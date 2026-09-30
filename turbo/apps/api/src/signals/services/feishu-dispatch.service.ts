@@ -46,7 +46,7 @@ import {
   readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -625,8 +625,8 @@ const feishuModelPickerState$ = command(
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -643,7 +643,7 @@ const feishuModelPickerState$ = command(
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            isDefault: policy.model === systemDefaultModel,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),

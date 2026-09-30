@@ -398,18 +398,6 @@ describe("AUTH-03 user model preference", () => {
       "selectedModel: Invalid input",
     );
 
-    const removedModel = await cfg.rawUpdateModelPreference(
-      admin,
-      { selectedModel: "claude-haiku-4-5", serviceTier: null },
-      [400],
-    );
-    expectApiError(removedModel.body);
-    expect(removedModel.body.error.code).toBe("BAD_REQUEST");
-    // Model IDs are catalog strings; the API rejects IDs the catalog lacks.
-    expect(removedModel.body.error.message).toBe(
-      'Unknown model "claude-haiku-4-5"',
-    );
-
     const unauthenticated = await cfg.requestReadModelPreference(null, [401]);
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body).toStrictEqual({

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 

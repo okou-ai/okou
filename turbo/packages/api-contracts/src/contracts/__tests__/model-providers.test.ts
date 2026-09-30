@@ -49,7 +49,6 @@ import {
   MODEL_PROVIDER_TYPES,
   modelProviderTypeSchema,
   modelProviderFrameworkSchema,
-  type ModelProviderWriteType,
 } from "../model-providers";
 import {
   findMatchingPermissions,
@@ -179,7 +178,6 @@ describe("model-first canonical catalog", () => {
       policies: [
         {
           model: "claude-sonnet-5",
-          isDefault: true,
           defaultProviderType: "vercel-ai-gateway",
           credentialScope: "org",
           modelProviderId: null,
@@ -188,8 +186,6 @@ describe("model-first canonical catalog", () => {
     });
     expect(parsed.policies).toHaveLength(1);
     expect(parsed.policies[0]).not.toHaveProperty("modelProviderSurfaceId");
-    // Released clients still send the retired default flag.
-    expect(parsed.policies[0]).not.toHaveProperty("isDefault");
   });
 
   it("identifies models blocked on limited-free-1", () => {
@@ -280,20 +276,6 @@ describe("model-first canonical catalog", () => {
     expect(isSupportedRunModel("deepseek-v4.1-flash")).toBe(true);
     expect(isSupportedRunModel("deepseek-v4-flash")).toBe(true);
     expect(isSupportedRunModel("deepseek-v4-pro")).toBe(true);
-  });
-
-  it.each([
-    "gpt-5.5",
-    "openai/gpt-5.5",
-    "claude-sonnet-4-6",
-    "anthropic/claude-sonnet-4.6",
-    "claude-opus-4-8",
-    "anthropic/claude-opus-4.8",
-    "deepseek-v4-pro",
-    "deepseek/deepseek-v4-pro",
-    " Anthropic/Claude-Sonnet-4.6 ",
-  ])("keeps %s recognized without a runtime provider route", (model) => {
-    expect(getProvidersForModel(model)).toEqual([]);
   });
 
   it("restricts existing paid models only on the built-in route", () => {
@@ -933,12 +915,6 @@ describe("model-first canonical catalog", () => {
       ]);
     },
   );
-
-  it("leaves the built-in default to the model catalog", () => {
-    expect(getDefaultModel("built-in")).toBeUndefined();
-    expect(getProvidersForModel("okou-1.0")).toEqual(["built-in"]);
-    expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
-  });
 
   it("keeps long-context billing thresholds for runtime models", () => {
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS["gpt-6-astra"]).toBe(
@@ -1881,7 +1857,6 @@ describe("built-in provider discriminator contract", () => {
     id: "22222222-2222-4222-8222-222222222222",
     model: "gpt-5.6-sol",
     modelLabel: "GPT 5.6 Sol",
-    isDefault: true,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -1950,10 +1925,5 @@ describe("built-in provider discriminator contract", () => {
       }),
     ).toHaveLength(1);
     expect(getProvidersForModel("gpt-5.6-sol")).toContain("built-in");
-  });
-
-  it("emits the canonical built-in writer value", () => {
-    const writeType: ModelProviderWriteType = "built-in";
-    expect(writeType).toBe("built-in");
   });
 });

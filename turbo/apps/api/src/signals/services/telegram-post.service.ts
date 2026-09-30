@@ -48,7 +48,7 @@ import {
 } from "../external/telegram-official";
 import { now } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
   enqueueChatInput,
   scheduleEnqueuedChatThreadPick$,
@@ -1476,8 +1476,8 @@ const handleModelCommand$ = command(
       signal.throwIfAborted();
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
@@ -1492,7 +1492,7 @@ const handleModelCommand$ = command(
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        isDefault: policy.model === systemDefaultModel,
       };
     });
     if (options.length === 0) {

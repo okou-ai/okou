@@ -784,9 +784,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       remaining: 1000,
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
-    // A new organization starts in Auto with only the fixed default; Auto
-    // exposes no workspace provider connections.
-    await expect(runs.listOrgModelProviders(admin)).resolves.toStrictEqual([]);
+    // A new organization starts in Auto with only the fixed default.
     const policies =
       await createMiscRoutesApi(context).listModelPolicies(admin);
     expect(policies.modelMode).toBe("auto");
@@ -6572,8 +6570,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         });
       }
       const removal = input.Delete as
-        | { readonly Objects?: readonly { readonly Key?: string }[] }
-        | undefined;
+        { readonly Objects?: readonly { readonly Key?: string }[] } | undefined;
       for (const object of removal?.Objects ?? []) {
         if (object.Key) {
           deletedS3Keys.push(object.Key);

@@ -49,8 +49,7 @@ async function customConnectionsAllowed(
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 type NotFoundResponse = ReturnType<typeof notFound>;
 type ConnectionInput =
-  | CreateModelProviderConnectionRequest
-  | UpdateModelProviderConnectionRequest;
+  CreateModelProviderConnectionRequest | UpdateModelProviderConnectionRequest;
 
 interface ValidatedSurface {
   readonly protocol: ModelProviderSurfaceProtocol;

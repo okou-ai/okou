@@ -146,13 +146,24 @@ takes the per-organization policy advisory locks in `org_id` order.
 - `agents.selected_model` and `model_providers.selected_model`. An agent
   pinned to a provider connection keeps its selection unless that provider
   type serves the replacement; the API resolves and rejects it on read.
+- Chat thread selections (`chat_threads.selected_model` and `model_settings`),
+  appending one `model_selection_updated` event per re-pinned thread with an
+  agent. A thread whose legacy provider pin has no enabled route on the
+  replacement keeps its retired model and pin; the API resolves it along the
+  chain on read and rejects the incompatible route explicitly.
 
 Never touched: history (`agent_runs`, `chat_events` including queued inputs,
-usage and billing, session conversations), `org_plan_entitlements`
-restrictions, custom-gateway `model_mappings`, and chat thread selections
-(`chat_threads` and its `chat_thread_events` stream). A thread rewrite would
-have to append `model_selection_updated` events with reserved sequence
-ranges, so the API resolves thread selections along the chain on read instead.
+usage and billing, session conversations) and custom-gateway
+`model_mappings`. `org_plan_entitlements.restricted_built_in_models` is a
+boolean flag that turns on the code's limited-free restricted-model rule; it
+stores no model IDs, so there is nothing to rewrite there.
+
+Production impact: as of MaskDB on 2026-09-30, no chat thread, organization
+policy, member preference, agent or model provider references any of
+`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`,
+`gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or `okou-1.0-max`. The migration
+therefore rewrites zero production rows, and the single-transaction thread
+scan needs no batching.
 
 ## Constraint design
 
@@ -191,12 +202,18 @@ loaded per request so an operator change is visible to the next request.
 
 ## Remaining compatibility removals
 
-Only physical deletions justified by rolling deploys and released clients
-remain. Each is removed in a later change once its condition holds:
+Only physical deletions justified by rolling deploys remain. Each is removed
+in a later change once its condition holds:
 
-| Item                                                                             | Kept because                                                                                          | Delete when                                                                                        |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `org_model_policies.is_default` column                                           | API versions from before the catalog still read and write it during the rollout.                      | No deployed API version reads or writes it (the release after this one is fully rolled out).       |
-| `run_model_catalog.allow_new_org_policy` column                                  | Older API versions gate adding a policy with it; the new API uses `replaced_by`.                      | No deployed API version reads it, and the owner has decided every unrecognized active-looking row. |
-| `subscription_model_catalog` table                                               | Older API versions list personal subscription models from it; the new API reads `model_routes`.       | No deployed API version reads it.                                                                  |
-| Response fields `isDefault`, `workspaceDefaultModel`, `workspaceDefaultPolicyId` | Released iOS builds decode `isDefault` as required; they are derived from the catalog system default. | No supported iOS, App or CLI release reads them (force-upgrade floor past the catalog release).    |
+| Item                                            | Kept because                                                                                    | Delete when                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `org_model_policies.is_default` column          | API versions from before the catalog still read and write it during the rollout.                | No deployed API version reads or writes it (the release after this one is fully rolled out).       |
+| `run_model_catalog.allow_new_org_policy` column | Older API versions gate adding a policy with it; the new API uses `replaced_by`.                | No deployed API version reads it, and the owner has decided every unrecognized active-looking row. |
+| `subscription_model_catalog` table              | Older API versions list personal subscription models from it; the new API reads `model_routes`. | No deployed API version reads it.                                                                  |
+
+The deprecated `GET /api/model-policies` response fields `isDefault`,
+`workspaceDefaultModel` and `workspaceDefaultPolicyId` are removed in this
+release rather than kept for released iOS builds. The owner accepted the iOS
+break: released iOS builds that decode `isDefault` as required fail to read the
+policy list until they upgrade. Current App, iOS and CLI read the system
+default from `GET /api/model-catalog`.

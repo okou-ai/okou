@@ -163,7 +163,6 @@ function builtInPolicy(
     id,
     model,
     modelLabel,
-    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -187,7 +186,6 @@ function claudeOpusApiKeyPolicy(): OrgModelPolicy {
     id: "00000000-0000-4000-a000-000000000212",
     model: "claude-opus-5",
     modelLabel: "Claude Opus 5",
-    isDefault: false,
     defaultProviderType: "anthropic-api-key",
     credentialScope: "org",
     modelProviderId: anthropicApiKeyProvider().id,
@@ -224,7 +222,6 @@ function missingOpenAiPolicy(): OrgModelPolicy {
     id: "00000000-0000-4000-a000-000000000213",
     model: "gpt-5.6-luna",
     modelLabel: "GPT 5.6 Luna",
-    isDefault: false,
     defaultProviderType: "openai-api-key",
     credentialScope: "org",
     modelProviderId: "00000000-0000-4000-a000-000000009999",
@@ -589,7 +586,6 @@ test("Keep models readable but hide configuration for an unconfigured workspace"
   expect(
     within(autoRow).getByLabelText("Auto can't be removed"),
   ).toBeDisabled();
-  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Provider connections" }),
   ).toBeNull();
@@ -679,7 +675,7 @@ test("Deleting one legacy model preserves other restricted routes", async () => 
   ).toBeInTheDocument();
 });
 
-test("Keep the projected system default row locked and out of policy writes", async () => {
+test("Show the system default row locked and write only org-configured policies", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([]);
   context.mocks.data.orgModelPolicies([
@@ -712,16 +708,12 @@ test("Keep the projected system default row locked and out of policy writes", as
       writePreconditionRequired: false,
       policies: [],
       modelsAvailableToAdd: [],
-      workspaceDefaultModel: null,
-      workspaceDefaultPolicyId: null,
     });
   });
   await openProvidersTab();
 
   // The server projects the catalog system default for every organization.
   const autoRow = await screen.findByTestId("org-model-policy-row-okou-1.0");
-  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
-  expect(within(autoRow).queryByLabelText("Actions for Auto")).toBeNull();
   expect(
     within(autoRow).getByLabelText("Auto can't be removed"),
   ).toBeDisabled();
@@ -851,7 +843,6 @@ test("Show available routes before provider connections", async () => {
       id: "00000000-0000-4000-a000-000000000212",
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      isDefault: false,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
       modelProviderId: null,
@@ -873,7 +864,6 @@ test("Show available routes before provider connections", async () => {
   });
   const claudeRow = screen.getByTestId("org-model-policy-row-claude-opus-5");
 
-  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
   expect(within(claudeRow).getByText("Acme Gateway")).toBeInTheDocument();
   expect(
     availableModels.compareDocumentPosition(claudeRow) &
@@ -1460,7 +1450,6 @@ test("Reconnect a stale workspace Claude account", async () => {
       id: "00000000-0000-4000-a000-000000000231",
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -1545,7 +1534,6 @@ test("Complete a stale workspace Codex reconnection", async () => {
       id: "00000000-0000-4000-a000-000000000232",
       model: "gpt-5.6-sol",
       modelLabel: "GPT 5.6 Sol",
-      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -1595,8 +1583,6 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   return {
     revision: "administrative-snapshot-one",
     writePreconditionRequired: true,
-    workspaceDefaultModel: MOCK_SYSTEM_DEFAULT_MODEL,
-    workspaceDefaultPolicyId: autoPolicy().id,
     modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
       return (
         model !== "gpt-5.6-luna" &&
@@ -1652,14 +1638,9 @@ function mockPriorityPolicyWrites() {
         ...policy,
       };
     });
-    const autoRoute = policies.find((policy) => {
-      return policy.model === MOCK_SYSTEM_DEFAULT_MODEL;
-    });
     snapshot = {
       revision: crypto.randomUUID(),
       writePreconditionRequired: true,
-      workspaceDefaultModel: autoRoute?.model ?? null,
-      workspaceDefaultPolicyId: autoRoute?.id ?? null,
       modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
         return (
           model !== "gpt-6-sol" &&
@@ -1709,7 +1690,6 @@ test("Enabled priority adds a subscription while preserving existing routes and 
         defaultProviderType: "codex-oauth-token",
       }),
       expect.objectContaining({ model: "claude-fable-5-1" }),
-      // The server-projected system default is never part of the write.
       expect.objectContaining({
         model: "claude-opus-5",
         defaultProviderType: "claude-code-oauth-token",
@@ -1717,11 +1697,6 @@ test("Enabled priority adds a subscription while preserving existing routes and 
       }),
     ],
   });
-  expect(
-    submitted()?.policies.some((policy) => {
-      return "isDefault" in policy;
-    }),
-  ).toBeFalsy();
   expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
 });
 

@@ -208,9 +208,6 @@ describe("member source-first onboarding", () => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
-    expect(policies.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
   });
 
   it("does not pull a member who already chats in the workspace into onboarding", async () => {
@@ -312,7 +309,7 @@ describe("POST /api/onboarding/complete", () => {
     expect(policies.body.modelMode).toBe("auto");
   });
 
-  it("writes no subscription models for a new Auto organization despite a subscription choice", async () => {
+  it("lists only the system default policy for a new Auto organization after a subscription choice", async () => {
     const actor = orgActor();
     mockDefaultAgentStorage();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
@@ -397,9 +394,6 @@ describe("POST /api/onboarding/complete", () => {
           credentialScope: "member",
         });
       }
-      expect(after.body.workspaceDefaultModel).toBe(
-        SEEDED_SYSTEM_DEFAULT_MODEL,
-      );
 
       await accept(
         onboardingCompleteClient().complete({

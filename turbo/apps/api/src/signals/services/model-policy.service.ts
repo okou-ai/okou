@@ -71,7 +71,8 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
-// `is_default` is written only for old API instances and is never read.
+// `is_default` is neither read nor written; the column remains for API
+// instances from before the model catalog during the rollout.
 export type OrgModelPolicyRow = Readonly<
   Omit<
     typeof orgModelPolicies.$inferSelect,
@@ -141,11 +142,12 @@ function projectedDefaultPolicyId(orgId: string, model: string): string {
   const hex = createHash("sha256")
     .update(`org-model-policy-default:${orgId}:${model}`)
     .digest("hex");
-  const variant = ((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
+  const variant = (
+    (Number.parseInt(hex.slice(16, 17), 16) & 0x3) |
+    0x8
+  ).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
-
-const PROJECTED_DEFAULT_TIMESTAMP = new Date(0);
 
 function projectedDefaultPolicy(
   orgId: string,
@@ -161,8 +163,9 @@ function projectedDefaultPolicy(
     modelProviderSurfaceId: null,
     createdByUserId: ORG_SENTINEL_USER_ID,
     updatedByUserId: ORG_SENTINEL_USER_ID,
-    createdAt: PROJECTED_DEFAULT_TIMESTAMP,
-    updatedAt: PROJECTED_DEFAULT_TIMESTAMP,
+    // A stable epoch timestamp: the projected policy has no stored row.
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
   };
 }
 
@@ -873,8 +876,6 @@ function serializePolicy(
     id: policy.id,
     model,
     modelLabel: catalogDisplayName(catalog, model),
-    // Deprecated: released iOS decodes it as required.
-    isDefault: model === catalog.systemDefaultModel,
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId: policy.modelProviderId ?? null,
@@ -884,17 +885,6 @@ function serializePolicy(
     createdAt: policy.createdAt.toISOString(),
     updatedAt: policy.updatedAt.toISOString(),
   };
-}
-
-function selectWorkspaceDefaultPolicy(
-  catalog: ModelCatalog,
-  policies: OrgModelPolicy[],
-): OrgModelPolicy | null {
-  return (
-    policies.find((policy) => {
-      return policy.model === catalog.systemDefaultModel;
-    }) ?? null
-  );
 }
 
 function memberRouteAvailability(params: {
@@ -933,7 +923,6 @@ function memberSubscriptionPolicy(
     id: entry.id,
     model: entry.model,
     modelLabel: entry.displayName,
-    isDefault: false,
     defaultProviderType: entry.providerType,
     runtimeProviderType: entry.providerType,
     credentialScope: "member",
@@ -992,12 +981,18 @@ async function loadOrgModelMode(db: Db, orgId: string) {
   return org?.modelMode === "auto" ? "auto" : "custom";
 }
 
+export interface OrgModelPolicyListing {
+  readonly response: OrgModelPoliciesResponse;
+  /** The catalog system default the listing was projected from. */
+  readonly systemDefaultModel: SupportedRunModel;
+}
+
 async function listOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-): Promise<OrgModelPoliciesResponse> {
+): Promise<OrgModelPolicyListing> {
   const [persistedRows, catalog] = await Promise.all([
     loadRows(db, orgId),
     loadModelCatalog(db),
@@ -1083,7 +1078,6 @@ async function listOrgModelPolicies(
       } satisfies OrgModelPolicy;
     }),
   );
-  const workspaceDefault = selectWorkspaceDefaultPolicy(catalog, policies);
   const modelMode = await loadOrgModelMode(db, orgId);
   const memberPolicies = await loadAutoMemberPolicies(
     db,
@@ -1093,7 +1087,7 @@ async function listOrgModelPolicies(
     modelMode === "auto",
   );
 
-  return {
+  const response: OrgModelPoliciesResponse = {
     modelMode,
     policies: [...policies, ...memberPolicies],
     revision: policyRevision(persistedRows),
@@ -1102,9 +1096,8 @@ async function listOrgModelPolicies(
     writePreconditionRequired: true,
     modelsAvailableToAdd:
       modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
-    workspaceDefaultModel: workspaceDefault?.model ?? null,
-    workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
+  return { response, systemDefaultModel: catalog.systemDefaultModel };
 }
 
 async function persistOrgModelPolicyUpdates(params: {
@@ -1129,7 +1122,6 @@ async function persistOrgModelPolicyUpdates(params: {
           return {
             orgId: params.orgId,
             model: policy.model,
-            isDefault: false,
             defaultProviderType: policy.defaultProviderType,
             credentialScope: policy.credentialScope,
             modelProviderId: policy.modelProviderId,
@@ -1184,12 +1176,6 @@ async function persistOrgModelPolicyUpdates(params: {
         ),
       );
   }
-
-  // `is_default` is only kept for old API instances and is never read.
-  await tx
-    .update(orgModelPolicies)
-    .set({ isDefault: false })
-    .where(eq(orgModelPolicies.orgId, params.orgId));
 
   for (const policy of policies) {
     await tx
@@ -1280,21 +1266,19 @@ export async function initializeOnboardingOrgModelPolicies(
     now: nowDate(),
     systemDefaultModel: catalog.systemDefaultModel,
     activeModels: catalogActiveModels(catalog),
-    policies: [
-      ...seed.models
-        .filter((model) => {
-          return isCatalogModelAddable(catalog, model);
-        })
-        .map((model) => {
-          return {
-            model,
-            defaultProviderType: seed.providerType,
-            credentialScope: "member" as const,
-            modelProviderId: null,
-            modelProviderSurfaceId: null,
-          };
-        }),
-    ],
+    policies: seed.models
+      .filter((model) => {
+        return isCatalogModelAddable(catalog, model);
+      })
+      .map((model) => {
+        return {
+          model,
+          defaultProviderType: seed.providerType,
+          credentialScope: "member" as const,
+          modelProviderId: null,
+          modelProviderSurfaceId: null,
+        };
+      }),
   });
 }
 
@@ -1305,7 +1289,7 @@ export const listOrgModelPolicies$ = command(
     signal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
     const db = set(writeDb$);
-    const response = await listOrgModelPolicies(
+    const { response } = await listOrgModelPolicies(
       db,
       params.orgId,
       params.userId,
@@ -1313,6 +1297,27 @@ export const listOrgModelPolicies$ = command(
     );
     signal.throwIfAborted();
     return response;
+  },
+);
+
+/**
+ * The policy list together with the catalog system default it projects, for
+ * integration model pickers that mark the default option.
+ */
+export const listOrgModelPoliciesWithSystemDefault$ = command(
+  async (
+    { get, set },
+    params: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<OrgModelPolicyListing> => {
+    const listing = await listOrgModelPolicies(
+      set(writeDb$),
+      params.orgId,
+      params.userId,
+      await get(builtInModelKeyIdsByVendor$),
+    );
+    signal.throwIfAborted();
+    return listing;
   },
 );
 
@@ -1404,7 +1409,7 @@ export const updateOrgModelPolicies$ = command(
       return written;
     }
 
-    const response = await listOrgModelPolicies(
+    const { response } = await listOrgModelPolicies(
       db,
       params.orgId,
       params.userId,

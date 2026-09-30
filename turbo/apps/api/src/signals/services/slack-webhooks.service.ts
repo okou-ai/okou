@@ -50,7 +50,10 @@ import {
   readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import {
+  listOrgModelPolicies$,
+  listOrgModelPoliciesWithSystemDefault$,
+} from "./model-policy.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
   admitCanonicalSlackChatEvent,
@@ -843,8 +846,8 @@ const slackModelPickerState$ = command(
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -861,7 +864,7 @@ const slackModelPickerState$ = command(
         return {
           model: policy.model,
           label: policy.modelLabel,
-          isDefault: policy.isDefault,
+          isDefault: policy.model === systemDefaultModel,
         };
       }),
       currentSelectedModel,

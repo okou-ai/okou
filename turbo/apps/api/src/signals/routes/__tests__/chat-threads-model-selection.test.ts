@@ -225,36 +225,47 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
   });
 
   it.each([
-    "claude-fable-5",
-    "claude-sonnet-4-6",
-    "claude-opus-4-8",
-    "deepseek-v4-pro",
+    ["claude-fable-5", "claude-fable-5-1"],
+    ["claude-sonnet-4-6", "claude-sonnet-5-5"],
+    ["claude-opus-4-8", "claude-opus-5-5"],
   ] as const)(
-    "preserves the thread selection when an old client requests retired %s",
-    async (retiredModel) => {
+    "stores the replacement when an old client requests retired %s",
+    async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
+      const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+      await api.updateOrgModelPolicies(
+        fixture.actor,
+        (["claude-sonnet-5", "claude-opus-5", replacement] as const).map(
+          (model) => {
+            return {
+              model,
+              preferred: model === "claude-sonnet-5",
+              defaultProviderType: "anthropic-api-key",
+              credentialScope: "org",
+              modelProviderId: providerId,
+            };
+          },
+        ),
+      );
       const token = okouToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
         capabilities: ["chat-thread:read", "chat-thread:write"],
       });
       const headers = { authorization: `Bearer ${token}` };
-      const rejected = await accept(
+      await accept(
         modelSelectionClient().update({
           headers,
           params: { id: fixture.threadId },
           body: { model: retiredModel },
         }),
-        [400],
-      );
-      expect(rejected.body.error.message).toBe(
-        "This model has been retired. Select another available model.",
+        [204],
       );
       const thread = await accept(
         metadataClient().get({ headers, params: { id: fixture.threadId } }),
         [200],
       );
-      expect(thread.body.selectedModel).toBe("claude-sonnet-5");
+      expect(thread.body.selectedModel).toBe(replacement);
     },
   );
 

@@ -25,7 +25,6 @@ import {
   getProvidersForModel,
   type UpsertModelProviderRequest,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";

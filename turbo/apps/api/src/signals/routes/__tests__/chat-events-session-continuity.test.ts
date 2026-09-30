@@ -1017,10 +1017,10 @@ describe("CHAT-02: run-level model overrides", () => {
       [400],
     );
     expectApiError(invalidModel.body);
-    expect(invalidModel.body.error.message).toBe("Invalid input");
+    expect(invalidModel.body.error.message).toBe('Unknown model "codex"');
     await chat.requestReadThread(actor, invalidModelThreadId, [404]);
 
-    // Removed sentinel models fail contract validation.
+    // Models outside the catalog are rejected.
     for (const selectedModel of [
       "claude-haiku-4-5",
       "anthropic/claude-haiku-4.5",
@@ -1039,7 +1039,7 @@ describe("CHAT-02: run-level model overrides", () => {
       expectApiError(removed.body);
       expect(removed.body.error).toMatchObject({
         code: "BAD_REQUEST",
-        message: "Invalid input",
+        message: `Unknown model "${selectedModel}"`,
       });
       await chat.requestReadThread(actor, removedThreadId, [404]);
     }

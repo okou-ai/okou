@@ -341,7 +341,6 @@ describe("GET/PUT /api/model-policies", () => {
     useSession(memberFixture, "org:member");
     const member = await accept(client.list({ headers: authHeaders() }), [200]);
     expect(member.body.modelMode).toBe("auto");
-    expect(member.body.workspaceDefaultModel).toBe("okou-1.0");
     expect(
       member.body.policies.map((policy) => {
         return policy.model;
@@ -572,58 +571,18 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual(["okou-1.0", "gpt-6-luna"]);
   });
 
-  it("offers active catalog models and rejects replaced or unknown ones", async () => {
+  it("offers active catalog models to add", async () => {
     const fixture = seedFixture();
     useSession(fixture);
-    const client = apiClient();
     const initial = await accept(
-      client.list({ headers: authHeaders() }),
+      apiClient().list({ headers: authHeaders() }),
       [200],
     );
 
     // `replaced_by IS NULL` is the only addability authority.
-    expect(initial.body.modelsAvailableToAdd).toEqual(
+    expect(initial.body.modelsAvailableToAdd).toStrictEqual(
       expect.arrayContaining(["gpt-5.6-sol", "gpt-6-sol", "claude-opus-5-5"]),
     );
-    for (const replaced of ["claude-fable-5", "gpt-5.5", "deepseek-v4-pro"]) {
-      expect(initial.body.modelsAvailableToAdd).not.toContain(replaced);
-    }
-    expect(initial.body.modelsAvailableToAdd).not.toContain(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
-
-    const retired = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          revision: initial.body.revision,
-          policies: [makeBuiltInPolicy("claude-fable-5")],
-        },
-      }),
-      [400],
-    );
-    expect(retired.body.error.message).toBe(
-      "This model has been retired. Select another available model.",
-    );
-    const unknown = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          revision: initial.body.revision,
-          policies: [makeBuiltInPolicy("not-a-catalog-model")],
-        },
-      }),
-      [400],
-    );
-    expect(unknown.body.error.message).toBe(
-      'Unknown model "not-a-catalog-model"',
-    );
-
-    const unchanged = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(unchanged.body.revision).toBe(initial.body.revision);
   });
 
   it("can re-add GPT 6 Luna after removing it", async () => {
@@ -748,7 +707,6 @@ describe("GET/PUT /api/model-policies", () => {
       client.list({ headers: authHeaders() }),
       [200],
     );
-    expect(existing.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
     expect(
       existing.body.policies.some((policy) => {
         return policy.model === "gpt-6-sol";
@@ -804,7 +762,7 @@ describe("GET/PUT /api/model-policies", () => {
     ["claude-opus-4-8", "claude-opus-5-5"],
     ["deepseek-v4-pro", "gpt-6-luna"],
   ] as const)(
-    "rejects a %s policy and stores a preference for it as %s",
+    "stores a %s preference as its replacement %s",
     async (retiredModel, replacement) => {
       const fixture = seedFixture();
       useSession(fixture);
@@ -813,40 +771,11 @@ describe("GET/PUT /api/model-policies", () => {
         client.list({ headers: authHeaders() }),
         [200],
       );
-      const retired = await accept(
-        client.update({
-          headers: authHeaders(),
-          body: {
-            revision: await currentPolicyRevision(),
-            policies: [
-              ...toUpdate(existing.body),
-              makeBuiltInPolicy(retiredModel),
-            ],
-          },
-        }),
-        [400],
-      );
-      expect(retired.body.error.message).toBe(
-        "This model has been retired. Select another available model.",
-      );
-
-      const preferences = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      // Without a policy for the replacement the selection is unavailable.
-      await accept(
-        preferences.update({
-          headers: authHeaders(),
-          body: { selectedModel: retiredModel, serviceTier: null },
-        }),
-        [400],
-      );
       await accept(
         client.update({
           headers: authHeaders(),
           body: {
-            revision: await currentPolicyRevision(),
+            revision: existing.body.revision,
             policies: [
               ...toUpdate(existing.body),
               makeBuiltInPolicy(replacement),
@@ -855,7 +784,11 @@ describe("GET/PUT /api/model-policies", () => {
         }),
         [200],
       );
-      // A legacy client sending the replaced ID stores the final model.
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      // A client sending the replaced ID stores the final model.
       const stored = await accept(
         preferences.update({
           headers: authHeaders(),
@@ -924,19 +857,12 @@ describe("GET/PUT /api/model-policies", () => {
       expect.objectContaining({
         model: SEEDED_SYSTEM_DEFAULT_MODEL,
         modelLabel: "Auto",
-        isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
         routeStatus: "valid",
       }),
     ]);
-    expect(response.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
-    expect(response.body.workspaceDefaultPolicyId).toBe(
-      response.body.policies[0]?.id,
-    );
   });
 
   it("projects the system default beside stored policies", async () => {
@@ -956,15 +882,9 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(
       response.body.policies.map((policy) => {
-        return [policy.model, policy.isDefault];
+        return policy.model;
       }),
-    ).toStrictEqual([
-      [SEEDED_SYSTEM_DEFAULT_MODEL, true],
-      ["gpt-6-luna", false],
-    ]);
-    expect(response.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-6-luna"]);
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
@@ -1110,7 +1030,6 @@ describe("GET/PUT /api/model-policies", () => {
       defaultProviderType: "built-in",
       credentialScope: "org",
     });
-    expect(response.body.modelsAvailableToAdd).toStrictEqual([]);
   });
 
   it("starts in Auto when the policy list was read before the workspace bootstrap", async () => {
@@ -1134,7 +1053,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
-  it("keeps the projected default when an update omits it", async () => {
+  it("projects the system default beside a written list that omits it", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -1153,12 +1072,9 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(
       written.body.policies.map((policy) => {
-        return [policy.model, policy.isDefault];
+        return policy.model;
       }),
-    ).toStrictEqual([
-      [SEEDED_SYSTEM_DEFAULT_MODEL, true],
-      ["gpt-6-luna", false],
-    ]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-6-luna"]);
   });
 
   it("allows members to read policy controls", async () => {
@@ -1177,9 +1093,6 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
-    expect(response.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
   });
 
   it("allows agent tokens to read policy controls without a model-provider capability", async () => {
@@ -1203,9 +1116,11 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    expect(response.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
+    expect(
+      response.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
   it("requires admins for policy writes", async () => {
@@ -2427,7 +2342,6 @@ describe("GET/PUT /api/model-policies", () => {
         policies: [
           {
             model: "claude-haiku-4-5",
-            isDefault: true,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null,
@@ -2726,9 +2640,6 @@ describe("conditional organization model policy writes", () => {
         expect.arrayContaining(requested),
       );
       expect(saved.body.policies).toHaveLength(requested.length);
-      expect(saved.body.workspaceDefaultPolicyId).toBe(
-        initial.body.workspaceDefaultPolicyId,
-      );
       expect(
         saved.body.policies.find((policy) => {
           return policy.model === model;

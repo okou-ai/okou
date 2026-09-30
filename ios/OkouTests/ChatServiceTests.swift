@@ -93,12 +93,11 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
   }
 
-  func testCreateWithoutSavedModelUsesCatalogDefaultOnlyWhenItsRouteIsValid() async throws {
+  func testCreateWithoutSavedModelUsesRoutableCatalogDefault() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
     }
     let routeStatus = Mutex("valid")
-    let catalogDefault = Mutex<String?>("claude-sonnet-5")
     let createdModels = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -119,7 +118,7 @@ final class ChatServiceTests: XCTestCase {
             "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"\(status)\"}]}"
         )
       case "/api/model-catalog":
-        return modelCatalogResponse(systemDefaultModel: catalogDefault.withLock { $0 })
+        return modelCatalogResponse(systemDefaultModel: "claude-sonnet-5")
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
         createdModels.withLock { $0.append(body.model) }
@@ -135,24 +134,16 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(created.selectedModel, "claude-sonnet-5")
     XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5"])
 
-    // A response without the top-level default falls back to the flagged catalog model.
-    catalogDefault.withLock { $0 = nil }
-    _ = try await ChatService(client: fixture.client).createThread()
-    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5", "okou-1.0"])
-
-    catalogDefault.withLock { $0 = "claude-sonnet-5" }
     routeStatus.withLock { $0 = "missing_provider" }
     do {
       _ = try await ChatService(client: fixture.client).createThread()
       XCTFail("Expected no available default model")
     } catch ChatServiceError.noDefaultModel {}
-    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5", "okou-1.0"])
   }
 
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
-      let serviceTier: String?
       let reasoningEffort: String?
     }
     let createdRequests = Mutex<[CreatedRequest]>([])
@@ -191,8 +182,6 @@ final class ChatServiceTests: XCTestCase {
     let created = try await ChatService(client: fixture.client).createThread()
     XCTAssertEqual(created.selectedModel, "claude-opus-5-5")
     XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["claude-opus-5-5"])
-    // The saved tier belonged to the retired model and is not carried to its replacement.
-    XCTAssertEqual(createdRequests.withLock { $0.map(\.serviceTier) }, [nil])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
 

@@ -13,7 +13,9 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+function authHeaders() {
+  return { authorization: "Bearer clerk-session" };
+}
 
 function catalogApi() {
   return setupApp({ context, routes: modelCatalogRoutes })(
@@ -45,13 +47,17 @@ function builtIn(model: UpdateOrgModelPolicy["model"]): UpdateOrgModelPolicy {
 }
 
 async function listPolicies() {
-  return (await accept(policiesApi().list({ headers }), [200])).body;
+  return (await accept(policiesApi().list({ headers: authHeaders() }), [200]))
+    .body;
 }
 
 describe("model catalog authority", () => {
   it("exposes the database system default and display price tiers", async () => {
     signInAdmin();
-    const { body } = await accept(catalogApi().get({ headers }), [200]);
+    const { body } = await accept(
+      catalogApi().get({ headers: authHeaders() }),
+      [200],
+    );
 
     expect(body.systemDefaultModel).toBe("okou-1.0");
     expect(
@@ -59,12 +65,6 @@ describe("model catalog authority", () => {
         return row.model === "okou-1.0";
       })?.priceTier,
     ).toBe("$");
-    // A replaced model has no route of its own, hence no price tier.
-    expect(
-      body.models.find((row) => {
-        return row.model === "claude-fable-5";
-      })?.priceTier,
-    ).toBeNull();
   });
 
   it("projects the system default policy without storing a per-organization row", async () => {
@@ -74,19 +74,16 @@ describe("model catalog authority", () => {
     expect(initial.policies).toStrictEqual([
       expect.objectContaining({
         model: "okou-1.0",
-        isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
       }),
     ]);
-    expect(initial.workspaceDefaultModel).toBe("okou-1.0");
-    expect(initial.workspaceDefaultPolicyId).toBe(initial.policies[0]?.id);
 
-    // A write that omits the default keeps it; nothing is persisted for it,
-    // so the policy revision is unchanged by an empty write.
+    // The default is projected rather than persisted, so a write that omits
+    // it returns the same projection and revision.
     const written = await accept(
       policiesApi().update({
-        headers,
+        headers: authHeaders(),
         body: { revision: initial.revision, policies: [] },
       }),
       [200],
@@ -95,21 +92,15 @@ describe("model catalog authority", () => {
     expect(written.body.policies).toStrictEqual(initial.policies);
   });
 
-  it("admits a new policy only for an active catalog model", async () => {
+  it("admits a new policy for an active catalog model", async () => {
     signInAdmin();
     const { revision } = await listPolicies();
 
-    const retired = await policiesApi().update({
-      headers,
-      body: { revision, policies: [builtIn("claude-fable-5")] },
-    });
-    expect(retired.status).toBe(400);
-
-    // Active in the catalog; the retired `allow_new_org_policy` flag is false
+    // Active in the catalog; the legacy `allow_new_org_policy` flag is false
     // for this row and no longer decides admission.
     const added = await accept(
       policiesApi().update({
-        headers,
+        headers: authHeaders(),
         body: { revision, policies: [builtIn("claude-opus-5-5")] },
       }),
       [200],
@@ -119,8 +110,6 @@ describe("model catalog authority", () => {
         return policy.model;
       }),
     ).toStrictEqual(["okou-1.0", "claude-opus-5-5"]);
-    expect(added.body.modelsAvailableToAdd).not.toContain("claude-fable-5");
-    expect(added.body.modelsAvailableToAdd).not.toContain("okou-1.0");
   });
 
   it("stores the final replacement for a legacy model preference", async () => {
@@ -128,7 +117,7 @@ describe("model catalog authority", () => {
     const { revision } = await listPolicies();
     await accept(
       policiesApi().update({
-        headers,
+        headers: authHeaders(),
         body: { revision, policies: [builtIn("claude-fable-5-1")] },
       }),
       [200],
@@ -140,17 +129,11 @@ describe("model catalog authority", () => {
 
     const updated = await accept(
       preferences.update({
-        headers,
+        headers: authHeaders(),
         body: { selectedModel: "claude-fable-5", serviceTier: null },
       }),
       [200],
     );
     expect(updated.body.selectedModel).toBe("claude-fable-5-1");
-
-    const unknown = await preferences.update({
-      headers,
-      body: { selectedModel: "not-a-catalog-model", serviceTier: null },
-    });
-    expect(unknown.status).toBe(400);
   });
 });

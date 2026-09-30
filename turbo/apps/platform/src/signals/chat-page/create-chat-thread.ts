@@ -3608,9 +3608,7 @@ function createChatThreadComposerSignals(
         get(modelCatalog$),
       ]);
       // Thread pins of retired models display their catalog replacement.
-      const selectedModel = catalog.resolve(
-        get(modelSelection.selectedModel$),
-      );
+      const selectedModel = catalog.resolve(get(modelSelection.selectedModel$));
       if (!selectedModel) {
         return null;
       }

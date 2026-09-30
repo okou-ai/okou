@@ -4,7 +4,6 @@ import {
   getRunModelRouteAccess,
   isBuiltInModelProviderType,
   isModelSupportedByProvider,
-  isSupportedRunModel,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderType,
@@ -37,9 +36,7 @@ export interface ResolvedModelFirstPolicyRoute {
   readonly modelProviderCredentialScope: ModelProviderCredentialScope;
   readonly selectedModel: SupportedRunModel;
   readonly personalConnectionState?:
-    | "capture_required"
-    | "reconnect_required"
-    | "unavailable";
+    "capture_required" | "reconnect_required" | "unavailable";
 }
 
 interface PersonalCandidate {
@@ -76,8 +73,7 @@ export interface PreparedMemberModelRouteContext {
 }
 
 type ModelRouteMemberContext =
-  | MemberModelRouteContext
-  | PreparedMemberModelRouteContext;
+  MemberModelRouteContext | PreparedMemberModelRouteContext;
 
 export function prepareMemberModelRouteContext(
   db: Db,

@@ -492,12 +492,6 @@ unless model_defaults_script.include?("/api/model-policies") &&
     model_defaults_script.include?('{"selectedModel":"deepseek-v4-flash","serviceTier":null}')
   raise "runner bootstrap must reset the limited-free model defaults"
 end
-if model_defaults_script.include?("isDefault")
-  raise "runner bootstrap must not send the removed isDefault policy field"
-end
-if model_defaults_script.include?("okou-1.0")
-  raise "runner bootstrap must leave the projected system default to the server"
-end
 %w[claude-opus-4-7 claude-sonnet-4-6 gpt-5.5].each do |restricted_model|
   if model_defaults_script.include?(restricted_model)
     raise "runner bootstrap must not select restricted model #{restricted_model}"
@@ -546,10 +540,6 @@ end
 unless mock_claude_script.include?('credentialScope: "member"') &&
     mock_claude_script.include?("modelProviderId: null")
   raise "mock Claude OAuth policy must use member credentials"
-end
-if mock_claude_script.include?("okou-1.0") ||
-    mock_claude_script.include?("isDefault")
-  raise "mock Claude bootstrap must leave the projected system default to the server"
 end
 codex_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap real Codex account"
@@ -620,14 +610,6 @@ end
 unless claude_script.include?('defaultProviderType: "built-in"') &&
     claude_script.include?("modelProviderId: null")
   raise "real Claude bootstrap must use the built-in provider"
-end
-[codex_script, built_in_codex_script, claude_script].each do |script|
-  if script.include?("okou-1.0")
-    raise "runner bootstrap policy writes must leave the projected system default to the server"
-  end
-  if script.include?("isDefault")
-    raise "runner bootstrap must not send the removed isDefault policy field"
-  end
 end
 
 shard_step = runner.fetch("steps").find do |step|

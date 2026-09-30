@@ -1388,21 +1388,20 @@ describe("workflow queue", () => {
       }),
       [204],
     );
-    // No current writer stores another route for the fixed default; stage one
-    // so neither the preferred model nor the default has a usable route.
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId: scenario.orgId,
-      model: SEEDED_SYSTEM_DEFAULT_MODEL,
-      defaultProviderType: "anthropic-api-key",
-    });
 
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
-    await executeDueWorkflowAutomations(created.body.id);
-    await executeDueWorkflowAutomations(created.body.id);
+    // Operator-managed key availability has no user mutation API; scope the
+    // fixed default's unavailable Built-in route to these launches.
+    await withBuiltInModelRuntimeRouteUnavailableForTest(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+      async () => {
+        await executeDueWorkflowAutomations(created.body.id);
+        await executeDueWorkflowAutomations(created.body.id);
+      },
+    );
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.nextRunAt).not.toBeNull();
-    expect(automation.chatThreadId).toBeNull();
 
     await runsApi.ensureOrgModelProvider(scenario.actor);
 

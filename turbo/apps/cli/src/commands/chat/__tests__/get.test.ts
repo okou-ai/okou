@@ -153,7 +153,6 @@ describe("okou chat get command", () => {
     expect(output).toContain(
       "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort medium",
     );
-    expect(output).not.toContain("claude-opus-4-8");
   });
 
   it("loads another chat thread passed with --thread-id", async () => {

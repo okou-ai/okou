@@ -33,10 +33,7 @@ import {
   resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import {
-  modelCatalog$,
-  type ModelCatalog,
-} from "../external/model-catalog.ts";
+import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";

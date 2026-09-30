@@ -23,6 +23,7 @@ import type { RouteEntry } from "../route-entry";
 import { listOrgModelPolicies$ } from "../services/model-policy.service";
 import {
   loadModelCatalog,
+  type ModelCatalog,
   resolveCatalogRunModel,
 } from "../services/model-catalog.service";
 import { db$ } from "../external/db";
@@ -133,6 +134,36 @@ const persistUserModelPreference$ = command(
   },
 );
 
+/**
+ * A legacy client may send a replaced model ID: store the final model of its
+ * replacement chain. Unknown IDs are rejected explicitly.
+ */
+function resolveRequestedPreferenceModels(
+  catalog: ModelCatalog,
+  request: UpdateUserModelPreferenceRequest,
+): UpdateUserModelPreferenceRequest | ReturnType<typeof badRequestMessage> {
+  const selectedModel =
+    request.selectedModel === null
+      ? null
+      : resolveCatalogRunModel(catalog, request.selectedModel);
+  if (request.selectedModel !== null && selectedModel === null) {
+    return badRequestMessage(`Unknown model "${request.selectedModel}"`);
+  }
+  const patch = request.modelSettingsPatch;
+  if (!patch) {
+    return { ...request, selectedModel };
+  }
+  const patchModel = resolveCatalogRunModel(catalog, patch.model);
+  if (patchModel === null) {
+    return badRequestMessage(`Unknown model "${patch.model}"`);
+  }
+  return {
+    ...request,
+    selectedModel,
+    modelSettingsPatch: { ...patch, model: patchModel },
+  };
+}
+
 const updateUserModelPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -158,40 +189,14 @@ const updateUserModelPreferenceInner$ = command(
       return await set(persistUserModelPreference$, body.data, signal);
     }
 
-    // A legacy client may send a replaced model ID: store the final model of
-    // its replacement chain. Unknown IDs are rejected explicitly.
-    const catalog = await loadModelCatalog(get(db$));
+    const data = resolveRequestedPreferenceModels(
+      await loadModelCatalog(get(db$)),
+      body.data,
+    );
     signal.throwIfAborted();
-    const resolveModel = (model: string) => {
-      return resolveCatalogRunModel(catalog, model);
-    };
-    const selectedModel =
-      body.data.selectedModel === null
-        ? null
-        : resolveModel(body.data.selectedModel);
-    if (body.data.selectedModel !== null && selectedModel === null) {
-      return badRequestMessage(`Unknown model "${body.data.selectedModel}"`);
+    if ("status" in data) {
+      return data;
     }
-    const patchModel = body.data.modelSettingsPatch
-      ? resolveModel(body.data.modelSettingsPatch.model)
-      : null;
-    if (body.data.modelSettingsPatch && patchModel === null) {
-      return badRequestMessage(
-        `Unknown model "${body.data.modelSettingsPatch.model}"`,
-      );
-    }
-    const data: UpdateUserModelPreferenceRequest = {
-      ...body.data,
-      selectedModel,
-      ...(body.data.modelSettingsPatch && patchModel
-        ? {
-            modelSettingsPatch: {
-              ...body.data.modelSettingsPatch,
-              model: patchModel,
-            },
-          }
-        : {}),
-    };
 
     const policies =
       data.selectedModel !== null

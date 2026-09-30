@@ -24,7 +24,6 @@ function builtInPolicy(model: string, index: number): OrgModelPolicy {
     id: `e5000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: model,
-    isDefault: false,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -33,7 +32,7 @@ function builtInPolicy(model: string, index: number): OrgModelPolicy {
     routeStatusReason: null,
     createdAt: POLICY_DATE,
     updatedAt: POLICY_DATE,
-  } as OrgModelPolicy;
+  };
 }
 
 function configurePolicies(models: readonly string[]): void {
@@ -60,7 +59,7 @@ async function readyComposer(): Promise<void> {
   ).resolves.toBeVisible();
 }
 
-test("Offer only active catalog models in catalog order with catalog names", async () => {
+test("Offer the active catalog models in catalog order with catalog names", async () => {
   const user = userEvent.setup({ delay: null });
   configurePolicies([
     "gpt-6-luna",

@@ -27,7 +27,6 @@ function policy(
     id: "34240000-0000-4000-a000-000000000001",
     model: "gpt-5.6-sol",
     modelLabel: "GPT 5.6 Sol",
-    isDefault: false,
     defaultProviderType: "built-in",
     runtimeProviderType: "openai-api-key",
     credentialScope: "org",
@@ -66,7 +65,6 @@ test.each([
         id: "34430000-0000-4000-a000-000000000003",
         model: "claude-sonnet-5",
         modelLabel: "Claude Sonnet 5",
-        isDefault: false,
         runtimeProviderType: "anthropic-api-key",
         memberEffective: {
           providerType: "claude-code-oauth-token",
@@ -255,8 +253,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
           memberEffective: switched ? currentPolicy.memberEffective : undefined,
         },
       ],
-      workspaceDefaultModel: "okou-1.0",
-      workspaceDefaultPolicyId: null,
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {

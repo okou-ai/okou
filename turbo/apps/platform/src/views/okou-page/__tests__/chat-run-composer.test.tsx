@@ -180,7 +180,6 @@ test("Send a large image with a fallback-enabled text model", async () => {
     buildModelPolicy({
       model: "deepseek-v4-flash",
       modelLabel: "DeepSeek V4 Flash",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,

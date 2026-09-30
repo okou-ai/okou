@@ -59,7 +59,7 @@ import {
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
   ensureTeamsChatThreadRoute,
   findTeamsRoutedChatThreadId,
@@ -800,8 +800,8 @@ const teamsModelPickerState$ = command(
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -820,7 +820,7 @@ const teamsModelPickerState$ = command(
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            isDefault: policy.model === systemDefaultModel,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),

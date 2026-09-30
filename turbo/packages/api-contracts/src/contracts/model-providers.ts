@@ -1590,10 +1590,6 @@ export const orgModelPolicySchema = z.object({
   id: z.uuid(),
   model: runModelIdSchema,
   modelLabel: z.string(),
-  // Deprecated compatibility field for released clients that decode it as
-  // required. True only for the projected system default (the catalog's
-  // `is_system_default` model); new code must not read it.
-  isDefault: z.boolean(),
   defaultProviderType: modelProviderTypeSchema,
   // Concrete built-in provider; other policies use defaultProviderType.
   runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
@@ -1663,10 +1659,6 @@ export const orgModelPoliciesResponseSchema = z.object({
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
   modelsAvailableToAdd: z.array(runModelIdSchema),
-  // Deprecated compatibility fields for released clients. Always the catalog
-  // system default and its projected policy ID; new code must not read them.
-  workspaceDefaultModel: runModelIdSchema.nullable(),
-  workspaceDefaultPolicyId: z.uuid().nullable(),
 });
 
 export type OrgModelPoliciesResponse = z.infer<

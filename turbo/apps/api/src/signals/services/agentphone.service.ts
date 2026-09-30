@@ -60,7 +60,7 @@ import {
   scheduleEnqueuedChatThreadPick$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
@@ -1162,8 +1162,8 @@ const handleModelCommand$ = command(
       );
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
@@ -1179,7 +1179,7 @@ const handleModelCommand$ = command(
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        isDefault: policy.model === systemDefaultModel,
       };
     });
 

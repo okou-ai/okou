@@ -114,7 +114,6 @@ export function buildModelPolicy(
   return {
     id: "00000000-0000-4000-a000-000000000101",
     modelLabel: "Claude Opus 5.5",
-    isDefault: false,
     defaultProviderType: "claude-code-oauth-token",
     credentialScope: "member",
     modelProviderId: null,
@@ -181,7 +180,6 @@ export function mockOrgModelRoutes(): void {
       id: "00000000-0000-4000-a000-000000000205",
       model: MOCK_SYSTEM_DEFAULT_MODEL,
       modelLabel: "Auto",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
     }),

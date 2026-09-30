@@ -57,7 +57,6 @@ type PersonalProviderType = Extract<
 >;
 
 function policy(args: {
-  readonly isDefault?: boolean;
   readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
@@ -67,7 +66,6 @@ function policy(args: {
     id: crypto.randomUUID(),
     model: args.model,
     modelLabel: args.modelLabel,
-    isDefault: args.isDefault ?? true,
     defaultProviderType: args.providerType,
     credentialScope: "member",
     modelProviderId: args.modelProviderId,
@@ -79,16 +77,11 @@ function policy(args: {
   };
 }
 
-function builtInPolicy(
-  model: string,
-  modelLabel: string,
-  isDefault: boolean,
-): OrgModelPolicy {
+function builtInPolicy(model: string, modelLabel: string): OrgModelPolicy {
   return {
     id: crypto.randomUUID(),
     model,
     modelLabel,
-    isDefault,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -475,8 +468,8 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   const billing: { upgraded: boolean } = { upgraded: false };
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
-    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
-    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5", false),
+    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna"),
+    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5"),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     if (billing.upgraded) {

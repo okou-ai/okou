@@ -9,14 +9,11 @@ import {
 } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "okou-1.0",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000009",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000001",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -29,7 +26,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000002",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
@@ -42,7 +38,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000003",
       model: "gpt-5.6-sol",
       modelLabel: "GPT 5.6 Sol",
-      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -55,7 +50,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000009",
       model: "okou-1.0",
       modelLabel: "Auto",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,

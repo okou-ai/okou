@@ -43,7 +43,6 @@ function modelPolicy(
     id: `e3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: mockCatalogDisplayName(model),
-    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId:

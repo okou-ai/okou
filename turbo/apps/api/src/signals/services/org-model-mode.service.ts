@@ -155,8 +155,8 @@ const enterCustomMode$ = command(
         .where(eq(orgModelPolicies.orgId, orgId)),
       loadSystemDefaultRunModel(db),
     ]);
-    const policies = [...stored, { model: systemDefaultModel }];
     signal.throwIfAborted();
+    const policies = [...stored, { model: systemDefaultModel }];
     await db
       .update(orgMembersMetadata)
       .set({

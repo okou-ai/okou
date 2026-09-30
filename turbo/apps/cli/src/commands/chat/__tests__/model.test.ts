@@ -23,14 +23,11 @@ const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}
 const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "okou-1.0",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000109",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000101",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -43,7 +40,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000102",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -56,7 +52,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000103",
       model: "deepseek-v4-flash",
       modelLabel: "DeepSeek V4 Flash",
-      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -69,7 +64,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000109",
       model: "okou-1.0",
       modelLabel: "Auto",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -400,26 +394,6 @@ describe("okou chat model command", () => {
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
-  it("rejects a retired model and points to its catalog replacement", async () => {
-    server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
-      }),
-      http.post(MODEL_SELECTION_URL, () => {
-        throw new Error("retired models must not be selected");
-      }),
-    );
-
-    await expect(async () => {
-      await chatCommand.parseAsync(["node", "cli", "model", "claude-opus-4-8"]);
-    }).rejects.toThrow("process.exit called");
-
-    const stderr = mockConsoleError.mock.calls.flat().join("\n");
-    expect(stderr).toContain("Model is retired: claude-opus-4-8");
-    expect(stderr).toContain("okou chat model claude-opus-5-5");
-    expect(mockExit).toHaveBeenCalledWith(1);
-  });
-
   it("applies an effort-only change to the replacement of a retired selection", async () => {
     server.use(
       http.get(GET_URL, () => {

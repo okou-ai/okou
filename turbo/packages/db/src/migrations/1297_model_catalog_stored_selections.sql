@@ -15,9 +15,10 @@
 -- explicitly instead of silently re-routing it.
 --
 -- Not touched: history (agent_runs, chat_events including queued inputs,
--- usage and billing, session conversations), org_plan_entitlements
--- restrictions and custom-gateway model_mappings. Queued inputs are rechecked
--- by the API at dispatch.
+-- usage and billing, session conversations) and custom-gateway
+-- model_mappings. org_plan_entitlements.restricted_built_in_models is a
+-- boolean flag, not a model list, so it has nothing to rewrite. Queued inputs
+-- are rechecked by the API at dispatch.
 CREATE TEMP TABLE model_selection_rewrite ON COMMIT DROP AS
 WITH RECURSIVE chain (source, target) AS (
   SELECT model, replaced_by

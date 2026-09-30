@@ -203,7 +203,6 @@ export function installChatListModelPolicies(context: TestContext): void {
           .padStart(12, "0")}`,
         model,
         modelLabel,
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

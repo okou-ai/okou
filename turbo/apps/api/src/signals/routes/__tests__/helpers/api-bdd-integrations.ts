@@ -34,7 +34,7 @@ import {
   type GithubOauthConnectQuery,
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
-import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,

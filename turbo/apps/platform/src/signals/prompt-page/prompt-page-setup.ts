@@ -175,7 +175,9 @@ export const setupPromptPage$ = command(
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
     if (resolvedRequestedModel) {
-      set(setChatPageModelSelection$, { selectedModel: resolvedRequestedModel });
+      set(setChatPageModelSelection$, {
+        selectedModel: resolvedRequestedModel,
+      });
     } else {
       set(resetChatPageModelSelection$);
     }

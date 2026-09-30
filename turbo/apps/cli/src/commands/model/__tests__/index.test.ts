@@ -6,14 +6,11 @@ import { MODEL_CATALOG_RESPONSE } from "../../../mocks/handlers/model-catalog";
 import { switchCommand, modelCommand } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "okou-1.0",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000009",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000001",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -26,7 +23,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000002",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
@@ -39,7 +35,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000009",
       model: "okou-1.0",
       modelLabel: "Auto",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -164,17 +159,16 @@ describe("okou model command", () => {
     await modelCommand.parseAsync(["node", "cli", "ls"]);
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("Sonnet Five (claude-sonnet-5) (default)");
     expect(output).toContain("price tier: $$$$");
-    expect(output).toContain("Auto (okou-1.0)\n");
-    expect(output).not.toContain("Auto (okou-1.0) (default)");
-    expect(output).not.toContain("claude-opus-4-8");
-    expect(output.indexOf("okou-1.0")).toBeLessThan(
-      output.indexOf("claude-sonnet-5"),
-    );
-    expect(output.indexOf("claude-sonnet-5")).toBeLessThan(
-      output.indexOf("gpt-5.6-luna"),
-    );
+    // Exactly the active catalog models, in catalog order.
+    const modelLines = mockConsoleLog.mock.calls.flat().filter((line) => {
+      return String(line).startsWith("  - ");
+    });
+    expect(modelLines).toStrictEqual([
+      "  - Auto (okou-1.0)",
+      "  - Sonnet Five (claude-sonnet-5) (default)",
+      "  - GPT 5.6 Luna (gpt-5.6-luna)",
+    ]);
   });
 
   it("should show Web switching guidance", async () => {

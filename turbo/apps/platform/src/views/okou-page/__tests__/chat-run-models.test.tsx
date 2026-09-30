@@ -1,7 +1,4 @@
-import {
-  MOCK_SYSTEM_DEFAULT_MODEL,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
@@ -93,7 +90,6 @@ function configureModelPolicies(
       id: `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       model,
       modelLabel: mockCatalogDisplayName(model),
-      isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
       defaultProviderType: options.defaultProviderType ?? "built-in",
       credentialScope: options.credentialScope ?? "org",
       modelProviderId: options.modelProviderId ?? null,

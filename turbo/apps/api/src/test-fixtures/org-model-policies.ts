@@ -1,6 +1,6 @@
-import {
-  type ModelProviderType,
-  type SupportedRunModel,
+import type {
+  ModelProviderType,
+  SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, count, eq, sql } from "drizzle-orm";

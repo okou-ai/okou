@@ -677,8 +677,7 @@ interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants:
-    | readonly AgentCustomConnectorGrant[]
-    | undefined;
+    readonly AgentCustomConnectorGrant[] | undefined;
   readonly source: ConnectorScopeSource;
 }
 
@@ -842,8 +841,7 @@ type AtomicLaunchCommitResult =
   | ThreadSessionSnapshotStale
   | QueueFirstRunClaimLost;
 type AtomicLaunchCommitAttempt =
-  | AtomicLaunchCommitResult
-  | CreateRunErrorResult;
+  AtomicLaunchCommitResult | CreateRunErrorResult;
 interface AtomicLaunchCommitCompletion {
   readonly result: AtomicLaunchCommitAttempt;
   readonly transactionReturnedAt: number;
@@ -960,8 +958,7 @@ interface PermissionManifest {
   readonly builtinRuntimeTargets?: readonly BuiltinRuntimeTargetRegistration[];
   readonly connectorPermissionBaseline?: StoredConnectorPermissionBaseline;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly billableFirewalls: readonly string[];
 }
 
@@ -1159,8 +1156,7 @@ interface BuiltinConnectorRuntimeContext {
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
@@ -1899,8 +1895,7 @@ function expandEnvironment(args: {
   readonly secrets: Record<string, string> | undefined;
   readonly additionalEnvironment: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly storedConnectorEnvironment: Record<string, string> | undefined;
   readonly connectorVars: Record<string, string> | undefined;
 }): Record<string, string> | null {
@@ -1963,8 +1958,7 @@ function expandStoredConnectorEnvironment(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): Record<string, string> | undefined {
   if (!args.environment) {
     return undefined;
@@ -2026,8 +2020,7 @@ function missingEnvironmentReferences(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly additionalEnvironment: Record<string, string> | undefined;
   readonly storedConnectorEnvironment: Record<string, string> | undefined;
   readonly connectorVars: Record<string, string> | undefined;
@@ -2060,8 +2053,7 @@ function missingReferencesInEnvironment(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): string[] {
   if (!args.environment) {
     return [];
@@ -2092,8 +2084,7 @@ function assertStoredConnectorEnvironmentReferences(args: {
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
 }): void {
   const missing = missingReferencesInEnvironment(args);
   if (missing.length > 0) {
@@ -3435,8 +3426,7 @@ function withoutOkouNamespaceEntries<T>(
 function filterSecretConnectorMap(args: {
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly overriddenSecrets: readonly (
-    | Readonly<Record<string, unknown>>
-    | undefined
+    Readonly<Record<string, unknown>> | undefined
   )[];
 }): Record<string, string> | undefined {
   if (!args.secretConnectorMap) {
@@ -3459,8 +3449,7 @@ function filterSecretConnectorMap(args: {
 
 function filterSecretConnectorMetadataMap(args: {
   readonly secretConnectorMetadataMap:
-    | Record<string, SecretConnectorMetadata>
-    | undefined;
+    Record<string, SecretConnectorMetadata> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
 }): Record<string, SecretConnectorMetadata> | undefined {
   if (!args.secretConnectorMetadataMap || !args.secretConnectorMap) {
@@ -4069,8 +4058,7 @@ function eagerStoredConnectorSecretNames(args: {
   readonly storedEnvironment: Record<string, string> | undefined;
   readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly overriddenSecretAliases: ReadonlySet<string>;
 }): ReadonlySet<string> {
   const names = new Set<string>();
@@ -4107,8 +4095,7 @@ async function materializeEagerStoredConnectorSecrets(
     readonly eagerStoredEnvironment: Record<string, string> | undefined;
     readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
     readonly environmentSecretPlaceholders:
-      | Readonly<Record<string, string>>
-      | undefined;
+      Readonly<Record<string, string>> | undefined;
     readonly overriddenSecretAliases: ReadonlySet<string>;
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
@@ -4186,8 +4173,7 @@ async function loadStoredConnectorMaterializationPlan(
     readonly userId: string;
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
     readonly connectorIdCandidatesBySlug:
-      | ReadonlyMap<ConnectorSlug, readonly string[]>
-      | undefined;
+      ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
     readonly scopeSource: ConnectorScopeSource;
     readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
   },
@@ -4503,8 +4489,7 @@ interface StoredConnectorMaterializationArgs {
   readonly userId: string;
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorIdCandidatesBySlug:
-    | ReadonlyMap<ConnectorSlug, readonly string[]>
-    | undefined;
+    ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
   readonly scopeSource: ConnectorScopeSource;
   readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
 }
@@ -4815,16 +4800,14 @@ type BuiltCustomConnectorRuntimeRow =
         { readonly kind: "custom" }
       >;
       readonly skill:
-        | CustomConnectorRuntimeContext["skills"][number]
-        | undefined;
+        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: ExpandedFirewallConfig;
       readonly permissionPolicy: FirewallPolicy | undefined;
     }
   | {
       readonly registration: undefined;
       readonly skill:
-        | CustomConnectorRuntimeContext["skills"][number]
-        | undefined;
+        CustomConnectorRuntimeContext["skills"][number] | undefined;
       readonly firewall: undefined;
       readonly permissionPolicy: undefined;
     };
@@ -5111,8 +5094,7 @@ async function resolveCustomConnectorMemberIds(
     readonly userId: string;
     readonly allowedCustomConnectorIds: readonly string[];
     readonly connectorIdCandidatesByCustomConnectorId:
-      | ReadonlyMap<string, readonly string[]>
-      | undefined;
+      ReadonlyMap<string, readonly string[]> | undefined;
   },
 ): Promise<ReadonlyMap<string, string>> {
   const accountResolutions = await resolveConnectorAccounts(db, {
@@ -5182,11 +5164,9 @@ async function loadCustomConnectorContext(
     readonly userId: string;
     readonly allowedCustomConnectorIds: readonly string[];
     readonly connectorIdCandidatesByCustomConnectorId:
-      | ReadonlyMap<string, readonly string[]>
-      | undefined;
+      ReadonlyMap<string, readonly string[]> | undefined;
     readonly customConnectorGrants:
-      | readonly AgentCustomConnectorGrant[]
-      | undefined;
+      readonly AgentCustomConnectorGrant[] | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
   },
@@ -6494,8 +6474,7 @@ interface LaunchRunRowsArgs {
   readonly launchSnapshot: AgentRunLaunchSnapshot;
   readonly langfuseTraceEnabled: boolean;
   readonly officialWorkflowProvenance:
-    | AgentRunOfficialWorkflowProvenance
-    | undefined;
+    AgentRunOfficialWorkflowProvenance | undefined;
   readonly error: string | undefined;
   readonly creditAdmitted: boolean;
 }
@@ -7303,8 +7282,7 @@ function priorPiMemoryRecall(args: {
     "storageId" | "versionId"
   >;
   readonly previousRunStorageMounts:
-    | readonly PersistedStorageMount[]
-    | undefined;
+    readonly PersistedStorageMount[] | undefined;
   readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
 }): PiMemoryRecallSelection | undefined {
   const priorMount =
@@ -7342,11 +7320,9 @@ async function resolvePiMemoryRecall(
     readonly piMemoryEnabled: boolean;
     readonly storageMounts: readonly StorageMountMetadata[];
     readonly persistedStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
+      readonly PersistedStorageMount[] | undefined;
     readonly previousRunStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
+      readonly PersistedStorageMount[] | undefined;
   },
   signal: AbortSignal,
 ): Promise<PiMemoryRecallSelection | undefined> {
@@ -7497,8 +7473,7 @@ interface PreparePiLaunchResourcesArgs {
   readonly agentSessionId: string;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly previousRunStorageMounts:
-    | readonly PersistedStorageMount[]
-    | undefined;
+    readonly PersistedStorageMount[] | undefined;
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
@@ -9417,8 +9392,7 @@ async function loadRunConnectorContexts(
     readonly userId: string;
     readonly connectorScope: EffectiveConnectorScope;
     readonly threadConnectorSelectionIds:
-      | ThreadConnectorSelectionIds
-      | undefined;
+      ThreadConnectorSelectionIds | undefined;
     readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly timing: ApiDispatchTimingCollector | undefined;
@@ -9926,8 +9900,7 @@ async function prepareRunConnectorContexts(
     readonly createArgs: CreateAgentRunArgs;
     readonly connectorScope: EffectiveConnectorScope;
     readonly threadConnectorSelectionIds:
-      | ThreadConnectorSelectionIds
-      | undefined;
+      ThreadConnectorSelectionIds | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly connectorCatalogSelection: RunConnectorCatalogSelection;
     readonly timing: ApiDispatchTimingCollector;
@@ -10161,8 +10134,7 @@ async function resolvePreparedConnectorSelections(
   | {
       readonly connectorCatalogSelection: RunConnectorCatalogSelection;
       readonly threadConnectorSelectionIds:
-        | ThreadConnectorSelectionIds
-        | undefined;
+        ThreadConnectorSelectionIds | undefined;
     }
 > {
   const [connectorCatalogSelectionResult, threadConnectorSelectionIdsResult] =
@@ -10524,8 +10496,7 @@ interface PrepareRunContextInput {
   readonly preloadedFeatureSwitchContext: FeatureSwitchContext | undefined;
   readonly preloadedUserTimezone: string | null | undefined;
   readonly preloadedConnectorCatalogSnapshot:
-    | ConnectorRuntimeSelection
-    | undefined;
+    ConnectorRuntimeSelection | undefined;
 }
 
 function prepareRunContexts(

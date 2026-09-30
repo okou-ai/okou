@@ -1,5 +1,4 @@
 import {
-  MOCK_SYSTEM_DEFAULT_MODEL,
   mockCatalogBuiltInProvider,
   mockCatalogDisplayName,
 } from "../../../mocks/handlers/api-model-catalog.ts";
@@ -70,7 +69,6 @@ function modelPolicy(
     id: `e1000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: mockCatalogDisplayName(model),
-    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: providerType,
     ...(isBuiltInModelProviderType(providerType)
       ? { runtimeProviderType: mockCatalogBuiltInProvider(model) }

@@ -6,6 +6,7 @@ import {
 import {
   getFrameworkForType,
   modelProviderCredentialScopeSchema,
+  normalizeRunModelId,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderType,
@@ -16,8 +17,13 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { db$ } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import {
+  catalogDisplayName,
+  loadModelCatalog,
+  resolveCatalogModel,
+} from "./model-catalog.service";
 
 const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
@@ -57,9 +63,7 @@ function buildPersonalModelProvidersUrl(): string {
 function buildClaudeCodeCredentialRecoveryUrl(params: {
   readonly modelProviderType: ModelProviderType | null | undefined;
   readonly modelProviderCredentialScope:
-    | ModelProviderCredentialScope
-    | null
-    | undefined;
+    ModelProviderCredentialScope | null | undefined;
 }): string {
   if (
     params.modelProviderType === "claude-code-oauth-token" &&
@@ -155,6 +159,23 @@ function runErrorProviderContext(
   });
 }
 
+/**
+ * User-facing name of a run's model: the catalog display name of the model
+ * its selection resolves to. Models outside the catalog are shown verbatim.
+ */
+async function resolveRunModelDisplayName(
+  db: ReadonlyDb,
+  selectedModel: string,
+): Promise<string> {
+  const catalog = await loadModelCatalog(db);
+  const model = normalizeRunModelId(selectedModel.trim());
+  const resolution = resolveCatalogModel(catalog, model);
+  return catalogDisplayName(
+    catalog,
+    resolution.kind === "unknown" ? model : resolution.resolvedModel,
+  );
+}
+
 function formatRunErrorLikeWebMessage(
   params: FormatRunErrorLikeWebMessageParams,
 ): Computed<Promise<string>> {
@@ -187,12 +208,15 @@ function formatRunErrorLikeWebMessage(
       params.selectedModel !== undefined
         ? params.selectedModel
         : providerContext?.selectedModel;
+    const selectedModelLabel = selectedModel?.trim()
+      ? await resolveRunModelDisplayName(get(db$), selectedModel)
+      : null;
     return formatRunErrorForExternalSurface({
       code: "INTERNAL_SERVER_ERROR",
       message: errorMessage,
       failureReason: params.failureReason,
       framework: params.framework,
-      selectedModel,
+      selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: {
         modelProviderType,

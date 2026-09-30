@@ -168,10 +168,7 @@ export type QueueFirstRunAdmission =
     };
 
 export type QueueFirstRunSessionSnapshotState =
-  | "binding_changed"
-  | "current"
-  | "session_changed"
-  | "unvalidated";
+  "binding_changed" | "current" | "session_changed" | "unvalidated";
 
 /** Whether the outer ChatEvent row is an unclaimed, unrevoked prompt. */
 export function queuedUserMessageExists(db: Pick<Db, "select">): SQL {

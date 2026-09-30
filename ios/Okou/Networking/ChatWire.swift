@@ -195,19 +195,13 @@ struct ModelPolicies: Decodable, Sendable {
 /// Global run model catalog: the product authority for the system default and for
 /// retired models. Only the fields the app uses are decoded; routes are ignored.
 struct ModelCatalog: Decodable, Sendable {
-  let systemDefaultModel: String?
+  let systemDefaultModel: String
   let models: [Model]
 
   struct Model: Decodable, Sendable {
     let model: String
-    let isSystemDefault: Bool?
     /// The active model a stored selection of this model resolves to.
-    let resolvedModel: String?
-  }
-
-  /// The catalog system default, tolerating a response without the top-level field.
-  var defaultModel: String? {
-    systemDefaultModel ?? models.first(where: { $0.isSystemDefault == true })?.model
+    let resolvedModel: String
   }
 
   /// Maps a stored (possibly retired) selection to the active model it resolves to.

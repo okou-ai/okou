@@ -983,9 +983,7 @@ type TimingStateAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
-      | "clear-run-api-start"
-      | "read-run-api-start"
-      | "steer-run-time-budget";
+      "clear-run-api-start" | "read-run-api-start" | "steer-run-time-budget";
   }
 >;
 

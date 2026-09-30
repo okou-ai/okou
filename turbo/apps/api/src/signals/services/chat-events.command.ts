@@ -38,6 +38,10 @@ import {
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import {
+  loadModelCatalog,
+  resolveCatalogRunModel,
+} from "./model-catalog.service";
 import type { Tx } from "../../lib/db-types";
 import type { AuthContext } from "../../types/auth";
 import type {
@@ -1372,6 +1376,17 @@ export const sendNormalEvent$ = command(
       args.orgPlanCapabilities$ === undefined
         ? undefined
         : await get(args.orgPlanCapabilities$);
+    signal.throwIfAborted();
+    // An explicit model the catalog (or this runtime) cannot resolve is an
+    // error, never a silent switch to the system default. Stored thread
+    // selections keep their existing fallback.
+    if (
+      args.body.model !== undefined &&
+      resolveCatalogRunModel(await loadModelCatalog(db), args.body.model) ===
+        null
+    ) {
+      return badRequestMessage(`Unknown model "${args.body.model}"`);
+    }
     signal.throwIfAborted();
     const prepared = await prepareNormalSend(
       db,

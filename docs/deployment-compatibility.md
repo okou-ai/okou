@@ -39,13 +39,24 @@ Migrations:
   policies are dropped and merged duplicates keep one row, moving the legacy
   `is_default` flag onto the survivor), `org_members_metadata.selected_model`
   and `model_settings`, `agents.selected_model` and
-  `model_providers.selected_model`. It is re-runnable and serializes with API
-  policy writes through the per-organization advisory lock. It never touches
-  history (`agent_runs`, `chat_events` including queued inputs, usage and
-  billing, session conversations), `org_plan_entitlements`, custom-gateway
-  `model_mappings`, or chat thread selections (`chat_threads` and
-  `chat_thread_events`); the API resolves those along the chain on read and
-  rechecks queued inputs at dispatch.
+  `model_providers.selected_model`, and chat thread selections
+  (`chat_threads.selected_model` and `model_settings`, with one
+  `model_selection_updated` event per re-pinned thread; a thread whose
+  provider pin cannot serve the replacement keeps its retired model and the
+  API resolves it on read). It is re-runnable and serializes with API policy
+  writes through the per-organization advisory lock. It never touches history
+  (`agent_runs`, `chat_events` including queued inputs, usage and billing,
+  session conversations) or custom-gateway `model_mappings`; the API rechecks
+  queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
+  is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
+  turns on the code's limited-free restricted-model rule and stores no model
+  IDs, so 1297 has nothing to rewrite there.
+- Production impact of 1297: as of MaskDB on 2026-09-30, no chat thread,
+  organization policy, member preference, agent or model provider references
+  any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
+  `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
+  `okou-1.0-max`. The migration rewrites zero production rows, so batching the
+  thread rewrite is unnecessary.
 
 Old and new versions during deploy:
 
@@ -57,10 +68,12 @@ Old and new versions during deploy:
   writes and does not store a default row; how the previous API's default
   repair reacts to an organization without an `is_default` row was not
   confirmed here (unverified).
-- Old App, iOS and CLI against the new API: responses keep the deprecated
-  `isDefault`, `workspaceDefaultModel` and `workspaceDefaultPolicyId` fields,
-  derived from the catalog system default, because released iOS builds decode
-  `isDefault` as required. A request `isDefault` is stripped. Old clients that
+- Old App, iOS and CLI against the new API: the deprecated response fields
+  `isDefault`, `workspaceDefaultModel` and `workspaceDefaultPolicyId` are
+  removed from `GET /api/model-policies`. Released iOS builds decode
+  `isDefault` as required and cannot read the policy list until they upgrade;
+  the owner accepted this iOS break, so no iOS compatibility is kept. A
+  request `isDefault` is stripped. Old clients that
   still send the default policy in `PUT /api/model-policies` are accepted and
   that entry is ignored; omitting it is no longer an error. A retired model
   ID sent as a run or thread selection is resolved to its replacement, or

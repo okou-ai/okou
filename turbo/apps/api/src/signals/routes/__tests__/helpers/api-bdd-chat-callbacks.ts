@@ -50,9 +50,7 @@ interface TruncatedOpenRouterCompletion {
 }
 
 type OpenRouterCompletionResult =
-  | string
-  | TruncatedOpenRouterCompletion
-  | Response;
+  string | TruncatedOpenRouterCompletion | Response;
 
 interface StoredS3Object {
   readonly bucket: string;

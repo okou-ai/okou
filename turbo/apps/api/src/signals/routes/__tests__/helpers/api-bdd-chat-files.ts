@@ -44,7 +44,7 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   agentsMainContract,
@@ -466,9 +466,7 @@ export function createChatFilesBddApi(context: TestContext) {
   }
 
   return {
-    async getDefaultCreateThreadModel(
-      actor: ApiTestUser,
-    ): Promise<string> {
+    async getDefaultCreateThreadModel(actor: ApiTestUser): Promise<string> {
       return await defaultCreateThreadModel(actor);
     },
 
@@ -1543,16 +1541,7 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       body: BddSendEventBody,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 422
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 422 | 429 | 503
       )[],
       options: RequestSendEventOptions = {},
       signal?: AbortSignal,

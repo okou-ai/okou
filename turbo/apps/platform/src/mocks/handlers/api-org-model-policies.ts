@@ -58,7 +58,6 @@ function makeBuiltInPolicy(
     id,
     model,
     modelLabel: catalogDisplayName(model),
-    isDefault: model === systemDefaultModel(),
     defaultProviderType: "built-in",
     runtimeProviderType: catalogBuiltInConcreteProvider(model),
     credentialScope: "org",
@@ -78,7 +77,6 @@ function makeDefaultPolicies(): OrgModelPolicy[] {
       id: policyId(index),
       model,
       modelLabel: catalogDisplayName(model),
-      isDefault: false,
       defaultProviderType: "built-in",
       runtimeProviderType: catalogBuiltInConcreteProvider(model),
       credentialScope: "org",
@@ -110,7 +108,7 @@ function projectedPolicies(): OrgModelPolicy[] {
       "2026-05-08T00:00:00.000Z",
     );
   return [
-    { ...systemDefault, isDefault: true },
+    systemDefault,
     ...mockOrgModelPolicies.filter((policy) => {
       return policy.model !== defaultModel;
     }),
@@ -127,8 +125,6 @@ const NON_ADMITTED_MODELS = new Set([
 
 function response(): OrgModelPoliciesResponse {
   const policies = projectedPolicies();
-  // Deprecated compat fields for released iOS clients mirror the system default.
-  const workspaceDefault = policies[0] ?? null;
   const configuredModels = new Set(
     policies.map((policy) => {
       return policy.model;
@@ -154,8 +150,6 @@ function response(): OrgModelPoliciesResponse {
       .map((entry) => {
         return entry.model;
       }),
-    workspaceDefaultModel: workspaceDefault?.model ?? null,
-    workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
 }
 
@@ -181,7 +175,6 @@ function applyUpdate(policy: UpdateOrgModelPolicy): OrgModelPolicy {
     id: existing?.id ?? crypto.randomUUID(),
     model: policy.model,
     modelLabel: catalogDisplayName(policy.model),
-    isDefault: false,
     defaultProviderType: policy.defaultProviderType,
     ...(isBuiltInModelProviderType(policy.defaultProviderType)
       ? { runtimeProviderType: catalogBuiltInConcreteProvider(policy.model) }
@@ -211,20 +204,13 @@ export const apiOrgModelPoliciesHandlers = [
   }),
 
   mockApi(modelPoliciesMainContract.update, ({ body, respond }) => {
+    // The server manages the system default row and ignores it on writes.
     const defaultModel = systemDefaultModel();
-    if (
-      body.policies.some((policy) => {
-        return policy.model === defaultModel;
+    mockOrgModelPolicies = body.policies
+      .filter((policy) => {
+        return policy.model !== defaultModel;
       })
-    ) {
-      return respond(400, {
-        error: {
-          message: `${defaultModel} is the server-managed system default`,
-          code: "BAD_REQUEST",
-        },
-      });
-    }
-    mockOrgModelPolicies = body.policies.map(applyUpdate);
+      .map(applyUpdate);
     return respond(200, response());
   }),
 ];

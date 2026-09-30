@@ -82,8 +82,7 @@ const HELP = [
 ].join("\n");
 
 type AccountInteraction =
-  | DiscordCommandInteraction
-  | DiscordComponentInteraction;
+  DiscordCommandInteraction | DiscordComponentInteraction;
 
 const currentDiscordBinding$ = command(
   async ({ get }, actor: DiscordInteractionActor, signal: AbortSignal) => {
@@ -402,9 +401,7 @@ const discordBoundAccountAction$ = command(
     { get, set },
     args: {
       readonly action:
-        | DiscordCommandName
-        | DiscordPickerState["action"]
-        | undefined;
+        DiscordCommandName | DiscordPickerState["action"] | undefined;
       readonly binding: DiscordVerifiedBinding;
       readonly actor: DiscordInteractionActor;
       readonly botToken: string;

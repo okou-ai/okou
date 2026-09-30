@@ -33,7 +33,6 @@ function configurePolicies(
         id: `e1000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
         model,
         modelLabel: mockCatalogDisplayName(model),
-        isDefault: index === 0,
         defaultProviderType:
           directAstra && model === "gpt-6-astra"
             ? "openai-api-key"
@@ -117,7 +116,6 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
             id: "e1000000-0000-4000-a000-000000000099",
             model: subscriptionModel,
             modelLabel: mockCatalogDisplayName(subscriptionModel),
-            isDefault: false,
             defaultProviderType: "codex-oauth-token",
             runtimeProviderType: "codex-oauth-token",
             credentialScope: "member",
@@ -146,7 +144,6 @@ function autoPolicy(): OrgModelPolicy {
     id: "e1000000-0000-4000-a000-000000000001",
     model: "okou-1.0",
     modelLabel: mockCatalogDisplayName("okou-1.0"),
-    isDefault: true,
     defaultProviderType: "built-in",
     runtimeProviderType: mockCatalogBuiltInProvider("okou-1.0"),
     credentialScope: "org",

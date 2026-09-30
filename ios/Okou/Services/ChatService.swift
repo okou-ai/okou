@@ -82,12 +82,10 @@ actor ChatService {
     }
     // A saved selection of a retired model resolves to its active replacement.
     let savedModel = preference.selectedModel.map { catalog.resolve($0) }
-    let systemDefault = catalog.defaultModel.flatMap { model -> String? in
-      let routable = policies.policies.contains(where: {
-        $0.model == model && $0.routeStatus == "valid"
-      })
-      return routable ? model : nil
-    }
+    let defaultIsRoutable = policies.policies.contains(where: {
+      $0.model == catalog.systemDefaultModel && $0.routeStatus == "valid"
+    })
+    let systemDefault = defaultIsRoutable ? catalog.systemDefaultModel : nil
     guard let model = savedModel ?? systemDefault else {
       throw ChatServiceError.noDefaultModel
     }

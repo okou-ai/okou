@@ -279,9 +279,16 @@ The effort domain is the replacement's route for the pin type (Built-in when
 unpinned); an unsupported effort becomes that route's `default_effort`. The
 chat thread rewrite is one scan of `chat_threads` in the migration
 transaction, like 1213. Only rows still selecting a retired model are
-written, so re-running appends nothing. If production counts of such threads
-are large, split the thread rewrite into a batched non-transactional
-migration (see 1286) before release.
+written, so re-running appends nothing. As of MaskDB on 2026-09-30 no chat
+thread, organization policy, member preference, agent or model provider
+references any retired or unrecognized catalog model (`claude-fable-5`,
+`claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`, `gpt-5.5`,
+`gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1297 rewrites zero
+production rows and needs no batching.
+
+`org_plan_entitlements.restricted_built_in_models` is a boolean flag that turns
+on the code's limited-free restricted-model rule; it stores no model IDs, so
+1297 has nothing to rewrite there.
 
 ## Migration patterns
 

@@ -2031,10 +2031,7 @@ export type ChatInputEvent = Extract<
   ChatEvent,
   {
     eventType:
-      | "input.prompt"
-      | "input.automation"
-      | "input.budget"
-      | "input.rejected";
+      "input.prompt" | "input.automation" | "input.budget" | "input.rejected";
   }
 >;
 export type ChatUserMessageEvent = Extract<
