@@ -2249,7 +2249,7 @@ export function registerFeishuIntegrationTests(
         ]);
       });
 
-      it("keeps the managed connector and skill HEAD active when repair publication fails", async () => {
+      it("reuses the managed connector skill HEAD during repair without accessing R2", async () => {
         const actor = authOrgApi.user({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -2302,31 +2302,34 @@ export function registerFeishuIntegrationTests(
           name: storageName,
           owner: "organization",
         });
+        context.mocks.s3.send.mockClear();
         context.mocks.s3.send.mockRejectedValue(
-          new Error("Managed connector repair skill upload failed"),
+          new Error("Registered managed connector skill must not access R2"),
         );
 
-        const failedRepair = await requestFeishuConfigurationFailure({
-          method: "PATCH",
-          path: connectContract.updateInstallation.path.replace(
-            ":installationId",
-            installationId,
-          ),
-          body: { setupCompleted: true },
-        });
+        await accept(
+          client.updateInstallation({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { installationId },
+            body: { setupCompleted: true },
+          }),
+          [200],
+        );
 
-        expect(failedRepair.status).toBe(500);
+        expect(context.mocks.s3.send).not.toHaveBeenCalled();
         context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-        const connectorAfterFailure = await accept(
+        const connectorAfterRepair = await accept(
           customConnectorClient.list({
             headers: { authorization: "Bearer clerk-session" },
           }),
           [200],
         );
-        expect(connectorAfterFailure.body.connectors).toMatchObject([
+        // Successful repair learns the bot name; the registered skill
+        // content and Storage version are still reused without an R2 write.
+        expect(connectorAfterRepair.body.connectors).toMatchObject([
           {
             id: initialConnector.id,
-            displayName: initialConnector.displayName,
+            displayName: `${provider.name}-Okou Feishu`,
             skillMarkdown: initialConnector.skillMarkdown,
           },
         ]);

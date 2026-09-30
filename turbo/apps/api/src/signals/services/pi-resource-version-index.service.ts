@@ -22,7 +22,10 @@ import {
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { downloadS3BufferWithMaxBytes } from "../external/s3";
+import {
+  downloadS3BufferWithMaxBytes,
+  S3ObjectSizeLimitError,
+} from "../external/s3";
 import { safeSync, settle } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
@@ -213,10 +216,9 @@ function projectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
 ) {
-  const ready =
-    projection !== undefined &&
-    archiveSize <= RESOURCE_ARCHIVE_MAX_BYTES &&
-    piResourceIndexFits(projection);
+  // Only a materialized archive's actual bytes determine its size limit.
+  // archiveSize is the registered source revision, not a byte identity.
+  const ready = projection !== undefined && piResourceIndexFits(projection);
   return {
     status: ready ? ("ready" as const) : ("unindexable" as const),
     projection: ready ? projection : null,
@@ -444,10 +446,7 @@ export const executePiResourceIndexWork$ = command(
         let projection: PiResourceVersionIndex | undefined;
         if (item.archiveSize === 0 && item.fileCount === 0) {
           projection = { schemaVersion: 1, files: [] };
-        } else if (
-          item.archiveSize > 0 &&
-          item.archiveSize <= RESOURCE_ARCHIVE_MAX_BYTES
-        ) {
+        } else {
           const downloaded = await settle(
             get(
               downloadS3BufferWithMaxBytes(
@@ -459,7 +458,10 @@ export const executePiResourceIndexWork$ = command(
             ),
             signal,
           );
-          if (!downloaded.ok) {
+          if (
+            !downloaded.ok &&
+            !(downloaded.error instanceof S3ObjectSizeLimitError)
+          ) {
             const currentTime = nowDate();
             const updated = await db
               .update(piResourceVersionIndexes)
@@ -489,10 +491,9 @@ export const executePiResourceIndexWork$ = command(
             }
             return;
           }
-          const archive = downloaded.value;
-          if (archive.length === item.archiveSize) {
+          if (downloaded.ok) {
             const parsed = safeSync(() => {
-              return indexPiResourceArchive(archive);
+              return indexPiResourceArchive(downloaded.value);
             });
             if ("ok" in parsed) {
               projection = parsed.ok;

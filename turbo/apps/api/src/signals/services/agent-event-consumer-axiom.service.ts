@@ -1,8 +1,14 @@
+import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import type {
   AgentEvent,
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
 import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
+import { db$ } from "../external/db";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const AGENT_RUN_EVENTS_DATASET = "agent-run-events";
 const AXIOM_EVENT_INGEST_TIMEOUT_MS = 10_000;
@@ -221,29 +227,43 @@ function eventDataForAxiom(
   return reducedEventData(event, serialized, originalBytes, encoder);
 }
 
-export async function ingestAxiomEvents(
-  payload: EventConsumerPayload,
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  const encoder = new TextEncoder();
-  const axiomEvents = payload.events.map((event) => {
-    return {
-      runId: payload.runId,
-      userId: payload.context.userId,
-      sequenceNumber: event.sequenceNumber,
-      eventType: event.type,
-      eventData: eventDataForAxiom(event, encoder),
-    };
-  });
-  const result = await ingestAxiomDirect(
-    getDatasetName(AGENT_RUN_EVENTS_DATASET),
-    axiomEvents,
-    AXIOM_EVENT_INGEST_TIMEOUT_MS,
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!result.configured) {
-    throw new Error("Axiom agent-run-events dataset is not configured");
-  }
-}
+export const ingestAxiomEvents$ = command(
+  async (
+    { get },
+    payload: EventConsumerPayload,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const context = await loadUserFeatureSwitchContext(
+      get(db$),
+      payload.context.orgId,
+      payload.context.userId,
+    );
+    signal.throwIfAborted();
+    // Raw events are diagnostic data, not the persisted chat transcript.
+    // Resolve the current override for every batch, before serializing events.
+    if (!isFeatureEnabled(FeatureSwitchKey.OkouDebug, context)) {
+      return;
+    }
+    const encoder = new TextEncoder();
+    const axiomEvents = payload.events.map((event) => {
+      return {
+        runId: payload.runId,
+        userId: payload.context.userId,
+        sequenceNumber: event.sequenceNumber,
+        eventType: event.type,
+        eventData: eventDataForAxiom(event, encoder),
+      };
+    });
+    const result = await ingestAxiomDirect(
+      getDatasetName(AGENT_RUN_EVENTS_DATASET),
+      axiomEvents,
+      AXIOM_EVENT_INGEST_TIMEOUT_MS,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!result.configured) {
+      throw new Error("Axiom agent-run-events dataset is not configured");
+    }
+  },
+);

@@ -760,7 +760,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentStorageCommit(
       body: AgentStorageCommitBody,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (200 | 400 | 401 | 404 | 409 | 413 | 500)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 413 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(
@@ -776,7 +776,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentStorageCommitUnchecked(
       body: unknown,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 409 | 413 | 500)[],
+      statuses: readonly (400 | 401 | 404 | 413 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(

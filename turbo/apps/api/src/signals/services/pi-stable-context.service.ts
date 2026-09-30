@@ -764,11 +764,9 @@ function indexedProjection(
       return null;
     }
     const indexed = indexes.get(mount.versionId);
-    if (
-      !indexed ||
-      indexed.storageId !== mount.storageId ||
-      indexed.archiveSize !== mount.archiveSize
-    ) {
+    // The source's gzip length is not part of the logical Storage identity.
+    // A captured mount and its ready index can describe different encodings.
+    if (!indexed || indexed.storageId !== mount.storageId) {
       throw new Error("Stable-context resource index identity changed");
     }
     return indexed.projection;

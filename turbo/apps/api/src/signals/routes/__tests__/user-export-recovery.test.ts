@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import {
   CompleteMultipartUploadCommand,
@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+import { getInstructionsStorageName } from "@okouai/core/storage-names";
 import AdmZip from "adm-zip";
 import { onTestFinished } from "vitest";
 
@@ -22,6 +23,7 @@ import { emailSubscriptionRoutes } from "../email-subscription";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -254,6 +256,71 @@ test("continues the same export across bounded requests after a staged write los
     JSON.parse(readExportText(zip, `workflows/${workflow.body.id}.json`)),
   ).toMatchObject({
     instruction: "Preserve the workflow instruction.",
+  });
+});
+
+test("exports legacy instructions when the gzip size differs from the registered version", async () => {
+  const user = actor();
+  const agent = await createBddApi(context).createAgent(user, {
+    displayName: "Legacy compression export",
+    visibility: "private",
+  });
+  const content = "Recover the original instruction bytes, not a gzip length.";
+  const files = ["CLAUDE.md", "AGENTS.md"].map((path) => {
+    return storageTextFile(path, content);
+  });
+  const original = gzipSync(
+    tarArchive(
+      files.map((file) => {
+        return tarEntry({
+          path: file.path,
+          type: "0",
+          content: Buffer.from(content, "utf8"),
+        });
+      }),
+    ),
+  );
+  const recompressed = gzipSync(gunzipSync(original), { level: 0 });
+  expect(recompressed).not.toHaveLength(original.length);
+
+  const storages = createStoragesBddApi(context);
+  storages.mockStoragePresignedUrls();
+  storages.mockStorageObjectsExist(original.length);
+  const storageName = getInstructionsStorageName(agent.agentId);
+  const prepared = await storages.prepareStorage(user, {
+    storageName,
+    storageOwner: "organization",
+    files,
+  });
+  const archiveKey = prepared.uploads?.archive.key;
+  const manifestKey = prepared.uploads?.manifest.key;
+  if (!archiveKey?.endsWith("/archive.tar.gz") || !manifestKey) {
+    throw new Error("Expected a new instruction Storage upload");
+  }
+  await storages.commitStorage(user, {
+    storageName,
+    storageOwner: "organization",
+    versionId: prepared.versionId,
+    files,
+  });
+
+  const s3Key = archiveKey.slice(0, -"/archive.tar.gz".length);
+  const storage = installDurableUserExportStorage(context, {
+    prefixes: ["exports/", `${s3Key}/`],
+  });
+  storage.seedObject(archiveKey, recompressed);
+  storage.seedObject(manifestKey, Buffer.from(JSON.stringify({ files })));
+  const api = createOpsLogsApi(context);
+  const started = await api.requestPostUserExport(user, [202]);
+  cleanup(user, started.body.jobId);
+  await flushWaitUntilForTest();
+  await work(user, started.body.jobId, "run", 200);
+  const zip = await completedZip(user, started.body.jobId, storage);
+  expect(
+    JSON.parse(readExportText(zip, `agents/${agent.agentId}.json`)),
+  ).toMatchObject({
+    instructions: content,
+    instructionsUnavailableReason: null,
   });
 });
 

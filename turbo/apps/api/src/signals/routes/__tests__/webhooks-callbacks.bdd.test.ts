@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
+import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -12,7 +14,9 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
@@ -1296,7 +1300,7 @@ describe("WHCB-03: email inbound webhook boundaries", () => {
 });
 
 describe("WHCB-04: internal callback and event-consumer boundaries", () => {
-  it("acknowledges DB projection while the Axiom trace stays best effort", async () => {
+  it("exports raw events for a debug-enabled owner while the trace stays best effort", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
@@ -1318,6 +1322,9 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     const headers = {
       authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
     };
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     const body = {
       runId: run.runId,
       events: [
@@ -1326,11 +1333,13 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       ],
     };
     let ingestRequests = 0;
+    const ingestedEvents: unknown[] = [];
     server.use(
       http.post(
         "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        () => {
+        async ({ request }) => {
           ingestRequests += 1;
+          ingestedEvents.push(await request.json());
           return HttpResponse.json(
             successfulAxiomIngestStatus(body.events.length),
           );
@@ -1346,6 +1355,17 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     });
     await flushWaitUntilForTest();
     expect(ingestRequests).toBe(1);
+    expect(ingestedEvents).toStrictEqual([
+      body.events.map((event) => {
+        return {
+          runId: run.runId,
+          userId: actor.userId,
+          sequenceNumber: event.sequenceNumber,
+          eventType: event.type,
+          eventData: event,
+        };
+      }),
+    ]);
     mockOptionalEnv("AXIOM_TOKEN_SESSIONS", undefined);
     const unconfigured = await api.requestAgentEvents(body, headers, [200]);
     expect(unconfigured.body).toStrictEqual({
@@ -1437,9 +1457,12 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   });
 
   it("acknowledges the event batch before the Axiom sub-deadline elapses", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const { actor, runId, headers } = await createEventWebhookRun(
       "best-effort Axiom deadline",
     );
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     const submittedPayloadValue = `private-timeout-value-${randomUUID()}`;
     const axiomToken = `xaat-timeout-${randomUUID()}`;
     mockOptionalEnv("AXIOM_TOKEN_SESSIONS", axiomToken);
@@ -1496,9 +1519,12 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
   });
 
   it("acknowledges events when the optional Axiom status is malformed", async () => {
-    const { runId, headers } = await createEventWebhookRun(
+    const { actor, runId, headers } = await createEventWebhookRun(
       "malformed optional Axiom status",
     );
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
     server.use(
       http.post(
         "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
@@ -6548,13 +6574,11 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       );
     });
-    const survivingRun = await runs.requestReadRun(actor, run.runId, [200]);
-    expect(survivingRun.status).toBe(200);
-    // The onboarding default agent and the teardown agent both survive.
-    await expect(bdd.listAgents(actor)).resolves.toHaveLength(2);
+    await runs.requestReadRun(actor, run.runId, [404]);
+    await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
 
-    // The redelivered event completes the teardown, deleting storage
-    // objects and all org-scoped resources.
+    // R2 failure no longer preserves live DB references. The durable cleanup
+    // inventory survives those deletions and owns the later object retry.
     const deletedS3Keys: string[] = [];
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const input = commandInput(command);
@@ -6579,22 +6603,15 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       }
       return Promise.resolve({});
     });
-    api.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgOf(actor) },
-    });
-    const redelivery = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(redelivery.body).toBe("OK");
-    await flushWaitUntilForTest();
-
-    await expect
-      .poll(() => {
-        return deletedS3Keys.length;
-      })
-      .toBeGreaterThan(0);
-    // The redelivered webhook responds OK before the teardown finishes, so
-    // the resource deletions land asynchronously — poll instead of asserting
-    // a single snapshot.
+    await accept(
+      setupApp({ context, routes: testStorageObjectCleanupRoutes })(
+        testStorageObjectCleanupContract,
+      ).retry({
+        body: { kind: "organization", orgId: orgOf(actor) },
+      }),
+      [200],
+    );
+    expect(deletedS3Keys.length).toBeGreaterThan(0);
     await waitForExpectation(async () => {
       await runs.requestReadRun(actor, run.runId, [404]);
     });

@@ -14859,6 +14859,9 @@ describe("HOOK-02: event-consumer dispatch failures", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
 
     const run = await api.createRun(actor, {
       agentId,

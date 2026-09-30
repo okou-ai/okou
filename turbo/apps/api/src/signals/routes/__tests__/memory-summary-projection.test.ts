@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import type {
@@ -398,6 +398,30 @@ describe("memory summary projection", () => {
         user_id: VOLUME_ORG_USER_ID,
       }),
     ).resolves.toMatchObject({ state: null });
+  });
+
+  it("accepts a different gzip size for the same logical Storage version", async () => {
+    const summary = Buffer.from("summary with stable logical contents", "utf8");
+    const original = tarGz([{ path: "memory_summary.md", content: summary }]);
+    const version = await publishVersion({
+      files: [declaredFile("memory_summary.md", summary)],
+      archive: original,
+    });
+    const differentlyCompressed = gzipSync(gunzipSync(original), { level: 0 });
+    expect(differentlyCompressed).not.toHaveLength(original.length);
+    context.sessionHistoryBlobs.set(version.archiveKey, differentlyCompressed);
+    context.mocks.s3.send.mockClear();
+
+    await expect(run(version)).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
+      }),
+    ).toHaveLength(0);
+    await expect(read(version)).resolves.toMatchObject({
+      content: summary.toString("utf8"),
+      source_size: summary.length,
+    });
   });
 
   it("materializes and reads exact versions once under concurrent workers", async () => {

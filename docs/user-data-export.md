@@ -175,7 +175,10 @@ instructions prefer the validated exact-version Pi text index. A legacy
 volume without usable indexed text has explicit limits: a 16 MiB manifest,
 32 MiB compressed archive, and 64 MiB expanded archive. A volume exceeding those
 limits fails explicitly, preserving the checkpoint for a later retry; it never
-publishes truncated instructions or exposes unrelated volume files. Chat
+publishes truncated instructions or exposes unrelated volume files. For legacy
+agent instructions, the registered gzip length is only a hint: the actual
+archive download is bounded, its declared transfer length is checked, and the
+extracted instruction is verified against the manifest's size and hash. Chat
 snapshots and memory archives are copied without whole-object decompression.
 
 ## Deployment compatibility
