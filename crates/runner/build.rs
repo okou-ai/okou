@@ -54,10 +54,10 @@ fn main() {
     for guest in &guests {
         println!("cargo::rerun-if-env-changed={}", guest.path_env);
     }
-    let guest_cli_path = env::var("GUEST_CLI_PATH").ok();
+    let guest_cli_path = read_bundle_path("GUEST_CLI_PATH");
     let paths: Vec<_> = guests
         .iter()
-        .filter_map(|guest| env::var(&guest.path_env).ok().map(|value| (guest, value)))
+        .filter_map(|guest| read_bundle_path(&guest.path_env).map(|value| (guest, value)))
         .collect();
     let supplied = paths.len() + usize::from(guest_cli_path.is_some());
     if supplied != 0 && supplied != guests.len() + 1 {
@@ -100,6 +100,14 @@ fn main() {
             &guest_cli_path.expect("CLI path is required with Guest paths"),
             &workspace_root,
         );
+    }
+}
+
+fn read_bundle_path(name: &str) -> Option<String> {
+    match env::var(name) {
+        Ok(path) => Some(path),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => panic!("{name} must be a UTF-8 path"),
     }
 }
 
