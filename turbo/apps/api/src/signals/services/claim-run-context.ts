@@ -28,7 +28,6 @@ import {
   type PiMemoryRecallSelection,
   piMemoryRecallSelectionSchema,
 } from "@okouai/api-contracts/contracts/runners";
-import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { connectorCatalogArtifactFailureCode } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
