@@ -69,7 +69,9 @@ export function createAgentCustomConnectorDefinitions(
   ids: readonly string[],
 ) {
   return computed(async (get) => {
-    if (ids.length === 0) return [];
+    if (ids.length === 0) {
+      return [];
+    }
     const rows = await get(db$)
       .select({
         connector: customConnectorDefinitionSelection(),

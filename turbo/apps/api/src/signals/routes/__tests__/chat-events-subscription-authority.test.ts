@@ -139,9 +139,8 @@ describe("CHAT-02: run-level model overrides", () => {
         f.preparation.arrival("subscription-account"),
         f.preparation.arrival("thread-session"),
       ]);
-      expect(
-        f.preparation.hasArrived("post-authorization-context"),
-      ).toBeFalsy();
+      // Identity-only bootstrap/catalog work can now finish independently of
+      // account capture; admission still waits for the captured account below.
       f.preparation.release("subscription-account");
       await f.preparation.arrival("post-authorization-context");
       await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);

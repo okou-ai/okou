@@ -8458,6 +8458,16 @@ export async function resolveAgentExecution(
     return requireResolvedAgentIdMatch(resolved, body.agentId);
   }
 
+  return await resolveProductAgentExecution(body, userId, orgId, options);
+}
+
+/** Product execution depends only on identity and the captured session/agent. */
+export async function resolveProductAgentExecution(
+  body: Pick<CreateRunBody, "agentId" | "sessionId">,
+  userId: string,
+  orgId: string,
+  options: Omit<ResolveAgentExecutionOptions, "testOnlyResolveDirectRun">,
+): Promise<ResolvedRunExecution | CreateRunErrorResult> {
   const productAgentExecutionPlan = options.productAgentExecutionPlan;
   if (productAgentExecutionPlan === undefined) {
     throw new Error(

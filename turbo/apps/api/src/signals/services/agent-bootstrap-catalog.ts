@@ -140,7 +140,9 @@ export function createAgentCatalogProjectionRows(
 ) {
   return computed(
     async (get): Promise<readonly AgentCatalogProjectionRow[]> => {
-      if (connectorSlugs.length === 0) return [];
+      if (connectorSlugs.length === 0) {
+        return [];
+      }
       return await get(db$)
         .select({
           connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,

@@ -121,8 +121,10 @@ Catalog reuse has a separate key: current projection identity plus the sorted
 connector list. The pick reads the current global identity; only a matching
 projection set/version, capability identity and connector list reuse speculative
 rows. A changed catalog reads current projection rows without discarding other
-bootstrap data. Existing payload/digest validation, count checks, immutable
-process caches and conditional fresh-identity fencing remain in force. Thread
+bootstrap data. Reusing speculative projection rows also joins a fresh identity
+fence, even when those rows are complete, so replacement after the first pick
+identity read cannot admit mixed catalog generations. Existing payload/digest
+validation, count checks and immutable process caches remain in force. Thread
 connector selection/accounts, stored connector snapshots, custom connector
 values and session rows are not in the prefetch package.
 

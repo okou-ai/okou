@@ -132,7 +132,10 @@ describe("chat agent bootstrap prefetch", () => {
         throw new Error("Expected a run-associated replacement");
       }
       const run = await api.readRun(actor, associated.runId);
-      expect(run).toMatchObject({ agentId, prompt: "prepare my agent" });
+      expect(run).toMatchObject({ prompt: "prepare my agent" });
+      await expect(
+        chat.readThread(actor, sent.body.threadId),
+      ).resolves.toMatchObject({ agentId });
       const claimed = await claimChatRun(runnerGroup, associated.runId);
       expect(claimed.claim.platformEnvironment).toHaveProperty("OKOU_TOKEN");
       await cancelChatRun(actor, associated.runId, claimed.sandboxHeaders);

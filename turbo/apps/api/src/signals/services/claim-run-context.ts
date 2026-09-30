@@ -150,7 +150,7 @@ import {
   priorPiMemoryRecall,
   readOnlyStoragePresignedUrlRequest,
   regularProviderEnvironmentFromSnapshot,
-  resolveAgentExecution,
+  resolveProductAgentExecution,
   type ResolvedModelProviderEnvironment,
   type ResolveModelProviderEnvironmentArgs,
   resolvePreparedPiModelConfig,
@@ -7488,6 +7488,7 @@ export function createClaimRunObjects(
       projection.identity,
       selectedSlugs,
     );
+    let prefetchedRowsUsed = false;
     const rows: ConnectorCatalogRuntimeProjectionRowsRead =
       uncachedSlugs.length === 0
         ? { kind: "ready", connectors: [], missingConnectorSlugs: [] }
@@ -7510,6 +7511,7 @@ export function createClaimRunObjects(
                     ) === projectionIdentityKey(projection.identity) &&
                     prefetched.connectorSlugs.join("\0") ===
                       selectedSlugs.join("\0");
+                  prefetchedRowsUsed = catalogHit;
                   (await get(catalogInput$)).timing.recordElapsed(
                     "api_dispatch_connector_catalog_prefetch_selection",
                     "nested",
@@ -7547,6 +7549,7 @@ export function createClaimRunObjects(
       projection,
       cached,
       rows,
+      prefetchedRowsUsed,
       cacheOutcome:
         uncachedSlugs.length === 0 ? ("hit" as const) : ("miss" as const),
     };
@@ -7586,7 +7589,7 @@ export function createClaimRunObjects(
     const rows = await get(runtimeCatalogProjectionRowsProjectionRows$);
     return rows.kind === "projection" &&
       rows.rows.kind === "ready" &&
-      rows.rows.missingConnectorSlugs.length > 0
+      (rows.rows.missingConnectorSlugs.length > 0 || rows.prefetchedRowsUsed)
       ? await get(catalogReadInput$)
       : undefined;
   });
@@ -7622,7 +7625,10 @@ export function createClaimRunObjects(
           reason: read.rows.reason,
         };
       }
-      if (read.rows.missingConnectorSlugs.length > 0) {
+      if (
+        read.rows.missingConnectorSlugs.length > 0 ||
+        read.prefetchedRowsUsed
+      ) {
         if (
           latest?.projection.kind !== "ready" ||
           projectionIdentityKey(latest.projection.projection.identity) !==
@@ -7630,7 +7636,10 @@ export function createClaimRunObjects(
         ) {
           throw new Error("Connector catalog changed during runtime selection");
         }
-        if (actualConnectorCount !== read.projection.identity.connectorCount) {
+        if (
+          read.rows.missingConnectorSlugs.length > 0 &&
+          actualConnectorCount !== read.projection.identity.connectorCount
+        ) {
           return {
             kind: "fallback" as const,
             captured: read.captured,
@@ -10905,32 +10914,19 @@ export function createClaimRunObjects(
     // Agent/session resolution has no dependency on connector firewall policies
     // or the completed runner body. Use the already-authorized identity and
     // canonical session snapshot directly, as buildCreateAgentRunArgs does.
-    const [{ command, timing }, fullCommand, agent, session] =
-      await Promise.all([
-        get(preCreateInput$),
-        get(selectedCommand$),
-        get(preCreateAgentAgent$),
-        get(threadSession$),
-      ]);
+    const [{ command, timing }, agent, session] = await Promise.all([
+      get(preCreateInput$),
+      get(preCreateAgentAgent$),
+      get(threadSession$),
+    ]);
     if (!agent) {
       throw new Error("Agent disappeared after preparation authorization");
     }
-    if (!fullCommand) {
-      throw new Error("Run execution requires an authorized ready input");
-    }
-    const body = {
-      ...fullCommand.body,
-      agentId: agent.id,
-      triggerSource: fullCommand.triggerSource ?? "web",
-    };
-    if (session?.sessionId) {
-      body.sessionId = session.sessionId;
-    } else if (command.chatThreadId) {
-      delete body.sessionId;
-    }
-    return await resolveAgentExecution(
-      get(db$),
-      body,
+    return await resolveProductAgentExecution(
+      {
+        agentId: agent.id,
+        ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
+      },
       command.auth.userId,
       command.auth.orgId,
       {
