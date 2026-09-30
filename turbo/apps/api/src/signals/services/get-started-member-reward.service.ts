@@ -134,12 +134,23 @@ export const grantGetStartedClaim$ = command(
     ) {
       throw result.error;
     }
-    // A concurrent grant took this reward identity or slot; the transaction
-    // rolled back and the claim keeps its unresolved state and lease. That
-    // committed state is the deterministic result: the lease expires and the
-    // existing review cycle decides the claim again (no in-place retry).
+    // A concurrent grant took this reward identity or slot. The unique index
+    // is the decision: resolve this claim as ineligible with one conditional
+    // update (a claim another redeemer already resolved is left as is).
     const current = await currentClaim(db, args.claim.id);
     signal.throwIfAborted();
-    return current;
+    if (!current) {
+      return current;
+    }
+    const reason = isUniqueViolation(result.error, "uq_get_started_reward_key")
+      ? "already_redeemed"
+      : "limit_reached";
+    const [ineligible] = await db
+      .update(getStartedClaims)
+      .set(slackRewardIneligibleValues(reason, nowDate()))
+      .where(unresolvedClaimWhere(current))
+      .returning();
+    signal.throwIfAborted();
+    return ineligible ?? current;
   },
 );
