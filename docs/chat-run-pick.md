@@ -296,8 +296,16 @@ The cache write does not delay activation. Its failure is logged without retry
 or changing the admitted run. This is the one explicit exception to preparation's
 fail-fast rule; the runner never needs the cache write to finish.
 
-Callback KMS encryption starts when callback definitions are ready, and runtime
-secret encryption starts when its resolved secrets are ready. They overlap
+`execution-callbacks.service.ts:prepareCallbacks$` encrypts ordinary callback
+definitions and returns no run ID or persistence row. The Thread owner preserves
+existing JSONB payload serialization and adds the run ID only for its atomic
+write. Internal callbacks carry no HTTP secret. Callback preparation no longer
+waits for bootstrap merely to supply an unused encryption feature context.
+`execution-secrets.service.ts:encryptExecutionSecrets$` encrypts the final secret
+namespace with the existing versioned envelope; null remains null and an empty
+object remains encrypted. Neither resource selects secrets, writes rows or sends
+notifications. Callback KMS encryption starts when callback definitions are ready,
+and runtime secret encryption starts when its resolved secrets are ready. They overlap
 independent reads and storage assembly through `Promise.all`, but both must
 finish before `createRun$`: the runner may claim the queue row immediately after
 commit. Pending run, runner job and encrypted callbacks remain one atomic write

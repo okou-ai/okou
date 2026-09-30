@@ -71,7 +71,14 @@ export function createPickObjects(
   const selectedClaimRunObjects$ = computed((get) => {
     const claim = get(internalSelectedClaim$);
     return claim
-      ? createThreadClaimRunObjects(claim, prefetchedBootstrap)
+      ? createThreadClaimRunObjects(
+          {
+            orgId: claim.orgId,
+            chatThreadId: claim.chatThreadId,
+            claimId: claim.claimId,
+          },
+          prefetchedBootstrap,
+        )
       : null;
   });
   const internalOrgCursor$ = state<OrgPickCursor | null>(null);
@@ -279,13 +286,17 @@ export function createPickObjects(
    * this module, so the pick is built here on the same request Store. This is
    * new work, not a retry: `pick$` never loops.
    */
+  const nextThreadPickObjects$ = computed((get) => {
+    const claim = get(internalSelectedClaim$);
+    return claim ? createPickObjects(claim.orgId, claim.chatThreadId) : null;
+  });
   const scheduleThreadPick$ = command(
-    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
-      const { pick$: nextPick$ } = createPickObjects(
-        claim.orgId,
-        claim.chatThreadId,
-      );
-      waitUntil(set(nextPick$, signal));
+    ({ get, set }, signal: AbortSignal): void => {
+      const next = get(nextThreadPickObjects$);
+      if (!next) {
+        throw new Error("Rescheduling requires a selected thread claim");
+      }
+      waitUntil(set(next.pick$, signal));
     },
   );
 
@@ -297,7 +308,7 @@ export function createPickObjects(
       signal: AbortSignal,
     ): Promise<void> => {
       if (await set(releaseClaim$, claim, signal)) {
-        set(scheduleThreadPick$, claim, signal);
+        set(scheduleThreadPick$, signal);
       }
     },
   );

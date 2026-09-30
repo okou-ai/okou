@@ -1,3 +1,8 @@
+import { encryptExecutionSecrets$ } from "./execution-secrets.service";
+import {
+  prepareCallbacks$ as prepareExecutionCallbacks$,
+  type ExecutionCallback,
+} from "./execution-callbacks.service";
 import { createBootstrapAgent } from "./agent-bootstrap-agent";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import type { Tx } from "../../lib/db-types";
@@ -392,10 +397,6 @@ import {
   resolveCustomConnectorBaseUrlVars,
 } from "./connector-runtime-preparation.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import {
-  encryptPersistentSecretValue,
-  encryptPersistentSecretsMap,
-} from "./crypto.utils";
 import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
 import {
   customConnectorPermissionBundleDependencySlug,
@@ -12327,42 +12328,61 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const prepareCallbacks$ = command(async ({ get }, signal: AbortSignal) => {
-    const identity = get(internalRunIds$);
-    if (!identity) {
-      throw new Error("Claim has no run identity");
-    }
-    const [callbacks, bootstrap] = await Promise.all([
-      get(callbackInputs$),
-      get(preCreateBootstrapMetadata$),
-    ]);
-    signal.throwIfAborted();
-    return await Promise.all(
-      (callbacks ?? []).map(async (callback) => {
-        if ("internalKind" in callback) {
-          return {
-            runId: identity.runId,
-            url: null,
-            internalKind: callback.internalKind,
-            encryptedSecret: null,
-            payload: callback.payload,
-          };
-        }
-        const encryptedSecret = await encryptPersistentSecretValue(
-          callback.secret,
-          bootstrap.featureSwitchContext,
-        );
-        signal.throwIfAborted();
-        return {
-          runId: identity.runId,
-          url: callback.url,
-          internalKind: null,
-          encryptedSecret,
-          payload: callback.payload,
-        };
-      }),
-    );
-  });
+  const prepareCallbacks$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const identity = get(internalRunIds$);
+      if (!identity) {
+        throw new Error("Claim has no run identity");
+      }
+      const [callbacks, { command }] = await Promise.all([
+        get(callbackInputs$),
+        get(selectedIdentityInputIdentityInput$),
+      ]);
+      signal.throwIfAborted();
+      const definitions = (callbacks ?? []).map(
+        (callback): ExecutionCallback => {
+          // Keep the JSON serialization previously performed by callback JSONB
+          // persistence (optional fields omitted, Date values serialized).
+          const serializedPayload = JSON.stringify(callback.payload);
+          const payload =
+            serializedPayload === undefined
+              ? null
+              : z.json().parse(JSON.parse(serializedPayload) as unknown);
+          return "internalKind" in callback
+            ? { kind: "internal", internalKind: callback.internalKind, payload }
+            : {
+                kind: "http",
+                url: callback.url,
+                secret: callback.secret,
+                payload,
+              };
+        },
+      );
+      const prepared = await set(
+        prepareExecutionCallbacks$,
+        { orgId: command.auth.orgId, userId: command.auth.userId },
+        definitions,
+        signal,
+      );
+      return prepared.map((callback) => {
+        return callback.kind === "internal"
+          ? {
+              runId: identity.runId,
+              url: null,
+              internalKind: callback.internalKind,
+              encryptedSecret: null,
+              payload: callback.payload,
+            }
+          : {
+              runId: identity.runId,
+              url: callback.url,
+              internalKind: null,
+              encryptedSecret: callback.encryptedSecret,
+              payload: callback.payload,
+            };
+      });
+    },
+  );
   const storageMounts$ = computed((get) => {
     return get(preparedStorage$);
   });
@@ -12387,14 +12407,12 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionInput$))) {
       return null;
     }
-    const [environment, connectors, model, snapshot, featureSwitchContext] =
-      await Promise.all([
-        get(preCreateBodyEnvironmentEnvironment$),
-        get(connectorContext$),
-        get(modelRoute$),
-        get(connectorSnapshot$),
-        get(preCreateModelFeatureSwitchContext$),
-      ]);
+    const [environment, connectors, model, snapshot] = await Promise.all([
+      get(preCreateBodyEnvironmentEnvironment$),
+      get(connectorContext$),
+      get(modelRoute$),
+      get(connectorSnapshot$),
+    ]);
     if (isRouteError(environment)) {
       return environment;
     }
@@ -12414,19 +12432,19 @@ export function createThreadClaimRunObjects(
         bodySecrets: environment.secrets,
         customConnectorContext: snapshot.customConnectorContext,
       }).secrets,
-      featureSwitchContext,
     };
   });
   const prepareEncryptedSecrets$ = command(
-    async ({ get }, signal: AbortSignal) => {
+    async ({ get, set }, signal: AbortSignal) => {
       const input = await get(storedSecretsInput$);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
         return input;
       }
-      const encryptedSecrets = await encryptPersistentSecretsMap(
+      const encryptedSecrets = await set(
+        encryptExecutionSecrets$,
         input.secrets ?? null,
-        input.featureSwitchContext,
+        signal,
       );
       signal.throwIfAborted();
       return { encryptedSecrets };
