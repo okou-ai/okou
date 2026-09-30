@@ -658,8 +658,7 @@ interface QueuedModelInput {
   readonly providerModelSupport?: ProviderModelSupport;
 }
 
-interface QueuedPromptGraphInput {
-  readonly head: ChatQueueHeadContext;
+interface QueuedPromptTiming {
   readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly runTiming: ApiDispatchTimingCollector;
 }
@@ -3532,20 +3531,27 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
-  const promptInternalInputInternalInput$ =
-    state<QueuedPromptGraphInput | null>(null);
+  const promptTiming$ = state<QueuedPromptTiming | null>(null);
+  const promptSelectedHead$ = computed(async (get) => {
+    const head = await get(head$);
+    if (!head) {
+      throw new Error("Prompt preparation has no selected head");
+    }
+    return head;
+  });
   const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
     readonly material: QueuedLaunchMaterial | null;
   } | null>(null);
-  const promptInputInput$ = computed((get) => {
-    const input = get(promptInternalInputInternalInput$);
-    if (!input) {
-      throw new Error("Prompt preparation has no selected input");
+  const promptInputInput$ = computed(async (get) => {
+    const head = await get(promptSelectedHead$);
+    const timing = get(promptTiming$);
+    if (!timing) {
+      throw new Error("Prompt preparation has no timing collector");
     }
-    return input;
+    return { head, ...timing };
   });
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const picked = await get(pickedEvent$);
     // The picked head already excludes consumed and revoked inputs.
     const event =
@@ -3639,7 +3645,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptAgentAgent$ = computed(
     async (get): Promise<QueuedPromptAgent | null> => {
-      const { head } = get(promptInputInput$);
+      const head = await get(promptSelectedHead$);
       const db = get(db$);
       if (
         ![
@@ -3683,7 +3689,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { head, timing } = get(promptInputInput$);
+      const head = await get(promptSelectedHead$);
       const db = get(db$);
       const [queuedMessage, agent] = await Promise.all([
         get(promptQueuedMessageQueuedMessage$),
@@ -3699,13 +3705,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         agent: { id: agent.agentId, orgId: head.orgId },
         expectedThreadAgentId: agent.expectedThreadAgentId,
         queuedMessage,
-        timing,
       };
     },
   );
   const promptFeaturesFeatures$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const { head } = get(promptInputInput$);
+      const head = await get(promptSelectedHead$);
       const db = get(db$);
       const rows = await db
         .select({
@@ -4814,7 +4819,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const promptHostHost$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const db = get(db$);
     const [host] = await db
       .select({
@@ -4839,7 +4844,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return host ?? null;
   });
   const promptCaptureCapture$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const db = get(db$);
     const [row] = await db
       .select({ id: chatNetworkBodyCaptures.chatEventId })
@@ -5086,11 +5091,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal: AbortSignal,
     ): Promise<boolean> => {
       const timing = new ChatCallbackPreCreateTimingCollector();
-      set(promptInternalInputInternalInput$, {
-        head,
-        timing,
-        runTiming,
-      });
+      set(promptTiming$, { timing, runTiming });
       set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
       const early = await get(internalEarlyAssembly$);
       signal.throwIfAborted();
@@ -5137,10 +5138,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (early) {
         return early;
       }
-      const input = get(promptInternalInputInternalInput$);
-      if (!input) {
-        throw new Error("Prompt preparation has no selected input");
-      }
+      const input = await get(promptInputInput$);
       const { head, timing } = input;
       const prepared = await settle(
         timing.measure(
@@ -5188,7 +5186,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        await get(promptSelectedHead$),
       );
       return false;
     }
@@ -5198,7 +5196,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (await get(internalEarlyAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = get(promptInputInput$);
+    const { head, runTiming: timing } = await get(promptInputInput$);
     const args = await get(promptArgsArgs$);
     return {
       timing,
@@ -5314,7 +5312,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        await get(promptSelectedHead$),
       );
       return null;
     }
