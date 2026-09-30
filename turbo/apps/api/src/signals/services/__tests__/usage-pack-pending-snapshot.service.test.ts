@@ -472,13 +472,3 @@ describe.each([true, false])(
     });
   },
 );
-
-describe("outgoing and prepared pending writers on the retained schema", () => {
-  let harness: Awaited<ReturnType<typeof createHarness>>;
-  beforeEach(async () => {
-    harness = await createHarness(true);
-  });
-  afterEach(async () => {
-    await harness.destroy();
-  });
-});
