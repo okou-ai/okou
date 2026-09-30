@@ -90,6 +90,8 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       api.nextSteerableInput(token, active.runId),
     ).resolves.toStrictEqual(next);
 
+    // Finish the two enqueues' owned publications before observing steering.
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.requestDeclareSteeredInputAs(
@@ -110,6 +112,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         return body;
       }),
     ).toStrictEqual([{ outcome: "steered" }, { outcome: "steered" }]);
+    await flushWaitUntilForTest();
     expect(
       context.mocks.ably.publish.mock.calls.filter(([topic]) => {
         return topic === `chatThreadMessageCreated:${active.threadId}`;

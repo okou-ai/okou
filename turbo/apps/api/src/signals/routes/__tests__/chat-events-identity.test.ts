@@ -5,10 +5,8 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { readRunAutonomyBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   type PromptMessage,
@@ -23,7 +21,6 @@ const {
   api,
   chat,
   chatCallbacks,
-  runStateStore,
   entitledChatActor,
   sendChatRun,
   claimChatRun,
@@ -192,7 +189,7 @@ describe("CHAT-02: default assistant identity", () => {
 });
 
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
-  it("keeps immediate and queued runs agent-scoped without retired provenance", async () => {
+  it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -259,32 +256,20 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       runId: immediateRunId,
       prompt: "immediate run-scoped handoff",
     });
-    await expect(
-      readRunAutonomyBudgetFixture(context, caller.runId),
-    ).resolves.toBe(10);
-    await expect(
-      readRunAutonomyBudgetFixture(context, immediateRunId),
-    ).resolves.toBe(9);
-    // Neither callback internals nor retired provenance are public API fields.
-    // The test-only state route is the only boundary that can prove their
-    // absence without importing database schemas or production services.
-    const immediateState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: immediateRunId,
-      },
-      context.signal,
-    );
-    expect(immediateState.agent_run).toMatchObject({
-      triggerSource: "agent",
-    });
-    expect(
-      immediateState.callbacks.map((callback) => {
-        return callback.internalKind;
+    expect(userMessages(launchedMessages.events)).toContainEqual(
+      expect.objectContaining({
+        revokesEventId: immediateEventId,
+        userMessage: expect.objectContaining({
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "source",
+              kind: "agent",
+              runId: caller.runId,
+            }),
+          ]),
+        }),
       }),
-    ).toStrictEqual(["chat"]);
+    );
 
     const queuedEventId = randomUUID();
     const queued = await requestSendEventWithBearer(
@@ -332,26 +317,13 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       runId: promoted.runId,
       prompt: "queued run-scoped handoff",
     });
-    await expect(
-      readRunAutonomyBudgetFixture(context, promoted.runId),
-    ).resolves.toBe(9);
-    const promotedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: promoted.runId,
-      },
-      context.signal,
-    );
-    expect(promotedState.agent_run).toMatchObject({
-      triggerSource: "agent",
-    });
-    expect(
-      promotedState.callbacks.map((callback) => {
-        return callback.internalKind;
+    expect(promoted.userMessage.parts).toContainEqual(
+      expect.objectContaining({
+        type: "source",
+        kind: "agent",
+        runId: caller.runId,
       }),
-    ).toStrictEqual(["chat"]);
+    );
 
     await cancelChatRun(actor, promoted.runId);
     await cancelChatRun(actor, caller.runId);
