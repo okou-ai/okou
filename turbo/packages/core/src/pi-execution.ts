@@ -72,6 +72,7 @@ export const PI_MODEL_POLICY = {
     exception: "frontier-vendor-harness",
     reason: "The Astra frontier line runs on the Codex vendor harness.",
   },
+  "gpt-6.1-sol": { pi: true, route: "gpt-codex" },
   "gpt-6-sol": { pi: true, route: "gpt-codex" },
   "gpt-6-luna": { pi: true, route: "gpt-codex" },
   "gpt-5.6-sol": { pi: true, route: "gpt-codex" },
@@ -176,7 +177,7 @@ function isOkouPiExecutionRoute(
   model: ActiveRunModel,
   builtIn: boolean,
   runtimeProviderType: string | null | undefined,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): boolean {
   return (
     isOkouRunModel(model) &&
@@ -192,13 +193,15 @@ function isPiRouteAdmitted(args: {
   readonly route: PiRouteClass;
   readonly modelProviderType: string | null | undefined;
   readonly runtimeProviderType: string | null | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): boolean {
   if (args.route === "claude-native") {
     return isPiNativeRoute(args.modelProviderType, args.model);
   }
+  if (args.codexServiceTier === "ultrafast") return false;
   const builtIn = isBuiltInModelProviderType(args.modelProviderType);
   const custom = args.modelProviderType === "custom-openai-responses";
+  if (args.model === "gpt-6.1-sol" && custom) return false;
   if (args.route === "deepseek") {
     return (
       (builtIn && isDeepSeekPiProviderType(args.runtimeProviderType)) ||
@@ -357,7 +360,7 @@ export function isPiPolicyAdmittedRoute(args: {
   readonly selectedModel: string | null | undefined;
   readonly modelProviderType: string | null | undefined;
   readonly runtimeProviderType: string | null | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): boolean {
   const model = activeRunModel(args.selectedModel);
   const route = piRouteClass(args.selectedModel);
@@ -396,7 +399,7 @@ export function isPiExecutionRoute(args: {
   readonly selectedModel: string | null | undefined;
   readonly modelProviderType: string | null | undefined;
   readonly runtimeProviderType: string | null | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): boolean {
   return isPiPolicyAdmittedRoute(args) && isPiRouteRuntimeCapable(args);
 }

@@ -282,14 +282,19 @@ async function initializeThread(
   // Policy seeding/repair is a write. Resolve it on this transaction so the
   // resolver's nested transaction is a savepoint.
   let pin: ModelFirstPin;
-  let codexServiceTier: "fast" | null = null;
+  let codexServiceTier: "fast" | "ultrafast" | null = null;
   if (input.model === undefined) {
     const initialModel = await resolveRequiredDefaultChatThreadModelPin(
       tx,
       principal,
     );
     pin = initialModel;
-    codexServiceTier = initialModel.serviceTier === "priority" ? "fast" : null;
+    codexServiceTier =
+      initialModel.serviceTier === "priority"
+        ? "fast"
+        : initialModel.serviceTier === "ultrafast"
+          ? "ultrafast"
+          : null;
   } else {
     const resolved = await resolveModelSelectionPin({
       db: tx,

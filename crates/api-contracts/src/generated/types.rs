@@ -418,6 +418,9 @@ pub mod runners {
             /// Public Responses priority service tier.
             #[serde(rename = "priority")]
             Priority,
+            /// Astra Ultrafast public API service tier.
+            #[serde(rename = "ultrafast")]
+            Ultrafast,
         }
 
         /// Non-secret custom gateway credential header policy.
@@ -563,7 +566,7 @@ pub mod runners {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "dialect", rename_all_fields = "camelCase")]
         pub enum PiModelConfigV3 {
-            /// Public Responses route with optional priority tier.
+            /// Public Responses route with optional priority or Astra Ultrafast tier.
             #[serde(rename = "openai-responses")]
             OpenaiResponses {
                 /// Pi model configuration generation.

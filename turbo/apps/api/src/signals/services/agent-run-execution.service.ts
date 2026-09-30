@@ -4669,7 +4669,7 @@ export interface CreateAgentRunArgs {
   readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly callbacks?: readonly RunCallback[];
   readonly chatThreadId?: string;
   /** Exact connector that delivered this run's durable integration input. */
@@ -10676,8 +10676,13 @@ async function claimQueueFirstAssociationForLaunch(args: {
     admission: args.admission,
     runId: args.identity.runId,
     selectedModel: args.createArgs.agentRunModelPin.selectedModel,
-    ...(args.createArgs.codexServiceTier === "fast"
-      ? { serviceTier: "priority" as const }
+    ...(args.createArgs.codexServiceTier
+      ? {
+          serviceTier:
+            args.createArgs.codexServiceTier === "fast"
+              ? ("priority" as const)
+              : ("ultrafast" as const),
+        }
       : {}),
     timing: args.timing,
   });
@@ -12989,6 +12994,15 @@ function createRunModelProviderObjects(
     const provider = providerResult.value;
     if (isRouteError(provider)) {
       return provider;
+    }
+    if (
+      context.input.args.codexServiceTier === "ultrafast" &&
+      (provider?.type !== "openai-api-key" ||
+        provider.selectedModel !== "gpt-6-astra")
+    ) {
+      return badRequestMessage(
+        "Astra Ultrafast requires a direct OpenAI API-key route",
+      );
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),
@@ -15910,7 +15924,7 @@ function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
   readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }): Record<string, string> {
   const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
@@ -17327,7 +17341,7 @@ export function selectedRunModelProviderArgs(
       optionalAgentSetting(agent.selectedModel),
     builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
     piExecution: selectedRunPiExecution(command),
-    codexServiceTier: command.codexServiceTier === "fast" ? "fast" : undefined,
+    codexServiceTier: command.codexServiceTier,
     agentRunMetadata: { reasoningEffort: command.reasoningEffort },
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }

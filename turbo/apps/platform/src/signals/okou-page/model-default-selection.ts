@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   isCodexFastModeModel,
   isSupportedRunModel,
@@ -15,7 +16,7 @@ import {
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
-  serviceTier?: "priority" | null;
+  serviceTier?: "priority" | "ultrafast" | null;
   modelSettings?: ModelSettings;
 }
 
@@ -88,6 +89,18 @@ export function resolveModelFirstStoredUserSelection(params: {
   );
   if (!userSelection) {
     return null;
+  }
+  if (
+    params.userPreference?.serviceTier === "ultrafast" &&
+    userSelection.selectedModel === "gpt-6-astra" &&
+    params.policies?.policies.some((policy) => {
+      return (
+        policy.model === "gpt-6-astra" &&
+        getMemberModelPolicyRoute(policy).providerType === "openai-api-key"
+      );
+    })
+  ) {
+    return { ...userSelection, codexServiceTier: "ultrafast" };
   }
   if (
     params.userPreference?.serviceTier === "priority" &&

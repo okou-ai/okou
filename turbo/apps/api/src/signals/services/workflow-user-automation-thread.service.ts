@@ -232,7 +232,12 @@ async function createAutomationChatThread(
     modelProviderType: pinColumns.modelProviderType,
     modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
     selectedModel: pinColumns.selectedModel,
-    codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
+    codexServiceTier:
+      pin.serviceTier === "priority"
+        ? "fast"
+        : pin.serviceTier === "ultrafast"
+          ? "ultrafast"
+          : null,
     lastMessageAt: args.currentTime,
     createdAt: args.currentTime,
     updatedAt: args.currentTime,

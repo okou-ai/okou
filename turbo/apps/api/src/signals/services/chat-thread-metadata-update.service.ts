@@ -5,7 +5,10 @@ import {
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ChatThreadServiceTier,
+  CodexServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -72,7 +75,7 @@ interface ChatThreadMetadataState {
   readonly titleTruncated: boolean;
   readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly serviceTier: "priority" | null;
+  readonly serviceTier: ChatThreadServiceTier | null;
   readonly updatedAt: Date;
 }
 

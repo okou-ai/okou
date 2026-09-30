@@ -10,7 +10,7 @@ export const PI_AGENT_THINKING_LEVELS = [
 
 export type PiAgentThinkingLevel = (typeof PI_AGENT_THINKING_LEVELS)[number];
 
-export type PiAgentServiceTier = "priority" | "fast";
+export type PiAgentServiceTier = "priority" | "fast" | "ultrafast";
 
 export type PiAgentDialect =
   | "openai-responses"
@@ -74,7 +74,7 @@ export type PiAgentModelConfig = PiAgentModelCommon &
     | {
         readonly dialect: "openai-responses";
         readonly transport: "sse";
-        readonly serviceTier?: "priority";
+        readonly serviceTier?: "priority" | "ultrafast";
         readonly accountId?: never;
         readonly region?: never;
         readonly bedrockAuth?: never;

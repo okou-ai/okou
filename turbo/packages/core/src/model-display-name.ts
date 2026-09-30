@@ -42,6 +42,8 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // OpenAI / Codex
   "gpt-6-astra": "GPT 6 Astra",
   "openai/gpt-6-astra": "GPT 6 Astra",
+  "gpt-6.1-sol": "GPT 6.1 Sol",
+  "openai/gpt-6.1-sol": "GPT 6.1 Sol",
   "gpt-6-sol": "GPT 6 Sol",
   "openai/gpt-6-sol": "GPT 6 Sol",
   "gpt-6-luna": "GPT 6 Luna",
@@ -87,5 +89,9 @@ export function getRunModelDisplayName(
   codexServiceTier: CodexServiceTier | null | undefined,
 ): string {
   const modelName = getModelDisplayName(model);
-  return codexServiceTier === "fast" ? `${modelName} Fast` : modelName;
+  return codexServiceTier === "fast"
+    ? `${modelName} Fast`
+    : codexServiceTier === "ultrafast"
+      ? `${modelName} Ultrafast`
+      : modelName;
 }

@@ -283,7 +283,7 @@ class TestModelProviderWebSocketUsageAggregation:
             recovered = tiers["resp_ws_evicted"]
             assert len(tiers) == 100
             assert recovered.tier == "long_context"
-            assert recovered.fast is True
+            assert recovered.service_tier == "fast"
             assert recovered.committed is True
 
             mitm_addon.websocket_end(flow)
@@ -345,7 +345,7 @@ class TestModelProviderWebSocketUsageAggregation:
 
             recovered = tiers["resp_ws_evicted_duplicate"]
             assert recovered.tier == "base"
-            assert recovered.fast is False
+            assert recovered.service_tier == "standard"
             assert recovered.committed is True
 
             mitm_addon.websocket_end(flow)
@@ -382,6 +382,7 @@ class TestModelProviderWebSocketUsageAggregation:
         ),
         [
             pytest.param(20, "priority", 20, None, ".fast", id="fast-omitted-tier"),
+            pytest.param(20, "ultrafast", 20, None, ".ultrafast", id="ultrafast-omitted-tier"),
             pytest.param(
                 272_001,
                 "priority",
@@ -685,7 +686,7 @@ class TestModelProviderWebSocketUsageAggregation:
         assert len(tiers) == 100
         assert "resp_ws_tier_0" not in tiers
         assert tiers["resp_ws_tier_100"].tier == "base"
-        assert tiers["resp_ws_tier_100"].fast is False
+        assert tiers["resp_ws_tier_100"].service_tier == "standard"
         assert tiers["resp_ws_tier_100"].committed is False
 
         mitm_addon.websocket_end(flow)

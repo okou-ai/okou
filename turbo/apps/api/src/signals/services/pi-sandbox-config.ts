@@ -112,7 +112,7 @@ function piCatalogProvider(
 function piRuntimeContract(args: {
   readonly providerType: string;
   readonly selectedModel: string;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): PiRuntimeContract {
   if (isPiGptModel(args.selectedModel) && !isOkouRunModel(args.selectedModel)) {
     return {
@@ -154,7 +154,7 @@ export function shouldUsePiExecution(args: {
   readonly chatThreadId: string | undefined;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
 }): boolean {
   return (
@@ -181,10 +181,11 @@ interface PiModelProviderConfigInput extends PiNativeModelProviderInput {
 
 function resolveCodexSubscriptionPiModelConfig(
   provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "codex-oauth-token" ||
+    codexServiceTier === "ultrafast" ||
     !isPiGptModel(provider.selectedModel) ||
     provider.inlineFirewall === true ||
     provider.credentialHeader !== undefined ||
@@ -245,7 +246,7 @@ function resolveCodexSubscriptionPiModelConfig(
     dialect: config.dialect,
     transport: config.transport,
     thinkingLevel: config.thinkingLevel,
-    serviceTier: codexServiceTier,
+    serviceTier: codexServiceTier === "fast" ? "fast" : undefined,
   })
     ? config
     : null;
@@ -253,7 +254,7 @@ function resolveCodexSubscriptionPiModelConfig(
 
 function resolveCustomGatewayPiModelConfig(
   provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "custom-openai-responses" ||
@@ -300,7 +301,7 @@ function resolveCustomGatewayPiModelConfig(
 
 function resolveGptApiKeyPiModelConfig(
   provider: PiModelProviderConfigInput,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   const route = gptApiKeyPiRoute(provider.type);
   if (
@@ -327,7 +328,12 @@ function resolveGptApiKeyPiModelConfig(
   ) {
     return null;
   }
-  const serviceTier = codexServiceTier === "fast" ? "priority" : undefined;
+  const serviceTier =
+    codexServiceTier === "fast"
+      ? "priority"
+      : codexServiceTier === "ultrafast"
+        ? "ultrafast"
+        : undefined;
   const config = {
     ...(serviceTier === undefined
       ? { schemaVersion: PI_MODEL_CONFIG_CURRENT_GENERATION }
@@ -369,7 +375,7 @@ function resolveGptApiKeyPiModelConfig(
 
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
-  codexServiceTier: "fast" | undefined = undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
@@ -400,7 +406,7 @@ function resolvePiRouteModelConfig(
 
 function resolveResponsesPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (provider.inlineFirewall) {
     return null;
@@ -488,7 +494,7 @@ function resolveResponsesPiModelConfig(
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
 export function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
-  codexServiceTier: "fast" | undefined = undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(provider, codexServiceTier);

@@ -98,6 +98,13 @@ const EXPECTED_ADMITTED_ROUTES = [
   "claude-sonnet-5 | aws-bedrock | aws-bedrock | fast",
   "claude-sonnet-5 | custom-anthropic-messages | custom-anthropic-messages | standard",
   "claude-sonnet-5 | custom-anthropic-messages | custom-anthropic-messages | fast",
+  "gpt-6.1-sol | built-in | built-in | standard",
+  "gpt-6.1-sol | built-in | openai-api-key | standard",
+  "gpt-6.1-sol | built-in | openai-api-key | fast",
+  "gpt-6.1-sol | openai-api-key | openai-api-key | standard",
+  "gpt-6.1-sol | openai-api-key | openai-api-key | fast",
+  "gpt-6.1-sol | codex-oauth-token | codex-oauth-token | standard",
+  "gpt-6.1-sol | codex-oauth-token | codex-oauth-token | fast",
   "gpt-6-sol | built-in | built-in | standard",
   "gpt-6-sol | built-in | openai-api-key | standard",
   "gpt-6-sol | built-in | openai-api-key | fast",
@@ -179,7 +186,7 @@ const EXPECTED_ADMITTED_ROUTES = [
  * shrinks only when a model is retired or a route is removed. The remaining
  * 218 combinations are all evaluated.
  */
-const ENUMERATED_COMBINATIONS = 218;
+const ENUMERATED_COMBINATIONS = 230;
 
 interface Combination {
   readonly selectedModel: string;
@@ -274,6 +281,7 @@ describe("Pi admission policy table", () => {
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
       "okou-1.0",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",

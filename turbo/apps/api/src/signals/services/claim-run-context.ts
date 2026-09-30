@@ -1517,7 +1517,7 @@ type ModelContext =
       readonly effectiveModelProvider: string | null | undefined;
       readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
       readonly cliAgentType: string | null;
-      readonly codexServiceTier: "fast" | undefined;
+      readonly codexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | null;
       readonly piExecution: boolean;
     }
@@ -2219,7 +2219,7 @@ type QueuedModelContext =
         readonly error: RunErrorResponse | undefined;
       };
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | undefined;
+      readonly runCodexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
         | BuiltInModelRuntimeRoute
@@ -8946,6 +8946,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const provider = providerResult.value;
     if (isRouteError(provider)) {
       return provider;
+    }
+    if (
+      context.input.args.codexServiceTier === "ultrafast" &&
+      (provider?.type !== "openai-api-key" ||
+        provider.selectedModel !== "gpt-6-astra")
+    ) {
+      return badRequestMessage(
+        "Astra Ultrafast requires a direct OpenAI API-key route",
+      );
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),

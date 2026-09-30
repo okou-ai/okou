@@ -54,6 +54,13 @@ export interface ModelFastServiceTierOptions {
   readonly apiSpeedMultiplier?: number;
 }
 
+export interface ModelUltrafastServiceTierOptions {
+  /** Direct OpenAI API key token cost relative to Standard. */
+  readonly apiCostMultiplier: number;
+  /** Published upper bound on token generation speed in Codex. */
+  readonly speedMultiplier: number;
+}
+
 export interface ModelRunOptions {
   /** Reasoning efforts the model accepts, weakest first. Empty when it has none. */
   readonly efforts: readonly RunOptionEffort[];
@@ -61,6 +68,8 @@ export interface ModelRunOptions {
   readonly defaultEffort?: RunOptionEffort;
   /** Present only for models that support the Fast service tier. */
   readonly fast?: ModelFastServiceTierOptions;
+  /** API-key-only Ultrafast; not available on subscriptions or gateways. */
+  readonly ultrafast?: ModelUltrafastServiceTierOptions;
 }
 
 const CODEX_FAST: ModelFastServiceTierOptions = {
@@ -75,6 +84,12 @@ const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
       efforts: CODEX_REASONING_EFFORTS,
       defaultEffort: "max",
       fast: { ...CODEX_FAST, chatGptSpeedMultiplier: 2 },
+      ultrafast: { apiCostMultiplier: 6, speedMultiplier: 8 },
+    },
+    "gpt-6.1-sol": {
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "medium",
+      fast: CODEX_FAST,
     },
     "gpt-6-sol": {
       efforts: CODEX_REASONING_EFFORTS,

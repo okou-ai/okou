@@ -86,6 +86,7 @@ class TestReportModelProviderUsage:
         ("provider", "input_tokens", "expected_suffix"),
         [
             ("gpt-6-astra", 272_001, ".long_context"),
+            ("gpt-6.1-sol", 272_001, ".long_context"),
             ("gpt-5.5", 272_000, ""),
             ("gpt-5.5", 272_001, ".long_context"),
             ("gpt-5.6-sol", 272_001, ".long_context"),
@@ -157,6 +158,36 @@ class TestReportModelProviderUsage:
             "tokens.output.long_context.fast": 9,
             "tokens.cache_read.long_context.fast": 70_000,
             "tokens.cache_creation.long_context.fast": 2_001,
+        }
+
+    @pytest.mark.parametrize(
+        ("input_tokens", "suffix"),
+        [(271_998, ".ultrafast"), (272_001, ".long_context.ultrafast")],
+    )
+    def test_astra_ultrafast_uses_distinct_billable_categories(
+        self, tmp_path, real_flow, usage_webhook_api, input_tokens, suffix
+    ):
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="api.openai.com",
+            original_url="https://api.openai.com/v1/responses",
+            firewall_name="model-provider:openai-api-key",
+            model_usage_provider="gpt-6-astra",
+            usage={
+                "service_tier": "ultrafast",
+                "tokens.input": input_tokens,
+                "tokens.output": 7,
+                "tokens.cache_read": 2,
+            },
+        )
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-astra-ultrafast")
+            usage.flush_usage_events(trigger="test")
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            f"tokens.input{suffix}": input_tokens,
+            f"tokens.output{suffix}": 7,
+            f"tokens.cache_read{suffix}": 2,
         }
 
     def test_output_without_input_skips_unclassifiable_terminal_billing(

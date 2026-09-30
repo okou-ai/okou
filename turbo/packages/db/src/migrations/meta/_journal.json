@@ -1503,8 +1503,15 @@
     {
       "idx": 1292,
       "version": "7",
-      "when": 1790732540916,
-      "tag": "1292_chat_thread_canonical_session",
+      "when": 1790729666014,
+      "tag": "1292_gpt_6_1_sol_subscription_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1293,
+      "version": "7",
+      "when": 1790733279900,
+      "tag": "1293_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

@@ -24,7 +24,10 @@ import { fillComposer } from "./chat-test-helpers.ts";
 
 const POLICY_DATE = "2026-09-28T09:00:00.000Z";
 
-function configurePolicies(models: readonly SupportedRunModel[]): void {
+function configurePolicies(
+  models: readonly SupportedRunModel[],
+  directAstra = false,
+): void {
   context.mocks.data.orgModelPolicies(
     models.map((model, index): OrgModelPolicy => {
       return {
@@ -32,8 +35,14 @@ function configurePolicies(models: readonly SupportedRunModel[]): void {
         model,
         modelLabel: getCanonicalModelDisplayName(model),
         isDefault: index === 0,
-        defaultProviderType: "built-in",
-        runtimeProviderType: getBuiltInConcreteProviderType(model),
+        defaultProviderType:
+          directAstra && model === "gpt-6-astra"
+            ? "openai-api-key"
+            : "built-in",
+        runtimeProviderType:
+          directAstra && model === "gpt-6-astra"
+            ? "openai-api-key"
+            : getBuiltInConcreteProviderType(model),
         credentialScope: "org",
         modelProviderId: null,
         modelProviderSurfaceId: null,
@@ -163,6 +172,56 @@ test("Auto shows the model picker once a subscription adds models", async () => 
   await setupAutoComposer("gpt-6-sol");
   await waitFor(() => {
     expect(hasAutoModelTrigger()).toBeTruthy();
+  });
+});
+
+test("Ultrafast is absent for built-in Astra", async () => {
+  await setupPanel(["gpt-6-astra"]);
+  const panel = await openPanel("GPT 6 Astra, Max");
+  expect(
+    within(panel).queryByRole("switch", { name: "Ultrafast mode" }),
+  ).toBeNull();
+});
+
+test("Direct OpenAI Astra sends the priced Ultrafast tier", async () => {
+  const creates: { serviceTier?: string | null }[] = [];
+  installRunChat({
+    selectedModel: "gpt-6-astra",
+    onThreadCreate: (body) => {
+      creates.push(body);
+    },
+  });
+  configurePolicies(["gpt-6-astra"], true);
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.ComposerModelPanel]: true,
+    },
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  const panel = await openPanel("GPT 6 Astra, Max");
+  const toggle = within(panel).getByRole("switch", { name: "Ultrafast mode" });
+  expect(toggle).toHaveAccessibleDescription(/8×.*6×/u);
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).toBeChecked();
+  });
+  await expect(
+    findButton("GPT 6 Astra, Max, Ultrafast"),
+  ).resolves.toBeVisible();
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fillComposer(composer, "Run this on Astra Ultrafast");
+  click(await findButton("Send"));
+  await waitFor(() => {
+    expect(creates).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        serviceTier: "ultrafast",
+      }),
+    );
   });
 });
 

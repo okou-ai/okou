@@ -224,8 +224,13 @@ async function validateClaimedRunAdmission(
         admission,
         runId: identity.runId,
         selectedModel: modelPin.selectedModel,
-        ...(input.args.codexServiceTier === "fast"
-          ? { serviceTier: "priority" as const }
+        ...(input.args.codexServiceTier
+          ? {
+              serviceTier:
+                input.args.codexServiceTier === "fast"
+                  ? ("priority" as const)
+                  : ("ultrafast" as const),
+            }
           : {}),
         timing: input.timing,
       });

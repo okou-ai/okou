@@ -305,16 +305,16 @@ const fullCatalogBudgets = {
   create_chat_thread: {
     description: 701,
     inputSchema: 797,
-    outputSchema: 5183,
+    outputSchema: 5195,
     annotations: 119,
-    total: 6890,
+    total: 6902,
   },
   update_chat_thread: {
     description: 563,
     inputSchema: 871,
-    outputSchema: 2359,
+    outputSchema: 2371,
     annotations: 120,
-    total: 4003,
+    total: 4015,
   },
   send_chat_message: {
     description: 578,

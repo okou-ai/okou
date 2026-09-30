@@ -419,7 +419,7 @@ export interface CreateQueuedChatRunInput {
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly cliAgentType: string | null;
   readonly piExecution: boolean;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly computerUseHostGrant: {
     readonly hostId: string;
@@ -2160,7 +2160,7 @@ export interface QueuedMessageModelRoute {
   readonly effectiveModelProvider: string | null | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly cliAgentType: string | null;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 

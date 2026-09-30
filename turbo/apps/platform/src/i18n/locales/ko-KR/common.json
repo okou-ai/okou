@@ -4976,7 +4976,10 @@
           "claudeCodeOauth": "Claude Code (OAuth 토큰)",
           "deepseek": "Deepseek"
         },
-        "standard": "표준"
+        "standard": "표준",
+        "ultrafast": "울트라패스트",
+        "ultrafastImpact": "토큰 생성 속도 최대 8배 · OpenAI API 토큰 요금 6배",
+        "ultrafastMode": "울트라패스트 모드"
       },
       "policies": {
         "actionsFor": "{{model}}에 대한 작업",
