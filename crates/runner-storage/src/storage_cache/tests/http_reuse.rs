@@ -11,9 +11,12 @@ struct ArchiveRequest {
 
 impl ArchiveRequest {
     fn respond(self, status: &str, body: &[u8], close: bool) {
+        self.respond_with_length(status, body, body.len(), close);
+    }
+
+    fn respond_with_length(self, status: &str, body: &[u8], length: usize, close: bool) {
         let mut response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: {}\r\n\r\n",
-            body.len(),
+            "HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: {}\r\n\r\n",
             if close { "close" } else { "keep-alive" },
         )
         .into_bytes();
@@ -448,7 +451,14 @@ async fn fresh_delivery_failed_requests_stay_terminal_without_poisoning_later_ru
         if reason == "status" {
             request.respond("503 Service Unavailable", &[], false);
         } else {
-            request.respond("200 OK", &pending.body[..pending.body.len() - 1], false);
+            // Advertise the full body, then close early: transport truncation
+            // remains fatal even when the stored archive size is only a hint.
+            request.respond_with_length(
+                "200 OK",
+                &pending.body[..pending.body.len() - 1],
+                pending.body.len(),
+                true,
+            );
         }
         let sandbox = MockSandbox::new("failed-pooled-archive");
         assert!(

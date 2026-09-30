@@ -332,18 +332,11 @@ fn mismatch_header(payload: &serde_json::Value) -> &serde_json::Value {
     assert_eq!(diagnostics.len(), 1);
     let header = diagnostics[0];
     assert_eq!(header["action_type"], PHASES[0]);
-    assert_eq!(header["success"], false);
-    assert_eq!(header["error"], "response-size-mismatch");
-    assert!(operations.iter().all(|operation| {
-        !PHASES[1..]
-            .iter()
-            .any(|phase| operation["action_type"] == *phase)
-    }));
     header
 }
 
 #[tokio::test]
-async fn rejected_header_payload_preserves_exact_lengths_and_bounded_encodings() {
+async fn size_drift_payload_preserves_exact_lengths_and_bounded_encodings() {
     for (length, encoding_headers, expected_encoding) in [
         (0, b"".as_slice(), "absent"),
         (
@@ -383,12 +376,12 @@ async fn rejected_header_payload_preserves_exact_lengths_and_bounded_encodings()
         );
         let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
         let sandbox = MockSandbox::new("header-mismatch");
-        let error =
+        assert!(
             populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
                 .await
-                .err()
-                .expect("the mismatched response must fail storage delivery");
-        assert!(error.to_string().contains("response-size-mismatch"));
+                .is_err(),
+            "an incomplete or invalid response must still fail storage delivery"
+        );
         let requests = server.assert_finished_with_requests().await;
         assert_eq!(requests.len(), 1);
         assert!(requests[0].starts_with("GET "));
@@ -403,8 +396,21 @@ async fn rejected_header_payload_preserves_exact_lengths_and_bounded_encodings()
         assert_op_count(&operations, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
         assert_no_op(&operations, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
         let payload = flush_telemetry_payload(telemetry, receiver).await;
+        let header = mismatch_header(&payload);
+        assert_eq!(header["success"], length > 0 && length <= CACHE_MAX_SIZE);
+        let header_error = if length == 0 {
+            Some("response-size-zero")
+        } else if length > CACHE_MAX_SIZE {
+            Some("response-size-oversized")
+        } else {
+            None
+        };
         assert_eq!(
-            mismatch_header(&payload)["archive_size_mismatch"],
+            header.get("error").and_then(|error| error.as_str()),
+            header_error
+        );
+        assert_eq!(
+            header["archive_size_mismatch"],
             serde_json::json!({
                 "expected_bytes": "5",
                 "response_bytes": length.to_string(),
@@ -427,11 +433,13 @@ async fn rejected_header_payload_preserves_exact_lengths_and_bounded_encodings()
 }
 
 #[tokio::test]
-async fn grouped_mismatch_reports_the_first_normalized_source_not_admission_order() {
+async fn grouped_size_drift_reports_the_first_normalized_source_not_admission_order() {
     for source_kind in ["storage", "artifact"] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
-        let (url, server) = raw_http_url(http_response("200 OK", b"abc")).await;
+        let body = tarball_bytes();
+        let stored_size = body.len() as u64 + 2;
+        let (url, server) = raw_http_url(http_response("200 OK", &body)).await;
         let mut previous = StorageFingerprints::default();
         let mut storages = Vec::new();
         let mut artifacts = Vec::new();
@@ -465,7 +473,7 @@ async fn grouped_mismatch_reports_the_first_normalized_source_not_admission_orde
                 "shared",
                 "v1",
             );
-            duplicate.archive_size = Some(5);
+            duplicate.archive_size = Some(stored_size);
             artifacts.push(duplicate);
         } else {
             artifacts.push(artifact_entry(
@@ -480,26 +488,37 @@ async fn grouped_mismatch_reports_the_first_normalized_source_not_admission_orde
                 "shared",
                 "v1",
             );
-            duplicate.archive_size = Some(5);
+            duplicate.archive_size = Some(stored_size);
             artifacts.push(duplicate);
         }
         let mut plan = plan_from_entries(storages, artifacts, Some(&previous));
         let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
         let sandbox = MockSandbox::new("grouped-header-mismatch");
-        let error =
+        assert!(
             populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
                 .await
-                .err()
-                .expect("the grouped mismatched response must fail storage delivery");
-        assert!(error.to_string().contains("response-size-mismatch"));
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(server.assert_finished_with_requests().await.len(), 1);
-        assert!(sandbox.write_files_calls().is_empty());
-        assert!(!home.storage_cache_dir("shared", "v1").exists());
-        let payload = flush_telemetry_payload(telemetry, receiver).await;
+        assert_eq!(sandbox.write_files_calls().len(), 1);
         assert_eq!(
-            mismatch_header(&payload)["archive_size_mismatch"],
+            fs::read(
+                home.storage_cache_dir("shared", "v1")
+                    .join("archive.tar.gz")
+            )
+            .await
+            .unwrap(),
+            body
+        );
+        let payload = flush_telemetry_payload(telemetry, receiver).await;
+        let header = mismatch_header(&payload);
+        assert_eq!(header["success"], true);
+        assert_eq!(
+            header["archive_size_mismatch"],
             serde_json::json!({
-                "expected_bytes": "5", "response_bytes": "3",
+                "expected_bytes": stored_size.to_string(),
+                "response_bytes": body.len().to_string(),
                 "source_kind": source_kind, "source_index": 5, "content_encoding": "absent",
             }),
         );
@@ -558,6 +577,7 @@ async fn completed_mismatch_survives_cancellation_and_repeated_drain() {
     ));
     let payload = flush_telemetry_payload(telemetry, receiver).await;
     let header = mismatch_header(&payload);
+    assert_eq!(header["success"], true);
     assert_eq!(
         header["duration_ms"],
         u64::try_from(duration.as_millis()).unwrap()

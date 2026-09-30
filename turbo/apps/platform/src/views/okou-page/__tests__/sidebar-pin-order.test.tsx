@@ -1,6 +1,7 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadPinOrderContract,
   chatThreadPinContract,
@@ -161,6 +162,53 @@ test("moving a pin between equal ranks preserves the requested order", async () 
       "First pin",
       "Last pin",
       "Second pin",
+      "Regular thread",
+    ]);
+  });
+});
+
+test.each([
+  ["Move up", "Last pin"],
+  ["Move down", "First pin"],
+])("%s skips a hidden archived pin", async (action, title) => {
+  const caseId = 66;
+  const pinnedAt = "2026-09-01T00:00:00Z";
+  const snapshot = [
+    chatListThread(3, "First pin", { pinnedAt, pinOrder: "a0" }),
+    chatListThread(2, "Archived pin", {
+      pinnedAt,
+      pinOrder: "a1",
+      archived: true,
+    }),
+    chatListThread(1, "Last pin", { pinnedAt, pinOrder: "a2" }),
+    chatListThread(4, "Regular thread"),
+  ];
+  installChatListAgent(context);
+  installChatListStream(context, { caseId, snapshot });
+  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    auth: chatListAuth(caseId),
+    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+  await screen.findByText("First pin");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    "First pin",
+    "Last pin",
+    "Regular thread",
+  ]);
+
+  click(menuButton(title));
+  await screen.findByRole("menu");
+  click(menuItem(action));
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "Last pin",
+      "First pin",
       "Regular thread",
     ]);
   });

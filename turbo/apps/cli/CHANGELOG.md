@@ -1,5 +1,19 @@
 # Changelog
 
+## [9.373.10](https://github.com/okou-ai/okou/compare/cli-v9.373.9...cli-v9.373.10) (2026-09-30)
+
+
+### Bug Fixes
+
+* **browser:** safely recover tabs after native input ([#37337](https://github.com/okou-ai/okou/issues/37337)) ([e3384ea](https://github.com/okou-ai/okou/commit/e3384eab4f0c3cfdd348e85bb9a027fa07a0c26a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/pi-agent-runtime bumped to 1.44.1
+
 ## [9.373.9](https://github.com/okou-ai/okou/compare/cli-v9.373.8...cli-v9.373.9) (2026-09-30)
 
 

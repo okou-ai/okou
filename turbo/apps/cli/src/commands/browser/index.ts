@@ -30,8 +30,11 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { captureBrowserInputTargets } from "./browser-user-action-capture";
 import { BrowserInputRequestError } from "./browser-input-request-error";
-
-const DEFAULT_AGENT_BROWSER_SESSION = "okou-browser";
+import {
+  browserTabCommand,
+  DEFAULT_AGENT_BROWSER_SESSION,
+  parseAgentSession,
+} from "./browser-tab";
 const BROWSER_INPUT_TARGET_MAX_LENGTH = 2048;
 const BROWSER_ACTION_NEXT_STEP =
   "Return this exact action URL in your final response, then stop using the Browser in this turn.";
@@ -99,15 +102,6 @@ function parseCountry(value: string): string {
     throw new InvalidArgumentError("country must be a two-letter country code");
   }
   return normalized;
-}
-
-function parseAgentSession(value: string): string {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(value)) {
-    throw new InvalidArgumentError(
-      "agent-session must contain only letters, numbers, underscores, or hyphens",
-    );
-  }
-  return value;
 }
 
 function collectInputField(
@@ -580,6 +574,7 @@ export const browserCommand = new Command()
   .addCommand(newCommand)
   .addCommand(statusCommand)
   .addCommand(viewCommand)
+  .addCommand(browserTabCommand)
   .addCommand(inputRequestCommand)
   .addHelpText(
     "after",
@@ -589,9 +584,11 @@ Examples:
   Keep it alive:              okou browser lease
   Create another browser:     okou browser new --name booking --country us
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
-  Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue after the user enters their email"
-  Request login credentials:  okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --field '{"key":"password","label":"Password","fieldKind":"password","required":true,"target":"@e2"}' --callback-prompt "Continue the login after the user enters their credentials"
-  Request a one-time code:    okou browser input-request --field '{"key":"code","label":"Verification code","fieldKind":"one_time_code","required":true,"target":"@e3"}' --callback-prompt "Continue the login after the user enters their code"
+  Inspect existing tabs:      okou browser tab list
+  Select an existing tab:    okou browser tab select t2
+  Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue on the existing page after email input"
+  Request login credentials:  okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --field '{"key":"password","label":"Password","fieldKind":"password","required":true,"target":"@e2"}' --callback-prompt "Continue sign-in on the existing page after native input"
+  Request a one-time code:    okou browser input-request --field '{"key":"code","label":"Verification code","fieldKind":"one_time_code","required":true,"target":"@e3"}' --callback-prompt "Continue on the existing verification page after native input"
   Request a number:           okou browser input-request --field '{"key":"quantity","label":"Quantity","fieldKind":"number","required":false,"target":"@e2"}' --callback-prompt "Continue after the user enters a quantity"
   Request a native slider:    okou browser input-request --field '{"key":"level","label":"Level","fieldKind":"range","required":true,"target":"@e2"}' --callback-prompt "Continue after the user confirms the slider"
   Request a native color:     okou browser input-request --field '{"key":"color","label":"Color","fieldKind":"color","required":true,"target":"@e2"}' --callback-prompt "Continue after the user chooses a color"
@@ -614,7 +611,9 @@ Notes:
   - input-request --json errors are one JSON object on stderr and exit nonzero
   - When native input is enabled, prefer input-request for user-held values in supported exact controls, including passwords and one-time codes; use agent-browser for ordinary form values
   - Never put user-held credentials or codes in CLI arguments, the callback prompt, or chat; input-request fills controls but does not submit the website form
-  - After input-request succeeds, return its exact URL and run no later Browser command in this turn; on callback, inspect the page, submit if needed, and verify
+  - After input-request succeeds, return its exact URL and run no later Browser command in this turn; on callback, use safe tab list/select to find the existing page before submitting at most once, then verify the website's result
+  - Tab IDs are valid only for the current agent-browser attachment. Safe tab metadata cannot distinguish same-origin pages; stop if the intended page is ambiguous
+  - Do not print raw agent-browser tab listings or tab-switch results: they may contain full URLs, OAuth parameters, or titles
   - Direct Browser takeover is a last resort for unsupported or unavailable input. Return the exact okou browser view URL, explain the step, ask for a chat reply when finished or blocked, and stop using the Browser in this turn
   - An explicit user request to view the Browser is not a takeover; sharing the current view URL is fine`,
   );
