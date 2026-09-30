@@ -52,6 +52,7 @@ import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-sched
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
+import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
 import {
   recordQueuedPromptRunLaunch$,
   buildChatPriorRunsContext,
@@ -13073,9 +13074,21 @@ export function createThreadClaimRunObjects(
 
   const activatePendingRun$ = command(
     async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      recordThreadRunActivationMarkers(
+        pending.activation.runnerNotification,
+        pending.activation.apiStartTime,
+        pending.activation.timing.activationOrigin,
+      );
+      // A false publication result preserves the existing admitted-run policy.
+      // Neither false nor an exception can undo this durable creation.
       await set(
         activateCommittedRun$,
-        { activation: pending.activation, activationScheduledAt: now() },
+        {
+          notification: pending.activation.runnerNotification,
+          timing: pending.activation.timing,
+          activationScheduledAt: now(),
+        },
         signal,
       );
       const launched = pending.context.launchRecord;

@@ -9,8 +9,40 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
+import type { RunnerJobNotification } from "./runner-dispatch.service";
+import { recordSameThreadRunnerJobPersisted } from "./runner-job-queue-lifecycle.service";
 
 const L = logger("api:chat-first-assistant-message-metric");
+
+/** Thread-owned markers finish before shared post-commit activation begins. */
+export function recordThreadRunActivationMarkers(
+  notification: RunnerJobNotification,
+  apiStartedAt: number,
+  activationOrigin: "direct" | "promotion",
+): void {
+  recordSameThreadRunnerJobPersisted(notification);
+  recordFirstAssistantEventEligibility({
+    runId: notification.runId,
+    apiStartedAt,
+  });
+  const completedAt = now();
+  recordSandboxOperation({
+    sandboxType: "runner",
+    actionType: "runner_notification_queue_to_same_thread_markers_complete",
+    durationMs: Math.max(0, completedAt - notification.createdAt.getTime()),
+    success: true,
+    runId: notification.runId,
+    dimensions: {
+      runner_group: notification.runnerGroup,
+      profile: notification.profile,
+      notification_target: "broadcast",
+      activation_origin: activationOrigin,
+      same_thread_markers: "recorded",
+      logical_queue_created_at: notification.createdAt.toISOString(),
+      boundary_at: new Date(completedAt).toISOString(),
+    },
+  });
+}
 
 export function recordFirstAssistantEventEligibility(args: {
   readonly runId: string;

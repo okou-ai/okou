@@ -367,6 +367,17 @@ The durable run/job commit is recorded before post-transaction telemetry and
 cancellation checks. Failures after that boundary propagate without rejecting the
 consumed input, compensating, retrying or creating a replacement execution.
 
+Shared `activatePendingRun$` receives ordinary `notification`, `timing` and
+`activationScheduledAt` values and returns the actual publication boolean. It
+has no Thread identity, API-start time or first-output marker responsibility.
+Thread records first-assistant eligibility and the persisted-job/marker-complete
+milestones before invoking it. The same cumulative marker-complete action remains
+observable with its real earlier boundary; generic activation no longer emits
+an artificial no-op Thread-marker milestone or Thread-marker dimensions.
+Commit/context/dispatch/scheduling/activation-entry/database-ready notification
+attribution remains in the shared notifier. False keeps the existing admitted-run
+policy; an exception remains post-commit and cannot create a replacement run.
+
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection uses fixed
 identity, requested-slug, projection-row, count, fresh-identity and complete-

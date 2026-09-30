@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { now } from "../../lib/time";
 import { activatePendingRun$ } from "./agent-run-activation.service";
+import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
 import {
   createSelectedAgentRunObjects,
   isRouteError,
@@ -33,10 +34,18 @@ export const createTestFixtureAgentRun$ = command(
       throw new Error("Agent run without a queue association lost a claim");
     }
     if (result.status === 201 && result.pendingActivation) {
+      if (result.pendingActivation.chatThreadId !== undefined) {
+        recordThreadRunActivationMarkers(
+          result.pendingActivation.runnerNotification,
+          result.pendingActivation.apiStartTime,
+          result.pendingActivation.timing.activationOrigin,
+        );
+      }
       await set(
         activatePendingRun$,
         {
-          activation: result.pendingActivation,
+          notification: result.pendingActivation.runnerNotification,
+          timing: result.pendingActivation.timing,
           activationScheduledAt: now(),
         },
         signal,

@@ -5,6 +5,7 @@ import {
   ApiDispatchPhaseCollector,
 } from "./api-dispatch-timing.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
+import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
 import {
   createAgentRunExecutionObjects,
   isRouteError,
@@ -59,10 +60,18 @@ export const createAgentRun$ = command(
       throw new Error("Direct run unexpectedly lost a queue-first claim");
     }
     if (result.status === 201 && result.pendingActivation) {
+      if (result.pendingActivation.chatThreadId !== undefined) {
+        recordThreadRunActivationMarkers(
+          result.pendingActivation.runnerNotification,
+          result.pendingActivation.apiStartTime,
+          result.pendingActivation.timing.activationOrigin,
+        );
+      }
       await set(
         activatePendingRun$,
         {
-          activation: result.pendingActivation,
+          notification: result.pendingActivation.runnerNotification,
+          timing: result.pendingActivation.timing,
           activationScheduledAt: now(),
         },
         signal,
