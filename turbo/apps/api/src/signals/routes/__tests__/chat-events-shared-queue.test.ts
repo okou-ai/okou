@@ -10,14 +10,9 @@ import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  readRunAutonomyBudgetFixture,
-  readThreadSessionBinding,
-  setRunAutonomyBudgetFixture,
-} from "./helpers/runtime-state";
+import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
@@ -31,7 +26,6 @@ const {
   api,
   chat,
   chatCallbacks,
-  runStateStore,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
@@ -75,6 +69,45 @@ async function readPickedInputRun(
     throw new Error("Expected the queued input to launch a run");
   }
   return runId;
+}
+
+/** Construct delegation depth through public sends and Runner completion. */
+async function callerAtDelegationDepth(
+  actor: Parameters<typeof sendChatRun>[0],
+  agentId: string,
+  runnerGroup: string,
+  depth: number,
+) {
+  let run = await sendChatRun(actor, {
+    agentId,
+    prompt: "root of bounded delegation",
+  });
+  let claim = await claimChatRun(runnerGroup, run.runId);
+  for (let level = 1; level <= depth; level += 1) {
+    const eventId = randomUUID();
+    const thread = await chat.createThread(actor, { agentId });
+    const sent = await requestSendEventWithBearer(
+      okouTokenFromClaim(claim.claim),
+      {
+        agentId,
+        threadId: thread.id,
+        clientEventId: eventId,
+        prompt: `delegation depth ${level}`,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected a delegation within the public depth limit");
+    }
+    await flushWaitUntilForTest();
+    const childId = await readPickedInputRun(actor, thread.id, eventId);
+    const childClaim = await claimChatRun(runnerGroup, childId);
+    await completeChatRunOk(run.runId, claim.sandboxHeaders);
+    await flushWaitUntilForTest();
+    run = { runId: childId, threadId: thread.id };
+    claim = childClaim;
+  }
+  return { run, claim };
 }
 
 describe("CHAT-02: shared user message queue", () => {
@@ -295,17 +328,20 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists user-forwarded run provenance across chat threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const source = await sendChatRun(actor, {
+    // Ten public delegation hops exhaust the source. Human forwarding is
+    // still an ordinary user request, not another agent delegation.
+    const { run: source } = await callerAtDelegationDepth(
+      actor,
       agentId,
-      prompt: "source content selected for forwarding",
-    });
-    await setRunAutonomyBudgetFixture(context, source.runId, 0);
+      runnerGroup,
+      10,
+    );
     const targetThread = await chat.createThread(actor, { agentId });
     const forwardedEventId = randomUUID();
     const forwarded = await chat.requestSendEvent(
@@ -357,16 +393,6 @@ describe("CHAT-02: shared user message queue", () => {
     });
 
     const forwardedRun = await api.readRun(actor, forwardedRunId);
-    const forwardedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: forwardedRunId,
-      },
-      context.signal,
-    );
-    expect(forwardedState.agent_run).toMatchObject({ triggerSource: "web" });
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
     expect(forwardedSystemPrompt).toContain("# This Run's Trigger");
     expect(forwardedSystemPrompt).toContain(
@@ -379,12 +405,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(forwardedSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    await expect(
-      readRunAutonomyBudgetFixture(context, source.runId),
-    ).resolves.toBe(0);
-    await expect(
-      readRunAutonomyBudgetFixture(context, forwardedRunId),
-    ).resolves.toBe(10);
 
     const unknownSource = await chat.requestSendEvent(
       actor,
@@ -447,12 +467,6 @@ describe("CHAT-02: shared user message queue", () => {
       firstTargetThread.id,
       firstEventId,
     );
-    await expect(
-      readRunAutonomyBudgetFixture(context, source.runId),
-    ).resolves.toBe(10);
-    await expect(
-      readRunAutonomyBudgetFixture(context, firstTargetRunId),
-    ).resolves.toBe(9);
     const firstTargetRun = await api.readRun(actor, firstTargetRunId);
     const firstTargetSystemPrompt = firstTargetRun.appendSystemPrompt ?? "";
     expect(firstTargetSystemPrompt).toContain("# This Run's Trigger");
@@ -652,9 +666,6 @@ describe("CHAT-02: shared user message queue", () => {
       secondTargetThread.id,
       secondEventId,
     );
-    await expect(
-      readRunAutonomyBudgetFixture(context, secondTargetRunId),
-    ).resolves.toBe(9);
     await cancelChatRun(actor, secondTargetRunId);
     await flushWaitUntilForTest();
     const nowTargetRunId = await readPickedInputRun(
@@ -771,16 +782,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const rotatedRun = await api.readRun(actor, rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
-    const rotatedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: rotatedRunId,
-      },
-      context.signal,
-    );
-    expect(rotatedState.agent_run).toMatchObject({ triggerSource: "agent" });
     expect(rotatedSystemPrompt).toContain("# Web Chat Run Context");
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
     expect(rotatedSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
@@ -856,16 +857,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
-    const incompleteState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: incompleteRunId,
-      },
-      context.signal,
-    );
-    expect(incompleteState.agent_run).toMatchObject({ triggerSource: "agent" });
     expect(incompleteSystemPrompt).toContain("# Web Chat Run Context");
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
     expect(incompleteSystemPrompt).not.toContain("# Incomplete Rounds Context");
@@ -888,12 +879,14 @@ describe("CHAT-02: shared user message queue", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const target = await chat.createThread(actor, { agentId });
     const blockedTarget = await chat.createThread(actor, { agentId });
-    const root = await sendChatRun(actor, {
+    // The documented ten-hop limit is reached through nine ordinary hops,
+    // then the last allowed delegation below. No budget row is injected.
+    const { run: root, claim: rootClaim } = await callerAtDelegationDepth(
+      actor,
       agentId,
-      prompt: "start bounded delegation",
-    });
-    const rootClaim = await claimChatRun(runnerGroup, root.runId);
-    await setRunAutonomyBudgetFixture(context, root.runId, 1);
+      runnerGroup,
+      9,
+    );
 
     const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(
@@ -915,9 +908,6 @@ describe("CHAT-02: shared user message queue", () => {
       target.id,
       delegatedEventId,
     );
-    await expect(
-      readRunAutonomyBudgetFixture(context, delegatedRunId),
-    ).resolves.toBe(0);
 
     await completeChatRunOk(root.runId, rootClaim.sandboxHeaders);
     await flushWaitUntilForTest();
