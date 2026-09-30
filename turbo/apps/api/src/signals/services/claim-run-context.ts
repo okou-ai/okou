@@ -259,7 +259,6 @@ import {
   isWebChatContextType,
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
-  queuedUserMessageExists,
   queuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
@@ -2547,15 +2546,48 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return eventId;
       }),
     );
-    return (
+    const picked =
       candidates
         .filter(({ id }) => {
           return !revoked.has(id);
         })
         .sort((left, right) => {
           return left.seqId - right.seqId;
-        })[0] ?? null
-    );
+        })[0] ?? null;
+    if (!picked) {
+      return null;
+    }
+    // The one read of the head row: the queue context, prompt branch and
+    // model selection all derive from it.
+    const [row] = await database
+      .select({
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        userMessage: canonicalChatEventUserMessage(),
+        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
+        modelSelection: chatEvents.modelSelection,
+        canonicalModelSelection: canonicalChatInputModelSelection(),
+        sourceAutonomyBudget: agentRuns.autonomyBudget,
+        userId: chatThreads.userId,
+        agentId: chatThreads.agentId,
+      })
+      .from(chatEvents)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .leftJoin(
+        agentRuns,
+        and(
+          eq(chatEvents.contextType, "agent_run"),
+          eq(agentRuns.id, chatEvents.contextId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEvents.id, picked.id),
+          eq(chatEvents.chatThreadId, claim.chatThreadId),
+        ),
+      )
+      .limit(1);
+    return row ? { ...picked, ...row } : null;
   });
   const internalStartedAt$ = state<number | null>(null);
   const internalRunIds$ = state<{
@@ -2571,25 +2603,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return { orgId: claim.orgId, chatThreadId: claim.chatThreadId, head };
   });
   const queueHeadContext$ = computed(async (get) => {
-    const { chatThreadId, head } = await get(input$);
-    const db = await get(db$);
-    const [row] = await db
-      .select({
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        userId: chatThreads.userId,
-        agentId: chatThreads.agentId,
-      })
-      .from(chatEvents)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .where(
-        and(
-          eq(chatEvents.id, head.id),
-          eq(chatEvents.chatThreadId, chatThreadId),
-        ),
-      )
-      .limit(1);
-    return row ? { ...row, agentId: z.string().parse(row.agentId) } : null;
+    const { head } = await get(input$);
+    return {
+      contextType: head.contextType,
+      contextId: head.contextId,
+      userId: head.userId,
+      agentId: z.string().parse(head.agentId),
+    };
   });
   const head$ = computed(async (get) => {
     const [input, context] = await Promise.all([
@@ -2622,17 +2642,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsSelection$ = computed(async (get) => {
     const input = get(queuedModelInputsInput$);
-    const [event] = await get(db$)
-      .select({ modelSelection: canonicalChatInputModelSelection() })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, input.eventId),
-          eq(chatEvents.chatThreadId, input.threadId),
-        ),
-      )
-      .limit(1);
-    return event?.modelSelection ?? null;
+    const head = await get(pickedEvent$);
+    if (head?.id !== input.eventId) {
+      throw new Error("Queued model selection must belong to the picked head");
+    }
+    return head.canonicalModelSelection;
   });
   const orgMetadata$ = computed(async (get) => {
     const { orgId } = get(queuedModelInputsInput$);
@@ -3458,34 +3472,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
     const { head } = get(promptInputInput$);
-    const db = get(db$);
-    const [event] = await db
-      .select({
-        id: chatEvents.id,
-        createdAt: chatEvents.createdAt,
-        userMessage: canonicalChatEventUserMessage(),
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        modelSelection: chatEvents.modelSelection,
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        sourceAutonomyBudget: agentRuns.autonomyBudget,
-      })
-      .from(chatEvents)
-      .leftJoin(
-        agentRuns,
-        and(
-          eq(chatEvents.contextType, "agent_run"),
-          eq(agentRuns.id, chatEvents.contextId),
-        ),
-      )
-      .where(
-        and(
-          eq(chatEvents.id, head.id),
-          eq(chatEvents.chatThreadId, head.chatThreadId),
-          queuedUserMessageExists(db),
-        ),
-      )
-      .limit(1);
+    const picked = await get(pickedEvent$);
+    // The picked head already excludes consumed and revoked inputs.
+    const event =
+      picked?.id === head.id && picked.eventType === "input.prompt"
+        ? picked
+        : null;
     if (!event) {
       return null;
     }
@@ -5735,17 +5727,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsSelection$2 = computed(async (get) => {
     const input = get(queuedModelInputsInput$2);
-    const [event] = await get(db$)
-      .select({ modelSelection: canonicalChatInputModelSelection() })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, input.eventId),
-          eq(chatEvents.chatThreadId, input.threadId),
-        ),
-      )
-      .limit(1);
-    return event?.modelSelection ?? null;
+    const head = await get(pickedEvent$);
+    if (head?.id !== input.eventId) {
+      throw new Error("Queued model selection must belong to the picked head");
+    }
+    return head.canonicalModelSelection;
   });
   const queuedModelInputsOrgMetadata$ = computed(async (get) => {
     const { orgId } = get(queuedModelInputsInput$2);
@@ -12999,6 +12985,36 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
+  /**
+   * An unresolvable Official Workflow artifact is a business rejection of the
+   * head; any other preparation error propagates.
+   */
+  const rejectUnresolvedOfficialArtifact$ = command(
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      error: unknown,
+      signal: AbortSignal,
+    ): Promise<{ readonly kind: "passed" }> => {
+      if (!(error instanceof OfficialWorkflowArtifactResolutionError)) {
+        throw error;
+      }
+      const assembly = await get(assembly$);
+      signal.throwIfAborted();
+      await set(
+        rejectChatQueueHead$,
+        {
+          head,
+          rejection: claimAssemblyRejection(assembly, head, {
+            code: "CONFLICT",
+            message: OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
+          }),
+        },
+        signal,
+      );
+      return { kind: "passed" };
+    },
+  );
   const prepareRunContext$ = command(
     async (
       { get, set },
@@ -13015,25 +13031,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         signal,
       );
       if (!resources.ok) {
-        if (
-          !(resources.error instanceof OfficialWorkflowArtifactResolutionError)
-        ) {
-          throw resources.error;
-        }
-        const assembly = await get(assembly$);
-        signal.throwIfAborted();
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection: claimAssemblyRejection(assembly, head, {
-              code: "CONFLICT",
-              message: OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-            }),
-          },
+        return await set(
+          rejectUnresolvedOfficialArtifact$,
+          head,
+          resources.error,
           signal,
         );
-        return { kind: "passed" };
       }
       signal.throwIfAborted();
       if (resources.value.kind === "rejected") {
