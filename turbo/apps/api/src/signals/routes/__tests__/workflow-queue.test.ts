@@ -41,9 +41,13 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
+import {
+  readThreadSessionBinding,
+  seedBuiltInModelKey,
+} from "./helpers/runtime-state";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...testWorkflowAutomationExecutionRoutes,
@@ -124,7 +128,7 @@ async function setup(): Promise<Scenario> {
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -495,7 +499,7 @@ describe("workflow queue", () => {
     await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1366,7 +1370,7 @@ describe("workflow queue", () => {
     await runsApi.updateOrgModelPolicies(scenario.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1405,15 +1409,18 @@ describe("workflow queue", () => {
       [204],
     );
 
+    // Without the Anthropic key the launch falls back to the fixed default,
+    // whose Built-in route has no operator key yet, so the launch fast-fails.
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);
     await executeDueWorkflowAutomations(created.body.id);
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.nextRunAt).not.toBeNull();
-    expect(automation.chatThreadId).toBeNull();
 
-    await runsApi.ensureOrgModelProvider(scenario.actor);
+    // The failed tick pins the thread to the fixed default; provisioning its
+    // operator key lets the re-armed schedule launch.
+    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
 
     if (!automation.nextRunAt) {
       throw new Error("Expected the failed recurring schedule to re-arm");

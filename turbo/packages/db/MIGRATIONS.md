@@ -112,6 +112,21 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-model-catalog-seed.ts` protects migration
+  `1298_global_model_catalog`: the seeded catalog and routes must match the
+  code model lists, route candidates, run options and
+  `subscription_model_catalog` they duplicate. Delete it when those code lists
+  and `subscription_model_catalog` are removed (see
+  [the model catalog design](../../../docs/model-catalog.md)). The replacement,
+  default and route constraints are permanent in
+  `scripts/test-model-catalog-permanent.ts`.
+
+- `scripts/test-model-catalog-stored-selections.ts` protects migration
+  `1299_model_catalog_stored_selections`: retired selections move along the
+  replacement chain, duplicate policies merge, cross-provider policies are
+  dropped rather than transplanted, efforts convert, history rows stay and a
+  second run is a no-op. Delete it together with the seed validator.
+
 - `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
   `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
   without deleting pointers, 6,001 V7 pointers are removed in committed batches
@@ -214,6 +229,138 @@ Keep shipped SQL, snapshots, journal and numbered external-data operation 014
 [completed 014 record](../../../docs/goal-archive-search-recovery.md) is not an
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
+
+## Model catalog rollout compatibility
+
+Migrations 1297 to 1299 (#37416) keep the columns and tables that API versions
+from before the global model catalog still read:
+
+- `org_model_policies.is_default` stays with its existing values. 1297 copies
+  no per-organization default; the API projects the system default from
+  `run_model_catalog.is_system_default`. 1299 only moves the flag to a
+  surviving replacement policy when it merges a retired one. Drop the column
+  once no deployed API version reads or writes it.
+- `subscription_model_catalog` stays until no deployed API version reads it;
+  `model_routes` is authoritative for the new API.
+- `allow_new_org_policy` stays until no deployed API version reads it; the
+  new API uses `replaced_by` only.
+
+Replacement chains: `replaced_by` may point at a retired row; the chain ends
+at the final active model. The self foreign key
+`(replaced_by, replaced_by_lineage_rank) → (model, lineage_rank)` (ON UPDATE
+CASCADE) rejects dangling targets, `replaced_by_lineage_rank > lineage_rank`
+rejects self-references and cycles, and both replacement columns must be set
+together. To retire X in favor of Y, raise Y's `lineage_rank` above X's if
+needed (raising a rank never invalidates referrers), then set `replaced_by`
+and `replaced_by_lineage_rank` on X in the same statement. To retire the
+system default, move `is_system_default` to an active model with an enabled
+Built-in route first, in the same transaction.
+
+Former Okou and Terra rows: `gpt-5.6-terra`, `okou-1.0-pro` and
+`okou-1.0-max` (seeded by 1191 and 1194, code support removed by #37363 and
+#37368) are in the 1298 seed as retired rows with their former labels (GPT
+5.6 Terra, Okou 1.0 Pro, Okou 1.0 Max), `lineage_rank = 0`, no
+`model_routes` and `allow_new_org_policy = false`, replaced by the
+owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0` (active, rank
+100). The rows are kept, not deleted, so history stays named; 1299 rewrites
+any mutable selection of them to their target (MaskDB shows zero
+references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
+`agents` and `model_providers`). 1298 still keeps any other row outside the
+seed with its ID as label, sorted last, `allow_new_org_policy = false` and no
+routes; none is known to exist.
+
+1299 rewrites chat thread selections (`chat_threads.selected_model` and
+`model_settings`) and appends one `model_selection_updated` event per
+re-pinned thread with an agent, reserving one contiguous `seq_id` range per
+`(user_id, org_id)` stream as 1213 did. The event carries a
+`model_settings_patch` only when an effort is copied. Legacy provider pins
+(`model_provider_type`, or the type of `model_provider_id`) are never
+transplanted or cleared: a thread whose pin type has no enabled route on the
+replacement keeps its retired model and pin, so the API resolves it along the
+chain and rejects the route explicitly instead of silently re-routing it to
+the organization policy or Built-in billing. Compatible pins stay as stored.
+The effort domain is the replacement's route for the pin type (Built-in when
+unpinned); an unsupported effort becomes that route's `default_effort`. The
+chat thread rewrite is one scan of `chat_threads` in the migration
+transaction, like 1213. Only rows still selecting a retired model are
+written, so re-running appends nothing. As of MaskDB on 2026-09-30 no chat
+thread, organization policy, member preference, agent or model provider
+references any retired catalog model (`claude-fable-5`,
+`claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`, `gpt-5.5`,
+`gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1299 rewrites zero
+production rows. See the performance evidence below for why it needs no
+batching.
+
+`1302_model_route_long_context_threshold` adds nullable
+`model_routes.long_context_min_total_input_tokens` with
+`chk_model_routes_long_context_threshold` (NULL, or a positive value on a
+Built-in route) and backfills Built-in routes whose pricing provider, model
+or upstream model was a key of the former `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+map to 272001, the value every key had. It is a small single-table update
+(the catalog has tens of routes) and changes no price. Apply it before
+promoting the API; the previous API does not select the column. Runner
+compatibility of the captured value is in
+[deployment compatibility](../../../docs/deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+
+### Migration 1299 performance evidence
+
+Production row counts (MaskDB `vm0-prod-ro`, read-only, 2026-09-30; exact
+counts by `limit 1` + `offset` bisection, which is equivalent to full
+pagination): `chat_threads` 162,621; `org_model_policies` 32,810;
+`model_providers` 7,374; `agents` 8,009; `org_members_metadata` 6,988;
+`chat_thread_events` 143,338; `chat_thread_event_sequences` 4,476. Rows
+selecting a retired model (`claude-fable-5`, `claude-opus-4-8`,
+`claude-sonnet-4-6`, `gpt-5.5`, `deepseek-v4-pro`) are zero in all five
+rewritten tables (the same filter returns rows for active models, so the zero
+is not a filter artifact).
+
+Index shape: none of the rewritten tables has an index on `selected_model` or
+`model` (except `idx_org_model_policies_org_model (org_id, model)`, which a
+`model`-only predicate cannot use), so every rewrite statement scans its table
+once; the joins after the filter use primary keys. The scans are bounded by
+the table sizes above; none of them touches history tables. Statement 14
+(`model_selection_rewrite_threads`) is the only one that reads
+`chat_threads`.
+
+Experiment: throwaway PostgreSQL 18 (`timezone=UTC`, default `work_mem`,
+`fsync=off`), all migrations applied, synthetic rows at production scale
+(1x) and 5x, then the 1299 body re-run statement by statement under
+`EXPLAIN (ANALYZE, BUFFERS)` with `statement_timeout = 10s` inside a rolled
+back transaction. Retired-model share: 0% (production), 1% and 10%.
+Statement numbers count the 1299 statements before the `ANALYZE` below was
+added: 14 builds `model_selection_rewrite_threads`, 15 updates `chat_threads`
+and 16 appends the `model_selection_updated` events.
+
+| Scenario                                               | Total  | Slowest statement                                  | Other statements |
+| ------------------------------------------------------ | ------ | -------------------------------------------------- | ---------------- |
+| 1x, 0 matches (production)                             | 0.21 s | 14 (thread scan) 164 ms                            | each <= 11 ms    |
+| 1x, 1% matches (1,597 threads, 317 policies)           | 0.27 s | 14: 103 ms; 15/16 (thread update, events) 59/54 ms | each <= 22 ms    |
+| 1x, 10% matches (16,258 threads, 3,162 policies)       | 1.01 s | 15: 364 ms; 16: 331 ms; 14: 216 ms                 | each <= 25 ms    |
+| 5x, 0 matches                                          | 2.28 s | 14: 1,964 ms                                       | each <= 113 ms   |
+| 5x, 1% matches (8,028 threads)                         | 4.10 s | 14: 2,029 ms; 15: 869 ms; 16: 700 ms               | each <= 108 ms   |
+| 5x, 1% matches, with `ANALYZE model_selection_rewrite` | 1.29 s | 15: 401 ms; 16: 390 ms; 14: 310 ms                 | each <= 58 ms    |
+
+No statement came near the 10 s timeout. The one plan defect: temp tables
+have no statistics, so without an `ANALYZE` the planner sorted every chat
+thread (external merge sort) before joining the few-row rewrite map, which
+grows faster than linearly with `chat_threads`. 1299 therefore analyzes
+`model_selection_rewrite` right after creating its primary key; statement 14
+then filters during the scan (5x: 2,029 ms to 310 ms). Batching is not needed:
+production has zero matching rows, and even 5x production volume with 1%
+matches finishes in about 1.3 s. Write locks are taken only on rows that
+match, so the scans block no writers.
+
+Verified: statement plans and timings on synthetic data at the stated scales,
+production row counts and zero retired references at the time of the MaskDB
+read. Not verified: production hardware, cache state, `work_mem`, bloat and
+concurrent load; the exact production distribution of thread effort settings
+and provider pins; rows that start selecting a retired model between the
+MaskDB read and the deploy (1299 re-checks at run time, and the numbers above
+cover up to 10% of rows).
+
+`org_plan_entitlements.restricted_built_in_models` is a boolean flag that turns
+on the code's limited-free restricted-model rule; it stores no model IDs, so
+1299 has nothing to rewrite there.
 
 ## Migration patterns
 

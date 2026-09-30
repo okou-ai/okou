@@ -1,15 +1,14 @@
 import { command, computed, state } from "ccstate";
-import {
-  ACTIVE_RUN_MODELS,
-  getProviderRuntimeModel,
-  isModelSupportedByProvider,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import type {
   ModelProviderConnectionResponse,
   ModelProviderSurfaceProtocol,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../external/model-catalog.ts";
 import {
   createModelProviderConnection$,
   updateModelProviderConnection$,
@@ -46,13 +45,16 @@ interface ConnectionDraft {
 
 type SurfaceField = Exclude<keyof SurfaceDraft, "enabled">;
 
-function mappingsFor(type: ModelProviderType): string {
+/** Prefill mappings from the catalog's active routes for this provider. */
+function mappingsFor(
+  type: ModelProviderType,
+  catalog: ModelCatalog | null,
+): string {
   return JSON.stringify(
     Object.fromEntries(
-      ACTIVE_RUN_MODELS.filter((model) => {
-        return isModelSupportedByProvider(model, type);
-      }).map((model) => {
-        return [model, getProviderRuntimeModel(type, model)];
+      (catalog?.activeModels ?? []).flatMap((entry) => {
+        const route = catalog?.routes(entry.model, { providerType: type })[0];
+        return route ? [[entry.model, route.upstreamModel]] : [];
       }),
     ),
     null,
@@ -72,6 +74,7 @@ function emptySurface(): SurfaceDraft {
 
 function templateDraft(
   template: ModelProviderConnectionTemplate,
+  catalog: ModelCatalog | null = null,
 ): ConnectionDraft {
   const base = {
     open: true,
@@ -87,13 +90,13 @@ function templateDraft(
         ...emptySurface(),
         enabled: true,
         apiBaseUrl: "https://ai-gateway.vercel.sh",
-        modelMappings: mappingsFor("vercel-ai-gateway"),
+        modelMappings: mappingsFor("vercel-ai-gateway", catalog),
       },
       responses: {
         ...emptySurface(),
         enabled: true,
         apiBaseUrl: "https://ai-gateway.vercel.sh/v1",
-        modelMappings: mappingsFor("vercel-ai-gateway-codex"),
+        modelMappings: mappingsFor("vercel-ai-gateway-codex", catalog),
       },
     };
   }
@@ -105,13 +108,13 @@ function templateDraft(
         ...emptySurface(),
         enabled: true,
         apiBaseUrl: "https://openrouter.ai/api",
-        modelMappings: mappingsFor("openrouter-api-key"),
+        modelMappings: mappingsFor("openrouter-api-key", catalog),
       },
       responses: {
         ...emptySurface(),
         enabled: true,
         apiBaseUrl: "https://openrouter.ai/api/v1",
-        modelMappings: mappingsFor("openrouter-codex"),
+        modelMappings: mappingsFor("openrouter-codex", catalog),
       },
     };
   }
@@ -185,12 +188,18 @@ const openConnectionDialog$ = command(
 );
 
 export const openCreateModelProviderConnection$ = command(
-  (
-    { set },
+  async (
+    { get, set },
     template: ModelProviderConnectionTemplate,
     settingsDialogSignal: AbortSignal,
   ) => {
-    set(openConnectionDialog$, templateDraft(template), settingsDialogSignal);
+    const catalog = await get(modelCatalog$);
+    settingsDialogSignal.throwIfAborted();
+    set(
+      openConnectionDialog$,
+      templateDraft(template, catalog),
+      settingsDialogSignal,
+    );
   },
 );
 

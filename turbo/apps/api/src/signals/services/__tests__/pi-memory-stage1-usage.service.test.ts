@@ -13,10 +13,7 @@ import {
   piMemoryStage1AccountingId,
   type RecordPiMemoryStage1UsageArgs,
 } from "../pi-memory-stage1-usage.service";
-import {
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_BYOK_MODEL,
-} from "@okouai/pi-agent-runtime/api";
+import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import { compactUsageEvents$ } from "../cron-compact-usage-events.service";
 
 // D infrastructure exception: immutable historical billing rows, physical
@@ -44,6 +41,7 @@ function harness() {
     responseSourceId: randomUUID(),
     model: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
     billing: { mode: "builtin" as const, orgId, userId },
+    longContextMinTotalInputTokens: null,
     usage: { input: 10, output: 8, cacheRead: 2, cacheWrite: 3 },
   } satisfies RecordPiMemoryStage1UsageArgs;
   onTestFinished(async () => {
@@ -208,14 +206,12 @@ describe("Stage 1 durable usage boundary", () => {
     );
   });
 
-  it("uses all cache-inclusive tier quantities at the inclusive long-context boundary", () => {
+  it("uses all cache-inclusive tier quantities at the captured inclusive long-context boundary", () => {
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
-        input: 270_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 0,
-      }).map((x) => {
+      piMemoryStage1UsageEntries(
+        { input: 270_000, output: 1, cacheRead: 2000, cacheWrite: 0 },
+        272_001,
+      ).map((x) => {
         return x.category;
       }),
     ).toStrictEqual([
@@ -225,12 +221,10 @@ describe("Stage 1 durable usage boundary", () => {
       "tokens.cache_creation",
     ]);
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
-        input: 270_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 1,
-      }).map((x) => {
+      piMemoryStage1UsageEntries(
+        { input: 270_000, output: 1, cacheRead: 2000, cacheWrite: 1 },
+        272_001,
+      ).map((x) => {
         return x.category;
       }),
     ).toStrictEqual([
@@ -241,14 +235,12 @@ describe("Stage 1 durable usage boundary", () => {
     ]);
   });
 
-  it("keeps the built-in model on base categories past the GPT long-context boundary", () => {
+  it("keeps a single-tier route on base categories past any long-context size", () => {
     expect(
-      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BUILT_IN_MODEL, {
-        input: 900_000,
-        output: 1,
-        cacheRead: 2000,
-        cacheWrite: 1,
-      }),
+      piMemoryStage1UsageEntries(
+        { input: 900_000, output: 1, cacheRead: 2000, cacheWrite: 1 },
+        null,
+      ),
     ).toStrictEqual([
       { category: "tokens.input", quantity: 900_000 },
       { category: "tokens.output", quantity: 1 },

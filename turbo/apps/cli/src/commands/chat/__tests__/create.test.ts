@@ -138,7 +138,9 @@ describe("okou chat create command", () => {
     expect(output).toContain("Chat thread created");
     expect(output).toContain(`Thread: ${NEW_THREAD_ID}`);
     expect(output).toContain("Title:  Launch plan");
-    expect(output).toContain("Model:  claude-sonnet-5 · effort high");
+    expect(output).toContain(
+      "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort high",
+    );
     expect(output).toContain("Priority: enabled");
     expect(output).toContain(`Agent:  ${OTHER_AGENT_ID}`);
     expect(output).toContain(
@@ -238,7 +240,7 @@ describe("okou chat create command", () => {
       "xhigh",
     ]);
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      "Model:  gpt-6-sol · effort xhigh",
+      "Model:  GPT 6 Sol (gpt-6-sol) · effort xhigh",
     );
 
     await chatCommand.parseAsync([

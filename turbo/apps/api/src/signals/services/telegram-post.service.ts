@@ -5,13 +5,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {
-  getCanonicalModelDisplayName,
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
@@ -50,7 +44,7 @@ import {
 } from "../external/telegram-official";
 import { now } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
   enqueueChatInput,
   scheduleEnqueuedChatThreadPick$,
@@ -1459,7 +1453,6 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const chatId = String(args.message.chat.id);
     const replyToMessageId =
       args.message.chat.type === "private"
@@ -1485,24 +1478,20 @@ const handleModelCommand$ = command(
       signal.throwIfAborted();
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
     const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        !visibleModels.has(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
+      if (policy.routeStatus !== "valid") {
         return [];
       }
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        isDefault: policy.model === systemDefaultModel,
       };
     });
     if (options.length === 0) {
@@ -1608,7 +1597,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1622,23 +1611,20 @@ function findModelOption(
     compactLookupKey(normalizedInput),
   ]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [option.model, normalizeRunModelId(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatTelegramModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1658,7 +1644,9 @@ function formatTelegramModelOptionsMessage(
   });
 
   const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
+    ? (options.find((option) => {
+        return option.model === currentSelectedModel;
+      })?.label ?? currentSelectedModel)
     : "workspace default";
   return [
     "<b>Available models</b>",

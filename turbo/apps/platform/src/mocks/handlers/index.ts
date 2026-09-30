@@ -24,6 +24,10 @@ import {
   resetMockOrgModelProviders,
 } from "./api-org-model-providers.ts";
 import {
+  apiModelCatalogHandlers,
+  resetMockModelCatalog,
+} from "./api-model-catalog.ts";
+import {
   apiOrgModelPoliciesHandlers,
   resetMockOrgModelPolicies,
 } from "./api-org-model-policies.ts";
@@ -123,6 +127,7 @@ export const handlers = [
   ...apiUsageHandlers,
   ...apiUsageRecordHandlers,
   ...apiOrgModelProvidersHandlers,
+  ...apiModelCatalogHandlers,
   ...apiOrgModelPoliciesHandlers,
   ...apiPersonalModelProvidersHandlers,
   ...apiPresentationTemplatesHandlers,
@@ -166,6 +171,7 @@ export function resetAllMockHandlers(): void {
   resetMockEmailSubscription();
   resetMockUserModelPreference();
   resetMockOrgModelProviders();
+  resetMockModelCatalog();
   resetMockOrgModelPolicies();
   resetMockPersonalModelProviders();
   resetMockPresentationTemplates();

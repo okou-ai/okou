@@ -3,19 +3,18 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
+  readPrimaryBuiltInRouteFixture,
+  updateRestrictedPlanAccessFixture,
+} from "../../../test-fixtures/model-route-capabilities";
+import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  getBuiltInApiModel,
   getModelProviderFirewall,
-  getProviderRuntimeModel,
-  getBuiltInConcreteProviderType,
-  getBuiltInVendor,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -190,6 +189,7 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -411,13 +411,14 @@ async function expectBuiltInModelRunRuntimeRoute(
   runId: string,
   selectedModel: string,
 ): Promise<void> {
+  const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
   await expect(readRunModelRuntimeRouteFixture(runId)).resolves.toStrictEqual({
     modelProvider: "built-in",
     selectedModel,
-    modelRuntimeProvider: getBuiltInConcreteProviderType(selectedModel),
-    modelRuntimeModel: getProviderRuntimeModel("built-in", selectedModel),
+    modelRuntimeProvider: primary.concreteProviderType,
+    modelRuntimeModel: primary.upstreamModel,
     builtInModelKeyId: expect.any(String),
-    builtInModelKeyVendor: getBuiltInVendor(selectedModel),
+    builtInModelKeyVendor: primary.vendor,
   });
 }
 
@@ -5549,7 +5550,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("uses Luna for unavailable limited-free chat models and rejects paid pins", async () => {
+  it("uses the fixed Auto default for unavailable limited-free chat models and rejects pins outside it", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5571,17 +5572,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       credits: 1000,
       onboardingPaymentPending: false,
     });
+    // A new organization starts in Auto with only the fixed default.
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-6-luna");
+    expect(modelPolicies.modelMode).toBe("auto");
     expect(
-      modelPolicies.policies.find((policy) => {
-        return policy.model === "gpt-6-luna";
+      modelPolicies.policies.map((policy) => {
+        return policy.model;
       }),
-    ).toMatchObject({ isDefault: true });
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
 
-    await seedBuiltInModelKey("gpt-6-luna");
-    // Luna is Pi-eligible, so the limited-free default chat run is claimed as
-    // a sandbox Pi turn rather than a Codex Runner job.
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
+    // The fixed default is Pi-eligible, so the limited-free default chat run
+    // is claimed as a sandbox Pi turn rather than a Codex Runner job.
     preparePiSandboxClaim();
     const sent = await chat.sendAndLaunch(actor, {
       agentId,
@@ -5591,18 +5593,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(sent.runId);
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      provider: "openai",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
     });
-    expect(claim.modelUsageProvider).toBe("gpt-6-luna");
+    expect(claim.modelUsageProvider).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     await api.requestCancelRun(actor, sent.runId, [200]);
     await finishCancelledRun(sent.runId, claim.sandboxToken);
 
-    // Unavailable selections fall back to the workspace default at enqueue.
-    // Explicitly pinning an unavailable model still reports its access error.
+    // Unavailable selections fall back to the fixed default at enqueue.
+    // Explicitly pinning a model outside the Auto policy is rejected.
     for (const [model, status, code] of [
-      ["gpt-6-astra", 402, "INSUFFICIENT_CREDITS"],
-      ["claude-fable-5-1", 402, "INSUFFICIENT_CREDITS"],
+      ["gpt-6-astra", 400, "BAD_REQUEST"],
+      ["claude-fable-5-1", 400, "BAD_REQUEST"],
       ["gpt-5.6-sol", 400, "BAD_REQUEST"],
     ] as const) {
       const fallback = await chat.sendAndLaunch(actor, {
@@ -5612,10 +5614,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       });
       const fallbackClaim = await api.claimRunnerJob(fallback.runId);
       expect(fallbackClaim.piModelConfig).toMatchObject({
-        provider: "openai",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       });
-      expect(fallbackClaim.modelUsageProvider).toBe("gpt-6-luna");
+      expect(fallbackClaim.modelUsageProvider).toBe(
+        SEEDED_SYSTEM_DEFAULT_MODEL,
+      );
       await api.requestCancelRun(actor, fallback.runId, [200]);
       await finishCancelledRun(fallback.runId, fallbackClaim.sandboxToken);
 
@@ -5635,7 +5639,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   it("claims built-in model runs with billable model firewall and usage provider", async () => {
     const api = createRunsApi(context);
     const selectedModel = await seedBuiltInDefaultModelKey();
-    const concreteProvider = getBuiltInConcreteProviderType(selectedModel);
+    const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
+    const concreteProvider = primary.concreteProviderType;
     const expectedFirewall = getModelProviderFirewall(concreteProvider)?.name;
     if (!expectedFirewall) {
       throw new Error(
@@ -5655,8 +5660,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: selectedModel });
-    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.environment).toMatchObject({
+      OPENAI_MODEL: primary.upstreamModel,
+    });
 
     expect(
       claim.firewalls?.map((firewall) => {
@@ -5666,6 +5672,47 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.billableFirewalls).toContain(expectedFirewall);
     expect(claim.modelUsageProvider).toBe(selectedModel);
 
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
+  it("runs a provider-prefixed ID of a model the catalog frees for restricted plans", async () => {
+    const api = createRunsApi(context);
+    const selectedModel = "deepseek-v4-flash";
+    await seedBuiltInModelKey(selectedModel);
+    // Free-plan Built-in access is the catalog row's flag, not a code list.
+    onTestFinished(
+      await updateRestrictedPlanAccessFixture({
+        model: selectedModel,
+        builtInOnRestrictedPlans: true,
+      }),
+    );
+    const { actor, runnerGroup } = await entitledRunActor();
+    if (!actor.orgId) {
+      throw new Error("Expected the restricted-plan actor to have an org");
+    }
+    const compose = await api.createDirectAgent(actor, {
+      version: "1",
+      agents: { main: { framework: "codex" } },
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: true,
+    });
+
+    // The OpenRouter upstream ID names exactly one catalog model, which the
+    // catalog now allows on restricted plans.
+    const run = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "provider-prefixed built-in model",
+      selectedModelProviderType: "built-in",
+      selectedModelOverride: "deepseek/deepseek-v4-flash",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
+    expect(claim.modelUsageProvider).toBe(selectedModel);
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -5679,7 +5726,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -5766,7 +5813,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -5871,7 +5918,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -5896,7 +5943,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(claim.piModelConfig).toMatchObject({
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        model: getBuiltInApiModel(selectedModel),
+        model: (await readPrimaryBuiltInRouteFixture(selectedModel))
+          .upstreamModel,
       });
       expect(
         claim.firewalls?.map((firewall) => {
@@ -5935,7 +5983,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openrouter-codex",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6006,21 +6054,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: unsupportedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openrouter-codex",
         credentialScope: "org",
         modelProviderId: openrouterProviderId,
       },
       {
         model: supportedModel,
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: anthropicProviderId,
       },
       {
         model: unknownModel,
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -6031,7 +6077,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // sandbox Pi claim.
     preparePiSandboxClaim();
 
-    async function claimModel(model: SupportedRunModel) {
+    async function claimModel(model: string) {
       const sent = await chat.sendAndLaunch(actor, {
         agentId,
         prompt: `recognition eligibility for ${model}`,
@@ -6289,7 +6335,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: orgProvider.providerId,
@@ -6298,7 +6344,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         // Member-scope routes resolve the provider per caller at run time,
         // so they must not pin a provider id.
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -15508,7 +15553,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openAiProviderId,

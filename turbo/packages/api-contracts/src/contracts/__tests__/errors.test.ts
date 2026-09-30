@@ -396,27 +396,30 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isGenericRunErrorForDisplay(modelCapacity)).toBe(false);
   });
 
-  it("shows friendly Claude overload guidance with the selected model label", () => {
-    const rawRunError =
-      "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.";
-
+  it("shows friendly Claude overload guidance with the provided model label", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message: rawRunError,
-        selectedModel: "claude-sonnet-4-6",
+        message:
+          "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.",
+        selectedModelLabel: "Claude Sonnet 5.5",
       }),
     ).toBe(
-      "Claude Sonnet 4.6 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Sonnet 5.5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
+  });
+
+  it("shows the provided model label for structured Claude overload failures", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
-        message: rawRunError,
-        selectedModel: "anthropic/claude-sonnet-5",
+        message: "private upstream diagnostic",
+        failureReason: "provider_overloaded",
+        framework: "claude-code",
+        selectedModelLabel: "Claude Fable 5.1",
       }),
     ).toBe(
-      "Claude Sonnet 5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
   });
 
@@ -438,10 +441,10 @@ describe("formatRunErrorForExternalSurface", () => {
         code: "UNKNOWN",
         message:
           "API Error: Repeated 529 Overloaded errors. The API is at capacity - this is usually temporary.",
-        selectedModel: "claude-opus-4-8",
+        selectedModelLabel: "Claude Opus 5.5",
       }),
     ).toBe(
-      "Claude Opus 4.8 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+      "Claude Opus 5.5 is overloaded. Please wait a few minutes and try again, or switch to another model.",
     );
   });
 
@@ -457,7 +460,7 @@ describe("formatRunErrorForExternalSurface", () => {
         formatRunErrorForExternalSurface({
           code: "UNKNOWN",
           message: rawRunError,
-          selectedModel: "claude-sonnet-4-6",
+          selectedModelLabel: "Claude Sonnet 5.5",
         }),
       ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
     }

@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -31,6 +27,7 @@ import {
   seedBuiltInModelKey,
   setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -47,7 +44,7 @@ async function sendRejectedByUnavailableModel(
   body: {
     readonly agentId: string;
     readonly prompt: string;
-    readonly model: SupportedRunModel;
+    readonly model: string;
   },
 ) {
   const clientEventId = randomUUID();
@@ -84,7 +81,7 @@ interface ClaimedBuiltInRun {
 async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   const keyFixture = await seedBuiltInModelCandidateKeys(
     context,
-    DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    SEEDED_SYSTEM_DEFAULT_MODEL,
   );
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -225,7 +222,7 @@ describe("POST /api/test/runtime-state/action", () => {
       await runs.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -383,7 +380,7 @@ describe("POST /api/test/runtime-state/action", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-sol",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

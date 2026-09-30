@@ -33,7 +33,7 @@ import {
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockOrgModelRoutes();
   mockBillingCapabilities({
     supportByok: true,
     restrictedBuiltInModels: false,

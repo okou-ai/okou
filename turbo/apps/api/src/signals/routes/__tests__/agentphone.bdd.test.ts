@@ -38,10 +38,12 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
@@ -86,7 +88,7 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -128,14 +130,13 @@ async function modelSessionScenario({
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: provider.providerId,
     },
     {
       model: "gpt-6-astra",
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: openAiProvider.providerId,
@@ -206,7 +207,7 @@ async function modelSessionScenario({
       serviceTier: run.serviceTier,
     };
   }
-  return { actor, send, complete, sends };
+  return { actor, send, complete, sends, runnerGroup };
 }
 
 async function claimDispatchedRun(runnerGroup: string): Promise<{
@@ -1235,10 +1236,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(lastSend(sends).body).toContain("Switched to");
         await expect(
           integrations.readUserModelPreference(actor),
-        ).resolves.toMatchObject({
-          selectedModel:
-            scenario.model === "claude-fable-5-1" ? null : scenario.model,
-        });
+        ).resolves.toMatchObject({ selectedModel: scenario.model });
         const lifecycle = await createChatFilesBddApi(
           context,
         ).requestThreadEvents(actor, {}, [200]);
@@ -1272,9 +1270,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("uses the organization default for input when the stored DM model becomes unavailable", async () => {
+  it("uses the fixed organization default for input when the stored DM model becomes unavailable", async () => {
     const integrations = createBddIntegrationApi(context);
-    const { actor, complete } = await modelSessionScenario({
+    const runs = createRunsApi(context);
+    const { actor, complete, send, runnerGroup } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
     });
@@ -1291,19 +1290,27 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-astra",
     });
-    const available = await complete(
-      "use the available workspace default",
-      "claude-fable-5-1",
+    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+    await send("use the fixed organization default");
+    await runs.heartbeatRunner(runnerGroup);
+    let runId: string | undefined;
+    await expect
+      .poll(async () => {
+        runId = (await runs.pollRunner(runnerGroup)).body.job?.runId;
+        return runId ?? null;
+      })
+      .not.toBeNull();
+    if (!runId) {
+      throw new Error("Expected an AgentPhone run to be dispatched");
+    }
+    expect((await runs.readRun(actor, runId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
     );
-    expect(available.threadId).toBe(preferred.threadId);
-    expect(available.selectedModel).toBe("gpt-6-astra");
-    expect(available.threadCount).toBe(1);
-    const continued = await complete(
-      "continue with the available workspace default",
-      "claude-fable-5-1",
+    const metadata = await createChatFilesBddApi(context).readThreadMetadata(
+      actor,
+      preferred.threadId,
     );
-    expect(continued.threadId).toBe(preferred.threadId);
-    expect(continued.threadCount).toBe(1);
+    expect(metadata.selectedModel).toBe("gpt-6-astra");
   });
 
   it("keeps the DM service tier captured when its thread was created", async () => {

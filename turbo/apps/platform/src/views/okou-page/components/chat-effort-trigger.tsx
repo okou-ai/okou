@@ -1,10 +1,11 @@
 import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
-import { isCodexFastModeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
+import { isPolicyFastModeAvailable } from "../../../signals/okou-page/model-default-selection.ts";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
 import {
   ChatEffortSettings,
@@ -40,6 +41,7 @@ export function ChatEffortTrigger({
   const { t } = useTranslation();
   const { efforts, effort } = useChatEffort(value);
   const policies = useLastResolved(orgModelPolicies$);
+  const catalog = useLastResolved(modelCatalog$);
   const policy = policies?.policies.find((entry) => {
     return entry.model === value.selectedModel;
   });
@@ -52,13 +54,8 @@ export function ChatEffortTrigger({
   const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
   const disabled =
-    policy === undefined || !isMemberModelPolicyConfigurable(policy);
-  const fastAvailable =
-    policy !== undefined &&
-    isMemberModelPolicyConfigurable(policy) &&
-    (policy.subscriptionOptions
-      ? policy.subscriptionOptions.serviceTier === "priority"
-      : isCodexFastModeModel(policy.model));
+    policy === undefined || !isMemberModelPolicyConfigurable(policy, catalog);
+  const fastAvailable = isPolicyFastModeAvailable(policy, catalog);
   return (
     <Popover>
       {/* A real composer control, not a bare trigger: the shared button owns
@@ -104,7 +101,7 @@ export function ChatEffortTrigger({
           disabled={disabled}
           onChange={onChange}
         />
-        {fastAvailable ? (
+        {fastAvailable && policy ? (
           <ChatFastSetting
             selection={value}
             disabled={disabled}

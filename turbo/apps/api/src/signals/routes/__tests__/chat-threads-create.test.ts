@@ -72,21 +72,19 @@ async function seedAgent(): Promise<AgentFixture> {
   await api.updateOrgModelPolicies(actor, [
     {
       model: WORKSPACE_DEFAULT_MODEL,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
     },
     {
       model: OTHER_WORKSPACE_MODEL,
-      isDefault: false,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
     },
     {
       model: PRIORITY_MODEL,
-      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -1321,14 +1319,13 @@ describe("POST /api/chat-threads", () => {
     await api.updateOrgModelPolicies(fixture.actor, [
       {
         model: WORKSPACE_DEFAULT_MODEL,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: PRIORITY_MODEL,
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: priorityProvider.providerId,

@@ -518,14 +518,13 @@ describe("CHAT-02: queued chat thread picks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -582,14 +581,14 @@ describe("CHAT-02: queued chat thread picks", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const nativePolicy = {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
     } as const;
     await api.updateOrgModelPolicies(actor, [
       nativePolicy,
-      { ...nativePolicy, model: "claude-opus-5", isDefault: false },
+      { ...nativePolicy, model: "claude-opus-5", preferred: false },
     ]);
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -644,7 +643,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, successorRun.runId);
   }, 90_000);
 
-  it("rejects a queued input whose recorded model was retired before its pick", async () => {
+  it("rejects a queued input whose recorded model is not in the catalog at its pick", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -653,9 +652,9 @@ describe("CHAT-02: queued chat thread picks", () => {
       prompt: "occupy the only organization slot",
     });
     const waiting = await sendWaiting(actor, agentId, "retired model input");
-    // Okou 1.0 Pro was retired after this input recorded it at enqueue.
+    // The recorded model has no catalog row, so it resolves to nothing.
     await setQueuedInputModelSelectionFixture(waiting.clientEventId, {
-      selectedModel: "okou-1.0-pro",
+      selectedModel: "model-outside-the-catalog",
       codexServiceTier: null,
       reasoningEffort: null,
     });

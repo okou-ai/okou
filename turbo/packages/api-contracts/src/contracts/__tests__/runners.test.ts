@@ -200,6 +200,7 @@ describe("runner claim response contract", () => {
       runId: "00000000-0000-4000-8000-000000020985",
       reuseKey: "thread:00000000-0000-4000-8000-000000020986",
       modelUsageProvider: "fixture-model",
+      modelUsageLongContextMinTotalInputTokens: 272_001,
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");

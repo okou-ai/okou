@@ -5658,6 +5658,14 @@ mod tests {
             "fixture-agent-id"
         );
         assert_eq!(
+            context.model_usage_provider.as_deref(),
+            Some("fixture-model")
+        );
+        assert_eq!(
+            context.model_usage_long_context_min_total_input_tokens,
+            Some(272_001)
+        );
+        assert_eq!(
             context.secret_values.as_deref(),
             Some(["fixture-secret-value-not-real".to_string()].as_slice())
         );

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { isPiExecutionRoute } from "../pi-execution";
+import { isPiExecutionRoute, piCatalogModel } from "../pi-execution";
 import type { PiRuntimeIdentity } from "../pi-runtime-capability";
+import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
 
 const UNRESOLVABLE: PiRuntimeIdentity = {
   provider: "anthropic",
@@ -13,12 +14,10 @@ const UNRESOLVABLE: PiRuntimeIdentity = {
  * `session-runtime.ts` would refuse to create.
  *
  * The production interface cannot reach this state on its own: every model the
- * policy table admits has capability data, and `pi-runtime-capability.test.ts`
- * in `@okouai/pi-agent-runtime` keeps that true against the real resolver. The
- * capability-excluded `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`
- * are refused one layer earlier by the policy table, so they never exercise
- * the gate. Substituting the capability
- * lookup is the only way to prove the gate itself is load-bearing.
+ * seeded catalog gives a Pi route class has capability data, and
+ * `pi-runtime-capability.test.ts` in `@okouai/pi-agent-runtime` keeps that true
+ * against the real resolver. Substituting the capability lookup is the only way
+ * to prove the gate itself is load-bearing.
  */
 vi.mock("../pi-runtime-capability", async (importOriginal) => {
   const actual =
@@ -46,7 +45,10 @@ describe("Pi capability gate", () => {
     (modelProviderType, runtimeProviderType) => {
       expect(
         isPiExecutionRoute({
-          selectedModel: UNRESOLVABLE.model,
+          catalogModel: piCatalogModel(
+            SEEDED_MODEL_CATALOG,
+            UNRESOLVABLE.model,
+          ),
           modelProviderType,
           runtimeProviderType,
           codexServiceTier: undefined,
@@ -59,7 +61,7 @@ describe("Pi capability gate", () => {
     for (const selectedModel of ["claude-opus-5", "deepseek-v4-flash"]) {
       expect(
         isPiExecutionRoute({
-          selectedModel,
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, selectedModel),
           modelProviderType: "built-in",
           runtimeProviderType:
             selectedModel === "claude-opus-5"

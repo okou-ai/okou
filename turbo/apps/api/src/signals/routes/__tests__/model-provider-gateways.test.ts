@@ -401,7 +401,7 @@ describe("custom model provider gateway routes", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "custom-anthropic-messages",
         credentialScope: "org",
         modelProviderId: null,
@@ -456,7 +456,7 @@ describe("custom model provider gateway routes", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "custom-openai-responses",
         credentialScope: "org",
         modelProviderId: null,

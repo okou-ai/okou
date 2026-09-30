@@ -245,7 +245,7 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -332,7 +332,7 @@ import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
-import { resolveModelFirstUserDefaultSelection } from "../../signals/okou-page/model-default-selection.ts";
+import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 
@@ -8773,6 +8773,14 @@ function ComposerModelScopeCard({
   );
 }
 
+function runServiceTier(
+  selection: ModelProviderSelection | null | undefined,
+): "priority" | "ultrafast" | null {
+  return selection?.codexServiceTier === "fast"
+    ? "priority"
+    : (selection?.codexServiceTier ?? null);
+}
+
 function ComposerTemporaryModelNotice({
   signals,
 }: {
@@ -8782,37 +8790,38 @@ function ComposerTemporaryModelNotice({
   const selection = useLastResolved(signals.model.modelSelection$);
   const policies = useLastResolved(orgModelPolicies$);
   const userPreference = useLastResolved(userModelPreference$);
+  const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateUserModelPreference$,
   );
   const pageSignal = useGet(pageSignal$);
-  const defaultSelection = resolveModelFirstUserDefaultSelection({
+  const defaultSelection = resolveDefaultModelSelection({
     userPreference,
     policies,
+    catalog,
   });
-  const selectionServiceTier =
-    selection?.codexServiceTier === "fast"
-      ? "priority"
-      : (selection?.codexServiceTier ?? null);
-  const defaultServiceTier =
-    defaultSelection?.codexServiceTier === "fast"
-      ? "priority"
-      : (defaultSelection?.codexServiceTier ?? null);
+  const selectionServiceTier = runServiceTier(selection);
+  const defaultServiceTier = runServiceTier(defaultSelection);
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection);
-  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
+  const effort = preferredChatReasoningEffort(selection, catalog);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection, catalog);
   const effortChanged = effort !== defaultEffort;
+  // Compare only against a resolved default; until both sources load the
+  // fixed Auto fallback would misreport the member's saved preference.
   if (
     !selection ||
     !defaultSelection ||
+    userPreference === undefined ||
+    policies === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);
   }
   const updating = updateLoadable.state === "loading";
-  const modelName = getModelDisplayName(selection.selectedModel);
+  const modelName =
+    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast

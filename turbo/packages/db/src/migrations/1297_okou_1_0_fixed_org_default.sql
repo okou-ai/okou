@@ -1,0 +1,12 @@
+-- Intentionally no data change. The organization default model is fixed to
+-- the built-in "okou-1.0" (Auto) policy, but that default is a system-required
+-- policy the API projects to every organization from
+-- run_model_catalog.is_system_default (migration 1298). No per-organization
+-- default row is copied here.
+--
+-- org_model_policies.is_default and its existing values stay untouched: API
+-- instances from before this release still read and write the flag during the
+-- rollout. The new API neither reads nor writes it. The column is dropped once
+-- no deployed API version reads it (see MIGRATIONS.md, "Model catalog rollout
+-- compatibility").
+SELECT 1;

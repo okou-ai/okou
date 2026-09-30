@@ -174,7 +174,7 @@ async function selectBuiltInDefaultModel(actor: ApiTestUser): Promise<void> {
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,

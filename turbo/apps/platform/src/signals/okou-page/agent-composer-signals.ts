@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -54,7 +53,7 @@ function changedModelSettingsPatch(
   previous: ModelProviderSelection | null,
 ): ModelSettingsPatch | undefined {
   const selectedModel = selection?.selectedModel;
-  if (!selection || !isSupportedRunModel(selectedModel)) {
+  if (!selection || !selectedModel) {
     return undefined;
   }
   const selectedEffort = selection.modelSettings?.[selectedModel]?.effort;
@@ -87,7 +86,7 @@ const setModelSelection$ = command(
     }
     const explicitDefaultActionEnabled =
       get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-    if (!explicitDefaultActionEnabled && isSupportedRunModel(selectedModel)) {
+    if (!explicitDefaultActionEnabled && selectedModel) {
       await set(
         updateUserModelPreference$,
         {

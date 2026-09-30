@@ -3,9 +3,8 @@ import { randomUUID } from "node:crypto";
 import { and, eq, notExists, notInArray } from "drizzle-orm";
 import {
   getFrameworkForType,
-  getBuiltInConcreteProviderType,
-  isActiveRunModel,
-  getRunModelAccess,
+  modelProviderTypeSchema,
+  normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
@@ -28,6 +27,13 @@ import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
+import {
+  catalogBuiltInCandidates,
+  isCatalogModelRunnable,
+  loadModelCatalog,
+  resolveCatalogModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 const SECRET_PLACEHOLDER = "{{secret}}";
@@ -173,26 +179,39 @@ function validateHeader(args: {
   return { name, template: args.template };
 }
 
+/**
+ * A gateway can serve a catalog model that runs directly (active, with an
+ * enabled route) whose primary Built-in route speaks the surface's protocol.
+ */
 function protocolSupportsModel(
+  catalog: ModelCatalog,
   protocol: ModelProviderSurfaceProtocol,
   model: string,
 ): boolean {
-  if (!isActiveRunModel(model)) {
+  if (!isCatalogModelRunnable(catalog, model)) {
     return false;
   }
-  const framework = getFrameworkForType(getBuiltInConcreteProviderType(model));
+  const [primary] = catalogBuiltInCandidates(catalog, model);
+  const concrete = modelProviderTypeSchema.safeParse(
+    primary?.concreteProviderType,
+  );
+  if (!concrete.success) {
+    return false;
+  }
+  const framework = getFrameworkForType(concrete.data);
   return protocol === "anthropic-messages"
     ? framework === "claude-code"
     : framework === "codex";
 }
 
 function validateMappings(
+  catalog: ModelCatalog,
   protocol: ModelProviderSurfaceProtocol,
   mappings: Record<string, string>,
 ): Record<string, string> | BadRequestResponse {
   const normalized: Record<string, string> = {};
   for (const [model, upstream] of Object.entries(mappings)) {
-    if (!protocolSupportsModel(protocol, model)) {
+    if (!protocolSupportsModel(catalog, protocol, model)) {
       return badRequestMessage(
         `Model "${model}" is not compatible with ${protocol}`,
       );
@@ -201,7 +220,13 @@ function validateMappings(
     if (!upstreamModel) {
       return badRequestMessage(`Upstream model for "${model}" cannot be empty`);
     }
-    if (getRunModelAccess(upstreamModel) === "retired") {
+    // A provider-prefixed alias of a retired catalog model is still retired.
+    const upstreamCatalogModel = normalizeBuiltInModelId(
+      upstreamModel.toLowerCase(),
+    );
+    if (
+      resolveCatalogModel(catalog, upstreamCatalogModel).kind === "replaced"
+    ) {
       return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
     normalized[model] = upstreamModel;
@@ -210,6 +235,7 @@ function validateMappings(
 }
 
 function validateConnectionInput(
+  catalog: ModelCatalog,
   input: ConnectionInput,
 ): ValidatedConnection | BadRequestResponse {
   const displayName = input.displayName.trim();
@@ -245,6 +271,7 @@ function validateConnectionInput(
       return header;
     }
     const modelMappings = validateMappings(
+      catalog,
       surface.protocol,
       surface.modelMappings,
     );
@@ -352,7 +379,10 @@ export const createModelProviderConnection$ = command(
     },
     signal: AbortSignal,
   ): Promise<ModelProviderConnectionResponse | BadRequestResponse> => {
-    const validated = validateConnectionInput(args.input);
+    const validated = validateConnectionInput(
+      await loadModelCatalog(set(writeDb$)),
+      args.input,
+    );
     if (isBadRequest(validated)) {
       return validated;
     }
@@ -420,7 +450,10 @@ export const updateModelProviderConnection$ = command(
   ): Promise<
     ModelProviderConnectionResponse | BadRequestResponse | NotFoundResponse
   > => {
-    const validated = validateConnectionInput(args.input);
+    const validated = validateConnectionInput(
+      await loadModelCatalog(set(writeDb$)),
+      args.input,
+    );
     if (isBadRequest(validated)) {
       return validated;
     }

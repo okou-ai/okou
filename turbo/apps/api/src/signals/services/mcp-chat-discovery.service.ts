@@ -6,19 +6,13 @@ import type {
   McpListAgentsOutput,
   McpListModelsOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import {
-  ACTIVE_RUN_MODELS,
-  getCanonicalModelDisplayName,
-  isBuiltInModelProviderType,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { loadMemberSubscriptionModels } from "./subscription-model-catalog.service";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -33,18 +27,25 @@ import { awaitWithSignal, safeJsonParse, settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
+  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { shouldReplaceExistingDefaultForPlan } from "./model-policy.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
+import {
+  catalogDisplayName,
+  isCatalogModelRunnable,
+  resolveCatalogRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import { loadOrgModelPolicyFacts } from "./model-policy.service";
 
 interface Principal {
   readonly orgId: string;
@@ -319,7 +320,9 @@ function personalConnectionState(
 }
 
 function describeModelAvailability(params: {
-  readonly model: SupportedRunModel;
+  readonly catalog: ModelCatalog;
+  readonly model: string;
+  readonly name: string;
   readonly defaultProviderType: string;
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly capabilities: OrgPlanCapabilities | null;
@@ -328,7 +331,7 @@ function describeModelAvailability(params: {
   const { model, route } = params;
   const entry: McpListModelsOutput["models"][number] = {
     id: model,
-    name: getCanonicalModelDisplayName(model),
+    name: params.name,
     selectable: route !== null,
     availability: "available",
     reason: null,
@@ -338,9 +341,20 @@ function describeModelAvailability(params: {
     : undefined;
   if (
     checkOrgPlanRunAdmission({
+      catalog: params.catalog,
       capabilities: params.capabilities,
       selectedModel: model,
       modelProviderType: route?.modelProviderType ?? params.defaultProviderType,
+      personalSubscription:
+        route !== null &&
+        isMemberSubscriptionRoute({
+          catalog: params.catalog,
+          // Sentinel contexts carry no subscriptions, so they never match.
+          member: { memberScoped: true, subscriptions: params.subscriptions },
+          model,
+          providerType: route.modelProviderType,
+          credentialScope: route.modelProviderCredentialScope,
+        }),
     })
   ) {
     entry.availability = "plan_restricted";
@@ -362,51 +376,10 @@ function describeModelAvailability(params: {
   return entry;
 }
 
-async function loadDiscoveryModelPolicies(
-  tx: Tx,
-  orgId: string,
-  capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >,
-) {
-  const policies = await tx
-    .select({
-      model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-      ),
-    )
-    .limit(ACTIVE_RUN_MODELS.length);
-  if (policies.length === 0) {
-    throw new DiscoveryUnavailable(
-      "No active model policies are configured for this organization. Open model settings before creating a conversation.",
-    );
-  }
-  // Selection repairs defaults after plan changes. A read must not describe
-  // the pre-repair routes as if they were the configuration selection uses.
-  if (
-    shouldReplaceExistingDefaultForPlan(
-      policies.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
-  ) {
-    throw new DiscoveryUnavailable(
-      "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-    );
-  }
-  return policies;
+async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
+  // The system default is projected, so every organization has a policy.
+  const { policies, catalog } = await loadOrgModelPolicyFacts(tx, orgId);
+  return { policies, catalog };
 }
 
 async function appendAutoMemberMcpModels({
@@ -414,11 +387,13 @@ async function appendAutoMemberMcpModels({
   budget,
   principal,
   member,
+  catalog,
   capabilities,
   policiesByModel,
   models,
 }: {
   tx: Tx;
+  catalog: ModelCatalog;
   budget: ReadBudget;
   principal: Principal;
   member: MemberModelRouteContext;
@@ -443,10 +418,11 @@ async function appendAutoMemberMcpModels({
       continue;
     }
     const denied = checkOrgPlanRunAdmission({
+      catalog,
       capabilities,
       selectedModel: personal.model,
       modelProviderType: personal.providerType,
-      autoPersonalSubscription: true,
+      personalSubscription: true,
     });
     models.push({
       id: personal.model,
@@ -483,10 +459,9 @@ export async function listMcpModels(
           ? capabilities
           : { restrictedBuiltInModels: false, supportByok: true };
       await budget.beforeQuery(tx);
-      const policies = await loadDiscoveryModelPolicies(
+      const { policies, catalog } = await loadDiscoveryModelPolicies(
         tx,
         principal.orgId,
-        routeCapabilities,
       );
       await budget.beforeQuery(tx);
       const [preference] = await tx
@@ -519,14 +494,15 @@ export async function listMcpModels(
           return [policy.model, policy];
         }),
       );
-      for (const model of ACTIVE_RUN_MODELS) {
-        const policy = policiesByModel.get(model);
-        if (!policy) {
+      for (const policy of policies) {
+        const model = policy.model;
+        if (!isCatalogModelRunnable(catalog, model)) {
           continue;
         }
         await budget.beforeQuery(tx);
         const route = await resolveEffectivePolicyRoute({
           db: tx,
+          catalog,
           orgId: principal.orgId,
           policy,
           member,
@@ -534,7 +510,9 @@ export async function listMcpModels(
         });
         budget.check();
         const entry = describeModelAvailability({
+          catalog,
           model,
+          name: catalogDisplayName(catalog, model),
           defaultProviderType: policy.defaultProviderType,
           route,
           capabilities,
@@ -565,15 +543,19 @@ export async function listMcpModels(
         budget,
         principal,
         member,
+        catalog,
         capabilities,
         policiesByModel,
         models,
       });
+      const preferredModel = preference?.model
+        ? resolveCatalogRunModel(catalog, preference.model)
+        : null;
       const preferred = models.find((model) => {
-        return model.id === preference?.model && model.selectable;
+        return model.id === preferredModel && model.selectable;
       });
       const workspaceDefault = models.find((model) => {
-        return policiesByModel.get(model.id)?.isDefault && model.selectable;
+        return model.id === catalog.systemDefaultModel && model.selectable;
       });
       return {
         models,

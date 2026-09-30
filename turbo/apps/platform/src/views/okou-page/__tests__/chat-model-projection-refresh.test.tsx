@@ -36,7 +36,6 @@ function modelPolicy(personal: boolean, restricted = false): OrgModelPolicy {
     id: POLICY_ID,
     model: MODEL,
     modelLabel: "GPT 5.6 Sol",
-    isDefault: true,
     defaultProviderType: "built-in",
     runtimeProviderType: "openai-api-key",
     credentialScope: "org",
@@ -169,8 +168,6 @@ test.each([
         writePreconditionRequired: false,
         modelsAvailableToAdd: [],
         policies: [modelPolicy(personal, restricted)],
-        workspaceDefaultModel: MODEL,
-        workspaceDefaultPolicyId: POLICY_ID,
       });
     });
     // Reconnect callbacks belong to the real MessagePort protocol; the direct
@@ -233,8 +230,6 @@ async function setupHeldProjectionRefresh() {
         writePreconditionRequired: false,
         modelsAvailableToAdd: [],
         policies: [modelPolicy(true)],
-        workspaceDefaultModel: MODEL,
-        workspaceDefaultPolicyId: POLICY_ID,
       });
     },
   );
@@ -331,8 +326,6 @@ test("A local active-account change refreshes the member projection", async () =
       writePreconditionRequired: false,
       modelsAvailableToAdd: [],
       policies: [modelPolicy(personal)],
-      workspaceDefaultModel: MODEL,
-      workspaceDefaultPolicyId: POLICY_ID,
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {

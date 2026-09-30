@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
-  isCodexFastModeAvailableForSelection,
-  resolveModelFirstUserDefaultSelection,
+  isServiceTierAvailableForSelection,
+  resolveDefaultModelSelection,
 } from "./model-default-selection.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
@@ -69,31 +69,32 @@ export const chatPageModelSelection$ = computed(
       if (!user.value.codexServiceTier) {
         return selection;
       }
-      const policies = await get(orgModelPolicies$);
-      if (user.value.codexServiceTier === "ultrafast") {
-        const directAstra = policies?.policies.some((policy) => {
-          return (
-            policy.model === user.value?.selectedModel &&
-            policy.model === "gpt-6-astra" &&
-            getMemberModelPolicyRoute(policy).providerType === "openai-api-key"
-          );
-        });
-        return directAstra
-          ? { ...selection, codexServiceTier: "ultrafast" }
-          : selection;
-      }
-      return isCodexFastModeAvailableForSelection({
+      const [policies, catalog] = await Promise.all([
+        get(orgModelPolicies$),
+        get(modelCatalog$),
+      ]);
+      const ultrafast = user.value.codexServiceTier === "ultrafast";
+      return isServiceTierAvailableForSelection({
         policies,
+        catalog,
         selectedModel: user.value.selectedModel,
+        tier: ultrafast ? "ultrafast" : "priority",
       })
-        ? { ...selection, codexServiceTier: "fast" }
+        ? {
+            ...selection,
+            codexServiceTier: ultrafast ? "ultrafast" : "fast",
+          }
         : selection;
     }
-    const policies = await get(orgModelPolicies$);
-    const userPreference = await get(userModelPreference$);
-    return resolveModelFirstUserDefaultSelection({
+    const [policies, userPreference, catalog] = await Promise.all([
+      get(orgModelPolicies$),
+      get(userModelPreference$),
+      get(modelCatalog$),
+    ]);
+    return resolveDefaultModelSelection({
       userPreference,
       policies,
+      catalog,
     });
   },
 );

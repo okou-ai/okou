@@ -1,12 +1,33 @@
 import {
   MODEL_PROVIDER_TYPES,
-  getBuiltInModelPriceTier,
   isBuiltInModelProviderType,
   type ModelProviderType,
-  type SupportedRunModel,
-  type ModelPriceTier,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { i18n } from "../../../../i18n/index.ts";
+import type { ModelCatalog } from "../../../../signals/external/model-catalog.ts";
+
+/** Display price tiers; which tier a model has comes from the catalog. */
+export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
+
+const MODEL_PRICE_TIERS: ReadonlySet<string> = new Set([
+  "$",
+  "$$",
+  "$$$",
+  "$$$$",
+]);
+
+function isModelPriceTier(value: string | null): value is ModelPriceTier {
+  return value !== null && MODEL_PRICE_TIERS.has(value);
+}
+
+/** The catalog's Built-in display price tier of a model, if it has one. */
+export function getCatalogModelPriceTier(
+  catalog: ModelCatalog | null | undefined,
+  model: string,
+): ModelPriceTier | undefined {
+  const tier = catalog?.priceTier(model) ?? null;
+  return isModelPriceTier(tier) ? tier : undefined;
+}
 
 /**
  * Get the display label for a provider type (UI override or core fallback)
@@ -94,32 +115,25 @@ export function getMediaModelPriceTierLabel(tier: ModelPriceTier): string {
   }
 }
 
-const MODEL_BRAND_ICON: Readonly<Record<SupportedRunModel, ModelProviderType>> =
-  Object.freeze({
-    "okou-1.0": "built-in",
-    "claude-fable-5-1": "anthropic-api-key",
-    "claude-fable-5": "anthropic-api-key",
-    "claude-opus-5-5": "anthropic-api-key",
-    "claude-opus-5": "anthropic-api-key",
-    "claude-opus-4-8": "anthropic-api-key",
-    "claude-sonnet-5-5": "anthropic-api-key",
-    "claude-sonnet-5": "anthropic-api-key",
-    "claude-sonnet-4-6": "anthropic-api-key",
-    "deepseek-v4.1-flash": "deepseek",
-    "deepseek-v4-flash": "deepseek",
-    "deepseek-v4-pro": "deepseek",
-    "gpt-6-astra": "openai-api-key",
-    "gpt-6.1-sol": "openai-api-key",
-    "gpt-6-sol": "openai-api-key",
-    "gpt-6-luna": "openai-api-key",
-    "gpt-5.6-sol": "openai-api-key",
-    "gpt-5.6-luna": "openai-api-key",
-    "gpt-5.5": "openai-api-key",
-  });
+// Brand icons follow the vendor that serves a model's routes in the catalog.
+const BRAND_ICON_VENDORS: readonly ModelProviderType[] = [
+  "anthropic-api-key",
+  "openai-api-key",
+  "deepseek",
+];
 
 export function getModelBrandIconType(
-  model: SupportedRunModel,
+  model: string,
+  catalog: ModelCatalog | null | undefined,
 ): ModelProviderType {
-  return MODEL_BRAND_ICON[model];
+  const concreteProviders = new Set(
+    (catalog?.routes(model) ?? []).map((route) => {
+      return route.concreteProviderType;
+    }),
+  );
+  return (
+    BRAND_ICON_VENDORS.find((vendor) => {
+      return concreteProviders.has(vendor);
+    }) ?? "built-in"
+  );
 }
-export { getBuiltInModelPriceTier, type ModelPriceTier };

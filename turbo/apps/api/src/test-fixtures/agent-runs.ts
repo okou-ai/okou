@@ -29,6 +29,7 @@ import {
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
 import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
+import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 /**
  * Test fixtures for retired agent-run API capabilities.
@@ -425,6 +426,9 @@ export type DirectRunFixtureRequest = Omit<
 > & {
   readonly triggerSource?: TriggerSource;
   readonly connectorScope?: CreateAgentRunArgs["connectorScope"];
+  /** A requested model and route, as a caller that selects them passes them. */
+  readonly selectedModelOverride?: string;
+  readonly selectedModelProviderType?: string;
   readonly ownedSystemStorageMounts?: readonly {
     readonly storageId: string;
     readonly version?: string;
@@ -484,7 +488,13 @@ export async function createDirectRunFixture(args: {
   readonly body: DirectRunFixtureRequest;
   readonly signal: AbortSignal;
 }) {
-  const { connectorScope, ownedSystemStorageMounts, ...body } = args.body;
+  const {
+    connectorScope,
+    ownedSystemStorageMounts,
+    selectedModelOverride,
+    selectedModelProviderType,
+    ...body
+  } = args.body;
   const resolvedOwnedSystemStorageMounts =
     await resolveOwnedSystemStorageMounts(
       ownedSystemStorageMounts,
@@ -494,10 +504,12 @@ export async function createDirectRunFixture(args: {
   return await store.set(
     createAgentRun$,
     {
+      catalog: await loadModelCatalog(db()),
       userId: args.userId,
       orgId: args.orgId,
       apiStartTime: now(),
-      modelProviderType: body.modelProviderType,
+      modelProviderType: selectedModelProviderType ?? body.modelProviderType,
+      ...(selectedModelOverride === undefined ? {} : { selectedModelOverride }),
       piExecution: false,
       testOnlyResolveDirectRun: resolveDirectRun,
       connectorScope: connectorScope ?? {
@@ -632,6 +644,22 @@ export async function readRunModelRuntimeRouteFixture(runId: string) {
     .limit(1);
   if (!run) {
     throw new Error("Expected one run runtime route");
+  }
+  return run;
+}
+
+/** Launch options a run captured for its runtime (effort and service tier). */
+export async function readRunModelLaunchOptionsFixture(runId: string) {
+  const [run] = await db()
+    .select({
+      reasoningEffort: agentRuns.reasoningEffort,
+      codexServiceTier: agentRuns.codexServiceTier,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error("Expected one run launch options row");
   }
   return run;
 }

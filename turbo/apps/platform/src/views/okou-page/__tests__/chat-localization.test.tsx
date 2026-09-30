@@ -116,7 +116,6 @@ function configureModelRoute(): void {
       id: "00000000-0000-4000-a000-000000000081",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: true,
       defaultProviderType: "openrouter-api-key",
       credentialScope: "org",
       modelProviderId: OPENROUTER_PROVIDER_ID,

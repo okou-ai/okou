@@ -33,7 +33,10 @@ export async function observePiMemoryStage1Cost(
     (async () => {
       const observedAt = nowDate().toISOString();
       const entries = safeSync(() => {
-        return piMemoryStage1UsageEntries(args.model, args.usage);
+        return piMemoryStage1UsageEntries(
+          args.usage,
+          args.longContextMinTotalInputTokens,
+        );
       });
       const base = {
         operation: "pi_memory_stage1",

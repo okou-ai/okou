@@ -1,5 +1,52 @@
 # Deployment Compatibility
 
+## Long-context threshold in the Runner payload (2026-10-01)
+
+The long-context pricing threshold is catalog data:
+`model_routes.long_context_min_total_input_tokens` (migration
+`1302_model_route_long_context_threshold`, nullable, NULL = single tier,
+backfilled for every Built-in route from the former code resolution, so no
+existing route changes how it bills). The claim and direct-run execution
+context gain the optional field `modelUsageLongContextMinTotalInputTokens`,
+captured from the run's assigned route: a positive threshold, or `0` as the
+explicit single-tier marker. A new API always sends it. The Runner copies it
+unchanged into the proxy registry sandbox entry, and the mitm addon treats any
+present value as authoritative. Only an absent field falls back to the
+generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map keyed by
+`modelUsageProvider`. The registry and addon are runner-private and change
+atomically with the Runner binary (see
+[Runner process drain](#runner-process-drain)). Only the API → Runner hop
+crosses versions:
+
+| API | Runner | Behavior                                                                                                                                                                                                                                             |
+| --- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| old | old    | Unchanged: the addon classifies by the generated map keyed by `modelUsageProvider`.                                                                                                                                                                  |
+| old | new    | The field is absent and the addon falls back to the generated map, so classification is unchanged.                                                                                                                                                   |
+| new | old    | The old Runner ignores the unknown top-level field (`ExecutionContext` is not `deny_unknown_fields`) and classifies by the map. The backfilled routes equal the map, so they bill as before; a route whose threshold differs from the map would not. |
+| new | new    | The addon classifies by the captured value: a positive threshold for any provider (including ones absent from the map), `0` as a single tier even for a provider in the map.                                                                         |
+
+Until every serving Runner includes this change, do not give a route a
+threshold that differs from what the map yields for its `pricing_provider`:
+no threshold on a new model, pricing alias or other provider absent from the
+map, and no NULL on a route whose provider is in the map. Admission already
+prices such a route's `.long_context` categories, but an old Runner would bill
+them at the base tier (or bill a NULL route's long input at `.long_context`).
+Migration order: apply 1302 before promoting the API; the previous API does
+not select the column. Rollback of either side returns to map-only
+classification with the same caveat.
+
+Delete the generated Python map, `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+and the addon's absent-field fallback when the API rollback floor includes
+this change (no serving or rollback-target API omits the field) and no Runner
+that predates the field is serving. Do not add entries to the map meanwhile;
+new thresholds belong on route rows.
+
+Usage displays now name model usage rows by `agent_runs.selected_model`, joined
+by `run_id`. This is a read-time API projection: stored `usage_event`,
+`usage_event_hourly_rollup` rows and existing `usage.recorded` chat events are
+unchanged. An old App shows the new response values through its existing
+catalog mapping. No database migration is involved.
+
 ## Storage version reuse and reference-first Clerk cleanup
 
 Registered Storage versions are reused from their database metadata without an
@@ -38,6 +85,164 @@ old API instance may still accept Ultrafast until the API rollout completes;
 the new App alone does not disable old API instances. Rolling back restores the
 previous availability. Re-enabling requires verified account-specific tier
 discovery, rather than assuming subscription eligibility from the model name.
+
+With the global model catalog below, this pause is catalog data rather than a
+code check: migration 1298 seeds the `gpt-6-astra` `openai-api-key` route with
+`service_tiers = {priority}` only, so every Ultrafast check (pickers, member
+preference, thread selection, send, run creation and claim) finds no route
+offering it and returns `400`. Re-enabling is a `model_routes` data change.
+
+## Global model catalog and projected system default (2026-09-30)
+
+The server model catalog (`run_model_catalog` plus `model_routes`, served by
+`GET /api/model-catalog`) becomes the only authority for model names, order,
+the system default, retirement and replacement, price tiers and route
+capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
+product authority, and the system default is the DB row with
+`is_system_default = true`. Code still owns runtime adapters, keyed by
+provider (Built-in concrete provider vendor pool, BYOK/subscription provider
+type), never by model ID: `SUPPORTED_RUN_MODELS`, `SupportedRunModel`,
+`isSupportedRunModel` and `supportedRunModelSchema` are removed, so a model
+added only as catalog and route rows on an existing protocol is configurable
+and runnable by the new API, IM model pickers and CLI (Pi too, when its route's
+upstream model is one the pinned Pi runtime resolves). No schema change; the
+previous API still rejects such a row as unsupported, so operators add
+catalog-only models after this API is fully deployed. The CLI no longer
+pre-rejects model IDs outside its bundled list; an old CLI still does. Free-plan
+model access is catalog data (`built_in_on_restricted_plans`, migration 1300,
+true only for `okou-1.0`), read by model policy writes, run admission and the
+Platform; the static `isLimitedFree1RestrictedRunModel` allowlist is gone and
+is not reproduced. Free plans (`limited-free-1` and legacy `free`, whose
+`restricted_built_in_models` migration 1300 backfills to true) run only
+`okou-1.0` on Built-in, or a model on the member's own connected Claude Code or
+Codex subscription route; organization BYOK and custom gateways are no longer
+free-plan entitlements. During the rolling window the old API still enforces
+its code allowlist against the backfilled legacy Free rows, which only narrows
+access earlier; stored selections that become restricted fail explicitly
+(`PRO_REQUIRED`) rather than being rewritten. Custom-gateway mapping
+follows the model's routes instead of hard-coded model IDs. The organization default is not configurable: the
+catalog system default (`okou-1.0`, Auto) is projected into every
+organization's `GET /api/model-policies` as a non-deletable system policy and
+is not stored per organization. Resolution is thread selection, then member
+preference, then the system default. Stored selections of retired models
+resolve along the replacement chain (`claude-fable-5` → `claude-fable-5-1`,
+`claude-opus-4-8` → `claude-opus-5-5`, `claude-sonnet-4-6` →
+`claude-sonnet-5-5`, `deepseek-v4-pro` and `gpt-5.5` → `gpt-6-luna`); a
+replacement never transplants credentials, and a selection whose provider type
+has no route on the replacement fails explicitly. Chains may have several hops,
+constrained by `lineage_rank` (each hop strictly increases it). App credit
+usage and history show a run's own model name from the catalog, including
+retired models, never the replacement's name. Built-in runtime candidates
+come from enabled `model_routes` rows, and the API takes BYOK and
+subscription upstream IDs from the route's `upstream_model`; the Pi execution
+config in `@okouai/core` still uses the static route tables (not finished, see
+the design note). The `OkouModels` feature
+switch is removed. See [the design note](model-catalog.md).
+
+Migrations:
+
+- `1297_okou_1_0_fixed_org_default` intentionally changes no data. It copies
+  no per-organization default row and leaves `org_model_policies.is_default`
+  and its values untouched.
+- `1298_global_model_catalog` adds `display_name`, `sort_order`,
+  `is_system_default`, `replaced_by`, `lineage_rank` and
+  `replaced_by_lineage_rank` to `run_model_catalog` (rank-based acyclic
+  replacement chains, no triggers) and adds `model_routes`. It seeds every
+  recognized model, the system default, the approved replacements and routes
+  (Built-in candidates, BYOK compatibility and a copy of
+  `subscription_model_catalog`), and fails rather than dropping rows if that
+  table lists a model outside the active catalog. Existing
+  `allow_new_org_policy` values are preserved. There is no generic delete:
+  unrecognized rows are kept with their ID as label, sorted last,
+  `allow_new_org_policy = false` and no routes. `gpt-5.6-terra`,
+  `okou-1.0-pro` and `okou-1.0-max` (seeded by migrations 1191 and 1194; code
+  support removed by #37363 and #37368; MaskDB on 2026-09-30 shows zero
+  references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
+  `agents` and `model_providers`) are kept with their former labels, no
+  routes and `allow_new_org_policy = false`, and are retired into the
+  owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0`. The previous
+  API does not offer them either: they have no adapter or route and are not
+  addable.
+- `1299_model_catalog_stored_selections` rewrites mutable stored selections of
+  retired models to their final replacement: `org_model_policies.model` (only
+  onto a replacement route of the same provider type; incompatible retired
+  policies are dropped and merged duplicates keep one row, moving the legacy
+  `is_default` flag onto the survivor), `org_members_metadata.selected_model`
+  and `model_settings`, `agents.selected_model` and
+  `model_providers.selected_model`, and chat thread selections
+  (`chat_threads.selected_model` and `model_settings`, with one
+  `model_selection_updated` event per re-pinned thread; a thread whose
+  provider pin cannot serve the replacement keeps its retired model and the
+  API resolves it on read). It is re-runnable and serializes with API policy
+  writes through the per-organization advisory lock. It never touches history
+  (`agent_runs`, `chat_events` including queued inputs, usage and billing,
+  session conversations) or custom-gateway `model_mappings`; the API rechecks
+  queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
+  is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
+  turns on the catalog's restricted-plan flags and stores no model IDs, so
+  1299 has nothing to rewrite there.
+- Production impact of 1299: as of MaskDB on 2026-09-30, no chat thread,
+  organization policy, member preference, agent or model provider references
+  any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
+  `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
+  `okou-1.0-max`. The migration rewrites zero production rows. Every rewrite
+  statement scans its table once (no `selected_model`/`model` index exists);
+  on synthetic data at production scale (162,621 chat threads, 32,810
+  policies) the whole migration took 0.21 s with zero matches and 1.01 s with
+  10% matches, and 1.29 s at 5x scale with 1% matches, far below a 10 s
+  statement timeout, so batching is unnecessary. 1299 analyzes its rewrite
+  map before the chat thread scan; without it the planner sorted every thread
+  first (2.0 s at 5x). Evidence and the verified/unverified boundary:
+  `turbo/packages/db/MIGRATIONS.md`, "Migration 1299 performance evidence".
+- `1300_model_catalog_restricted_plans` adds the
+  two restricted-plan flags to `run_model_catalog` with defaults and seeds
+  them from the former code allowlist. Additive; the previous API ignores the
+  columns.
+- `1301_model_catalog_pi_route_class` (in progress in this PR) adds nullable
+  `run_model_catalog.pi_route_class` with a check constraint and seeds it
+  from the former `@okouai/core` Pi policy. Additive; the previous API
+  ignores the column and keeps its static Pi policy.
+- Queue pick: an input enqueued by the previous API is re-resolved by the new
+  API against the catalog at the pick (provider-prefixed upstream IDs and
+  replacements included); runs that already started are unaffected. The
+  pick no longer seeds per-organization policies under the policy advisory
+  lock; the projected system default replaces that write.
+
+Old and new versions during deploy:
+
+- Previous API after the migrations: it ignores the new catalog columns and
+  `model_routes` and still reads `allow_new_org_policy`,
+  `subscription_model_catalog` and `is_default`, all of which are kept. After
+  1299 it no longer finds policies of the retired models, which its code
+  already treats as retired. The new API clears `is_default` on its policy
+  writes and does not store a default row; how the previous API's default
+  repair reacts to an organization without an `is_default` row was not
+  confirmed here (unverified).
+- Old App, iOS and CLI against the new API: the deprecated response fields
+  `isDefault` and `workspaceDefaultPolicyId` are removed from
+  `GET /api/model-policies`. `workspaceDefaultModel` is kept as a
+  compatibility field whose value is always the catalog system default:
+  released CLIs resolve a thread without a selected model to it
+  (`okou workflow automation show`, `okou chat model`), and `automation show`
+  exits with an error when it is absent. Released CLIs only use a missing
+  `isDefault` to omit the "(default)" marker. Remove `workspaceDefaultModel`
+  once the CLI floor excludes builds that read it (tracked in #37442).
+  Released iOS builds decode
+  `isDefault` as required and cannot read the policy list until they upgrade;
+  the owner accepted this iOS break, so no iOS compatibility is kept. A
+  request `isDefault` is stripped. Old clients that
+  still send the default policy in `PUT /api/model-policies` are accepted and
+  that entry is ignored; omitting it is no longer an error. A retired model
+  ID sent as a run or thread selection is resolved to its replacement, or
+  fails explicitly when no compatible route exists; adding a policy for a
+  retired model is rejected. Old clients keep showing their bundled labels
+  until upgraded.
+- New App, iOS and CLI require `GET /api/model-catalog`, which ships with this
+  API release; they are released after it.
+- Rollback: 1298 and 1299 are forward-only data changes that the previous API
+  tolerates (it ignores the new columns and table). Rewritten selections stay
+  on their replacements after a rollback; rows dropped by 1299 (retired
+  policies with no compatible replacement route) are not restored.
 
 ## Integration model commands are thread-scoped (2026-09-29)
 
@@ -4969,28 +5174,14 @@ existing models but cannot consume Sol jobs. Sol work waits until a supporting
 Runner is available. The capability remains necessary while an incompatible
 Runner is a supported rollback target; no database migration is involved.
 
-#### Claude Opus 5.5 native model readiness
+#### Claude Opus 5.5 native model readiness (retired)
 
-Poll and claim requests advertise `X-Native-Claude-Opus-5-5: 1` only from
-Runner artifacts whose bundled Guest accepts Claude Opus 5.5, its gateway alias,
-and the model's reasoning efforts. The API checks this capability before an old
-Runner can claim Claude Code work whose canonical `modelUsageProvider` is
-`claude-opus-5-5`. The logical identity is used instead of `ANTHROPIC_MODEL` so
-the guard also covers OpenRouter, Vercel, Azure deployment names, Bedrock
-foundation models and opaque cloud profiles.
-
-Poll excludes unsupported Opus 5.5 jobs before applying its candidate limit, so
-old Runners can still discover existing work behind one. Claim repeats the
-check for direct notifications and previously discovered work. A claimant
-without the header receives the existing claim `404`; the job remains pending
-for a capable Runner.
-
-The header leaves strict request bodies unchanged and is ignored by old APIs.
-During API-first promotion or Runner rollback, old Runners continue executing
-existing models while Opus 5.5 work waits. The model remains on the Claude Code
-harness until the pinned Pi catalog can resolve and verify it. No organization
-default or stored model selection changes, and no database migration is part of
-this compatibility boundary.
+The `X-Native-Claude-Opus-5-5` Runner capability and its poll/claim guard were
+removed with the expired compatibility cleanup (#37056); every serving and
+rollback-eligible Runner accepts Claude Opus 5.5. No API capability guard keys
+on `modelUsageProvider`, so a route pricing alias cannot bypass one. A future
+model capability guard must key on the run's actual model or captured route,
+never on the pricing identity.
 
 #### Runner process drain
 

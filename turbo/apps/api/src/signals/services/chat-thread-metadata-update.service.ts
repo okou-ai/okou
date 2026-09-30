@@ -31,6 +31,7 @@ import {
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
@@ -319,8 +320,12 @@ async function resolveModelColumns(
   if ("status" in pin) {
     return { kind: "response", response: pin };
   }
+  const catalog = await loadModelCatalog(tx);
+  signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel: pin.selectedModel,
+    modelProviderType: pin.modelProviderType,
     modelSettings: modelSettingsSchema.parse(current.modelSettings),
     requested: args.patch.reasoningEffort,
   });
@@ -331,7 +336,11 @@ async function resolveModelColumns(
     args.codexServiceTier.kind === "preserve"
       ? current.codexServiceTier
       : args.codexServiceTier.value;
-  const tierError = validateCodexServiceTier({ pin, codexServiceTier });
+  const tierError = validateCodexServiceTier({
+    catalog,
+    pin,
+    codexServiceTier,
+  });
   if (tierError) {
     return { kind: "response", response: tierError };
   }

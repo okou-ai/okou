@@ -318,9 +318,7 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     ).toBeVisible();
   });
   click(within(dialog).getByRole("combobox", { name: "GPT 6 Astra Fast" }));
-  click(
-    await screen.findByRole("option", { name: "Inherit from org default" }),
-  );
+  click(await screen.findByRole("option", { name: "Org default (Auto)" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
       selectedModel: null,
@@ -328,7 +326,7 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     });
     expect(
       within(dialog).getByRole("combobox", {
-        name: "Inherit from org default",
+        name: "Org default (Auto)",
       }),
     ).toBeVisible();
   });

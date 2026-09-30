@@ -2,7 +2,7 @@ import {
   isBuiltInModelProviderType,
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
-  supportedRunModelSchema,
+  runModelIdSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -79,8 +79,8 @@ function parsedModelProvider(
 function parsedSelectedModel(
   run: AgentRunFailureLogSnapshot,
 ): string | undefined {
-  const result = supportedRunModelSchema.safeParse(run.selectedModel);
-  return result.success ? result.data : undefined;
+  // Any catalog model ID is logged; the static model list is not an authority.
+  return runModelIdSchema.safeParse(run.selectedModel).data;
 }
 
 function modelCredentialOwner(

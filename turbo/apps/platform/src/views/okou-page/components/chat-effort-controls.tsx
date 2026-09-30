@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
+import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
 import {
   availableChatReasoningEfforts,
   effectiveChatReasoningEffort,
@@ -23,12 +24,13 @@ export function useChatEffort(
   selection: ModelProviderSelection | null | undefined,
 ) {
   const policies = useLastResolved(orgModelPolicies$);
+  const catalog = useLastResolved(modelCatalog$);
   const policy = policies?.policies.find((entry) => {
     return entry.model === selection?.selectedModel;
   });
   return {
-    efforts: availableChatReasoningEfforts(selection, policy),
-    effort: effectiveChatReasoningEffort(selection, policy),
+    efforts: availableChatReasoningEfforts(selection, policy, catalog),
+    effort: effectiveChatReasoningEffort(selection, policy, catalog),
     builtIn:
       policy !== undefined &&
       isBuiltInModelProviderType(

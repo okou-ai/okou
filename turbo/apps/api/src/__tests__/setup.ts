@@ -12,6 +12,7 @@ import {
 import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
 import { clearAllDetached } from "../signals/utils";
+import { seedDevelopmentModelPricingForTests } from "../test-fixtures/usage-pricing";
 
 const testDataKey = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
@@ -39,10 +40,11 @@ aroundEach(async (runTest) => {
   await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
 });
 
-beforeAll(() => {
+beforeAll(async () => {
   server.listen({ onUnhandledRequest: "error" });
   // SDK transports can import named HTTP exports instead of the CJS module.
   syncBuiltinESMExports();
+  await seedDevelopmentModelPricingForTests();
 });
 
 beforeEach(() => {

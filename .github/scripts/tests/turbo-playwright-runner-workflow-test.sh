@@ -83,11 +83,11 @@ grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
   fail "paid runner accounts must use the public checkout API"
 grep -Fq 'fillStripeCheckout' "$RUNNER_TOKEN" ||
   fail "real runner accounts must complete the public Stripe checkout"
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 4 ]]; then
-  fail "both real Codex accounts, real Claude, and mock Claude must upgrade to Pro"
-fi
-if [[ "$(grep -Fc 'upgradeToPro: false' "$RUNNER_TOKEN")" -ne 1 ]]; then
-  fail "the default mock runner account must remain on limited-free"
+# Free plans run only okou-1.0 on Built-in, so every runner account (both real
+# Codex accounts, real Claude, mock Claude, and the default mock runner) is paid.
+if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
+  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 5 ]]; then
+  fail "all five runner accounts, including the default mock runner, must upgrade to Pro"
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
@@ -489,7 +489,7 @@ unless model_defaults_script.include?("/api/model-policies") &&
     model_defaults_script.include?("deepseek-v4-flash") &&
     model_defaults_script.include?("gpt-5.6-luna") &&
     model_defaults_script.scan('defaultProviderType: "built-in"').length == 2 &&
-    model_defaults_script.include?('{"selectedModel":null,"serviceTier":null}')
+    model_defaults_script.include?('{"selectedModel":"deepseek-v4-flash","serviceTier":null}')
   raise "runner bootstrap must reset the limited-free model defaults"
 end
 %w[claude-opus-4-7 claude-sonnet-4-6 gpt-5.5].each do |restricted_model|
@@ -577,10 +577,10 @@ built_in_codex_script = built_in_codex_step.fetch("run")
     raise "built-in Codex bootstrap must include #{required_fragment}"
   end
 end
-unless built_in_codex_script.include?('"model":"gpt-6-astra","isDefault":true') &&
-    built_in_codex_script.include?('"model":"gpt-5.6-luna","isDefault":false') &&
-    built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
+unless built_in_codex_script.include?('"model":"gpt-6-astra","defaultProviderType":"built-in"') &&
+    built_in_codex_script.include?('"model":"gpt-5.6-luna","defaultProviderType":"built-in"') &&
     built_in_codex_script.include?('"modelProviderId":null') &&
+    built_in_codex_script.include?('{"selectedModel":"gpt-6-astra","serviceTier":null}') &&
     built_in_codex_script.include?('"_realAgentInPreview":true')
   raise "native Astra and Pi Luna must retain their isolated account setup"
 end
@@ -610,6 +610,26 @@ end
 unless claude_script.include?('defaultProviderType: "built-in"') &&
     claude_script.include?("modelProviderId: null")
   raise "real Claude bootstrap must use the built-in provider"
+end
+# New organizations start in Auto mode, which rejects policy writes; every
+# account that writes policies must enter Custom mode before reading them.
+{
+  "runner defaults" => model_defaults_script,
+  "mock Claude" => mock_claude_script,
+  "real Codex" => codex_script,
+  "built-in Codex" => built_in_codex_script,
+  "real Claude" => claude_script,
+}.each do |account, script|
+  enable_debug = script.index('{"switches":{"_debug":true}}')
+  enter_custom = script.index('{"mode":"custom"}')
+  disable_debug = script.index('{"switches":{"_debug":false}}')
+  first_policy_read = script.index("/api/model-policies\"")
+  unless enable_debug && enter_custom && disable_debug && first_policy_read &&
+      script.include?("/api/model-policies/mode") &&
+      enable_debug < enter_custom && enter_custom < disable_debug &&
+      disable_debug < first_policy_read
+    raise "#{account} bootstrap must enter Custom model mode before writing policies"
+  end
 end
 
 shard_step = runner.fetch("steps").find do |step|

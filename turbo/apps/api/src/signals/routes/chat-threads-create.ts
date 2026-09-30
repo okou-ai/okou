@@ -37,6 +37,7 @@ import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadDefaults } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import { loadModelCatalog } from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
@@ -211,7 +212,10 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in pin) {
     return pin;
   }
+  const catalog = await loadModelCatalog(writeDb);
+  signal.throwIfAborted();
   const codexServiceTierError = validateCodexServiceTier({
+    catalog,
     pin,
     codexServiceTier,
   });
@@ -225,7 +229,9 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel: pin.selectedModel,
+    modelProviderType: pin.modelProviderType,
     modelSettings: defaults.modelSettings,
     requested: body.data.reasoningEffort,
   });

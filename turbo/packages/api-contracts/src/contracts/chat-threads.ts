@@ -17,7 +17,7 @@ import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
-import { supportedRunModelSchema } from "./model-providers";
+import { runModelIdSchema } from "./model-providers";
 import {
   avatarVideoAspectRatioSchema,
   avatarVideoVoiceIdSchema,
@@ -995,7 +995,7 @@ const chatThreadDraftSchema = z
   })
   .superRefine(requireUserMessageForDraftAttachments);
 
-const selectedModelRequestSchema = supportedRunModelSchema;
+const selectedModelRequestSchema = runModelIdSchema;
 
 const chatThreadCreateBodySchema = z.object({
   agentId: z.string().min(1),

@@ -763,7 +763,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

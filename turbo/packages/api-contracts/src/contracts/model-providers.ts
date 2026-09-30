@@ -3,17 +3,10 @@ import { z } from "zod";
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
 import {
   OKOU_MODEL_CODEX_CATALOG,
-  OKOU_MODEL_METADATA,
   OKOU_RUN_MODELS,
   type OkouRunModel,
 } from "./okou-model-metadata";
-import {
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
-  type SupportedRunModel,
-  type ModelPriceTier,
-} from "./model-price-tiers";
+import type { ModelPriceTier } from "./model-price-tiers";
 import {
   MODEL_PROVIDER_TYPE_IDS,
   isBuiltInModelProviderType,
@@ -71,13 +64,7 @@ const DEEPSEEK_MODEL_CATALOG = {
   ],
 };
 
-export {
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
-  type SupportedRunModel,
-  type ModelPriceTier,
-};
+export type { ModelPriceTier };
 
 /**
  * Secret field configuration for multi-secret providers
@@ -162,19 +149,13 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   },
 };
 
-export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
-  "claude-fable-5-1",
-  "gpt-6-astra",
-  "gpt-6-luna",
-] as const satisfies readonly SupportedRunModel[];
-
-export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "gpt-6-luna" as const satisfies SupportedRunModel;
-
-export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "gpt-6-luna" as const satisfies SupportedRunModel;
-
-export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
+/**
+ * A run model ID on the wire. The global model catalog (served by
+ * `GET /api/model-catalog`) is the authority; the API validates and resolves
+ * the ID against it, so clients can pass catalog models this package does
+ * not list.
+ */
+export const runModelIdSchema = z.string().trim().min(1).max(255);
 
 export const modelProviderCredentialScopeSchema = z.enum(["org", "member"]);
 
@@ -182,45 +163,9 @@ export type ModelProviderCredentialScope = z.infer<
   typeof modelProviderCredentialScopeSchema
 >;
 
-export interface DefaultOrgModelPolicySeed {
-  model: SupportedRunModel;
-  isDefault: boolean;
-  defaultProviderType: "built-in";
-  credentialScope: "org";
-  modelProviderId: null;
-}
-
-const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
-  "okou-1.0": "Auto",
-  "claude-fable-5-1": "Claude Fable 5.1",
-  "claude-fable-5": "Claude Fable 5",
-  "claude-opus-5-5": "Claude Opus 5.5",
-  "claude-opus-5": "Claude Opus 5",
-  "claude-opus-4-8": "Claude Opus 4.8",
-  "claude-sonnet-5-5": "Claude Sonnet 5.5",
-  "claude-sonnet-5": "Claude Sonnet 5",
-  "claude-sonnet-4-6": "Claude Sonnet 4.6",
-  "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
-  "deepseek-v4-flash": "DeepSeek V4 Flash",
-  "deepseek-v4-pro": "DeepSeek V4 Pro",
-  "gpt-6-astra": "GPT 6 Astra",
-  "gpt-6.1-sol": "GPT 6.1 Sol",
-  "gpt-6-sol": "GPT 6 Sol",
-  "gpt-6-luna": "GPT 6 Luna",
-  "gpt-5.6-sol": "GPT 5.6 Sol",
-  "gpt-5.6-luna": "GPT 5.6 Luna",
-  "gpt-5.5": "GPT 5.5",
-};
-
-const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
-  SUPPORTED_RUN_MODELS,
-);
-
 export { OKOU_RUN_MODELS, type OkouRunModel };
 
-const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(
-  OKOU_RUN_MODELS satisfies readonly SupportedRunModel[],
-);
+const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
 
 export function isOkouRunModel(
   model: string | null | undefined,
@@ -228,119 +173,43 @@ export function isOkouRunModel(
   return typeof model === "string" && OKOU_RUN_MODEL_SET.has(model);
 }
 
-const RETIRED_RUN_MODELS = [
-  "claude-fable-5",
-  "claude-opus-4-8",
-  "claude-sonnet-4-6",
-  "deepseek-v4-pro",
-  "gpt-5.5",
-] as const satisfies readonly SupportedRunModel[];
-
-type RetiredRunModel = (typeof RETIRED_RUN_MODELS)[number];
-
-const RETIRED_RUN_MODEL_SET: ReadonlySet<string> = new Set(RETIRED_RUN_MODELS);
-
-export type ActiveRunModel = Exclude<SupportedRunModel, RetiredRunModel>;
-
-// Historical IDs remain in the wire schemas and billing catalog. Availability
-// is a separate product decision, including for provider-prefixed aliases.
+// Retirement and replacement are owned by the global model catalog
+// (`run_model_catalog.replaced_by`).
 export const RETIRED_RUN_MODEL_MESSAGE =
   "This model has been retired. Select another available model.";
 
-export function getRunModelAccess(
-  model: string | null | undefined,
-  restrictedBuiltInModels = false,
-): "allowed" | "pro_required" | "retired" {
-  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  if (RETIRED_RUN_MODEL_SET.has(canonical)) {
-    return "retired";
-  }
-  return restrictedBuiltInModels && isLimitedFree1RestrictedRunModel(model)
-    ? "pro_required"
-    : "allowed";
+/**
+ * Plan policy of one catalog model (`run_model_catalog`) for organizations
+ * whose plan restricts Built-in models.
+ */
+export interface RestrictedPlanModelAccess {
+  readonly builtInOnRestrictedPlans: boolean;
 }
 
-/** Plan model restrictions apply unless the route is known to be BYOK. */
-export function getRunModelRouteAccess(
-  model: string | null | undefined,
+/**
+ * Plan access of a catalog model on a route. A restricted plan runs only
+ * catalog models flagged `builtInOnRestrictedPlans`, and only on Built-in
+ * routes (a missing or unknown provider type is treated as Built-in). Every
+ * other route is the organization's or member's own and is not a plan
+ * entitlement; the one exception, a member's verified personal subscription
+ * route, is decided by the API before it calls this (it passes an
+ * unrestricted plan). A model outside the catalog (`access` undefined) is
+ * never allowed on a restricted plan.
+ */
+export function getCatalogRunModelRouteAccess(
+  access: RestrictedPlanModelAccess | undefined,
   providerType: string | null | undefined,
   restrictedBuiltInModels = false,
-): "allowed" | "pro_required" | "retired" {
-  const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
+): "allowed" | "pro_required" {
+  if (!restrictedBuiltInModels) {
+    return "allowed";
+  }
+  const ownRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
-  // Newly launched paid models are restricted on managed and BYOK routes.
-  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  return getRunModelAccess(
-    model,
-    restrictedBuiltInModels &&
-      (canonical === "claude-sonnet-5-5" ||
-        canonical === "gpt-6.1-sol" ||
-        !knownByokRoute),
-  );
-}
-
-export function isActiveRunModel(
-  model: string | null | undefined,
-): model is ActiveRunModel {
-  return isSupportedRunModel(model) && getRunModelAccess(model) === "allowed";
-}
-
-export function isSupportedRunModel(
-  model: string | null | undefined,
-): model is SupportedRunModel {
-  return typeof model === "string" && SUPPORTED_RUN_MODEL_SET.has(model);
-}
-
-/** Models supported by the Codex Fast service tier. */
-export const CODEX_FAST_MODE_MODELS = [
-  "gpt-6-astra",
-  "gpt-6.1-sol",
-  "gpt-6-sol",
-  "gpt-6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
-] as const satisfies readonly SupportedRunModel[];
-
-const CODEX_FAST_MODE_MODEL_SET: ReadonlySet<string> = new Set(
-  CODEX_FAST_MODE_MODELS,
-);
-
-export function isCodexFastModeModel(
-  model: string | null | undefined,
-): boolean {
-  const bareModel = model?.startsWith("openai/")
-    ? model.slice("openai/".length)
-    : model;
-  return (
-    typeof bareModel === "string" && CODEX_FAST_MODE_MODEL_SET.has(bareModel)
-  );
-}
-
-export function getBuiltInModelPriceTier(
-  model: string,
-): ModelPriceTier | undefined {
-  return isSupportedRunModel(model)
-    ? BUILT_IN_MODEL_PRICE_TIER[model]
-    : undefined;
-}
-
-export function getCanonicalModelDisplayName(model: string): string {
-  return isSupportedRunModel(model) ? SUPPORTED_RUN_MODEL_LABELS[model] : model;
-}
-
-export function getDefaultOrgModelPolicySeed(
-  defaultModel: SupportedRunModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-): DefaultOrgModelPolicySeed[] {
-  return DEFAULT_ORG_MODEL_POLICY_MODELS.map((model) => {
-    return {
-      model,
-      isDefault: model === defaultModel,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    };
-  });
+  return !ownRoute && access?.builtInOnRestrictedPlans === true
+    ? "allowed"
+    : "pro_required";
 }
 
 /**
@@ -358,183 +227,25 @@ export const BUILT_IN_MODEL_ROUTE_PROVIDERS = {
 export type BuiltInModelRouteProviderType =
   keyof typeof BUILT_IN_MODEL_ROUTE_PROVIDERS;
 
-export interface BuiltInModelRouteCandidate {
-  readonly concreteType: BuiltInModelRouteProviderType;
-  // Overrides the display-name when substituting `$model` in the concrete
-  // provider's env bindings. Needed when the upstream API expects a
-  // different identifier than what we show to users.
-  readonly apiModel?: string;
+/** The key-pool vendor of a concrete Built-in provider; undefined for others. */
+export function getBuiltInRouteProviderVendor(
+  concreteProviderType: string,
+): string | undefined {
+  return BUILT_IN_ROUTE_PROVIDER_VENDORS.get(concreteProviderType);
 }
 
-interface ModelConfig {
-  readonly candidates: readonly [
-    BuiltInModelRouteCandidate,
-    ...BuiltInModelRouteCandidate[],
-  ];
-}
+const BUILT_IN_ROUTE_PROVIDER_VENDORS: ReadonlyMap<string, string> = new Map(
+  Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).map(([type, provider]) => {
+    return [type, provider.vendor];
+  }),
+);
 
-// Execution routes contain only active models. Historical recognition and
-// retirement validation must not depend on a model retaining an executable route.
-export const BUILT_IN_MODEL_TO_PROVIDER = {
-  "claude-fable-5-1": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-fable-5.1",
-      },
-    ],
-  },
-  "claude-opus-5-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-opus-5.5",
-      },
-    ],
-  },
-  "claude-opus-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-opus-5",
-      },
-    ],
-  },
-  "claude-sonnet-5-5": {
-    candidates: [{ concreteType: "anthropic-api-key" }],
-  },
-  "claude-sonnet-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-sonnet-5",
-      },
-    ],
-  },
-  "okou-1.0": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0"].presetModel,
-      },
-    ],
-  },
-  "deepseek-v4.1-flash": {
-    candidates: [
-      { concreteType: "deepseek", apiModel: "deepseek-flash" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "deepseek/deepseek-v4.1-flash",
-      },
-    ],
-  },
-  "deepseek-v4-flash": {
-    candidates: [
-      { concreteType: "deepseek" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "deepseek/deepseek-v4-flash",
-      },
-    ],
-  },
-  // Permanent Built-in availability routing: prefer OpenAI, then use
-  // OpenRouter when the primary candidate has no key or is in cooldown.
-  // This is operational routing, not a cross-version compatibility bridge.
-  "gpt-6-astra": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-astra",
-      },
-    ],
-  },
-  "gpt-6.1-sol": {
-    candidates: [{ concreteType: "openai-api-key" }],
-  },
-  "gpt-6-sol": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-sol",
-      },
-    ],
-  },
-  "gpt-6-luna": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-luna",
-      },
-    ],
-  },
-  "gpt-5.6-sol": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.6-sol",
-      },
-    ],
-  },
-  "gpt-5.6-luna": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.6-luna",
-      },
-    ],
-  },
-} as const satisfies Record<ActiveRunModel, ModelConfig>;
-
-export interface BuiltInModelRouteTarget {
-  readonly selectedModel: SupportedRunModel;
-  readonly providerType: BuiltInModelRouteProviderType;
-  readonly upstreamModel: string;
-  readonly vendor: string;
-}
-
-function builtInPrimaryCandidate(model: string): BuiltInModelRouteCandidate {
-  if (!isActiveRunModel(model)) {
-    throw new Error(
-      `Unknown built-in model "${model}". Valid models: ${Object.keys(BUILT_IN_MODEL_TO_PROVIDER).join(", ")}`,
-    );
-  }
-  return BUILT_IN_MODEL_TO_PROVIDER[model].candidates[0];
-}
-
-export function getBuiltInModelRouteCandidates(
-  model: string,
-): readonly BuiltInModelRouteTarget[] {
-  if (!isActiveRunModel(model)) {
-    throw new Error(
-      `Unknown built-in model "${model}". Valid models: ${Object.keys(BUILT_IN_MODEL_TO_PROVIDER).join(", ")}`,
-    );
-  }
-  return BUILT_IN_MODEL_TO_PROVIDER[model].candidates.map((candidate) => {
-    return {
-      selectedModel: model,
-      providerType: candidate.concreteType,
-      upstreamModel: "apiModel" in candidate ? candidate.apiModel : model,
-      vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[candidate.concreteType].vendor,
-    };
-  });
-}
-
+/** Vendors of every concrete provider a Built-in route can use (key pools). */
 export function getBuiltInModelRouteVendors(): readonly string[] {
   return [
     ...new Set(
-      Object.values(BUILT_IN_MODEL_TO_PROVIDER).flatMap((config) => {
-        return config.candidates.map((candidate) => {
-          return BUILT_IN_MODEL_ROUTE_PROVIDERS[candidate.concreteType].vendor;
-        });
+      Object.values(BUILT_IN_MODEL_ROUTE_PROVIDERS).map((provider) => {
+        return provider.vendor;
       }),
     ),
   ];
@@ -551,43 +262,14 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
-} as const satisfies Record<string, SupportedRunModel>;
+} as const satisfies Record<string, string>;
 
 const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
 
-const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
-  "okou-1.0",
-  "gpt-6-luna",
-  "gpt-5.6-luna",
-  "deepseek-v4.1-flash",
-  "deepseek-v4-flash",
-]);
-
 export function normalizeBuiltInModelId(model: string): string {
   return BUILT_IN_MODEL_ALIAS_LOOKUP[model] ?? model;
 }
-
-export function isLimitedFree1RestrictedRunModel(
-  model: string | null | undefined,
-): boolean {
-  if (!model) {
-    return false;
-  }
-  const normalized = model.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  const canonicalModel = normalizeBuiltInModelId(normalized);
-  const unprefixedModel = canonicalModel.replace(
-    /^(anthropic|deepseek|openai)\//,
-    "",
-  );
-  return !LIMITED_FREE1_ALLOWED_RUN_MODELS.has(unprefixedModel);
-}
-
-export const ACTIVE_RUN_MODELS: readonly SupportedRunModel[] =
-  SUPPORTED_RUN_MODELS.filter(isActiveRunModel);
 
 export type ModelImageInputSupport = "supported" | "unsupported" | "unknown";
 
@@ -663,13 +345,6 @@ export function modelSupportsImageInput(
 }
 
 /**
- * Return the built-in models visible to callers.
- */
-export function getBuiltInVisibleModels(): string[] {
-  return [...ACTIVE_RUN_MODELS];
-}
-
-/**
  * Model Provider type configuration
  * Maps type to framework, secret name, and display info
  *
@@ -686,8 +361,6 @@ export function getBuiltInVisibleModels(): string[] {
 const BUILT_IN_MODEL_PROVIDER_CONFIG = {
   framework: "claude-code" as const,
   label: "Built-in model",
-  models: [...ACTIVE_RUN_MODELS],
-  defaultModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
 };
 
 export const MODEL_PROVIDER_TYPES = {
@@ -1064,164 +737,22 @@ export function getModelProviderPresentationLabel(
   return MODEL_PROVIDER_TYPES[type].label;
 }
 
-const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
-  "okou-1.0": ["built-in"],
-  "claude-fable-5-1": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-opus-5-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-opus-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-sonnet-5-5": [
-    "built-in",
-    "anthropic-api-key",
-    "claude-code-oauth-token",
-  ],
-  "claude-sonnet-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "gpt-6-astra": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-6.1-sol": ["built-in", "openai-api-key", "codex-oauth-token"],
-  "gpt-6-sol": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-6-luna": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-5.6-sol": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
-  "gpt-5.6-luna": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
-  "deepseek-v4.1-flash": ["built-in", "openrouter-codex"],
-  "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
-} as const satisfies Record<ActiveRunModel, readonly ModelProviderType[]>;
-
-const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
-  Record<ModelProviderType, Partial<Record<ActiveRunModel, string>>>
-> = {
-  "openrouter-api-key": {
-    "claude-fable-5-1": "anthropic/claude-fable-5.1",
-    "claude-opus-5-5": "anthropic/claude-opus-5.5",
-    "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-sonnet-5": "anthropic/claude-sonnet-5",
-  },
-  "vercel-ai-gateway": {
-    "claude-fable-5-1": "anthropic/claude-fable-5.1",
-    "claude-opus-5-5": "anthropic/claude-opus-5.5",
-    "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-sonnet-5": "anthropic/claude-sonnet-5",
-  },
-  "openrouter-codex": {
-    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
-    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
-    "gpt-6-astra": "openai/gpt-6-astra",
-    "gpt-6-sol": "openai/gpt-6-sol",
-    "gpt-6-luna": "openai/gpt-6-luna",
-    "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-luna": "openai/gpt-5.6-luna",
-  },
-  "vercel-ai-gateway-codex": {
-    "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-luna": "openai/gpt-5.6-luna",
-  },
+const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
+  "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
+  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
+  "anthropic/claude-fable-5.1": "claude-fable-5-1",
+  "anthropic/claude-fable-5": "claude-fable-5",
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
+  "anthropic/claude-opus-5": "claude-opus-5",
+  "anthropic/claude-opus-4.8": "claude-opus-4-8",
+  "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
+  "anthropic/claude-sonnet-5": "claude-sonnet-5",
+  "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
 };
-
-const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
-  {
-    "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
-    "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
-    "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
-    "anthropic/claude-fable-5.1": "claude-fable-5-1",
-    "anthropic/claude-fable-5": "claude-fable-5",
-    "anthropic/claude-opus-5.5": "claude-opus-5-5",
-    "anthropic/claude-opus-5": "claude-opus-5",
-    "anthropic/claude-opus-4.8": "claude-opus-4-8",
-    "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
-    "anthropic/claude-sonnet-5": "claude-sonnet-5",
-    "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
-  };
 
 export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;
-}
-
-export function getProvidersForModel(model: string): ModelProviderType[] {
-  const canonical = normalizeRunModelId(model);
-  if (!isActiveRunModel(canonical)) {
-    return [];
-  }
-  return [...MODEL_FIRST_PROVIDER_COMPATIBILITY[canonical]];
-}
-
-export function isModelSupportedByProvider(
-  model: string,
-  type: ModelProviderType,
-): boolean {
-  return getProvidersForModel(model).includes(
-    isBuiltInModelProviderType(type) ? "built-in" : type,
-  );
-}
-
-export function getProviderRuntimeModel(
-  type: ModelProviderType,
-  model: string,
-): string {
-  const canonical = normalizeRunModelId(model);
-  if (!isActiveRunModel(canonical)) {
-    return model;
-  }
-  if (isBuiltInModelProviderType(type)) {
-    return builtInPrimaryCandidate(canonical).apiModel ?? canonical;
-  }
-  return PROVIDER_RUNTIME_MODEL_ALIASES[type]?.[canonical] ?? canonical;
 }
 
 /**
@@ -1259,33 +790,6 @@ export const modelProviderTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 export const modelProviderWriteTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 
 export const modelProviderFrameworkSchema = z.enum(["claude-code", "codex"]);
-
-/**
- * Get the concrete provider type for a built-in model.
- * Throws if the model is not in the built-in model mapping.
- */
-export function getBuiltInConcreteProviderType(
-  model: string,
-): BuiltInModelRouteProviderType {
-  return builtInPrimaryCandidate(model).concreteType;
-}
-
-/**
- * Get the vendor name for a built-in model.
- * Used for key pool lookup.
- */
-export function getBuiltInVendor(model: string): string {
-  const providerType = builtInPrimaryCandidate(model).concreteType;
-  return BUILT_IN_MODEL_ROUTE_PROVIDERS[providerType].vendor;
-}
-
-/**
- * Get the upstream API model identifier for a built-in model.
- * Falls back to the display name when no override is configured.
- */
-export function getBuiltInApiModel(model: string): string {
-  return builtInPrimaryCandidate(model).apiModel ?? model;
-}
 
 /**
  * Get framework for a model provider type
@@ -1400,12 +904,11 @@ export function getModelProviderCodexRuntimeCapabilities(
   return MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES[type];
 }
 
-const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
-  Partial<Record<ActiveRunModel, Record<string, unknown>>>
-> = {
-  "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
-  "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
-};
+const CODEX_MODEL_CATALOGS: Readonly<Record<string, Record<string, unknown>>> =
+  {
+    "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
+    "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
+  };
 
 /**
  * Project a Codex catalog record onto the model ID and provider used at
@@ -1422,50 +925,42 @@ export function getModelProviderCodexCatalogForModel(
     (logicalModel === "deepseek-v4.1-flash" ||
       logicalModel === "deepseek-v4-flash");
   const catalogModel = normalizeRunModelId(logicalModel);
-  // The native V4 alias serves V4.1. Other providers keep the original
-  // legacy catalog until their upstream mapping is verified.
-  const overrideCatalog =
-    catalogModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
-      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
-      : isActiveRunModel(catalogModel)
-        ? CODEX_MODEL_CATALOG_OVERRIDES[catalogModel]
+  // The native V4 alias serves V4.1 (the DeepSeek provider catalog). Other
+  // providers keep the original legacy catalog until their upstream mapping
+  // is verified.
+  const sourceCatalog =
+    catalogModel === "deepseek-v4-flash"
+      ? runtimeProviderType === "deepseek"
+        ? DEEPSEEK_MODEL_CATALOG
+        : DEEPSEEK_V4_FLASH_MODEL_CATALOG
+      : Object.hasOwn(CODEX_MODEL_CATALOGS, catalogModel)
+        ? CODEX_MODEL_CATALOGS[catalogModel]
         : undefined;
-  const sourceCatalogs = overrideCatalog
-    ? [overrideCatalog]
-    : getProvidersForModel(catalogModel).flatMap((type) => {
-        const sourceCatalog =
-          MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
-        return sourceCatalog ? [sourceCatalog] : [];
-      });
-  for (const sourceCatalog of sourceCatalogs) {
-    const sourceModels = sourceCatalog.models;
-    const sourceModel = Array.isArray(sourceModels)
-      ? sourceModels.find(
-          (model: unknown): model is Record<string, unknown> => {
-            return (
-              typeof model === "object" &&
-              model !== null &&
-              !Array.isArray(model) &&
-              "slug" in model &&
-              model.slug === catalogModel
-            );
-          },
-        )
-      : undefined;
-    if (sourceCatalog && sourceModel) {
-      return {
-        ...sourceCatalog,
-        models: [
-          {
-            ...sourceModel,
-            ...(disableApplyPatch ? { apply_patch_tool_type: null } : {}),
-            slug: runtimeModel,
-          },
-        ],
-      };
-    }
+  const sourceModels = sourceCatalog?.models;
+  const sourceModel = Array.isArray(sourceModels)
+    ? sourceModels.find((model: unknown): model is Record<string, unknown> => {
+        return (
+          typeof model === "object" &&
+          model !== null &&
+          !Array.isArray(model) &&
+          "slug" in model &&
+          model.slug === catalogModel
+        );
+      })
+    : undefined;
+  if (!sourceCatalog || !sourceModel) {
+    return undefined;
   }
-  return undefined;
+  return {
+    ...sourceCatalog,
+    models: [
+      {
+        ...sourceModel,
+        ...(disableApplyPatch ? { apply_patch_tool_type: null } : {}),
+        slug: runtimeModel,
+      },
+    ],
+  };
 }
 
 const CUSTOM_GATEWAY_PROVIDER_TYPES: ReadonlySet<ModelProviderType> = new Set([
@@ -1616,15 +1111,8 @@ export const upsertModelProviderRequestSchema = z.object({
   secret: z.string().min(1).optional(), // Legacy single secret
   authMethod: z.string().optional(), // For multi-auth providers
   secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
-  selectedModel: z
-    .string()
-    .refine(
-      (model) => {
-        return getRunModelAccess(model) !== "retired";
-      },
-      { message: RETIRED_RUN_MODEL_MESSAGE },
-    )
-    .optional(),
+  // Retired catalog models are rejected by the API against the catalog.
+  selectedModel: z.string().optional(),
 });
 
 export type UpsertModelProviderRequest = z.infer<
@@ -1655,9 +1143,8 @@ export type OrgModelPolicyRouteStatus = z.infer<
 
 export const orgModelPolicySchema = z.object({
   id: z.uuid(),
-  model: supportedRunModelSchema,
+  model: runModelIdSchema,
   modelLabel: z.string(),
-  isDefault: z.boolean(),
   defaultProviderType: modelProviderTypeSchema,
   // Concrete built-in provider; other policies use defaultProviderType.
   runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
@@ -1706,9 +1193,9 @@ export const orgModelPolicySchema = z.object({
 
 export type OrgModelPolicy = z.infer<typeof orgModelPolicySchema>;
 
+// Released clients may still send `isDefault`; z.object strips it.
 export const updateOrgModelPolicySchema = z.object({
-  model: supportedRunModelSchema,
-  isDefault: z.boolean(),
+  model: runModelIdSchema,
   defaultProviderType: modelProviderWriteTypeSchema,
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
@@ -1725,9 +1212,16 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
-  modelsAvailableToAdd: z.array(supportedRunModelSchema),
-  workspaceDefaultModel: supportedRunModelSchema.nullable(),
-  workspaceDefaultPolicyId: z.uuid().nullable(),
+  modelsAvailableToAdd: z.array(runModelIdSchema),
+  /**
+   * Compatibility only (docs/deployment-compatibility.md, #37442): released
+   * CLIs resolve a thread without a selected model to this value and fail
+   * when it is absent. Always the catalog system default; current clients
+   * read the default from `GET /api/model-catalog`. Remove once the CLI floor
+   * excludes builds that read it. Optional in this schema so current clients
+   * and their fixtures never depend on it; the API always sends it.
+   */
+  workspaceDefaultModel: runModelIdSchema.optional(),
 });
 
 export type OrgModelPoliciesResponse = z.infer<

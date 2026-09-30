@@ -32,6 +32,7 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -67,6 +68,7 @@ import {
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({
   connectorCatalog: true,
@@ -786,12 +788,15 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       remaining: 1000,
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
-    const limitedFreeProviders = await runs.listOrgModelProviders(admin);
+    // A new organization starts in Auto with only the fixed default.
+    const policies =
+      await createMiscRoutesApi(context).listModelPolicies(admin);
+    expect(policies.modelMode).toBe("auto");
     expect(
-      limitedFreeProviders.find((provider) => {
-        return provider.type === "built-in";
-      })?.selectedModel,
-    ).toBe("gpt-6-luna");
+      policies.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

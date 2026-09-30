@@ -1,6 +1,5 @@
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { isModelSupportedByProvider } from "@okouai/api-contracts/contracts/model-providers";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -20,6 +19,10 @@ import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  catalogHasProviderRoute,
+  loadModelCatalog,
+} from "./model-catalog.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import {
@@ -96,6 +99,7 @@ async function selectCurrentCredential(
       asc(modelProviders.type),
       asc(modelProviders.id),
     );
+  const catalog = await loadModelCatalog(db);
   for (const provider of providers) {
     if (provider.type === "codex-oauth-token") {
       if (provider.userId !== claim.userId || provider.needsReconnect) {
@@ -132,7 +136,8 @@ async function selectCurrentCredential(
     if (
       !provider.secretId ||
       !route?.endpoint ||
-      !isModelSupportedByProvider(
+      !catalogHasProviderRoute(
+        catalog,
         PI_MEMORY_PHASE2_BYOK_MODEL,
         route.productProviderType,
       )
@@ -301,7 +306,8 @@ async function credentialSnapshot(db: ReadDb, source: CurrentCredential) {
   const route = gptApiKeyPiRoute(source.type);
   if (
     !route?.endpoint ||
-    !isModelSupportedByProvider(
+    !catalogHasProviderRoute(
+      await loadModelCatalog(db),
       PI_MEMORY_PHASE2_BYOK_MODEL,
       route.productProviderType,
     )

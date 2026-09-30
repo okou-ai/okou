@@ -1,20 +1,13 @@
 import { computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
-import {
-  getFrameworkForType,
-  modelProviderTypeSchema,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import { escapeHtml } from "../../lib/telegram-format";
 import { resolveRunModelSelection } from "./run-model-selection.service";
-
-const ORG_SENTINEL_USER_ID = "__org__";
 
 function displayLabel(row: {
   agentDisplayName: string | null;
@@ -27,39 +20,12 @@ function displayLabel(row: {
   return row.agentName;
 }
 
-async function resolveOrgDefaultModelProviderSelectedModel(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | undefined> {
-  const rows = await db
-    .select({
-      type: modelProviders.type,
-      selectedModel: modelProviders.selectedModel,
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        eq(modelProviders.isDefault, true),
-      ),
-    );
-  const row = rows.find((candidate) => {
-    const parsed = modelProviderTypeSchema.safeParse(candidate.type);
-    return parsed.success && getFrameworkForType(parsed.data) === "claude-code";
-  });
-  return row?.selectedModel ?? undefined;
-}
-
 async function resolveAgentReplyModelLabel(args: {
   readonly db: ReadonlyDb;
-  readonly orgId: string;
   readonly runId: string;
 }): Promise<string | undefined> {
   const runModel = await resolveRunModelSelection(args.db, args.runId);
-  const model =
-    runModel?.selectedModel ??
-    (await resolveOrgDefaultModelProviderSelectedModel(args.db, args.orgId));
+  const model = runModel?.selectedModel;
 
   return model
     ? escapeHtml(getRunModelDisplayName(model, runModel?.codexServiceTier))
@@ -77,7 +43,6 @@ export async function resolveTelegramAgentReplyFooterText(args: {
   // carry a "Responded by" label; only the model label is shown.
   return await resolveAgentReplyModelLabel({
     db: args.db,
-    orgId: args.orgId,
     runId: args.runId,
   });
 }

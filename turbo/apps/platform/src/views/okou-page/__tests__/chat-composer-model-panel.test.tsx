@@ -1,9 +1,8 @@
 import {
-  type OrgModelPolicy,
-  type SupportedRunModel,
-  getBuiltInConcreteProviderType,
-  getCanonicalModelDisplayName,
-} from "@okouai/api-contracts/contracts/model-providers";
+  mockCatalogBuiltInProvider,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -25,7 +24,7 @@ import { fillComposer } from "./chat-test-helpers.ts";
 const POLICY_DATE = "2026-09-28T09:00:00.000Z";
 
 function configurePolicies(
-  models: readonly SupportedRunModel[],
+  models: readonly string[],
   directAstra = false,
 ): void {
   context.mocks.data.orgModelPolicies(
@@ -33,8 +32,7 @@ function configurePolicies(
       return {
         id: `e1000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
         model,
-        modelLabel: getCanonicalModelDisplayName(model),
-        isDefault: index === 0,
+        modelLabel: mockCatalogDisplayName(model),
         defaultProviderType:
           directAstra && model === "gpt-6-astra"
             ? "openai-api-key"
@@ -42,7 +40,7 @@ function configurePolicies(
         runtimeProviderType:
           directAstra && model === "gpt-6-astra"
             ? "openai-api-key"
-            : getBuiltInConcreteProviderType(model),
+            : mockCatalogBuiltInProvider(model),
         credentialScope: "org",
         modelProviderId: null,
         modelProviderSurfaceId: null,
@@ -72,7 +70,7 @@ function modelRadio(container: HTMLElement, model: string): HTMLElement {
 }
 
 async function setupPanel(
-  models: readonly SupportedRunModel[],
+  models: readonly string[],
   onThreadCreate?: Parameters<typeof installRunChat>[0] extends infer O
     ? O extends { onThreadCreate?: infer F }
       ? F
@@ -106,9 +104,7 @@ function hasAutoModelTrigger(): boolean {
   });
 }
 
-async function setupAutoComposer(
-  subscriptionModel?: SupportedRunModel,
-): Promise<void> {
+async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   installRunChat({ selectedModel: "okou-1.0" });
   const auto = autoPolicy();
   context.mocks.data.orgModelPolicies(
@@ -119,8 +115,7 @@ async function setupAutoComposer(
             ...auto,
             id: "e1000000-0000-4000-a000-000000000099",
             model: subscriptionModel,
-            modelLabel: getCanonicalModelDisplayName(subscriptionModel),
-            isDefault: false,
+            modelLabel: mockCatalogDisplayName(subscriptionModel),
             defaultProviderType: "codex-oauth-token",
             runtimeProviderType: "codex-oauth-token",
             credentialScope: "member",
@@ -148,10 +143,9 @@ function autoPolicy(): OrgModelPolicy {
   return {
     id: "e1000000-0000-4000-a000-000000000001",
     model: "okou-1.0",
-    modelLabel: getCanonicalModelDisplayName("okou-1.0"),
-    isDefault: true,
+    modelLabel: mockCatalogDisplayName("okou-1.0"),
     defaultProviderType: "built-in",
-    runtimeProviderType: getBuiltInConcreteProviderType("okou-1.0"),
+    runtimeProviderType: mockCatalogBuiltInProvider("okou-1.0"),
     credentialScope: "org",
     modelProviderId: null,
     modelProviderSurfaceId: null,
@@ -289,7 +283,7 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
 test("Send with the model and effort chosen in the panel", async () => {
   const user = userEvent.setup({ delay: null });
   const creates: {
-    model?: SupportedRunModel;
+    model?: string;
     reasoningEffort?: string;
   }[] = [];
   const composer = await setupPanel(

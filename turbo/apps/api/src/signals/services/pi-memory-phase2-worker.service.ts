@@ -3,6 +3,7 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -195,6 +196,7 @@ async function checkNewAttemptQuotaAdmission(
   // Canonical createAgentRun admission and final transaction remain authoritative.
   const admission = await checkOrgCreditsForRunAdmission({
     db,
+    catalog: await loadModelCatalog(db),
     orgId: claim.orgId,
     userId: claim.userId,
     modelProviderType: credential.pin.modelProvider,
@@ -284,9 +286,12 @@ const dispatchClaim$ = command(
         };
       }),
     } as const;
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
     const result = await set(
       createAgentRun$,
       {
+        catalog,
         userId: claim.userId,
         orgId: claim.orgId,
         body: {

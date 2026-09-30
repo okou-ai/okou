@@ -37,6 +37,7 @@ import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as modelProviderGatewaySchema from "./schema/model-provider-gateway";
 import * as orgModelPolicySchema from "./schema/org-model-policy";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
+import * as modelRouteSchema from "./schema/model-route";
 import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
@@ -198,6 +199,7 @@ export const schema = {
   ...modelProviderGatewaySchema,
   ...orgModelPolicySchema,
   ...runModelCatalogSchema,
+  ...modelRouteSchema,
   ...slackOrgInstallationSchema,
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,

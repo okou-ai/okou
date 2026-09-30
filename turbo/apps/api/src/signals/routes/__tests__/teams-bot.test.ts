@@ -2188,10 +2188,11 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     });
     expect(modelSubmitBody).not.toHaveProperty("dispatch");
+    // The model card leaves the member preference the fixture configured.
     await expect(
       userConfigApi.readModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: null,
+      selectedModel: "claude-fable-5-1",
     });
 
     expect(outboundRequests).toHaveLength(6);
@@ -2322,14 +2323,13 @@ describe("POST /api/webhooks/teams/bot", () => {
       await runsApi.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: anthropic.providerId,
         },
         {
           model: "gpt-6-astra",
-          isDefault: false,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: openai.providerId,
@@ -2449,14 +2449,13 @@ describe("POST /api/webhooks/teams/bot", () => {
     await runsApi.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: anthropic.providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openai.providerId,
@@ -2525,7 +2524,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     await readTeamsBotResponseAndFlush(switchResponse);
     await expect(
       userConfigApi.readModelPreference(actor),
-    ).resolves.toMatchObject({ selectedModel: null });
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
       setupApp({ context, routes: chatThreadRoutes })(

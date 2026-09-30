@@ -13,13 +13,18 @@ import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Client } from "pg";
 
+import { env } from "../lib/env";
+import { USAGE_PRICING } from "../scripts/dev-seed";
 import { writeDb$, type Db } from "../signals/external/db";
 import {
   resolveUsagePricingProvider,
   type UsagePricingProviderResolution,
   type UsagePricingResolution,
 } from "../signals/context/usage-pricing-resolution";
+import { onRejection } from "../signals/utils";
 
 export interface UsagePricingKey {
   readonly kind: string;
@@ -152,4 +157,57 @@ export async function deleteUsagePricingRows(filter: {
     .where(where);
   await db.delete(usagePricing).where(where);
   return rows;
+}
+
+/**
+ * Pricing the development seed does not carry for an active migrated
+ * Built-in route; test-database-only rows, never production data.
+ */
+const TEST_ONLY_MODEL_PRICING = [
+  "tokens.input",
+  "tokens.output",
+  "tokens.cache_read",
+  "tokens.cache_creation",
+].flatMap((category) => {
+  return [category, `${category}.long_context`].flatMap((base) => {
+    return [base, `${base}.fast`].map((tiered) => {
+      return {
+        kind: "model",
+        provider: "gpt-6-sol",
+        category: tiered,
+        unitPrice: 1,
+        unitSize: 1_000_000,
+      };
+    });
+  });
+});
+
+/**
+ * Built-in run admission requires usage_pricing for every category a route
+ * can bill, but API tests migrate without the development seed. Seed the
+ * development model pricing into the test database once per test file; rows
+ * a test already owns are left untouched.
+ *
+ * Runs in global setup, so it uses its own short-lived client instead of the
+ * app pool singleton: tests that stub DATABASE_URL to an unavailable database
+ * rely on their first app DB access creating the pool from that stub.
+ */
+export async function seedDevelopmentModelPricingForTests(): Promise<void> {
+  const client = new Client({ connectionString: env("DATABASE_URL") });
+  await client.connect();
+  const seeded = drizzle(client)
+    .insert(usagePricing)
+    .values([
+      ...USAGE_PRICING.filter((row) => {
+        return row.kind === "model";
+      }),
+      ...TEST_ONLY_MODEL_PRICING,
+    ])
+    .onConflictDoNothing({
+      target: [usagePricing.kind, usagePricing.provider, usagePricing.category],
+    });
+  await onRejection(seeded, () => {
+    return client.end();
+  });
+  await client.end();
 }

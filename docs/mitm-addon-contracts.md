@@ -450,6 +450,33 @@ unchanged, and old Runner instances keep their previous behavior until replaced.
 `test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
 chunked, and HTTP/2 uploads, including body data queued during the headers hook.
 
+## Model usage provider and long-context tier
+
+A registry sandbox entry carries `modelUsageProvider` (the `usage_pricing`
+provider every billable model usage event reports, which may be a pricing
+alias of the run's model) and optionally
+`modelUsageLongContextMinTotalInputTokens`, the threshold the API captured
+from the run's Built-in route. Request handling copies both into flow metadata
+when a firewall matches (`MODEL_USAGE_PROVIDER`,
+`MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`) and clears both for
+passthrough flows. Billing classifies a source as long-context when its total
+input (`tokens.input` + `tokens.cache_read` + `tokens.cache_creation`) reaches
+the threshold. For the registry's usage provider the field is authoritative
+whenever it is present:
+
+| Registry value                  | Classification                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| positive integer                | Long-context at or above it, whether or not the provider is in the map.                                                              |
+| `0`                             | Explicit single tier; the generated map is not consulted.                                                                            |
+| absent (or not an integer >= 0) | Compatibility fallback: the generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map keyed by provider; no entry means single tier. |
+
+Only an API that predates catalog thresholds omits the field; the fallback and
+the generated map are deleted together once no such API is serving or a
+rollback target (see
+[deployment compatibility](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01)).
+The `.fast` and `.ultrafast` suffixes follow the observed service tier.
+See [model catalog](model-catalog.md#long-context-classification).
+
 ## Model-provider failure reporting shutdown
 
 Failure reports are best-effort diagnostics with four reporter-owned daemon
