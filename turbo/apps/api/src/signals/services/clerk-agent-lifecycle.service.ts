@@ -185,14 +185,9 @@ const deleteClerkOrganizationLifecycleData$ = command(
         const runIds = runs.map((run) => {
           return run.id;
         });
-        // Settlement and Run activation both own parents before this entitlement.
-        // Deleting it before raw usage takes its implicit row lock and cascades
-        // its windows/allocations in the same entitlement-first order as
-        // admission and Stripe publication, so a stale refresh or window
-        // insertion cannot interleave. The later loop entry then matches none.
-        await tx
-          .delete(orgUsageAllowanceEntitlements)
-          .where(eq(orgUsageAllowanceEntitlements.orgId, orgId));
+        // Raw and hourly usage go first because hourly rollups reference
+        // allowance windows; the entitlement (and its window cascade) is then
+        // deleted by the loop's ordinary DELETE, with no explicit row lock.
         for (const target of usage) {
           await tx.delete(target.table).where(target.condition);
         }
