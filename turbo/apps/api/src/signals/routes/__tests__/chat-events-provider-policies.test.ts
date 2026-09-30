@@ -644,6 +644,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold capacity",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       configureNativeCliArtifact();

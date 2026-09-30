@@ -619,6 +619,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold capacity",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const gateway = await configureCustomPiModel(actor, selectedModel);
@@ -797,6 +798,25 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     const gateway = await configureCustomPiModel(actor, "gpt-6-luna");
+    const replacement = await configureCustomPiModel(actor, "gpt-6-astra");
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-luna",
+        isDefault: true,
+        defaultProviderType: "custom-openai-responses",
+        credentialScope: "org",
+        modelProviderId: null,
+        modelProviderSurfaceId: gateway.surfaceId,
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "custom-openai-responses",
+        credentialScope: "org",
+        modelProviderId: null,
+        modelProviderSurfaceId: replacement.surfaceId,
+      },
+    ]);
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     const thread = await chat.createThread(actor, { agentId });
@@ -810,12 +830,9 @@ describe("CHAT-02: model-first provider policies", () => {
       runOptions: { codexServiceTier: "fast" },
     });
     await flushWaitUntilForTest();
-    await chat.updateThreadModelSelection(
-      actor,
-      thread.id,
-      "claude-fable-5-1",
-      { codexServiceTier: null },
-    );
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: null,
+    });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
     const promoted = await waiting.launchedRun();

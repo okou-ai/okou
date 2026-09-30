@@ -48,6 +48,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold capacity",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const captured = await configureSubscriptionPiModel(actor, {
