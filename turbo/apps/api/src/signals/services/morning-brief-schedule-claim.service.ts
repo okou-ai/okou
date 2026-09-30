@@ -12,24 +12,22 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import {
-  MorningBriefSnapshotChanged,
   morningBriefLegacyWriterAuthorityFromRow,
   readMorningBriefNativeScheduleForWrite,
-  withFreshMorningBriefSnapshot,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
 
-import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
+import { advanceInFlightSchedule } from "./morning-brief-legacy-settlement-sql";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -349,21 +347,6 @@ function legacyMorningBriefSettlementPlan(
       nextRunAt,
       updatedAt: settledAt,
     },
-    nativeValues: {
-      enabled: automation.enabled && !shouldDisable,
-      cronExpression: automation.cronExpression,
-      timezone: automation.timezone,
-      nextRunAt,
-      at: settledAt,
-    },
-  };
-}
-
-/** The automation row a settlement computed from, with its exact row version. */
-function automationSnapshotColumns() {
-  return {
-    ...workflowAutomationColumns(),
-    rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(pgTextDecoder),
   };
 }
 
@@ -373,16 +356,20 @@ type MorningBriefScheduleSettlementOutcome = {
   readonly consecutiveFailures: number;
 } | null;
 
+/** Another settler already settled this occurrence; roll back this transaction. */
+class MorningBriefClaimAlreadySettled extends Error {}
+
 /**
- * One attempt: read the current rows, compute the successor from their current
- * cron and timezone, then commit only if none of them changed.
+ * Settle one occurrence once: read, compute, then conditional writes.
  *
- * No row is locked. Writes follow the documented order (native row, legacy
- * automation, then its claim) and each is a conditional UPDATE. A concurrent
- * schedule, timezone, toggle or claim commit makes the native or automation
- * write match zero rows, which rolls the attempt back so the caller recomputes
- * from fresh state. The claim write is the exactly-once gate: when another
- * settler already settled it, this attempt rolls back and settles nothing.
+ * No row is locked and nothing is retried. Writes follow the documented order
+ * (native row, legacy automation, then its claim). The schedule advance is a
+ * single conditional pass ({@link advanceInFlightSchedule}): a toggle, cutover
+ * or settlement that already published the successor wins unchanged, and a
+ * cron or timezone edit that landed after the read is applied from the
+ * columns the write returned. The claim write is the exactly-once gate: when
+ * another settler already settled it, the whole transaction rolls back and
+ * this call settles nothing.
  */
 async function attemptMorningBriefScheduleSettlement(
   tx: Tx,
@@ -399,7 +386,7 @@ async function attemptMorningBriefScheduleSettlement(
     ? morningBriefLegacyWriterAuthorityFromRow(native?.row, lineage)
     : { kind: "ordinary", fence: { kind: "ordinary" } };
   const [automation] = await tx
-    .select(automationSnapshotColumns())
+    .select(workflowAutomationColumns())
     .from(workflowAutomations)
     .where(eq(workflowAutomations.id, args.automationId))
     .limit(1);
@@ -430,38 +417,27 @@ async function attemptMorningBriefScheduleSettlement(
     args,
     settledAt,
   );
-  if (
-    plan &&
-    lineage &&
-    authority.kind === "selected" &&
-    authority.row.phase === "legacy"
-  ) {
-    const { rowCount } = await tx.execute(
-      settleLegacyMorningBriefSql(lineage, authority.row, plan.nativeValues),
-    );
-    if (rowCount !== 1) {
-      throw new MorningBriefSnapshotChanged();
-    }
-  }
-  if (plan) {
-    // A newer claim always rewrites this row, so its version also fences the
-    // claim-sequence read above.
-    const [advanced] = await tx
-      .update(workflowAutomations)
-      .set(plan.automationValues)
-      .where(
-        and(
-          eq(workflowAutomations.id, args.automationId),
-          eq(workflowAutomations.enabled, true),
-          isNull(workflowAutomations.nextRunAt),
-          sql`${workflowAutomations}.xmin::text = ${automation.rowVersion}`,
-        ),
-      )
-      .returning({ id: workflowAutomations.id });
-    if (!advanced) {
-      throw new MorningBriefSnapshotChanged();
-    }
-  }
+  const advanced = plan
+    ? await advanceInFlightSchedule(tx, {
+        automationId: args.automationId,
+        read: {
+          scheduleType: "cron",
+          cronExpression: automation.cronExpression,
+          intervalSeconds: automation.intervalSeconds,
+          timezone: automation.timezone,
+        },
+        automationValues: plan.automationValues,
+        shouldDisable: plan.shouldDisable,
+        at: settledAt,
+        requireEmptySlot: true,
+        legacy:
+          lineage &&
+          authority.kind === "selected" &&
+          authority.row.phase === "legacy"
+            ? { lineage, row: authority.row }
+            : undefined,
+      })
+    : "superseded";
   const [settled] = await tx
     .update(morningBriefScheduleClaims)
     .set({ settlement: args.settlement, settledAt, updatedAt: settledAt })
@@ -473,11 +449,10 @@ async function attemptMorningBriefScheduleSettlement(
     )
     .returning({ id: morningBriefScheduleClaims.id });
   if (!settled) {
-    // Another settler won this occurrence; discard everything this attempt
-    // wrote. The next attempt reads the settled claim and returns null.
-    throw new MorningBriefSnapshotChanged();
+    // Another settler won this occurrence; discard everything written here.
+    throw new MorningBriefClaimAlreadySettled();
   }
-  return plan?.shouldDisable
+  return plan?.shouldDisable && advanced === "advanced"
     ? {
         orgId: claim.orgId,
         userId: claim.ownerUserId,
@@ -494,18 +469,25 @@ const commitMorningBriefScheduleSettlement$ = command(
     signal?: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const outcome = await withFreshMorningBriefSnapshot(() => {
-      return db.transaction(async (tx) => {
+    const result = await settle(
+      db.transaction(async (tx) => {
         const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
         signal?.throwIfAborted();
         return attempted;
-      });
-    }, signal);
+      }),
+      signal,
+    );
     signal?.throwIfAborted();
-    if (outcome) {
+    if (!result.ok) {
+      if (result.error instanceof MorningBriefClaimAlreadySettled) {
+        return;
+      }
+      throw result.error;
+    }
+    if (result.value) {
       log.warn(
         "Morning Brief schedule auto-disabled after consecutive failures",
-        { automationId: args.automationId, ...outcome },
+        { automationId: args.automationId, ...result.value },
       );
     }
   },

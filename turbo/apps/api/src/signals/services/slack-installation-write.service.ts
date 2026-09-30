@@ -4,21 +4,13 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
-import {
-  OrgCreditExpirationRequired,
-  pendingOrgCreditExpirationQuery,
-  requireNoPendingOrgCreditExpiration,
-} from "./org-credit-expiration";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
+  settleSlackRewardClaim,
   slackRewardIdentity,
-  slackRewardUnavailableReason,
-  slackOrgRewardSql,
   slackRewardWalletEntitlement,
 } from "./slack-installation-reward";
 
@@ -32,14 +24,6 @@ interface SlackInstallationWrite {
   readonly orgId: string | null;
   readonly userId: string | null;
   readonly mode: "install" | "reinstall" | "connect";
-}
-
-/** Terminal claims are never rewritten by a later completion. */
-function unsettledSlackClaim(id: string) {
-  return and(
-    eq(getStartedClaims.id, id),
-    notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
-  );
 }
 
 const commitSlackInstallation$ = command(
@@ -118,49 +102,10 @@ const commitSlackInstallation$ = command(
       await tx
         .insert(getStartedClaims)
         .values(reward.values)
-        .onConflictDoNothing({
-          target: [
-            getStartedClaims.actorUserId,
-            getStartedClaims.questKey,
-            getStartedClaims.sourceKey,
-          ],
-        });
+        .onConflictDoNothing(reward.conflict);
       // Every Slack reward writer first writes this workspace's installation
       // row, so the implicit row lock of that write orders claims per source.
-      const [claim] = await tx
-        .select()
-        .from(getStartedClaims)
-        .where(reward.where);
-      if (!claim) {
-        throw new Error("Slack completion claim was not persisted");
-      }
-      if (["granted", "ineligible", "rejected"].includes(claim.status)) {
-        return installed;
-      }
-      const awards = await tx
-        .select({ rewardKey: getStartedClaims.rewardKey })
-        .from(getStartedClaims)
-        .where(reward.awardsWhere)
-        .limit(2);
-      const reason = slackRewardUnavailableReason(reward.rewardKey, awards);
-      if (reason) {
-        await tx
-          .update(getStartedClaims)
-          .set({
-            status: "ineligible",
-            reason,
-            updatedAt: at,
-            leaseId: null,
-            leaseExpiresAt: null,
-          })
-          .where(unsettledSlackClaim(claim.id));
-        return installed;
-      }
-      const [pending] = await tx
-        .select()
-        .from(pendingOrgCreditExpirationQuery(orgId, at));
-      requireNoPendingOrgCreditExpiration(orgId, pending);
-      await tx.execute(slackOrgRewardSql(claim, reward.rewardKey, at));
+      await settleSlackRewardClaim(tx, reward, at);
       signal.throwIfAborted();
       return installed;
     });
@@ -169,30 +114,20 @@ const commitSlackInstallation$ = command(
   },
 );
 
-/** Installation, permanent eligibility and organization credit publish together. */
+/**
+ * Installation, permanent eligibility and organization credit publish together.
+ * Due credit lots are expired first so the reward is not deferred by them; the
+ * installation then commits once with one deterministic reward outcome.
+ */
 export const persistSlackInstallation$ = command(
   async (
     { set },
     args: SlackInstallationWrite,
     signal: AbortSignal,
   ): Promise<SlackInstallation> => {
-    for (let attempt = 0; ; attempt++) {
-      const result = await settle(set(commitSlackInstallation$, args, signal));
-      signal.throwIfAborted();
-      if (result.ok) {
-        return result.value;
-      }
-      if (attempt >= 3) {
-        throw result.error;
-      }
-      if (result.error instanceof OrgCreditExpirationRequired) {
-        await set(expireOrgCredits$, result.error.orgId, signal);
-      } else if (
-        !isUniqueViolation(result.error, "uq_get_started_reward_key") &&
-        !isUniqueViolation(result.error, "uq_get_started_slack_org")
-      ) {
-        throw result.error;
-      }
+    if (args.orgId && args.userId) {
+      await set(expireOrgCredits$, args.orgId, signal);
     }
+    return await set(commitSlackInstallation$, args, signal);
   },
 );

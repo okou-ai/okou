@@ -1,10 +1,8 @@
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, gt, inArray, lte, notInArray, sql } from "drizzle-orm";
+import { and, eq, gt, lte, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
-
-export const ORG_CREDIT_EXPIRATION_BATCH_SIZE = 100;
 
 export class OrgCreditExpirationRequired extends Error {
   constructor(readonly orgId: string) {
@@ -25,7 +23,8 @@ export function expiredOrgCreditsWhere(orgId: string, at: Date) {
  * A plain read in the settling transaction. Expiration that commits after it
  * clears only lots that expired after this read (the serial order "settle,
  * then expire"); a clear that races a planned lot deduction is rejected by one
- * of the two conditional writes and retried from a fresh read.
+ * of the two conditional writes, and that writer reports a deterministic
+ * conflict instead of re-reading.
  */
 export function pendingOrgCreditExpirationQuery(orgId: string, at: Date) {
   return new QueryBuilder()
@@ -45,30 +44,6 @@ export function requireNoPendingOrgCreditExpiration(
   }
 }
 
-/** Only the finite prepared identities can be cleared by this write. */
-export function boundedOrgCreditExpirationSql(
-  orgId: string,
-  at: Date,
-  ids: readonly string[],
-) {
-  if (ids.length === 0 || ids.length > ORG_CREDIT_EXPIRATION_BATCH_SIZE) {
-    throw new Error("Invalid organization credit expiration batch");
-  }
-  return orgCreditExpirationSql(orgId, at, ids);
-}
-
-/**
- * R1 compatibility: expiration is still one atomic wallet clamp. The pre-R1
- * adders do not reject expired remainder, so committing partial expiration can
- * erase or retain the wrong part of a concurrent purchase. Remove this fallback
- * only after all those adders, debt clearers and extenders drain. The bounded
- * statement already clears its finite set when that set is the complete
- * expired cohort; otherwise it changes nothing and reports `omitted`.
- */
-export function atomicOrgCreditExpirationSql(orgId: string, at: Date) {
-  return orgCreditExpirationSql(orgId, at);
-}
-
 export class OrgCreditExpirationConflict extends Error {
   constructor(readonly orgId: string) {
     super(`Organization ${orgId} credit expiration lost a concurrent write`);
@@ -79,15 +54,12 @@ export class OrgCreditExpirationConflict extends Error {
 export interface OrgCreditExpirationOutcome {
   /** The organization wallet row existed in the statement snapshot. */
   readonly wallet: boolean;
-  /** Bounded form only: an expired lot outside the finite set exists. */
-  readonly omitted: boolean;
   readonly expected: number;
   readonly cleared: number;
 }
 
 export const orgCreditExpirationOutcomeRow = z.object({
   wallet: z.boolean(),
-  omitted: z.boolean(),
   expected: z.coerce.number().int(),
   cleared: z.coerce.number().int(),
 });
@@ -103,49 +75,45 @@ export function orgCreditExpirationOutcome(
 }
 
 /**
- * Every lot the statement snapshot selected must have been cleared; otherwise
- * the wallet clamp covered only part of the cohort and the caller must roll
- * the transaction back (throwing here does that) and read again.
+ * A lot the statement snapshot selected but did not clear was changed by a
+ * concurrent writer that committed first. When that writer was another
+ * expiration (or an extension that un-expired the lot), no expired remainder
+ * is left and its own clamp covered those lots: this outcome is complete.
+ * Only expired remainder that is still present afterwards is a conflict;
+ * throwing rolls the owning transaction back and the caller reports it once
+ * (the next writer or cron cycle expires again), never an in-place re-read.
  */
 export function requireCompleteOrgCreditExpiration(
   orgId: string,
   outcome: OrgCreditExpirationOutcome,
+  remaining: { readonly id: string } | undefined,
 ): void {
-  if (outcome.cleared !== outcome.expected) {
+  if (outcome.wallet && outcome.cleared !== outcome.expected && remaining) {
     throw new OrgCreditExpirationConflict(orgId);
   }
 }
 
 /**
- * One statement, no explicit row lock. The snapshot selects the expired lots
- * with their row versions; each lot is cleared only if it still has that
- * version (EvalPlanQual re-checks a lot another writer changed while this
- * statement waited for it). The wallet clamp is atomic arithmetic over the
- * amounts actually cleared. The caller rejects `cleared <> expected`, so a
- * partially applied clamp never commits.
+ * One statement, no explicit row lock, over the complete expired cohort (R1
+ * compatibility: pre-R1 adders do not reject expired remainder, so expiration
+ * stays one atomic wallet clamp). The snapshot selects the expired lots with
+ * their row versions; each lot is cleared only if it still has that version
+ * (EvalPlanQual re-checks a lot another writer changed while this statement
+ * waited for it). The wallet clamp is atomic arithmetic over the amounts
+ * actually cleared. The caller rejects `cleared <> expected`, so a partially
+ * applied clamp with expired remainder left behind never commits.
  */
-function orgCreditExpirationSql(
-  orgId: string,
-  at: Date,
-  ids?: readonly string[],
-) {
-  const omitted = ids
-    ? sql`EXISTS (
-    SELECT 1 FROM ${creditExpiresRecord}
-    WHERE ${and(expiredOrgCreditsWhere(orgId, at), notInArray(creditExpiresRecord.id, [...ids]))}
-  )`
-    : sql`false`;
+export function orgCreditExpirationSql(orgId: string, at: Date) {
   return sql`WITH wallet AS MATERIALIZED (
     SELECT EXISTS (
       SELECT 1 FROM ${orgMetadata} WHERE ${orgMetadata.orgId} = ${orgId}
-    ) AS present, ${omitted} AS omitted
+    ) AS present
   ), expired AS MATERIALIZED (
     SELECT ${creditExpiresRecord.id} AS id,
            ${creditExpiresRecord.remaining} AS remaining,
            ${creditExpiresRecord}.xmin::text AS observed_xmin
     FROM ${creditExpiresRecord}, wallet
-    WHERE ${and(expiredOrgCreditsWhere(orgId, at), ids ? inArray(creditExpiresRecord.id, [...ids]) : undefined)}
-      AND wallet.present AND NOT wallet.omitted
+    WHERE ${expiredOrgCreditsWhere(orgId, at)} AND wallet.present
   ), cleared AS (
     UPDATE ${creditExpiresRecord} SET remaining = 0
     FROM expired
@@ -163,7 +131,7 @@ function orgCreditExpirationSql(
     WHERE ${orgMetadata.orgId} = ${orgId} AND total.amount > 0
     RETURNING ${orgMetadata.orgId}
   )
-  SELECT wallet.present AS wallet, wallet.omitted AS omitted,
+  SELECT wallet.present AS wallet,
          (SELECT count(*)::int FROM expired) AS expected, total.rows AS cleared
   FROM wallet, total`;
 }

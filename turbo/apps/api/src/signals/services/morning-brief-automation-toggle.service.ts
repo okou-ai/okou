@@ -17,7 +17,7 @@ import {
   morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
-  withFreshMorningBriefSnapshot,
+  commitMorningBriefSnapshotOnce,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
@@ -106,12 +106,24 @@ function revokedOccurrence(at: Date) {
 class StaleMorningBriefToggle extends Error {}
 
 /**
+ * The toggle's outcome for the generic automation writer.
+ *
+ * `not-applicable` hands the row to the ordinary writer; `conflict` is a lost
+ * conditional write on the native row, which the caller reports as the
+ * existing retryable official-workflow conflict instead of re-running.
+ */
+export type MorningBriefAutomationToggleResult =
+  | { readonly kind: "not-applicable" }
+  | { readonly kind: "applied"; readonly row: AutomationRow }
+  | { readonly kind: "conflict" };
+
+/**
  * Atomically commit the legacy automation, enrollment choice and native obligation.
  *
  * No row is locked. The native obligation is computed from the row as read and
  * written first (the documented order) under its exact row version; losing to
- * a concurrent native writer rolls the attempt back and recomputes from fresh
- * state. The automation write keeps its caller-snapshot lifecycle condition,
+ * a concurrent native writer rolls the transaction back and returns
+ * `conflict` once; nothing is re-read or retried here. The automation write keeps its caller-snapshot lifecycle condition,
  * whose zero-row outcome is the existing stale-toggle result.
  */
 export const persistMorningBriefAutomationToggle$ = command(
@@ -119,15 +131,15 @@ export const persistMorningBriefAutomationToggle$ = command(
     { set },
     args: MorningBriefToggleInput,
     signal: AbortSignal,
-  ): Promise<AutomationRow | undefined> => {
+  ): Promise<MorningBriefAutomationToggleResult> => {
     const owner = toggleOwner(args.automation);
     if (owner === undefined) {
-      return undefined;
+      return { kind: "not-applicable" };
     }
     const db = set(writeDb$);
     signal.throwIfAborted();
     const result = await settle(
-      withFreshMorningBriefSnapshot(() => {
+      commitMorningBriefSnapshotOnce(() => {
         return db.transaction(async (tx) => {
           const snapshot = await readMorningBriefNativeScheduleForWrite(
             tx,
@@ -218,10 +230,12 @@ export const persistMorningBriefAutomationToggle$ = command(
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof StaleMorningBriefToggle) {
-        return undefined;
+        return { kind: "not-applicable" };
       }
       throw result.error;
     }
-    return result.value;
+    return result.value.kind === "committed"
+      ? { kind: "applied", row: result.value.value }
+      : { kind: "conflict" };
   },
 );

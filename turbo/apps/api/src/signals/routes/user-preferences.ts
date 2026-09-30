@@ -12,7 +12,7 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
-import { badRequestMessage } from "../../lib/error";
+import { badRequestMessage, conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -118,7 +118,7 @@ const updateUserPreferencesInner$ = command(
       ]);
     }
     if (body.data.timezone !== undefined) {
-      await set(
+      const synchronized = await set(
         synchronizeMorningBriefTimezone$,
         {
           orgId: auth.orgId,
@@ -126,6 +126,13 @@ const updateUserPreferencesInner$ = command(
         },
         signal,
       );
+      if (synchronized === "conflict") {
+        // The preference is saved; the Morning Brief schedule lost a race and
+        // is left unchanged. Repeating the same update re-applies it.
+        return conflict(
+          "Morning Brief schedule changed concurrently. Retry the time zone update.",
+        );
+      }
       enqueueMorningBriefProvisioning(
         set(
           ensureMorningBriefDefaultEnabled$,

@@ -1221,13 +1221,6 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   if (!claimed) {
     return { kind: "missing" };
   }
-  const resolvedSelectionCount =
-    (
-      await db
-        .delete(chatThreadConnectorSelections)
-        .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
-    ).rowCount ?? 0;
-
   // A fresh statement sees any default committed after the claim. A default
   // still in flight wins through the partial unique index: the savepoint
   // turns that conflict into "not promoted" instead of an error.
@@ -1271,6 +1264,17 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   const promotedDefaultConnectionId = promotion.ok
     ? (promotion.value[0]?.id ?? null)
     : null;
+
+  // Selections are resolved after every account-row write (claim, then
+  // promotion). Selection writers write their account row before the selection
+  // row (chat-thread-connector-selection.service), so both sides take account
+  // rows before selection rows and cannot wait on each other in a cycle.
+  const resolvedSelectionCount =
+    (
+      await db
+        .delete(chatThreadConnectorSelections)
+        .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
+    ).rowCount ?? 0;
 
   if (
     args.target.kind === "builtin" &&

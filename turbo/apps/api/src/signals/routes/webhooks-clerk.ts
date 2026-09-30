@@ -1,4 +1,8 @@
-import { acceptGetStartedInvitation$ } from "../services/get-started-invitation-acceptance.service";
+import {
+  acceptGetStartedInvitation$,
+  InvitationRewardSlotConflict,
+} from "../services/get-started-invitation-acceptance.service";
+import type { AcceptedGetStartedInvitation } from "../services/get-started-invitation-acceptance";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { orgCache } from "@okouai/db/schema/org-cache";
@@ -629,6 +633,34 @@ const handleDeletedUserWebhook$ = command(
   },
 );
 
+/**
+ * A lost invitation reward slot race rolled the acceptance back once; 503 asks
+ * Clerk to redeliver (its existing delivery retry), which decides again.
+ */
+const acceptInvitationReward$ = command(
+  async (
+    { set },
+    identity: AcceptedGetStartedInvitation | undefined,
+    signal: AbortSignal,
+  ): Promise<Response | null> => {
+    if (!identity) {
+      return null;
+    }
+    const outcome = await settle(
+      set(acceptGetStartedInvitation$, identity, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (outcome.ok) {
+      return null;
+    }
+    if (outcome.error instanceof InvitationRewardSlotConflict) {
+      return jsonError("Invitation reward slot changed; redeliver", 503);
+    }
+    throw outcome.error;
+  },
+);
+
 const postClerkWebhook$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const event = await verifiedClerkWebhook(get(request$).raw);
@@ -644,8 +676,9 @@ const postClerkWebhook$ = command(
 
     if (event.type === "organizationInvitation.accepted") {
       const identity = organizationInvitationAcceptedIdentity(event.data);
-      if (identity) {
-        await set(acceptGetStartedInvitation$, identity, signal);
+      const conflict = await set(acceptInvitationReward$, identity, signal);
+      if (conflict) {
+        return conflict;
       }
       return set(
         handleOrganizationInvitationAcceptedWebhook$,
@@ -660,11 +693,14 @@ const postClerkWebhook$ = command(
         identity?.createdAt &&
         (identity.getStartedClaimId || identity.purchaseId)
       ) {
-        await set(
-          acceptGetStartedInvitation$,
+        const conflict = await set(
+          acceptInvitationReward$,
           { ...identity, acceptedAt: identity.createdAt },
           signal,
         );
+        if (conflict) {
+          return conflict;
+        }
       }
       if (identity) {
         await set(initializeMemberMemory$, identity, signal);

@@ -25,9 +25,9 @@ export interface BillingAttribution {
 }
 
 /**
- * The KEY SHARE is kept deliberately: the usage-event insert's run_id FK takes
- * the same lock implicitly; taking it first keeps Run-before-ledger order with
- * Run deletion instead of a deadlock cycle. It never blocks Run updates.
+ * Plain read, no explicit row lock. The usage-event insert's run_id FK check
+ * is the only Run lock (implicit, as on main); a Run deleted after this read
+ * fails that insert instead of being blocked here.
  */
 export function managedBillingRunQuery(runId: string | undefined) {
   return new QueryBuilder()
@@ -43,7 +43,6 @@ export function managedBillingRunQuery(runId: string | undefined) {
     })
     .from(agentRuns)
     .where(runId ? eq(agentRuns.id, runId) : sql`false`)
-    .for("key share")
     .as("managed_billing_run");
 }
 

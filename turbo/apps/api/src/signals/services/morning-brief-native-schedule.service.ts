@@ -184,37 +184,35 @@ export function morningBriefNativeRowVersionCondition(rowVersion: string) {
  * A conditional Morning Brief write lost to a concurrent commit.
  *
  * Thrown inside the writer's transaction so every write it already made rolls
- * back; {@link withFreshMorningBriefSnapshot} then re-reads current state.
+ * back; {@link commitMorningBriefSnapshotOnce} turns it into a `changed`
+ * result that the caller maps to its deterministic conflict outcome.
  */
 export class MorningBriefSnapshotChanged extends Error {}
 
-const MORNING_BRIEF_SNAPSHOT_ATTEMPTS = 5;
+export type MorningBriefSnapshotCommit<T> =
+  | { readonly kind: "committed"; readonly value: T }
+  | { readonly kind: "changed" };
 
 /**
- * Re-run a read-compute-conditional-write transaction from fresh state.
+ * Run one read-compute-conditional-write transaction exactly once.
  *
- * This is not a lock retry: each attempt re-reads the current rows and
- * recomputes from them, and an attempt only repeats when another writer
- * committed a change to exactly the rows it read. The bound turns sustained
- * contention into an error instead of an unbounded loop.
+ * A lost race is a result, never a retry: the transaction rolled back and the
+ * caller returns its own deterministic conflict/deferral outcome. The winner's
+ * commit is the current state; nothing here re-reads it.
  */
-export async function withFreshMorningBriefSnapshot<T>(
+export async function commitMorningBriefSnapshotOnce<T>(
   attempt: () => Promise<T>,
   signal?: AbortSignal,
-): Promise<T> {
-  for (let count = 1; ; count += 1) {
-    signal?.throwIfAborted();
-    const result = await settle(attempt(), signal);
-    if (result.ok) {
-      return result.value;
-    }
-    if (
-      !(result.error instanceof MorningBriefSnapshotChanged) ||
-      count >= MORNING_BRIEF_SNAPSHOT_ATTEMPTS
-    ) {
-      throw result.error;
-    }
+): Promise<MorningBriefSnapshotCommit<T>> {
+  signal?.throwIfAborted();
+  const result = await settle(attempt(), signal);
+  if (result.ok) {
+    return { kind: "committed", value: result.value };
   }
+  if (result.error instanceof MorningBriefSnapshotChanged) {
+    return { kind: "changed" };
+  }
+  throw result.error;
 }
 
 /** The selected legacy row a reconciliation, claim or callback may mutate. */

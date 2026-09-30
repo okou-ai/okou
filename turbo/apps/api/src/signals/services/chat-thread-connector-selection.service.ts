@@ -11,7 +11,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -427,52 +427,74 @@ async function projectStoredSelections(
   });
 }
 
+/**
+ * The selected account row is written (same values) first, and the selection
+ * row is written only from that statement's result. Exact account deletion
+ * claims the account row with an UPDATE, promotes a sibling, and only then
+ * deletes the account's selections, so both writers take the account row
+ * before any selection row and serialize on it without an explicit lock:
+ *
+ * - a selection that writes the account first commits before the deletion's
+ *   claim proceeds, and the deletion then resolves that selection;
+ * - a selection that arrives after the claim waits for the deletion to commit
+ *   and then finds no account row, so it writes nothing (`undefined`).
+ */
+function selectionWriteSql(
+  tx: Tx,
+  chatThreadId: string,
+  selection: ConnectorAccountSelection,
+  onConflict: "update" | "none",
+) {
+  const account = tx.$with("selected_connector_account").as(
+    tx
+      .update(connectors)
+      .set({ updatedAt: sql`${connectors.updatedAt}` })
+      .where(eq(connectors.id, selection.connectionId))
+      .returning({ id: connectors.id }),
+  );
+  const target = targetColumns(selection.target);
+  const insert = tx
+    .with(account)
+    .insert(chatThreadConnectorSelections)
+    .select(
+      sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
+    );
+  if (onConflict === "none") {
+    return insert.returning({
+      connectorId: chatThreadConnectorSelections.connectorId,
+    });
+  }
+  return (
+    selection.target.kind === "builtin"
+      ? insert.onConflictDoUpdate({
+          target: [
+            chatThreadConnectorSelections.chatThreadId,
+            chatThreadConnectorSelections.connectorSlug,
+          ],
+          targetWhere: isNotNull(chatThreadConnectorSelections.connectorSlug),
+          set: { connectorId: selection.connectionId },
+        })
+      : insert.onConflictDoUpdate({
+          target: [
+            chatThreadConnectorSelections.chatThreadId,
+            chatThreadConnectorSelections.customConnectorId,
+          ],
+          targetWhere: isNotNull(
+            chatThreadConnectorSelections.customConnectorId,
+          ),
+          set: { connectorId: selection.connectionId },
+        })
+  ).returning({ connectorId: chatThreadConnectorSelections.connectorId });
+}
+
+/** `undefined`: the account was deleted before this selection could reference it. */
 async function upsertSelection(
   tx: Tx,
   chatThreadId: string,
   selection: ConnectorAccountSelection,
-): Promise<ConnectorAccountSelection> {
-  const values = {
-    chatThreadId,
-    connectorId: selection.connectionId,
-    ...targetColumns(selection.target),
-  };
-  const [row] =
-    selection.target.kind === "builtin"
-      ? await tx
-          .insert(chatThreadConnectorSelections)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [
-              chatThreadConnectorSelections.chatThreadId,
-              chatThreadConnectorSelections.connectorSlug,
-            ],
-            targetWhere: isNotNull(chatThreadConnectorSelections.connectorSlug),
-            set: { connectorId: selection.connectionId },
-          })
-          .returning({
-            connectorId: chatThreadConnectorSelections.connectorId,
-          })
-      : await tx
-          .insert(chatThreadConnectorSelections)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [
-              chatThreadConnectorSelections.chatThreadId,
-              chatThreadConnectorSelections.customConnectorId,
-            ],
-            targetWhere: isNotNull(
-              chatThreadConnectorSelections.customConnectorId,
-            ),
-            set: { connectorId: selection.connectionId },
-          })
-          .returning({
-            connectorId: chatThreadConnectorSelections.connectorId,
-          });
-  if (!row) {
-    throw new Error("Failed to persist chat thread connector selection");
-  }
-  return selection;
+): Promise<ConnectorAccountSelection | undefined> {
+  const [row] = await selectionWriteSql(tx, chatThreadId, selection, "update");
+  return row ? selection : undefined;
 }
 
 function foreignKeyConstraint(error: unknown): string | undefined {
@@ -566,6 +588,12 @@ export async function updateChatThreadConnectorSelection(
           throw new Error("Expected one prepared connector selection");
         }
         const updated = await upsertSelection(tx, args.chatThreadId, selection);
+        if (!updated) {
+          return {
+            kind: "invalid",
+            message: "Connector account does not match the requested target",
+          };
+        }
         await reprojectWorkflowAutomationsForOwner(
           tx,
           { ...args, target: selection.target },
@@ -676,22 +704,20 @@ export async function insertInitialChatThreadConnectorSelections(
     readonly selections: readonly PreparedChatThreadConnectorSelection[];
   },
 ): Promise<void> {
-  for (const selection of args.selections) {
-    // Initial thread creation omits accounts deleted since preparation (no
-    // account row is locked). A savepoint contains only this child insert,
-    // preserving the thread and its other selections.
-    const inserted = await settle(
-      tx.transaction(async (selectionTx) => {
-        await selectionTx.insert(chatThreadConnectorSelections).values({
-          chatThreadId: args.chatThreadId,
-          connectorId: selection.connectionId,
-          ...targetColumns(selection.target),
-        });
-      }),
-    );
-    if (!inserted.ok && selectionParentMissing(inserted.error) !== "account") {
-      throw inserted.error;
-    }
+  // Account rows are written in id order, so concurrent creators selecting
+  // the same accounts never wait on each other in opposite orders.
+  const ordered = [...args.selections].sort((a, b) => {
+    return a.connectionId < b.connectionId
+      ? -1
+      : a.connectionId > b.connectionId
+        ? 1
+        : 0;
+  });
+  for (const selection of ordered) {
+    // Initial thread creation omits accounts deleted since preparation: the
+    // account-first write (selectionWriteSql) inserts nothing for them, and
+    // the thread and its other selections are kept.
+    await selectionWriteSql(tx, args.chatThreadId, selection, "none");
   }
 }
 

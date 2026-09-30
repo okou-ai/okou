@@ -718,6 +718,11 @@ const usagePackCheckoutAuthed$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (result.status === "conflict") {
+      return conflict(
+        "Another usage pack purchase changed concurrently; refresh billing and try again",
+      );
+    }
     return {
       status: 200 as const,
       body: result.status === "preview" ? result.preview : { url: result.url },

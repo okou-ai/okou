@@ -32,7 +32,6 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { isUniqueViolation } from "../../lib/pg-errors";
 import {
   clerk$,
   createClerkReadContext,
@@ -796,7 +795,6 @@ const persistSuccessfulPayment$ = command(
   async (
     { set },
     args: SuccessfulPaymentArgs,
-    conflictingPurchase: boolean,
     signal?: AbortSignal,
   ): Promise<UsagePackInvitationPurchaseRow> => {
     signal?.throwIfAborted();
@@ -851,9 +849,8 @@ const persistSuccessfulPayment$ = command(
         )
         .limit(1);
       let superseded =
-        conflictingPurchase ||
-        (competing !== undefined && competing.status !== "checkout_pending");
-      if (!conflictingPurchase && competing?.status === "checkout_pending") {
+        competing !== undefined && competing.status !== "checkout_pending";
+      if (competing?.status === "checkout_pending") {
         const [retired] = await tx
           .update(usagePackInvitationPurchases)
           .set({
@@ -909,32 +906,21 @@ const persistSuccessfulPayment$ = command(
   },
 );
 
+/**
+ * One conditional publication of a payment. When a concurrent paid purchase
+ * fills the same email slot first, the unique index
+ * uq_usage_pack_invitation_purchases_current_email rejects this transaction
+ * as a whole; the delivery fails and Stripe's redelivery (or reconciliation)
+ * observes the committed winner and records this payment as refund_pending.
+ * No in-process re-run.
+ */
 const recordSuccessfulPayment$ = command(
   async (
     { set },
     args: SuccessfulPaymentArgs,
     signal?: AbortSignal,
   ): Promise<UsagePackInvitationPurchaseRow> => {
-    const recorded = await settle(
-      set(persistSuccessfulPayment$, args, false, signal),
-    );
-    signal?.throwIfAborted();
-    if (recorded.ok) {
-      return recorded.value;
-    }
-    if (
-      !isUniqueViolation(
-        recorded.error,
-        "uq_usage_pack_invitation_purchases_current_email",
-      )
-    ) {
-      throw recorded.error;
-    }
-    // A concurrent paid purchase can fill the email slot after our SELECT. The
-    // unique index picks the winner for both outgoing and current writers. Save
-    // the losing payment's real receipt for the existing refund path; never
-    // retry an active insertion or create a second payable invitation.
-    return await set(persistSuccessfulPayment$, args, true, signal);
+    return await set(persistSuccessfulPayment$, args, signal);
   },
 );
 

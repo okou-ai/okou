@@ -3062,21 +3062,10 @@ const reconcileConcurrencyInvoice$ = command(
     { set },
     prepared: PreparedConcurrencyInvoice,
   ): Promise<PaidWebhookOutcome> => {
-    // Contending webhook deliveries retry a fresh finite read/publication attempt.
-    // Exhaustion remains a failed webhook delivery so Stripe will redeliver it.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const result = await settle(set(publishConcurrencyInvoice$, prepared));
-      if (result.ok) {
-        return result.value;
-      }
-      if (
-        !(result.error instanceof ConcurrencyProjectionChangedError) ||
-        attempt === 2
-      ) {
-        throw result.error;
-      }
-    }
-    throw new ConcurrencyProjectionChangedError();
+    // One conditional publication. A contending delivery that changed the
+    // projection makes this one fail as a whole; Stripe redelivers it against
+    // the committed state. No in-process re-run.
+    return await set(publishConcurrencyInvoice$, prepared);
   },
 );
 

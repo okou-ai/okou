@@ -53,6 +53,14 @@ observable correctness requirements to declare the path complete.
 
 ## Transaction boundaries
 
+> **Priority update (Ethan, 2026-09-30):** the terminal state is about removing
+> advisory locks. Database/transaction handle passing and the "command owns
+> its transaction" shape below are **non-goals** for release 1 acceptance:
+> existing conversions stay, but remaining handle passing is not tracked as a
+> gap. Still required: no explicit row locks, retry loops, `NOWAIT` or
+> `lock_timeout` as replacements for advisory locks; no external I/O inside a
+> transaction; no new tables, fields, JSON coordination state or triggers.
+
 A short transaction contains a bounded set of local database reads and writes
 for one atomic business result. Its SQL lives inside the owning command's
 transaction callback. Reusable pure calculations and SQL builders may accept

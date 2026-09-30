@@ -16,8 +16,8 @@ export interface AcceptedGetStartedInvitation {
 /**
  * Plain read. Every transition the acceptance then makes on this claim is
  * conditional on it still being unresolved under the observed lease
- * (unresolvedClaimWhere); a zero-row transition means another redeemer won and
- * the acceptance is decided again from a fresh read.
+ * (unresolvedClaimWhere); a zero-row transition means another redeemer won,
+ * and its committed transition is the acceptance's deterministic outcome.
  */
 export function acceptedInvitationClaimQuery(
   args: AcceptedGetStartedInvitation,

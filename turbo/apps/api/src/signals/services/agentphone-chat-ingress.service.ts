@@ -6,7 +6,9 @@ import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+import type { Tx } from "../../lib/db-types";
 import {
+  integrationChatThreadInsertFromRouteSql,
   integrationChatThreadValues,
   integrationThreadCreatedEventSql,
   type IntegrationChatThreadCreation,
@@ -59,7 +61,47 @@ const ROUTE_COLUMNS = {
   chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
 } as const;
 
-/** The unique route and its new thread/event commit in this command alone. */
+type AgentPhoneChatThreadRouteRow = Awaited<
+  ReturnType<typeof loadAgentPhoneChatThreadRoute>
+>;
+
+async function loadAgentPhoneChatThreadRoute(
+  tx: Tx,
+  key: AgentPhoneChatThreadRouteKey,
+) {
+  const [route] = await tx
+    .select(ROUTE_COLUMNS)
+    .from(agentphoneChatThreadRoutes)
+    .innerJoin(
+      chatThreads,
+      eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
+    )
+    .where(routeWhere(key))
+    .limit(1);
+  return route;
+}
+
+/** Conditional context refresh; no row lock, the route id pins the row. */
+async function refreshAgentPhoneRouteConversation(
+  tx: Tx,
+  route: NonNullable<AgentPhoneChatThreadRouteRow>,
+  conversationId: string | null,
+): Promise<void> {
+  if (route.conversationId === conversationId) {
+    return;
+  }
+  await tx
+    .update(agentphoneChatThreadRoutes)
+    .set({ conversationId })
+    .where(eq(agentphoneChatThreadRoutes.id, route.id));
+}
+
+/**
+ * The unique route and its new thread/event commit in this command alone.
+ * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
+ * reads the committed winner once. The thread row is inserted by the same
+ * statement only when the route insert wins.
+ */
 export const ensureAgentPhoneChatThreadRoute$ = command(
   async (
     { set },
@@ -74,32 +116,18 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
     const candidateId = randomUUID();
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const [existing] = await tx
-          .select(ROUTE_COLUMNS)
-          .from(agentphoneChatThreadRoutes)
-          .innerJoin(
-            chatThreads,
-            eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
-          )
-          .where(routeWhere(args))
-          .limit(1)
-          .for("update");
-        if (existing) {
-          if (existing.conversationId !== args.conversationId) {
-            await tx
-              .update(agentphoneChatThreadRoutes)
-              .set({ conversationId: args.conversationId })
-              .where(eq(agentphoneChatThreadRoutes.id, existing.id));
-          }
-          return existing;
-        }
-        if (attempt === 1) {
-          break;
-        }
-        const thread = integrationChatThreadValues(args, candidateId, defaults);
-        await tx.insert(chatThreads).values(thread);
-        const [route] = await tx
+      const existing = await loadAgentPhoneChatThreadRoute(tx, args);
+      if (existing) {
+        await refreshAgentPhoneRouteConversation(
+          tx,
+          existing,
+          args.conversationId,
+        );
+        return existing;
+      }
+      const thread = integrationChatThreadValues(args, candidateId, defaults);
+      const insertedRoute = tx.$with("inserted_agentphone_route").as(
+        tx
           .insert(agentphoneChatThreadRoutes)
           .values({
             agentphoneUserLinkId: args.agentphoneUserLinkId,
@@ -114,19 +142,29 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
               agentphoneChatThreadRoutes.rootMessageId,
             ],
           })
-          .returning(ROUTE_COLUMNS);
-        if (route) {
-          await tx.execute(
-            integrationThreadCreatedEventSql(args.orgId, thread),
-          );
-          signal.throwIfAborted();
-          return route;
-        }
-        await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      }
-      throw new Error(
-        "Failed to resolve AgentPhone chat thread route after conflict",
+          .returning(ROUTE_COLUMNS),
       );
+      const insertedThread = tx
+        .$with("inserted_agentphone_thread", {})
+        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
+      const [route] = await tx
+        .with(insertedRoute, insertedThread)
+        .select()
+        .from(insertedRoute);
+      if (route) {
+        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+        signal.throwIfAborted();
+        return route;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once.
+      const winner = await loadAgentPhoneChatThreadRoute(tx, args);
+      if (!winner) {
+        throw new Error(
+          "Failed to resolve AgentPhone chat thread route after conflict",
+        );
+      }
+      await refreshAgentPhoneRouteConversation(tx, winner, args.conversationId);
+      return winner;
     });
     signal.throwIfAborted();
     return result;

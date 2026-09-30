@@ -5,23 +5,16 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, eq, notInArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import {
-  OrgCreditExpirationRequired,
-  pendingOrgCreditExpirationQuery,
-  requireNoPendingOrgCreditExpiration,
-} from "./org-credit-expiration";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
+  settleSlackRewardClaim,
   slackRewardIdentity,
-  slackRewardUnavailableReason,
-  slackOrgRewardSql,
   slackRewardWalletEntitlement,
-  slackRewardIneligibleValues,
 } from "./slack-installation-reward";
 import {
   connectedSlackWorkspace,
@@ -57,14 +50,6 @@ function isDeletedInstallationReference(error: unknown): boolean {
     error.cause !== null &&
     "constraint" in error.cause &&
     error.cause.constraint === SLACK_CONNECTION_WORKSPACE_FK
-  );
-}
-
-/** Terminal claims are never rewritten by a later completion. */
-function unsettledSlackClaim(id: string) {
-  return and(
-    eq(getStartedClaims.id, id),
-    notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
   );
 }
 
@@ -195,33 +180,7 @@ const commitSlackWorkspaceConnection$ = command(
           .insert(getStartedClaims)
           .values(reward.values)
           .onConflictDoNothing(reward.conflict);
-        const [claim] = await tx
-          .select()
-          .from(getStartedClaims)
-          .where(reward.where);
-        if (!claim) {
-          throw new Error("Slack completion claim was not persisted");
-        }
-        if (!["granted", "ineligible", "rejected"].includes(claim.status)) {
-          const awards = await tx
-            .select({ rewardKey: getStartedClaims.rewardKey })
-            .from(getStartedClaims)
-            .where(reward.awardsWhere)
-            .limit(2);
-          const reason = slackRewardUnavailableReason(reward.rewardKey, awards);
-          if (reason) {
-            await tx
-              .update(getStartedClaims)
-              .set(slackRewardIneligibleValues(reason, at))
-              .where(unsettledSlackClaim(claim.id));
-          } else {
-            const [pending] = await tx
-              .select()
-              .from(pendingOrgCreditExpirationQuery(args.orgId, at));
-            requireNoPendingOrgCreditExpiration(args.orgId, pending);
-            await tx.execute(slackOrgRewardSql(claim, reward.rewardKey, at));
-          }
-        }
+        await settleSlackRewardClaim(tx, reward, at);
         signal.throwIfAborted();
         return connectedSlackWorkspace(args, bound, connection.id, replaced);
       },
@@ -231,41 +190,35 @@ const commitSlackWorkspaceConnection$ = command(
   },
 );
 
-/** Workspace binding, account switch and its permanent reward receipt commit together. */
+/**
+ * Workspace binding, account switch and its permanent reward receipt commit
+ * together. Due credit lots are expired first so the reward is not deferred by
+ * them; the connection then commits once and every lost race maps to one
+ * deterministic result.
+ */
 export const connectSlackWorkspace$ = command(
   async (
     { set },
     args: SlackWorkspaceConnection,
     signal: AbortSignal,
   ): Promise<SlackWorkspaceConnectionResult> => {
-    for (let attempt = 0; ; attempt++) {
-      const result = await settle(
-        set(commitSlackWorkspaceConnection$, args, signal),
-      );
-      signal.throwIfAborted();
-      if (result.ok) {
-        return result.value;
-      }
-      if (result.error instanceof SlackWorkspaceConnectionDenied) {
-        return result.error.result;
-      }
-      if (isDeletedInstallationReference(result.error)) {
-        return {
-          kind: "not_found",
-          message: "Workspace not found. Please install the Slack app first.",
-        };
-      }
-      if (attempt >= 3) {
-        throw result.error;
-      }
-      if (result.error instanceof OrgCreditExpirationRequired) {
-        await set(expireOrgCredits$, result.error.orgId, signal);
-      } else if (
-        !isUniqueViolation(result.error, "uq_get_started_reward_key") &&
-        !isUniqueViolation(result.error, "uq_get_started_slack_org")
-      ) {
-        throw result.error;
-      }
+    await set(expireOrgCredits$, args.orgId, signal);
+    const result = await settle(
+      set(commitSlackWorkspaceConnection$, args, signal),
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return result.value;
     }
+    if (result.error instanceof SlackWorkspaceConnectionDenied) {
+      return result.error.result;
+    }
+    if (isDeletedInstallationReference(result.error)) {
+      return {
+        kind: "not_found",
+        message: "Workspace not found. Please install the Slack app first.",
+      };
+    }
+    throw result.error;
   },
 );

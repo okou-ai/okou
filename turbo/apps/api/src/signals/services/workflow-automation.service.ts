@@ -7260,12 +7260,18 @@ export const enableWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (morningBriefRow !== undefined) {
+    if (morningBriefRow.kind === "conflict") {
+      return {
+        kind: "conflict",
+        message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+      };
+    }
+    if (morningBriefRow.kind === "applied") {
       return await finalizeAndPublishEnabledWorkflowAutomation(
         set(writeDb$),
         {
           previousAutomation: automation,
-          enabledAutomation: morningBriefRow,
+          enabledAutomation: morningBriefRow.row,
           memberUserId: args.member.userId,
         },
         signal,
@@ -7354,15 +7360,16 @@ export const disableWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const ordinaryRow =
-      morningBriefRow === undefined
-        ? await set(
-            persistDisabledWorkflowAutomation$,
-            { automation: owned.automation, nextRunAt, now },
-            signal,
-          )
-        : undefined;
-    const row = morningBriefRow ?? ordinaryRow;
+    const row =
+      morningBriefRow.kind === "applied"
+        ? morningBriefRow.row
+        : morningBriefRow.kind === "conflict"
+          ? undefined
+          : await set(
+              persistDisabledWorkflowAutomation$,
+              { automation: owned.automation, nextRunAt, now },
+              signal,
+            );
     signal.throwIfAborted();
     if (!row) {
       if (owned.automation.officialBlueprintKey !== null) {

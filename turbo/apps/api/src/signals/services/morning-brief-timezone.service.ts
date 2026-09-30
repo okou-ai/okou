@@ -20,7 +20,7 @@ import {
   morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
-  withFreshMorningBriefSnapshot,
+  commitMorningBriefSnapshotOnce,
 } from "./morning-brief-native-schedule.service";
 import {
   awaitMorningBriefPreferenceCompatibility,
@@ -70,8 +70,9 @@ function automationTimezoneValues(
  * automation are read with their row versions, their successors are computed
  * from the current cron and the timezone read in the same transaction, and
  * each is written with a conditional UPDATE on that version. A concurrent
- * settlement, toggle, reconciliation or timezone commit rolls the attempt back
- * and it recomputes from fresh state. An installation that commits after this
+ * settlement, toggle, reconciliation or timezone commit rolls the transaction
+ * back and the result is `conflict` once, which callers report as their
+ * retryable conflict; nothing is re-read or retried here. An installation that commits after this
  * read runs this synchronization itself once installed, so one of the two
  * writers always observes the other.
  */
@@ -83,13 +84,13 @@ export const synchronizeMorningBriefTimezone$ = command(
       readonly member: { readonly userId: string };
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<"synchronized" | "conflict"> => {
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const db = set(writeDb$);
     signal.throwIfAborted();
     await awaitMorningBriefPreferenceCompatibility(db, owner);
     signal.throwIfAborted();
-    await withFreshMorningBriefSnapshot(() => {
+    const outcome = await commitMorningBriefSnapshotOnce(() => {
       return db.transaction(async (tx) => {
         const [target] = parseRawRows(
           timezoneTarget,
@@ -186,5 +187,6 @@ export const synchronizeMorningBriefTimezone$ = command(
       });
     }, signal);
     signal.throwIfAborted();
+    return outcome.kind === "committed" ? "synchronized" : "conflict";
   },
 );

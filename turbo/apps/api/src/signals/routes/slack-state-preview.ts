@@ -46,7 +46,7 @@ import {
 } from "./preview-endpoint-access";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgPlanEntitlementValues } from "../services/org-plan-entitlements.service";
-import { atomicOrgCreditExpirationSql } from "../services/org-credit-expiration";
+import { orgCreditExpirationSql } from "../services/org-credit-expiration";
 
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_WORKSPACE_NAME = "E2E Test Workspace";
@@ -185,7 +185,7 @@ const commitSlackStarterDefault$ = command(
         .onConflictDoNothing()
         .returning({ orgId: orgMetadataCanonicalWrites.orgId });
       if (inserted) {
-        await tx.execute(atomicOrgCreditExpirationSql(input.orgId, nowDate()));
+        await tx.execute(orgCreditExpirationSql(input.orgId, nowDate()));
         const expiresAt = nowDate();
         expiresAt.setMonth(expiresAt.getMonth() + 1);
         const [grant] = await tx

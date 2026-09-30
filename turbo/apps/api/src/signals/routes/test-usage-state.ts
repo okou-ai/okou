@@ -602,8 +602,7 @@ const insertFixtureUsage$ = command(
               threadId: agentRuns.chatThreadId,
             })
             .from(agentRuns)
-            .where(eq(agentRuns.id, runId))
-            .for("key share");
+            .where(eq(agentRuns.id, runId));
           signal.throwIfAborted();
           if (run) {
             const capture = billingRunAttributionWrite(run);
@@ -628,8 +627,7 @@ const insertFixtureUsage$ = command(
             ),
           })
           .from(billingRunAttribution)
-          .where(runId ? eq(billingRunAttribution.runId, runId) : sql`false`)
-          .for("update");
+          .where(runId ? eq(billingRunAttribution.runId, runId) : sql`false`);
         signal.throwIfAborted();
         if (
           attribution &&
@@ -720,6 +718,15 @@ async function attachUsageAllowance(
   }
 
   const windowLimit = Math.max(args.consumedUnits, args.unitsApplied) + 100;
+  // Each attached pair is a distinct window identity (entitlement, kind,
+  // start), so successive fixture pairs start one second apart.
+  const [existing] = await db
+    .select({ windows: count() })
+    .from(orgUsageAllowanceWindows)
+    .where(eq(orgUsageAllowanceWindows.entitlementId, entitlement.id));
+  const startsAt = new Date(
+    Date.UTC(2000, 0, 1) + (existing?.windows ?? 0) * 1000,
+  );
   const windows = await db
     .insert(orgUsageAllowanceWindows)
     .values([
@@ -727,7 +734,7 @@ async function attachUsageAllowance(
         orgId: args.orgId,
         entitlementId: entitlement.id,
         kind: "short",
-        startsAt: new Date("2000-01-01T00:00:00.000Z"),
+        startsAt,
         expiresAt: new Date("3000-01-01T00:00:00.000Z"),
         unitLimit: windowLimit,
         consumedUnits: args.consumedUnits,
@@ -737,7 +744,7 @@ async function attachUsageAllowance(
         orgId: args.orgId,
         entitlementId: entitlement.id,
         kind: "weekly",
-        startsAt: new Date("2000-01-01T00:00:00.000Z"),
+        startsAt,
         expiresAt: new Date("3000-01-01T00:00:00.000Z"),
         unitLimit: windowLimit,
         consumedUnits: args.consumedUnits,
@@ -887,116 +894,110 @@ const materializeHourlyUsage$ = command(
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
-    let total = 0;
-    while (true) {
-      const materialized = await db.transaction(async (tx) => {
-        const runPredicate =
-          args.runId === null
-            ? isNull(usageEvent.runId)
-            : eq(usageEvent.runId, args.runId);
-        const rows = await tx
-          .select({
-            id: usageEvent.id,
-            processedHour: sql`date_trunc('hour', ${usageEvent.processedAt})`
-              .mapWith(usageEvent.createdAt)
-              .as("processed_hour"),
-            orgId: usageEvent.orgId,
-            userId: usageEvent.userId,
-            runId: usageEvent.runId,
-            billingRunId: usageEvent.billingRunId,
-            billingContext: usageEvent.billingContext,
-            billingAnchorAt: sql`${usageEvent.billingAnchorAt}::text`.mapWith(
-              nullableDriverValueDecoder(pgTextDecoder),
-            ),
-            kind: usageEvent.kind,
-            provider: usageEvent.provider,
-            category: usageEvent.category,
-            shortWindowId: usageAllowanceAllocations.shortWindowId,
-            weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
-            quantity: usageEvent.quantity,
-            creditsCharged: usageEvent.creditsCharged,
-            allowanceUnits: usageAllowanceAllocations.unitsApplied,
-          })
-          .from(usageEvent)
-          .leftJoin(
-            usageAllowanceAllocations,
-            eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
-          )
+    // One transaction over the whole finite fixture scope, as on main; no
+    // row lock and no paging loop.
+    const materialized = await db.transaction(async (tx) => {
+      const runPredicate =
+        args.runId === null
+          ? isNull(usageEvent.runId)
+          : eq(usageEvent.runId, args.runId);
+      const rows = await tx
+        .select({
+          id: usageEvent.id,
+          processedHour: sql`date_trunc('hour', ${usageEvent.processedAt})`
+            .mapWith(usageEvent.createdAt)
+            .as("processed_hour"),
+          orgId: usageEvent.orgId,
+          userId: usageEvent.userId,
+          runId: usageEvent.runId,
+          billingRunId: usageEvent.billingRunId,
+          billingContext: usageEvent.billingContext,
+          billingAnchorAt: sql`${usageEvent.billingAnchorAt}::text`.mapWith(
+            nullableDriverValueDecoder(pgTextDecoder),
+          ),
+          kind: usageEvent.kind,
+          provider: usageEvent.provider,
+          category: usageEvent.category,
+          shortWindowId: usageAllowanceAllocations.shortWindowId,
+          weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
+          quantity: usageEvent.quantity,
+          creditsCharged: usageEvent.creditsCharged,
+          allowanceUnits: usageAllowanceAllocations.unitsApplied,
+        })
+        .from(usageEvent)
+        .leftJoin(
+          usageAllowanceAllocations,
+          eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
+        )
+        .where(
+          and(
+            eq(usageEvent.orgId, args.orgId),
+            eq(usageEvent.userId, args.userId),
+            runPredicate,
+            eq(usageEvent.status, "processed"),
+            isNotNull(usageEvent.processedAt),
+          ),
+        )
+        .orderBy(usageEvent.id);
+      signal.throwIfAborted();
+
+      if (rows.length === 0) {
+        return 0;
+      }
+
+      await tx.insert(usageEventHourlyRollup).values(
+        rows.map((row) => {
+          return {
+            processedHour: row.processedHour,
+            orgId: row.orgId,
+            userId: row.userId,
+            runId: row.runId,
+            billingRunId: row.billingRunId,
+            billingContext: row.billingContext,
+            billingAnchorAt:
+              row.billingAnchorAt === null
+                ? null
+                : sql`${row.billingAnchorAt}::timestamp`,
+            kind: row.kind,
+            provider: row.provider,
+            category: row.category,
+            shortWindowId: row.shortWindowId,
+            weeklyWindowId: row.weeklyWindowId,
+            quantity: row.quantity,
+            creditsCharged: row.creditsCharged ?? 0,
+            allowanceUnits: row.allowanceUnits ?? 0,
+          };
+        }),
+      );
+      signal.throwIfAborted();
+
+      const observedIds = rows.flatMap((row) => {
+        return row.billingRunId ? [row.billingRunId] : [];
+      });
+      if (observedIds.length > 0) {
+        await tx
+          .update(billingRunAttribution)
+          .set({ usageObserved: true })
           .where(
             and(
-              eq(usageEvent.orgId, args.orgId),
-              eq(usageEvent.userId, args.userId),
-              runPredicate,
-              eq(usageEvent.status, "processed"),
-              isNotNull(usageEvent.processedAt),
+              inArray(billingRunAttribution.runId, observedIds),
+              eq(billingRunAttribution.usageObserved, false),
             ),
-          )
-          .orderBy(usageEvent.id)
-          .limit(500)
-          .for("update", { of: usageEvent });
-        signal.throwIfAborted();
-
-        if (rows.length === 0) {
-          return 0;
-        }
-
-        await tx.insert(usageEventHourlyRollup).values(
-          rows.map((row) => {
-            return {
-              processedHour: row.processedHour,
-              orgId: row.orgId,
-              userId: row.userId,
-              runId: row.runId,
-              billingRunId: row.billingRunId,
-              billingContext: row.billingContext,
-              billingAnchorAt:
-                row.billingAnchorAt === null
-                  ? null
-                  : sql`${row.billingAnchorAt}::timestamp`,
-              kind: row.kind,
-              provider: row.provider,
-              category: row.category,
-              shortWindowId: row.shortWindowId,
-              weeklyWindowId: row.weeklyWindowId,
-              quantity: row.quantity,
-              creditsCharged: row.creditsCharged ?? 0,
-              allowanceUnits: row.allowanceUnits ?? 0,
-            };
-          }),
-        );
-        signal.throwIfAborted();
-
-        const observedIds = rows.flatMap((row) => {
-          return row.billingRunId ? [row.billingRunId] : [];
-        });
-        if (observedIds.length > 0) {
-          await tx
-            .update(billingRunAttribution)
-            .set({ usageObserved: true })
-            .where(
-              and(
-                inArray(billingRunAttribution.runId, observedIds),
-                eq(billingRunAttribution.usageObserved, false),
-              ),
-            );
-        }
-        await tx.delete(usageEvent).where(
-          inArray(
-            usageEvent.id,
-            rows.map((row) => {
-              return row.id;
-            }),
-          ),
-        );
-        signal.throwIfAborted();
-        return rows.length;
-      });
-      signal.throwIfAborted();
-      total += materialized;
-      if (materialized < 500) {
-        return total;
+          );
       }
-    }
+      await tx.delete(usageEvent).where(
+        inArray(
+          usageEvent.id,
+          rows.map((row) => {
+            return row.id;
+          }),
+        ),
+      );
+      signal.throwIfAborted();
+      return rows.length;
+    });
+    signal.throwIfAborted();
+    return materialized;
   },
 );
 

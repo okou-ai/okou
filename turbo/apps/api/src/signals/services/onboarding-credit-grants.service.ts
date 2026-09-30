@@ -7,13 +7,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 
-import { settle } from "../utils";
-import {
-  OrgCreditExpirationRequired,
-  pendingOrgCreditExpirationQuery,
-  requireNoPendingOrgCreditExpiration,
-} from "./org-credit-expiration";
-import { expireOrgCredits$ } from "./org-credit-expiration.service";
+import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 const LIMITED_FREE_ONBOARDING_CREDITS = 1000;
@@ -29,10 +23,12 @@ function onboardingCreditsExpiresAt(grantedAt: Date): Date {
 /**
  * The grant identity and its balance change commit together before publication.
  * The unique onboarding receipt admits one increment, which is atomic
- * arithmetic; no wallet row lock is taken. An uncommitted expiration still
- * shows its expired remainder, so this adder retries after it.
+ * arithmetic; no wallet row lock is taken; a replay is an idempotent ON
+ * CONFLICT no-op. Expired remainder is cleared first by one conditional
+ * statement in this transaction, so the grant is serially after expiration; a
+ * lost clear throws OrgCreditExpirationConflict once (no retry loop).
  */
-const commitOnboardingCredits$ = command(
+export const grantOnboardingCredits$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
@@ -91,10 +87,8 @@ const commitOnboardingCredits$ = command(
       if (existingGrant) {
         return;
       }
-      const [expired] = await tx
-        .select()
-        .from(pendingOrgCreditExpirationQuery(orgId, nowDate()));
-      requireNoPendingOrgCreditExpiration(orgId, expired);
+      const at = nowDate();
+      await expireOrgCreditsInTransaction(tx, orgId, at);
       const [grant] = await tx
         .insert(creditExpiresRecord)
         .values({
@@ -103,7 +97,7 @@ const commitOnboardingCredits$ = command(
           stripeInvoiceId: ONBOARDING_CREDIT_IDEMPOTENCY_KEY,
           amount: LIMITED_FREE_ONBOARDING_CREDITS,
           remaining: LIMITED_FREE_ONBOARDING_CREDITS,
-          expiresAt: onboardingCreditsExpiresAt(nowDate()),
+          expiresAt: onboardingCreditsExpiresAt(at),
         })
         .onConflictDoNothing()
         .returning({ id: creditExpiresRecord.id });
@@ -112,28 +106,11 @@ const commitOnboardingCredits$ = command(
           .update(orgMetadata)
           .set({
             credits: sql`${orgMetadata.credits} + ${LIMITED_FREE_ONBOARDING_CREDITS}`,
-            updatedAt: nowDate(),
+            updatedAt: at,
           })
           .where(eq(orgMetadata.orgId, orgId));
       }
     });
     signal.throwIfAborted();
-  },
-);
-
-export const grantOnboardingCredits$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const result = await settle(set(commitOnboardingCredits$, orgId, signal));
-      signal.throwIfAborted();
-      if (result.ok) {
-        return;
-      }
-      if (!(result.error instanceof OrgCreditExpirationRequired)) {
-        throw result.error;
-      }
-      await set(expireOrgCredits$, orgId, signal);
-    }
-    throw new OrgCreditExpirationRequired(orgId);
   },
 );

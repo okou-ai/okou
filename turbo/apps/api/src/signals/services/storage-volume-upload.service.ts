@@ -139,7 +139,6 @@ function publicationReadinessSql(fence: PiStableContextPublicationFence) {
     WHERE ${generationScopeCondition(scope)}`;
 }
 
-const HEAD_REBIND_ATTEMPTS = 8;
 const headColumns = Object.freeze({
   id: piStableContextHeads.id,
   generation: piStableContextHeads.generation,
@@ -254,43 +253,28 @@ const commitPreparedVolumeUpload$ = command(
         )
         .orderBy(asc(piStableContextHeads.id))
         .limit(16);
-      for (const listed of heads) {
-        // Generation compare-and-set per head. A miss means another writer
-        // committed first; re-read its row and rebind on top of it so neither
-        // Storage mount rebind is lost.
-        let head: typeof listed | undefined = listed;
-        for (let attempt = 0; head; attempt += 1) {
-          const values = reboundHeadValues(head, version);
-          if (!values) {
-            break;
-          }
-          if (attempt >= HEAD_REBIND_ATTEMPTS) {
-            throw new Error("Stable-context head kept changing during rebind");
-          }
-          const [updated] = await tx
-            .update(piStableContextHeads)
-            .set(values)
-            .where(
-              and(
-                eq(piStableContextHeads.id, head.id),
-                eq(piStableContextHeads.generation, head.generation),
-              ),
-            )
-            .returning({ id: piStableContextHeads.id });
-          if (updated) {
-            break;
-          }
-          [head] = await tx
-            .select(headColumns)
-            .from(piStableContextHeads)
-            .where(
-              and(
-                eq(piStableContextHeads.id, listed.id),
-                isNotNull(piStableContextHeads.input),
-                isNotNull(piStableContextHeads.inputDigest),
-              ),
-            )
-            .limit(1);
+      for (const head of heads) {
+        const values = reboundHeadValues(head, version);
+        if (!values) {
+          continue;
+        }
+        // One generation compare-and-set per head. A miss means another
+        // writer committed a newer head first; this publication is stale and
+        // rolls back, so its caller returns the existing conflict result.
+        const [updated] = await tx
+          .update(piStableContextHeads)
+          .set(values)
+          .where(
+            and(
+              eq(piStableContextHeads.id, head.id),
+              eq(piStableContextHeads.generation, head.generation),
+            ),
+          )
+          .returning({ id: piStableContextHeads.id });
+        if (!updated) {
+          throw new StalePiStableContextPublicationError(
+            "Stable-context head changed before Storage HEAD commit",
+          );
         }
       }
       await tx.execute(publicationReadinessSql(fence));

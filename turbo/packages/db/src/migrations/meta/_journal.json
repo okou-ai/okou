@@ -1527,6 +1527,13 @@
       "when": 1790743539610,
       "tag": "1295_retire_billing_attribution_mutation_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 1296,
+      "version": "7",
+      "when": 1790748608965,
+      "tag": "1296_allowance_window_uniqueness",
+      "breakpoints": true
     }
   ]
 }

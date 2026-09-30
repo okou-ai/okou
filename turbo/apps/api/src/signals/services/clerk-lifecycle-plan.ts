@@ -1,4 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { agentSessions } from "@okouai/db/schema/agent-session";
 import {
   artifacts,
   imageArtifacts,
@@ -110,14 +112,56 @@ export function runCatalogCleanupSql(runIds: readonly string[]) {
 /**
  * Only delete Runs that have no conversation, so the Run cascade never drops a
  * conversation (and its blob reference) this deletion did not release. A Run
- * that gained a conversation after the release statement survives this DELETE
- * and is picked up by the next bounded sweep.
+ * that gained a conversation after the release statement survives, and the
+ * short RETURNING count makes the caller roll back deterministically.
+ *
+ * Release 2 switches `conversations.run_id` from ON DELETE CASCADE to RESTRICT
+ * once no deployed deleter relies on the cascade; that also turns a conversation
+ * committed while this DELETE waits on the Run row into an FK error.
  */
 export function conversationFreeRunDeleteSql(runIds: readonly string[]) {
-  return sql`DELETE FROM ${agentRuns}
+  return sql`WITH deleted AS (
+    DELETE FROM ${agentRuns}
     WHERE ${agentRuns.id} = ANY(${sql.param(runIds)}::uuid[])
     AND NOT EXISTS (
       SELECT 1 FROM ${conversations} WHERE ${conversations.runId} = ${agentRuns.id}
+    )
+    RETURNING 1
+  ) SELECT count(*)::int AS "deletedRuns" FROM deleted`;
+}
+
+export const deletedRunCountSchema = z.object({
+  deletedRuns: z.number().int().nonnegative(),
+});
+
+/**
+ * Delete the user's Sessions only when no Run remains under them.
+ *
+ * The target Runs were already deleted conversation-first. A Run created in
+ * one of these Sessions after that snapshot would otherwise be removed by the
+ * Session cascade together with its conversation, leaking the blob reference.
+ * The guard keeps such a Session; the caller then fails the job attempt.
+ */
+export function runFreeUserSessionDeleteSql(userId: string) {
+  return sql`DELETE FROM ${agentSessions}
+    WHERE ${agentSessions.userId} = ${userId}
+    AND NOT EXISTS (
+      SELECT 1 FROM ${agentRuns} WHERE ${agentRuns.sessionId} = ${agentSessions.id}
+    )`;
+}
+
+/** Same guard for the organization's Agent cascade (Agent -> Session -> Run). */
+export function runFreeAgentDeleteSql(
+  orgId: string,
+  agentIds: readonly string[],
+) {
+  return sql`DELETE FROM ${agents}
+    WHERE ${agents.orgId} = ${orgId}
+    AND ${agents.id} = ANY(${sql.param(agentIds)}::uuid[])
+    AND NOT EXISTS (
+      SELECT 1 FROM ${agentSessions}
+      JOIN ${agentRuns} ON ${agentRuns.sessionId} = ${agentSessions.id}
+      WHERE ${agentSessions.agentId} = ${agents.id}
     )`;
 }
 
@@ -188,20 +232,13 @@ export function emptyConversationDeletionReceipt(): ConversationDeletionReceipt 
   return { deletedConversations: 0, releasedReferences: 0, releasedHashes: 0 };
 }
 
-export function addConversationDeletionReceipts(
-  a: ConversationDeletionReceipt,
-  b: ConversationDeletionReceipt,
-): ConversationDeletionReceipt {
-  return {
-    deletedConversations: a.deletedConversations + b.deletedConversations,
-    releasedReferences: a.releasedReferences + b.releasedReferences,
-    releasedHashes: a.releasedHashes + b.releasedHashes,
-  };
-}
-
-/** Late Runs or conversations kept appearing; roll back and let the job retry. */
-export function throwUnconvergedRunSweep(): never {
+/**
+ * A target Run gained a conversation, or a late Run appeared under a Session
+ * or Agent being deleted, after this transaction's snapshot. Roll back once;
+ * the deletion job's existing attempt schedule re-runs it from current rows.
+ */
+export function throwLateRunConversation(): never {
   throw new ClerkReferenceAccountingError(
-    "Conversation deletion did not converge: target runs kept gaining conversations",
+    "Conversation deletion conflicted with a concurrent run or conversation write",
   );
 }

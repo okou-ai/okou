@@ -84,10 +84,11 @@ export function checkObservationTimes(
 }
 
 /**
- * The SHARE lock is kept (pre-existing on main, moved here): admission checks
- * observation times against completed_at, and billability against trigger and
- * model provider, three times across the transaction. A lock-free form needs a
- * publication conditional on the Run's current completion window.
+ * Plain read, no explicit row lock. Admission re-reads the Run with the
+ * database clock before its final check, so a completion committed during the
+ * transaction narrows the admitted window; one that commits later is serially
+ * after this admission (every observation is at or before that clock sample).
+ * A Run deleted meanwhile fails the usage FK insert, reported as 404.
  */
 export function xUsageRunQuery(owner: Owner) {
   return new QueryBuilder()
@@ -112,7 +113,6 @@ export function xUsageRunQuery(owner: Owner) {
         eq(agentRuns.userId, owner.userId),
       ),
     )
-    .for("share")
     .as("x_usage_run");
 }
 

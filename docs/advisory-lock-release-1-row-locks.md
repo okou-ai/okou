@@ -47,3 +47,38 @@ writes that re-run from a fresh read; automation thread bindings use
 run deletion can leave a blob reference count one too high; closing it fully
 needs `conversations.run_id` to become RESTRICT with every run-deleting path
 removing conversations first (a constraint change on existing columns).
+
+## Retry loops (Ethan, 2026-09-30)
+
+Retry loops used to coordinate concurrency are not terminal either. A lost race
+now yields one deterministic result from a conditional statement (success,
+idempotent no-op, "already handled", or a 409/conflict the route maps), or a
+settlement batch stays pending for the existing next cycle. Removed in this PR:
+
+| Area                                                             | Former retry                                               | Now                                                                                                                                                   |
+| ---------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Credit settlement                                                | `attempt < 3`, 40P01 deadlock retry, expiration-then-retry | One prepare and one commit; stale snapshot or expiration conflict leaves the batch pending for the next cycle; deadlocks propagate as on main         |
+| Credit usage paging                                              | `while (true)`                                             | One read of pending keys, fixed batches                                                                                                               |
+| Credit expiration                                                | bounded clear + retry                                      | One statement over the expired set                                                                                                                    |
+| Org/onboarding/CLI grants                                        | `attempt < 4`                                              | One transaction; `ON CONFLICT` receipt + atomic increment                                                                                             |
+| Legacy plan invoice                                              | `attempt < 3`                                              | One commit; a lost wallet race reads the winner once and becomes a no-op when the invoice is now a duplicate or rejected, otherwise Stripe redelivers |
+| Get-started rewards/invitations                                  | `attempt < 16`                                             | One transaction; a lost slot race returns the claim unchanged (reward) or 503 for Clerk redelivery (invitation)                                       |
+| Chat ingress routes (Slack, Teams, Telegram, Feishu, AgentPhone) | 2–3 attempts with speculative thread + delete              | One CTE statement: the thread is inserted only from a winning route `ON CONFLICT DO NOTHING`; the winner is read once                                 |
+| Slack installation/workspace                                     | 4-attempt whole transaction                                | One commit; reward grant in a savepoint maps unique violations to ineligible                                                                          |
+| Storage stable-context heads                                     | 8 attempts                                                 | One generation CAS; a miss is the existing stale-publication result                                                                                   |
+| Catalog reader                                                   | 2-pass read                                                | One identity read, one combined read on miss                                                                                                          |
+| Model provider accounts                                          | 40P01 mapped to 409                                        | Provider row written first so account changes queue on it                                                                                             |
+| Connector deletion vs selection                                  | savepoint retry on RESTRICT                                | Selection writes first write the account row; deletion removes selections and the account in one statement                                            |
+| Morning Brief settlement/toggle/timezone/materialization         | `MORNING_BRIEF_SNAPSHOT_ATTEMPTS = 5`                      | One pass; `conflict` maps to 409 or leaves enrollment pending for its existing retry schedule                                                         |
+| Clerk deletion                                                   | bounded run re-sweep                                       | One pass; a late run/conversation fails the job, which the existing background-job attempts re-run                                                    |
+| Usage pack purchase snapshot/checkout                            | `while (true)`                                             | One pass returning `conflict` (409)                                                                                                                   |
+| Stripe concurrency invoice                                       | `attempt < 3`                                              | One conditional publish; failure → Stripe redelivery                                                                                                  |
+
+Kept (not concurrency coordination): external provider HTTP retries already on
+main (Gmail token refresh), queue/background job attempt counters, Stripe and
+Clerk webhook redelivery, and pagination loops.
+
+The allowance window entitlement lock is replaced by the unique index
+`uq_org_usage_allowance_windows_entitlement_kind_starts` on existing columns
+(migration 1296) with `INSERT … ON CONFLICT`. Before releasing, verify that
+production has no duplicate `(entitlement_id, kind, starts_at)` windows.

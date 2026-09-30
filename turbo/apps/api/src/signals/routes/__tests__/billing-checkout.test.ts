@@ -1867,52 +1867,25 @@ describe("POST /api/billing/checkout", () => {
         }[];
       };
     }
-    // Stripe state is cumulative: every creation stays listable, and a
-    // cancellation only changes its status.
+    // Stripe state is cumulative: every creation stays listable.
     const stripeSubscriptions: CreatedSubscription[] = [];
-    // No lock spans the purchase's provider I/O. Hold a later creation until
-    // Stripe has been read after the first one, so exactly one purchase can
-    // observe the other before paying.
-    const readAfterFirstCreation = createDeferredPromise<void>(context.signal);
     context.mocks.stripe.subscriptions.list.mockImplementation(() => {
-      if (stripeSubscriptions.length > 0 && !readAfterFirstCreation.settled()) {
-        readAfterFirstCreation.resolve();
-      }
-      return Promise.resolve({
-        data: stripeSubscriptions.map((subscription) => {
-          return { ...subscription };
-        }),
-        has_more: false,
+      const data = stripeSubscriptions.map((subscription) => {
+        return { ...subscription };
       });
+      return Promise.resolve({ data, has_more: false });
     });
-    context.mocks.stripe.subscriptions.cancel.mockImplementation(
-      (id: unknown) => {
-        const subscription = stripeSubscriptions.find((candidate) => {
-          return candidate.id === id;
-        });
-        if (!subscription) {
-          throw new Error(`Unknown test subscription ${String(id)}`);
-        }
-        subscription.status = "canceled";
-        return Promise.resolve({ ...subscription });
-      },
-    );
-    context.mocks.stripe.subscriptions.create.mockImplementation(
-      async (input) => {
-        if (stripeSubscriptions.length > 0) {
-          await readAfterFirstCreation.promise;
-        }
-        const subscription: CreatedSubscription = {
-          id: `sub_${randomUUID().slice(0, 8)}`,
-          customer: customerId,
-          status: "active",
-          metadata: stripeInputMetadata(input),
-          items: { data: [{ price: { id: TEST_PRICE_PRO } }] },
-        };
-        stripeSubscriptions.push(subscription);
-        return { ...subscription, latest_invoice: null };
-      },
-    );
+    context.mocks.stripe.subscriptions.create.mockImplementation((input) => {
+      const subscription: CreatedSubscription = {
+        id: `sub_${randomUUID().slice(0, 8)}`,
+        customer: customerId,
+        status: "active",
+        metadata: stripeInputMetadata(input),
+        items: { data: [{ price: { id: TEST_PRICE_PRO } }] },
+      };
+      stripeSubscriptions.push(subscription);
+      return Promise.resolve({ ...subscription, latest_invoice: null });
+    });
 
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingCheckoutContract,
@@ -1985,19 +1958,14 @@ describe("POST /api/billing/checkout", () => {
         code: "CONFLICT",
       },
     });
-    // A purchase that lost the post-creation Stripe read released its unpaid
-    // subscription; exactly one Pro subscription remains.
-    const remaining = stripeSubscriptions.filter((subscription) => {
-      return subscription.status !== "canceled";
-    });
-    expect(remaining).toHaveLength(1);
-    const [createdSubscription] = remaining;
+    // The local claim decided the winner before any provider write: the
+    // loser never reached Stripe, so nothing had to be released.
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    const [createdSubscription] = stripeSubscriptions;
     if (!createdSubscription) {
       throw new Error("Expected the winning Pro subscription");
     }
-    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
-      stripeSubscriptions.length - 1,
-    );
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [
         createdSubscription,
@@ -2024,9 +1992,8 @@ describe("POST /api/billing/checkout", () => {
       [409],
     );
     expect(replay.body).toStrictEqual(staleUpgrade.body);
-    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(
-      stripeSubscriptions.length,
-    );
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
   });
 
@@ -4266,7 +4233,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(context.mocks.stripe.subscriptions.create).not.toHaveBeenCalled();
   });
 
-  it("releases an unpaid usage pack subscription when a replacement retires its snapshot mid-confirmation", async () => {
+  it("rejects a replacement usage pack purchase while a confirmation owns the claim", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const customerId = `cus_${randomUUID()}`;
@@ -4329,69 +4296,46 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       throw new Error("Expected a usage pack purchase preview");
     }
 
-    // No lock spans the provider call: a replacement preview retires the
-    // confirmed snapshot while its Stripe subscription is being created.
+    // The confirmation claimed its snapshot before calling Stripe. A
+    // replacement purchase started while the subscription is being created
+    // cannot retire that claim; it is a deterministic conflict instead.
     const subscriptionId = `sub_${randomUUID()}`;
     let confirmedSnapshotId: string | undefined;
+    let replacementStatus: number | undefined;
     context.mocks.stripe.subscriptions.create.mockImplementation(
       async (input) => {
         const metadata = stripeInputMetadata(input);
         confirmedSnapshotId = metadata.usagePackSubscriptionId;
-        await accept(
-          client.create({
-            body: {
-              ...purchaseBody,
-              memberUsagePacks: [
-                { memberId: fixture.userId, usagePackUsd: 50 },
-              ],
-            },
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [200],
-        );
+        const replacement = await client.create({
+          body: {
+            ...purchaseBody,
+            memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 50 }],
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        });
+        replacementStatus = replacement.status;
         return {
           id: subscriptionId,
           customer: customerId,
-          status: "incomplete",
+          status: "active",
           metadata,
           items: { data: [{ price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } }] },
-          latest_invoice: {
-            id: `in_${randomUUID()}`,
-            customer: customerId,
-            status: "open",
-            amount_due: 4000,
-            currency: "usd",
-            metadata,
-            hosted_invoice_url: null,
-            lines: { has_more: false, data: [] },
-            parent: null,
-          },
+          latest_invoice: null,
         };
       },
     );
-    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-      id: subscriptionId,
-      status: "canceled",
-    });
 
-    const confirmation = await accept(
+    await accept(
       client.confirm({
         body: { previewToken: preview.body.previewToken },
         headers: { authorization: "Bearer clerk-session" },
       }),
-      [409],
+      [200],
     );
 
-    expect(confirmation.body).toStrictEqual({
-      error: {
-        message: "Usage pack purchase preview is no longer valid",
-        code: "CONFLICT",
-      },
-    });
-    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
-      subscriptionId,
-    );
-    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+    expect(replacementStatus).toBe(409);
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     if (!confirmedSnapshotId) {
       throw new Error("Expected the confirmed usage pack snapshot ID");
     }
@@ -4399,8 +4343,8 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       (await readUsagePackState(fixture.orgId, confirmedSnapshotId))
         .subscription,
     ).toMatchObject({
-      subscriptionStatus: "checkout_expired",
-      stripeSubscriptionId: null,
+      subscriptionStatus: "active",
+      stripeSubscriptionId: subscriptionId,
     });
   });
 
@@ -4580,28 +4524,36 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       data: [],
       has_more: false,
     });
-    context.mocks.stripe.subscriptions.create.mockImplementation((input) => {
-      createdSubscription = {
-        id: `sub_${randomUUID()}`,
-        customer: customerId,
-        status: "active",
-        metadata: stripeInputMetadata(input),
-        items: {
-          data: [
-            { price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } },
-            { price: { id: TEST_PRICE_USAGE_PACK_20 } },
-          ],
-        },
-      };
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [createdSubscription],
-        has_more: false,
-      });
-      return Promise.resolve({
-        ...createdSubscription,
-        latest_invoice: null,
-      });
-    });
+    // The winner is held inside Stripe creation until the other
+    // confirmation has answered, so both run against the same claim state.
+    const otherConfirmationAnswered = createDeferredPromise<void>(
+      context.signal,
+    );
+    context.mocks.stripe.subscriptions.create.mockImplementation(
+      async (input) => {
+        await otherConfirmationAnswered.promise;
+        createdSubscription = {
+          id: `sub_${randomUUID()}`,
+          customer: customerId,
+          status: "active",
+          metadata: stripeInputMetadata(input),
+          items: {
+            data: [
+              { price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } },
+              { price: { id: TEST_PRICE_USAGE_PACK_20 } },
+            ],
+          },
+        };
+        context.mocks.stripe.subscriptions.list.mockResolvedValue({
+          data: [createdSubscription],
+          has_more: false,
+        });
+        return {
+          ...createdSubscription,
+          latest_invoice: null,
+        };
+      },
+    );
     context.mocks.stripe.subscriptions.retrieve.mockImplementation(
       (subscriptionId) => {
         if (!createdSubscription || subscriptionId !== createdSubscription.id) {
@@ -4670,7 +4622,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       hasSubscription: false,
     });
 
-    const confirmations = await Promise.all([
+    const confirmationRequests = [
       client.confirm({
         body: { previewToken: firstPreview.body.previewToken },
         headers: { authorization: "Bearer clerk-session" },
@@ -4679,7 +4631,17 @@ describe("POST /api/billing/usage-pack-checkout", () => {
         body: { previewToken: secondPreview.body.previewToken },
         headers: { authorization: "Bearer clerk-session" },
       }),
-    ]);
+    ];
+    onTestFinished(async () => {
+      if (!otherConfirmationAnswered.settled()) {
+        otherConfirmationAnswered.resolve();
+      }
+      await Promise.allSettled(confirmationRequests);
+    });
+    const firstAnswer = await Promise.race(confirmationRequests);
+    expect(firstAnswer.status).toBe(409);
+    otherConfirmationAnswered.resolve();
+    const confirmations = await Promise.all(confirmationRequests);
 
     expect(
       confirmations
@@ -4687,8 +4649,11 @@ describe("POST /api/billing/usage-pack-checkout", () => {
           return status;
         })
         .sort(),
-    ).toStrictEqual([200, 200]);
+    ).toStrictEqual([200, 409]);
+    // Both previews reuse one snapshot. Its claim admits exactly one
+    // confirmation; the other is rejected before any provider write.
     expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         customer: customerId,

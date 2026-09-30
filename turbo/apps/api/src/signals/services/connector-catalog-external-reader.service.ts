@@ -655,7 +655,29 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   return second;
 }
 
-/** Command-owned snapshot reader; payload decoding never receives a DB handle. */
+function activeCatalogCondition(sourceId: string) {
+  return and(
+    eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+    eq(
+      connectorCatalogActiveSnapshot.schemaVersion,
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    ),
+  );
+}
+
+function activeCatalogIdentitySelection() {
+  return {
+    schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+    catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+    catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+  };
+}
+
+/**
+ * Command-owned snapshot reader; payload decoding never receives a DB handle.
+ * A cache miss reads the active identity and its payload in one statement, so
+ * an activation committing between two reads cannot strand this reader.
+ */
 export const loadAcceptedConnectorCatalogSnapshot$ = command(
   async (
     { set },
@@ -664,75 +686,69 @@ export const loadAcceptedConnectorCatalogSnapshot$ = command(
     const db = set(writeDb$);
     const sourceId = connectorCatalogSource().sourceId;
     const capability = connectorCatalogExecutableCapabilityState();
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const [identityRow] = await db
-        .select({
-          schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-          catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-          catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-        })
-        .from(connectorCatalogActiveSnapshot)
-        .where(
-          and(
-            eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-            eq(
-              connectorCatalogActiveSnapshot.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!identityRow) {
-        throw new ExternalConnectorCatalogUnavailableError(
-          "missing_current_identity",
-        );
-      }
-      const identity = {
-        ...identityRow,
-        sourceId,
-        capabilityDigest: capability.digest,
-      };
-      const key = identityKey(identity);
-      const cache = preparedCatalogCache();
-      if (cache.completed?.key === key) {
-        return cache.completed.catalog;
-      }
-      const [row] = await db
-        .select(currentCatalogPayloadSelection())
-        .from(connectorCatalogActiveSnapshot)
-        .leftJoin(
-          connectorCatalogCompatibilityEvaluation,
-          externalCatalogJoin(capability.digest),
-        )
-        .where(currentCatalogPayloadCondition(identity))
-        .limit(1);
-      signal.throwIfAborted();
-      if (!row) {
-        continue;
-      }
-      const parsed = safeSync(() => {
-        return materializeCurrentCatalog({ row, identity, capability });
-      });
-      if (!("ok" in parsed)) {
-        const failureCode = connectorCatalogArtifactFailureCode(parsed.error);
-        if (failureCode === undefined) {
-          throw parsed.error;
-        }
-        log.error("Rejected persisted connector catalog snapshot", {
-          ...identityLogFields(identity),
-          failureCode,
-        });
-        throw new ExternalConnectorCatalogUnavailableError(
-          `invalid_artifact:${failureCode}`,
-        );
-      }
-      cache.completed = { key, catalog: parsed.ok };
-      return parsed.ok;
+    const cache = preparedCatalogCache();
+    const [identityRow] = await db
+      .select(activeCatalogIdentitySelection())
+      .from(connectorCatalogActiveSnapshot)
+      .where(activeCatalogCondition(sourceId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!identityRow) {
+      throw new ExternalConnectorCatalogUnavailableError(
+        "missing_current_identity",
+      );
     }
-    throw new ExternalConnectorCatalogUnavailableError(
-      "missing_active_snapshot_after_retry",
-    );
+    const cachedKey = identityKey({
+      ...identityRow,
+      sourceId,
+      capabilityDigest: capability.digest,
+    });
+    if (cache.completed?.key === cachedKey) {
+      return cache.completed.catalog;
+    }
+    const [row] = await db
+      .select({
+        ...activeCatalogIdentitySelection(),
+        ...currentCatalogPayloadSelection(),
+      })
+      .from(connectorCatalogActiveSnapshot)
+      .leftJoin(
+        connectorCatalogCompatibilityEvaluation,
+        externalCatalogJoin(capability.digest),
+      )
+      .where(activeCatalogCondition(sourceId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      throw new ExternalConnectorCatalogUnavailableError(
+        "missing_current_identity",
+      );
+    }
+    const identity = {
+      schemaVersion: row.schemaVersion,
+      catalogVersion: row.catalogVersion,
+      catalogDigest: row.catalogDigest,
+      sourceId,
+      capabilityDigest: capability.digest,
+    };
+    const parsed = safeSync(() => {
+      return materializeCurrentCatalog({ row, identity, capability });
+    });
+    if (!("ok" in parsed)) {
+      const failureCode = connectorCatalogArtifactFailureCode(parsed.error);
+      if (failureCode === undefined) {
+        throw parsed.error;
+      }
+      log.error("Rejected persisted connector catalog snapshot", {
+        ...identityLogFields(identity),
+        failureCode,
+      });
+      throw new ExternalConnectorCatalogUnavailableError(
+        `invalid_artifact:${failureCode}`,
+      );
+    }
+    cache.completed = { key: identityKey(identity), catalog: parsed.ok };
+    return parsed.ok;
   },
 );
 

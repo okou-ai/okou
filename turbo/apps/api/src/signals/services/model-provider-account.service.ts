@@ -35,7 +35,7 @@ import {
 
 import { settle } from "../utils";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -102,8 +102,13 @@ export type PersonalProviderAccountErrorResponse =
   | ReturnType<typeof notFound>
   | ReturnType<typeof conflict>;
 
+/**
+ * A lost account-set race is decided by a unique index (identity or
+ * one-active). Every account-set mutation writes its logical provider row
+ * first, so they serialize on that row instead of deadlocking on account rows.
+ */
 function isAccountMutationConflict(error: unknown): boolean {
-  return isUniqueViolation(error) || safeSqlStateCode(error) === "40P01";
+  return isUniqueViolation(error);
 }
 
 function normalizedText(value: string | null | undefined): string | null {
@@ -963,6 +968,17 @@ export const activatePersonalModelProviderAccount$ = command(
           !current ||
           !isPersonalSubscriptionProviderType(current.account.type)
         ) {
+          return notFound("Resource not found");
+        }
+        // The same logical-parent row write that publication and
+        // disconnection make first: account-set mutations of one provider
+        // serialize here, before any account row is written.
+        const [provider] = await tx
+          .update(modelProviders)
+          .set({ updatedAt: nowDate() })
+          .where(eq(modelProviders.id, current.provider.id))
+          .returning({ id: modelProviders.id });
+        if (!provider) {
           return notFound("Resource not found");
         }
         await tx

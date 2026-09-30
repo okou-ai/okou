@@ -13,52 +13,55 @@ import { usageCleanupTargets } from "./usage-event-cleanup.service";
 import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
 import {
-  addConversationDeletionReceipts,
   clerkStableContextCleanupSql,
   conversationFreeRunDeleteSql,
+  deletedRunCountSchema,
   emptyConversationDeletionReceipt,
   releaseRunConversationsSql,
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
   revokeAgentDeliveriesSql,
   runCatalogCleanupSql,
+  runFreeAgentDeleteSql,
+  runFreeUserSessionDeleteSql,
   throwClerkLifecycleFailure,
-  throwUnconvergedRunSweep,
+  throwLateRunConversation,
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
 
-// Each sweep re-reads the target Runs, so a Run or conversation written after
-// the previous sweep's snapshot is released by the next one. Concurrent
-// checkpoints are rare after run cancellation; four sweeps bound the loop and
-// a still-moving target set rolls back for the deletion job's retry.
-const MAX_RUN_SWEEPS = 4;
-
-async function sweepTargetRuns(
+/**
+ * Delete one snapshot of target Runs conversation-first, in a single pass.
+ *
+ * The conversations and their blob references go in one statement, then the
+ * catalog, then only conversation-free Runs. A Run that gained a conversation
+ * in between survives that DELETE; the short count rolls the whole deletion
+ * back for the job's existing attempt schedule instead of re-sweeping here.
+ */
+async function deleteTargetRunsConversationFirst(
   tx: Tx,
-  selectRunIds: () => Promise<readonly string[]>,
+  runIds: readonly string[],
 ): Promise<ConversationDeletionReceipt> {
-  let receipt = emptyConversationDeletionReceipt();
-  for (let sweep = 0; ; sweep += 1) {
-    const runIds = await selectRunIds();
-    if (runIds.length === 0) {
-      return receipt;
-    }
-    if (sweep === MAX_RUN_SWEEPS) {
-      throwUnconvergedRunSweep();
-    }
-    const released = requireReleasedConversationReferences(
-      parseRawRows(
-        releasedConversationSweepSchema,
-        await tx.execute(releaseRunConversationsSql(runIds)),
-      ),
-    );
-    receipt = addConversationDeletionReceipts(receipt, released);
-    for (const statement of runCatalogCleanupSql(runIds)) {
-      await tx.execute(statement);
-    }
-    await tx.execute(conversationFreeRunDeleteSql(runIds));
+  if (runIds.length === 0) {
+    return emptyConversationDeletionReceipt();
   }
+  const receipt = requireReleasedConversationReferences(
+    parseRawRows(
+      releasedConversationSweepSchema,
+      await tx.execute(releaseRunConversationsSql(runIds)),
+    ),
+  );
+  for (const statement of runCatalogCleanupSql(runIds)) {
+    await tx.execute(statement);
+  }
+  const [deleted] = parseRawRows(
+    deletedRunCountSchema,
+    await tx.execute(conversationFreeRunDeleteSql(runIds)),
+  );
+  if (deleted?.deletedRuns !== runIds.length) {
+    throwLateRunConversation();
+  }
+  return receipt;
 }
 
 function idsOf(rows: readonly { readonly id: string }[]) {
@@ -92,21 +95,28 @@ const deleteClerkUserLifecycleData$ = command(
           .from(agentSessions)
           .where(eq(agentSessions.userId, userId));
         // UNION deduplicates the user's direct runs and runs in the user's sessions.
-        const receipt = await sweepTargetRuns(tx, async () => {
-          return idsOf(
-            await tx
-              .select({ id: agentRuns.id })
-              .from(agentRuns)
-              .where(eq(agentRuns.userId, userId))
-              .union(
-                tx
-                  .select({ id: agentRuns.id })
-                  .from(agentRuns)
-                  .where(inArray(agentRuns.sessionId, userSessions)),
-              ),
-          );
-        });
-        await tx.delete(agentSessions).where(eq(agentSessions.userId, userId));
+        const runIds = idsOf(
+          await tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.userId, userId))
+            .union(
+              tx
+                .select({ id: agentRuns.id })
+                .from(agentRuns)
+                .where(inArray(agentRuns.sessionId, userSessions)),
+            ),
+        );
+        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
+        await tx.execute(runFreeUserSessionDeleteSql(userId));
+        const [lateSession] = await tx
+          .select({ id: agentSessions.id })
+          .from(agentSessions)
+          .where(eq(agentSessions.userId, userId))
+          .limit(1);
+        if (lateSession) {
+          throwLateRunConversation();
+        }
         await tx
           .delete(chatThreadDrafts)
           .where(eq(chatThreadDrafts.userId, userId));
@@ -162,34 +172,41 @@ const deleteClerkOrganizationLifecycleData$ = command(
             eq(agentSessions.agentId, sql`ANY(${sql.param(agentIds)}::uuid[])`),
           );
         // UNION deduplicates direct and cross-org Agent -> Session -> Run ownership.
-        const receipt = await sweepTargetRuns(tx, async () => {
-          return idsOf(
-            await tx
-              .select({ id: agentRuns.id })
-              .from(agentRuns)
-              .where(eq(agentRuns.orgId, orgId))
-              .union(
-                tx
-                  .select({ id: agentRuns.id })
-                  .from(agentRuns)
-                  .where(inArray(agentRuns.sessionId, ownedSessions)),
-              ),
-          );
-        });
+        const runIds = idsOf(
+          await tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.orgId, orgId))
+            .union(
+              tx
+                .select({ id: agentRuns.id })
+                .from(agentRuns)
+                .where(inArray(agentRuns.sessionId, ownedSessions)),
+            ),
+        );
+        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
         const scope = { kind: "organization", orgId } as const;
         for (const statement of clerkStableContextCleanupSql(scope, agentIds)) {
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
           await tx.execute(revokeAgentDeliveriesSql(agentIds));
-          await tx
-            .delete(agents)
+          // Only Agents with no Run left under their Sessions; a late Run
+          // (and its conversation) is never removed by the Agent cascade.
+          await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));
+          const [lateAgent] = await tx
+            .select({ id: agents.id })
+            .from(agents)
             .where(
               and(
                 agentScope,
                 eq(agents.id, sql`ANY(${sql.param(agentIds)}::uuid[])`),
               ),
-            );
+            )
+            .limit(1);
+          if (lateAgent) {
+            throwLateRunConversation();
+          }
           // Agent cascades drain child-row writers that could initialize non-FK
           // lifecycle metadata after the first sweep. The Agent DELETE waits for
           // those writers, so this second sweep removes their late state.

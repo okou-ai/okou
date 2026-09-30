@@ -1,28 +1,121 @@
-import { sql } from "drizzle-orm";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import {
+  and,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import type { Db } from "../external/db";
+import { BILLING_PURCHASE_PREVIEW_TTL_MS } from "./billing-purchase-preview-token.service";
 
-/** Outgoing Plan and usage-pack writers still require this shared boundary. */
+/**
+ * R1 compatibility only: outgoing (pre-Release-1) Plan confirm and usage-pack
+ * snapshot/confirm writers hold this key across their Stripe list/create.
+ * Current writers take it only inside their short local claim/snapshot
+ * transactions. Remove in Release 2 once no serving or rollback API version
+ * holds billing_purchase across provider I/O.
+ */
 export function billingPurchaseCompatibilityLockSql(orgId: string) {
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`billing_purchase:${orgId}`}, 0))`;
 }
 
 /**
- * Wait for any outgoing purchase writer that currently holds billing_purchase.
+ * Existing "subscription payment not complete" status reused as the claim
+ * marker of an initial purchase whose Stripe subscription is being created.
  *
- * Outgoing writers list, create and pay Stripe subscriptions inside that
- * section. Current writers create their subscription first, pass this barrier
- * and only then read Stripe for competing purchases, so an outgoing section
- * that began earlier is visible and one that begins later observes ours. The
- * transaction performs no other statement; remove it once no deployed writer
- * holds the key across provider I/O.
+ * - Plan: `org_metadata.subscription_status` of the organization row.
+ * - Usage pack: `usage_pack_subscriptions.subscription_status` of the claimed
+ *   snapshot while `stripe_subscription_id` and the Checkout Session are NULL.
  */
-export async function awaitBillingPurchaseCompatibilityBarrier(
-  db: Pick<Db, "transaction">,
+export const PLAN_PURCHASE_CLAIM_STATUS = "incomplete";
+export const USAGE_PACK_PURCHASE_CLAIM_STATUS = "incomplete";
+
+/**
+ * A claim older than twice the preview lifetime cannot belong to a running
+ * confirmation. Recovery reads Stripe by the claimed purchase identity before
+ * it retires or replaces such a claim.
+ */
+export const PLAN_PURCHASE_CLAIM_STALE_MS = 2 * BILLING_PURCHASE_PREVIEW_TTL_MS;
+export const USAGE_PACK_PURCHASE_CLAIM_STALE_MS =
+  2 * BILLING_PURCHASE_PREVIEW_TTL_MS;
+
+const TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES = [
+  "canceled",
+  "incomplete_expired",
+  "invalid",
+] as const;
+
+/**
+ * Usage-pack purchases that block another initial purchase: a claimed
+ * snapshot whose subscription is being created, or a live usage-pack
+ * subscription other than the purchase's own source subscription.
+ */
+export function inFlightUsagePackPurchaseQuery(
+  db: Pick<Db, "select">,
+  args: {
+    readonly orgId: string;
+    readonly sourceSubscriptionId: string | null;
+    readonly excludeUsagePackSubscriptionId: string | null;
+  },
+) {
+  return db
+    .select({ id: usagePackSubscriptions.id })
+    .from(usagePackSubscriptions)
+    .where(
+      and(
+        eq(usagePackSubscriptions.orgId, args.orgId),
+        args.excludeUsagePackSubscriptionId === null
+          ? undefined
+          : ne(usagePackSubscriptions.id, args.excludeUsagePackSubscriptionId),
+        or(
+          and(
+            eq(
+              usagePackSubscriptions.subscriptionStatus,
+              USAGE_PACK_PURCHASE_CLAIM_STATUS,
+            ),
+            isNull(usagePackSubscriptions.stripeSubscriptionId),
+            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+          ),
+          and(
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+            ]),
+            args.sourceSubscriptionId === null
+              ? undefined
+              : ne(
+                  usagePackSubscriptions.stripeSubscriptionId,
+                  args.sourceSubscriptionId,
+                ),
+          ),
+        ),
+      ),
+    );
+}
+
+/** A fresh, unpublished Plan purchase claim on the organization row. */
+export function inFlightPlanPurchaseQuery(
+  db: Pick<Db, "select">,
   orgId: string,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
-  });
+  staleBefore: Date,
+) {
+  return db
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(
+      and(
+        eq(orgMetadata.orgId, orgId),
+        eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
+        isNull(orgMetadata.stripeSubscriptionId),
+        gt(orgMetadata.updatedAt, staleBefore),
+      ),
+    );
 }

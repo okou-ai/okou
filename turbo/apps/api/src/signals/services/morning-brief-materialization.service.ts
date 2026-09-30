@@ -25,7 +25,7 @@ import {
   morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
-  withFreshMorningBriefSnapshot,
+  commitMorningBriefSnapshotOnce,
   type MorningBriefNativeScheduleSnapshot,
 } from "./morning-brief-native-schedule.service";
 
@@ -49,7 +49,9 @@ function revokeOldMembershipOccurrence(at: Date) {
  * and the enrollment are read with their row versions; the native write is a
  * conditional UPDATE on its version and the enrollment write is the final
  * conditional UPDATE on the version this decision was made from. A concurrent
- * commit to either rolls the attempt back and it recomputes from fresh state.
+ * commit to either rolls the transaction back and the result is `conflict`
+ * once: the enrollment keeps its pending state for the existing enrollment
+ * retry schedule, and a preference request reports its retryable conflict.
  */
 export const completeAndMaterializeMorningBriefEnrollment$ = command(
   async (
@@ -57,16 +59,17 @@ export const completeAndMaterializeMorningBriefEnrollment$ = command(
     owner: MorningBriefMemberIdentity,
     workflowId: string,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<"materialized" | "conflict"> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    await withFreshMorningBriefSnapshot(() => {
+    const outcome = await commitMorningBriefSnapshotOnce(() => {
       return db.transaction(async (tx) => {
         await attemptMaterialization(tx, owner, workflowId);
         signal.throwIfAborted();
       });
     }, signal);
     signal.throwIfAborted();
+    return outcome.kind === "committed" ? "materialized" : "conflict";
   },
 );
 

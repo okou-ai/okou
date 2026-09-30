@@ -7,6 +7,7 @@ import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
+  integrationChatThreadInsertFromRouteSql,
   integrationChatThreadValues,
   integrationThreadCreatedEventSql,
   type IntegrationChatThreadCreation,
@@ -86,8 +87,9 @@ async function loadRoute(
       eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
     )
     .where(routeWhere(key))
-    .limit(1)
-    .for("update");
+    .limit(1);
+  // No row lock: the DM destination move is one conditional update pinned
+  // to the route id.
   if (
     route &&
     key.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
@@ -199,7 +201,12 @@ const ROUTE_COLUMNS = {
   chatThreadId: telegramChatThreadRoutes.chatThreadId,
 } as const;
 
-/** The unique route and its new thread/event commit in this command alone. */
+/**
+ * The unique route and its new thread/event commit in this command alone.
+ * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
+ * reads the committed winner once. The thread row is inserted by the same
+ * statement only when the route insert wins.
+ */
 export const ensureTelegramChatThreadRoute$ = command(
   async (
     { set },
@@ -214,49 +221,13 @@ export const ensureTelegramChatThreadRoute$ = command(
     const candidateId = randomUUID();
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      // No row lock: a route that disappears between the read and the DM
-      // destination move is re-resolved, and a concurrent creator is found
-      // through the unique route index (ON CONFLICT waits for its commit).
-      let inserting = false;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const [existing] = await tx
-          .select(ROUTE_COLUMNS)
-          .from(telegramChatThreadRoutes)
-          .innerJoin(
-            chatThreads,
-            eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
-          )
-          .where(routeWhere(args))
-          .limit(1);
-        if (existing) {
-          if (
-            args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
-            existing.chatId !== args.chatId
-          ) {
-            const [updated] = await tx
-              .update(telegramChatThreadRoutes)
-              .set({ chatId: args.chatId })
-              .where(
-                and(
-                  eq(telegramChatThreadRoutes.id, existing.id),
-                  routeWhere(args),
-                ),
-              )
-              .returning({ chatId: telegramChatThreadRoutes.chatId });
-            if (!updated) {
-              continue;
-            }
-            return { ...existing, ...updated };
-          }
-          return existing;
-        }
-        if (inserting) {
-          break;
-        }
-        inserting = true;
-        const thread = integrationChatThreadValues(args, candidateId, defaults);
-        await tx.insert(chatThreads).values(thread);
-        const [route] = await tx
+      const existing = await loadRoute(tx, args);
+      if (existing) {
+        return existing;
+      }
+      const thread = integrationChatThreadValues(args, candidateId, defaults);
+      const insertedRoute = tx.$with("inserted_telegram_route").as(
+        tx
           .insert(telegramChatThreadRoutes)
           .values({
             telegramOfficialUserLinkId: args.ownerLink.id,
@@ -266,19 +237,28 @@ export const ensureTelegramChatThreadRoute$ = command(
             createdAt: args.currentTime,
           })
           .onConflictDoNothing()
-          .returning(ROUTE_COLUMNS);
-        if (route) {
-          await tx.execute(
-            integrationThreadCreatedEventSql(args.orgId, thread),
-          );
-          signal.throwIfAborted();
-          return route;
-        }
-        await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      }
-      throw new Error(
-        "Failed to resolve Telegram chat thread route after conflict",
+          .returning(ROUTE_COLUMNS),
       );
+      const insertedThread = tx
+        .$with("inserted_telegram_thread", {})
+        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
+      const [route] = await tx
+        .with(insertedRoute, insertedThread)
+        .select()
+        .from(insertedRoute);
+      if (route) {
+        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+        signal.throwIfAborted();
+        return route;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once.
+      const winner = await loadRoute(tx, args);
+      if (!winner) {
+        throw new Error(
+          "Failed to resolve Telegram chat thread route after conflict",
+        );
+      }
+      return winner;
     });
     signal.throwIfAborted();
     return result;

@@ -5,7 +5,6 @@ import { command } from "ccstate";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
   orgCreditInvoiceGrantSql,
@@ -34,6 +33,40 @@ interface LegacyPlanInvoiceResult {
   readonly replacedSubscriptionId: string | null;
 }
 
+/**
+ * Another delivery committed a wallet change first. Its committed state
+ * decides once: the same invoice already published is an idempotent success
+ * (the winner owns replacement cleanup), a no-longer-admitted invoice is a
+ * no-op, and any other change is left to Stripe redelivery.
+ */
+function lostLegacyPlanInvoiceRace(
+  current: Parameters<typeof legacyPlanInvoiceAdmission>[0] | undefined,
+  args: LegacyPlanInvoice,
+): LegacyPlanInvoiceResult {
+  const admission = current
+    ? legacyPlanInvoiceAdmission(current, args)
+    : "rejected";
+  if (admission === "duplicate") {
+    return {
+      processed: true,
+      cancelReplaced: false,
+      replacedSubscriptionId: null,
+    };
+  }
+  if (admission === "rejected") {
+    return legacyPlanInvoiceNotProcessed();
+  }
+  throw new LegacyPlanInvoiceConflict(args.invoiceId);
+}
+
+function legacyPlanInvoiceNotProcessed(): LegacyPlanInvoiceResult {
+  return {
+    processed: false,
+    cancelReplaced: false,
+    replacedSubscriptionId: null,
+  };
+}
+
 const commitLegacyPlanInvoice$ = command(
   async (
     { set },
@@ -51,11 +84,7 @@ const commitLegacyPlanInvoice$ = command(
         .from(orgMetadata)
         .where(eq(orgMetadata.orgId, args.orgId));
       if (!wallet || legacyPlanInvoiceAdmission(wallet, args) === "rejected") {
-        return {
-          processed: false,
-          cancelReplaced: false,
-          replacedSubscriptionId: null,
-        };
+        return legacyPlanInvoiceNotProcessed();
       }
       let writeMetadata =
         legacyPlanInvoiceAdmission(wallet, args) === "publish";
@@ -72,7 +101,15 @@ const commitLegacyPlanInvoice$ = command(
           .where(legacyPlanInvoiceWalletWhere(args.orgId, wallet))
           .returning({ orgId: orgMetadata.orgId });
         if (!claimed) {
-          throw new LegacyPlanInvoiceConflict(args.invoiceId);
+          // Another delivery changed the wallet first. Read its committed
+          // state once: if this invoice is now a duplicate or no longer
+          // admitted, the winner's result stands and this delivery is a
+          // deterministic no-op. Any other change is left to redelivery.
+          const [current] = await tx
+            .select()
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, args.orgId));
+          return lostLegacyPlanInvoiceRace(current, args);
         }
       }
       let cancelReplaced = true;
@@ -196,19 +233,10 @@ export const publishLegacyPlanInvoice$ = command(
     const trialIds = trialRows.map(({ id }) => {
       return id;
     });
-    for (let attempt = 0; ; attempt++) {
-      const outcome = await settle(
-        set(commitLegacyPlanInvoice$, { invoice, trialIds }, signal),
-        signal,
-      );
-      if (outcome.ok) {
-        return outcome.value;
-      }
-      // The whole commit rolled back; decide again from the current wallet.
-      if (outcome.error instanceof LegacyPlanInvoiceConflict && attempt < 3) {
-        continue;
-      }
-      throw outcome.error;
-    }
+    // One commit, no retry. A stale wallet read throws LegacyPlanInvoiceConflict
+    // and an expiration that became due after the expiration above throws
+    // OrgCreditExpirationRequired; both roll back completely and surface to
+    // the Stripe webhook / billing reconcile cycle that redelivers the invoice.
+    return await set(commitLegacyPlanInvoice$, { invoice, trialIds }, signal);
   },
 );

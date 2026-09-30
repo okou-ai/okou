@@ -21,6 +21,11 @@ async function lockPendingSnapshotOrgs(
     throw new Error("Usage pack writes require an organization scope");
   }
   for (const orgId of orderedOrgIds) {
+    // R1 compatibility only: outgoing (pre-Release-1) Plan confirm and
+    // usage-pack snapshot/confirm writers hold billing_purchase across their
+    // Stripe list/create; current snapshot and claim writers take it only for
+    // this local transaction. Remove in Release 2 once no serving or rollback
+    // API version holds the key across provider I/O.
     await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
   }
   // Lifecycle writers own subscription roots before the explicit count guard.

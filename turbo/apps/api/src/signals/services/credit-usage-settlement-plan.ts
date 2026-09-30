@@ -5,13 +5,11 @@ import {
 } from "./credit-usage-batch";
 import type { SocialSettlementClaim } from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { and, asc, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS } from "./credit-low-balance-alert.service";
@@ -155,7 +153,8 @@ function deductionSource(updates: readonly ConditionalDeduction[]) {
  * xmin moved, under EvalPlanQual this also covers a writer that committed
  * while this statement waited), a remainder smaller than the deduction, or a
  * grant that expired is skipped; the caller compares the row count with the
- * plan and rejects the whole settlement snapshot on any shortfall.
+ * plan and rejects the whole settlement snapshot on any shortfall, leaving the
+ * batch pending for the next settlement cycle.
  */
 export function memberGrantDeductionsSql(
   updates: readonly ConditionalDeduction[],
@@ -293,53 +292,6 @@ export function settlementReceipt(
   };
 }
 
-export function pendingParentsQuery(
-  orgId: string,
-  snapshots: readonly PendingUsageSnapshot[],
-  socialKey: string | undefined,
-) {
-  const builder = new QueryBuilder();
-  return (
-    builder
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.orgId, orgId),
-          exists(
-            builder
-              .select({ id: usageEvent.id })
-              .from(usageEvent)
-              .where(
-                and(
-                  eq(usageEvent.runId, agentRuns.id),
-                  eq(usageEvent.orgId, orgId),
-                  eq(usageEvent.status, "pending"),
-                  socialKey
-                    ? eq(usageEvent.idempotencyKey, socialKey)
-                    : inArray(
-                        usageEvent.id,
-                        snapshots.map(({ event }) => {
-                          return event.id;
-                        }),
-                      ),
-                ),
-              ),
-          ),
-        ),
-      )
-      .orderBy(asc(agentRuns.id))
-      // Kept deliberately. This is the same KEY SHARE the allocation/usage FK
-      // checks take implicitly later in this transaction, acquired first so the
-      // order is parent before ledger children, as in Run deletion (Run FOR
-      // UPDATE, then its usage). Taken only at the FK insert, it would follow
-      // this transaction's usage-event row locks and close a deadlock cycle
-      // with deletion. KEY SHARE does not conflict with Run status updates.
-      .for("key share")
-      .as("settlement_run_parents")
-  );
-}
-
 export function settlementDebitValues(
   amount: number,
   expired: number,
@@ -363,9 +315,13 @@ export function completeSettlementReceipt(
   };
 }
 
+/**
+ * The claim is conditional on each prepared row version; no parent Run row is
+ * locked first. A usage row deleted with its Run, or changed since preparation,
+ * is not claimed and the short count rejects the snapshot.
+ */
 export function claimUsageWhere(
   orgId: string,
-  parents: readonly { id: string }[],
   snapshots: readonly PendingUsageSnapshot[],
   socialKey?: string,
 ) {
@@ -375,15 +331,6 @@ export function claimUsageWhere(
       : usageSnapshotCondition(snapshots),
     eq(usageEvent.orgId, orgId),
     eq(usageEvent.status, "pending"),
-    or(
-      isNull(usageEvent.runId),
-      inArray(
-        usageEvent.runId,
-        parents.map((parent) => {
-          return parent.id;
-        }),
-      ),
-    ),
   );
 }
 

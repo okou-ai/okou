@@ -1,9 +1,5 @@
-import {
-  OrgCreditExpirationRequired,
-  pendingOrgCreditExpirationQuery,
-  requireNoPendingOrgCreditExpiration,
-} from "./org-credit-expiration";
-import { expireOrgCredits$ } from "./org-credit-expiration.service";
+import { OrgCreditExpirationConflict } from "./org-credit-expiration";
+import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
   usageExpiryScope,
   expiryLotsQuery,
@@ -54,7 +50,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { safeSqlStateCode } from "../../lib/pg-errors";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
@@ -74,7 +70,6 @@ import {
   completeSettlementReceipt,
   settlementDefaultPlan,
   settlementReceipt,
-  pendingParentsQuery,
 } from "./credit-usage-settlement-plan";
 import {
   entitlementQuery,
@@ -83,6 +78,7 @@ import {
   planAllowanceCandidates,
   windowQuery,
   planAllowanceWrites,
+  requireAllowanceWrite,
 } from "./usage-allowance-settlement-plan";
 import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import {
@@ -91,16 +87,18 @@ import {
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 
+const L = logger("CreditUsageSettlement");
+
 /**
- * The whole settlement transaction rolled back, so it is safe to prepare again
- * from a fresh read: a conditional write reported a stale snapshot, or
- * PostgreSQL chose this transaction as a deadlock victim against a writer that
- * acquires the same rows' implicit locks in another order.
+ * The whole settlement transaction rolled back because a conditional write
+ * reported a stale snapshot. The batch stays pending; the existing next
+ * settlement cycle (cron-process-usage-events, the next run completion or the
+ * social job cycle) prepares it again. It is never re-run in place.
  */
-function retryableSettlementConflict(error: unknown) {
+function deferredSettlementConflict(error: unknown) {
   return (
     error instanceof UsageSettlementSnapshotConflict ||
-    safeSqlStateCode(error) === "40P01"
+    error instanceof OrgCreditExpirationConflict
   );
 }
 
@@ -117,9 +115,10 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * Parents precede usage/allocation FK rows and the entitlement, as in deletion
- * and launch. Grant and lot deductions are conditional on the rows read and
- * the wallet debit is atomic arithmetic; a short row count rejects the batch.
+ * No explicit row lock: the usage claim, allowance windows and consumption,
+ * grant and lot deductions are conditional on the rows read, expiration and
+ * the wallet debit are atomic arithmetic, and a short row count rejects the
+ * batch with UsageSettlementSnapshotConflict (deferred, not retried).
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
@@ -155,9 +154,6 @@ const commitUsageBatch$ = command(
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
       const key = managed?.idempotencyKey;
-      const parents = await tx
-        .select()
-        .from(pendingParentsQuery(orgId, batch.events, key));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       const at = nowDate();
       work.orgLockWaitMs = settlementOrgLockWaitMs(startedAt, work.lockWaitMs);
@@ -165,7 +161,7 @@ const commitUsageBatch$ = command(
         ? await tx
             .update(usageEvent)
             .set({ status: "processed", creditsCharged: 0, processedAt: at })
-            .where(claimUsageWhere(orgId, parents, batch.events, key))
+            .where(claimUsageWhere(orgId, batch.events, key))
             .returning()
         : [];
       requireCompleteUsageClaim(batch.events.length, events.length, !!job);
@@ -184,8 +180,9 @@ const commitUsageBatch$ = command(
       const windows = await tx.select().from(windowQuery(orgId, plan));
       const scope = { orgId, refresh, at };
       const allowance = planAllowanceWrites(scope, plan, windows, entitlement);
-      for (const mutation of allowance.mutations) {
-        await tx.execute(mutation);
+      for (const write of allowance.writes) {
+        const { rowCount } = await tx.execute(write.sql);
+        requireAllowanceWrite(write.kind, write.planned, rowCount);
       }
       const charges = planUsageCharges(priced, allowance.applied);
       await tx.execute(settledEventsSql(charges, at));
@@ -202,9 +199,10 @@ const commitUsageBatch$ = command(
       const granted = (await tx.execute(grantSql)).rowCount;
       requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
-      const pending = pendingOrgCreditExpirationQuery(orgId, at);
-      const [pendingExpiry] = amount > 0 ? await tx.select().from(pending) : [];
-      requireNoPendingOrgCreditExpiration(orgId, pendingExpiry);
+      if (amount > 0) {
+        // Main's order: expire before the new deduction, in one statement.
+        await expireOrgCreditsInTransaction(tx, orgId, at);
+      }
       const lotScope = usageExpiryScope(orgId, batch.lots, amount, at);
       const lots =
         amount > 0 ? await tx.select().from(expiryLotsQuery(lotScope)) : [];
@@ -252,40 +250,40 @@ const commitUsageBatch$ = command(
   },
 );
 
+/**
+ * One prepare and one commit. A rejected snapshot returns null with the batch
+ * still pending (a deterministic deferral to the next settlement cycle); any
+ * other failure, including a deadlock victim's rollback, propagates.
+ */
 export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
-    for (let attempt = 0; ; attempt++) {
-      const batch = await set(prepareUsageSettlementBatch$, args, signal);
-      const refreshArgs = usageAllowanceRefreshArgs(args, batch);
-      const refresh = refreshArgs
-        ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
-        : undefined;
-      const outcome = await settle(
-        set(commitUsageBatch$, { ...args, batch, refresh }, signal),
-      );
-      signal.throwIfAborted();
-      if (!outcome.ok) {
-        if (
-          outcome.error instanceof OrgCreditExpirationRequired &&
-          attempt < 3
-        ) {
-          await set(expireOrgCredits$, args.orgId, signal);
-          continue;
-        }
-        if (retryableSettlementConflict(outcome.error) && attempt < 3) {
-          continue;
-        }
-        throw outcome.error;
+    const batch = await set(prepareUsageSettlementBatch$, args, signal);
+    const refreshArgs = usageAllowanceRefreshArgs(args, batch);
+    const refresh = refreshArgs
+      ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
+      : undefined;
+    const outcome = await settle(
+      set(commitUsageBatch$, { ...args, batch, refresh }, signal),
+    );
+    signal.throwIfAborted();
+    if (!outcome.ok) {
+      if (deferredSettlementConflict(outcome.error)) {
+        L.warn("Usage settlement snapshot deferred to the next cycle", {
+          orgId: args.orgId,
+          error: outcome.error,
+        });
+        return null;
       }
-      const { result, startedAt } = outcome.value;
-      if (result?.work.pendingEvents && !args.social) {
-        reportCommittedSettlementPricing(
-          args.orgId,
-          batch,
-          get(usagePricingResolution$),
-        );
-      }
-      return result ? completeSettlementReceipt(result, startedAt) : null;
+      throw outcome.error;
     }
+    const { result, startedAt } = outcome.value;
+    if (result?.work.pendingEvents && !args.social) {
+      reportCommittedSettlementPricing(
+        args.orgId,
+        batch,
+        get(usagePricingResolution$),
+      );
+    }
+    return result ? completeSettlementReceipt(result, startedAt) : null;
   },
 );

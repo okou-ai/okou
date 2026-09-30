@@ -7,7 +7,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { command, computed, type Computed } from "ccstate";
-import { and, desc, eq, ne, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 
 import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
@@ -15,12 +15,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import {
-  expiredOrgCreditsWhere,
-  OrgCreditExpirationRequired,
-} from "./org-credit-expiration";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { expireOrgCredits$ } from "./org-credit-expiration.service";
+import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 
 export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
@@ -155,60 +150,43 @@ function clerkRoleToCacheRole(role: string): "admin" | "member" {
   return role === "org:admin" ? "admin" : "member";
 }
 
+/**
+ * One transaction, no retry: expired remainder is cleared by one conditional
+ * statement first, then the top-up is one atomic GREATEST update. A lost clear
+ * throws OrgCreditExpirationConflict for this test-only caller.
+ */
 const ensureTestOrgBillingRow$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const complete = await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(orgMetadataCanonicalWrites)
-          .values({ orgId, tier: "pro" })
-          .onConflictDoNothing()
-          .returning({ orgId: orgMetadata.orgId });
-        if (inserted) {
-          await tx
-            .insert(orgPlanEntitlements)
-            .values(
-              orgPlanEntitlementValues(
-                { orgId, tier: "pro", source: "org_metadata_migration" },
-                { stripeSubscriptionId: null, sourceMetadata: {} },
-              ),
-            )
-            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-        }
-        // The wallet UPDATE owns the row and admits the top-up only while no
-        // expired remainder exists; zero rows sends this caller to expiration.
-        const at = nowDate();
-        const [provisioned] = await tx
-          .update(orgMetadata)
-          .set({
-            tier: "pro",
-            credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
-            updatedAt: at,
-          })
-          .where(
-            and(
-              eq(orgMetadata.orgId, orgId),
-              notExists(
-                tx
-                  .select({ id: creditExpiresRecord.id })
-                  .from(creditExpiresRecord)
-                  .where(expiredOrgCreditsWhere(orgId, at)),
-              ),
+    await set(writeDb$).transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId, tier: "pro" })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      if (inserted) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              { orgId, tier: "pro", source: "org_metadata_migration" },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
             ),
           )
-          .returning({ orgId: orgMetadata.orgId });
-
-        signal.throwIfAborted();
-        return provisioned !== undefined;
-      });
-      signal.throwIfAborted();
-      if (complete) {
-        return;
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
-      await set(expireOrgCredits$, orgId, signal);
-    }
-    throw new OrgCreditExpirationRequired(orgId);
+      const at = nowDate();
+      await expireOrgCreditsInTransaction(tx, orgId, at);
+      await tx
+        .update(orgMetadata)
+        .set({
+          tier: "pro",
+          credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
+          updatedAt: at,
+        })
+        .where(eq(orgMetadata.orgId, orgId));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
   },
 );
 

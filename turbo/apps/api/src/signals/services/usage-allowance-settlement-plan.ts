@@ -158,10 +158,11 @@ export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
   });
   // Only the latest covering window of each kind can affect a candidate.
   // The existing org/kind/starts index serves each finite anchor lookup.
-  // The UUID tie break matches latestWindow's stable sort over owned rows.
-  // Every window writer first owns the entitlement row (settlement's
-  // entitlementQuery, admission, Stripe publication), so these rows are stable
-  // for the settlement; consumption itself is atomic arithmetic.
+  // The UUID tie break matches latestWindow's stable sort over read rows.
+  // Plain read: window creation is admitted by the (entitlement, kind, start)
+  // unique identity and consumption is conditional on the consumed_units read
+  // here, so a concurrent writer rejects this settlement's snapshot instead of
+  // being blocked by an entitlement row lock.
   const selected = sql`SELECT chosen.id FROM unnest(${sql.param(anchors)}::timestamp[]) AS anchors(at)
     CROSS JOIN (VALUES ('short'), ('weekly')) AS kinds(kind)
     CROSS JOIN LATERAL (
@@ -358,9 +359,11 @@ export function planAllowanceConsumption(
   }
   const changes = windows
     .map((window) => {
+      const observed = before.get(window.id) ?? 0;
       return {
         id: window.id,
-        delta: window.consumedUnits - (before.get(window.id) ?? 0),
+        observed,
+        delta: window.consumedUnits - observed,
       };
     })
     .filter((window) => {
@@ -369,8 +372,21 @@ export function planAllowanceConsumption(
   return { allocations, changes, applied: plan.applied };
 }
 
+interface AllowanceConsumption {
+  readonly id: string;
+  readonly observed: number;
+  readonly delta: number;
+}
+
+/**
+ * Atomic, conditional increment: a window whose consumed_units moved since the
+ * planning read (or since EvalPlanQual re-read it after a concurrent writer)
+ * is skipped, and the caller rejects the snapshot on a short row count. The
+ * planned delta was capped against the observed remainder, so a committed
+ * increment can never overdraw the window.
+ */
 export function allowanceConsumptionSql(
-  changes: readonly { readonly id: string; readonly delta: number }[],
+  changes: readonly AllowanceConsumption[],
   at: Date,
 ) {
   return sql`UPDATE ${orgUsageAllowanceWindows} SET consumed_units = consumed_units + consumption.delta, updated_at = ${at.toISOString()}::timestamp
@@ -380,29 +396,43 @@ export function allowanceConsumptionSql(
       }),
     )}::uuid[], ${sql.param(
       changes.map((change) => {
+        return change.observed;
+      }),
+    )}::bigint[], ${sql.param(
+      changes.map((change) => {
         return change.delta;
       }),
-    )}::bigint[]) AS consumption(id, delta)
-    WHERE ${orgUsageAllowanceWindows.id} = consumption.id`;
+    )}::bigint[]) AS consumption(id, observed, delta)
+    WHERE ${orgUsageAllowanceWindows.id} = consumption.id
+      AND ${orgUsageAllowanceWindows.consumedUnits} = consumption.observed`;
 }
 
 /**
- * Kept deliberately (not replaceable by a conditional write alone): this row
- * lock is the shared creation protocol for allowance windows. Settlement,
- * run availability and allowance availability all create short/weekly windows
- * after observing that no covering window exists, and windows have no
- * uniqueness/exclusion constraint that would reject an overlapping duplicate.
- * Window consumption is planned from the observed consumed_units. Replacing it
- * needs every window creator to switch together to a conditional entitlement
- * revision (or an exclusion constraint), which is outside this settlement.
+ * Plain read, no row lock. Window creation is admitted by the unique
+ * (entitlement_id, kind, starts_at) identity with INSERT … ON CONFLICT DO
+ * NOTHING; a prepared Stripe refresh of the entitlement is conditional on the
+ * row text read here. Either write reporting fewer rows than planned rejects
+ * the settlement snapshot, which is then left for the next settlement cycle.
  */
 export function entitlementQuery(orgId: string) {
   return new QueryBuilder()
     .select(allowanceEntitlementSelection())
     .from(orgUsageAllowanceEntitlements)
     .where(eq(orgUsageAllowanceEntitlements.orgId, orgId))
-    .for("update")
     .as("settlement_entitlement");
+}
+
+/** A conditional write that affected fewer rows than planned rejects the snapshot. */
+export function requireAllowanceWrite(
+  kind: string,
+  planned: number,
+  updated: number | null,
+) {
+  if (updated !== planned) {
+    throw new UsageSettlementSnapshotConflict(
+      `Usage allowance ${kind} changed before settlement`,
+    );
+  }
 }
 
 export function planAllowanceWrites(
@@ -444,23 +474,36 @@ export function planAllowanceWrites(
     args.plan,
     issued.windows,
   );
-  const refreshSql =
+  const refresh =
     prepared.update && current
-      ? [
-          sql`UPDATE ${orgUsageAllowanceEntitlements}
+      ? sql`UPDATE ${orgUsageAllowanceEntitlements}
     SET status = ${prepared.update.status}, expires_at = ${prepared.update.expiresAt.toISOString()}::timestamp,
-      updated_at = ${args.at.toISOString()}::timestamp WHERE ${orgUsageAllowanceEntitlements.id} = ${current.id}`,
-        ]
-      : [];
-  // A fixed, finite SQL batch. The caller executes these statements directly
-  // inside its transaction; this planner never receives a database handle.
-  const mutations = [
-    ...refreshSql,
-    insertWindowsSql(issued.inserted),
-    allowanceConsumptionSql(consumed.changes, args.at),
-    insertAllocationsSql(args.orgId, consumed.allocations),
+      updated_at = ${args.at.toISOString()}::timestamp
+    WHERE ${orgUsageAllowanceEntitlements.id} = ${current.id}
+      AND ${orgUsageAllowanceEntitlements}::text = ${current.snapshot}`
+      : null;
+  // A fixed, finite SQL batch with the row count each statement must report.
+  // The caller executes these statements directly inside its transaction and
+  // compares the counts; this planner never receives a database handle.
+  const writes = [
+    ...(refresh ? [{ kind: "entitlement", sql: refresh, planned: 1 }] : []),
+    {
+      kind: "window",
+      sql: insertWindowsSql(issued.inserted),
+      planned: issued.inserted.length,
+    },
+    {
+      kind: "consumption",
+      sql: allowanceConsumptionSql(consumed.changes, args.at),
+      planned: consumed.changes.length,
+    },
+    {
+      kind: "allocation",
+      sql: insertAllocationsSql(args.orgId, consumed.allocations),
+      planned: consumed.allocations.length,
+    },
   ];
-  return { applied: consumed.applied, mutations };
+  return { applied: consumed.applied, writes };
 }
 
 function insertWindowsSql(rows: readonly NewAllowanceWindow[]) {
@@ -506,7 +549,8 @@ function insertWindowsSql(rows: readonly NewAllowanceWindow[]) {
           return row.createdByRunId;
         }),
       )}::uuid[])
-    AS issued(id, org_id, entitlement_id, kind, starts_at, expires_at, unit_limit, run_id)`;
+    AS issued(id, org_id, entitlement_id, kind, starts_at, expires_at, unit_limit, run_id)
+    ON CONFLICT (entitlement_id, kind, starts_at) DO NOTHING`;
 }
 
 function insertAllocationsSql(

@@ -1,5 +1,5 @@
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { USAGE_SETTLEMENT_BATCH_SIZE } from "./credit-usage-batch";
 import { command } from "ccstate";
@@ -155,39 +155,29 @@ export const processUsageEventKeys$ = command(
   },
 );
 
-/** Background catch-up pages between committed batches, never inside a transaction. */
+/**
+ * Background catch-up: one read of the pending identities, then committed
+ * batches of them, never inside one transaction. A batch whose snapshot was
+ * rejected stays pending for the next settlement cycle; nothing is re-read or
+ * re-run here.
+ */
 export const processOrgUsageEvents$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    let afterId: string | undefined;
-    while (true) {
-      const batch = await db
-        .select({ id: usageEvent.id, key: usageEvent.idempotencyKey })
-        .from(usageEvent)
-        .where(
-          and(
-            eq(usageEvent.orgId, orgId),
-            eq(usageEvent.status, "pending"),
-            afterId ? gt(usageEvent.id, afterId) : undefined,
-          ),
-        )
-        .orderBy(asc(usageEvent.id))
-        .limit(USAGE_SETTLEMENT_BATCH_SIZE);
-      signal.throwIfAborted();
-      if (batch.length === 0) {
-        return;
-      }
-      await set(
-        processUsageEventKeys$,
-        {
-          orgId,
-          idempotencyKeys: batch.map((row) => {
-            return row.key;
-          }),
-        },
-        signal,
-      );
-      afterId = batch.at(-1)?.id;
-    }
+    const pending = await set(writeDb$)
+      .select({ key: usageEvent.idempotencyKey })
+      .from(usageEvent)
+      .where(and(eq(usageEvent.orgId, orgId), eq(usageEvent.status, "pending")))
+      .orderBy(asc(usageEvent.id));
+    signal.throwIfAborted();
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId,
+        idempotencyKeys: pending.map((row) => {
+          return row.key;
+        }),
+      },
+      signal,
+    );
   },
 );
