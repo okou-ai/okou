@@ -410,7 +410,7 @@ import {
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import {
-  ORG_PLAN_CAPABILITY_SELECTION,
+  loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
   runtimeStatusForEntitlement,
 } from "./org-plan-entitlement-read.service";
@@ -11847,35 +11847,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const capturedRunAdmissionCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
       const { orgId } = await get(capturedRunAdmissionReadInput$);
-
-      const db = get(db$);
-      const [capabilities] = await db
-        .select(ORG_PLAN_CAPABILITY_SELECTION)
-        .from(orgPlanEntitlements)
-        .where(eq(orgPlanEntitlements.orgId, orgId))
-        .limit(1);
-      if (!capabilities) {
-        const [org] = await db
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .limit(1);
-        if (!org) {
-          return null;
-        }
-        throw new Error(`Missing org plan entitlement for ${orgId}`);
-      }
-      if (capabilities.restrictedBuiltInModels === null) {
-        throw new Error(
-          `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
-        );
-      }
-      const { restrictedBuiltInModels, ...runtimeCapabilities } = capabilities;
-      return {
-        ...runtimeCapabilities,
-        restrictedBuiltInModels,
-        status: runtimeStatusForEntitlement(capabilities.status),
-      };
+      return await loadOrgPlanCapabilities(get(db$), orgId);
     },
   );
   const runAdmissionCreditBalance$ = computed(async (get) => {

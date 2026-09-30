@@ -57,7 +57,7 @@ import {
   type DiscordChatEventContext,
 } from "./chat-event.service";
 import {
-  createEnqueuedChatThreadPickScheduler,
+  scheduleEnqueuedChatThreadPick$,
   enqueueChatInput,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
@@ -1170,9 +1170,6 @@ const sendIngressQueueWaitNotice$ = command(
   },
 );
 
-const scheduleDiscordIngressChatThreadPick$ =
-  createEnqueuedChatThreadPickScheduler(sendIngressQueueWaitNotice$);
-
 export const processCanonicalDiscordIngress$ = command(
   async (
     { set },
@@ -1221,16 +1218,23 @@ export const processCanonicalDiscordIngress$ = command(
     });
     signal.throwIfAborted();
     set(
-      scheduleDiscordIngressChatThreadPick$,
+      scheduleEnqueuedChatThreadPick$,
       {
         orgId: ingress.orgId,
         chatThreadId: ingress.chatThreadId,
         // The ingress id is the enqueued input's chat event id.
         eventId: args.ingressId,
-        afterPick: {
-          ingressId: args.ingressId,
-          connectionId: ingress.connectionId,
-          channelId: ingress.destinationChannelId,
+        afterPick: async (pick, pickSignal) => {
+          await set(
+            sendIngressQueueWaitNotice$,
+            {
+              ingressId: args.ingressId,
+              connectionId: ingress.connectionId,
+              channelId: ingress.destinationChannelId,
+            },
+            pick,
+            pickSignal,
+          );
         },
         publish: async () => {
           await publishChatThreadMessageCreatedSafely({

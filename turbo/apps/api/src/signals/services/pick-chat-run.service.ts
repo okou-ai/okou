@@ -455,6 +455,22 @@ async function appendQueueHeadRejection(
   };
 }
 
+/**
+ * One pick's outcome: the launched run, a claim released because the
+ * organization had no free concurrency slot, or nothing launched.
+ */
+export type PickResult =
+  | { readonly kind: "launched"; readonly runId: string }
+  | { readonly kind: "org-full" }
+  | { readonly kind: "none" };
+
+function createClaimRunTiming(pickStartedAt: number): ClaimRunTiming {
+  return {
+    run: new ApiDispatchTimingCollector(),
+    phase: new ApiDispatchPhaseCollector(pickStartedAt),
+  };
+}
+
 export function createPickObjects(orgId: string, fixedThreadId?: string) {
   const internalReloadPick$ = state(0);
   const internalOrgCursor$ = state<OrgPickCursor | null>(null);
@@ -1180,49 +1196,14 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   );
 
   /**
-   * Prepare and commit the claimed head. A rejected head or `passed`
-   * preparation only releases this claim; no extra pick is scheduled.
+   * Claim one thread and launch its head. The claimed head is prepared and
+   * committed under `settle`: a rejected head or `passed` preparation only
+   * releases this claim, and an unexpected failure there marks the head
+   * rejected so it cannot stay queued. A pending commit fences and clears the
+   * lease in its own transaction, so the launched path has no separate release.
    */
-  const launchPickedHead$ = command(
-    async (
-      { set },
-      {
-        claim,
-        claimed,
-      }: {
-        readonly claim: LeasedThreadClaim;
-        readonly claimed: ReturnType<typeof createClaimRunObjects>;
-      },
-      signal: AbortSignal,
-    ): Promise<string | null> => {
-      const timing: ClaimRunTiming = {
-        run: new ApiDispatchTimingCollector(),
-        phase: new ApiDispatchPhaseCollector(claim.pickStartedAt),
-      };
-      const context = await set(claimed.prepareRunContext$, timing, signal);
-      signal.throwIfAborted();
-      if (context.kind === "passed") {
-        await set(releaseClaim$, claim, signal);
-        return null;
-      }
-      // A pending commit fences and clears this claim's lease in its own
-      // transaction, so the success path has no separate release.
-      const pending = await set(createRun$, { claim, context, timing }, signal);
-      if (pending.kind !== "pending") {
-        if (pending.kind === "rejected") {
-          await set(rejectEvent$, context, pending.error, signal);
-        }
-        await set(releaseClaim$, claim, signal);
-        return null;
-      }
-      waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-      await set(activatePendingRun$, pending, signal);
-      return pending.runId;
-    },
-  );
-
   const pick$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+    async ({ get, set }, signal: AbortSignal): Promise<PickResult> => {
       signal.throwIfAborted();
       set(internalReloadPick$, (revision) => {
         return revision + 1;
@@ -1230,7 +1211,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       const claim = await set(claim$, signal);
       signal.throwIfAborted();
       if (!claim) {
-        return null;
+        return { kind: "none" };
       }
       const claimed = createClaimRunObjects({
         orgId: claim.orgId,
@@ -1245,28 +1226,54 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       signal.throwIfAborted();
       if (!hasCapacity) {
         await set(releaseClaim$, claim, signal);
-        return null;
+        return { kind: "org-full" };
       }
       if (!event) {
         await observeEmptyQueuePickForTest(claim.chatThreadId);
         signal.throwIfAborted();
         await set(deleteEmptyQueue$, claim, signal);
-        return null;
+        return { kind: "none" };
       }
-      const launched = await settle(
-        set(launchPickedHead$, { claim, claimed }, signal),
+      const timing = createClaimRunTiming(claim.pickStartedAt);
+      const settled = await settle(
+        (async (): Promise<PendingClaimRun | null> => {
+          const context = await set(claimed.prepareRunContext$, timing, signal);
+          signal.throwIfAborted();
+          if (context.kind === "passed") {
+            await set(releaseClaim$, claim, signal);
+            return null;
+          }
+          const committed = await set(
+            createRun$,
+            { claim, context, timing },
+            signal,
+          );
+          if (committed.kind === "pending") {
+            return committed;
+          }
+          if (committed.kind === "rejected") {
+            await set(rejectEvent$, context, committed.error, signal);
+          }
+          await set(releaseClaim$, claim, signal);
+          return null;
+        })(),
         signal,
       );
-      if (launched.ok) {
-        return launched.value;
+      if (!settled.ok) {
+        // The marking write's own failure is left to lease expiry.
+        await settle(
+          set(rejectAbandonedHead$, { claim, eventId: event.id }, signal),
+          signal,
+        );
+        throw settled.error;
       }
-      // The picked head must not stay queued after an unexpected failure.
-      // The marking write's own failure is left to lease expiry.
-      await settle(
-        set(rejectAbandonedHead$, { claim, eventId: event.id }, signal),
-        signal,
-      );
-      throw launched.error;
+      const pending = settled.value;
+      if (!pending) {
+        return { kind: "none" };
+      }
+      waitUntil(set(claimed.updatePresignedUrlCache$, signal));
+      await set(activatePendingRun$, pending, signal);
+      return { kind: "launched", runId: pending.runId };
     },
   );
   return { pick$ };

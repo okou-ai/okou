@@ -8,7 +8,6 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { computed, command, type Computed } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
@@ -27,8 +26,6 @@ import { db$, type Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
-  ORG_PLAN_CAPABILITY_SELECTION,
-  runtimeStatusForEntitlement,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
@@ -88,35 +85,7 @@ type RunAdmissionReadInput = ReturnType<typeof createRunAdmissionReadInput>;
 function createRunAdmissionCapabilitiesObject(input$: RunAdmissionReadInput) {
   return computed(async (get): Promise<OrgPlanCapabilities | null> => {
     const { orgId } = await get(input$);
-
-    const db = get(db$);
-    const [capabilities] = await db
-      .select(ORG_PLAN_CAPABILITY_SELECTION)
-      .from(orgPlanEntitlements)
-      .where(eq(orgPlanEntitlements.orgId, orgId))
-      .limit(1);
-    if (!capabilities) {
-      const [org] = await db
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .limit(1);
-      if (!org) {
-        return null;
-      }
-      throw new Error(`Missing org plan entitlement for ${orgId}`);
-    }
-    if (capabilities.restrictedBuiltInModels === null) {
-      throw new Error(
-        `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
-      );
-    }
-    const { restrictedBuiltInModels, ...runtimeCapabilities } = capabilities;
-    return {
-      ...runtimeCapabilities,
-      restrictedBuiltInModels,
-      status: runtimeStatusForEntitlement(capabilities.status),
-    };
+    return await loadOrgPlanCapabilities(get(db$), orgId);
   });
 }
 
