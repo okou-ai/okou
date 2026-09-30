@@ -1069,6 +1069,36 @@ function assertOfficialSourceClaim(
   }
 }
 
+/**
+ * The stored prompt: an agent-sourced send carries its source Run annotation;
+ * an MCP send carries its source part.
+ */
+function normalSendUserMessage(
+  args: NormalSendArgs,
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+): UserMessageDocument {
+  if (agentRunSource !== null) {
+    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
+  }
+  return args.mcpSource === undefined
+    ? args.body.userMessage
+    : {
+        ...args.body.userMessage,
+        parts: [...args.body.userMessage.parts, args.mcpSource],
+      };
+}
+
+/**
+ * A conflict on the insert is accepted as a duplicate without a lookup. Only
+ * a follow-up with a server-generated id cannot have collided on its id, so
+ * its conflict is the revoke edge taken concurrently.
+ */
+function conflictingSendResponse(args: NormalSendArgs, threadId: string) {
+  return args.body.revokesEventId && args.body.clientEventId === undefined
+    ? conflict("Recommended follow-up has already been used")
+    : acceptedSendResponse(threadId, nowDate(), true);
+}
+
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
   readonly id: string;
@@ -1440,15 +1470,7 @@ export const sendNormalEvent$ = command(
       modelSelection,
       id: args.body.clientEventId ?? randomUUID(),
       threadId: thread.threadId,
-      userMessage:
-        agentRunSource !== null
-          ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
-          : args.mcpSource === undefined
-            ? args.body.userMessage
-            : {
-                ...args.body.userMessage,
-                parts: [...args.body.userMessage.parts, args.mcpSource],
-              },
+      userMessage: normalSendUserMessage(args, agentRunSource),
       triggerSource: normalSendTriggerSource(args.auth),
       agentRunSource,
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
@@ -1516,13 +1538,7 @@ export const sendNormalEvent$ = command(
       throw enqueued.error;
     }
     if (enqueued.value === null) {
-      // A conflict on the insert is accepted as a duplicate without a
-      // lookup. Only a follow-up with a server-generated id cannot have
-      // collided on its id, so its conflict is the revoke edge taken
-      // concurrently.
-      return args.body.revokesEventId && args.body.clientEventId === undefined
-        ? conflict("Recommended follow-up has already been used")
-        : acceptedSendResponse(thread.threadId, nowDate(), true);
+      return conflictingSendResponse(args, thread.threadId);
     }
     return acceptedSendResponse(thread.threadId, enqueued.value, false);
   },

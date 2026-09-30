@@ -2412,6 +2412,132 @@ function storageManifestCacheLookupCondition(
   );
 }
 
+interface QueuedProviderAdmissionSurface {
+  readonly id: string;
+  readonly protocol: string;
+  readonly modelMappings: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The pinned provider's framing: its CLI agent framework (Built-in runs use
+ * the protocol framework of the model's primary catalog candidate) and
+ * whether a validated catalog model lacks a route on the pinned provider, so
+ * only a matching custom surface mapping can serve it.
+ */
+function queuedProviderRouteFraming(
+  catalog: ModelCatalog,
+  pin: ModelFirstPin,
+  providerModelSupport: ProviderModelSupport | undefined,
+) {
+  const parsed = modelProviderTypeSchema.safeParse(pin.modelProviderType);
+  const knownProvider = parsed.success ? parsed.data : null;
+  const pinModel = pin.selectedModel;
+  const [primaryBuiltIn] =
+    pinModel === null ? [] : catalogBuiltInCandidates(catalog, pinModel);
+  const primaryConcrete = modelProviderTypeSchema.safeParse(
+    primaryBuiltIn?.concreteProviderType,
+  );
+  const cliAgentType = knownProvider
+    ? getFrameworkForType(
+        isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
+          ? primaryConcrete.data
+          : knownProvider,
+      )
+    : null;
+  const requiresCustomSurface =
+    (providerModelSupport ?? "validate") === "validate" &&
+    pinModel !== null &&
+    catalog.byModel.has(pinModel) &&
+    (!knownProvider ||
+      !catalogHasProviderRoute(
+        catalog,
+        pinModel,
+        isBuiltInModelProviderType(knownProvider) ? "built-in" : knownProvider,
+      ));
+  return { cliAgentType, requiresCustomSurface };
+}
+
+function customSurfaceServesPin(
+  surface: QueuedProviderAdmissionSurface | null,
+  pin: ModelFirstPin,
+): boolean {
+  return (
+    surface !== null &&
+    pin.selectedModel !== null &&
+    surface.id === pin.modelProviderId &&
+    providerTypeForSurfaceProtocol(surface.protocol) ===
+      pin.modelProviderType &&
+    typeof surface.modelMappings[pin.selectedModel] === "string"
+  );
+}
+
+/**
+ * Provider admission shared by the chat and workflow-automation picks: model
+ * support on the pinned provider, org plan admission (the member's own
+ * subscription route is plan-exempt), then the Built-in credit balance.
+ */
+async function resolveQueuedProviderAdmission(params: {
+  readonly catalog: ModelCatalog;
+  readonly pin: ModelFirstPin;
+  readonly providerModelSupport: ProviderModelSupport | undefined;
+  readonly customSurface: () => Promise<QueuedProviderAdmissionSurface | null>;
+  readonly personalSubscription: () => Promise<boolean>;
+  readonly capabilities: () => Parameters<
+    typeof checkOrgPlanRunAdmission
+  >[0]["capabilities"];
+  readonly creditBalance: () => Promise<{
+    readonly spendableCredits: number;
+    readonly usagePackCredits: number;
+  } | null>;
+}) {
+  const { catalog, pin } = params;
+  const effectiveModelProvider = pin.modelProviderType;
+  const { cliAgentType, requiresCustomSurface } = queuedProviderRouteFraming(
+    catalog,
+    pin,
+    params.providerModelSupport,
+  );
+  if (
+    requiresCustomSurface &&
+    !customSurfaceServesPin(await params.customSurface(), pin)
+  ) {
+    return {
+      effectiveModelProvider,
+      cliAgentType,
+      error: badRequestMessage(
+        "The selected model is not supported by the current model provider",
+      ),
+      needsAllowance: false,
+    };
+  }
+  const personalSubscription = await params.personalSubscription();
+  const error = checkOrgPlanRunAdmission({
+    catalog,
+    capabilities: params.capabilities(),
+    modelProviderType: effectiveModelProvider,
+    selectedModel: pin.selectedModel,
+    personalSubscription,
+  });
+  if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
+    return {
+      effectiveModelProvider,
+      cliAgentType,
+      error,
+      needsAllowance: false,
+    };
+  }
+  const balance = await params.creditBalance();
+  return {
+    effectiveModelProvider,
+    cliAgentType,
+    error: balance ? undefined : pickChatRunModelInsufficientCredits(),
+    needsAllowance:
+      balance !== null &&
+      balance.usagePackCredits <= 0 &&
+      balance.spendableCredits <= 0,
+  };
+}
+
 export function createClaimRunObjects(claim: ThreadClaim) {
   // One model catalog snapshot per claim: the queued input is re-resolved
   // against the catalog current at the pick, not at enqueue.
@@ -3189,84 +3315,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
-    const effectiveModelProvider = pin.modelProviderType;
-    const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-    const knownProvider = parsed.success ? parsed.data : null;
-    const catalog = await get(claimCatalog$);
-    // Built-in runs use the protocol framework of the model's primary catalog
-    // candidate.
-    const pinModel = pin.selectedModel;
-    const [primaryBuiltIn] =
-      pinModel === null ? [] : catalogBuiltInCandidates(catalog, pinModel);
-    const primaryConcrete = modelProviderTypeSchema.safeParse(
-      primaryBuiltIn?.concreteProviderType,
-    );
-    const cliAgentType = knownProvider
-      ? getFrameworkForType(
-          isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
-            ? primaryConcrete.data
-            : knownProvider,
-        )
-      : null;
-    if (
-      (get(queuedProviderAdmissionInput$).providerModelSupport ??
-        "validate") === "validate" &&
-      pinModel !== null &&
-      catalog.byModel.has(pinModel) &&
-      (!knownProvider ||
-        !catalogHasProviderRoute(
-          catalog,
-          pinModel,
-          isBuiltInModelProviderType(knownProvider)
-            ? "built-in"
-            : knownProvider,
-        ))
-    ) {
-      const surface = await get(queuedProviderAdmissionCustomSurface$);
-      if (
-        !surface ||
-        surface.id !== pin.modelProviderId ||
-        providerTypeForSurfaceProtocol(surface.protocol) !==
-          effectiveModelProvider ||
-        typeof surface.modelMappings[pinModel] !== "string"
-      ) {
-        return {
-          effectiveModelProvider,
-          cliAgentType,
-          error: badRequestMessage(
-            "The selected model is not supported by the current model provider",
-          ),
-          needsAllowance: false,
-        };
-      }
-    }
-    const personalSubscription = await get(personalSubscription$);
-    const error = checkOrgPlanRunAdmission({
+    return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
-      capabilities: get(queuedProviderAdmissionPolicyFacts$)
-        .orgPlanCapabilities,
-      modelProviderType: effectiveModelProvider,
-      selectedModel: pin.selectedModel,
-      personalSubscription,
+      pin,
+      providerModelSupport: get(queuedProviderAdmissionInput$)
+        .providerModelSupport,
+      customSurface: () => {
+        return get(queuedProviderAdmissionCustomSurface$);
+      },
+      personalSubscription: () => {
+        return get(personalSubscription$);
+      },
+      capabilities: () => {
+        return get(queuedProviderAdmissionPolicyFacts$).orgPlanCapabilities;
+      },
+      creditBalance: () => {
+        return get(queuedProviderAdmissionCreditBalance$);
+      },
     });
-    if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-      return {
-        effectiveModelProvider,
-        cliAgentType,
-        error,
-        needsAllowance: false,
-      };
-    }
-    const balance = await get(queuedProviderAdmissionCreditBalance$);
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-      needsAllowance:
-        balance !== null &&
-        balance.usagePackCredits <= 0 &&
-        balance.spendableCredits <= 0,
-    };
   });
   const admission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$,
@@ -6250,84 +6316,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
-    const effectiveModelProvider = pin.modelProviderType;
-    const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-    const knownProvider = parsed.success ? parsed.data : null;
-    const catalog = await get(claimCatalog$);
-    // Built-in runs use the protocol framework of the model's primary catalog
-    // candidate.
-    const pinModel = pin.selectedModel;
-    const [primaryBuiltIn] =
-      pinModel === null ? [] : catalogBuiltInCandidates(catalog, pinModel);
-    const primaryConcrete = modelProviderTypeSchema.safeParse(
-      primaryBuiltIn?.concreteProviderType,
-    );
-    const cliAgentType = knownProvider
-      ? getFrameworkForType(
-          isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
-            ? primaryConcrete.data
-            : knownProvider,
-        )
-      : null;
-    if (
-      (get(queuedProviderAdmissionInput$2).providerModelSupport ??
-        "validate") === "validate" &&
-      pinModel !== null &&
-      catalog.byModel.has(pinModel) &&
-      (!knownProvider ||
-        !catalogHasProviderRoute(
-          catalog,
-          pinModel,
-          isBuiltInModelProviderType(knownProvider)
-            ? "built-in"
-            : knownProvider,
-        ))
-    ) {
-      const surface = await get(queuedProviderAdmissionCustomSurface$2);
-      if (
-        !surface ||
-        surface.id !== pin.modelProviderId ||
-        providerTypeForSurfaceProtocol(surface.protocol) !==
-          effectiveModelProvider ||
-        typeof surface.modelMappings[pinModel] !== "string"
-      ) {
-        return {
-          effectiveModelProvider,
-          cliAgentType,
-          error: badRequestMessage(
-            "The selected model is not supported by the current model provider",
-          ),
-          needsAllowance: false,
-        };
-      }
-    }
-    const personalSubscription = await get(personalSubscription$2);
-    const error = checkOrgPlanRunAdmission({
+    return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
-      capabilities: get(queuedProviderAdmissionPolicyFacts$2)
-        .orgPlanCapabilities,
-      modelProviderType: effectiveModelProvider,
-      selectedModel: pin.selectedModel,
-      personalSubscription,
+      pin,
+      providerModelSupport: get(queuedProviderAdmissionInput$2)
+        .providerModelSupport,
+      customSurface: () => {
+        return get(queuedProviderAdmissionCustomSurface$2);
+      },
+      personalSubscription: () => {
+        return get(personalSubscription$2);
+      },
+      capabilities: () => {
+        return get(queuedProviderAdmissionPolicyFacts$2).orgPlanCapabilities;
+      },
+      creditBalance: () => {
+        return get(queuedProviderAdmissionCreditBalance$2);
+      },
     });
-    if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-      return {
-        effectiveModelProvider,
-        cliAgentType,
-        error,
-        needsAllowance: false,
-      };
-    }
-    const balance = await get(queuedProviderAdmissionCreditBalance$2);
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-      needsAllowance:
-        balance !== null &&
-        balance.usagePackCredits <= 0 &&
-        balance.spendableCredits <= 0,
-    };
   });
   const queuedModelAdmission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$2,

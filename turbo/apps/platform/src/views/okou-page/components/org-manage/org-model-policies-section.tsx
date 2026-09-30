@@ -1366,6 +1366,24 @@ function ProviderRouteConfiguration({
   return null;
 }
 
+/** Which route choices the selected model needs a Pro upgrade for. */
+function getRoutePlanRequirements(
+  selectedModel: string | null,
+  modelCapabilities: ModelPlanCapabilities,
+): { oauthRequiresPro: boolean; builtInRequiresPro: boolean } {
+  return {
+    oauthRequiresPro:
+      !modelCapabilities.supportByok &&
+      !(
+        selectedModel !== null &&
+        oauthSubscriptionRouteAllowed(selectedModel, modelCapabilities)
+      ),
+    builtInRequiresPro:
+      selectedModel !== null &&
+      !modelAllowedForPlan(selectedModel, modelCapabilities),
+  };
+}
+
 function ModelPolicyRouteDialog({
   catalog,
   policies,
@@ -1559,6 +1577,10 @@ function ModelPolicyRouteDialog({
     selectedProviderType,
     surfaceId: selectedSurfaceId,
   });
+  const routePlanRequirements = getRoutePlanRequirements(
+    selectedModel,
+    modelCapabilities,
+  );
 
   return (
     <Dialog
@@ -1610,17 +1632,8 @@ function ModelPolicyRouteDialog({
             oauthTypes={oauthTypes}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
-            oauthRequiresPro={
-              !modelCapabilities.supportByok &&
-              !(
-                selectedModel !== null &&
-                oauthSubscriptionRouteAllowed(selectedModel, modelCapabilities)
-              )
-            }
-            builtInRequiresPro={
-              selectedModel !== null &&
-              !modelAllowedForPlan(selectedModel, modelCapabilities)
-            }
+            oauthRequiresPro={routePlanRequirements.oauthRequiresPro}
+            builtInRequiresPro={routePlanRequirements.builtInRequiresPro}
             onChoose={chooseRoute}
           />
           <ProviderRouteConfiguration
