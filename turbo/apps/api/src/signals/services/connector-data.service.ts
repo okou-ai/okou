@@ -1100,30 +1100,26 @@ interface PendingConnectorAutomationCleanup {
   readonly pendingGoogleMeetSubscriptionDelete: PendingGoogleMeetSubscriptionDelete | null;
 }
 
-async function prepareConnectorAutomationCleanup(
-  tx: Tx,
+/**
+ * Meet subscription deletion is prepared outside the account deletion
+ * transaction, like Calendar and Forms; remote cleanup is best effort.
+ */
+async function prepareDeletedConnectorMeetCleanup(
+  db: Db,
   args: DeleteBuiltinConnectorLocalStateArgs,
-  connectorId: string,
   signal: AbortSignal,
-): Promise<PendingConnectorAutomationCleanup> {
-  const cleanupArgs = {
-    db: tx,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorId,
-  };
-  const pendingGoogleCalendarWatchStop = null;
-  const pendingGoogleMeetSubscriptionDelete =
-    args.connectorSlug === "google-meet"
-      ? await prepareGoogleMeetSubscriptionDeleteForConnector(
-          cleanupArgs,
-          signal,
-        )
-      : null;
-  return {
-    pendingGoogleCalendarWatchStop,
-    pendingGoogleMeetSubscriptionDelete,
-  };
+): Promise<PendingGoogleMeetSubscriptionDelete | null> {
+  return args.connectorSlug === "google-meet"
+    ? await prepareGoogleMeetSubscriptionDeleteForConnector(
+        {
+          db,
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorId: args.sourceId,
+        },
+        signal,
+      )
+    : null;
 }
 
 async function deleteBuiltinConnectorAccountLocalState(
@@ -1149,8 +1145,6 @@ async function deleteBuiltinConnectorAccountLocalState(
     return {
       kind: account.kind,
       pendingTokenRevoke: null,
-      pendingGoogleCalendarWatchStop: null,
-      pendingGoogleMeetSubscriptionDelete: null,
     };
   }
   const existing = account.connector;
@@ -1167,8 +1161,6 @@ async function deleteBuiltinConnectorAccountLocalState(
     return {
       kind: deletion.kind,
       pendingTokenRevoke: null,
-      pendingGoogleCalendarWatchStop: null,
-      pendingGoogleMeetSubscriptionDelete: null,
     };
   }
 
@@ -1201,12 +1193,6 @@ async function deleteBuiltinConnectorAccountLocalState(
   }
   signal.throwIfAborted();
 
-  const pendingAutomationCleanup = await prepareConnectorAutomationCleanup(
-    tx,
-    args,
-    existing.id,
-    signal,
-  );
   await deleteConnectorCredentialStorageConnection(
     tx,
     { connectorId: existing.id },
@@ -1215,7 +1201,6 @@ async function deleteBuiltinConnectorAccountLocalState(
   return {
     kind: "deleted" as const,
     pendingTokenRevoke,
-    ...pendingAutomationCleanup,
     deletion,
   };
 }
@@ -1327,11 +1312,15 @@ export const deleteBuiltinConnectorLocalState$ = command(
             userId: args.userId,
             overrides: featureSwitchOverrides,
           } satisfies FeatureSwitchContext);
-    const calendarCleanup = await set(
-      prepareDeletedConnectorCalendarCleanup$,
-      args,
-      signal,
-    );
+    const automationCleanup: PendingConnectorAutomationCleanup = {
+      pendingGoogleCalendarWatchStop: await set(
+        prepareDeletedConnectorCalendarCleanup$,
+        args,
+        signal,
+      ),
+      pendingGoogleMeetSubscriptionDelete:
+        await prepareDeletedConnectorMeetCleanup(writeDb, args, signal),
+    };
     const formsCleanup =
       args.connectorSlug === "google-forms"
         ? await set(
@@ -1363,7 +1352,7 @@ export const deleteBuiltinConnectorLocalState$ = command(
     }
     const automationCleanupAbort = await stopPendingConnectorAutomationCleanup(
       writeDb,
-      { ...deleteResult, pendingGoogleCalendarWatchStop: calendarCleanup },
+      automationCleanup,
       signal,
     );
     postCommitAbort ??= automationCleanupAbort;
