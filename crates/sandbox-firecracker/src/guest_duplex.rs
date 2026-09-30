@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use guest_contracts::private_duplex::{ACTIVATE, READY};
+use guest_contracts::private_duplex::{ACTIVATE, ACTIVATED, READY};
 use sandbox::{AcceptedGuestDuplex, GuestDuplexAcceptor};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -210,9 +210,18 @@ impl GuestDuplexAcceptor for Acceptor {
             biased;
             () = operation.cancelled() => return Err(unavailable()),
             () = self.shared.closed.cancelled() => return Err(unavailable()),
-            result = tokio::time::timeout(ATTACH_TIMEOUT, stream.write_all(&[ACTIVATE])) =>
-                result.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Guest activation timed out"))??,
+            result = tokio::time::timeout(ATTACH_TIMEOUT, async {
+                stream.write_all(&[ACTIVATE]).await?;
+                if stream.read_u8().await? != ACTIVATED {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "Guest worker not ready"));
+                }
+                Ok::<(), io::Error>(())
+            }) => result.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Guest activation timed out"))??,
         }
+        if operation.is_cancelled() {
+            return Err(unavailable());
+        }
+        self.shared.ensure_running()?;
         Ok(AcceptedGuestDuplex {
             sandbox_id: self.shared.context.sandbox_id.clone(),
             stream: Box::new(ReservedStream::new(

@@ -1,7 +1,8 @@
 //! Version 1 private, run-assignment Guest duplex wire limits.
 //! One Guest-initiated vsock stream per logical channel: host `READY` acknowledges
 //! a pending slot, then host `ACTIVATE` admits the exact run assignment.
-//! Both directions then use four-byte big-endian length-prefixed opaque data.
+//! Guest `ACTIVATED` confirms a started, initialized worker before attachment
+//! succeeds. Both directions then use four-byte big-endian length-prefixed opaque data.
 //! EOF half-closes its direction; framing errors invalidate the channel and
 //! require its owner to close the stream.
 
@@ -11,6 +12,8 @@ pub const VSOCK_PORT: u32 = 52002;
 pub const READY: u8 = 2;
 /// One-byte host acceptance marker sent only after assignment admission.
 pub const ACTIVATE: u8 = 1;
+/// Guest worker readiness marker, sent after thread startup and buffer initialization.
+pub const ACTIVATED: u8 = 3;
 /// Maximum payload in one direction's length-prefixed frame.
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 /// Maximum active duplex stream workers per run/sandbox.

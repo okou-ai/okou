@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use guest_contracts::private_duplex::{
-    ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT,
+    ACTIVATE, ACTIVATED, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT,
 };
 const RETRY: Duration = Duration::from_millis(100);
 // Bound a stalled ingress acknowledgement so the only pending Guest worker
@@ -38,23 +38,33 @@ pub(super) fn run() {
                     std::thread::sleep(RETRY);
                     continue;
                 }
-                active.fetch_add(1, Ordering::AcqRel);
-                let count = WorkerCount(Arc::clone(&active));
-                if std::thread::Builder::new()
-                    .name("gdup-echo".into())
-                    .spawn(move || {
-                        let _count = count;
-                        let _ = serve_echo(stream);
-                    })
-                    .is_err()
+                if start_worker(stream, &active, |stream, count| {
+                    std::thread::Builder::new()
+                        .name("gdup-echo".into())
+                        .spawn(move || {
+                            let _count = count;
+                            let _ = serve_echo(stream);
+                        })
+                })
+                .is_err()
                 {
-                    // The closure (and guard) are dropped on spawn failure.
                     std::thread::sleep(RETRY);
                 }
             }
             Err(_) => std::thread::sleep(RETRY),
         }
     }
+}
+
+/// Count before spawning; the moved guard and socket are dropped on spawn failure.
+/// Only the successfully started worker may acknowledge readiness.
+fn start_worker(
+    stream: UnixStream,
+    active: &Arc<AtomicUsize>,
+    spawn: impl FnOnce(UnixStream, WorkerCount) -> io::Result<std::thread::JoinHandle<()>>,
+) -> io::Result<std::thread::JoinHandle<()>> {
+    active.fetch_add(1, Ordering::AcqRel);
+    spawn(stream, WorkerCount(Arc::clone(active)))
 }
 
 /// Connect only to the dedicated private host listener. Do not use the control
@@ -126,7 +136,13 @@ fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Resul
 /// Finite frame buffer and per-direction ordered, backpressured echo. EOF of
 /// the inbound direction sends EOF outward; malformed/oversized frames close the stream.
 fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
-    let mut data = vec![0u8; MAX_FRAME_BYTES];
+    let mut data = Vec::new();
+    data.try_reserve_exact(MAX_FRAME_BYTES)
+        .map_err(|error| io::Error::new(io::ErrorKind::OutOfMemory, error))?;
+    data.resize(MAX_FRAME_BYTES, 0);
+    // A successful ACTIVATE write on the host is not worker readiness. Confirm
+    // only from this running worker, after its bounded frame buffer is initialized.
+    stream.write_all(&[ACTIVATED])?;
     loop {
         let mut header = [0u8; 4];
         if stream.read(&mut header[..1])? == 0 {
@@ -155,13 +171,47 @@ mod tests {
     #[test]
     fn dedicated_ingress_acknowledges_before_assignment_activation() {
         let (mut guest, mut host) = UnixStream::pair().unwrap();
+        let active = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&active);
         let worker = std::thread::spawn(move || {
             await_activation(&mut guest, Duration::from_millis(100)).unwrap();
-            guest
+            start_worker(guest, &count, |stream, count| {
+                Ok(std::thread::spawn(move || {
+                    let _count = count;
+                    serve_echo(stream).unwrap();
+                }))
+            })
+            .unwrap()
+            .join()
+            .unwrap();
         });
         host.write_all(&[READY]).unwrap();
         host.write_all(&[ACTIVATE]).unwrap();
-        let _activated = worker.join().unwrap();
+        let mut ready = [0];
+        host.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, [ACTIVATED]);
+        host.write_all(b"\0\0\0\x03one").unwrap();
+        host.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut echo = [0; 7];
+        host.read_exact(&mut echo).unwrap();
+        assert_eq!(&echo, b"\0\0\0\x03one");
+        worker.join().unwrap();
+        assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn worker_spawn_failure_closes_without_ready_and_releases_capacity() {
+        let (mut guest, mut host) = UnixStream::pair().unwrap();
+        let active = Arc::new(AtomicUsize::new(0));
+        host.write_all(&[READY, ACTIVATE]).unwrap();
+        await_activation(&mut guest, Duration::from_millis(100)).unwrap();
+        let error = start_worker(guest, &active, |_stream, _count| {
+            Err(io::Error::other("injected worker spawn failure"))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(host.read(&mut [0]).unwrap(), 0);
+        assert_eq!(active.load(Ordering::Acquire), 0);
     }
 
     #[test]
@@ -179,6 +229,9 @@ mod tests {
     fn echo_preserves_order_and_half_close() {
         let (mut host, guest) = UnixStream::pair().unwrap();
         let worker = std::thread::spawn(move || serve_echo(guest));
+        let mut ready = [0];
+        host.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, [ACTIVATED]);
         for frame in [b"first".as_slice(), b"second".as_slice()] {
             host.write_all(&(frame.len() as u32).to_be_bytes()).unwrap();
             host.write_all(frame).unwrap();
@@ -206,6 +259,9 @@ mod tests {
                 serve_echo(guest).unwrap_err().kind(),
                 io::ErrorKind::UnexpectedEof
             );
+            let mut ready = [0];
+            host.read_exact(&mut ready).unwrap();
+            assert_eq!(ready, [ACTIVATED]);
             assert_eq!(host.read(&mut [0]).unwrap(), 0);
         }
     }

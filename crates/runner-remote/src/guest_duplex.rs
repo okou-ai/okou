@@ -89,6 +89,7 @@ impl RunGuestChannels {
     }
 
     /// Exact in-process lookup; no DB, status file, guessed sandbox or idle cache.
+    /// Success requires the provider to confirm Guest worker readiness, not just activation.
     pub async fn open(&self, run_id: RunId) -> io::Result<Channel> {
         let entry = self
             .entries

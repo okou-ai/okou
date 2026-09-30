@@ -414,16 +414,18 @@ async fn successful_park_variants_replace_both_guest_endpoint_epochs_before_resu
             duplex_peer.read_u8().await.unwrap(),
             guest_contracts::private_duplex::READY
         );
-        let accepted_duplex = sandbox
-            .guest_duplex("run-b")
-            .unwrap()
-            .accept()
-            .await
-            .unwrap();
-        assert_eq!(
-            duplex_peer.read_u8().await.unwrap(),
-            guest_contracts::private_duplex::ACTIVATE
-        );
+        let acceptor = sandbox.guest_duplex("run-b").unwrap();
+        let (accepted_duplex, ()) = tokio::join!(acceptor.accept(), async {
+            assert_eq!(
+                duplex_peer.read_u8().await.unwrap(),
+                guest_contracts::private_duplex::ACTIVATE
+            );
+            duplex_peer
+                .write_all(&[guest_contracts::private_duplex::ACTIVATED])
+                .await
+                .unwrap();
+        });
+        let accepted_duplex = accepted_duplex.unwrap();
         assert_eq!(accepted_duplex.sandbox_id, sandbox.id());
         drop(accepted_duplex);
         let mut new_peer = UnixStream::connect(&path).await.unwrap();

@@ -104,12 +104,154 @@ impl Fixture {
     fn acceptor(&self, run: &str) -> Arc<dyn GuestDuplexAcceptor> {
         self.endpoint.as_ref().unwrap().acceptor(run)
     }
+    async fn accept_ready(&self, run: &str, guest: &mut UnixStream) -> AcceptedGuestDuplex {
+        let acceptor = self.acceptor(run);
+        let (accepted, ()) = tokio::join!(acceptor.accept(), async {
+            assert_eq!(guest.read_u8().await.unwrap(), ACTIVATE);
+            guest.write_all(&[ACTIVATED]).await.unwrap();
+        });
+        accepted.unwrap()
+    }
     async fn connect(&self) -> UnixStream {
         let mut stream = UnixStream::connect(&self.path).await.unwrap();
         let mut ready = [0];
         stream.read_exact(&mut ready).await.unwrap();
         assert_eq!(ready, [READY]);
         stream
+    }
+}
+
+#[tokio::test]
+async fn attachment_waits_for_worker_ack_and_preserves_first_frame_bytes() {
+    let fixture = Fixture::new().await;
+    let mut guest = fixture.connect().await;
+    let acceptor = fixture.acceptor("run-a");
+    let mut accepting = Box::pin(acceptor.accept());
+    assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+    assert_eq!(guest.read_u8().await.unwrap(), ACTIVATE);
+    assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+    assert_eq!(
+        fixture.host.try_fence_normal_operations().err(),
+        Some(guest_control_client::NormalOperationFenceRejection::Busy)
+    );
+    guest
+        .write_all(&[ACTIVATED, 0, 0, 0, 1, b'x'])
+        .await
+        .unwrap();
+    let mut accepted = accepting.await.unwrap();
+    let mut frame = [0; 5];
+    accepted.stream.read_exact(&mut frame).await.unwrap();
+    assert_eq!(&frame, b"\0\0\0\x01x");
+    drop(accepted);
+    drop(fixture.host.try_fence_normal_operations().unwrap());
+}
+
+#[tokio::test]
+async fn failed_worker_ack_releases_reservation_and_next_attachment_recovers() {
+    let fixture = Fixture::new().await;
+    // EOF models a Guest worker spawn failure; READY/ACTIVATE are not valid replies.
+    for reply in [None, Some(READY), Some(ACTIVATE), Some(0xff)] {
+        let mut guest = fixture.connect().await;
+        let acceptor = fixture.acceptor("run-a");
+        let mut accepting = Box::pin(acceptor.accept());
+        assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+        assert_eq!(guest.read_u8().await.unwrap(), ACTIVATE);
+        if let Some(reply) = reply {
+            guest.write_all(&[reply]).await.unwrap();
+        } else {
+            guest.shutdown().await.unwrap();
+        }
+        assert_eq!(
+            accepting.await.err().unwrap().kind(),
+            if reply.is_some() {
+                io::ErrorKind::InvalidData
+            } else {
+                io::ErrorKind::UnexpectedEof
+            }
+        );
+        assert_eq!(guest.read(&mut [0]).await.unwrap(), 0);
+        drop(fixture.host.try_fence_normal_operations().unwrap());
+    }
+    let mut healthy = fixture.connect().await;
+    let accepted = fixture.accept_ready("run-a", &mut healthy).await;
+    drop(accepted);
+    drop(fixture.host.try_fence_normal_operations().unwrap());
+}
+
+#[tokio::test]
+async fn failed_worker_ack_does_not_revoke_a_healthy_parallel_stream() {
+    let fixture = Fixture::new().await;
+    let mut healthy_guest = fixture.connect().await;
+    let mut healthy = fixture.accept_ready("run-a", &mut healthy_guest).await;
+    let mut failed_guest = fixture.connect().await;
+    let acceptor = fixture.acceptor("run-a");
+    let mut accepting = Box::pin(acceptor.accept());
+    assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+    assert_eq!(failed_guest.read_u8().await.unwrap(), ACTIVATE);
+    failed_guest.shutdown().await.unwrap();
+    assert_eq!(
+        accepting.await.err().unwrap().kind(),
+        io::ErrorKind::UnexpectedEof
+    );
+    assert!(!healthy.cancelled.is_cancelled());
+    healthy.stream.write_all(b"ok").await.unwrap();
+    let mut bytes = [0; 2];
+    healthy_guest.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"ok");
+    drop(healthy);
+    drop(fixture.host.try_fence_normal_operations().unwrap());
+}
+
+#[tokio::test]
+async fn missing_worker_ack_times_out_and_releases_reservation() {
+    let fixture = Fixture::new().await;
+    let mut guest = fixture.connect().await;
+    let acceptor = fixture.acceptor("run-a");
+    let mut accepting = Box::pin(acceptor.accept());
+    assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+    assert_eq!(guest.read_u8().await.unwrap(), ACTIVATE);
+    assert_eq!(
+        accepting.await.err().unwrap().kind(),
+        io::ErrorKind::TimedOut
+    );
+    assert_eq!(guest.read(&mut [0]).await.unwrap(), 0);
+    drop(fixture.host.try_fence_normal_operations().unwrap());
+    let mut healthy = fixture.connect().await;
+    drop(fixture.accept_ready("run-a", &mut healthy).await);
+}
+
+#[tokio::test]
+async fn worker_ack_wait_is_cancelled_by_assignment_endpoint_or_runtime() {
+    enum Source {
+        Assignment,
+        Endpoint,
+        Runtime,
+    }
+    for source in [Source::Assignment, Source::Endpoint, Source::Runtime] {
+        let mut fixture = Fixture::new().await;
+        let mut guest = fixture.connect().await;
+        let acceptor = fixture.acceptor("run-a");
+        let mut accepting = Box::pin(acceptor.accept());
+        assert!(futures_util::poll!(accepting.as_mut()).is_pending());
+        assert_eq!(guest.read_u8().await.unwrap(), ACTIVATE);
+        match source {
+            Source::Assignment => {
+                fixture.coordinator.begin_terminate(Some("run-a"));
+            }
+            Source::Endpoint => drop(fixture.endpoint.take()),
+            Source::Runtime => fixture.runtime_cancel.cancel(),
+        }
+        assert_eq!(
+            timeout(Duration::from_secs(1), accepting)
+                .await
+                .unwrap()
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::NotConnected
+        );
+        assert_eq!(guest.read(&mut [0]).await.unwrap(), 0);
+        drop(fixture.host.try_fence_normal_operations().unwrap());
     }
 }
 
@@ -127,10 +269,7 @@ async fn idle_candidate_does_not_reserve_park_and_only_current_run_activates() {
     assert!(fixture.acceptor("other").accept().await.is_err());
     let mut guest = fixture.connect().await;
     drop(fixture.host.try_fence_normal_operations().unwrap());
-    let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
-    let mut marker = [0];
-    guest.read_exact(&mut marker).await.unwrap();
-    assert_eq!(marker, [ACTIVATE]);
+    let mut accepted = fixture.accept_ready("run-a", &mut guest).await;
     assert_eq!(accepted.sandbox_id, "sandbox-a");
     assert_eq!(
         fixture.host.try_fence_normal_operations().err(),
@@ -158,9 +297,7 @@ async fn attach_waiting_on_guest_control_is_bounded_without_activating_socket() 
     assert_eq!(guest.read(&mut activation).await.unwrap(), 0);
     drop(locked);
     let mut next = fixture.connect().await;
-    let accepted = fixture.acceptor("run-a").accept().await.unwrap();
-    next.read_exact(&mut activation).await.unwrap();
-    assert_eq!(activation, [ACTIVATE]);
+    let accepted = fixture.accept_ready("run-a", &mut next).await;
     drop(accepted);
 }
 
@@ -240,8 +377,7 @@ async fn duplicate_bind_preserves_original_and_runtime_exit_revokes_active_strea
     );
     assert!(fixture.path.exists());
     let mut guest = fixture.connect().await;
-    let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
-    guest.read_exact(&mut [0]).await.unwrap();
+    let mut accepted = fixture.accept_ready("run-a", &mut guest).await;
     let mut byte = [0];
     let mut pending_read = Box::pin(accepted.stream.read(&mut byte));
     assert!(futures_util::poll!(pending_read.as_mut()).is_pending());
@@ -278,8 +414,7 @@ async fn duplex_close_revokes_only_duplex_not_existing_rpc_work() {
     let mut rpc_peer = UnixStream::connect(&rpc_path).await.unwrap();
     let mut accepted_rpc = rpc.acceptor("run-a").accept().await.unwrap();
     let mut duplex_peer = fixture.connect().await;
-    let accepted_duplex = fixture.acceptor("run-a").accept().await.unwrap();
-    duplex_peer.read_exact(&mut [0]).await.unwrap();
+    let accepted_duplex = fixture.accept_ready("run-a", &mut duplex_peer).await;
     drop(fixture.endpoint.take());
     timeout(
         Duration::from_secs(1),
@@ -310,8 +445,7 @@ async fn rpc_close_revokes_only_rpc_not_existing_duplex_work() {
     let _rpc_peer = UnixStream::connect(&rpc_path).await.unwrap();
     let accepted_rpc = rpc.acceptor("run-a").accept().await.unwrap();
     let mut duplex_peer = fixture.connect().await;
-    let mut accepted_duplex = fixture.acceptor("run-a").accept().await.unwrap();
-    duplex_peer.read_exact(&mut [0]).await.unwrap();
+    let mut accepted_duplex = fixture.accept_ready("run-a", &mut duplex_peer).await;
     drop(rpc);
     timeout(Duration::from_secs(1), accepted_rpc.cancelled.cancelled())
         .await
@@ -352,8 +486,7 @@ async fn old_capability_cannot_follow_reused_sandbox_and_cancel_interrupts_io() 
     drop(fence);
     assert!(old.accept().await.is_err());
     let mut guest = fixture.connect().await;
-    let mut accepted = fixture.acceptor("run-b").accept().await.unwrap();
-    guest.read_exact(&mut [0]).await.unwrap();
+    let mut accepted = fixture.accept_ready("run-b", &mut guest).await;
     let mut buffer = [0];
     let mut read = Box::pin(accepted.stream.read(&mut buffer));
     assert!(futures_util::poll!(read.as_mut()).is_pending());

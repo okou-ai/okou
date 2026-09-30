@@ -5,17 +5,17 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
 struct FakeAcceptor {
-    rx: AsyncMutex<mpsc::Receiver<AcceptedGuestDuplex>>,
+    rx: AsyncMutex<mpsc::Receiver<io::Result<AcceptedGuestDuplex>>>,
 }
 #[async_trait]
 impl GuestDuplexAcceptor for FakeAcceptor {
     async fn accept(&self) -> io::Result<AcceptedGuestDuplex> {
-        self.rx.lock().await.recv().await.ok_or_else(unavailable)
+        self.rx.lock().await.recv().await.ok_or_else(unavailable)?
     }
 }
 struct Fixture {
     acceptor: Arc<FakeAcceptor>,
-    tx: mpsc::Sender<AcceptedGuestDuplex>,
+    tx: mpsc::Sender<io::Result<AcceptedGuestDuplex>>,
 }
 impl Fixture {
     fn new() -> Self {
@@ -30,11 +30,11 @@ impl Fixture {
     async fn guest(&self, sandbox: &str) -> DuplexStream {
         let (host, guest) = tokio::io::duplex(128 * 1024);
         self.tx
-            .send(AcceptedGuestDuplex {
+            .send(Ok(AcceptedGuestDuplex {
                 sandbox_id: sandbox.to_owned(),
                 stream: Box::new(host),
                 cancelled: CancellationToken::new(),
-            })
+            }))
             .await
             .unwrap();
         guest
@@ -48,6 +48,50 @@ impl Fixture {
     ) -> Registration {
         registry.register_acceptor(run, sandbox.to_owned(), self.acceptor.clone(), cancel)
     }
+}
+
+#[tokio::test]
+async fn provider_readiness_errors_release_run_capacity_without_poisoning_live_channels() {
+    let registry = RunGuestChannels::default();
+    let fixture = Fixture::new();
+    let run = RunId::new_v4();
+    let _registration = fixture.register(&registry, run, "sandbox-a", &CancellationToken::new());
+    let mut healthy_guest = fixture.guest("sandbox-a").await;
+    let mut healthy = registry.open(run).await.unwrap();
+    // Model the provider's readiness failures; it owns consuming the handshake.
+    for kind in [
+        io::ErrorKind::UnexpectedEof,
+        io::ErrorKind::InvalidData,
+        io::ErrorKind::TimedOut,
+    ] {
+        for _ in 0..MAX_STREAMS_PER_RUN {
+            let mut opening = Box::pin(registry.open(run));
+            assert!(futures_util::poll!(opening.as_mut()).is_pending());
+            fixture
+                .tx
+                .send(Err(io::Error::new(kind, "Guest readiness failed")))
+                .await
+                .unwrap();
+            assert_eq!(opening.await.err().unwrap().kind(), kind);
+        }
+    }
+    healthy.send(b"ok").await.unwrap();
+    let mut frame = [0; 6];
+    healthy_guest.read_exact(&mut frame).await.unwrap();
+    assert_eq!(&frame, b"\0\0\0\x02ok");
+    let mut channels = vec![healthy];
+    let mut guests = vec![healthy_guest];
+    for _ in 1..MAX_STREAMS_PER_RUN {
+        guests.push(fixture.guest("sandbox-a").await);
+        channels.push(registry.open(run).await.unwrap());
+    }
+    assert_eq!(
+        registry.open(run).await.err().unwrap().kind(),
+        io::ErrorKind::WouldBlock
+    );
+    drop(channels.pop());
+    guests.push(fixture.guest("sandbox-a").await);
+    channels.push(registry.open(run).await.unwrap());
 }
 
 #[tokio::test]
