@@ -11297,11 +11297,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       get,
     ): Promise<MaterializedAgentRunStorage | CreateRunErrorResult | null> => {
-      const ready = await get(resourceReady$);
-      if (ready.failure) {
-        return ready.failure;
-      }
-      if (!ready.allowed) {
+      if (!(await get(resourceAllowed$))) {
         return null;
       }
       const plan = await get(storagePlan$);
@@ -12546,33 +12542,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const internalAdmission$ = state<{
-    readonly failure: CreateRunErrorResult | undefined;
-  } | null>(null);
-  const resourceReady$ = computed(async (get) => {
-    const admission = get(internalAdmission$);
-    if (admission === null) {
-      throw new Error("Claim admission has not been checked");
-    }
-    const { failure } = admission;
+  // Resource reads do not wait for credit admission: its failure is checked
+  // with the prepared resources before anything is committed.
+  const resourceAllowed$ = computed(async (get) => {
     const [selection, validSource] = await Promise.all([
       get(selectionInput$),
       (await get(isAutomation$)) ? true : get(resourceValidation$),
     ]);
-    return { failure, allowed: !!selection && validSource };
+    return !!selection && validSource;
   });
   const prepareRunnerInput$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [input, identity, ready] = await Promise.all([
+      const [input, identity, allowed] = await Promise.all([
         get(runPlan$),
         get(runIdentity$),
-        get(resourceReady$),
+        get(resourceAllowed$),
       ]);
       signal.throwIfAborted();
-      if (ready.failure) {
-        return ready.failure;
-      }
-      if (!ready.allowed) {
+      if (!allowed) {
         return null;
       }
       if (!input || isRouteError(input)) {
@@ -12886,65 +12873,63 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return head;
     },
   );
-  const admitStorage$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const admission = await set(checkClaimAdmission$, signal);
+  /** Runner input owns the random token; storage then reads its result. */
+  const prepareRunnerResources$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const runnerInput = await set(prepareRunnerInput$, signal);
       signal.throwIfAborted();
-      set(internalAdmission$, { failure: admission });
-      await get(storageMounts$);
-      signal.throwIfAborted();
+      set(internalRunnerInput$, { input: runnerInput });
+      return await Promise.all([get(runPlan$), get(runnerStorage$)]);
     },
   );
-  const prepareAdmittedStorage$ = command(
-    async ({ set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+  /**
+   * Automation launch arguments are the only write-derived input of these
+   * reads; Web input starts them at once.
+   */
+  const prepareLaunchResources$ = command(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
       if (head.contextType === "automation") {
-        await set(resolveAutomationModelSnapshot$, signal);
+        const launch = await set(
+          initializeQueuedAutomationInitializeQueuedAutomation$,
+          head,
+          signal,
+        );
         signal.throwIfAborted();
+        if (launch) {
+          await set(initializeWorkflowAutomationRun$, launch, signal);
+          signal.throwIfAborted();
+        }
       }
-      const [encrypted] = await Promise.all([
-        set(prepareEncryptedSecrets$, signal),
-        set(admitStorage$, signal),
+      const [runner, callbackRows, assembly, identity] = await Promise.all([
+        set(prepareRunnerResources$, signal),
+        set(prepareCallbacks$, signal),
+        get(assembly$),
+        get(runIdentity$),
+        set(observeExecution$, signal),
+        get(runMemberSnapshot$),
+        get(runDisabledPaidToolsSnapshot$),
+        get(runEnvironmentSnapshot$),
       ]);
       signal.throwIfAborted();
-      return encrypted;
+      return { runner, callbackRows, assembly, identity };
     },
   );
   const prepareClaimResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      const [encrypted, launch] = await Promise.all([
-        set(prepareAdmittedStorage$, head, signal),
-        head.contextType === "automation"
-          ? set(
-              initializeQueuedAutomationInitializeQueuedAutomation$,
-              head,
-              signal,
-            )
-          : null,
-      ]);
-      signal.throwIfAborted();
-      if (launch) {
-        await set(initializeWorkflowAutomationRun$, launch, signal);
+      if (head.contextType === "automation") {
+        await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
-      const [runnerInput, callbackRows, assembly, identity] = await Promise.all(
-        [
-          set(prepareRunnerInput$, signal),
-          set(prepareCallbacks$, signal),
-          get(assembly$),
-          get(runIdentity$),
-          set(observeExecution$, signal),
-          get(runMemberSnapshot$),
-          get(runDisabledPaidToolsSnapshot$),
-          get(runEnvironmentSnapshot$),
-        ],
-      );
-      signal.throwIfAborted();
-      set(internalRunnerInput$, { input: runnerInput });
-      const [input, storage] = await Promise.all([
-        get(runPlan$),
-        get(runnerStorage$),
+      // Storage mounts and runtime-secret KMS do not read reconciled
+      // automation configuration, so they start before launch preparation.
+      const [encrypted, admission, launch] = await Promise.all([
+        set(prepareEncryptedSecrets$, signal),
+        set(checkClaimAdmission$, signal),
+        set(prepareLaunchResources$, head, signal),
+        get(storageMounts$),
       ]);
       signal.throwIfAborted();
+      const [input, storage] = launch.runner;
       const contextDraft = set(
         claimRunPrepareStoredContextDraft$,
         encrypted,
@@ -12953,10 +12938,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return [
         input,
         storage,
-        callbackRows,
+        launch.callbackRows,
         contextDraft,
-        assembly,
-        identity,
+        launch.assembly,
+        launch.identity,
+        admission,
       ] as const;
     },
   );
@@ -12995,8 +12981,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
         return { kind: "passed" };
       }
-      const [input, storage, callbackRows, contextDraft, assembly, identity] =
-        resources.value;
+      const [
+        input,
+        storage,
+        callbackRows,
+        contextDraft,
+        assembly,
+        identity,
+        admission,
+      ] = resources.value;
       signal.throwIfAborted();
       if (assembly.kind !== "assembled") {
         await set(
@@ -13014,11 +13007,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       const failure = isRouteError(input)
         ? input
-        : isRouteError(storage)
-          ? storage
-          : isRouteError(contextDraft)
-            ? contextDraft
-            : null;
+        : (admission ??
+          (isRouteError(storage)
+            ? storage
+            : isRouteError(contextDraft)
+              ? contextDraft
+              : null));
       if (failure) {
         await set(
           rejectChatQueueHead$,
