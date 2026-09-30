@@ -3514,7 +3514,8 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingUsagePackCheckoutContract,
     );
-    const body = (usagePackUsd: 20 | 50) => {
+    const before = await readBillingStatus(fixture);
+    const body = (usagePackUsd: 20 | 50 | 100) => {
       return {
         tier: "pro" as const,
         memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd }],
@@ -3568,6 +3569,27 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(context.mocks.stripe.checkout.sessions.expire).toHaveBeenCalledTimes(
       1,
     );
+
+    // Replacing the winner changes the purchase, but not the number of pending
+    // purchases. It must remain usable without activating any unpaid credits.
+    const replacement = await accept(
+      client.create({
+        body: body(100),
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(replacement.body).toStrictEqual({
+      url: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\//),
+    });
+    expect(
+      [...sessionStates.values()].filter((status) => {
+        return status === "open";
+      }),
+    ).toHaveLength(1);
+    const after = await readBillingStatus(fixture);
+    expect(after.tier).toBe(before.tier);
+    expect(after.credits).toBe(before.credits);
 
     for (const [input] of context.mocks.stripe.checkout.sessions.create.mock
       .calls) {

@@ -88,7 +88,10 @@ import {
 } from "./usage-pack-plan-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
-import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
+import {
+  publishUsagePackPendingSnapshotCount,
+  writeUsagePackPendingSnapshots,
+} from "./usage-pack-pending-snapshot.service";
 import {
   billingPurchaseCompatibilityLockSql,
   inFlightPlanPurchaseQuery,
@@ -624,7 +627,7 @@ async function pendingUsagePackCheckoutContexts(
 
 async function retireUsagePackCheckout(
   tx: Pick<WriteTx, "select" | "update">,
-  usagePackSubscriptionId: string,
+  subscription: UsagePackSubscriptionRow,
 ): Promise<void> {
   const at = nowDate();
   // Conditional transition: only a still-pending snapshot retires, and only
@@ -634,7 +637,24 @@ async function retireUsagePackCheckout(
     .set({ subscriptionStatus: "checkout_expired", updatedAt: at })
     .where(
       and(
-        eq(usagePackSubscriptions.id, usagePackSubscriptionId),
+        eq(usagePackSubscriptions.id, subscription.id),
+        eq(usagePackSubscriptions.orgId, subscription.orgId),
+        eq(
+          usagePackSubscriptions.subscriptionStatus,
+          subscription.subscriptionStatus,
+        ),
+        subscription.stripeCheckoutSessionId === null
+          ? isNull(usagePackSubscriptions.stripeCheckoutSessionId)
+          : eq(
+              usagePackSubscriptions.stripeCheckoutSessionId,
+              subscription.stripeCheckoutSessionId,
+            ),
+        subscription.stripeSubscriptionId === null
+          ? isNull(usagePackSubscriptions.stripeSubscriptionId)
+          : eq(
+              usagePackSubscriptions.stripeSubscriptionId,
+              subscription.stripeSubscriptionId,
+            ),
         inArray(usagePackSubscriptions.subscriptionStatus, [
           ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
         ]),
@@ -642,14 +662,14 @@ async function retireUsagePackCheckout(
     )
     .returning({ id: usagePackSubscriptions.id });
   if (!retired) {
-    return;
+    // A losing replacement must roll back, not create another pending row
+    // after a competing request has consumed the same source snapshot.
+    throw new Error("Usage pack purchase changed during retirement");
   }
   await tx
     .update(usagePackAllocations)
     .set({ status: "inactive", updatedAt: at })
-    .where(
-      eq(usagePackAllocations.usagePackSubscriptionId, usagePackSubscriptionId),
-    );
+    .where(eq(usagePackAllocations.usagePackSubscriptionId, subscription.id));
 }
 
 type PendingUsagePackCheckoutResolution =
@@ -667,7 +687,7 @@ async function resolvePendingUsagePackSnapshots(
   const matchingSnapshot = args.snapshots.find(args.matches);
   for (const snapshot of args.snapshots) {
     if (snapshot !== matchingSnapshot) {
-      await retireUsagePackCheckout(tx, snapshot.subscription.id);
+      await retireUsagePackCheckout(tx, snapshot.subscription);
     }
   }
   return matchingSnapshot
@@ -814,12 +834,12 @@ async function commitPendingUsagePackCheckout(
   const { retained } = prepared;
   for (const entry of prepared.resolved) {
     if (entry !== retained) {
-      await retireUsagePackCheckout(tx, entry.context.subscription.id);
+      await retireUsagePackCheckout(tx, entry.context.subscription);
     }
   }
   if (retained) {
     for (const snapshot of snapshots) {
-      await retireUsagePackCheckout(tx, snapshot.subscription.id);
+      await retireUsagePackCheckout(tx, snapshot.subscription);
     }
     if (retained.session.status === "complete") {
       return {
@@ -2845,11 +2865,14 @@ const publishUsagePackCheckoutState$ = command(
             ),
           );
       }
-      // Assign the final count even while the outgoing trigger also maintains it.
-      await tx
-        .update(usagePackPendingSnapshotGuards)
-        .set({ pendingSnapshotCount: counts.after })
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
+      // Migration 1132 retired the pending-count trigger. Publish only the
+      // actual count transition with the subscription's business writes.
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        args.orgId,
+        counts.before,
+        counts.after,
+      );
     });
   },
 );
@@ -3594,10 +3617,12 @@ const commitUsagePackPlanActivation$ = command(
             set: entitlement,
           });
       }
-      await tx
-        .update(usagePackPendingSnapshotGuards)
-        .set({ pendingSnapshotCount: counts.after })
-        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        orgId,
+        counts.before,
+        counts.after,
+      );
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
@@ -3800,16 +3825,12 @@ const commitUsagePackFulfillment$ = command(
         });
       }
       await tx.insert(usagePackInvoiceFulfillments).values(prepared.receipt);
-      await tx
-        .update(usagePackPendingSnapshotGuards)
-        .set({
-          pendingSnapshotCount: finalFulfillmentPendingCount(
-            args,
-            owned,
-            projection.advance,
-          ),
-        })
-        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        orgId,
+        pendingCount,
+        finalFulfillmentPendingCount(args, owned, projection.advance),
+      );
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
@@ -4045,12 +4066,12 @@ const retireReconciledUsagePackSnapshot$ = command(
             ),
           );
       }
-      // Assign the complete result, since the outgoing trigger may already
-      // have applied its decrement within this same transaction.
-      await tx
-        .update(usagePackPendingSnapshotGuards)
-        .set({ pendingSnapshotCount: pendingCount - retired.length })
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        args.orgId,
+        pendingCount,
+        pendingCount - retired.length,
+      );
     });
   },
 );
