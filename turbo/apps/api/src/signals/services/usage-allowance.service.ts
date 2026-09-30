@@ -1,5 +1,4 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
@@ -429,7 +428,7 @@ async function applyPreparedUsageAllowanceRefresh(
   };
 }
 
-export function orgCreditCompatibilityLockSql(orgId: string) {
+export function orgCreditLockSql(orgId: string) {
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   return sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`;
 }
@@ -437,30 +436,12 @@ export function orgCreditCompatibilityLockSql(orgId: string) {
 export async function lockOrgCredits(
   tx: UsageAllowanceStore,
   orgId: string,
-  scope: "settlement" | "allowance" = "allowance",
 ): Promise<void> {
-  // DB/API rollout: outgoing settlement reads pending events before an
-  // unconditional processed write and issues windows without row ownership.
-  // Remove the advisory call only after pre-Release-1 serving/in-flight and
-  // rollback writers are gone. Release 1/2 share the rows below and event CAS.
-  await tx.execute(orgCreditCompatibilityLockSql(orgId));
-  if (scope === "settlement") {
-    // Settlement owns the balance before grant/expiry rows. Admission only
-    // owns allowance; it can already hold a plan row and must not reverse the
-    // billing metadata-before-plan order merely to inspect a window.
-    await tx
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .for("update");
-  }
-  // The entitlement's existing unique organization identity owns creation of
-  // its short/weekly windows, including the absence of a window for a run.
-  await tx
-    .select({ id: orgUsageAllowanceEntitlements.id })
-    .from(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, orgId))
-    .for("update");
+  // Unfinished R1 financial protocol, not an outgoing-version compatibility
+  // gate. Different Run anchors can still issue overlapping missing windows;
+  // exact-start uniqueness alone does not settle that boundary. No explicit
+  // parent/entitlement locks substitute for the key during its retirement.
+  await tx.execute(orgCreditLockSql(orgId));
 }
 
 async function loadActiveUsageAllowanceEntitlement(
@@ -590,6 +571,13 @@ async function insertWindow(
       consumedUnits: 0,
       createdByRunId: args.createdByRunId,
     })
+    .onConflictDoNothing({
+      target: [
+        orgUsageAllowanceWindows.entitlementId,
+        orgUsageAllowanceWindows.kind,
+        orgUsageAllowanceWindows.startsAt,
+      ],
+    })
     .returning({
       id: orgUsageAllowanceWindows.id,
       kind: orgUsageAllowanceWindows.kind,
@@ -598,10 +586,34 @@ async function insertWindow(
       startsAt: orgUsageAllowanceWindows.startsAt,
       expiresAt: orgUsageAllowanceWindows.expiresAt,
     });
-  if (!window) {
-    throw new Error("Usage allowance window insert returned no row");
+  if (window) {
+    return window;
   }
-  return window;
+  // Resolve the committed identity once, not another issuance attempt. Reads
+  // use its current consumption; the losing request cannot reset its balance.
+  const [current] = await tx
+    .select({
+      id: orgUsageAllowanceWindows.id,
+      kind: orgUsageAllowanceWindows.kind,
+      unitLimit: orgUsageAllowanceWindows.unitLimit,
+      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+      startsAt: orgUsageAllowanceWindows.startsAt,
+      expiresAt: orgUsageAllowanceWindows.expiresAt,
+    })
+    .from(orgUsageAllowanceWindows)
+    .where(
+      and(
+        eq(orgUsageAllowanceWindows.orgId, args.entitlement.orgId),
+        eq(orgUsageAllowanceWindows.entitlementId, args.entitlement.id),
+        eq(orgUsageAllowanceWindows.kind, args.kind),
+        eq(orgUsageAllowanceWindows.startsAt, args.startsAt),
+      ),
+    )
+    .limit(1);
+  if (!current) {
+    throw new Error("Usage allowance window disappeared during issuance");
+  }
+  return current;
 }
 
 async function ensureWindowForRun(

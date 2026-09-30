@@ -56,6 +56,38 @@ removed; that simplification remains explicit R1 implementation work below.
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
 
+## Allowance issuance preparation — still unfinished key retirement
+
+`orgCreditCompatibilityLockSql` is renamed `orgCreditLockSql`: this is explicitly
+unfinished new-writer financial work, not an outgoing-version exemption. The
+`lockOrgCredits` helper no longer SELECT-locks the wallet or entitlement; no
+explicit row lock replaces the retained key. Its existing financial acquisition
+remains until different-anchor window issuance is correct.
+
+Both initial Run-window issuance and firewall Run-window backfill now use the
+existing `(entitlement_id, kind, starts_at)` unique index with `ON CONFLICT DO
+NOTHING`. A missing INSERT result resolves that exact committed identity once,
+with its current consumed balance; it does not repeat INSERT, reset consumption,
+loop or introduce new state. Disappearing identity rejects the operation. The
+settlement planner already conditions its monetary writes and rejects incomplete
+window/allocation counts with the batch left for the next settlement cycle.
+
+The public firewall regression sends three concurrent admissions for one BYOK
+Run, observes exactly two zero-consumption windows through billing status, then
+settles usage, verifies both windows consumed exactly two units, and verifies
+subsequent admission is denied rather than refilling allowance. Credits and
+visible settled usage retain exact assertions. This verifies ordinary business
+outcomes, not a claim that the retained key has been removed or that the unique
+conflict branch necessarily won that particular interleaving.
+
+**Different Run anchors remain an R1 gap.** Exact-start uniqueness does not
+prevent overlapping first windows at distinct original Run timestamps. A naive
+range-exclusion constraint can permanently defer a late historical settlement,
+and bucketing by wall-clock period would change the existing Run-anchor product
+semantics. Neither is introduced without a complete recovery/amount protocol.
+No financial correctness or production-data convergence is claimed for those
+unfinished cases.
+
 ## Key-free allowance refresh inside the Pick graph
 
 The three claim-owned allowance refresh nodes no longer call `lockOrgCredits`.

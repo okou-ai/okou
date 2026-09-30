@@ -7,6 +7,7 @@ import { command } from "ccstate";
 import { and, asc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
@@ -20,7 +21,7 @@ import {
   type AllowanceEntitlement,
 } from "./usage-allowance-settlement-plan";
 import {
-  orgCreditCompatibilityLockSql,
+  orgCreditLockSql,
   prepareUsageAllowanceRefresh$,
 } from "./usage-allowance.service";
 
@@ -113,6 +114,82 @@ function requireRefreshPublication(
   }
 }
 
+async function issueRunWindow(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly runId: string;
+    readonly runCreatedAt: Date;
+    readonly entitlement: AllowanceEntitlement;
+    readonly kind: "short" | "weekly";
+  },
+  signal?: AbortSignal,
+) {
+  const { entitlement, kind } = args;
+  const [window] = await tx
+    .insert(orgUsageAllowanceWindows)
+    .values({
+      orgId: args.orgId,
+      entitlementId: entitlement.id,
+      kind,
+      startsAt: args.runCreatedAt,
+      expiresAt: new Date(
+        args.runCreatedAt.getTime() +
+          1000 *
+            (kind === "short"
+              ? entitlement.shortWindowSeconds
+              : entitlement.weeklyWindowSeconds),
+      ),
+      unitLimit:
+        kind === "short"
+          ? entitlement.shortWindowUnits
+          : entitlement.weeklyWindowUnits,
+      consumedUnits: 0,
+      createdByRunId: args.runId,
+    })
+    .onConflictDoNothing({
+      target: [
+        orgUsageAllowanceWindows.entitlementId,
+        orgUsageAllowanceWindows.kind,
+        orgUsageAllowanceWindows.startsAt,
+      ],
+    })
+    .returning({
+      id: orgUsageAllowanceWindows.id,
+      kind: orgUsageAllowanceWindows.kind,
+      unitLimit: orgUsageAllowanceWindows.unitLimit,
+      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+    });
+  signal?.throwIfAborted();
+  if (window) {
+    return window;
+  }
+  // Read the unique committed identity once. This is not another
+  // attempt, and must not reset the winning window's consumption.
+  const [current] = await tx
+    .select({
+      id: orgUsageAllowanceWindows.id,
+      kind: orgUsageAllowanceWindows.kind,
+      unitLimit: orgUsageAllowanceWindows.unitLimit,
+      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+    })
+    .from(orgUsageAllowanceWindows)
+    .where(
+      and(
+        eq(orgUsageAllowanceWindows.orgId, args.orgId),
+        eq(orgUsageAllowanceWindows.entitlementId, entitlement.id),
+        eq(orgUsageAllowanceWindows.kind, kind),
+        eq(orgUsageAllowanceWindows.startsAt, args.runCreatedAt),
+      ),
+    )
+    .limit(1);
+  signal?.throwIfAborted();
+  if (!current) {
+    throw new Error("Usage allowance window disappeared during issuance");
+  }
+  return current;
+}
+
 /** Issued Run windows remain usable after their entitlement's current period. */
 export const resolveUsageAllowanceAvailabilityForRun$ = command(
   async (
@@ -144,7 +221,7 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
     signal?.throwIfAborted();
     const outcome = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(orgCreditCompatibilityLockSql(args.orgId));
+        await tx.execute(orgCreditLockSql(args.orgId));
         const [run] = await tx
           .select({ createdAt: agentRuns.createdAt })
           .from(agentRuns)
@@ -198,38 +275,20 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
           ) {
             continue;
           }
-          const [window] = await tx
-            .insert(orgUsageAllowanceWindows)
-            .values({
-              orgId: args.orgId,
-              entitlementId: entitlement.id,
-              kind,
-              startsAt: run.createdAt,
-              expiresAt: new Date(
-                run.createdAt.getTime() +
-                  1000 *
-                    (kind === "short"
-                      ? entitlement.shortWindowSeconds
-                      : entitlement.weeklyWindowSeconds),
-              ),
-              unitLimit:
-                kind === "short"
-                  ? entitlement.shortWindowUnits
-                  : entitlement.weeklyWindowUnits,
-              consumedUnits: 0,
-              createdByRunId: args.runId,
-            })
-            .returning({
-              id: orgUsageAllowanceWindows.id,
-              kind: orgUsageAllowanceWindows.kind,
-              unitLimit: orgUsageAllowanceWindows.unitLimit,
-              consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-            });
+          windows.push(
+            await issueRunWindow(
+              tx,
+              {
+                orgId: args.orgId,
+                runId: args.runId,
+                runCreatedAt: run.createdAt,
+                entitlement,
+                kind,
+              },
+              signal,
+            ),
+          );
           signal?.throwIfAborted();
-          if (!window) {
-            throw new Error("Usage allowance window insert returned no row");
-          }
-          windows.push(window);
         }
         return runWindowAvailability(windows);
       }),
