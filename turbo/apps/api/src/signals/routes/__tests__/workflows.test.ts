@@ -2683,7 +2683,22 @@ describe("workflows", () => {
     await expect(
       readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
     ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    // Detail reads may GET the manifest on a cache miss. Registered-version
+    // reuse must not probe or PUT the archive/manifest again.
+    const registeredKeys = new Set([
+      firstArchiveKey,
+      `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
+    ]);
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return (
+          (command instanceof HeadObjectCommand ||
+            command instanceof PutObjectCommand) &&
+          command.input.Key !== undefined &&
+          registeredKeys.has(command.input.Key)
+        );
+      }),
+    ).toHaveLength(0);
   });
 
   it("reuses an existing workflow archive across path order and umask", async () => {
