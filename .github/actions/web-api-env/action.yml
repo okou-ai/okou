@@ -213,9 +213,7 @@ runs:
           axiom_dataset_suffix="dev"
           deploy_env="preview"
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
-          # TEMPORARY (PR #37360 queue verification): one concurrent run per
-          # org so preview sends queue. Revert before merge.
-          concurrent_run_limit_cap="1"
+          concurrent_run_limit_cap="0"
           slack_redirect_base_url="$INPUT_WEB_URL"
           strapi_url=""
           private_artifacts_bucket="user-artifact-private-dev"
