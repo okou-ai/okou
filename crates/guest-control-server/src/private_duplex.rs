@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use guest_contracts::private_duplex::{
-    ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, PREFACE, READY, VSOCK_PORT,
+    ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT,
 };
 const RETRY: Duration = Duration::from_millis(100);
 // Bound a stalled ingress acknowledgement so the only pending Guest worker
@@ -58,13 +58,12 @@ pub(crate) fn run() {
 
 fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Result<()> {
     stream.set_read_timeout(Some(ack_timeout))?;
-    stream.write_all(&[PREFACE])?;
     let mut marker = [0];
     stream.read_exact(&mut marker)?;
     if marker != [READY] {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "duplex ingress not recognized",
+            "duplex ingress not acknowledged",
         ));
     }
     // READY is not authority. The acknowledged idle connection waits for
@@ -110,15 +109,12 @@ pub(crate) fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
 mod tests {
     use super::*;
     #[test]
-    fn shared_ingress_acknowledges_before_assignment_activation() {
+    fn dedicated_ingress_acknowledges_before_assignment_activation() {
         let (mut guest, mut host) = UnixStream::pair().unwrap();
         let worker = std::thread::spawn(move || {
             await_activation(&mut guest, Duration::from_millis(100)).unwrap();
             guest
         });
-        let mut preface = [0];
-        host.read_exact(&mut preface).unwrap();
-        assert_eq!(preface, [PREFACE]);
         host.write_all(&[READY]).unwrap();
         host.write_all(&[ACTIVATE]).unwrap();
         let _activated = worker.join().unwrap();
@@ -126,12 +122,9 @@ mod tests {
 
     #[test]
     fn missing_ingress_ack_times_out_without_activation() {
-        let (mut guest, mut unresponsive_host) = UnixStream::pair().unwrap();
+        let (mut guest, _unresponsive_host) = UnixStream::pair().unwrap();
         let worker =
             std::thread::spawn(move || await_activation(&mut guest, Duration::from_millis(20)));
-        let mut preface = [0];
-        unresponsive_host.read_exact(&mut preface).unwrap();
-        assert_eq!(preface, [PREFACE]);
         assert!(matches!(
             worker.join().unwrap().unwrap_err().kind(),
             io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut

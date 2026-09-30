@@ -12,7 +12,8 @@ pub(super) fn prepare_socket_paths(sandbox: &mut FirecrackerSandbox, dir: &Path)
 }
 
 struct BindObserver {
-    path: PathBuf,
+    rpc_path: PathBuf,
+    duplex_path: PathBuf,
     observed: bool,
 }
 
@@ -20,10 +21,12 @@ impl SandboxStartObserver for BindObserver {
     fn record_stage(&mut self, stage: SandboxStartStage, _duration: Duration, success: bool) {
         if stage == SandboxStartStage::BackendLaunch {
             assert!(!success);
-            assert_eq!(
-                std::fs::metadata(&self.path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
+            for path in [&self.rpc_path, &self.duplex_path] {
+                assert_eq!(
+                    std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
             self.observed = true;
         }
     }
@@ -47,7 +50,8 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
             });
         }
         let mut observer = BindObserver {
-            path: sandbox.sock_paths.guest_rpc(),
+            rpc_path: sandbox.sock_paths.guest_rpc(),
+            duplex_path: sandbox.sock_paths.guest_duplex(),
             observed: false,
         };
         let error = sandbox
@@ -61,9 +65,26 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
             "COW device"
         }));
         assert!(observer.observed);
-        assert!(!observer.path.exists());
+        assert!(!observer.rpc_path.exists());
+        assert!(!observer.duplex_path.exists());
         assert!(sandbox.guest_rpc("run-a").is_none());
+        assert!(sandbox.guest_duplex("run-a").is_none());
     }
+}
+
+#[tokio::test]
+async fn duplex_bind_collision_cleans_new_rpc_without_unlinking_existing_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut sandbox = test_sandbox_with_state(SandboxState::Created);
+    prepare_socket_paths(&mut sandbox, dir.path());
+    sandbox.bind_run_control("run-a").unwrap();
+    let duplex_path = sandbox.sock_paths.guest_duplex();
+    let existing = tokio::net::UnixListener::bind(&duplex_path).unwrap();
+    let err = sandbox.start().await.unwrap_err();
+    assert!(err.to_string().contains("bind private Guest channel"));
+    assert!(!sandbox.sock_paths.guest_rpc().exists());
+    assert!(duplex_path.exists());
+    drop(existing);
 }
 
 #[tokio::test]
@@ -74,15 +95,20 @@ async fn sandbox_stop_kill_and_drop_remove_the_owned_endpoint() {
         prepare_socket_paths(&mut sandbox, dir.path());
         sandbox.park_coordinator.bind_run_control("run-a").unwrap();
         sandbox.guest_rpc_endpoint = Some(sandbox.bind_guest_rpc_endpoint().unwrap());
+        sandbox.guest_duplex_endpoint = Some(sandbox.bind_guest_duplex_endpoint().unwrap());
         let path = sandbox.sock_paths.guest_rpc();
+        let duplex_path = sandbox.sock_paths.guest_duplex();
         let stale = sandbox.guest_rpc("run-a").unwrap();
+        let stale_duplex = sandbox.guest_duplex("run-a").unwrap();
         match operation {
             "stop" => sandbox.stop().await.unwrap(),
             "kill" => sandbox.kill().await.unwrap(),
             _ => drop(sandbox),
         }
         assert!(!path.exists());
+        assert!(!duplex_path.exists());
         assert!(stale.accept().await.is_err());
+        assert!(stale_duplex.accept().await.is_err());
     }
 }
 
@@ -96,10 +122,9 @@ async fn sandbox_park_and_final_exec_park_cannot_cross_an_accepted_guest_rpc_req
         sandbox.guest = guest;
         sandbox.park_coordinator.bind_run_control("run-a").unwrap();
         sandbox.guest_rpc_endpoint = Some(sandbox.bind_guest_rpc_endpoint().unwrap());
-        let mut rpc_peer = UnixStream::connect(sandbox.sock_paths.guest_rpc())
+        let _rpc_peer = UnixStream::connect(sandbox.sock_paths.guest_rpc())
             .await
             .unwrap();
-        rpc_peer.write_all(&[0]).await.unwrap();
         let accepted = sandbox.guest_rpc("run-a").unwrap().accept().await.unwrap();
         let result = if final_exec {
             sandbox

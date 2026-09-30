@@ -3,11 +3,9 @@
 //! then four-byte big-endian length-prefixed opaque data in each direction.
 //! EOF half-closes the corresponding direction; errors reset the connection.
 
-/// One private Guest-to-host listener shared with existing Guest RPC.
-pub const VSOCK_PORT: u32 = 52001;
-/// Reserved first byte of a duplex connection. Valid RPC request lengths cannot begin with 0xff.
-pub const PREFACE: u8 = 0xff;
-/// Non-authorizing ingress acknowledgement: the host recognized this preface.
+/// Dedicated private Guest-to-host listener, independent of control and RPC.
+pub const VSOCK_PORT: u32 = 52002;
+/// Non-authorizing ingress acknowledgement: the host reserved the pending slot.
 pub const READY: u8 = 2;
 /// One-byte host acceptance marker sent only after assignment admission.
 pub const ACTIVATE: u8 = 1;

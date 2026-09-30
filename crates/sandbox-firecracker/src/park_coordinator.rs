@@ -121,10 +121,6 @@ impl ParkCoordinator {
         Ok(inner.assignment_cancel.child_token())
     }
 
-    pub(crate) fn cancel_guest_rpc_operations(&self) {
-        self.inner().assignment_cancel.cancel();
-    }
-
     pub(crate) fn begin_prepare_park(&self) -> Result<ParkAttempt, PrepareParkError> {
         let mut inner = self.inner();
         match inner.state.clone() {
