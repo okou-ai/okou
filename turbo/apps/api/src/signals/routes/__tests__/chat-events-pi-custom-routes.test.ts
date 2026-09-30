@@ -12,6 +12,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
+import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -611,12 +612,24 @@ describe("CHAT-02: model-first provider policies", () => {
     async ({ selectedModel, removed }) => {
       const { actor, agentId } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
-      const gate = holdAgentRunPiExecutionSnapshotFixture({
+      const gate = holdPiContextPreparationStagesFixture({
         userId: actor.userId,
         orgId: requireOrgId(actor),
         signal: context.signal,
       });
-      onTestFinished(gate.release);
+      // Pi eligibility is observed in parallel with credentials now. Hold the
+      // provider read itself so deletion happens before its frozen snapshot.
+      for (const stage of [
+        "subscription-account",
+        "post-authorization-context",
+        "thread-session",
+        "connector-contexts",
+        "user-timezone",
+        "image-model",
+        "official-workflow",
+      ] as const) {
+        gate.release(stage);
+      }
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -635,7 +648,7 @@ describe("CHAT-02: model-first provider policies", () => {
         throw new Error("Expected the custom route send to be accepted");
       }
       expect(sent.body.runId).toBeNull();
-      await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
+      await gate.arrival("model-provider");
       const connection = setupApp({
         context,
         routes: modelProviderGatewayRoutes,
@@ -666,7 +679,7 @@ describe("CHAT-02: model-first provider policies", () => {
           [200],
         );
       }
-      gate.release();
+      gate.releaseAll();
       await flushWaitUntilForTest();
       const rejected = await waitForThreadMessages(
         actor,

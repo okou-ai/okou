@@ -261,7 +261,7 @@ async function openManagedBrowserChat() {
   });
   context.mocks.api(browserContract.open, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser, lifecycleEventId: null });
+    return respond(200, { browser });
   });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);

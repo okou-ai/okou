@@ -112,13 +112,14 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
-- `scripts/test-chat-event-v8-migration.ts` protects migration
-  `1286_chat_event_v8`: it seeds V7 rows in the 1285 schema, runs the
-  migration after an interrupted attempt that only swapped the checks, and
-  asserts the converged rows, drafts, shares, run sources, validated checks,
-  committed batches and an unchanged state after a repeated run. Retain it
-  until all three transition conditions above pass; the permanent migration
-  suite keeps the exact V8 event and context type sets.
+- `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
+  `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
+  without deleting pointers, 6,001 V7 pointers are removed in committed batches
+  (including the zero UUID), and every V8 row is unchanged,
+  the `= 8` check is validated, and a completed retry is a no-op. The historical
+  1286 rewrite validator is removed with the V7 API transition code; historical
+  SQL remains unchanged, while schema equivalence and the permanent migration
+  suite retain the V8 constraint and exact event/context type sets.
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
   `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):

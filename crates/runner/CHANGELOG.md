@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.216.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.216.0...runner-rs-v0.216.1) (2026-09-30)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.216.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.215.2...runner-rs-v0.216.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** embed source-bound cli tarball before runner compilation ([#37410](https://github.com/okou-ai/okou/issues/37410)) ([a9fa61a](https://github.com/okou-ai/okou/commit/a9fa61aa0d93200204af4b8aafc00a03172bac14))
+
+## [0.215.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.215.1...runner-rs-v0.215.2) (2026-09-30)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.215.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.215.0...runner-rs-v0.215.1) (2026-09-30)
 
 ### Release Dependencies

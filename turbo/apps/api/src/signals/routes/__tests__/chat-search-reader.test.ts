@@ -108,6 +108,9 @@ describe("GET /api/chat/search durable reader", () => {
           [201],
         );
         expect(sent).toMatchObject({ status: 201, body: { runId: null } });
+        // Rejection replaces the input at the pick's current time. Settle
+        // that write before advancing the clock for the next message.
+        await flushWaitUntilForTest();
       }
     });
     await projectChatSearchMessages([source.threadId]);
@@ -166,6 +169,7 @@ describe("GET /api/chat/search durable reader", () => {
           [201],
         );
         expect(sent).toMatchObject({ status: 201, body: { runId: null } });
+        await flushWaitUntilForTest();
       }
     });
     await projectChatSearchMessages([source.threadId]);

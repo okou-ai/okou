@@ -10,7 +10,6 @@ import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import type { FirewallApi } from "@okouai/connectors/firewall-types";
 import { and, eq, inArray } from "drizzle-orm";
-
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import {
@@ -18,7 +17,7 @@ import {
   customConnectorRuntimeExecutionState,
   loadEffectiveCustomConnectorPermissionBundle,
   type CustomConnectorRuntimeDataRows,
-} from "./agent-run-create.service";
+} from "./connector-runtime-preparation.service";
 import {
   loadConnectorRuntimeSelection,
   type ConnectorRuntimeSelection,

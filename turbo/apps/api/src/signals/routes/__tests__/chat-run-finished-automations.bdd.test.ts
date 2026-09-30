@@ -415,15 +415,13 @@ async function startSplitSlackWatchedRun(
     channel: channelId,
     ts: threadTs,
   });
+  // The webhook enqueues the input; own its background admission before
+  // claiming the watched run used by the callback-recovery scenarios.
+  await flushWaitUntilForTest();
   await api.heartbeatRunner(fixture.runnerGroup);
-  let watchedRunId: string | undefined;
-  await expect
-    .poll(async () => {
-      watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
-        ?.runId;
-      return watchedRunId;
-    })
-    .toBeTruthy();
+  const watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
+    ?.runId;
+  expect(watchedRunId).toBeTruthy();
   if (!watchedRunId) {
     throw new Error("Expected the Slack run to be admitted");
   }

@@ -12,6 +12,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createUsagePricingFixture,
   seedUsagePricingRows,
@@ -114,6 +115,8 @@ async function entitledRecordActor(): Promise<UsageRecordActor> {
   chatCallbacks.disableVapid();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
+  const runnerGroup = api.configureRunnerGroup();
+  await api.heartbeatRunner(runnerGroup);
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   await api.grantProEntitlement(actor);
   await api.ensureOrgModelProvider(actor);
@@ -126,9 +129,9 @@ async function entitledRecordActor(): Promise<UsageRecordActor> {
 
 /**
  * Creates a titled chat thread and sends one message through the product chat
- * API, producing a web-triggered run linked to the thread. Without runner
- * infrastructure the run settles into a terminal status on creation; usage
- * reads only depend on the run row and its usage events.
+ * API, producing a web-triggered run linked to the thread. The fixture Runner
+ * reports a terminal nonzero exit before another run is created; a missing
+ * executor must leave the input queued without manufacturing a billing record.
  */
 async function createChatThreadRun(
   fixture: UsageRecordActor,
@@ -157,6 +160,16 @@ async function createChatThreadRun(
   if (args.createdAt) {
     clearMockNow();
   }
+  const claim = await api.claimRunnerJob(runId);
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 1 },
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  await expect(api.readRun(fixture.actor, runId)).resolves.toMatchObject({
+    status: "failed",
+  });
   return { runId, threadId };
 }
 

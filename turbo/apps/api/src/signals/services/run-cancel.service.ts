@@ -2,7 +2,6 @@ import { command } from "ccstate";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq } from "drizzle-orm";
-
 import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
@@ -199,7 +198,7 @@ export const cancelRun$ = command(
     signal.throwIfAborted();
     // Only a committed cancellation reaches here: a never-started run's slot
     // goes back to its organization before any other side effect.
-    set(scheduleReleasedSlotPicks$, releasedSlots);
+    set(scheduleReleasedSlotPicks$, releasedSlots, signal);
 
     return result;
   },

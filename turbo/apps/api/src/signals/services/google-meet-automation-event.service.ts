@@ -36,12 +36,14 @@ import {
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
+import type {
+  AutomationRow,
+  WorkflowQueueAdmissionTransaction,
+} from "./workflow-automation-enqueue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
 const GOOGLE_WORKSPACE_EVENTS_API_BASE =

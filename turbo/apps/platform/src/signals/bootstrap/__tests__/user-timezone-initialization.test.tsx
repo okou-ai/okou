@@ -13,6 +13,7 @@ const context = testContext();
 function preferences(
   timezone: string | null,
   locale: UserPreferencesResponse["locale"] = "en-US",
+  memoryInitialized = true,
 ): UserPreferencesResponse {
   return {
     timezone,
@@ -24,14 +25,16 @@ function preferences(
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
+    memoryInitialized,
   };
 }
 
 function mockTimezonePreferences(
   initialTimezone: string | null,
   initialLocale: UserPreferencesResponse["locale"] = "en-US",
+  memoryInitialized = true,
 ) {
-  let stored = preferences(initialTimezone, initialLocale);
+  let stored = preferences(initialTimezone, initialLocale, memoryInitialized);
   let initializationBody:
     | { timezone?: string; locale?: UserPreferencesResponse["locale"] }
     | undefined;
@@ -55,6 +58,7 @@ function mockTimezonePreferences(
       ...stored,
       timezone: stored.timezone ?? body.timezone ?? null,
       locale: stored.locale ?? body.locale,
+      memoryInitialized: true,
     };
     return respond(200, stored);
   });
@@ -102,6 +106,27 @@ test("A member's first organization visit stores the browser timezone", async ()
       locale: "en-US",
     });
   });
+  expect(requests.reads()).toBe(1);
+  expect(requests.updates()).toBe(0);
+});
+
+test("An initialized member without memory initializes it without replacing preferences", async () => {
+  const requests = mockTimezonePreferences(
+    "America/Los_Angeles",
+    "en-US",
+    false,
+  );
+  setBrowserTimezone("Asia/Shanghai");
+
+  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(requests.stored().memoryInitialized).toBeTruthy();
+  });
+  expect(requests.stored().timezone).toBe("America/Los_Angeles");
   expect(requests.reads()).toBe(1);
   expect(requests.updates()).toBe(0);
 });

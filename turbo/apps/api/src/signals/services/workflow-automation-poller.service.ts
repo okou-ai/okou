@@ -20,16 +20,14 @@ import {
   type AutomationRow,
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
-} from "./workflow-automation-launch.service";
+  type ScheduleUnclaimed,
+  type WorkflowScheduleClaimPlan,
+} from "./workflow-automation-enqueue.service";
 import {
   bindMorningBriefScheduleClaimQueueEvent,
   claimMorningBriefSchedule,
   isCanonicalMorningBriefAutomation,
 } from "./morning-brief-schedule-claim.service";
-import type {
-  ScheduleUnclaimed,
-  WorkflowScheduleClaimPlan,
-} from "./workflow-chat-event-queue.service";
 import {
   preRunFailureFromError,
   recordPreRunFailure,

@@ -12,6 +12,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   and,
   eq,
@@ -39,6 +40,7 @@ import {
   scheduleReleasedSlotPicks$,
 } from "./agent-run-lifecycle.service";
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
+import { createPickObjects } from "./pick-chat-run.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -415,7 +417,7 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
-    set(scheduleReleasedSlotPicks$, committed.releasedSlots);
+    set(scheduleReleasedSlotPicks$, committed.releasedSlots, signal);
     const budgetExpired =
       committed.previousStatus === "running" && committed.chatThreadId !== null
         ? await expireRunTimeBudgetInput(
@@ -630,6 +632,25 @@ const cleanupFixtureMaintenance$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (scope.chatThreadIds.length === 0) {
+      return;
+    }
+    // Mirror the global queue pass without visiting another test's threads.
+    // Each explicitly scoped thread gets one pick after stale slots release;
+    // the normal conditional claim still owns lease and active-run admission.
+    const queuedThreads = await set(writeDb$)
+      .select({
+        orgId: queuedChatThreads.orgId,
+        chatThreadId: queuedChatThreads.chatThreadId,
+      })
+      .from(queuedChatThreads)
+      .where(inArray(queuedChatThreads.chatThreadId, [...scope.chatThreadIds]));
+    signal.throwIfAborted();
+    for (const thread of queuedThreads) {
+      const { pick$ } = createPickObjects(thread.orgId, thread.chatThreadId);
+      await set(pick$, signal);
+      signal.throwIfAborted();
+    }
   },
 );
 

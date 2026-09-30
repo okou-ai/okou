@@ -229,6 +229,25 @@ export default [
   },
   ...config,
   {
+    files: [
+      "src/signals/services/pick-chat-run.service.ts",
+      "src/signals/services/claim-run-context.ts",
+    ],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      // These two factories declare one owned graph. Keep the 128-line limit
+      // on every operational callback and ordinary function, while checking
+      // that the exempted owner itself contains only graph declarations.
+      "api/max-signal-owner-lines": [
+        "error",
+        {
+          max: 128,
+          owners: ["createPickObjects", "createClaimRunObjects"],
+        },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.ts"],
     plugins: {
       api: apiLintPlugin,
@@ -691,10 +710,10 @@ export default [
         {
           patterns: [
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },
@@ -744,12 +763,6 @@ export default [
       // has actually connected, so these exact byte, deadline, identity,
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      // Chat Event V8 transition (removed in PR-3 with the upgrade): V7-only
-      // Snapshot rows (the eight deleted event types, Goal and GitHub
-      // contexts, Goal parts) can no longer be written through any API, so
-      // the exact V7 -> V8 row matrix is pinned on the pure upgrade. The
-      // snapshot and cron route suites cover read-time and cron convergence.
-      "src/signals/services/__tests__/chat-event-snapshot-upgrade.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -848,10 +861,10 @@ export default [
               message: productionRouteTestImportMessage,
             },
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },
@@ -893,10 +906,10 @@ export default [
               message: lowerLayerRouteImportMessage,
             },
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },
@@ -937,12 +950,6 @@ export default [
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // Chat Event V8 transition (removed in PR-3 with the upgrade): V7-only
-      // Snapshot rows (the eight deleted event types, Goal and GitHub
-      // contexts, Goal parts) can no longer be written through any API, so
-      // the exact V7 -> V8 row matrix is pinned on the pure upgrade. The
-      // snapshot and cron route suites cover read-time and cron convergence.
-      "src/signals/services/__tests__/chat-event-snapshot-upgrade.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.

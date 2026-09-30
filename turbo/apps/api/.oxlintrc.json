@@ -4,6 +4,15 @@
   "plugins": ["import", "promise", "typescript", "unicorn", "eslint", "oxc"],
   "overrides": [
     {
+      "files": [
+        "src/signals/services/pick-chat-run.service.ts",
+        "src/signals/services/claim-run-context.ts"
+      ],
+      "rules": {
+        "max-lines-per-function": "allow"
+      }
+    },
+    {
       "files": ["src/lib/log.ts"],
       "rules": {
         "no-console": "allow"

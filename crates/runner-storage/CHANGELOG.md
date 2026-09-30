@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.21...runner-storage-v0.1.22) (2026-09-30)
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
 ## [0.1.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.20...runner-storage-v0.1.21) (2026-09-30)
 
 

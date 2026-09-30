@@ -1,50 +1,38 @@
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  prepareMemberModelRouteContext,
-  providerTypeForSurfaceProtocol,
-  resolveEffectivePolicyRoute,
-  type PreparedMemberModelRouteContext,
-  type ResolvedModelFirstPolicyRoute,
-} from "./effective-model-route.service";
-import {
-  getFrameworkForType,
-  getBuiltInConcreteProviderType,
-  isCodexFastModeModel,
-  isBuiltInModelProviderType,
   getRunModelAccess,
   getRunModelRouteAccess,
-  RETIRED_RUN_MODEL_MESSAGE,
+  isBuiltInModelProviderType,
+  isCodexFastModeModel,
   isSupportedRunModel,
-  isModelSupportedByProvider,
   modelProviderTypeSchema,
+  RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   loadMemberSubscriptionModels,
-  isAutoPersonalSubscriptionRoute,
+  type MemberSubscriptionModel,
 } from "./subscription-model-catalog.service";
 import { and, eq, or } from "drizzle-orm";
-
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";
+import {
+  prepareMemberModelRouteContext,
+  resolveEffectivePolicyRoute,
+  resolveEffectivePolicyRouteFromSnapshot,
+  type MemberModelRouteContext,
+  type PreparedMemberModelRouteContext,
+  type ResolvedModelFirstPolicyRoute,
+} from "./effective-model-route.service";
 import {
   ensureOrgModelPolicyFacts,
   loadOrgModelPolicyFacts,
   type OrgModelPolicyRow,
 } from "./model-policy.service";
-import {
-  checkOrgCreditsForRunAdmission,
-  checkOrgPlanRunAdmission,
-} from "./run-admission.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -91,13 +79,6 @@ interface ModelRoutingFacts {
   readonly modelMode: "auto" | "custom";
   readonly [modelRoutingFactsSource]: Db;
 }
-
-export type ExternalModelProviderPlanCapabilitiesSource =
-  | { readonly kind: "load-current" }
-  | {
-      readonly kind: "resolved";
-      readonly capabilities: OrgPlanCapabilities | null;
-    };
 
 interface ModelSelectionRequest {
   readonly modelProviderId: string;
@@ -304,17 +285,13 @@ export async function resolveDefaultModelFirstPin(
               )?.serviceTier
             : undefined;
         const serviceTier =
-          preference.serviceTier === "ultrafast" &&
-          preferredRoute.selectedModel === "gpt-6-astra" &&
-          preferredRoute.modelProviderType === "openai-api-key"
-            ? "ultrafast"
-            : preference.serviceTier === "priority" &&
-                (facts.modelMode !== "auto" || catalogTier === "priority") &&
-                isCodexFastServiceTierSupported({
-                  selectedModel: preferredRoute.selectedModel,
-                })
-              ? "priority"
-              : null;
+          preference.serviceTier === "priority" &&
+          (facts.modelMode !== "auto" || catalogTier === "priority") &&
+          isCodexFastServiceTierSupported({
+            selectedModel: preferredRoute.selectedModel,
+          })
+            ? "priority"
+            : null;
         return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
       }
     }
@@ -489,159 +466,11 @@ export async function resolveModelSelectionPin(params: {
   return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
 }
 
-async function resolveEffectiveModelProviderType(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-}): Promise<string | null | undefined> {
-  if (params.modelPin.modelProviderType) {
-    return params.modelPin.modelProviderType;
-  }
-  if (!params.modelPin.modelProviderId) {
-    return params.requestedModelProvider;
-  }
-
-  const [provider] = await params.db
-    .select({ type: modelProviders.type })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, params.modelPin.modelProviderId),
-        eq(modelProviders.orgId, params.orgId),
-        or(
-          eq(modelProviders.userId, params.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return provider?.type ?? params.requestedModelProvider;
-}
-
-/** Whether the pinned custom surface maps the model for the effective provider. */
-async function customSurfaceMapsModel(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly modelProviderId: string | null;
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly selectedModel: string;
-}): Promise<boolean> {
-  if (params.modelProviderId === null) {
-    return false;
-  }
-  const [customSurface] = await params.db
-    .select({
-      protocol: modelProviderSurfaces.protocol,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(
-      and(
-        eq(modelProviderSurfaces.id, params.modelProviderId),
-        eq(modelProviderConnections.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-  const surfaceProviderType = customSurface
-    ? providerTypeForSurfaceProtocol(customSurface.protocol)
-    : null;
-  return (
-    surfaceProviderType !== null &&
-    surfaceProviderType === params.effectiveModelProvider &&
-    typeof customSurface?.modelMappings[params.selectedModel] === "string"
-  );
-}
-
 /**
  * `trust-enqueued` skips re-validating that the resolved provider supports
  * the model an enqueue already captured; a mismatch fails at execution.
  */
 export type ProviderModelSupport = "validate" | "trust-enqueued";
-
-export async function resolveModelFirstProviderAdmission(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-  readonly externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource;
-  readonly providerModelSupport: ProviderModelSupport;
-}): Promise<{
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly cliAgentType: SupportedFramework | null;
-  readonly error:
-    | Awaited<ReturnType<typeof checkOrgCreditsForRunAdmission>>
-    | ReturnType<typeof badRequestMessage>;
-}> {
-  const effectiveModelProvider =
-    await resolveEffectiveModelProviderType(params);
-  const selectedModel = params.modelPin.selectedModel;
-  const parsedProvider = modelProviderTypeSchema.safeParse(
-    effectiveModelProvider,
-  );
-  const knownProvider = parsedProvider.success ? parsedProvider.data : null;
-  const cliAgentType = knownProvider
-    ? getFrameworkForType(
-        isBuiltInModelProviderType(knownProvider) &&
-          isSupportedRunModel(selectedModel)
-          ? getBuiltInConcreteProviderType(selectedModel)
-          : knownProvider,
-      )
-    : null;
-  if (
-    params.providerModelSupport === "validate" &&
-    isSupportedRunModel(selectedModel) &&
-    (!knownProvider ||
-      !isModelSupportedByProvider(selectedModel, knownProvider)) &&
-    !(await customSurfaceMapsModel({
-      db: params.db,
-      orgId: params.orgId,
-      modelProviderId: params.modelPin.modelProviderId,
-      effectiveModelProvider,
-      selectedModel,
-    }))
-  ) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: badRequestMessage(
-        "The selected model is not supported by the current model provider",
-      ),
-    };
-  }
-  const autoPersonalSubscription = await isAutoPersonalSubscriptionRoute({
-    db: params.db,
-    orgId: params.orgId,
-    userId: params.userId,
-    model: selectedModel,
-    providerType: effectiveModelProvider,
-  });
-  const error = isBuiltInModelProviderType(effectiveModelProvider)
-    ? await checkOrgCreditsForRunAdmission({
-        db: params.db,
-        orgId: params.orgId,
-        userId: params.userId,
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
-      })
-    : checkOrgPlanRunAdmission({
-        capabilities:
-          params.externalPlanCapabilities.kind === "resolved"
-            ? params.externalPlanCapabilities.capabilities
-            : await loadOrgPlanCapabilities(params.db, params.orgId),
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
-        autoPersonalSubscription,
-      });
-  return { effectiveModelProvider, cliAgentType, error };
-}
 
 export function isCodexFastServiceTierSupported(params: {
   readonly selectedModel: string | null | undefined;
@@ -654,12 +483,7 @@ export function validateCodexServiceTier(params: {
   readonly codexServiceTier: "fast" | "ultrafast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (params.codexServiceTier === "ultrafast") {
-    return params.pin.selectedModel === "gpt-6-astra" &&
-      params.pin.modelProviderType === "openai-api-key"
-      ? undefined
-      : badRequestMessage(
-          "Astra Ultrafast requires a direct OpenAI API-key route",
-        );
+    return badRequestMessage("Astra Ultrafast is temporarily disabled");
   }
   if (params.codexServiceTier !== "fast") {
     return undefined;
@@ -672,4 +496,85 @@ export function validateCodexServiceTier(params: {
   return badRequestMessage(
     "Codex fast mode is only available for GPT 5.6 runs",
   );
+}
+
+/** Resolve only the enqueued model from a pick-owned, read-only facts graph. */
+export function resolveQueuedModelSelectionPinFromSnapshot(params: {
+  readonly selectedModel: string;
+  readonly facts: {
+    readonly orgPlanCapabilities: OrgPlanCapabilities | null;
+    readonly policies: readonly OrgModelPolicyRow[];
+  };
+  readonly member: MemberModelRouteContext;
+  readonly orgProviderType?: string | null;
+  readonly customSurface?: {
+    readonly protocol: string;
+    readonly modelMappings: Readonly<Record<string, string>>;
+  } | null;
+  /** Organization model mode read with the other pick facts. */
+  readonly modelMode: "auto" | "custom";
+  /** The member's catalog-listed subscription models; empty outside Auto. */
+  readonly subscriptionModels: readonly MemberSubscriptionModel[];
+}):
+  | ModelFirstPin
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof insufficientCredits> {
+  if (getRunModelAccess(params.selectedModel) === "retired") {
+    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  }
+  if (!isSupportedRunModel(params.selectedModel)) {
+    return badRequestMessage("Invalid model selection");
+  }
+  const policy = params.facts.policies.find((candidate) => {
+    return candidate.model === params.selectedModel;
+  });
+  if (!policy && params.modelMode === "auto") {
+    // Auto: a model outside the org policies routes to the member's
+    // connected subscription, which is exempt from the plan restriction.
+    const personal = params.subscriptionModels.find((entry) => {
+      return entry.model === params.selectedModel;
+    });
+    return personal
+      ? {
+          modelProviderId: personal.providerId,
+          modelProviderType: personal.providerType,
+          modelProviderCredentialScope: "member",
+          selectedModel: personal.model,
+        }
+      : badRequestMessage(
+          "The selected model is not available in this workspace",
+        );
+  }
+  const route = policy
+    ? resolveEffectivePolicyRouteFromSnapshot({
+        ...params,
+        policy,
+        capabilities: { restrictedBuiltInModels: false, supportByok: true },
+      })
+    : null;
+  if (!route || !policy) {
+    return badRequestMessage(
+      "The selected model is not available in this workspace",
+    );
+  }
+  const planCapabilities = modelRouteCapabilities(
+    params.facts.orgPlanCapabilities,
+  );
+  if (
+    (params.modelMode === "auto" &&
+      route.modelProviderCredentialScope === "member") ||
+    modelRouteAllowedForOrgPlan({
+      capabilities: planCapabilities,
+      selectedModel: route.selectedModel,
+      modelProviderType: route.modelProviderType,
+    })
+  ) {
+    return modelFirstPinFromRoute(route);
+  }
+  const planRoute = resolveEffectivePolicyRouteFromSnapshot({
+    ...params,
+    policy,
+    capabilities: planCapabilities,
+  });
+  return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
 }

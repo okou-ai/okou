@@ -172,7 +172,7 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       firstPi.threadId,
     );
-    expect(firstCodexBinding.agent_session_id).not.toBe(
+    expect(firstCodexBinding.agent_session_id).toBe(
       firstPiBinding.agent_session_id,
     );
     const firstCodexRun = await api.readRun(actor, firstCodex.runId);
@@ -220,12 +220,14 @@ describe("CHAT-02: model-first provider policies", () => {
       firstPi.threadId,
     );
     if (!returnedPiBinding.agent_session_id) {
-      throw new Error("Expected the returned Pi run to bind a new session");
+      throw new Error(
+        "Expected the returned Pi run to retain its application session",
+      );
     }
-    expect(returnedPiBinding.agent_session_id).not.toBe(
+    expect(returnedPiBinding.agent_session_id).toBe(
       firstCodexBinding.agent_session_id,
     );
-    expect(returnedPiBinding.agent_session_id).not.toBe(
+    expect(returnedPiBinding.agent_session_id).toBe(
       firstPiBinding.agent_session_id,
     );
     const returnedPiRun = await api.readRun(actor, returnedPi.runId);
@@ -331,7 +333,7 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       firstPi.threadId,
     );
-    expect(repeatedCodexBinding.agent_session_id).not.toBe(
+    expect(repeatedCodexBinding.agent_session_id).toBe(
       returnedPiBinding.agent_session_id,
     );
     const repeatedCodexClaim = await claimChatRun(
@@ -379,10 +381,10 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       firstPi.threadId,
     );
-    expect(repeatedPiBinding.agent_session_id).not.toBe(
+    expect(repeatedPiBinding.agent_session_id).toBe(
       repeatedCodexBinding.agent_session_id,
     );
-    expect(repeatedPiBinding.agent_session_id).not.toBe(
+    expect(repeatedPiBinding.agent_session_id).toBe(
       returnedPiBinding.agent_session_id,
     );
     const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);

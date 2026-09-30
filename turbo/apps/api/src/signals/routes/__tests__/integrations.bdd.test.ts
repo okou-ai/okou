@@ -4,7 +4,6 @@ import {
 } from "./helpers/integration-input-assets";
 import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
-
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
@@ -14,7 +13,6 @@ import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
 import { createStore } from "ccstate";
 import { describe, expect, it, beforeEach } from "vitest";
-
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
@@ -922,7 +920,7 @@ async function expectFirstSlackPiExecution(args: {
     context,
     args.scenario.chatThreadId,
   );
-  expect(binding.agent_session_id).not.toBe(args.scenario.historicalSessionId);
+  expect(binding.agent_session_id).toBe(args.scenario.historicalSessionId);
   if (!binding.agent_session_id) {
     throw new Error("Expected the first Slack Pi session binding");
   }
@@ -5274,6 +5272,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
+    await bdd.completeOnboarding(actor2);
 
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {

@@ -61,7 +61,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
-
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
@@ -2398,9 +2397,8 @@ function claimTimingOperation(
 }
 
 const scheduleClaimFailedSideEffects$ = command(
-  ({ set }, args: ClaimFailedSideEffectArgs): void => {
-    set(scheduleReleasedSlotPicks$, args.releasedSlots);
-    const backgroundSignal = new AbortController().signal;
+  ({ set }, args: ClaimFailedSideEffectArgs, signal: AbortSignal): void => {
+    set(scheduleReleasedSlotPicks$, args.releasedSlots, signal);
     waitUntil(
       tapError(
         set(
@@ -2412,7 +2410,7 @@ const scheduleClaimFailedSideEffects$ = command(
             status: "failed",
             error: args.error,
           },
-          backgroundSignal,
+          signal,
         ),
         (error) => {
           L.error("dispatchCompleteSideEffects failed", {
@@ -2616,7 +2614,7 @@ const claimAuthorizedJob$ = command(
         capabilities: args.capabilities,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
-          set(scheduleClaimFailedSideEffects$, failedArgs);
+          set(scheduleClaimFailedSideEffects$, failedArgs, signal);
         },
       },
       signal,
@@ -2650,7 +2648,7 @@ const claimAuthorizedJob$ = command(
           runId,
           error: responseBodyResult.error,
           scheduleFailedSideEffects(failedArgs) {
-            set(scheduleClaimFailedSideEffects$, failedArgs);
+            set(scheduleClaimFailedSideEffects$, failedArgs, signal);
           },
         },
         signal,

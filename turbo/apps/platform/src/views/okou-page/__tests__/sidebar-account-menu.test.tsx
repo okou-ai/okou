@@ -764,6 +764,7 @@ test("Open personal Settings and manage account security", async () => {
   prepareDefaultAgent();
   context.mocks.data.userPreferences({
     captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
   });
 
   await setupPage({
@@ -841,6 +842,7 @@ test("Toggle network-body capture in Debug settings", async () => {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
   };
   context.mocks.data.userPreferences(preferences);
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {

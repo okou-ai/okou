@@ -51,6 +51,7 @@ readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-p
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
+readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -264,6 +265,17 @@ if [[ ! "$chat_event_v8_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$chat_event_v8_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Chat Event V8 migration: ${chat_event_v8_commit}."
+fi
+
+# Browser viewer mutations send an empty body. APIs predating this contract
+# still require a request event ID, so they cannot serve the current App.
+browser_session_mutations_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$BROWSER_SESSION_MUTATIONS_PATH" | sed -n '1p')
+if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Browser session mutation contract on main."
+fi
+if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and

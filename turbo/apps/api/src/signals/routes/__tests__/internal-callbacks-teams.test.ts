@@ -1129,11 +1129,12 @@ describe("Teams chat callbacks", () => {
           }),
         ),
       );
-      authOrgApi.user({
+      const secondActor = authOrgApi.user({
         userId: secondFixture.userId,
         orgId: secondFixture.orgId,
         orgRole: "org:admin",
       });
+      await authOrgApi.completeOnboarding(secondActor);
 
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;
       const postedActivityCountBeforeConnect = teamsApi.postedActivities.length;

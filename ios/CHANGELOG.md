@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/okou-ai/okou/compare/ios-v0.4.0...ios-v0.4.1) (2026-09-30)
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
 ## [0.4.0](https://github.com/okou-ai/okou/compare/ios-v0.3.1...ios-v0.4.0) (2026-09-28)
 
 

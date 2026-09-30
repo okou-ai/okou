@@ -7,11 +7,11 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import {
   and,
@@ -28,19 +28,18 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-
-import { settle } from "../utils";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
+import { settle } from "../utils";
+import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
+import { invalidateCodexResetCreditExpiry } from "./codex-reset-credit-expiry.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { invalidateCodexResetCreditExpiry } from "./codex-reset-credit-expiry.service";
-import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
 
 const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
@@ -53,6 +52,13 @@ const ACCOUNT_CONFLICT_MESSAGE =
 export type PersonalSubscriptionProviderType =
   | typeof CODEX_TYPE
   | typeof CLAUDE_CODE_TYPE;
+
+/** Connected Claude/Codex member accounts read together for one queued model route. */
+export interface MemberModelAccountSnapshot {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly accounts: readonly (typeof modelProviderAccounts.$inferSelect)[];
+}
 
 /** Request-local identity selected at capture. Mutable account and credential
  * state must still be read again from the account tables before use. */
@@ -969,7 +975,7 @@ export async function deletePersonalModelProviderAccount(
 }
 
 export async function activePersonalModelProviderAccount(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly modelProviderId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -990,52 +996,8 @@ export async function activePersonalModelProviderAccount(args: {
   return account ?? null;
 }
 
-/**
- * Capture the concrete subscription account selected for one run admission.
- *
- * A non-null candidate can name either the logical provider row or an already
- * captured account row. Unknown/stale explicit IDs fail closed instead of
- * falling back to whichever sibling account is active.
- */
-export async function captureActivePersonalModelProviderAccount(args: {
-  readonly db: Db;
-  readonly type: PersonalSubscriptionProviderType;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderId: string | null;
-}): Promise<AccountRow | null> {
-  if (args.modelProviderId !== null) {
-    const exactAccount = await personalModelProviderAccountById({
-      db: args.db,
-      id: args.modelProviderId,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    if (exactAccount) {
-      return exactAccount.type === args.type ? exactAccount : null;
-    }
-  }
-  const [account] = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.type, args.type),
-        eq(modelProviderAccounts.isActive, true),
-        isNull(modelProviderAccounts.disconnectedAt),
-        ...(args.modelProviderId === null
-          ? []
-          : [eq(modelProviderAccounts.modelProviderId, args.modelProviderId)]),
-      ),
-    )
-    .limit(1);
-  return account ?? null;
-}
-
 export async function personalModelProviderAccountById(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly runId?: string;
   readonly id: string;
   readonly orgId: string;
@@ -1330,7 +1292,7 @@ export async function validatePersonalSubscriptionAdmission(args: {
 /** Environment preparation reads the connected account, its logical provider
  * selection and its ciphertext bundle in one statement. */
 export async function readPersonalSubscriptionAccount(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;

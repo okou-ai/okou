@@ -2,6 +2,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getModelRunOptions } from "@okouai/api-contracts/contracts/model-run-options";
 import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
@@ -528,7 +529,7 @@ function ModelFirstPolicyRow({
       return $.settings.models.picker.fast;
     });
     const ultrafastAvailable =
-      policy.model === "gpt-6-astra" &&
+      getModelRunOptions(policy.model).ultrafast !== undefined &&
       getMemberModelPolicyRoute(policy).providerType === "openai-api-key";
     return (
       <>

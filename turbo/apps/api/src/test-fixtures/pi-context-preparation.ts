@@ -1,15 +1,12 @@
 import { onTestFinished } from "vitest";
-
 import {
   clearRunContextParallelHookForTest,
   setRunContextParallelHookForTest,
   type RunContextParallelStage,
-} from "../signals/services/agent-run-create.service";
-import {
   clearAgentRunPreCreateParallelHookForTest,
   setAgentRunPreCreateParallelHookForTest,
   type AgentRunPreCreateParallelStage,
-} from "../signals/services/agent-runs-create.service";
+} from "../signals/services/agent-run-preparation-hooks";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
 type PiContextPreparationStage =

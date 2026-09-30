@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import type {
   GenerationTemplateRequest,
   UserMessageInputDocument,
@@ -88,13 +92,8 @@ async function waitForLaunchedRunId(
   threadId: string,
   clientEventId: string,
 ): Promise<string> {
-  const messages = await waitForThreadMessages(actor, threadId, (items) => {
-    return userMessages(items).some((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-  });
+  await flushWaitUntilForTest();
+  const messages = await chat.listThreadEvents(actor, threadId);
   const runId = userMessages(messages.events).find((message) => {
     return message.revokesEventId === clientEventId;
   })?.runId;
@@ -1234,6 +1233,13 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     ];
     const credits = (await api.readBillingStatus(actor)).credits;
+    await flushWaitUntilForTest();
+    const storageWrites = context.mocks.s3.send.mock.calls.filter(
+      ([command]) => {
+        return command instanceof PutObjectCommand;
+      },
+    ).length;
+    const storageSignatures = context.mocks.s3.getSignedUrl.mock.calls.length;
     for (const arm of arms) {
       const clientEventId = randomUUID();
       const rejected = await chat.requestSendEvent(
@@ -1297,6 +1303,16 @@ describe("CHAT-02: generation templates and attachments", () => {
         }),
       ).toBeFalsy();
     }
+    await flushWaitUntilForTest();
+    // Rejected inputs must not initialize runner storage or sign its URLs.
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof PutObjectCommand;
+      }),
+    ).toHaveLength(storageWrites);
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(
+      storageSignatures,
+    );
     expect((await api.readBillingStatus(actor)).credits).toBe(credits);
 
     // Sharing through the owner APIs makes both packages readable. The same

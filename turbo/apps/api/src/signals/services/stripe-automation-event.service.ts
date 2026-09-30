@@ -22,7 +22,6 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
-
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -38,12 +37,12 @@ import {
 } from "./stripe-invoice-paid-workflow-automation.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 import type {
+  WorkflowQueueAdmissionTransaction,
   AutomationRow,
   RunWorkflowAutomationNowArgs,
   RunWorkflowAutomationResult,
-} from "./workflow-automation-launch.service";
+} from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 
 const log = logger("api:stripe-automation-event");

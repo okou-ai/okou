@@ -21,6 +21,11 @@ case "$target" in
 esac
 
 revision="${RUNNER_BINARY_GIT_REVISION:-HEAD}"
+source_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${revision}^{commit}")
+cli_package="${GUEST_CLI_PATH:-}"
+if [ -n "$cli_package" ] && [[ "$cli_package" != /* ]]; then
+  cli_package="${REPO_ROOT}/${cli_package}"
+fi
 cargo_target_dir="${CARGO_TARGET_DIR:-${REPO_ROOT}/crates/target}"
 if [[ "$cargo_target_dir" != /* ]]; then
   cargo_target_dir="${REPO_ROOT}/${cargo_target_dir}"
@@ -137,7 +142,8 @@ build() {
   mkdir -p "$(dirname "$metadata_path")"
 
   local digest_output binary_input_digest
-  digest_output=$(RUNNER_BINARY_GIT_REVISION="$revision" "${SCRIPT_DIR}/digest.sh" "$target")
+  digest_output=$(RUNNER_BINARY_GIT_REVISION="$source_sha" \
+    GUEST_CLI_PATH="$cli_package" "${SCRIPT_DIR}/digest.sh" "$target")
   binary_input_digest=$(sed -n 's/^binary-input-digest=//p' <<<"$digest_output")
   if [[ ! "$binary_input_digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "invalid runner binary input digest: ${binary_input_digest}" >&2
@@ -152,6 +158,7 @@ build() {
   RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE="$actual_toolchain_image" \
   RUNNER_BINARY_INPUT_DIGEST="$binary_input_digest" \
   RUNNER_BINARY_METADATA_PATH="$metadata_path" \
+  GUEST_CLI_PATH="$cli_package" \
     "${context_root}/.github/scripts/runner-binary-build/compile.sh"
 
   emit "binary-input-digest" "$binary_input_digest"

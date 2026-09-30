@@ -2,7 +2,6 @@ import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/cont
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
-
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -16,7 +15,7 @@ import {
   settleMorningBriefSchedulePreRunFailure,
 } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
-import type { AutomationRow } from "./workflow-automation-launch.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 
 const log = logger("WorkflowScheduleFailure");
 

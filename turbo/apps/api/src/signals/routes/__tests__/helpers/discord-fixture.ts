@@ -87,6 +87,9 @@ export async function setupConnectedDiscordActor(
       "Discord fixture onboarding did not create a default agent",
     );
   }
+  if (options.reuseOrganization) {
+    await authOrgApi.completeOnboarding(actor);
+  }
   if (!options.reuseOrganization) {
     await authOrgApi.updateAgentMetadata(actor, onboarding.defaultAgentId, {
       visibility: "public",

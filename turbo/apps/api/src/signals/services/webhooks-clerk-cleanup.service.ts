@@ -974,7 +974,7 @@ export const cleanupClerkDeletedOrg$ = command(
     signal.throwIfAborted();
     // Picked only once the data is gone: deleting the organization's Agents
     // cascaded its chat threads and their queued rows, so nothing launches.
-    set(scheduleReleasedSlotPicks$, released.slots);
+    set(scheduleReleasedSlotPicks$, released.slots, signal);
     await set(
       executeStorageObjectCleanupWork$,
       { jobIds: cleanupJobIds },
@@ -1068,7 +1068,7 @@ export const cleanupClerkDeletedUser$ = command(
     }
     // Picked only once the user's data is gone, so the slots go to other
     // members' waiting threads.
-    set(scheduleReleasedSlotPicks$, released.slots);
+    set(scheduleReleasedSlotPicks$, released.slots, signal);
     await set(
       executeStorageObjectCleanupWork$,
       { jobIds: cleanupJobIds },
@@ -1107,7 +1107,7 @@ export const cleanupClerkDeletedOrgMembership$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await commitClerkDeletedOrgMembershipCleanup(db, args, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots);
+      set(scheduleReleasedSlotPicks$, slots, signal);
     });
     signal.throwIfAborted();
   },
@@ -1117,7 +1117,7 @@ export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await cancelUserRuns(db, userId, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots);
+      set(scheduleReleasedSlotPicks$, slots, signal);
     });
     signal.throwIfAborted();
     await cancelLastAdminOrgsStripeSubscriptions(db, userId);

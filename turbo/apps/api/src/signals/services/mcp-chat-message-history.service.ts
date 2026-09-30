@@ -13,7 +13,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computed, type Computed } from "ccstate";
-import { and, asc, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -25,10 +25,6 @@ import {
 } from "../external/s3";
 import { awaitWithSignal, safeJsonParse, settleIncludingAbort } from "../utils";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
-import {
-  READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-  upgradeChatEventSnapshotBody,
-} from "./chat-event-snapshot-upgrade.service";
 
 const MAX_COMPRESSED_BYTES = 8 * 1024 * 1024;
 const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
@@ -110,42 +106,6 @@ interface SnapshotHead {
   readonly terminalSeqId: number | null;
   readonly terminalEventId: string | null;
   readonly objectKey: string;
-  readonly archiveSchemaVersion: number;
-}
-
-/**
- * Chat Event V8 transition: until the thread's V8 Snapshot is published, its
- * V7 prefix is upgraded in memory. The stored terminal row still pairs with
- * the V7 pointer; the upgraded rows carry their own terminal. Removed in PR-3
- * once every Snapshot pointer is V8 and pre-V8 APIs have left the rollback
- * window.
- */
-function upgradeHistoryArchive(
-  body: Buffer,
-  head: SnapshotHead,
-): { readonly body: Buffer; readonly head: SnapshotHead } {
-  if (head.archiveSchemaVersion === CURRENT_CHAT_EVENT_SCHEMA_VERSION) {
-    return { body, head };
-  }
-  const upgraded = upgradeChatEventSnapshotBody(
-    body,
-    head.archiveSchemaVersion,
-  );
-  if (
-    upgraded.sourceTerminal.id !== head.terminalEventId ||
-    upgraded.sourceTerminal.seqId !== head.terminalSeqId
-  ) {
-    throw new Error("Chat history archive terminal cursor is invalid");
-  }
-  const terminal = upgraded.rows.at(-1);
-  return {
-    body: upgraded.body,
-    head: {
-      ...head,
-      terminalSeqId: terminal?.seqId ?? 0,
-      terminalEventId: terminal?.id ?? null,
-    },
-  };
 }
 
 function decodeHistoryArchive(
@@ -232,8 +192,7 @@ function historyArchive(
       maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
     });
     budget.check();
-    const current = upgradeHistoryArchive(body, head);
-    return decodeHistoryArchive(current.body, current.head, threadId, budget);
+    return decodeHistoryArchive(body, head, threadId, budget);
   });
 }
 
@@ -428,19 +387,17 @@ export function readMcpChatHistoryProjection<T>(
                 terminalSeqId: chatEventSnapshots.terminalSeqId,
                 terminalEventId: chatEventSnapshots.terminalEventId,
                 objectKey: chatEventSnapshots.objectKey,
-                archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
               })
               .from(chatEventSnapshots)
               .where(
                 and(
                   eq(chatEventSnapshots.chatThreadId, threadId),
-                  inArray(chatEventSnapshots.archiveSchemaVersion, [
-                    ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-                  ]),
+                  eq(
+                    chatEventSnapshots.archiveSchemaVersion,
+                    CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+                  ),
                 ),
               )
-              // Chat Event V8 transition (removed in PR-3): prefer V8.
-              .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
               .limit(1);
             budget.check();
             const archive = head

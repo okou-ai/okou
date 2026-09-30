@@ -15,7 +15,6 @@ import { and, eq, not, sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { settle } from "../utils";
-
 import { writeDb$, type Db } from "../external/db";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -290,7 +289,14 @@ const admitChatRunFinishedAutomation$ = command(
         throw admission.error;
       }
       // A competing callback committed this input; wake the thread anyway.
-      set(scheduleEnqueuedChatThreadPick$, { chatThreadId });
+      set(
+        scheduleEnqueuedChatThreadPick$,
+        {
+          orgId: automation.orgId,
+          chatThreadId,
+        },
+        signal,
+      );
     }
   },
 );
@@ -364,9 +370,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // Queue admission is durable independently of its launch. A source retry
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
-          set(scheduleEnqueuedChatThreadPick$, {
-            chatThreadId: row.chatThreadId,
-          });
+          set(
+            scheduleEnqueuedChatThreadPick$,
+            {
+              orgId: row.automation.orgId,
+              chatThreadId: row.chatThreadId,
+            },
+            signal,
+          );
         }
         continue;
       }

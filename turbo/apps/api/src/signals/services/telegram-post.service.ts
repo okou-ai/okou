@@ -1323,27 +1323,33 @@ const runAgentForTelegram$ = command(
       orgId: args.source.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick) => {
-        const notice = chatQueueWaitNotice(pick.reason);
-        if (notice) {
-          await postTelegramMessage({
-            botToken: args.source.botToken,
-            chatId: args.chatId,
-            text: notice,
-            replyToMessageId: args.source.message.message_id,
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: args.source.orgId,
+        chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
+        afterPick: async (pick) => {
+          const notice = chatQueueWaitNotice(pick.reason);
+          if (notice) {
+            await postTelegramMessage({
+              botToken: args.source.botToken,
+              chatId: args.chatId,
+              text: notice,
+              replyToMessageId: args.source.message.message_id,
+            });
+          }
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: args.source.userLink.userId,
+            orgId: args.source.orgId,
+            threadId: persisted.chatThreadId,
           });
-        }
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.source.userLink.userId,
-          orgId: args.source.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
   },
 );
 

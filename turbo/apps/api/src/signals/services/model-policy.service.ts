@@ -218,7 +218,7 @@ function loadRows(
 
 // Seeds/repaired defaults and replacement writes share one organization-local
 // fence. Normal selection reads take no lock when no repair is needed.
-async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
+export async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
   await db.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
@@ -367,7 +367,7 @@ function storedRouteUnchanged(
   );
 }
 
-function modelPolicyCapabilities(
+export function modelPolicyCapabilities(
   capabilities: OrgPlanCapabilities | null,
 ): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
@@ -544,12 +544,16 @@ async function setDefaultModelPolicy(
     );
 }
 
-async function ensureOrgModelPoliciesLocked(
+export async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
+  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<EnsuredOrgModelPolicyFacts> {
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  const orgPlanCapabilities =
+    suppliedPlanCapabilities === undefined
+      ? await loadOrgPlanCapabilities(db, orgId)
+      : suppliedPlanCapabilities;
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
@@ -678,6 +682,21 @@ export async function ensureOrgModelPolicyFacts(
     orgId,
     suppliedPlanCapabilities,
   );
+  return await ensureOrgModelPolicyFactsFromSnapshot(
+    db,
+    orgId,
+    userId,
+    initial,
+  );
+}
+
+/** Apply the existing initialization policy to an already-read request snapshot. */
+function ensureOrgModelPolicyFactsFromSnapshot(
+  db: Db,
+  orgId: string,
+  userId: string,
+  initial: EnsuredOrgModelPolicyFacts,
+): Promise<EnsuredOrgModelPolicyFacts> {
   const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
   if (
     initial.policies.length > 0 &&
@@ -688,7 +707,7 @@ export async function ensureOrgModelPolicyFacts(
       capabilities,
     )
   ) {
-    return initial;
+    return Promise.resolve(initial);
   }
   return db.transaction(async (tx) => {
     await lockPolicyWrites(tx, orgId);

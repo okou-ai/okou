@@ -23,7 +23,6 @@ import {
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-maintenance.service";
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
 
 const L = logger("AgentRunCallback");
 
@@ -376,16 +375,6 @@ export const dispatchRunCallbacks$ = command(
       results.push(dispatchResult);
     }
     return results;
-  },
-);
-
-export const dispatchFailedRunCallbacks$: DispatchFailedRunCallbacks = command(
-  async ({ set }, { db, runId, error }, signal): Promise<void> => {
-    await set(
-      dispatchRunCallbacks$,
-      { db, runId, status: "failed", error },
-      signal,
-    );
   },
 );
 

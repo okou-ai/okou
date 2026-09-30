@@ -91,10 +91,6 @@ import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { modelPoliciesRoutes } from "../model-policies";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import {
-  seedV7ChatEventSnapshot$,
-  v7SnapshotUpgradeTemplates,
-} from "../../../test-fixtures/chat-event-snapshot-v7";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
@@ -1533,6 +1529,8 @@ describe("MCP chat discovery and creation", () => {
 
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
     const f = await creationFixture({ withDefaultAgent: true });
+    f.runs.configureRunnerGroup();
+    f.runs.acceptStorageDownloads();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
       requestId: randomUUID(),
@@ -5459,83 +5457,6 @@ describe("MCP canonical message reads", () => {
     ]);
   });
 
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("reads a V7-only Snapshot as upgraded V8 history before its PostgreSQL tail", async () => {
-    const f = await messageFixture();
-    installFakeChatEventR2(context);
-    const thread = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-    });
-    // Infrastructure exception: only a pre-V8 API wrote V7 Snapshot pointers.
-    // The shared V7 fixture seeds that state; MCP reads stay real.
-    const { templates } = v7SnapshotUpgradeTemplates();
-    const v7 = await createStore().set(
-      seedV7ChatEventSnapshot$,
-      { chatThreadId: thread.id, rows: templates },
-      context.signal,
-    );
-    writeFakeChatEventObject(v7.objectKey, v7.body);
-    onTestFinished(async () => {
-      await deleteFakeChatEventObject(v7.objectKey);
-    });
-    await f.send("PostgreSQL tail after V7", thread.id);
-
-    const history = await getMessages(f.auth.token(), { threadId: thread.id });
-    const archived = (index: number) => {
-      const row = v7.rows[index];
-      if (!row) {
-        throw new Error("Expected a V7 fixture row");
-      }
-      return { eventId: row.id, seqId: row.seqId };
-    };
-    const notice = templates[5]?.payload as { readonly content: string };
-    expect(
-      history.messages.map((message) => {
-        return {
-          eventId: message.ref.eventId,
-          seqId: message.ref.seqId,
-          role: message.role,
-          eventType: message.eventType,
-          text: message.text,
-        };
-      }),
-    ).toStrictEqual([
-      {
-        ...archived(0),
-        role: "user",
-        eventType: "input.prompt",
-        text: "Ship the weekly report",
-      },
-      {
-        ...archived(2),
-        role: "assistant",
-        eventType: "output.message",
-        text: "Goal progress",
-      },
-      {
-        ...archived(4),
-        role: "user",
-        eventType: "input.prompt",
-        text: "Review",
-      },
-      {
-        ...archived(5),
-        role: "assistant",
-        eventType: "output.message",
-        text: notice.content,
-      },
-      {
-        eventId: expect.any(String),
-        seqId: expect.any(Number),
-        role: "user",
-        // The no-credit send is rejected; its prompt remains the user message.
-        eventType: "input.rejected",
-        text: "PostgreSQL tail after V7",
-      },
-    ]);
-    expect(history.messages.at(-1)?.ref.seqId).toBeGreaterThan(v7.lastSeqId);
-  });
-
   it.each(["archive", "archive and tail"] as const)(
     "rejects ambiguous duplicate message identities across %s until the canonical snapshot is repaired",
     async (source) => {
@@ -6300,10 +6221,6 @@ describe("MCP message search", () => {
       agentId: f.agent.agentId,
       prompt: "Active unrelated task",
     });
-    onTestFinished(async () => {
-      await f.runs.requestCancelRun(f.actor, runId, [200]);
-      await flushWaitUntilForTest();
-    });
     for (const prompt of [
       "staleneedle recall",
       "staleneedle replace",
@@ -6359,6 +6276,11 @@ describe("MCP message search", () => {
     const current = await searchMessages(token, { query: "replacementneedle" });
     expect(current.matches).toHaveLength(1);
     expect(current.matches[0]?.ref.eventId).not.toBe(replaced.ref.eventId);
+
+    // Releasing this run can pick the remaining input. Settle that work
+    // before test teardown clears its Runner and storage configuration.
+    await f.runs.requestCancelRun(f.actor, runId, [200]);
+    await flushWaitUntilForTest();
   });
 
   it("finds retained source messages with valid context references and fails explicitly on a missing archive", async () => {
