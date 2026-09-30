@@ -18,6 +18,12 @@ jq -e '
   $job["runs-on"] == "ubuntu-latest-8-cores" and
   $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
   ($job | has("environment") | not) and
+  $job.needs == ["release-please", "publish-cli-versioned-artifact"] and
+  any($job.steps[];
+    .name == "Download canonical CLI build input" and
+    .with.name == "runner-release-cli-${{ github.run_id }}" and
+    .with.path == "runner-cli-intermediate"
+  ) and
   $job.strategy.matrix.target == [
     "aarch64-unknown-linux-musl",
     "x86_64-unknown-linux-musl"

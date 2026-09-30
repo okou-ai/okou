@@ -38,23 +38,32 @@ jq -e '
 }
 
 jq -e '
-  .jobs["prepare-runner-cli"].needs == "release-please" and
-  any(.jobs["prepare-runner-cli"].steps[]; .name == "Build source-bound CLI for Runner" and
-    (.run | contains("build-okou-cli-artifact.sh"))) and
-  any(.jobs["prepare-runner-cli"].steps[]; .name == "Upload private CLI build input" and
-    (.with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
-    .with.name == "runner-release-cli-${{ github.run_id }}" and
-    .with.overwrite == true) and
-  (.jobs["build-runner-release-assets"].needs | index("prepare-runner-cli") != null) and
+  .jobs["publish-cli-versioned-artifact"] as $publisher |
+  $publisher.steps as $steps |
+  ($steps | map(.name // "") | index("Publish versioned CLI artifact")) as $publish |
+  ($steps | map(.name // "") | index("Upload canonical CLI build input for Runner")) as $upload |
+  $publisher.needs == "release-please" and
+  ($publish < $upload) and
+  $steps[$publish].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
+  $steps[$publish].env.OUTPUT_DIR == "runner-cli-intermediate" and
+  $steps[$publish].run == "bash .github/scripts/publish-okou-cli-versioned-artifact.sh" and
+  $steps[$upload].if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
+  ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
+  $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}" and
+  $steps[$upload].with.overwrite == true and
+  $steps[$upload].with["if-no-files-found"] == "error" and
+  $steps[$upload].with["retention-days"] == 1 and
+  (.jobs["build-runner-release-assets"].needs | index("publish-cli-versioned-artifact") != null) and
   any(.jobs["build-runner-release-assets"].steps[];
-    .name == "Download source-bound CLI build input" and
-    .with.name == "runner-release-cli-${{ github.run_id }}") and
+    .name == "Download canonical CLI build input" and
+    .with.name == $steps[$upload].with.name and
+    .with.path == $steps[$publish].env.OUTPUT_DIR) and
   any(.jobs["build-runner-release-assets"].steps[];
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
     .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
     (.env | has("GUEST_CLI_SOURCE_SHA") | not)) and
-  (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null) and
+  (.jobs["builds-complete"].needs | index("publish-cli-versioned-artifact") != null) and
   (.jobs["build-runner-production"].needs | index("publish-cli-versioned-artifact") == null) and
   any(.jobs["build-runner-production"].steps[];
     .name == "Build rootfs and snapshot on production hosts" and

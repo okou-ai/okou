@@ -4748,8 +4748,10 @@ Compatibility is negotiated per run rather than by deployment order:
 - Official Runner binaries embed the source-bound CLI package alongside their
   Guest binaries. A local full rootfs build without a bundled CLI remains
   possible; neither preview nor production image preparation downloads a
-  separate CLI artifact. The
-  guest agent execs only the installed CLI on a parity match at or above the
+  separate CLI artifact onto the Runner host. Production Runner compilation
+  reuses the release target's verified canonical Turbo CLI package and manifest
+  retained by the versioned publisher; it does not rebuild CLI independently.
+  The guest agent execs only the installed CLI on a parity match at or above the
   CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
   `sessionConstruction.digest` is identical, and an installed CLI without a
