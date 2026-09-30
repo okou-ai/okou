@@ -5157,28 +5157,14 @@ existing models but cannot consume Sol jobs. Sol work waits until a supporting
 Runner is available. The capability remains necessary while an incompatible
 Runner is a supported rollback target; no database migration is involved.
 
-#### Claude Opus 5.5 native model readiness
+#### Claude Opus 5.5 native model readiness (retired)
 
-Poll and claim requests advertise `X-Native-Claude-Opus-5-5: 1` only from
-Runner artifacts whose bundled Guest accepts Claude Opus 5.5, its gateway alias,
-and the model's reasoning efforts. The API checks this capability before an old
-Runner can claim Claude Code work whose canonical `modelUsageProvider` is
-`claude-opus-5-5`. The logical identity is used instead of `ANTHROPIC_MODEL` so
-the guard also covers OpenRouter, Vercel, Azure deployment names, Bedrock
-foundation models and opaque cloud profiles.
-
-Poll excludes unsupported Opus 5.5 jobs before applying its candidate limit, so
-old Runners can still discover existing work behind one. Claim repeats the
-check for direct notifications and previously discovered work. A claimant
-without the header receives the existing claim `404`; the job remains pending
-for a capable Runner.
-
-The header leaves strict request bodies unchanged and is ignored by old APIs.
-During API-first promotion or Runner rollback, old Runners continue executing
-existing models while Opus 5.5 work waits. The model remains on the Claude Code
-harness until the pinned Pi catalog can resolve and verify it. No organization
-default or stored model selection changes, and no database migration is part of
-this compatibility boundary.
+The `X-Native-Claude-Opus-5-5` Runner capability and its poll/claim guard were
+removed with the expired compatibility cleanup (#37056); every serving and
+rollback-eligible Runner accepts Claude Opus 5.5. No API capability guard keys
+on `modelUsageProvider`, so a route pricing alias cannot bypass one. A future
+model capability guard must key on the run's actual model or captured route,
+never on the pricing identity.
 
 #### Runner process drain
 

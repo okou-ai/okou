@@ -462,6 +462,7 @@ import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-poli
 import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { modelLongContextMinTotalInputTokens } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { isStaffOrg } from "@okouai/core/staff-org";
@@ -9119,6 +9120,34 @@ function piLangfuseExecutionEnvironment(args: {
   };
 }
 
+/**
+ * The Runner's model usage metering fields: billable firewalls, the provider
+ * usage is reported under, and the long-context threshold resolved from the
+ * run's pricing provider, actual model and concrete upstream model (the same
+ * threshold Built-in route admission prices categories for).
+ */
+function modelUsageExecutionFields(args: {
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly billableFirewalls: readonly string[];
+  readonly modelUsageProvider: string | undefined;
+}): Pick<
+  StoredExecutionContext,
+  | "billableFirewalls"
+  | "modelUsageProvider"
+  | "modelUsageLongContextMinTotalInputTokens"
+> {
+  const selectedModel = args.modelProvider?.selectedModel;
+  return {
+    billableFirewalls: [...args.billableFirewalls],
+    modelUsageProvider: args.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      modelLongContextMinTotalInputTokens(args.modelUsageProvider, [
+        selectedModel ? normalizeRunModelId(selectedModel) : undefined,
+        args.modelProvider?.builtInModelRuntimeRoute?.upstreamModel,
+      ]),
+  };
+}
+
 export function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
@@ -9237,8 +9266,7 @@ export function buildStoredExecutionContextDraft(
       tools: args.body.tools,
       settings: args.body.settings,
       featureFlags: getAllFeatureStates(args.featureSwitchContext),
-      billableFirewalls: [...args.billableFirewalls],
-      modelUsageProvider: args.modelUsageProvider,
+      ...modelUsageExecutionFields(args),
       codexRuntimeConfig: args.modelProvider?.codexRuntimeConfig ?? null,
     },
     secretNames,

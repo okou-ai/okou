@@ -87,18 +87,25 @@ subscription routes (formerly `subscription_model_catalog`) are
 `usage_pricing` is the billing authority for Built-in model usage, reached
 through the pricing link of the route a run was assigned:
 
-1. **Run creation and claim.** Run creation captures the Built-in concrete
-   route (`builtInModelRuntimeRoute`). At the claim (and on a direct run),
+1. **Run creation.** Run creation (the queue pick, or a direct run) selects
+   and captures the Built-in concrete route (`builtInModelRuntimeRoute`), then
    `prepareModelUsageContext` (`agent-run-execution.service.ts`) reads that
-   route's `pricing_provider` from the same catalog snapshot the claim uses
-   for routing (`catalogBuiltInPricingProvider`) and sends it to the Runner as
-   `modelUsageProvider`, together with the billable firewalls and the
-   long-context threshold `modelUsageLongContextMinTotalInputTokens` (see
+   route's `pricing_provider` from the same catalog snapshot
+   (`catalogBuiltInRoute`) as `modelUsageProvider`, together with the billable
+   firewalls and the long-context threshold
+   `modelUsageLongContextMinTotalInputTokens` (see
    [Long-context classification](#long-context-classification)). Only Built-in
    runs have billable `model-provider:*` firewalls. The run's selected model,
    display name and upstream ID stay the actual model; only the usage label
    follows the pricing link. A Built-in run whose route has no pricing link
-   fails before launch instead of reporting unpriced usage.
+   fails before launch instead of reporting unpriced usage. Admission also
+   runs the [route pricing preflight](#route-pricing-preflight).
+   These values are written into the run's `runner_job_queue`
+   `execution_context` in the same statement that inserts the run. Every
+   Runner claim and retry of that run reads the stored context and never the
+   catalog, so a started run keeps its pricing identity and captured route
+   after an operator relinks or reorders routes; only runs created later use
+   the new link.
 2. **Runner addon.** The Runner passes `modelUsageProvider` and the threshold
    to the mitm addon through the proxy registry sandbox entry. For each
    billable model response the addon emits one usage event per positive token
@@ -115,7 +122,7 @@ through the pricing link of the route a run was assigned:
    records the `missing_pricing` billing error.
 
 Usage events and billing history keep the provider they captured; changing a
-route's pricing link affects only later claims. BYOK and subscription routes
+route's pricing link affects only runs created afterwards. BYOK and subscription routes
 have no pricing link (a schema CHECK and the API catalog loader both enforce
 it) and are not platform-billed: they have no billable model firewall, and
 their `modelUsageProvider` stays the catalog model ID as before.
@@ -123,8 +130,9 @@ their `modelUsageProvider` stays the catalog model ID as before.
 `usage_pricing` rows are operator data seeded outside migrations, so no schema
 constraint or migration check can prove that a linked provider has rows for
 every category a route can produce. The API catalog loader validates the link
-itself (Built-in: kind `model` and a provider; other routes: none);
-settlement surfaces a missing row as `missing_pricing`. Usage displays name
+itself (Built-in: kind `model` and a provider; other routes: none), and new
+Built-in runs are admitted only on fully priced routes (below); settlement
+still surfaces a missing row on historical usage as `missing_pricing`. Usage displays name
 model usage by the run's actual model, not the pricing provider (see
 [Usage display](#usage-display)).
 
@@ -160,6 +168,29 @@ recorded provider. The App maps that model ID to its catalog display name, so
 a run billed under a pricing alias reads as the model's own name. Existing
 `usage.recorded` events are not rewritten and keep the provider they
 captured.
+
+### Route pricing preflight
+
+A new Built-in run must not execute on a route whose billable categories lack
+`usage_pricing` (`built-in-route-pricing.ts`). The categories a route can
+produce are the four token categories, their `.long_context` variants when
+`modelLongContextMinTotalInputTokens` resolves a threshold for the route's
+pricing provider, model or upstream model (the value the Runner receives),
+and, for the run's requested service tier, their `.fast` or `.ultrafast`
+variants; standard-tier categories are always included. Each must resolve with
+settlement's lookup (`findUsagePricing`: the exact
+`(kind, pricing_provider, category)` row, else the provider's `__fallback__`
+row), so a route admitted as priced is priced at settlement. The rows for all
+of the model's Built-in candidates are read in one query per selection.
+
+- Route selection skips an unpriced candidate like any other unavailable one
+  and uses the next priced candidate; with none left, the run is rejected
+  with the existing `503 MODEL_PROVIDER_UNAVAILABLE`.
+- `prepareModelUsageContext` re-checks the assigned route (including a route
+  captured earlier) and rejects with `503 PROVIDER_UNAVAILABLE` naming the
+  unpriced categories.
+- Catalog reads, BYOK and subscription routes, and historical settlement are
+  unaffected.
 
 ## API surface
 
