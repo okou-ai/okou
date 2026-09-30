@@ -2,7 +2,7 @@ import type { PiCatalogSource } from "../pi-execution";
 
 /**
  * Active rows of `run_model_catalog` and every `model_routes` row as seeded by
- * migrations 1297 and 1300, so admission tests read the same catalog data the
+ * migrations 1298 and 1301, so admission tests read the same catalog data the
  * API serves.
  */
 export const SEEDED_MODEL_CATALOG: PiCatalogSource = {

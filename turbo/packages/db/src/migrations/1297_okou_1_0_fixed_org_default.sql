@@ -1,7 +1,7 @@
 -- Intentionally no data change. The organization default model is fixed to
 -- the built-in "okou-1.0" (Auto) policy, but that default is a system-required
 -- policy the API projects to every organization from
--- run_model_catalog.is_system_default (migration 1297). No per-organization
+-- run_model_catalog.is_system_default (migration 1298). No per-organization
 -- default row is copied here.
 --
 -- org_model_policies.is_default and its existing values stay untouched: API

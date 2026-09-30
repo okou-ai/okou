@@ -39,7 +39,7 @@ ALTER TABLE model_selection_rewrite ADD PRIMARY KEY (source);
 --> statement-breakpoint
 -- Temp tables have no statistics until analyzed. Without them the planner
 -- sorts every chat thread before joining this map of a few rows (measured in
--- MIGRATIONS.md, "Migration 1298 performance evidence").
+-- MIGRATIONS.md, "Migration 1299 performance evidence").
 ANALYZE model_selection_rewrite;
 --> statement-breakpoint
 -- Effort domain of each replacement: its first enabled Built-in route.

@@ -1,6 +1,6 @@
 {
-  "id": "1f25831a-e6fe-4eca-bdc4-f0895fe52b1a",
-  "prevId": "c6f07c2a-98c7-4d05-834d-15ee6c360e22",
+  "id": "3b2ba09c-f844-497e-b91e-0bff7e1f53e8",
+  "prevId": "697cea73-063e-456c-98ed-99dce0d42ff2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18574,6 +18574,194 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.model_routes": {
+      "name": "model_routes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "model": {
+          "name": "model",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_type": {
+          "name": "provider_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "concrete_provider_type": {
+          "name": "concrete_provider_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subscription_type": {
+          "name": "subscription_type",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "upstream_model": {
+          "name": "upstream_model",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "service_tiers": {
+          "name": "service_tiers",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_service_tier": {
+          "name": "default_service_tier",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "efforts": {
+          "name": "efforts",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_effort": {
+          "name": "default_effort",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_tier": {
+          "name": "price_tier",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_kind": {
+          "name": "pricing_kind",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pricing_provider": {
+          "name": "pricing_provider",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "model_routes_model_run_model_catalog_model_fk": {
+          "name": "model_routes_model_run_model_catalog_model_fk",
+          "tableFrom": "model_routes",
+          "tableTo": "run_model_catalog",
+          "columnsFrom": [
+            "model"
+          ],
+          "columnsTo": [
+            "model"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_model_routes_identity": {
+          "name": "uq_model_routes_identity",
+          "nullsNotDistinct": true,
+          "columns": [
+            "model",
+            "provider_type",
+            "subscription_type",
+            "concrete_provider_type"
+          ]
+        },
+        "uq_model_routes_priority": {
+          "name": "uq_model_routes_priority",
+          "nullsNotDistinct": true,
+          "columns": [
+            "model",
+            "provider_type",
+            "subscription_type",
+            "priority"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_model_routes_provider_type": {
+          "name": "chk_model_routes_provider_type",
+          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'anthropic-api-key', 'openrouter-api-key', 'deepseek', 'vercel-ai-gateway', 'openrouter-codex', 'vercel-ai-gateway-codex', 'openai-api-key', 'codex-oauth-token', 'azure-foundry', 'aws-bedrock', 'custom-anthropic-messages', 'custom-openai-responses', 'built-in')"
+        },
+        "chk_model_routes_concrete_provider_type": {
+          "name": "chk_model_routes_concrete_provider_type",
+          "value": "CASE WHEN \"model_routes\".\"provider_type\" = 'built-in' THEN \"model_routes\".\"concrete_provider_type\" IN ('anthropic-api-key', 'openrouter-api-key', 'deepseek', 'openrouter-codex', 'openai-api-key') ELSE \"model_routes\".\"concrete_provider_type\" = \"model_routes\".\"provider_type\" END"
+        },
+        "chk_model_routes_subscription_type": {
+          "name": "chk_model_routes_subscription_type",
+          "value": "\"model_routes\".\"subscription_type\" IS NULL OR (\"model_routes\".\"subscription_type\" IN ('claude-code-oauth-token', 'codex-oauth-token') AND \"model_routes\".\"subscription_type\" = \"model_routes\".\"provider_type\")"
+        },
+        "chk_model_routes_priority": {
+          "name": "chk_model_routes_priority",
+          "value": "\"model_routes\".\"priority\" >= 0"
+        },
+        "chk_model_routes_service_tiers": {
+          "name": "chk_model_routes_service_tiers",
+          "value": "\"model_routes\".\"service_tiers\" <@ ARRAY['priority', 'ultrafast']::text[] AND (\"model_routes\".\"default_service_tier\" IS NULL OR \"model_routes\".\"default_service_tier\" = ANY(\"model_routes\".\"service_tiers\"))"
+        },
+        "chk_model_routes_efforts": {
+          "name": "chk_model_routes_efforts",
+          "value": "\"model_routes\".\"efforts\" <@ ARRAY['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'extra', 'ultracode']::text[] AND (\"model_routes\".\"default_effort\" IS NULL OR \"model_routes\".\"default_effort\" = ANY(\"model_routes\".\"efforts\"))"
+        },
+        "chk_model_routes_price_tier": {
+          "name": "chk_model_routes_price_tier",
+          "value": "\"model_routes\".\"price_tier\" IS NULL OR (\"model_routes\".\"provider_type\" = 'built-in' AND \"model_routes\".\"price_tier\" IN ('$', '$$', '$$$', '$$$$'))"
+        },
+        "chk_model_routes_pricing_link": {
+          "name": "chk_model_routes_pricing_link",
+          "value": "CASE WHEN \"model_routes\".\"provider_type\" = 'built-in' THEN \"model_routes\".\"pricing_kind\" = 'model' AND \"model_routes\".\"pricing_provider\" IS NOT NULL ELSE \"model_routes\".\"pricing_kind\" IS NULL AND \"model_routes\".\"pricing_provider\" IS NULL END"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.morning_brief_collection_occurrences": {
       "name": "morning_brief_collection_occurrences",
       "schema": "",
@@ -26701,12 +26889,62 @@
           "primaryKey": true,
           "notNull": true
         },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_system_default": {
+          "name": "is_system_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "replaced_by": {
+          "name": "replaced_by",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lineage_rank": {
+          "name": "lineage_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "replaced_by_lineage_rank": {
+          "name": "replaced_by_lineage_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "allow_new_org_policy": {
           "name": "allow_new_org_policy",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "built_in_on_restricted_plans": {
+          "name": "built_in_on_restricted_plans",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pi_route_class": {
+          "name": "pi_route_class",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -26723,12 +26961,75 @@
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "idx_run_model_catalog_one_system_default": {
+          "name": "idx_run_model_catalog_one_system_default",
+          "columns": [
+            {
+              "expression": "is_system_default",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"run_model_catalog\".\"is_system_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_run_model_catalog_replaced_by": {
+          "name": "fk_run_model_catalog_replaced_by",
+          "tableFrom": "run_model_catalog",
+          "tableTo": "run_model_catalog",
+          "columnsFrom": [
+            "replaced_by",
+            "replaced_by_lineage_rank"
+          ],
+          "columnsTo": [
+            "model",
+            "lineage_rank"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "cascade"
+        }
+      },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "uq_run_model_catalog_model_lineage_rank": {
+          "name": "uq_run_model_catalog_model_lineage_rank",
+          "nullsNotDistinct": false,
+          "columns": [
+            "model",
+            "lineage_rank"
+          ]
+        }
+      },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_run_model_catalog_replacement_pair": {
+          "name": "chk_run_model_catalog_replacement_pair",
+          "value": "(\"run_model_catalog\".\"replaced_by\" IS NULL) = (\"run_model_catalog\".\"replaced_by_lineage_rank\" IS NULL)"
+        },
+        "chk_run_model_catalog_not_self_replaced": {
+          "name": "chk_run_model_catalog_not_self_replaced",
+          "value": "\"run_model_catalog\".\"replaced_by\" <> \"run_model_catalog\".\"model\""
+        },
+        "chk_run_model_catalog_replacement_rank": {
+          "name": "chk_run_model_catalog_replacement_rank",
+          "value": "\"run_model_catalog\".\"replaced_by_lineage_rank\" > \"run_model_catalog\".\"lineage_rank\""
+        },
+        "chk_run_model_catalog_pi_route_class": {
+          "name": "chk_run_model_catalog_pi_route_class",
+          "value": "\"run_model_catalog\".\"pi_route_class\" IS NULL OR \"run_model_catalog\".\"pi_route_class\" IN ('claude-native', 'gpt-codex', 'deepseek')"
+        },
+        "chk_run_model_catalog_default_active": {
+          "name": "chk_run_model_catalog_default_active",
+          "value": "NOT \"run_model_catalog\".\"is_system_default\" OR \"run_model_catalog\".\"replaced_by\" IS NULL"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.run_output_legacy_pi_events": {

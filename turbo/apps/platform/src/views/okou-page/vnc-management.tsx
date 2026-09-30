@@ -16,7 +16,11 @@ import {
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { VncCredentialImpact, VncX509NoneWarning } from "./vnc-fields.tsx";
+import {
+  VncClientCertificateWarning,
+  VncCredentialImpact,
+  VncX509NoneWarning,
+} from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
@@ -36,6 +40,16 @@ function isX509Security(
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
   switch (profile) {
+    case "client_certificate_none": {
+      return t(($) => {
+        return $.vnc.security.clientCertificateNone;
+      });
+    }
+    case "client_certificate_vnc": {
+      return t(($) => {
+        return $.vnc.security.clientCertificateVnc;
+      });
+    }
     case "x509_none": {
       return t(($) => {
         return $.vnc.security.x509None;
@@ -83,6 +97,16 @@ function VncAuthenticationLabel({
 }) {
   const { t } = useTranslation();
   switch (method) {
+    case "client_certificate": {
+      return t(($) => {
+        return $.vnc.security.clientCertificateNone;
+      });
+    }
+    case "client_certificate_vnc_password": {
+      return t(($) => {
+        return $.vnc.security.clientCertificateVnc;
+      });
+    }
     case "none": {
       return t(($) => {
         return $.vnc.security.x509None;
@@ -129,6 +153,53 @@ function VncRebindWarning() {
         return $.vnc.transport.sshNeedsRebind;
       })}
     </p>
+  );
+}
+
+function VncHostProfileDetails({
+  connection,
+}: {
+  readonly connection: VncConnectionResponse;
+}) {
+  const { t } = useTranslation();
+  const certificateMethod =
+    "clientCertificateAuthentication" in connection
+      ? connection.clientCertificateAuthentication
+      : undefined;
+  const profile: VncProfile =
+    certificateMethod === "client_certificate"
+      ? "client_certificate_none"
+      : certificateMethod === "client_certificate_vnc_password"
+        ? "client_certificate_vnc"
+        : connection.security.type;
+  return (
+    <>
+      {certificateMethod ? (
+        <VncClientCertificateWarning />
+      ) : connection.security.type === "x509_none" ? (
+        <VncX509NoneWarning />
+      ) : null}
+      <p className="text-sm text-muted-foreground">
+        <VncProfileLabel profile={profile} />
+        {" · "}
+        <VncAuthenticationLabel
+          method={certificateMethod ?? vncAuthMethodForProfile(profile)}
+        />
+        {isX509Security(connection.security) ? (
+          <>
+            {" "}
+            {" · "}{" "}
+            {connection.security.trust.mode === "system"
+              ? t(($) => {
+                  return $.vnc.security.system;
+                })
+              : t(($) => {
+                  return $.vnc.security.custom;
+                })}
+          </>
+        ) : null}
+      </p>
+    </>
   );
 }
 
@@ -209,27 +280,7 @@ function VncHostCard({
           {connection.credentialName}
         </p>
       )}
-      {connection.security.type === "x509_none" && <VncX509NoneWarning />}
-      <p className="text-sm text-muted-foreground">
-        <VncProfileLabel profile={connection.security.type} />
-        {" · "}
-        <VncAuthenticationLabel
-          method={vncAuthMethodForProfile(connection.security.type)}
-        />
-        {isX509Security(connection.security) ? (
-          <>
-            {" "}
-            {" · "}{" "}
-            {connection.security.trust.mode === "system"
-              ? t(($) => {
-                  return $.vnc.security.system;
-                })
-              : t(($) => {
-                  return $.vnc.security.custom;
-                })}
-          </>
-        ) : null}
-      </p>
+      <VncHostProfileDetails connection={connection} />
       <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button

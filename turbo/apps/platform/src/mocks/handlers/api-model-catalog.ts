@@ -27,7 +27,7 @@ const OPENAI_BYOK = [
   "custom-openai-responses",
 ] as const;
 
-// Mirrors the seeded production catalog (migration 1297), including retired
+// Mirrors the seeded production catalog (migration 1298), including retired
 // models and their single-hop replacements.
 const MODEL_ROWS: readonly (readonly [
   model: string,
@@ -153,7 +153,7 @@ function routesFor(model: string): MockCatalogRoute[] {
       providerType,
       concreteProviderType: providerType,
       // Astra Ultrafast is temporarily disabled: the seeded direct OpenAI
-      // route offers no Ultrafast tier, as in migration 1297.
+      // route offers no Ultrafast tier, as in migration 1298.
       serviceTiers: [...profile.serviceTiers],
       defaultServiceTier: null,
       priceTier: null,
@@ -179,13 +179,13 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
-// Plan policy seeded by migration 1299.
-/** Seeded `run_model_catalog.built_in_on_restricted_plans` (migration 1299). */
+// Plan policy seeded by migration 1300.
+/** Seeded `run_model_catalog.built_in_on_restricted_plans` (migration 1300). */
 const RESTRICTED_PLAN_BUILT_IN_MODELS: ReadonlySet<string> = new Set([
   "okou-1.0",
 ]);
 
-/** Seeded `run_model_catalog.pi_route_class` (migration 1300). */
+/** Seeded `run_model_catalog.pi_route_class` (migration 1301). */
 const PI_ROUTE_CLASS_BY_MODEL: Readonly<
   Record<string, "claude-native" | "gpt-codex" | "deepseek">
 > = {

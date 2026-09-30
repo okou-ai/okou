@@ -72,7 +72,7 @@ previous availability. Re-enabling requires verified account-specific tier
 discovery, rather than assuming subscription eligibility from the model name.
 
 With the global model catalog below, this pause is catalog data rather than a
-code check: migration 1297 seeds the `gpt-6-astra` `openai-api-key` route with
+code check: migration 1298 seeds the `gpt-6-astra` `openai-api-key` route with
 `service_tiers = {priority}` only, so every Ultrafast check (pickers, member
 preference, thread selection, send, run creation and claim) finds no route
 offering it and returns `400`. Re-enabling is a `model_routes` data change.
@@ -94,11 +94,11 @@ upstream model is one the pinned Pi runtime resolves). No schema change; the
 previous API still rejects such a row as unsupported, so operators add
 catalog-only models after this API is fully deployed. The CLI no longer
 pre-rejects model IDs outside its bundled list; an old CLI still does. Free-plan
-model access is catalog data (`built_in_on_restricted_plans`, migration 1299,
+model access is catalog data (`built_in_on_restricted_plans`, migration 1300,
 true only for `okou-1.0`), read by model policy writes, run admission and the
 Platform; the static `isLimitedFree1RestrictedRunModel` allowlist is gone and
 is not reproduced. Free plans (`limited-free-1` and legacy `free`, whose
-`restricted_built_in_models` migration 1299 backfills to true) run only
+`restricted_built_in_models` migration 1300 backfills to true) run only
 `okou-1.0` on Built-in, or a model on the member's own connected Claude Code or
 Codex subscription route; organization BYOK and custom gateways are no longer
 free-plan entitlements. During the rolling window the old API still enforces
@@ -126,10 +126,10 @@ switch is removed. See [the design note](model-catalog.md).
 
 Migrations:
 
-- `1296_okou_1_0_fixed_org_default` intentionally changes no data. It copies
+- `1297_okou_1_0_fixed_org_default` intentionally changes no data. It copies
   no per-organization default row and leaves `org_model_policies.is_default`
   and its values untouched.
-- `1297_global_model_catalog` adds `display_name`, `sort_order`,
+- `1298_global_model_catalog` adds `display_name`, `sort_order`,
   `is_system_default`, `replaced_by`, `lineage_rank` and
   `replaced_by_lineage_rank` to `run_model_catalog` (rank-based acyclic
   replacement chains, no triggers) and adds `model_routes`. It seeds every
@@ -147,7 +147,7 @@ Migrations:
   deletion is pending an owner decision (Ethan). They are not `replaced_by`
   anything, so the catalog response lists them with `replacedBy` null; the
   API does not offer or accept them because they have no adapter or route.
-- `1298_model_catalog_stored_selections` rewrites mutable stored selections of
+- `1299_model_catalog_stored_selections` rewrites mutable stored selections of
   retired models to their final replacement: `org_model_policies.model` (only
   onto a replacement route of the same provider type; incompatible retired
   policies are dropped and merged duplicates keep one row, moving the legacy
@@ -164,8 +164,8 @@ Migrations:
   queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
   is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
   turns on the catalog's restricted-plan flags and stores no model IDs, so
-  1298 has nothing to rewrite there.
-- Production impact of 1298: as of MaskDB on 2026-09-30, no chat thread,
+  1299 has nothing to rewrite there.
+- Production impact of 1299: as of MaskDB on 2026-09-30, no chat thread,
   organization policy, member preference, agent or model provider references
   any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
   `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
@@ -174,15 +174,15 @@ Migrations:
   on synthetic data at production scale (162,621 chat threads, 32,810
   policies) the whole migration took 0.21 s with zero matches and 1.01 s with
   10% matches, and 1.29 s at 5x scale with 1% matches, far below a 10 s
-  statement timeout, so batching is unnecessary. 1298 analyzes its rewrite
+  statement timeout, so batching is unnecessary. 1299 analyzes its rewrite
   map before the chat thread scan; without it the planner sorted every thread
   first (2.0 s at 5x). Evidence and the verified/unverified boundary:
-  `turbo/packages/db/MIGRATIONS.md`, "Migration 1298 performance evidence".
-- `1299_model_catalog_restricted_plans` adds the
+  `turbo/packages/db/MIGRATIONS.md`, "Migration 1299 performance evidence".
+- `1300_model_catalog_restricted_plans` adds the
   two restricted-plan flags to `run_model_catalog` with defaults and seeds
   them from the former code allowlist. Additive; the previous API ignores the
   columns.
-- `1300_model_catalog_pi_route_class` (in progress in this PR) adds nullable
+- `1301_model_catalog_pi_route_class` (in progress in this PR) adds nullable
   `run_model_catalog.pi_route_class` with a check constraint and seeds it
   from the former `@okouai/core` Pi policy. Additive; the previous API
   ignores the column and keeps its static Pi policy.
@@ -203,7 +203,7 @@ Old and new versions during deploy:
 - Previous API after the migrations: it ignores the new catalog columns and
   `model_routes` and still reads `allow_new_org_policy`,
   `subscription_model_catalog` and `is_default`, all of which are kept. After
-  1298 it no longer finds policies of the retired models, which its code
+  1299 it no longer finds policies of the retired models, which its code
   already treats as retired. The new API clears `is_default` on its policy
   writes and does not store a default row; how the previous API's default
   repair reacts to an organization without an `is_default` row was not
@@ -222,9 +222,9 @@ Old and new versions during deploy:
   until upgraded.
 - New App, iOS and CLI require `GET /api/model-catalog`, which ships with this
   API release; they are released after it.
-- Rollback: 1297 and 1298 are forward-only data changes that the previous API
+- Rollback: 1298 and 1299 are forward-only data changes that the previous API
   tolerates (it ignores the new columns and table). Rewritten selections stay
-  on their replacements after a rollback; rows dropped by 1298 (retired
+  on their replacements after a rollback; rows dropped by 1299 (retired
   policies with no compatible replacement route) are not restored.
 
 ## Integration model commands are thread-scoped (2026-09-29)
@@ -6680,6 +6680,16 @@ reader after an X509None row exists is unsafe even if `VncAccess` is disabled
 again. A later rollback below the reader floor needs a separate verified data
 and drain decision. No merge, migration, CI result or this compatibility
 assessment activates `VncAccess` or certifies an Agent/server acceptance run.
+
+## VNC owner-selected QEMU client certificates (default off; #37375)
+
+Migration `1296_little_electro` follows `1295_chat_thread_canonical_session` and adds nullable `vnc_credentials.encrypted_client_identity`, relaxes `encrypted_password` only for `client_certificate`, and replaces the exact credential and connection profile checks. No old row is rewritten. Apply migration before promoting the new API. The old API sees a compatible nullable column and existing rows during the migration-to-promotion window. Do not admit new certificate-bearing rows until the compatible API and App are promoted, because an old API cannot parse new auth discriminators (and cannot safely resolve or list these records). The first main commit with the compatible API is an explicit **API reader rollback floor once any new row exists**; disabling the feature afterward does not remove that floor. This document is a rollout requirement, not evidence that the floor has already been installed or new rows have been admitted. A rollback below it needs a verified row cleanup and drained readers decision, not an implicit downgrade.
+
+- Old App with new API: existing rows preserve their response shape. New certificate-backed connections carry an additional `clientCertificateAuthentication` metadata field, so a strict old App cannot manage them; refresh the App before admitting such rows. New App with an old API: strict contracts reject new variants; do not submit them during mixed promotion.
+- Old Runner with new API: an exact new tuple is absent, so `unsupported_profile` is returned before decryption; existing `none/x509_none` and `vnc_password/x509_vnc` keep their certificate-free behavior. New Runner with old API: its widened strict `supportedProfiles` request is rejected; **all** VNC resolves fail closed on that pairing. Deploy API before Runner and do not retry a legacy tuple.
+- New API with new Runner: only the winning authorized Runner receives the KMS-decrypted identity in a private no-store response. The API rechecks authority after KMS. Owner/Agent list metadata never receives keys or passwords. Saved SSH permissions, TLS server CA/name, generation and active-session checks are unchanged. The operational KMS rotation recovery manifest lists both encrypted VNC columns; run that current-version recovery tool against a migrated schema (older snapshots need the corresponding older tool until migration), and verify both password and identity envelopes during key rotation.
+
+Neither migration, merge, CI, independently configured loopback QEMU acceptance nor the client CertificateRequest alone proves production server `verify-peer=on` or a real Agent session. Before production activation record the server's client-CA/ingress policy, untrusted-client rejection for both subtypes and a separate real owner→Agent→Runner capture; `verify-peer=off` is an insecure negative control that accepts an unrelated-CA client. Do not modify a production VNC server, SSH service or `VncAccess` in this change. A supported server-side revocation guarantee is not asserted.
 
 ## Testing Expectations
 

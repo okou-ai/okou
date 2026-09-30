@@ -79,6 +79,7 @@ export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
 const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+  vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
   vncAppleVncPasswordSecurityVariantSchema,
@@ -150,6 +151,9 @@ export const vncConnectionMetadataSchema = z
     port: portSchema,
     credentialId: z.uuid(),
     credentialName: z.string(),
+    clientCertificateAuthentication: z
+      .enum(["client_certificate", "client_certificate_vnc_password"])
+      .optional(),
     security: vncCredentialSecuritySchema,
     generation: generationSchema,
     createdAt: z.string().datetime(),

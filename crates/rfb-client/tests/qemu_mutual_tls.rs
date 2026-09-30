@@ -4,7 +4,15 @@
 #![cfg(test)]
 #![cfg(unix)]
 
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Stdio, time::Duration};
+use std::{
+    fs, io,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    pin::Pin,
+    process::Stdio,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use base64::Engine;
 use rfb_client::{
@@ -13,7 +21,7 @@ use rfb_client::{
 };
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::{TcpListener, TcpStream, UnixStream},
     process::{Child, Command},
     time::{Instant, sleep, timeout},
@@ -239,9 +247,59 @@ async fn read_return(qmp: &mut UnixStream) {
     }
 }
 
+struct Fragmented(TcpStream);
+
+impl AsyncRead for Fragmented {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let mut bytes = [0; 17];
+        let mut part = ReadBuf::new(&mut bytes[..buf.remaining().min(17)]);
+        match Pin::new(&mut self.0).poll_read(cx, &mut part) {
+            Poll::Ready(Ok(())) => {
+                buf.put_slice(part.filled());
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncWrite for Fragmented {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, &buf[..buf.len().min(17)])
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
+    }
+}
+
 async fn connect_required(
     fixture: &Fixture,
     port: u16,
+    cert: CertificateDer<'static>,
+    key: Vec<u8>,
+    password: Option<&str>,
+    name: &str,
+    roots: TrustRoots,
+) -> Result<(), Error> {
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    connect_required_stream(fixture, stream, cert, key, password, name, roots).await
+}
+
+async fn connect_required_stream<S: AsyncRead + AsyncWrite + Unpin + 'static>(
+    fixture: &Fixture,
+    stream: S,
     cert: CertificateDer<'static>,
     key: Vec<u8>,
     password: Option<&str>,
@@ -254,7 +312,6 @@ async fn connect_required(
         ),
         None => ClientCertificateAuthentication::None,
     };
-    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut authenticated = authenticate_with_client_certificate(
         stream,
         name,
@@ -283,6 +340,45 @@ async fn connect_required(
     Ok(())
 }
 
+// Reach the selected VeNCrypt subtype, then send a deliberately malformed TLS
+// record. A server that closes or sends an alert cannot yield SecurityResult.
+async fn reject_malformed_tls(port: u16, subtype: u32) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let mut banner = [0; 12];
+    stream.read_exact(&mut banner).await.unwrap();
+    assert_eq!(&banner, b"RFB 003.008\n");
+    stream.write_all(&banner).await.unwrap();
+    assert_eq!(stream.read_u8().await.unwrap(), 1);
+    assert_eq!(stream.read_u8().await.unwrap(), 19);
+    stream.write_u8(19).await.unwrap();
+    assert_eq!(stream.read_u16().await.unwrap(), 2);
+    stream.write_u16(2).await.unwrap();
+    assert_eq!(stream.read_u8().await.unwrap(), 0);
+    let count = stream.read_u8().await.unwrap();
+    assert!(count > 0 && count < 16);
+    let mut offered = false;
+    for _ in 0..count {
+        offered |= stream.read_u32().await.unwrap() == subtype;
+    }
+    assert!(offered);
+    stream.write_u32(subtype).await.unwrap();
+    assert_eq!(stream.read_u8().await.unwrap(), 1);
+    stream
+        .write_all(&[0x16, 0x03, 0x03, 0, 1, 0xff])
+        .await
+        .unwrap();
+    stream.shutdown().await.unwrap();
+    let mut reply = [0; 8];
+    let length = timeout(Duration::from_secs(4), stream.read(&mut reply))
+        .await
+        .unwrap()
+        .unwrap_or(0);
+    assert!(
+        length == 0 || reply[0] == 0x15,
+        "malformed TLS received a non-alert response"
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires exact QEMU 8.2.2 executable; see tests/QEMU_MTLS.md"]
 async fn qemu_vnc_mutual_tls_acceptance_and_rejections() {
@@ -303,6 +399,22 @@ async fn qemu_vnc_mutual_tls_acceptance_and_rejections() {
         connect_required(
             &fixture,
             server.port,
+            fixture.client.clone(),
+            fixture.key.clone(),
+            expected,
+            NAME,
+            fixture.roots(),
+        )
+        .await
+        .unwrap();
+        let fragmented = Fragmented(
+            TcpStream::connect(("127.0.0.1", server.port))
+                .await
+                .unwrap(),
+        );
+        connect_required_stream(
+            &fixture,
+            fragmented,
             fixture.client.clone(),
             fixture.key.clone(),
             expected,
@@ -377,6 +489,7 @@ async fn qemu_vnc_mutual_tls_acceptance_and_rejections() {
             .await
             .is_err()
         );
+        reject_malformed_tls(server.port, if password { 261 } else { 260 }).await;
         if password {
             assert!(
                 connect_required(
@@ -394,33 +507,31 @@ async fn qemu_vnc_mutual_tls_acceptance_and_rejections() {
         }
         drop(server);
     }
-    let server = start_server(fixture.dir.path(), false, false).await;
-    let off_result = connect_required(
-        &fixture,
-        server.port,
-        fixture.client.clone(),
-        fixture.key.clone(),
-        None,
-        NAME,
-        fixture.roots(),
-    )
-    .await;
-    assert!(
-        off_result.is_ok(),
-        "QEMU verify-peer=off result: {off_result:?}"
-    );
-    let wrong_ca_off = connect_required(
-        &fixture,
-        server.port,
-        fixture.wrong_ca_client.clone(),
-        fixture.wrong_ca_key.clone(),
-        None,
-        NAME,
-        fixture.roots(),
-    )
-    .await;
-    assert!(
-        wrong_ca_off.is_ok(),
-        "QEMU verify-peer=off with wrong CA: {wrong_ca_off:?}"
-    );
+    for password in [false, true] {
+        let server = start_server(fixture.dir.path(), false, password).await;
+        let expected = if password { Some(PASSWORD) } else { None };
+        for (cert, key) in [
+            (fixture.client.clone(), fixture.key.clone()),
+            (
+                fixture.wrong_ca_client.clone(),
+                fixture.wrong_ca_key.clone(),
+            ),
+        ] {
+            let off_result = connect_required(
+                &fixture,
+                server.port,
+                cert,
+                key,
+                expected,
+                NAME,
+                fixture.roots(),
+            )
+            .await;
+            assert!(
+                off_result.is_ok(),
+                "QEMU verify-peer=off admitted no stream: {off_result:?}"
+            );
+        }
+        drop(server);
+    }
 }

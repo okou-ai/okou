@@ -18,6 +18,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
+import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
@@ -239,6 +240,161 @@ describe("private Runner VNC authority", () => {
     });
     expect(kms.decryptCalls).toBe(0);
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
+  });
+
+  it.each([
+    ["client_certificate", "x509_none", false],
+    ["client_certificate_vnc_password", "x509_vnc", true],
+  ] as const)(
+    "requires exact %s capability before KMS and hands identity only to the Runner",
+    async (method, securityType, passwordRequired) => {
+      const f = await api.fixture();
+      const host = await accept(
+        api.connections().create({
+          headers: vncSessionHeaders,
+          body: {
+            id: randomUUID(),
+            displayName: "mTLS QEMU desktop",
+            host: "qemu.example.com",
+            security: { type: securityType, trust: { mode: "system" } },
+            credential: {
+              create: {
+                name: "mTLS client identity",
+                authentication: passwordRequired
+                  ? {
+                      method: "client_certificate_vnc_password",
+                      certificateChain,
+                      privateKey,
+                      password: " secret ",
+                    }
+                  : {
+                      method: "client_certificate",
+                      certificateChain,
+                      privateKey,
+                    },
+              },
+            },
+          },
+        }),
+        [201],
+      );
+      await api.enableDefault(f, "vnc", host.body.id);
+      const selected = { ...f, connectionId: host.body.id };
+      const kms = useSecretKmsProbe();
+      await expect(
+        api.resolve(selected, { supportedProfiles: [...vncProfiles] }),
+      ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+      expect(kms.decryptCalls).toBe(0);
+      const resolved = await api.resolve(selected, {
+        supportedProfiles: [
+          {
+            authMethod: method,
+            securityType,
+            transportType: "direct",
+          },
+        ],
+      });
+      expect(resolved).toMatchObject({
+        outcome: "resolved_transport",
+        authentication: {
+          method,
+          certificateChainDer: [expect.any(String)],
+          privateKeyPkcs8Der: expect.any(String),
+          ...(passwordRequired ? { password: " secret " } : {}),
+        },
+        security: { type: securityType },
+      });
+      expect(kms.decryptCalls).toBe(passwordRequired ? 2 : 1);
+      const listed = await accept(
+        api.connections().list({ headers: vncSessionHeaders }),
+        [200],
+      );
+      expect(JSON.stringify(listed.body)).not.toContain(privateKey);
+      expect(JSON.stringify(listed.body)).not.toContain("privateKeyPkcs8Der");
+      expect((await check(selected, 1)).body).toStrictEqual({
+        outcome: "valid",
+      });
+    },
+  );
+
+  it("requires independent SSH access and the exact certificate/SSH tuple before decrypting a client key", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const created = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Tunnelled QEMU",
+          host: "127.0.0.1",
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "Tunnelled identity",
+              authentication: {
+                method: "client_certificate",
+                certificateChain,
+                privateKey,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    await api.enableDefault(f, "vnc", created.body.id);
+    const selected = { ...f, connectionId: created.body.id };
+    const kms = useSecretKmsProbe();
+    const profile = {
+      authMethod: "client_certificate" as const,
+      securityType: "x509_none" as const,
+      transportType: "ssh" as const,
+    };
+    await expect(
+      api.resolve(selected, { supportedProfiles: [profile] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(selected, {
+        supportedProfiles: [{ ...profile, transportType: "direct" }],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(
+      api.resolve(selected, { supportedProfiles: [profile] }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      authentication: {
+        method: "client_certificate",
+        privateKeyPkcs8Der: expect.any(String),
+      },
+      transport: { type: "ssh", connectionId: ssh.body.id },
+    });
+    expect(kms.decryptCalls).toBe(1);
   });
 
   it("requires the SSH-specific X509None capability and independent SSH authority", async () => {

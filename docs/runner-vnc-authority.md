@@ -47,7 +47,7 @@ trust assumption; the shared credential itself does not identify a machine.
 Every call joins the current same-owner Run/session/visible Agent/VNC
 connection and checks current chat-thread host access. Credential-backed rows
 must also resolve their same-owner saved VNC credential; an explicitly selected
-X509None row instead has no VNC credential to join or decrypt. SSH rows
+certificate-free `none` / `x509_none` row instead has no VNC credential to join or decrypt. The new `client_certificate` / `x509_none` pair has a credential and is never treated as credentialless. SSH rows
 additionally require effective access to the same-owner referenced SSH connection. Requests contain
 saved IDs, not endpoint or owner overrides.
 Private handlers set `Cache-Control: no-store` before authentication and body
@@ -57,8 +57,8 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
-X509None (`none` / `x509_none`), X509Vnc and X509Plain pairs separately
-for `direct` and `ssh`, plus the distinct
+certificate-free X509None (`none` / `x509_none`), X509Vnc and X509Plain pairs separately
+for `direct` and `ssh`, plus new exact `client_certificate` / `x509_none` and `client_certificate_vnc_password` / `x509_vnc` pairs for both routes, plus the distinct
 Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
 Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. Every advertised tuple
 names its `transportType`. An empty list or a saved tuple absent from the list
@@ -99,8 +99,8 @@ variant containing host, port, server name, typed authentication/security, VNC
 generation and explicit transport snapshot. The separate variant keeps the old
 sensitive decoder shape unchanged and makes omission unambiguous. VNC generation
 changes on credential rotation, rebinding or connection edits.
-Credential-backed profiles decrypt through KMS outside locks. X509None skips
-VNC credential lookup and KMS entirely. Both paths repeat current-authority
+Credential-backed profiles decrypt through KMS outside locks. Only certificate-free X509None skips
+VNC credential lookup and KMS entirely. The certificate-only pair decrypts one encrypted identity; the certificate-plus-password pair decrypts an identity and a separate password. Neither secret is exposed in owner or Agent metadata. Both paths repeat current-authority
 checks before handoff; a committed generation change discards the stale snapshot.
 
 `check` takes `connectionId`, `runnerIdentity`, `expectedGeneration` and, for a
@@ -121,12 +121,14 @@ transport; the current checks and #34780 runtime responsibilities below still ap
 
 For credential-backed profiles, generated Rust resolve DTOs use a zeroizing,
 UTF-8 byte-bounded `SecretUtf8Text<1023>` and deliberately omit Debug, Clone
-and Serialize. X509None has no secret-bearing authentication field. The runtime
+and Serialize. Certificate-free X509None has no secret-bearing authentication field. The certificate-required variants use `SecretUtf8Text<24576>` for the bounded base64 PKCS#8 key, decode into a zeroizing buffer and pass a validated, non-clonable `ClientIdentity` into the separate RFB engine. The signer may live with the TLS stream until session teardown. The runtime
 then constructs the selected engine authentication type: classic VNC
 enforces 1–8 printable ASCII bytes, while Plain enforces its username and
 password bounds without trimming spaces. Raw responses, decode/provider errors,
 secrets and server-controlled text must never become guest output, logs or
 observations.
+
+For certificate-bearing rows, the API admits only the exact advertised pair before decrypting either KMS envelope; the Runner rejects mismatched security/authentication and malformed DER/key before opening a socket. A certificate request and selection prove only what this client sent, not that QEMU enforces `verify-peer=on`. Require independent server policy and wrong-client rejection evidence, plus a separate real Agent session/capture before any production activation. The SSH host-key boundary does not attest VNC server client-auth policy. Keep `VncAccess` default-off.
 
 ## Native sharing choice
 

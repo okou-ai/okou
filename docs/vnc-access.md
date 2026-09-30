@@ -7,7 +7,7 @@ private Runner authority are described in
 [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509None,
 X509Vnc, X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct
-SRP and Apple RSA/SRP profiles. X509None requires an explicit owner selection:
+SRP and Apple RSA/SRP profiles. **Certificate-free** X509None requires an explicit owner selection:
 its TLS certificate verifies the **server** and encrypts the stream, but it
 provides **no VNC client authentication**. Any other client with access to the
 VNC listener may control the desktop. An SSH route authenticates the selected
@@ -25,7 +25,7 @@ The feature remains unavailable until a separate activation decision.
 | Older X509Vnc-only Runner          | `unsupported_profile` before KMS             | Supported                                    | `unsupported_profile` before KMS              | Fail closed; no downgrade              |
 | Production switch                  | Disabled                                     | Disabled                                     | Disabled                                      | Separate activation decision           |
 
-X509None is also an exact `none` / `x509_none` pair for direct and saved-SSH
+Certificate-free X509None is also an exact `none` / `x509_none` pair for direct and saved-SSH
 routes. The RFB engine has TigerVNC fixture coverage. Owner/API/Runner support
 requires an upgraded Runner that advertises the exact pair and a migration
 allowing a null credential only for X509None; an older Runner rejects it without
@@ -34,6 +34,14 @@ downgrading. This is not evidence of a production Agent/server acceptance run.
 Acceptance must name the exact server and Runner versions and distinguish
 engine-only evidence, controlled Runner integration and a real Agent session.
 Neither the matrix nor a merged implementation turns on the feature.
+
+## QEMU client certificate profiles (not production-activated)
+
+Two new owner-selected saved profiles use the same VeNCrypt wire subtypes but **new exact authentication pairs**: `client_certificate` / `x509_none` has no inner RFB password, and `client_certificate_vnc_password` / `x509_vnc` requires a 1–8 printable-ASCII-byte classic password. They do not change existing `none` / `x509_none` or `vnc_password` / `x509_vnc` records. Both verify the server certificate and saved DNS/IP identity with system or explicitly selected custom CA. Direct and saved-SSH routes retain their separate destination/authority checks. The Agent sees only the non-secret profile label and host metadata; only the winning authorized Runner receives a decrypted key through a private, no-store resolve response. A new Runner passes the identity to the separate certificate-required RFB engine; old Runners reject the exact new tuple **before KMS**. No downgrade to a certificate-free tuple is possible.
+
+Owner input accepts 1–8 PEM X.509 client certificates (at most 64 KiB total DER) and one matching unencrypted PKCS#8 PEM private key (at most 16 KiB DER). Encrypted private keys and passphrases are unsupported and rejected. The API checks structure, public-key match and leaf validity at save; the server ultimately decides certificate-chain acceptance and validity during a session. KMS envelope encryption holds the normalized chain/key as one private field; the inner VNC password, if present, uses its own KMS envelope. Metadata never contains either, and the UI never reloads a key. Replacing authentication rotates the whole identity and optional password, increments the credential revision and every referencing connection generation, invalidating active authority on recheck. Deleting an unused credential removes its ciphertext; backend and Runner retain in-memory plaintext only transiently for a resolve/handshake, while TLS may retain a signing key until session teardown. JavaScript runtime copies are not guaranteed to be zeroized immediately. Key backup, rotation and revocation are the owner's responsibility; the client does not claim CRL/OCSP coverage or automatic renewal.
+
+**Server-side policy is separate:** QEMU must be configured with a client CA and `verify-peer=on`, with network ingress restricted to intended peers. A TLS CertificateRequest and even a successful client-certificate handshake do not prove this setting; QEMU 8.2.2 with `verify-peer=off` still requests a client certificate and accepts a wrong-CA identity. Require independent server configuration and wrong-client rejection evidence before any production activation. Loopback engine tests and CI are not real owner→Agent→Runner→QEMU acceptance. `VncAccess` remains disabled by default; no production QEMU or OpenSSH change is implied.
 
 Optional Mac classic VNC password adds the **separate** `vnc_password` /
 `apple_vnc_password` pair for bare RFB security type 2. It reuses the 1–8
@@ -126,6 +134,8 @@ canonicalized DNS name or IP identity for certificate verification. Omitting it
 means use the saved VNC host; it never replaces the socket destination. Apple
 security variants do not accept `serverName` or an X.509 trust policy.
 The exact stored pairs are `none` / `x509_none` (without a credential),
+`client_certificate` / `x509_none` (with an encrypted identity credential),
+`client_certificate_vnc_password` / `x509_vnc` (with an encrypted identity and password),
 `vnc_password` / `x509_vnc`, `vnc_password` / `apple_vnc_password`,
 `username_password` / `x509_plain`, `apple_dh_username_password` / `apple_dh`,
 `apple_srp_username_password` / `apple_srp`, and
@@ -150,9 +160,9 @@ Runners omit transport, which means direct-only; an authorized SSH row returns
 public TCP.
 
 Connection creation accepts `credential: { type: "none" }` only with
-`security: { type: "x509_none", trust, ... }`; other profiles require either
+`security: { type: "x509_none", trust, ... }`; certificate-bearing X509None instead requires a separate certificate credential. All other profiles require either
 `credential: { id }` or `credential: { create: { name, authentication } }`.
-X509None metadata contains `{ credential: { type: "none" } }` rather than
+Certificate-free X509None metadata contains `{ credential: { type: "none" } }` rather than
 `credentialId` or `credentialName`. Inline credential and host creation commit
 atomically. Each saved connection has its own UUID; multiple connections can
 share the same canonical host and port, including the same credential. This permits independent login and security configurations, matching
@@ -197,7 +207,7 @@ the draft endpoint, security, credential and SSH selection instead of rewriting
 them.
 
 Select a saved VNC credential or create one for password-backed profiles.
-X509None has no VNC credential; the owner must explicitly select it, and the
+Certificate-free X509None has no VNC credential; the owner must explicitly select it, and the
 settings UI displays the no-client-authentication warning both while editing
 and on the saved connection. It retains certificate verification (system or
 custom CA), does not allow a certificate bypass, and is never an implicit

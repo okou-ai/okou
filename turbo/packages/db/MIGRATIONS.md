@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-model-catalog-seed.ts` protects migration
-  `1297_global_model_catalog`: the seeded catalog and routes must match the
+  `1298_global_model_catalog`: the seeded catalog and routes must match the
   code model lists, route candidates, run options and
   `subscription_model_catalog` they duplicate. Delete it when those code lists
   and `subscription_model_catalog` are removed (see
@@ -122,7 +122,7 @@ are enforced by the integration ingress tests.
   `scripts/test-model-catalog-permanent.ts`.
 
 - `scripts/test-model-catalog-stored-selections.ts` protects migration
-  `1298_model_catalog_stored_selections`: retired selections move along the
+  `1299_model_catalog_stored_selections`: retired selections move along the
   replacement chain, duplicate policies merge, cross-provider policies are
   dropped rather than transplanted, efforts convert, history rows stay and a
   second run is a no-op. Delete it together with the seed validator.
@@ -232,12 +232,12 @@ the complete migration consistency command remain active.
 
 ## Model catalog rollout compatibility
 
-Migrations 1296 to 1298 (#37416) keep the columns and tables that API versions
+Migrations 1297 to 1299 (#37416) keep the columns and tables that API versions
 from before the global model catalog still read:
 
-- `org_model_policies.is_default` stays with its existing values. 1296 copies
+- `org_model_policies.is_default` stays with its existing values. 1297 copies
   no per-organization default; the API projects the system default from
-  `run_model_catalog.is_system_default`. 1298 only moves the flag to a
+  `run_model_catalog.is_system_default`. 1299 only moves the flag to a
   surviving replacement policy when it merges a retired one. Drop the column
   once no deployed API version reads or writes it.
 - `subscription_model_catalog` stays until no deployed API version reads it;
@@ -255,7 +255,7 @@ and `replaced_by_lineage_rank` on X in the same statement. To retire the
 system default, move `is_system_default` to an active model with an enabled
 Built-in route first, in the same transaction.
 
-Unrecognized catalog rows: 1297 no longer deletes rows outside the seed.
+Unrecognized catalog rows: 1298 no longer deletes rows outside the seed.
 Production may hold `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`
 (seeded by 1191 and 1194; MaskDB does not expose `run_model_catalog`, so their
 presence is unverified; MaskDB shows zero references to them in
@@ -285,7 +285,7 @@ separating them from real models. Options for the owner (Ethan), per row:
 
 No option is applied here; their data is unchanged until the owner decides.
 
-1298 rewrites chat thread selections (`chat_threads.selected_model` and
+1299 rewrites chat thread selections (`chat_threads.selected_model` and
 `model_settings`) and appends one `model_selection_updated` event per
 re-pinned thread with an agent, reserving one contiguous `seq_id` range per
 `(user_id, org_id)` stream as 1213 did. The event carries a
@@ -303,11 +303,11 @@ written, so re-running appends nothing. As of MaskDB on 2026-09-30 no chat
 thread, organization policy, member preference, agent or model provider
 references any retired or unrecognized catalog model (`claude-fable-5`,
 `claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`, `gpt-5.5`,
-`gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1298 rewrites zero
+`gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1299 rewrites zero
 production rows. See the performance evidence below for why it needs no
 batching.
 
-### Migration 1298 performance evidence
+### Migration 1299 performance evidence
 
 Production row counts (MaskDB `vm0-prod-ro`, read-only, 2026-09-30; exact
 counts by `limit 1` + `offset` bisection, which is equivalent to full
@@ -329,10 +329,10 @@ the table sizes above; none of them touches history tables. Statement 14
 
 Experiment: throwaway PostgreSQL 18 (`timezone=UTC`, default `work_mem`,
 `fsync=off`), all migrations applied, synthetic rows at production scale
-(1x) and 5x, then the 1298 body re-run statement by statement under
+(1x) and 5x, then the 1299 body re-run statement by statement under
 `EXPLAIN (ANALYZE, BUFFERS)` with `statement_timeout = 10s` inside a rolled
 back transaction. Retired-model share: 0% (production), 1% and 10%.
-Statement numbers count the 1298 statements before the `ANALYZE` below was
+Statement numbers count the 1299 statements before the `ANALYZE` below was
 added: 14 builds `model_selection_rewrite_threads`, 15 updates `chat_threads`
 and 16 appends the `model_selection_updated` events.
 
@@ -348,7 +348,7 @@ and 16 appends the `model_selection_updated` events.
 No statement came near the 10 s timeout. The one plan defect: temp tables
 have no statistics, so without an `ANALYZE` the planner sorted every chat
 thread (external merge sort) before joining the few-row rewrite map, which
-grows faster than linearly with `chat_threads`. 1298 therefore analyzes
+grows faster than linearly with `chat_threads`. 1299 therefore analyzes
 `model_selection_rewrite` right after creating its primary key; statement 14
 then filters during the scan (5x: 2,029 ms to 310 ms). Batching is not needed:
 production has zero matching rows, and even 5x production volume with 1%
@@ -360,12 +360,12 @@ production row counts and zero retired references at the time of the MaskDB
 read. Not verified: production hardware, cache state, `work_mem`, bloat and
 concurrent load; the exact production distribution of thread effort settings
 and provider pins; rows that start selecting a retired model between the
-MaskDB read and the deploy (1298 re-checks at run time, and the numbers above
+MaskDB read and the deploy (1299 re-checks at run time, and the numbers above
 cover up to 10% of rows).
 
 `org_plan_entitlements.restricted_built_in_models` is a boolean flag that turns
 on the code's limited-free restricted-model rule; it stores no model IDs, so
-1298 has nothing to rewrite there.
+1299 has nothing to rewrite there.
 
 ## Migration patterns
 

@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.700.5](https://github.com/okou-ai/okou/compare/api-v1.700.4...api-v1.700.5) (2026-09-30)
+
+
+### Bug Fixes
+
+* **api:** gate raw agent event traces behind debug ([#37432](https://github.com/okou-ai/okou/issues/37432)) ([0a58653](https://github.com/okou-ai/okou/commit/0a5865399b77e2606efb215c7af502804c61007e))
+* **api:** reuse published storage versions and persist cleanup ([#37415](https://github.com/okou-ai/okou/issues/37415)) ([684b963](https://github.com/okou-ai/okou/commit/684b9633f79ed986d5c844c504820f2b4a82a6a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.4
+    * @okouai/core bumped to 8.724.4
+    * @okouai/db bumped to 1.315.5
+    * @okouai/pi-agent-runtime bumped to 1.44.5
+
 ## [1.700.4](https://github.com/okou-ai/okou/compare/api-v1.700.3...api-v1.700.4) (2026-09-30)
 
 

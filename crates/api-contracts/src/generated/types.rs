@@ -1943,6 +1943,12 @@ pub mod runners {
             /// Apple RSA/SRP username/password authentication with a 234-byte username bound.
             #[serde(rename = "apple_rsa_srp_username_password")]
             AppleRsaSrpUsernamePassword,
+            /// Required TLS client certificate with X509None.
+            #[serde(rename = "client_certificate")]
+            ClientCertificate,
+            /// Required TLS client certificate and classic VNC password.
+            #[serde(rename = "client_certificate_vnc_password")]
+            ClientCertificateVncPassword,
         }
 
         /// Security profile advertised by this Runner.
@@ -2138,6 +2144,22 @@ pub mod runners {
             },
             /// No inner client authentication or secret.
             None,
+            /// Required client identity; no inner RFB credential.
+            ClientCertificate {
+                /// Bounded base64-encoded DER client certificate chain.
+                certificate_chain_der: Vec<String>,
+                /// Base64-encoded unencrypted PKCS#8 key, private and zeroizing.
+                private_key_pkcs8_der: crate::SecretUtf8Text<24576>,
+            },
+            /// Required client identity and classic VNC password.
+            ClientCertificateVncPassword {
+                /// Bounded base64-encoded DER client certificate chain.
+                certificate_chain_der: Vec<String>,
+                /// Base64-encoded unencrypted PKCS#8 key, private and zeroizing.
+                private_key_pkcs8_der: crate::SecretUtf8Text<24576>,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportAuthentication {
@@ -2157,6 +2179,10 @@ pub mod runners {
                     AppleRsaSrpUsernamePassword,
                     #[serde(rename = "none")]
                     None,
+                    #[serde(rename = "client_certificate")]
+                    ClientCertificate,
+                    #[serde(rename = "client_certificate_vnc_password")]
+                    ClientCertificateVncPassword,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2167,6 +2193,10 @@ pub mod runners {
                     Password,
                     #[serde(rename = "username")]
                     Username,
+                    #[serde(rename = "certificateChainDer")]
+                    CertificateChainDer,
+                    #[serde(rename = "privateKeyPkcs8Der")]
+                    PrivateKeyPkcs8Der,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2184,6 +2214,8 @@ pub mod runners {
                         let mut outcome = None::<Kind>;
                         let mut password = None::<crate::SecretUtf8Text<1023>>;
                         let mut username = None::<String>;
+                        let mut certificate_chain_der = None::<Vec<String>>;
+                        let mut private_key_pkcs8_der = None::<crate::SecretUtf8Text<24576>>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2210,15 +2242,33 @@ pub mod runners {
                                     }
                                     username = Some(map.next_value()?);
                                 }
+                                Field::CertificateChainDer => {
+                                    if certificate_chain_der.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    certificate_chain_der = Some(map.next_value()?);
+                                }
+                                Field::PrivateKeyPkcs8Der => {
+                                    if private_key_pkcs8_der.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    private_key_pkcs8_der = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, password, username) {
-                            (Some(Kind::VncPassword), Some(password), None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
-                            (Some(Kind::UsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
-                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
-                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
-                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
-                            (Some(Kind::None), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
+                        match (outcome, password, username, certificate_chain_der, private_key_pkcs8_der) {
+                            (Some(Kind::VncPassword), Some(password), None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
+                            (Some(Kind::UsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
+                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
+                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
+                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::None), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
+                            (Some(Kind::ClientCertificate), None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
+                            (Some(Kind::ClientCertificateVncPassword), Some(password), None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword { certificate_chain_der, private_key_pkcs8_der, password }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }

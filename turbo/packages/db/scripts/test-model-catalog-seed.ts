@@ -15,7 +15,7 @@ interface CatalogRow {
 }
 
 /**
- * Free-plan Built-in entitlement seeded by migration 1299: free plans
+ * Free-plan Built-in entitlement seeded by migration 1300: free plans
  * (`org_plan_entitlements.restricted_built_in_models`) run only okou-1.0 on
  * Built-in routes; these catalog flags, not code, decide the models.
  */

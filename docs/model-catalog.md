@@ -248,7 +248,7 @@ none has been specified yet, so none is seeded or guessed:
 These rows were seeded by earlier migrations (1191 and 1194) and their code
 support was removed by #37363 and #37368. Until a target is decided they
 remain `replaced_by = NULL` with no `model_routes` and
-`allow_new_org_policy = false` (migration 1297 labels them with their own ID
+`allow_new_org_policy = false` (migration 1298 labels them with their own ID
 and sorts them after every recognized model). `GET /api/model-catalog`
 therefore lists them with `replacedBy` null, and the API never offers or
 accepts them for a policy or run because they have no route and no runtime
@@ -297,7 +297,7 @@ Upstream model IDs on BYOK and subscription routes come from the route's
 `upstream_model` in the API (`catalogProviderUpstreamModel`); the API no
 longer calls `getProviderRuntimeModel`.
 
-Pi eligibility is catalog data too: migration `1300_model_catalog_pi_route_class`
+Pi eligibility is catalog data too: migration `1301_model_catalog_pi_route_class`
 adds `run_model_catalog.pi_route_class` (`claude-native`, `gpt-codex`,
 `deepseek`; NULL means not Pi-eligible) and `@okouai/core` `pi-execution.ts`
 reads it from the catalog row. This work is in progress in the same PR; see
@@ -392,7 +392,7 @@ in `@okouai/core`.
 
 ## Stored-configuration migration
 
-Migration `1298_model_catalog_stored_selections` rewrites mutable stored
+Migration `1299_model_catalog_stored_selections` rewrites mutable stored
 selections of retired models to the final active model of their chain. It is
 re-runnable (it only selects rows that still reference a retired model) and
 takes the per-organization policy advisory locks in `org_id` order.
@@ -427,20 +427,20 @@ policy, member preference, agent or model provider references any of
 therefore rewrites zero production rows. The single-transaction thread scan
 needs no batching: measured on synthetic data at production and 5x scale it
 finishes in 0.2 s and 1.3 s (see `turbo/packages/db/MIGRATIONS.md`,
-"Migration 1298 performance evidence").
+"Migration 1299 performance evidence").
 
 ## Plan restriction (free plans)
 
 `org_plan_entitlements.restricted_built_in_models` marks a free plan. It is
 true for every free plan key: `limited-free-1` and legacy `free` (migration
-1299 backfills legacy Free rows, and `ORG_PLAN_ENTITLEMENT_TIER_VALUES.free`
+1300 backfills legacy Free rows, and `ORG_PLAN_ENTITLEMENT_TIER_VALUES.free`
 writes it for new ones). Paid plans (`pro`, `team`, `custom`) keep it false
 and their model access is unchanged.
 
 A free organization may run a model only on:
 
 1. **Built-in**, when the catalog row has `built_in_on_restricted_plans`
-   (default false; migration `1299_model_catalog_restricted_plans` seeds it
+   (default false; migration `1300_model_catalog_restricted_plans` seeds it
    true only for `okou-1.0`). Every other model, and every model added later,
    is paid-only on Built-in until an operator flips the row; no code list
    exists.

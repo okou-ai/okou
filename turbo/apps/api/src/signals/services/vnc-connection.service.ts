@@ -30,6 +30,7 @@ import {
   findVncCredential,
   prepareVncCredentialSelection,
   selectVncCredential,
+  validVncClientAuthentication,
 } from "./vnc-credential.service";
 import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
 
@@ -121,7 +122,7 @@ function response(
   ) {
     throw new Error("VNC connection has an invalid stored transport");
   }
-  const credentialless = row.securityType === "x509_none";
+  const credentialless = row.authMethod === "none";
   if (credentialless !== (row.credentialId === null && credential === null)) {
     throw new Error(
       "VNC connection has an invalid stored credential reference",
@@ -142,7 +143,14 @@ function response(
     port: row.port,
     ...(credentialless
       ? { credential: { type: "none" } }
-      : { credentialId: row.credentialId, credentialName: credential?.name }),
+      : {
+          credentialId: row.credentialId,
+          credentialName: credential?.name,
+          ...(row.authMethod === "client_certificate" ||
+          row.authMethod === "client_certificate_vnc_password"
+            ? { clientCertificateAuthentication: row.authMethod }
+            : {}),
+        }),
     security: responseSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
@@ -248,7 +256,7 @@ async function selectUpdateVncCredential(args: {
       ? null
       : await findVncCredential(args.tx, args.owner, args.currentCredentialId));
   if (!credential) {
-    throw new Error("VNC connection credential is missing");
+    return vncFailure("profileMismatch");
   }
   return isVncProfileCompatible(credential.authMethod, args.securityType)
     ? { ok: true, value: credential }
@@ -259,8 +267,8 @@ function validCreateCredentialProfile(
   credential: CreateVncConnectionRequest["credential"],
   securityType: Metadata["securityType"],
 ): boolean {
-  if ((securityType === "x509_none") !== "type" in credential) {
-    return false;
+  if ("type" in credential) {
+    return securityType === "x509_none";
   }
   return (
     !("create" in credential) ||
@@ -275,11 +283,35 @@ function validSelectedCredentialProfile(
   credential: CredentialMetadata | null,
   securityType: Metadata["securityType"],
 ): boolean {
+  return credential === null
+    ? securityType === "x509_none"
+    : isVncProfileCompatible(credential.authMethod, securityType);
+}
+
+function validInlineVncIdentity(
+  credential: CreateVncConnectionRequest["credential"],
+): boolean {
   return (
-    (credential === null) === (securityType === "x509_none") &&
-    (credential === null ||
-      isVncProfileCompatible(credential.authMethod, securityType))
+    !("create" in credential) ||
+    validVncClientAuthentication(credential.create.authentication)
   );
+}
+
+async function preflightVncConnectionCreation(args: {
+  readonly db: Db;
+  readonly owner: VncOwner;
+  readonly id: string;
+}): Promise<VncResult<undefined> | null> {
+  const inspected = await inspectVncCreationId(
+    args.db,
+    args.owner,
+    vncConnections,
+    args.id,
+  );
+  if (!inspected.ok) {
+    return inspected;
+  }
+  return inspected.value ? null : { ok: true, value: undefined };
 }
 
 export async function createVncConnection(args: {
@@ -288,17 +320,13 @@ export async function createVncConnection(args: {
   readonly body: CreateVncConnectionRequest;
   readonly featureContext: FeatureSwitchContext;
 }): Promise<VncResult<VncConnectionResponse | undefined>> {
-  const preflight = await inspectVncCreationId(
-    args.db,
-    args.owner,
-    vncConnections,
-    args.body.id,
-  );
-  if (!preflight.ok) {
+  const preflight = await preflightVncConnectionCreation({
+    db: args.db,
+    owner: args.owner,
+    id: args.body.id,
+  });
+  if (preflight !== null) {
     return preflight;
-  }
-  if (!preflight.value) {
-    return { ok: true, value: undefined };
   }
   const host = canonicalizeVncHost(args.body.host);
   if (!host.ok) {
@@ -327,6 +355,9 @@ export async function createVncConnection(args: {
     )
   ) {
     return vncFailure("profileMismatch");
+  }
+  if (!validInlineVncIdentity(args.body.credential)) {
+    return vncFailure("invalidClientIdentity");
   }
   const preparedCredential =
     "type" in args.body.credential
@@ -420,17 +451,21 @@ async function selectUpdatedProfileCredential(args: {
   readonly currentCredentialId: string | null;
   readonly securityType: Metadata["securityType"];
 }): Promise<VncResult<CredentialMetadata | null>> {
-  const credentialless = args.securityType === "x509_none";
   if (
-    (args.requestedCredential !== undefined &&
-      credentialless !== "type" in args.requestedCredential) ||
-    (credentialless !== (args.currentCredentialId === null) &&
-      args.requestedCredential === undefined)
+    args.requestedCredential !== undefined &&
+    "type" in args.requestedCredential
   ) {
-    return vncFailure("profileMismatch");
+    return args.securityType === "x509_none"
+      ? { ok: true, value: null }
+      : vncFailure("profileMismatch");
   }
-  if (credentialless) {
-    return { ok: true, value: null };
+  if (
+    args.currentCredentialId === null &&
+    args.requestedCredential === undefined
+  ) {
+    return args.securityType === "x509_none"
+      ? { ok: true, value: null }
+      : vncFailure("profileMismatch");
   }
   return await selectUpdateVncCredential({
     tx: args.tx,
@@ -483,6 +518,13 @@ export async function updateVncConnection(args: {
   }
   if (initial.generation !== args.body.expectedGeneration) {
     return vncFailure("generationConflict");
+  }
+  if (
+    args.body.credential &&
+    "create" in args.body.credential &&
+    !validVncClientAuthentication(args.body.credential.create.authentication)
+  ) {
+    return vncFailure("invalidClientIdentity");
   }
   const preparedCredential =
     args.body.credential === undefined || "type" in args.body.credential

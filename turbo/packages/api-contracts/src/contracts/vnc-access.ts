@@ -23,7 +23,19 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
   })
   .extend({ availability: sshHostAvailabilitySchema });
 
-export const vncHostSchema = z.discriminatedUnion("securityType", [
+export const vncHostSchema = z.union([
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("client_certificate"),
+      securityType: z.literal("x509_none"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("client_certificate_vnc_password"),
+      securityType: z.literal("x509_vnc"),
+    })
+    .strict(),
   vncHostBaseSchema
     .extend({
       authMethod: z.literal("none"),

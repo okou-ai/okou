@@ -90,6 +90,7 @@ try {
     "1229_peaceful_mathemanic.sql",
     "1253_unique_zarek.sql",
     "1289_thick_bruce_banner.sql",
+    "1296_little_electro.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -320,6 +321,45 @@ try {
     "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
   );
 
+  // New certificate-bearing records are distinct from both existing certificate-free pairs.
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_password,encrypted_client_identity)
+      VALUES ('00000000-0000-4000-8000-000000000080','org','owner','Client cert','client_certificate',NULL,'kms-key'),
+             ('00000000-0000-4000-8000-000000000081','org','owner','Client cert and password','client_certificate_vnc_password','kms-password','kms-key');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000082','org','owner','Mutual TLS','mtls.example.com','00000000-0000-4000-8000-000000000080','client_certificate','x509_none','system'),
+             ('00000000-0000-4000-8000-000000000083','org','owner','Mutual TLS VNC','mtlsvnc.example.com','00000000-0000-4000-8000-000000000081','client_certificate_vnc_password','x509_vnc','system');
+  `);
+  for (const [assignment, constraint] of [
+    ["encrypted_client_identity=NULL", "chk_vnc_credentials_password"],
+    ["encrypted_password='unexpected'", "chk_vnc_credentials_password"],
+    ["username='unexpected'", "chk_vnc_credentials_auth"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000080'`,
+      { code: "23514", constraint },
+    );
+  }
+  for (const assignment of [
+    "security_type='x509_vnc'",
+    "auth_method='none'",
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000082'`,
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000081' WHERE id='00000000-0000-4000-8000-000000000082'",
+    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+  );
+  await client.query(
+    "DELETE FROM vnc_connections WHERE id IN ('00000000-0000-4000-8000-000000000082','00000000-0000-4000-8000-000000000083')",
+  );
+  await client.query(
+    "DELETE FROM vnc_credentials WHERE id IN ('00000000-0000-4000-8000-000000000080','00000000-0000-4000-8000-000000000081')",
+  );
+
   await rejects(
     "UPDATE vnc_credentials SET username='operator',auth_method='username_password' WHERE id='00000000-0000-4000-8000-000000000001'",
     { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
@@ -360,7 +400,7 @@ try {
   }
   await rejects(
     "UPDATE vnc_credentials SET encrypted_password=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: "23502" },
+    { code: "23514", constraint: "chk_vnc_credentials_password" },
   );
   await rejects(
     "UPDATE vnc_credentials SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
