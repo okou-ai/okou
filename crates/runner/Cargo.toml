@@ -50,8 +50,10 @@ runner-supervisor.workspace = true
 runner-types.workspace = true
 
 [build-dependencies]
+hex = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
 
 [dev-dependencies]
 runner-executor = { workspace = true, features = ["test-support"] }

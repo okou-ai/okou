@@ -79,6 +79,25 @@ runner_sha=$(jq -r '.runnerSha256' "$FRESH_METADATA_PATH")
 runner_size=$(jq -r '.runnerSizeBytes' "$FRESH_METADATA_PATH")
 guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
 
+# Read back the selected CLI package on both architectures, including cache
+# hits, before building a serving image. The legacy host artifact below stays
+# independent until the rootfs cutover slice.
+if [ -n "${EMBEDDED_CLI_PACKAGE_PATH:-}" ]; then
+  require_env EMBEDDED_CLI_SOURCE_SHA
+  if [[ "$EMBEDDED_CLI_PACKAGE_PATH" != /* ]]; then
+    EMBEDDED_CLI_PACKAGE_PATH="${REPO_ROOT}/${EMBEDDED_CLI_PACKAGE_PATH}"
+  fi
+  if [ ! -s "$EMBEDDED_CLI_PACKAGE_PATH" ]; then
+    echo "embedded CLI package is missing or empty: ${EMBEDDED_CLI_PACKAGE_PATH}" >&2
+    exit 1
+  fi
+  embedded_cli_package_sha=$(sha256sum "$EMBEDDED_CLI_PACKAGE_PATH" | awk '{print $1}')
+  embedded_cli_package_size=$(stat -c '%s' "$EMBEDDED_CLI_PACKAGE_PATH")
+elif [ "${RUNNER_CLI_REQUIRED:-false}" = "true" ]; then
+  echo "runner image requires a private embedded CLI package" >&2
+  exit 1
+fi
+
 # Optional versioned Okou CLI artifact (package.tgz + manifest.json) installed
 # into the rootfs by `runner build --okou-cli-artifact`. Without it the image
 # keeps the legacy commit-addressed `npx` launch path only.
@@ -279,6 +298,19 @@ trap - EXIT
 REMOTE_SCRIPT
   then
     return 1
+  fi
+
+  if [ -n "${EMBEDDED_CLI_PACKAGE_PATH:-}" ]; then
+    local embedded_identity
+    if ! embedded_identity=$(ssh "$remote" sudo "${BIN_DIR}/runner" embedded-cli-info) ||
+      ! jq -e --arg source "$EMBEDDED_CLI_SOURCE_SHA" \
+        --arg digest "$embedded_cli_package_sha" \
+        --argjson size "$embedded_cli_package_size" \
+        '.sourceSha == $source and .packageSha256 == $digest and .packageSizeBytes == $size' \
+        <<<"$embedded_identity" >/dev/null; then
+      echo "embedded CLI identity does not match the private build input on ${host}" >&2
+      return 1
+    fi
   fi
 
   if [ -n "${OKOU_CLI_ARTIFACT_DIR:-}" ]; then

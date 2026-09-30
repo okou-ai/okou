@@ -367,12 +367,41 @@ workflow_toolchain=$(awk '
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
 ' "${REPO_ROOT}/.github/workflows/runner-image.yml")
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
-[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "3" ] \
-  || fail "runner binary input schema must start generation 3"
+[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "4" ] \
+  || fail "runner binary input schema must start generation 4"
 [ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825' ] \
   || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
 expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20260825"
 [ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \
   || fail "hashed build contract must derive the same runtime toolchain owner"
+
+# A private CLI build input is a single tarball. Bind its bytes and the
+# checked-out source revision to both architecture-specific cache keys.
+cli_package="${TMPDIR}/cli-intermediate/package.tgz"
+mkdir -p "$(dirname "$cli_package")"
+printf 'fixture CLI package\n' > "$cli_package"
+if RUNNER_CLI_REQUIRED=true digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  fail "a serving build without CLI bytes must fail"
+fi
+embedded_arm_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+  digest_value "$repo" aarch64-unknown-linux-musl)
+embedded_x86_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+  digest_value "$repo" x86_64-unknown-linux-musl)
+[ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
+  || fail "architecture must remain part of the source-bound digest"
+stale_revision_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" \
+  digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
+[ "$stale_revision_digest" != "$embedded_arm_digest" ] \
+  || fail "source revision must remain part of the Runner cache digest"
+printf 'changed bytes\n' >> "$cli_package"
+changed_cli_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" \
+  digest_value "$repo" aarch64-unknown-linux-musl)
+[ "$changed_cli_digest" != "$embedded_arm_digest" ] \
+  || fail "CLI byte changes must invalidate the Runner cache digest"
+rm "$cli_package"
+if RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  fail "a missing CLI package must fail"
+fi
 
 echo "runner-binary-build-test: ok"

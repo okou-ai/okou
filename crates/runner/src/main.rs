@@ -129,6 +129,8 @@ enum Command {
     Setup,
     /// Build rootfs and snapshot into a unified image
     Build(cmd::BuildArgs),
+    /// Print the source-bound CLI identity carried inside this Runner binary
+    EmbeddedCliInfo,
     /// Generate runner.yaml from a pre-built image hash
     Config(cmd::ConfigArgs),
     /// Run a single bash command in a sandbox for benchmarking
@@ -302,6 +304,7 @@ async fn main() -> ExitCode {
                 .await
                 .map(|()| ExitCode::SUCCESS)
         }
+        Command::EmbeddedCliInfo => cmd::run_embedded_cli_info().map(|()| ExitCode::SUCCESS),
         Command::Config(args) => cmd::run_config(args).await.map(|()| ExitCode::SUCCESS),
         Command::Benchmark(args) => {
             cmd::run_benchmark(args, &sandbox_firecracker::FirecrackerRuntimeProvider).await
