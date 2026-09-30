@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.33...sandbox-firecracker-v0.44.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
 ## [0.43.33](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.32...sandbox-firecracker-v0.43.33) (2026-09-30)
 
 ## [0.43.32](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.31...sandbox-firecracker-v0.43.32) (2026-09-29)

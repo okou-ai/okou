@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.217.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.216.1...runner-rs-v0.217.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.216.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.216.0...runner-rs-v0.216.1) (2026-09-30)
 
 ### Release Dependencies

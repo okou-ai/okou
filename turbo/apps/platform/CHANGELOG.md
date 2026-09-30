@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.988.4](https://github.com/okou-ai/okou/compare/app-v0.988.3...app-v0.988.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* **app:** soften sidebar chat selection transitions ([#37424](https://github.com/okou-ai/okou/issues/37424)) ([d5502cc](https://github.com/okou-ai/okou/commit/d5502ccbb04c871e4db0c344c8b65e2b22e5c015))
+* temporarily disable astra ultrafast ([#37425](https://github.com/okou-ai/okou/issues/37425)) ([72096df](https://github.com/okou-ai/okou/commit/72096dfa716fb51fc1959aefeb9d9f75659701cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.3
+    * @okouai/core bumped to 8.724.3
+
 ## [0.988.3](https://github.com/okou-ai/okou/compare/app-v0.988.2...app-v0.988.3) (2026-09-30)
 
 

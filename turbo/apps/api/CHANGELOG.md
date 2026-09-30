@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.700.4](https://github.com/okou-ai/okou/compare/api-v1.700.3...api-v1.700.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* temporarily disable astra ultrafast ([#37425](https://github.com/okou-ai/okou/issues/37425)) ([72096df](https://github.com/okou-ai/okou/commit/72096dfa716fb51fc1959aefeb9d9f75659701cf))
+
+
+### Refactoring
+
+* **api:** replace claim run sql wrappers with typed queries ([#37426](https://github.com/okou-ai/okou/issues/37426)) ([f8e3322](https://github.com/okou-ai/okou/commit/f8e3322cfb4977683e2cf1d3663b9a28cb806045))
+* **api:** select custom connector join id directly ([#37429](https://github.com/okou-ai/okou/issues/37429)) ([9a5499d](https://github.com/okou-ai/okou/commit/9a5499d4cc748f7bda57d1402c91ce9e202adc2d))
+
+
+### Performance Improvements
+
+* **api:** measure selected compaction grain source-row tail ([#37280](https://github.com/okou-ai/okou/issues/37280)) ([5612af7](https://github.com/okou-ai/okou/commit/5612af7827b79e7b95a64a98284c6ed9d4450337))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.3
+    * @okouai/core bumped to 8.724.3
+    * @okouai/db bumped to 1.315.4
+    * @okouai/pi-agent-runtime bumped to 1.44.4
+
 ## [1.700.3](https://github.com/okou-ai/okou/compare/api-v1.700.2...api-v1.700.3) (2026-09-30)
 
 
