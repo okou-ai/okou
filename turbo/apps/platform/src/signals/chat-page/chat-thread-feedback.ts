@@ -36,7 +36,7 @@ const COARSE_POINTER_QUERY = "(pointer: coarse)";
 const CHAT_EVENT_SELECTOR = "[data-chat-scroll-anchor-event-id]";
 const THREAD_CONTAINER_SELECTOR = "[data-chat-thread-container-id]";
 const CHAT_COMPOSER_SELECTOR = "[data-chat-composer]";
-const RUN_GROUP_SELECTOR = "[data-chat-run-id]";
+const RUN_CONTAINER_SELECTOR = "[data-chat-run-id]";
 const SELECTION_INTERACTION_SELECTOR = "[data-chat-selection-interaction]";
 const SELECTION_SCROLL_DISMISS_DISTANCE_PX = 8;
 
@@ -202,11 +202,11 @@ function resolveSelectionThreadId(source: Element): string | null {
 }
 
 function resolveSelectionRunId(source: Element): string | null {
-  const runGroup = source.closest(RUN_GROUP_SELECTOR);
-  if (!(runGroup instanceof HTMLElement)) {
+  const runContainer = source.closest(RUN_CONTAINER_SELECTOR);
+  if (!(runContainer instanceof HTMLElement)) {
     return null;
   }
-  return runGroup.dataset.chatRunId ?? null;
+  return runContainer.dataset.chatRunId ?? null;
 }
 
 function resolveFeedbackSource(source: Element): FeedbackSource | undefined {

@@ -197,8 +197,8 @@ inventory entries. The cursor schema is identical to main.
 
 Main's historical migrations through `1290_retire_cloudflare_access_triggers`
 are preserved. Drizzle regenerated the two PR-only migrations as
-`1294_retire_provisional_billing_purge` and
-`1295_retire_billing_attribution_mutation_guard`; the redundant scope-only
+`1295_retire_provisional_billing_purge` and
+`1296_retire_billing_attribution_mutation_guard`; the redundant scope-only
 retirement was withdrawn when main retired both Cloudflare triggers. The generated snapshots' structural schema
 matches main exactly; only their generated identity chain differs. The final
 zero-trigger and no-new-field requirements remain in force, and Forms no longer introduces a trigger removal

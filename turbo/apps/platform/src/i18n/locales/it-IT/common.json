@@ -4805,6 +4805,8 @@
           "title": "Fatture"
         },
         "model": {
+          "autoDescription": "Okou sceglie il modello per ogni attività.",
+          "autoLabel": "Selezione automatica",
           "description": "Scegli quali modelli di intelligenza artificiale utilizzare per la tua area di lavoro e le tue esecuzioni.",
           "title": "Modelli"
         },

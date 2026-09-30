@@ -12,7 +12,9 @@ export function ModelSection() {
 
   return (
     <div className="flex flex-col gap-10">
-      {isAdmin && policies?.modelMode !== "auto" && <OrgProvidersTab />}
+      {isAdmin && policies && policies.modelMode !== "auto" && (
+        <OrgProvidersTab />
+      )}
       <PersonalProvidersTab />
     </div>
   );

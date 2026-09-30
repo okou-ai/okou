@@ -1,6 +1,6 @@
 {
-  "id": "32b68995-f291-4da4-90d9-b63a1b23d8cc",
-  "prevId": "ab7d614c-0b3f-4310-a4db-81100651a036",
+  "id": "96e7e818-162b-4600-870d-383b31c401af",
+  "prevId": "097cd814-445d-489a-87ab-7300d3c585b9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7679,7 +7679,7 @@
             "id",
             "connector_slug"
           ],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "fk_chat_thread_connector_selections_custom_connector": {
@@ -7694,7 +7694,7 @@
             "id",
             "custom_connector_id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -23766,6 +23766,33 @@
         }
       },
       "indexes": {
+        "uq_org_usage_allowance_windows_entitlement_kind_starts": {
+          "name": "uq_org_usage_allowance_windows_entitlement_kind_starts",
+          "columns": [
+            {
+              "expression": "entitlement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_org_usage_allowance_windows_org_kind_starts": {
           "name": "idx_org_usage_allowance_windows_org_kind_starts",
           "columns": [

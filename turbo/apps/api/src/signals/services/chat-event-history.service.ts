@@ -5,7 +5,7 @@ import { gunzip } from "node:zlib";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { computed, type Computed } from "ccstate";
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 
@@ -16,10 +16,6 @@ import {
   validateChatEventSnapshotRows,
 } from "./chat-event-snapshot-body.service";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
-import {
-  READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-  upgradeChatEventSnapshotBody,
-} from "./chat-event-snapshot-upgrade.service";
 
 const gunzipAsync = promisify(gunzip);
 const CHAT_EVENT_HISTORY_PAGE_SIZE = 1000;
@@ -79,7 +75,6 @@ async function readPostgresTail(
 
 function decodeSnapshotRows(
   body: Buffer,
-  archiveSchemaVersion: number,
   chatThreadId: string,
   lastSeqId: number,
   terminalCursor: {
@@ -87,14 +82,7 @@ function decodeSnapshotRows(
     readonly seqId: number | null;
   },
 ): readonly ChatEventRow[] {
-  // Chat Event V8 transition (removed in PR-3): until the thread's V8 Snapshot
-  // is published, its V7 prefix is upgraded in memory. The stored terminal row
-  // still pairs with the V7 pointer.
-  const upgraded =
-    archiveSchemaVersion === CURRENT_CHAT_EVENT_SCHEMA_VERSION
-      ? null
-      : upgradeChatEventSnapshotBody(body, archiveSchemaVersion);
-  const rows = upgraded?.rows ?? decodeChatEventSnapshotBody(body);
+  const rows = decodeChatEventSnapshotBody(body);
   validateChatEventSnapshotRows(rows);
   let previousSeqId: number | null = null;
   for (const row of rows) {
@@ -107,7 +95,7 @@ function decodeSnapshotRows(
     }
     previousSeqId = row.seqId;
   }
-  const storedTerminal = upgraded?.sourceTerminal ?? {
+  const storedTerminal = {
     id: rows.at(-1)?.id ?? null,
     seqId: rows.at(-1)?.seqId ?? 0,
   };
@@ -154,7 +142,6 @@ export function readChatEventSnapshotObject(
     const decompressed = await gunzipAsync(compressed);
     const snapshot = decodeSnapshotRows(
       decompressed,
-      head.archiveSchemaVersion,
       chatThreadId,
       head.lastSeqId,
       {
@@ -187,13 +174,12 @@ export function readCurrentChatEventHistoryAtSnapshot(
       .where(
         and(
           eq(chatEventSnapshots.chatThreadId, chatThreadId),
-          inArray(chatEventSnapshots.archiveSchemaVersion, [
-            ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-          ]),
+          eq(
+            chatEventSnapshots.archiveSchemaVersion,
+            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+          ),
         ),
       )
-      // Chat Event V8 transition (removed in PR-3): prefer the V8 pointer.
-      .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
       .limit(1);
     signal.throwIfAborted();
 
@@ -207,6 +193,7 @@ export function readCurrentChatEventHistoryAtSnapshot(
     const snapshot = await get(
       readChatEventSnapshotObject(runtime.bucket, chatThreadId, head, signal),
     );
+    signal.throwIfAborted();
     const tail = await readPostgresTail(
       runtime.db,
       chatThreadId,

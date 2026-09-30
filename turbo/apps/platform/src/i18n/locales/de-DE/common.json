@@ -4741,6 +4741,8 @@
           "title": "Rechnungen"
         },
         "model": {
+          "autoDescription": "Okou wählt das Modell für jede Aufgabe.",
+          "autoLabel": "Automatische Modellwahl",
           "description": "Wählen Sie aus, welche KI-Modelle Ihr Arbeitsbereich und Ihre Ausführungen verwenden.",
           "title": "Modelle"
         },

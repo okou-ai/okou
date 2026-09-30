@@ -365,18 +365,14 @@ describe("auth tokens", () => {
     });
   });
 
-  it("ignores retired capabilities in a signed mixed legacy token", () => {
-    const retired = [
-      "goal:read",
-      "goal:agent-result:write",
-      "goal:user-control:write",
-    ];
+  it("filters a signed token to registered capabilities", () => {
+    const unregistered = ["unregistered:read", "unregistered:write"];
     const token = signSandboxJwtForTests({
       scope: "okou",
       userId: "user_okou",
       runId: "run_okou",
       orgId: "org_okou",
-      capabilities: [...retired, "chat-thread:read", "file:write"],
+      capabilities: [...unregistered, "chat-thread:read", "file:write"],
       iat: currentSecond(),
       exp: currentSecond() + 60,
     });
@@ -384,11 +380,6 @@ describe("auth tokens", () => {
       "chat-thread:read",
       "file:write",
     ]);
-    const fresh = generateOkouToken("user_okou", "run_okou", "org_okou");
-    const payload = decodeOkouTokenPayloadForTest(fresh);
-    for (const capability of retired) {
-      expect(payload.capabilities).not.toContain(capability);
-    }
   });
 
   it("gates computer-use capability on an explicit host grant", () => {

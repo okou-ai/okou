@@ -4,7 +4,7 @@ import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-eve
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -153,12 +153,10 @@ async function deleteConnectorOwnedCredentialRowsWhere(
 }
 
 /**
- * Selections and their accounts are deleted by one statement, so no selection
- * visible to it can be left referencing a deleted account. A selection writer
- * racing an exact account deletion writes the account row in its own upsert
- * statement (chat-thread-connector-selection.service), so it either commits
- * before the deletion's claim (and is resolved here) or waits for the deletion
- * and fails its own FK check. Returns the number of selections resolved here.
+ * Delete visible selections before their accounts in one statement. The
+ * cascading account FK also clears a reference committed after this statement's
+ * snapshot; an insert after deletion fails its ordinary FK check. Returns the
+ * number of selections explicitly resolved by this statement's snapshot.
  */
 async function deleteConnectorCredentialStorageConnectionsWhere(
   db: Db,
@@ -174,14 +172,19 @@ async function deleteConnectorCredentialStorageConnectionsWhere(
         .where(conditions.selection)
         .returning({ connectorId: chatThreadConnectorSelections.connectorId }),
     );
-  const deletedConnections = db
-    .$with("deleted_connector_accounts")
-    .as(
-      db
-        .delete(connectors)
-        .where(conditions.connection)
-        .returning({ id: connectors.id }),
-    );
+  const deletedConnections = db.$with("deleted_connector_accounts").as(
+    db
+      .delete(connectors)
+      .where(
+        and(
+          conditions.connection,
+          // Consume the child mutation before deleting its parent, so the
+          // returned count describes this statement's resolved selections.
+          gte(db.$count(deletedSelections), 0),
+        ),
+      )
+      .returning({ id: connectors.id }),
+  );
   const deleted = await db
     .with(deletedSelections, deletedConnections)
     .select({

@@ -1,6 +1,6 @@
 {
-  "id": "128866a8-f5d2-4cf9-a300-a974e5b75676",
-  "prevId": "39601795-c0b6-4973-864e-5143a5f5df44",
+  "id": "6b485a13-041f-427e-9f3a-30e35f134112",
+  "prevId": "32b68995-f291-4da4-90d9-b63a1b23d8cc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6538,7 +6538,7 @@
       "checkConstraints": {
         "chat_event_snapshots_archive_schema_version_check": {
           "name": "chat_event_snapshots_archive_schema_version_check",
-          "value": "\"chat_event_snapshots\".\"archive_schema_version\" IN (7, 8)"
+          "value": "\"chat_event_snapshots\".\"archive_schema_version\" = 8"
         },
         "chat_event_snapshots_terminal_cursor_check": {
           "name": "chat_event_snapshots_terminal_cursor_check",

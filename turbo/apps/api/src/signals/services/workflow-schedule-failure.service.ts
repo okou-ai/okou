@@ -87,6 +87,18 @@ const STALE_PRE_RUN_FAILURE = {
   consecutiveFailures: 0,
 } as const;
 
+function preRunFailureOutcome(
+  counted: { readonly consecutiveFailures: number },
+  failure: PreRunFailure,
+) {
+  return {
+    disabled:
+      !failure.isCreditError &&
+      counted.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES,
+    consecutiveFailures: counted.consecutiveFailures,
+  };
+}
+
 interface PreRunFailureInput {
   readonly automation: AutomationRow;
   readonly failure: PreRunFailure;
@@ -165,11 +177,9 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           return STALE_PRE_RUN_FAILURE;
         }
         const failureTime = nowDate();
-        const consecutiveFailures =
-          current.consecutiveFailures + (failure.isCreditError ? 0 : 1);
         const shouldDisable =
           !failure.isCreditError &&
-          consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+          current.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
         const nextRunAt = advanceAfterPreRunFailure(
           current,
           failureTime,
@@ -190,7 +200,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
         const [updated] = await tx
           .update(workflowAutomations)
           .set({
-            consecutiveFailures,
+            consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
             ...(shouldDisable
               ? { enabled: false, officialIntendedEnabled: false }
               : {}),
@@ -203,12 +213,14 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
               sql`${workflowAutomations}.xmin::text = ${current.rowVersion}`,
             ),
           )
-          .returning({ id: workflowAutomations.id });
+          .returning({
+            consecutiveFailures: workflowAutomations.consecutiveFailures,
+          });
         if (!updated) {
           throw new StalePreRunFailure();
         }
         signal.throwIfAborted();
-        return { disabled: shouldDisable, consecutiveFailures };
+        return preRunFailureOutcome(updated, failure);
       }),
       signal,
     );
@@ -248,21 +260,21 @@ export const recordPreRunFailure$ = command(
     }
     const db = set(writeDb$);
     const failureTime = nowDate();
-    const newFailureCount =
-      automation.consecutiveFailures + (failure.isCreditError ? 0 : 1);
-    const shouldDisable =
-      !failure.isCreditError && newFailureCount >= MAX_CONSECUTIVE_FAILURES;
-    const nextRunAt = advanceAfterPreRunFailure(
-      automation,
-      failureTime,
-      shouldDisable,
-    );
-    await db
+    const increment = failure.isCreditError ? 0 : 1;
+    const threshold = sql`${workflowAutomations.consecutiveFailures} + ${increment} >= ${MAX_CONSECUTIVE_FAILURES}`;
+    const nextRunAt = advanceAfterPreRunFailure(automation, failureTime, false);
+    const [updated] = await db
       .update(workflowAutomations)
       .set({
-        consecutiveFailures: newFailureCount,
-        ...(shouldDisable ? { enabled: false } : {}),
-        nextRunAt,
+        consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${increment}`,
+        ...(failure.isCreditError
+          ? {}
+          : {
+              enabled: sql`CASE WHEN ${threshold} THEN false ELSE ${workflowAutomations.enabled} END`,
+            }),
+        nextRunAt: failure.isCreditError
+          ? nextRunAt
+          : sql`CASE WHEN ${threshold} THEN NULL ELSE ${nextRunAt}::timestamp END`,
         updatedAt: failureTime,
       })
       .where(
@@ -275,16 +287,23 @@ export const recordPreRunFailure$ = command(
             ? eq(workflowAutomations.nextRunAt, stillDueAt)
             : undefined,
         ),
-      );
+      )
+      .returning({
+        consecutiveFailures: workflowAutomations.consecutiveFailures,
+      });
     signal.throwIfAborted();
-    if (shouldDisable) {
+    if (
+      !failure.isCreditError &&
+      updated &&
+      updated.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+    ) {
       log.warn("Workflow automation auto-disabled after consecutive failures", {
         automationId: automation.id,
         workflowId: automation.workflowId,
         orgId: automation.orgId,
         userId: automation.ownerUserId,
         error: failure.message,
-        consecutiveFailures: newFailureCount,
+        consecutiveFailures: updated.consecutiveFailures,
       });
     }
   },

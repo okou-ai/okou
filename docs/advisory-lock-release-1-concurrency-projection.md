@@ -1,8 +1,9 @@
 # Advisory lock cleanup: concurrency subscription projection
 
-This Release 1 change starts from `5b458cc9`. It prepares the mutable
-`org_concurrency_subscriptions` projection for coexistence with a Release 2
-writer that no longer takes `stripe_concurrency_subscription:<subscription>`.
+After `4f263928`, Release 1 deletes `stripe_concurrency_subscription:<subscription>`
+and both acquisitions. The mutable `org_concurrency_subscriptions` projection
+uses conditional publication and daily provider-observation repair. See the
+[current per-key inventory](./advisory-lock-release-1-key-retirement.md).
 It accompanies [customer and invitation preparation](advisory-lock-release-1-billing.md)
 in the single Release 1 PR #37313. Organization purchase and shared usage-pack
 projection work are not complete.
@@ -65,36 +66,28 @@ named commands; the scheduled change write is inlined in
 `changeConcurrencySubscription$`.
 
 Each publication reads its exact local snapshot and then retrieves Stripe
-outside the transaction. Its bounded SQL transaction acquires the historical
-advisory lock and conditionally publishes the prepared result. The one acquisition
-definition and its two callers remain because outgoing webhooks still publish
-unconditionally under that same key. An outgoing writer that acquired the lock
-first invalidates R1's snapshot. R1 no longer keeps Stripe I/O inside that
-boundary. However, the outgoing `handleConcurrencySubscriptionUpdated` uses the
-incoming event directly when its slot quantity equals the stored quantity; it
-does not always retrieve Stripe. After R1 publishes a cancellation, such an old
-same-quantity active event can still overwrite it unconditionally. The retained
-lock and R1's snapshot predicate do not prevent that subsequent old write. This
-is an existing outgoing-writer limitation, not proof that all mixed pre-R1/R1
-projection outcomes are safe. It must remain explicit in rollout evaluation;
-only prepared R1/R2 writers share authoritative retrieval and conditional
-publication.
+outside the transaction. Its bounded SQL transaction conditionally publishes
+the prepared result without an advisory acquisition. An intervening old or new
+committed write invalidates R1's snapshot.
 
-Other legacy billing preparation and reconciliation paths still pass ordinary
-writable databases or transactions to services, including invoice organization
-binding, plan and allowance projection, missing-subscription reconciliation,
-and cron discovery. They are unfinished ownership work; the two command-local
-projection commits do not establish full billing conformance.
+The outgoing `handleConcurrencySubscriptionUpdated` can use an equal-quantity
+incoming event directly instead of retrieving Stripe, so a later old event can
+still replace a newer observation. The old key did not prevent that overwrite.
+Live observations now receive a daily visit through the hourly billing cron's
+24 stable hash buckets; scoped reconciliation visits every live identity in its
+organizations. A CAS conflict is left to a subsequent scheduled visit. Existing
+expired payment-failure candidates continue to receive hourly treatment. Repair
+never creates or pays an invoice, creates a subscription or grants credits.
+Provider unavailability is not a hard 24-hour recovery SLA.
 
-Release 2 removal requires evidence that pre-R1 API instances no longer serve,
-their in-flight requests have drained, and every retained rollback target has
-the conditional protocol. Release 2 then removes the acquisition and its pure
-SQL builder. R1 and R2 can overlap: either writer's publication invalidates the
-other's older snapshot, and a stale result retries instead of overwriting.
+Database-handle propagation is not an R1 acceptance target. The remaining
+billing configuration and financial work is still R1 implementation work.
+There is no remaining R2 advisory deletion for this projection. Prepared
+R1/R2 publishers invalidate each other's earlier snapshots; external webhook
+redelivery or a later cron visit handles rejection, not an in-process retry.
 No App/Runner contract, client floor, or Runner drain is introduced.
 
-This change adds no advisory acquisition and removes none; the combined billing
-wave still has six definitions after removal of the invitation-email acquisition. The shared usage-pack
+This change removes one advisory definition and two acquisitions. The shared usage-pack
 allocation/Plan/migration/invitation writers still need the approved local
 desired-state publication and daily Stripe reconciliation. Temporary remote
 quantity drift is accepted. This conditional provider-fact cache is not the
@@ -105,9 +98,11 @@ charges or unpaid entitlement.
 ## Verification
 
 The API tests now provide authoritative Stripe subscription responses for
-invoice and update deliveries. A new public-webhook/status test sends stale
+invoice and update deliveries. A public-webhook/status test sends stale
 same-quantity cancellation events repeatedly at one fixed application clock
-and checks that cancellation remains visible. The existing proration test
+and checks that cancellation remains visible. The new scoped reconciliation
+test omits the update webhook, repairs a live cancellation observation twice,
+and checks unchanged credits and no new subscription, invoice or payment. The existing proration test
 uses concurrent public event deliveries and status assertions; its artificial
 provider gate and advisory serialization assertion are removed. Other coverage
 for proration quantities, deletion, shared Plan/allowance subscriptions and

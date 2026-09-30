@@ -133,6 +133,5 @@ describe("canonical chat event storage", () => {
       runId: fixture.single.interruptTargetRunId,
       payload: null,
     });
-    expect(storedInterrupt).not.toHaveProperty("interruptsRunId");
   });
 });

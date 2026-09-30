@@ -2,10 +2,9 @@ import { command, computed, state } from "ccstate";
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
-import { reloadBillingStatus$, usagePackManagementAsync$ } from "../billing.ts";
+import { usagePackManagementAsync$ } from "../billing.ts";
 import { isOrgAdmin$ } from "../../org.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
-import { reloadPersonalModelProviders$ } from "../../external/personal-model-providers.ts";
 import { resetSignal } from "../../utils.ts";
 import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
 import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
@@ -123,9 +122,6 @@ export const setSettingsActiveSection$ = command(
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
       set(resetUsagePackPricing$);
-    }
-    if (section === "model") {
-      set(reloadPersonalModelProviders$);
     }
     const params = new URLSearchParams(get(searchParams$));
     if (params.get("settings") !== section) {
@@ -283,7 +279,6 @@ export const setSettingsDialogOpen$ = command(
     // A plans sub-page that is already open when the session starts was opened
     // by an entry point outside Settings, so that flow owns the whole dialog.
     set(setBillingPlansStandalone$, get(billingSubPage$));
-    set(reloadBillingStatus$);
     if (get(internalActiveSection$) === "debug") {
       set(reloadConnectorCatalogDiagnostics$);
       set(reloadBuiltInModelCooldownDiagnostics$);
@@ -295,9 +290,6 @@ export const setSettingsDialogOpen$ = command(
     modalSignal.throwIfAborted();
     const params = new URLSearchParams(get(searchParams$));
     const section = get(internalActiveSection$);
-    if (section === "model") {
-      set(reloadPersonalModelProviders$);
-    }
     if (params.get("settings") !== section) {
       params.set("settings", section);
       set(updateSearchParams$, params);

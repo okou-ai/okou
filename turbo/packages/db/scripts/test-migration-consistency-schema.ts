@@ -1528,22 +1528,6 @@ async function validatePermanentAgentRunMetadataState(
       metadataPresence.definition.match(/ IS NOT NULL/gu)?.length,
       2,
     );
-    const goalObjects = await client.query(`SELECT
-      to_regclass('public.thread_goals') IS NULL AS table_absent,
-      to_regclass('public.idx_agent_runs_goal') IS NULL AS index_absent,
-      NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'agent_runs'::regclass
-        AND attname = 'goal_id' AND NOT attisdropped) AS column_absent,
-      NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN (
-        'agent_runs_goal_id_thread_goals_id_fk', 'agent_runs_metadata_without_goal_check')) AS transitional_constraints_absent`);
-    assert.deepEqual(goalObjects.rows, [
-      {
-        table_absent: true,
-        index_absent: true,
-        column_absent: true,
-        transitional_constraints_absent: true,
-      },
-    ]);
-
     const discriminators = await client.query<{
       columnDefault: string | null;
       columnName: string;
@@ -1593,8 +1577,7 @@ async function validatePermanentAgentRunMetadataState(
               'zero_runs',
               'zero_runs_pkey',
               'idx_zero_runs_chat_thread_id',
-              'idx_zero_runs_workflow_automation',
-              'idx_zero_runs_goal'
+              'idx_zero_runs_workflow_automation'
             )
         ) AS "physicalRelationCount",
         (

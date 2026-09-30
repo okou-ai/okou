@@ -2135,7 +2135,7 @@ mod tests {
     #[test]
     fn active_input_source_requires_a_thread_run() {
         assert!(supports_thread_active_input(Some("thread:chat-id")));
-        assert!(!supports_thread_active_input(Some("goal:goal-id")));
+        assert!(!supports_thread_active_input(Some("resource:resource-id")));
         assert!(!supports_thread_active_input(None));
     }
 

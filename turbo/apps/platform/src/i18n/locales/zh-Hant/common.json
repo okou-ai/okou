@@ -4723,6 +4723,8 @@
           "title": "發票"
         },
         "model": {
+          "autoDescription": "Okou 為每項任務選擇模型。",
+          "autoLabel": "自動選模",
           "description": "選擇工作區和執行使用哪些AI模型。",
           "title": "模型"
         },

@@ -428,16 +428,10 @@ async function projectStoredSelections(
 }
 
 /**
- * The selected account row is written (same values) first, and the selection
- * row is written only from that statement's result. Exact account deletion
- * claims the account row with an UPDATE, promotes a sibling, and only then
- * deletes the account's selections, so both writers take the account row
- * before any selection row and serialize on it without an explicit lock:
- *
- * - a selection that writes the account first commits before the deletion's
- *   claim proceeds, and the deletion then resolves that selection;
- * - a selection that arrives after the claim waits for the deletion to commit
- *   and then finds no account row, so it writes nothing (`undefined`).
+ * Insert only from an existing account. The ordinary foreign-key check either
+ * protects that reference until commit or rejects a concurrent parent delete;
+ * selectionParentMissing maps that rejection to an unavailable-account result.
+ * No empty account UPDATE is used to serialize the two requests.
  */
 function selectionWriteSql(
   tx: Tx,
@@ -445,13 +439,14 @@ function selectionWriteSql(
   selection: ConnectorAccountSelection,
   onConflict: "update" | "none",
 ) {
-  const account = tx.$with("selected_connector_account").as(
-    tx
-      .update(connectors)
-      .set({ updatedAt: sql`${connectors.updatedAt}` })
-      .where(eq(connectors.id, selection.connectionId))
-      .returning({ id: connectors.id }),
-  );
+  const account = tx
+    .$with("selected_connector_account")
+    .as(
+      tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(eq(connectors.id, selection.connectionId)),
+    );
   const target = targetColumns(selection.target);
   const insert = tx
     .with(account)

@@ -422,14 +422,6 @@ async function retrieveConcurrencySubscriptionState(
   return concurrencySubscriptionState(result.value);
 }
 
-function concurrencySubscriptionCompatibilityLock(subscriptionId: string) {
-  const lockKey = `stripe_concurrency_subscription:${subscriptionId}`;
-  // Outgoing webhooks publish unconditionally under this same key. R1 retains
-  // only the local commit boundary while its provider reads use exact-state CAS.
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
-}
-
 function subscriptionCancelAt(subscription: SubscriptionInput): Date | null {
   return typeof subscription.cancel_at === "number"
     ? new Date(subscription.cancel_at * 1000)
@@ -3000,9 +2992,6 @@ const publishConcurrencyInvoice$ = command(
       return { handled: true, drainOrgId: orgId };
     }
     await db.transaction(async (tx) => {
-      await tx.execute(
-        concurrencySubscriptionCompatibilityLock(subscriptionId),
-      );
       // Payment evidence remains valid even after the renewable subscription or
       // concurrency item disappears. Record its immutable invoice identity without
       // reviving a current projection from that historical payment.
@@ -3865,9 +3854,6 @@ const publishConcurrencySubscription$ = command(
     // projection and publish only against the database snapshot it started from.
     const state = await retrieveConcurrencySubscriptionState(subscription.id);
     return await db.transaction(async (tx) => {
-      await tx.execute(
-        concurrencySubscriptionCompatibilityLock(subscription.id),
-      );
       if (!state) {
         const rows = await tx
           .update(orgConcurrencySubscriptions)

@@ -20328,6 +20328,52 @@ describe("POST /api/billing/concurrency-checkout", () => {
     expect(status.tier).toBe("team");
   });
 
+  it("repairs a missed live concurrency observation through reconciliation without charging again", async () => {
+    const periodEnd = new Date("2099-06-01T00:00:00Z");
+    const fixture = await createConcurrencySubscriptionOrg({
+      subscriptionId: `sub_${randomUUID()}`,
+      slots: 2,
+      periodEnd,
+    });
+    const before = await readBillingStatus(fixture);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: fixture.subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: true,
+      schedule: null,
+      metadata: { purpose: "concurrency_subscription" },
+      items: {
+        data: [
+          {
+            id: `si_${randomUUID()}`,
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 2,
+            current_period_end: Math.floor(periodEnd.getTime() / 1000),
+          },
+        ],
+      },
+    });
+    // No subscription-updated webhook is delivered. Both the missed write and
+    // a repeat visit use the ordinary reconciliation entry point.
+    for (let visit = 0; visit < 2; visit++) {
+      await reconcileBillingOrganization(fixture.orgId);
+      const status = await readBillingStatus(fixture);
+      expect(status.concurrencySubscriptions).toStrictEqual([
+        expect.objectContaining({
+          id: fixture.subscriptionId,
+          quantity: 2,
+          cancelAtPeriodEnd: true,
+          currentPeriodEnd: periodEnd.toISOString(),
+        }),
+      ]);
+      expect(status.credits).toBe(before.credits);
+    }
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.create).not.toHaveBeenCalled();
+  });
+
   it("keeps authoritative cancellation across stale equal-quantity events and one clock tick", async () => {
     mockNow(new Date("2035-05-01T00:00:00Z"));
     onTestFinished(() => {

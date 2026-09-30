@@ -132,6 +132,7 @@ interface AtomGrantCandidate {
 interface ConcurrencyCandidate {
   readonly orgId: string;
   readonly stripeSubscriptionId: string;
+  readonly cancelAtPeriodEnd: boolean;
   readonly updatedAtText: string;
   readonly rowVersion: string;
 }
@@ -1243,9 +1244,9 @@ async function reconcileConcurrencyCandidate(
   signal: AbortSignal,
 ): Promise<ExpiredConcurrencySubscription[]> {
   const { db, stripe, now, staleBefore } = context;
-  const subscription = (await stripe.subscriptions.retrieve(
+  const subscription = await stripe.subscriptions.retrieve(
     candidate.stripeSubscriptionId,
-  )) as SubscriptionInput;
+  );
   signal.throwIfAborted();
 
   const item = concurrencySubscriptionItem(subscription);
@@ -1255,8 +1256,11 @@ async function reconcileConcurrencyCandidate(
   const syncedFields = {
     subscriptionStatus: subscription.status,
     cancelAtPeriodEnd:
-      subscription.cancel_at_period_end &&
-      knownBillingPlanPriceItem(subscription.items.data) === undefined,
+      (subscription.cancel_at_period_end &&
+        knownBillingPlanPriceItem(subscription.items.data) === undefined) ||
+      (candidate.cancelAtPeriodEnd &&
+        subscription.schedule !== null &&
+        subscription.schedule !== undefined),
     updatedAt: concurrencySubscriptionUpdatedAt(now),
     ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
     ...(item ? { stripePriceId: item.price.id } : {}),
@@ -1272,9 +1276,6 @@ async function reconcileConcurrencyCandidate(
       sql`${candidate.updatedAtText}::timestamp`,
     ),
     sql`${orgConcurrencySubscriptions}.xmin::text = ${candidate.rowVersion}`,
-    inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-      ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-    ]),
   );
 
   if (subscription.status === "canceled") {
@@ -1525,6 +1526,7 @@ async function loadReconcileCandidateRows(
       .select({
         orgId: orgConcurrencySubscriptions.orgId,
         stripeSubscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
         rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
           pgTextDecoder,
         ),
@@ -1539,12 +1541,29 @@ async function loadReconcileCandidateRows(
           scope
             ? inArray(orgConcurrencySubscriptions.orgId, [...scope.orgIds])
             : undefined,
-          inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-            ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-          ]),
           or(
-            isNull(orgConcurrencySubscriptions.currentPeriodEnd),
-            lte(orgConcurrencySubscriptions.currentPeriodEnd, staleBefore),
+            and(
+              inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+                ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+              ]),
+              or(
+                isNull(orgConcurrencySubscriptions.currentPeriodEnd),
+                lte(orgConcurrencySubscriptions.currentPeriodEnd, staleBefore),
+              ),
+            ),
+            and(
+              inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+                "active",
+                "trialing",
+                ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+              ]),
+              // Provider observations can arrive out of order during overlap
+              // with old webhook writers. Repair each live identity daily;
+              // this never creates an invoice, payment or credit grant.
+              scope
+                ? undefined
+                : sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
+            ),
           ),
         ),
       ),

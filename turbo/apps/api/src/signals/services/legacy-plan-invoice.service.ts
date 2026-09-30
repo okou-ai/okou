@@ -2,9 +2,10 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
   orgCreditInvoiceGrantSql,
@@ -90,28 +91,6 @@ const commitLegacyPlanInvoice$ = command(
         legacyPlanInvoiceAdmission(wallet, args) === "publish";
       let writeEntitlement =
         writeMetadata || legacyPlanEntitlementIsCurrent(wallet, args);
-      if (writeEntitlement) {
-        // The admission decision is a function of these wallet columns. This
-        // conditional transition is the linearization point: it succeeds only
-        // if they are unchanged, and its implicit row lock orders any later
-        // plan writer after this commit. Zero rows rejects the stale read.
-        const [claimed] = await tx
-          .update(orgMetadata)
-          .set({ updatedAt: sql`${orgMetadata.updatedAt}` })
-          .where(legacyPlanInvoiceWalletWhere(args.orgId, wallet))
-          .returning({ orgId: orgMetadata.orgId });
-        if (!claimed) {
-          // Another delivery changed the wallet first. Read its committed
-          // state once: if this invoice is now a duplicate or no longer
-          // admitted, the winner's result stands and this delivery is a
-          // deterministic no-op. Any other change is left to redelivery.
-          const [current] = await tx
-            .select()
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, args.orgId));
-          return lostLegacyPlanInvoiceRace(current, args);
-        }
-      }
       let cancelReplaced = true;
       if (writeMetadata) {
         const [pending] = await tx
@@ -170,10 +149,16 @@ const commitLegacyPlanInvoice$ = command(
         }
       }
       if (writeMetadata) {
-        await tx
+        const [published] = await tx
           .update(orgMetadata)
           .set(legacyPlanInvoiceMetadata(args, nowDate()))
-          .where(eq(orgMetadata.orgId, args.orgId));
+          .where(legacyPlanInvoiceWalletWhere(args.orgId, wallet))
+          .returning({ orgId: orgMetadata.orgId });
+        if (!published) {
+          // Any grant/extension in this transaction must roll back with a
+          // rejected binding. Resolve the winner only after that rollback.
+          throw new LegacyPlanInvoiceConflict(args.invoiceId);
+        }
       }
       if (writeEntitlement) {
         const [memberPack] = await tx
@@ -187,10 +172,19 @@ const commitLegacyPlanInvoice$ = command(
           memberPack !== undefined,
           stripeOwner?.orgId,
         );
-        await tx.insert(orgPlanEntitlements).values(values).onConflictDoUpdate({
-          target: orgPlanEntitlements.orgId,
-          set: values,
-        });
+        const insert = tx.insert(orgPlanEntitlements).values(values);
+        if (writeMetadata) {
+          await insert.onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: values,
+          });
+        } else {
+          // Duplicate invoice delivery can fill a missing entitlement, but
+          // must not replace a newer projection merely to obtain a row lock.
+          await insert.onConflictDoNothing({
+            target: orgPlanEntitlements.orgId,
+          });
+        }
       }
       signal.throwIfAborted();
       return {
@@ -237,6 +231,21 @@ export const publishLegacyPlanInvoice$ = command(
     // and an expiration that became due after the expiration above throws
     // OrgCreditExpirationRequired; both roll back completely and surface to
     // the Stripe webhook / billing reconcile cycle that redelivers the invoice.
-    return await set(commitLegacyPlanInvoice$, { invoice, trialIds }, signal);
+    const outcome = await settle(
+      set(commitLegacyPlanInvoice$, { invoice, trialIds }, signal),
+      signal,
+    );
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    if (!(outcome.error instanceof LegacyPlanInvoiceConflict)) {
+      throw outcome.error;
+    }
+    const [current] = await db
+      .select()
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, invoice.orgId));
+    signal.throwIfAborted();
+    return lostLegacyPlanInvoiceRace(current, invoice);
   },
 );

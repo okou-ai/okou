@@ -197,7 +197,8 @@ function unjournaledSettlementPlan(
     intervalSeconds: automation.intervalSeconds,
     timezone: automation.timezone,
     completedAt,
-    shouldDisable,
+    // Ordinary callbacks decide this from the atomic write's current count.
+    shouldDisable: authority.kind === "ordinary" ? false : shouldDisable,
   });
   return {
     shouldDisable,
@@ -289,6 +290,16 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
         read: automation,
         automationValues: plan.automation,
         shouldDisable: plan.shouldDisable,
+        ...(authority.kind === "ordinary"
+          ? {
+              ordinaryFailure: {
+                reset: args.callback.status === "completed",
+                increment:
+                  args.callback.status === "failed" && !isCreditError ? 1 : 0,
+                disableAt: MAX_CONSECUTIVE_FAILURES,
+              },
+            }
+          : {}),
         at: completedAt,
         // A selected compatibility callback owns only the empty slot; an
         // ordinary recurrence keeps its pre-existing enabled-only predicate.

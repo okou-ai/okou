@@ -7448,16 +7448,14 @@ describe("okou browser route", () => {
 
     // The viewer can restore a reclaimed browser without a live run.
     context.mocks.ably.publish.mockClear();
-    const resumedEventId = randomUUID();
     const resumed = await accept(
       client().open({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId },
-        body: { eventId: resumedEventId },
+        body: {},
       }),
       [200],
     );
-    expect(resumed.body.lifecycleEventId).toBe(resumedEventId);
     expect(resumed.body.browser).toMatchObject({
       threadId: threadId,
       status: "active",
@@ -7556,7 +7554,7 @@ describe("okou browser route", () => {
         authorization: "Bearer clerk-session",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ eventId: randomUUID() }),
+      body: JSON.stringify({}),
     });
     expect(failedResume.status).toBe(502);
     await expect(failedResume.json()).resolves.toMatchObject({
@@ -7793,7 +7791,7 @@ describe("okou browser route", () => {
       client().open({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId: current.threadId },
-        body: { eventId: randomUUID() },
+        body: {},
       }),
       [200],
     );
@@ -7951,7 +7949,7 @@ describe("okou browser route", () => {
       client().open({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId },
-        body: { eventId: randomUUID() },
+        body: {},
       }),
       [200],
     );
@@ -8546,7 +8544,7 @@ describe("okou browser route", () => {
     await deleteAgentRunRootFixture(first.runId);
   }, 120_000);
 
-  it("records browser lifecycle events only for UI actions and automatic reclamation", async () => {
+  it("keeps viewer actions separate from managed-browser reclamation", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
     const first = await createClaimedChatRun(
@@ -8600,12 +8598,11 @@ describe("okou browser route", () => {
     );
 
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const beforeStartCloseEventId = randomUUID();
     await accept(
       client().close({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId: first.threadId },
-        body: { eventId: beforeStartCloseEventId },
+        body: {},
       }),
       [200],
     );
@@ -8614,14 +8611,12 @@ describe("okou browser route", () => {
       client().use({ headers: first.claim.browserHeaders, body: {} }),
       [200],
     );
-    expect(firstStart.body.lifecycleEventId).toBeNull();
 
-    const beforeReclaimCloseEventId = randomUUID();
     await accept(
       client().close({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId: first.threadId },
-        body: { eventId: beforeReclaimCloseEventId },
+        body: {},
       }),
       [200],
     );
@@ -8644,35 +8639,29 @@ describe("okou browser route", () => {
       threadId: firstStart.body.browser.threadId,
       status: "active",
     });
-    expect(resumed.body.lifecycleEventId).toBeNull();
     expect(providerCreates).toBe(2);
 
-    const openEventId = randomUUID();
     const alreadyActive = await accept(
       client().open({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId: first.threadId },
-        body: { eventId: openEventId },
+        body: {},
       }),
       [200],
     );
     expect(alreadyActive.body).toMatchObject({
-      lifecycleEventId: openEventId,
       browser: { threadId: first.threadId, status: "active" },
     });
 
-    const closeEventId = randomUUID();
     const closed = await accept(
       client().close({
         headers: { authorization: "Bearer clerk-session" },
         params: { threadId: first.threadId },
-        body: { eventId: closeEventId },
+        body: {},
       }),
       [200],
     );
-    expect(closed.body).toStrictEqual({
-      lifecycleEventId: closeEventId,
-    });
+    expect(closed.body).toStrictEqual({});
     await flushWaitUntilForTest();
     expect(providerStops).toBe(1);
     const stillActive = await accept(

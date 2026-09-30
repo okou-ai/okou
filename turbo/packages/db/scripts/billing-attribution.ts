@@ -168,10 +168,9 @@ async function timeout() {
     performance.now() - startedAt < maxMs,
     "billing attribution time budget exhausted; resume the same checkpoint",
   );
-  await client.query(
-    "SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $2, true)",
-    [`${remainingMs()}ms`, `${Math.min(1000, remainingMs())}ms`],
-  );
+  await client.query("SELECT set_config('statement_timeout', $1, true)", [
+    `${remainingMs()}ms`,
+  ]);
 }
 await client.connect();
 try {
@@ -245,20 +244,16 @@ try {
       await client.query("BEGIN");
       try {
         await timeout();
-        // Release 1: outgoing compactors and cleanup writers still rely on
-        // this barrier. Release 2 removes it after API/worker drain, compatible
-        // rollback artifacts and operators using the row protocol below.
-        await client.query(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
-        );
+        // Mutation already requires --ack-writer-drain. Compatible compaction
+        // captures parents before consuming sources and records observations
+        // itself; conditional source writes below need no global barrier.
         await client.query(
           `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
           VALUES ($5, $1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
           [...scope, jobId],
         );
         const checkpointResult = await client.query(
-          "SELECT * FROM billing_attribution_backfill WHERE id = $1 FOR UPDATE",
+          "SELECT *, xmin::text AS snapshot_version FROM billing_attribution_backfill WHERE id = $1",
           [jobId],
         );
         const checkpoint = record(checkpointResult.rows[0]);
@@ -280,11 +275,12 @@ try {
         }
         const limit = Math.min(batchSize, maxRows - scannedThisInvocation);
         await timeout();
-        // FK checks by concurrent usage writers take KEY SHARE on the run.
-        // NO KEY UPDATE protects its source fields without blocking that check.
+        // Read a bounded source page. The writes use existing identities and
+        // exact ownership predicates; a concurrent deletion can reject the
+        // ordinary FK insert and roll back this batch, never skip ahead.
         const idsResult = await client.query(
           `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
-          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6${current === "runs" ? " FOR NO KEY UPDATE OF t" : ""}`,
+          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6`,
           [...scope, nullableText(checkpoint.cursor), limit],
         );
         const ids = idsResult.rows.map((value: unknown) => {
@@ -295,33 +291,6 @@ try {
         });
         let populated = 0;
         if (ids.length > 0) {
-          if (current !== "runs") {
-            // Preserve FK parents before source rows, matching compaction. A
-            // deletion may already own a child before it reaches the parent;
-            // NOWAIT rolls this batch back instead of making that cycle wait.
-            // The checkpoint advances only with a committed complete batch.
-            await client.query(
-              `SELECT id FROM agent_runs WHERE id IN (
-                SELECT run_id FROM ${tables[current]} WHERE id = ANY($1::uuid[])
-              ) ORDER BY id FOR KEY SHARE NOWAIT`,
-              [ids],
-            );
-            // Match producer/compaction ownership: retained Run, captured
-            // attribution, then its usage children. Captured identity cannot
-            // disappear between validation and the explicit observed write.
-            await client.query(
-              `SELECT run_id FROM billing_run_attribution WHERE run_id IN (
-                SELECT COALESCE(billing_run_id, run_id) FROM ${tables[current]}
-                WHERE id = ANY($1::uuid[])
-              ) ORDER BY run_id FOR UPDATE NOWAIT`,
-              [ids],
-            );
-            await client.query(
-              `SELECT id FROM ${tables[current]} WHERE id = ANY($1::uuid[])
-                ORDER BY id FOR UPDATE NOWAIT`,
-              [ids],
-            );
-          }
           await timeout();
           const result =
             current === "runs"
@@ -386,7 +355,8 @@ try {
         const update = await client.query(
           `UPDATE billing_attribution_backfill SET phase=$2, cursor=$3,
           scanned=scanned+$4, populated=populated+$5, missing_source=missing_source+$6, conflicts=conflicts+$7,
-          updated_at=timezone('UTC', clock_timestamp()) WHERE id=$1 RETURNING *`,
+          updated_at=timezone('UTC', clock_timestamp())
+          WHERE id=$1 AND xmin::text=$8 RETURNING *`,
           [
             jobId,
             nextPhase,
@@ -395,7 +365,13 @@ try {
             populated,
             integer(counts.missing_source),
             integer(counts.conflicts),
+            nullableText(checkpoint.snapshot_version),
           ],
+        );
+        assert.equal(
+          update.rowCount,
+          1,
+          "checkpoint was advanced by another invocation; this batch is rejected",
         );
         lastCheckpoint = record(update.rows[0]);
         await client.query("COMMIT");

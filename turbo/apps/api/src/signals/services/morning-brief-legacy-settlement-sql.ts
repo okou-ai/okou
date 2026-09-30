@@ -127,6 +127,12 @@ export interface InFlightScheduleAdvance {
     readonly updatedAt: Date;
   };
   readonly shouldDisable: boolean;
+  /** Ordinary callbacks count the committed value, not their read snapshot. */
+  readonly ordinaryFailure?: {
+    readonly reset: boolean;
+    readonly increment: number;
+    readonly disableAt: number;
+  };
   readonly at: Date;
   /** Only an empty (in-flight) slot may be advanced; a published one wins. */
   readonly requireEmptySlot: boolean;
@@ -174,9 +180,26 @@ export async function advanceInFlightSchedule(
           throw new InFlightScheduleSuperseded();
         }
       }
+      const ordinary = args.legacy ? undefined : args.ordinaryFailure;
+      const nextCount = ordinary?.reset
+        ? sql`0`
+        : sql`${workflowAutomations.consecutiveFailures} + ${ordinary?.increment ?? 0}`;
+      const disable =
+        ordinary && !ordinary.reset && ordinary.increment > 0
+          ? sql`${nextCount} >= ${ordinary.disableAt}`
+          : sql`false`;
       const [committed] = await sp
         .update(workflowAutomations)
-        .set(args.automationValues)
+        .set({
+          ...args.automationValues,
+          ...(ordinary
+            ? {
+                consecutiveFailures: nextCount,
+                enabled: sql`CASE WHEN ${disable} THEN false ELSE ${workflowAutomations.enabled} END`,
+                nextRunAt: sql`CASE WHEN ${disable} THEN NULL ELSE ${args.automationValues.nextRunAt}::timestamp END`,
+              }
+            : {}),
+        })
         .where(
           and(
             eq(workflowAutomations.id, args.automationId),
@@ -191,6 +214,7 @@ export async function advanceInFlightSchedule(
           cronExpression: workflowAutomations.cronExpression,
           intervalSeconds: workflowAutomations.intervalSeconds,
           timezone: workflowAutomations.timezone,
+          enabled: workflowAutomations.enabled,
         });
       if (committed === undefined) {
         throw new InFlightScheduleSuperseded();
@@ -207,7 +231,7 @@ export async function advanceInFlightSchedule(
         intervalSeconds: committed.intervalSeconds,
         timezone: committed.timezone,
         completedAt: args.at,
-        shouldDisable: args.shouldDisable,
+        shouldDisable: !committed.enabled,
       });
       await sp
         .update(workflowAutomations)

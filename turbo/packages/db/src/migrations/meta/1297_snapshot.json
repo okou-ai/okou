@@ -1,6 +1,6 @@
 {
-  "id": "32b68995-f291-4da4-90d9-b63a1b23d8cc",
-  "prevId": "ab7d614c-0b3f-4310-a4db-81100651a036",
+  "id": "097cd814-445d-489a-87ab-7300d3c585b9",
+  "prevId": "4ce240e9-0174-462b-acc9-1895c5dbe6a5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -23766,6 +23766,33 @@
         }
       },
       "indexes": {
+        "uq_org_usage_allowance_windows_entitlement_kind_starts": {
+          "name": "uq_org_usage_allowance_windows_entitlement_kind_starts",
+          "columns": [
+            {
+              "expression": "entitlement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_org_usage_allowance_windows_org_kind_starts": {
           "name": "idx_org_usage_allowance_windows_org_kind_starts",
           "columns": [

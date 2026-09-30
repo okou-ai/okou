@@ -39,7 +39,6 @@ import {
   type ClaimedBackgroundJob,
 } from "./background-job.service";
 import { collectUserExportSourceStep$ } from "./user-export-source.service";
-import { READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS } from "./chat-event-snapshot-upgrade.service";
 import { assembleUserExportStep$ } from "./user-export-assembly.service";
 import { userExportReadyEmail } from "./user-export.service";
 import { settleIncludingAbort } from "../utils";
@@ -162,10 +161,10 @@ async function commitCollectedEntries(
         .where(
           and(
             eq(chatEventSnapshots.chatThreadId, threadId),
-            // Chat Event V8 transition (removed in PR-3): V7 or V8 heads.
-            inArray(chatEventSnapshots.archiveSchemaVersion, [
-              ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-            ]),
+            eq(
+              chatEventSnapshots.archiveSchemaVersion,
+              CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+            ),
             eq(chatEventSnapshots.objectKey, entry.sourceKey),
           ),
         )

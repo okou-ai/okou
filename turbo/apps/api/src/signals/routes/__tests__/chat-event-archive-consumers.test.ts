@@ -43,11 +43,6 @@ import {
   seedRetentionRun$,
 } from "../../../test-fixtures/chat-event-retention";
 import { withChatEventDeletedAfterReadFixture } from "../../../test-fixtures/chat-events";
-import {
-  seedV7ChatEventSnapshot$,
-  v7SnapshotUpgradeTemplates,
-  type V7ChatEventSnapshotFixture,
-} from "../../../test-fixtures/chat-event-snapshot-v7";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { sharedThreadRoutes } from "../shared-threads";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
@@ -58,11 +53,9 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
-  deleteFakeChatEventObject,
   installFakeChatEventR2,
   readFakeChatEventObject,
   type RecordedChatEventPut,
-  writeFakeChatEventObject,
 } from "./helpers/fake-chat-event-r2";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -157,34 +150,6 @@ async function archiveAndRetain(
   await expect(
     store.set(readRetentionEvents$, eventIds, context.signal),
   ).resolves.toHaveLength(0);
-}
-
-/**
- * Chat Event V8 transition: points the thread at a V7 Snapshot written by a
- * pre-V8 API. Removed in PR-3 with the V7 Snapshot upgrade.
- */
-async function seedV7Snapshot(
-  threadId: string,
-  rows: readonly Readonly<Record<string, unknown>>[],
-): Promise<V7ChatEventSnapshotFixture> {
-  const v7 = await store.set(
-    seedV7ChatEventSnapshot$,
-    { chatThreadId: threadId, rows },
-    context.signal,
-  );
-  writeFakeChatEventObject(v7.objectKey, v7.body);
-  onTestFinished(async () => {
-    await deleteFakeChatEventObject(v7.objectKey);
-  });
-  return v7;
-}
-
-function v7RowId(v7: V7ChatEventSnapshotFixture, index: number): string {
-  const row = v7.rows[index];
-  if (!row) {
-    throw new Error("Expected a V7 fixture row");
-  }
-  return row.id;
 }
 
 function installAgentStorage(): void {
@@ -572,99 +537,6 @@ describe("archived chat event consumers", () => {
     expect(messages[0]?.seqId).toBeLessThan(messages.at(-1)?.seqId ?? 0);
   }, 60_000);
 
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("exports a V7-only Snapshot object unchanged with its V7 metadata plus the PostgreSQL tail", async () => {
-    const fixture = await createArchiveFixture("v7-export");
-    // Infrastructure exception: only a pre-V8 API wrote V7 Snapshot pointers.
-    // The shared V7 fixture seeds that state; export stays real.
-    const { templates } = v7SnapshotUpgradeTemplates();
-    const v7 = await seedV7Snapshot(fixture.threadId, templates);
-    const tailContent = `v7-export-tail-${randomUUID()}`;
-    const tailEventId = await store.set(
-      seedRetentionOutputEvent$,
-      { chatThreadId: fixture.threadId, content: tailContent },
-      context.signal,
-    );
-
-    const exportApi = createOpsLogsApi(context);
-    const storage = installDurableUserExportStorage(context);
-    const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
-    await flushWaitUntilForTest();
-    await accept(
-      setupApp({ context, routes: testUserExportWorkRoutes })(
-        testUserExportWorkContract,
-      ).action({
-        body: {
-          action: "run",
-          userId: fixture.actor.userId,
-          jobId: started.body.jobId,
-          maxSteps: 200,
-        },
-      }),
-      [200],
-    );
-    const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
-    expect(status.body.job).toMatchObject({
-      id: started.body.jobId,
-      status: "completed",
-    });
-    const downloadUrl = status.body.job?.downloadUrl;
-    if (!downloadUrl) {
-      throw new Error("Expected a downloadable user export");
-    }
-    const zip = new AdmZip(storage.download(downloadUrl));
-    const digest = createHash("sha256").update(v7.body).digest("hex");
-    const snapshotPath = `chat-messages/${fixture.threadId}/snapshots/${v7.lastSeqId.toString()}-${digest}.ndjson.gz`;
-    const snapshots = zip.getEntries().filter((entry) => {
-      return entry.entryName.startsWith(
-        `chat-messages/${fixture.threadId}/snapshots/`,
-      );
-    });
-    expect(
-      snapshots.map((entry) => {
-        return entry.entryName;
-      }),
-    ).toStrictEqual([snapshotPath]);
-    // The V7 object is exported byte for byte; it is not upgraded to V8.
-    expect(snapshots[0]?.getData().equals(v7.body)).toBeTruthy();
-    expect(manifestRecord(zip, snapshotPath)).toMatchObject({
-      sourceKind: "chat-snapshot",
-      threadId: fixture.threadId,
-      archiveSchemaVersion: 7,
-      lastSeqId: v7.lastSeqId,
-      terminalEventId: v7RowId(v7, templates.length - 1),
-      terminalSeqId: v7.rows.at(-1)?.seqId,
-      objectKey: v7.objectKey,
-      expectedSha256: digest,
-    });
-    expect(
-      manifestRecord(zip, `chat-threads/${fixture.threadId}.json`),
-    ).toMatchObject({
-      snapshotPath,
-      physicalCoverage: v7.lastSeqId,
-    });
-    const tail = zip
-      .getEntries()
-      .filter((entry) => {
-        return entry.entryName.startsWith(
-          `chat-messages/${fixture.threadId}/tail/`,
-        );
-      })
-      .flatMap((entry) => {
-        return readExportJsonLines(zip, entry.entryName).map((row) => {
-          return chatEventRowSchema.parse(row);
-        });
-      });
-    expect(tail).toStrictEqual([
-      expect.objectContaining({
-        id: tailEventId,
-        eventType: "output.message",
-        payload: { content: tailContent },
-      }),
-    ]);
-    expect(tail[0]?.seqId).toBeGreaterThan(v7.lastSeqId);
-  }, 60_000);
-
   it.each(["within-bound", "overtake-with-revocation"] as const)(
     "restores a durable export when archival advances between source pages (%s)",
     async (advancement) => {
@@ -1049,63 +921,6 @@ describe("archived chat event consumers", () => {
       [400],
     );
     expect(excluded.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
-  }, 60_000);
-
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("shares a selection from a V7-only Snapshot as upgraded V8 messages", async () => {
-    const fixture = await createArchiveFixture("v7-sharing");
-    // Infrastructure exception: only a pre-V8 API wrote V7 Snapshot pointers.
-    // The shared V7 fixture seeds that state; sharing stays real.
-    const { templates } = v7SnapshotUpgradeTemplates();
-    const v7 = await seedV7Snapshot(fixture.threadId, templates);
-    mockOptionalEnv("OPENROUTER_API_KEY", "v7-sharing-key");
-    chatCallbacks.mockOpenRouterCompletions(() => {
-      return "V7 selection";
-    });
-    const created = await accept(
-      sharedThreadClient().create({
-        params: { threadId: fixture.threadId },
-        headers: authenticate(fixture.actor),
-        body: {
-          // Goal input and prompt with a goal part, a goal-context answer, and
-          // the retired input.goal and output.thinking rows.
-          eventIds: [0, 1, 2, 3].map((index) => {
-            return v7RowId(v7, index);
-          }),
-        },
-      }),
-      [201],
-    );
-    const shared = await accept(
-      sharedThreadClient().get({ params: { id: created.body.id } }),
-      [200],
-    );
-    expect(shared.body).toStrictEqual({
-      id: created.body.id,
-      title: "V7 selection",
-      messages: [
-        {
-          messageIndex: 0,
-          role: "user",
-          content: "Ship the weekly report",
-        },
-        { messageIndex: 1, role: "assistant", content: "Goal progress" },
-      ],
-    });
-
-    const retiredOnly = await accept(
-      sharedThreadClient().create({
-        params: { threadId: fixture.threadId },
-        headers: authenticate(fixture.actor),
-        body: {
-          eventIds: [1, 3, templates.length - 1].map((index) => {
-            return v7RowId(v7, index);
-          }),
-        },
-      }),
-      [400],
-    );
-    expect(retiredOnly.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
   }, 60_000);
 
   it("shares one hot-table snapshot when its event is deleted after the read without blocking other threads", async () => {
