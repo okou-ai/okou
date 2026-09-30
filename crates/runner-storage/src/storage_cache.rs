@@ -3036,9 +3036,18 @@ async fn fetch_fresh_archive(
                             representative,
                             response.headers(),
                         ));
-                        return Err("response-size-mismatch");
                     }
-                    (expected, FreshArchiveSizeSource::Manifest)
+                    // A logical version does not fix the compressed archive size.
+                    // Use the response length when available and retain the stored
+                    // size only for responses without a declared length.
+                    (
+                        response_size.unwrap_or(expected),
+                        if mismatch.is_some() {
+                            FreshArchiveSizeSource::Response
+                        } else {
+                            FreshArchiveSizeSource::Manifest
+                        },
+                    )
                 }
                 None => match response_size {
                     Some(0) => return Err("response-size-zero"),
@@ -3050,10 +3059,18 @@ async fn fetch_fresh_archive(
                 },
             };
             if exact_size == 0 {
-                return Err("expected-size-zero");
+                return Err(if response_size.is_some() {
+                    "response-size-zero"
+                } else {
+                    "expected-size-zero"
+                });
             }
             if exact_size > CACHE_MAX_SIZE {
-                return Err("expected-size-oversized");
+                return Err(if response_size.is_some() {
+                    "response-size-oversized"
+                } else {
+                    "expected-size-oversized"
+                });
             }
             Ok((response, response_size, exact_size, size_source))
         })
@@ -4585,9 +4602,13 @@ mod tests {
     }
 
     fn tarball_with_contents(content: &[u8]) -> Vec<u8> {
+        tarball_with_compression(content, flate2::Compression::default())
+    }
+
+    fn tarball_with_compression(content: &[u8], compression: flate2::Compression) -> Vec<u8> {
         let mut bytes = Vec::new();
         {
-            let encoder = flate2::write::GzEncoder::new(&mut bytes, flate2::Compression::default());
+            let encoder = flate2::write::GzEncoder::new(&mut bytes, compression);
             let mut builder = tar::Builder::new(encoder);
             let mut header = tar::Header::new_gnu();
             header.set_size(content.len() as u64);
@@ -5606,6 +5627,70 @@ mod tests {
             "none",
             None,
         );
+    }
+
+    #[tokio::test]
+    async fn fresh_delivery_uses_response_size_when_stored_archive_size_is_stale() {
+        // Both archives contain file.txt with identical contents, but gzip
+        // compression changes the wire size without changing the logical version.
+        let compressed = tarball_bytes();
+        let uncompressed =
+            tarball_with_compression(b"storage cache test file\n", flate2::Compression::none());
+        assert!(compressed.len() < uncompressed.len());
+        let compressed_size = compressed.len() as u64;
+        let uncompressed_size = uncompressed.len() as u64;
+        for (case, body, stored_size) in [
+            ("larger", compressed, uncompressed_size),
+            ("smaller", uncompressed, compressed_size),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new(case);
+            let mut telemetry = new_telemetry();
+            let server = MockServer::start_async().await;
+            let get = server
+                .mock_async(|when, then| {
+                    when.method(GET)
+                        .path("/stale-size.tar.gz")
+                        .header_missing("range");
+                    then.status(200).body(body.clone());
+                })
+                .await;
+            let name = format!("stale-{case}");
+            let version = "v1";
+            let mut plan = fresh_storage_plan_with_archive_size(
+                server.url("/stale-size.tar.gz"),
+                &name,
+                version,
+                stored_size,
+            );
+
+            assert!(
+                populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            get.assert_calls_async(1).await;
+            assert_eq!(
+                storage_archive_url(&plan, 0),
+                Some(format!("file://{}", guest_archive_path(&name, version)).as_str())
+            );
+            assert_eq!(
+                fs::read(
+                    home.storage_cache_dir(&name, version)
+                        .join("archive.tar.gz")
+                )
+                .await
+                .unwrap(),
+                body
+            );
+            assert_eq!(sandbox.write_files_calls().len(), 1);
+            let ops = telemetry.pending_ops_snapshot();
+            assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE, true);
+            assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST);
+            assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_STAGED, true);
+        }
     }
 
     #[tokio::test]
