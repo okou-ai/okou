@@ -400,8 +400,8 @@ cargo build --target "$TARGET_TRIPLE" \
 
 # Step 2: build runner with embedded Guest binaries and the CLI tarball.
 # Build package.tgz from this same checkout first (see the Runner Image workflow).
-# Set every path below, or omit all paths for a local build without embedded resources.
-GUEST_CLI_PATH="/absolute/path/to/package.tgz" \
+# Paths below are relative to crates/; set all or omit all for an unbundled local build.
+GUEST_CLI_PATH="../runner-cli-intermediate/package.tgz" \
 GUEST_AGENT_PATH="target/$TARGET_TRIPLE/ci/guest-agent" \
 GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/ci/guest-storage-apply" \
 GUEST_INIT_PATH="target/$TARGET_TRIPLE/ci/guest-init" \

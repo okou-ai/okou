@@ -96,19 +96,29 @@ fn main() {
             println!("cargo::rustc-env={}={abs_str}", guest.bundled_env);
             println!("cargo::rerun-if-changed={abs_str}");
         }
-        embed_guest_cli(&guest_cli_path.expect("CLI path is required with Guest paths"));
+        embed_guest_cli(
+            &guest_cli_path.expect("CLI path is required with Guest paths"),
+            &workspace_root,
+        );
     }
 }
 
-fn embed_guest_cli(path: &str) {
-    let metadata = fs::symlink_metadata(path).unwrap_or_else(|e| panic!("CLI package {path}: {e}"));
+fn embed_guest_cli(path: &str, workspace_root: &Path) {
+    let resolved = if Path::new(path).is_relative() {
+        workspace_root.join(path)
+    } else {
+        PathBuf::from(path)
+    };
+    let metadata = fs::symlink_metadata(&resolved)
+        .unwrap_or_else(|e| panic!("CLI package {}: {e}", resolved.display()));
     assert!(
         metadata.file_type().is_file()
             && metadata.len() > 0
             && metadata.len() <= MAX_CLI_PACKAGE_SIZE,
         "CLI package must be a nonempty regular file no larger than {MAX_CLI_PACKAGE_SIZE} bytes: {path}"
     );
-    let path = fs::canonicalize(path).unwrap_or_else(|e| panic!("CLI package {path}: {e}"));
+    let path = fs::canonicalize(&resolved)
+        .unwrap_or_else(|e| panic!("CLI package {}: {e}", resolved.display()));
     println!("cargo::rerun-if-changed={}", path.display());
     println!("cargo::rustc-cfg=bundled_okou_cli");
     println!(
