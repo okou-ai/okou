@@ -1,42 +1,43 @@
-import { command } from "ccstate";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
-  type CodexServiceTier,
-  type ChatThreadServiceTier,
   chatThreadsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type ChatThreadServiceTier,
+  type CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { clerk$ } from "../external/clerk";
-import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
-import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { bodyResultOf } from "../context/request";
+import { clerk$ } from "../external/clerk";
+import { publishThreadListChanged } from "../external/realtime";
+import type { RouteEntry } from "../route-entry";
+import { agentExistsInOrg } from "../services/agent-deletion.service";
+import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
+import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
+import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import {
   createChatThread$,
   type CreatedChatThread,
   type ExistingChatThread,
 } from "../services/chat-thread.service";
-import { agentExistsInOrg } from "../services/agent-deletion.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
-  resolveDefaultModelFirstPin$,
-  resolveModelSelectionPin$,
+  resolveDefaultModelFirstPin,
+  resolveModelSelectionPin,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
-import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
-import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
-import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
-import type { RouteEntry } from "../route-entry";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
@@ -140,7 +141,13 @@ const initialThreadModel$ = command(
   }> => {
     const initial =
       requested.model === undefined
-        ? await set(resolveDefaultModelFirstPin$, owner, signal)
+        ? await resolveDefaultModelFirstPin(
+            set(writeDb$),
+            owner.orgId,
+            owner.userId,
+            undefined,
+            undefined,
+          )
         : { selectedModel: requested.model, serviceTier: null };
     signal.throwIfAborted();
     const serviceTier =
@@ -204,15 +211,12 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  const pin = await set(
-    resolveModelSelectionPin$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      modelSelection: modelFirstSelection(selectedModel),
-    },
-    signal,
-  );
+  const pin = await resolveModelSelectionPin({
+    db: set(writeDb$),
+    orgId: auth.orgId,
+    userId: auth.userId,
+    modelSelection: modelFirstSelection(selectedModel),
+  });
   signal.throwIfAborted();
   if ("status" in pin) {
     return pin;

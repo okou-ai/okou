@@ -1,16 +1,11 @@
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { command } from "ccstate";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, asc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import { logger } from "../../lib/log";
 import {
   enrichMessageContent,
@@ -39,17 +34,21 @@ import {
   canonicalSlackThreadStatusTargetForIngress,
   clearCanonicalSlackThreadStatusIfIdle,
 } from "./canonical-slack-thread-status.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
   isSlackDirectMessageSessionThreadTs,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
 
 const L = logger("CanonicalSlackIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -564,15 +563,11 @@ const enqueueCanonicalSlackMessage$ = command(
       id: args.ingress.ingressId,
       chatThreadId: args.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: args.chatThreadId,
-          orgId: args.orgId,
-          userId: args.ingress.userId,
-        },
-        signal,
-      ),
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
+        threadId: args.chatThreadId,
+        orgId: args.orgId,
+        userId: args.ingress.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: args.displayContent,
         files: canonicalInputMessageFiles(args.canonicalAssets),
@@ -824,27 +819,34 @@ export const processCanonicalSlackIngress$ = command(
         );
         signal.throwIfAborted();
         // Enqueue, then the background pick, then the UI realtime events.
-        set(scheduleEnqueuedChatThreadPick$, {
-          chatThreadId: ingress.chatThreadId,
-          afterPick: async (pick, pickSignal) => {
-            await settleCanonicalSlackStatusAfterPick(
-              db,
-              { ingress, ingressId: args.ingressId, reason: pick.reason },
-              pickSignal,
-            );
+        set(
+          scheduleEnqueuedChatThreadPick$,
+          {
+            orgId: ingress.orgId,
+            chatThreadId: ingress.chatThreadId,
+            // The ingress id is the enqueued input's chat event id.
+            eventId: args.ingressId,
+            afterPick: async (pick, pickSignal) => {
+              await settleCanonicalSlackStatusAfterPick(
+                db,
+                { ingress, ingressId: args.ingressId, reason: pick.reason },
+                pickSignal,
+              );
+            },
+            publish: async () => {
+              await publishChatThreadMessageCreatedSafely({
+                userId: ingress.userId,
+                orgId: ingress.orgId,
+                threadId: ingress.chatThreadId,
+              });
+              await publishThreadListChangedSafely({
+                userId: ingress.userId,
+                orgId: ingress.orgId,
+              });
+            },
           },
-          publish: async () => {
-            await publishChatThreadMessageCreatedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-              threadId: ingress.chatThreadId,
-            });
-            await publishThreadListChangedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-            });
-          },
-        });
+          signal,
+        );
         return true;
       })(),
       signal,

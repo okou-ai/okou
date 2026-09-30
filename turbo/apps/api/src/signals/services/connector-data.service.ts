@@ -1,27 +1,19 @@
-import {
-  completedGetStartedQuestSql,
-  memberRewardWalletQuery,
-} from "./get-started-member-reward";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { slackRewardWalletEntitlement } from "./slack-installation-reward";
-import { command, computed, type Computed } from "ccstate";
-import {
-  connectorReconnectReasonSchema,
-  type BuiltinConnectorListResponse,
-  type ConnectorProvidedBinding,
-  type ConnectorReconnectReason,
-  type BuiltinConnectorResponse,
-  type ScopeDiffResponse,
-} from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorReconnectReasonSchema,
+  type BuiltinConnectorListResponse,
+  type BuiltinConnectorResponse,
+  type ConnectorProvidedBinding,
+  type ConnectorReconnectReason,
+  type ScopeDiffResponse,
+} from "@okouai/api-contracts/contracts/connector-schemas";
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
+import { revokeConnectorAuthMethodAccessTokenWithMethod } from "@okouai/connectors/auth-providers";
 import {
   connectorAuthMethodGrantMetadata,
   connectorAuthMethodOwnedSecretNames,
@@ -30,7 +22,6 @@ import {
   connectorAuthMethodScopeDiff,
   type ConnectorOutputTarget,
 } from "@okouai/connectors/connector-auth-method";
-import { revokeConnectorAuthMethodAccessTokenWithMethod } from "@okouai/connectors/auth-providers";
 import type {
   ConnectorAuthMethodRuntimeConfig,
   ConnectorManualGrantFieldConfig,
@@ -39,31 +30,28 @@ import {
   getAllFeatureStates,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { connectors } from "@okouai/db/schema/connector";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  completedGetStartedQuestSql,
+  memberRewardWalletQuery,
+} from "./get-started-member-reward";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 
-import { optionalEnv } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { logger } from "../../lib/log";
 import type { Tx } from "../../lib/db-types";
+import { optionalEnv } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, type Db, type ReadonlyDb, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
-import {
-  decryptStoredSecretValue,
-  encryptStoredSecretValue,
-} from "./crypto.utils";
-import {
-  userFeatureSwitchContext,
-  userFeatureSwitchOverrides,
-} from "./feature-switches.service";
-import {
-  builtinConnectorCredentialReconnectReasonWithMethod,
-  builtinConnectorCredentialStatusWithMethod,
-} from "./connector-credential-status.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
   builtinConnectorCredentialStorageIsCompatible,
@@ -71,14 +59,11 @@ import {
   resolveStoredBuiltinConnectorRuntimeMethod,
   type BuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-access.service";
-import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
-import {
-  deleteConnectorCredentialStorageConnection,
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
-} from "./connector-credential-storage-write.service";
-import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
+import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
+import { resolveConnectorAccount } from "./connector-account-resolution.service";
+import { reconcileConnectorAccountState } from "./connector-account-state.service";
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
+import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   isConnectorCatalogUnavailableError,
   searchConnectorCatalog,
@@ -87,11 +72,34 @@ import {
   getConnectorRuntimeConnector,
   loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
+import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
+import {
+  replaceConnectorConnectionOutcome,
+  resolveConnectorConnectionMutation,
+  type ConnectorConnectionMutationResolution,
+  type StoredConnectorConnectionRow as StoredConnectorRow,
+} from "./connector-connection-write.service";
+import {
+  builtinConnectorCredentialReconnectReasonWithMethod,
+  builtinConnectorCredentialStatusWithMethod,
+} from "./connector-credential-status.service";
+import {
+  deleteConnectorCredentialStorageConnection,
+  upsertConnectorOwnedSecret,
+  upsertConnectorOwnedVariable,
+} from "./connector-credential-storage-write.service";
+import {
+  decryptStoredSecretValue,
+  encryptStoredSecretValue,
+} from "./crypto.utils";
+import {
+  userFeatureSwitchContext,
+  userFeatureSwitchOverrides,
+} from "./feature-switches.service";
 import { reconcileGmailWatchesForUser$ } from "./gmail-automation-event.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
@@ -111,15 +119,6 @@ import {
   reconcileGoogleMeetSubscriptionsForUser,
   type PendingGoogleMeetSubscriptionDelete,
 } from "./google-meet-automation-event.service";
-import { reconcileConnectorAccountState } from "./connector-account-state.service";
-import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
-import { resolveConnectorAccount } from "./connector-account-resolution.service";
-import {
-  replaceConnectorConnectionOutcome,
-  resolveConnectorConnectionMutation,
-  type ConnectorConnectionMutationResolution,
-  type StoredConnectorConnectionRow as StoredConnectorRow,
-} from "./connector-connection-write.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 const log = logger("api:connector-data");
@@ -307,7 +306,7 @@ export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
     signal: AbortSignal,
   ): Promise<ConnectorRuntimeSnapshot | null> => {
     const result = await settle(
-      set(loadConnectorRuntimeSnapshot$, signal),
+      loadConnectorRuntimeSnapshot(set(writeDb$)),
       signal,
     );
     signal.throwIfAborted();

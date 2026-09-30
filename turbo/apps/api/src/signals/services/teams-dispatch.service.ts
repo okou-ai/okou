@@ -1,39 +1,34 @@
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHash, randomBytes } from "node:crypto";
-
-import { command } from "ccstate";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
+  TeamsInboundActivity,
+  TeamsInboundAttachment,
+} from "@okouai/api-contracts/contracts/teams-bot";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
 } from "@okouai/db/jsonb-contracts/chat-teams-context";
+import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { agents } from "@okouai/db/schema/agent";
-import type {
-  TeamsInboundActivity,
-  TeamsInboundAttachment,
-} from "@okouai/api-contracts/contracts/teams-bot";
+import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
-
+import { createHash, randomBytes } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { inferMimetype } from "../../lib/mimetype";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { inferMimetype } from "../../lib/mimetype";
+import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -44,8 +39,8 @@ import {
   fetchTeamsChannelMessageReplies,
   fetchTeamsChannelMessages,
   fetchTeamsFile,
-  fetchTeamsUsers,
   fetchTeamsPersonalChatMessages,
+  fetchTeamsUsers,
   sendTeamsMessageReply,
   sendTeamsReaction,
   sendTeamsTypingActivity,
@@ -55,38 +50,41 @@ import {
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
 import { bestEffort, safeJsonParse } from "../utils";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import { InputFileImportError } from "./canonical-asset.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import {
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputAsset,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
   ensureTeamsChatThreadRoute$,
   findTeamsRoutedChatThreadId$,
 } from "./teams-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { formatTeamsFileForContext } from "./teams-prompt";
-import { InputFileImportError } from "./canonical-asset.service";
-import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
-import {
-  integrationInputMessageFiles,
-  materializeIntegrationInputAssets$,
-  readyIntegrationInputAsset,
-  type IntegrationInputFile,
-  type IntegrationInputAsset,
-} from "./integration-input-assets.service";
-import type { TeamsFileTokenPayload } from "./teams-file-token";
-import {
   buildTeamsConnectUrlForActivity,
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
+import type { TeamsFileTokenPayload } from "./teams-file-token";
+import { formatTeamsFileForContext } from "./teams-prompt";
 
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
@@ -1582,10 +1580,12 @@ const persistTeamsChatMessage$ = command(
     const route = await set(
       ensureTeamsChatThreadRoute$,
       {
-        initialModel: await set(
-          resolveDefaultModelFirstPin$,
-          { orgId: args.installation.orgId, userId: args.connection.userId },
-          signal,
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.installation.orgId,
+          args.connection.userId,
+          undefined,
+          undefined,
         ),
         connectionId: args.connection.id,
         conversationId: args.activity.conversationId,
@@ -1630,15 +1630,11 @@ const persistTeamsChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: route.chatThreadId,
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-        },
-        signal,
-      ),
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: [
           args.activity.text,
@@ -1760,19 +1756,25 @@ const runAgentForTeams$ = command(
       orgId: args.installation.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: args.installation.orgId,
+        chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
+        afterPick: async (pick, pickSignal) => {
+          await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: args.connection.userId,
+            orgId: args.installation.orgId,
+            threadId: persisted.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.connection.userId,
-          orgId: args.installation.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return { kind: "accepted" };
   },
 );

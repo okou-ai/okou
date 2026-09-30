@@ -565,16 +565,18 @@ export function createDeferredPromise<T>(signal: AbortSignal): {
   };
 }
 
-export async function clearAllDetached(): Promise<void> {
+/** Drain the existing test-owned work and let a scenario inspect every error. */
+export async function collectAllDetachedErrorsForTest(): Promise<
+  readonly unknown[]
+> {
   if (!IN_VITEST) {
-    return;
+    return [];
   }
 
   // Await every detached promise so background work cannot leak into the next
   // test. Detached work can schedule more detached work as it settles, so keep
   // draining until no promises remain. Only AbortError is swallowed — any other
-  // rejection is re-thrown so a failing waitUntil task fails the test that
-  // scheduled it.
+  // rejection is returned for explicit scenario validation or default teardown.
   const errors: unknown[] = [];
   while (tracker().collected.size > 0) {
     const pending = [...tracker().collected];
@@ -595,6 +597,11 @@ export async function clearAllDetached(): Promise<void> {
       );
     }
   }
+  return errors;
+}
+
+export async function clearAllDetached(): Promise<void> {
+  const errors = await collectAllDetachedErrorsForTest();
   if (errors.length > 0) {
     throw errors[0];
   }

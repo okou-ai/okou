@@ -63,6 +63,10 @@ export const userPreferencesResponseSchema = z.object({
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),
+  // False until this member's memory storage has a HEAD. The Web App then
+  // calls the idempotent initialize route before starting runs; run creation
+  // fails for a member without memory.
+  memoryInitialized: z.boolean(),
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -132,7 +136,8 @@ export const userPreferencesContract = c.router({
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Initialize missing timezone and locale and enroll Morning Brief",
+    summary:
+      "Initialize missing timezone, locale and member memory and enroll Morning Brief",
   },
   get: {
     method: "GET",

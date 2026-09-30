@@ -1,26 +1,24 @@
-import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
-import { Buffer } from "node:buffer";
-import { OAuth2Client } from "google-auth-library";
-import { command } from "ccstate";
-import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
 import { googleMeetTranscriptGeneratedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   googleWorkspaceEventSubscriptionStates,
   googleWorkspaceProcessedEvents,
 } from "@okouai/db/schema/google-workspace-event";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
-import { connectors } from "@okouai/db/schema/connector";
-import { optionalEnv } from "../../lib/env";
-import { writeDb$, type Db } from "../external/db";
-import { now, nowDate } from "../../lib/time";
+import { command } from "ccstate";
+import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
+import { OAuth2Client } from "google-auth-library";
+import { Buffer } from "node:buffer";
+import { z } from "zod";
 import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
+import { optionalEnv } from "../../lib/env";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import { now, nowDate } from "../../lib/time";
+import { writeDb$, type Db } from "../external/db";
 import {
   bestEffort,
   safeJsonParse,
@@ -28,20 +26,25 @@ import {
   settleIncludingAbort,
   tapError,
 } from "../utils";
+import { AutomationEventSourceTiming } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import { AutomationEventSourceTiming } from "./automation-event-source-timing.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  GoogleMeetAutomationSourceChangedError,
+  persistGoogleMeetWorkflowSource,
+} from "./workflow-google-meet-queue.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
 const GOOGLE_WORKSPACE_EVENTS_API_BASE =
@@ -2045,13 +2048,31 @@ const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief,
-          googleMeetSource: {
-            automationId: args.automation.automation.id,
-            orgId: args.automation.automation.orgId,
-            userId: args.automation.automation.ownerUserId,
-            connectorSourceId: args.state.connectorId,
-            subscriptionStateId: args.state.id,
-            subscriptionName: args.state.subscriptionName,
+          persistSourceTransition: async (tx) => {
+            await persistGoogleMeetWorkflowSource(
+              tx,
+              {
+                source: {
+                  automationId: args.automation.automation.id,
+                  orgId: args.automation.automation.orgId,
+                  userId: args.automation.automation.ownerUserId,
+                  connectorSourceId: args.state.connectorId,
+                  subscriptionStateId: args.state.id,
+                  subscriptionName: args.state.subscriptionName,
+                },
+                automationId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
           timing: runTiming.collectorForRunStart(),
         },

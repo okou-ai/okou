@@ -3,13 +3,10 @@ import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  connectorSlugSchema,
-  type ConnectorSlug,
-} from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
@@ -17,18 +14,19 @@ import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   loadAgentConnectorScope,
   type AgentConnectorScope,
 } from "./agent-connector-scope.service";
+import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
+import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   getConnectorRuntimeConnector,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
@@ -68,20 +66,6 @@ type UpdateChatThreadConnectorSelectionResult =
 type ClearChatThreadConnectorSelectionResult =
   | { readonly kind: "cleared" }
   | { readonly kind: "not_found" };
-
-type ResolveChatThreadConnectorSelectionsResult =
-  | {
-      readonly kind: "resolved";
-      readonly connectorIdCandidatesBySlug: ReadonlyMap<
-        ConnectorSlug,
-        readonly string[]
-      >;
-      readonly connectorIdCandidatesByCustomConnectorId: ReadonlyMap<
-        string,
-        readonly string[]
-      >;
-    }
-  | { readonly kind: "invalid"; readonly message: string };
 
 function targetFromRow(row: ConnectorSelectionRow): ConnectorAccountTarget {
   if (row.connectorSlug !== null && row.customConnectorId === null) {
@@ -187,32 +171,6 @@ async function loadSelectionRows(
       asc(chatThreadConnectorSelections.connectorSlug),
       asc(chatThreadConnectorSelections.customConnectorId),
     );
-}
-
-async function loadConnectorTarget(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-  },
-): Promise<ConnectorAccountTarget | undefined> {
-  const [row] = await db
-    .select({
-      connectorId: connectors.id,
-      connectorSlug: connectors.connectorSlug,
-      customConnectorId: connectors.customConnectorId,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return row ? targetFromRow(row) : undefined;
 }
 
 async function loadConnectorTargetOwnerships(
@@ -397,34 +355,6 @@ export async function prepareChatThreadConnectorSelections(
   return { kind: "ready", selections: [...byTarget.values()] };
 }
 
-async function projectStoredSelections(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly selections: readonly ConnectorAccountSelection[];
-  },
-): Promise<readonly ConnectorAccountSelection[]> {
-  const connections = await listConnectorAccountsByIds(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectionIds: args.selections.map((selection) => {
-      return selection.connectionId;
-    }),
-  });
-  const connectionTargetById = new Map(
-    connections.map((connection) => {
-      return [connection.id, connectorAccountTargetKey(connection.target)];
-    }),
-  );
-  return args.selections.filter((selection) => {
-    return (
-      connectionTargetById.get(selection.connectionId) ===
-      connectorAccountTargetKey(selection.target)
-    );
-  });
-}
-
 /**
  * Insert only from an existing account. The ordinary foreign-key check either
  * protects that reference until commit or rejects a concurrent parent delete;
@@ -481,6 +411,7 @@ function selectionWriteSql(
 }
 
 /** `undefined`: the account was deleted before this selection could reference it. */
+
 async function upsertSelection(
   tx: Tx,
   chatThreadId: string,
@@ -681,93 +612,4 @@ export async function insertInitialChatThreadConnectorSelections(
       throw inserted.error;
     }
   }
-}
-
-export async function resolveChatThreadConnectorSelections(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly scope: AgentConnectorScope;
-    readonly connectorSourceId?: string;
-  },
-): Promise<ResolveChatThreadConnectorSelectionsResult> {
-  const thread = await loadOwnedChatThread(db, args);
-  if (!thread) {
-    return {
-      kind: "invalid",
-      message: "Chat thread is no longer available",
-    };
-  }
-  const rows = await loadSelectionRows(db, args.chatThreadId);
-  const storedSelections = await projectStoredSelections(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    selections: rows.map(selectionFromRow).filter((selection) => {
-      return targetIsAuthorized(args.scope, selection.target);
-    }),
-  });
-  const selectionCandidates = new Map<
-    string,
-    readonly ConnectorAccountSelection[]
-  >();
-  for (const selection of storedSelections) {
-    selectionCandidates.set(connectorAccountTargetKey(selection.target), [
-      selection,
-    ]);
-  }
-  if (args.connectorSourceId !== undefined) {
-    const target = await loadConnectorTarget(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorSourceId,
-    });
-    if (target && targetIsAuthorized(args.scope, target)) {
-      const key = connectorAccountTargetKey(target);
-      const sourceSelection = {
-        connectionId: args.connectorSourceId,
-        target,
-      } satisfies ConnectorAccountSelection;
-      const threadSelection = selectionCandidates.get(key)?.[0];
-      selectionCandidates.set(
-        key,
-        threadSelection &&
-          threadSelection.connectionId !== sourceSelection.connectionId
-          ? [sourceSelection, threadSelection]
-          : [sourceSelection],
-      );
-    }
-  }
-
-  const connectorIdCandidatesBySlug = new Map<
-    ConnectorSlug,
-    readonly string[]
-  >();
-  const connectorIdCandidatesByCustomConnectorId = new Map<
-    string,
-    readonly string[]
-  >();
-  for (const candidates of selectionCandidates.values()) {
-    const first = candidates[0];
-    if (!first) {
-      continue;
-    }
-    const connectorIds = candidates.map((candidate) => {
-      return candidate.connectionId;
-    });
-    if (first.target.kind === "builtin") {
-      connectorIdCandidatesBySlug.set(first.target.connectorSlug, connectorIds);
-    } else {
-      connectorIdCandidatesByCustomConnectorId.set(
-        first.target.customConnectorId,
-        connectorIds,
-      );
-    }
-  }
-  return {
-    kind: "resolved",
-    connectorIdCandidatesBySlug,
-    connectorIdCandidatesByCustomConnectorId,
-  };
 }

@@ -1,5 +1,3 @@
-import { mockClerkUsers } from "./clerk-users";
-import type { z } from "zod";
 import {
   cliAuthTestCodexOauthContract,
   cliAuthTestConnectorContract,
@@ -7,15 +5,17 @@ import {
 } from "@okouai/api-contracts/contracts/cli-auth-test";
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse, http } from "msw";
+import type { z } from "zod";
+import { mockClerkUsers } from "./clerk-users";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import { server } from "../../../../mocks/server";
 import { generateSandboxToken } from "../../../auth/tokens";
 import { cliAuthTestRoutes } from "../../cli-auth-test";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
-import type { ApiTestUser } from "./api-bdd";
+import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
 
 type FirewallAuthBody = z.infer<
@@ -134,6 +134,7 @@ export function createFirewallApi(context: TestContext) {
         }),
         [200],
       );
+      await createBddApi(context).completeOnboarding(actor);
     },
 
     async seedTestConnector(

@@ -1,30 +1,25 @@
-import {
-  captureIntegrationInputUploads,
-  expectIntegrationInputPreview,
-} from "./helpers/integration-input-assets";
-import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
-import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
-
+import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
-import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { HttpResponse, http } from "msw";
 import { createStore } from "ccstate";
-import { describe, expect, it, beforeEach } from "vitest";
-
+import { http, HttpResponse } from "msw";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
+import { beforeEach, describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
 import {
   readChatEventContextFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
+import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   countPiMemoryStage1CandidatesFixture,
   readmitPiMemoryStage1CandidateFixture,
@@ -33,28 +28,31 @@ import {
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   agentPhoneBddWebhookSecret,
   createBddIntegrationApi,
   telegramLoginAuth,
 } from "./helpers/api-bdd-integrations";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
+import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+} from "./helpers/integration-input-assets";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
 } from "./helpers/runtime-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 
 /*
 helper gap:
@@ -922,7 +920,7 @@ async function expectFirstSlackPiExecution(args: {
     context,
     args.scenario.chatThreadId,
   );
-  expect(binding.agent_session_id).not.toBe(args.scenario.historicalSessionId);
+  expect(binding.agent_session_id).toBe(args.scenario.historicalSessionId);
   if (!binding.agent_session_id) {
     throw new Error("Expected the first Slack Pi session binding");
   }
@@ -5274,6 +5272,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
+    await bdd.completeOnboarding(actor2);
 
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {

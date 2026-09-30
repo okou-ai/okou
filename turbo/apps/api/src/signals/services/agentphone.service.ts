@@ -1,39 +1,38 @@
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { command } from "ccstate";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { v5 as uuidv5 } from "uuid";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import {
-  getCanonicalModelDisplayName,
   getBuiltInVisibleModels,
+  getCanonicalModelDisplayName,
   isSupportedRunModel,
   normalizeRunModelId,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
+import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { inferMimetype } from "../../lib/mimetype";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
+import { inferMimetype } from "../../lib/mimetype";
 import { now } from "../../lib/time";
+import {
+  sendAgentPhoneMessage,
+  sendAgentPhoneTypingIndicator,
+} from "../external/agentphone-client";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import {
-  sendAgentPhoneMessage,
-  sendAgentPhoneTypingIndicator,
-} from "../external/agentphone-client";
 import { bestEffort, safeUrlParse } from "../utils";
+import {
+  ensureAgentPhoneChatThreadRoute$,
+  findAgentPhoneRoutedChatThreadId$,
+} from "./agentphone-chat-ingress.service";
 import {
   agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
@@ -47,20 +46,17 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import {
-  ensureAgentPhoneChatThreadRoute$,
-  findAgentPhoneRoutedChatThreadId$,
-} from "./agentphone-chat-ingress.service";
+import { InputFileImportError } from "./canonical-asset.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
-import { InputFileImportError } from "./canonical-asset.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -68,6 +64,10 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
+import { listOrgModelPolicies$ } from "./model-policy.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
@@ -1314,10 +1314,12 @@ const persistAgentPhoneChatMessage$ = command(
     const route = await set(
       ensureAgentPhoneChatThreadRoute$,
       {
-        initialModel: await set(
-          resolveDefaultModelFirstPin$,
-          { orgId: args.userLink.orgId, userId: args.userLink.userId },
-          signal,
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.userLink.orgId,
+          args.userLink.userId,
+          undefined,
+          undefined,
         ),
         agentphoneUserLinkId: args.userLink.id,
         rootMessageId: args.rootMessageId,
@@ -1359,15 +1361,11 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: route.chatThreadId,
-          orgId: args.userLink.orgId,
-          userId: args.userLink.userId,
-        },
-        signal,
-      ),
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
+        threadId: route.chatThreadId,
+        orgId: args.userLink.orgId,
+        userId: args.userLink.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),
@@ -1446,22 +1444,28 @@ const runAgentForAgentPhone$ = command(
       orgId: args.userLink.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        const notice = chatQueueWaitNotice(pick.reason);
-        if (notice) {
-          await sendAgentPhoneText(args.event, notice, pickSignal);
-        }
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: args.userLink.orgId,
+        chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
+        afterPick: async (pick, pickSignal) => {
+          const notice = chatQueueWaitNotice(pick.reason);
+          if (notice) {
+            await sendAgentPhoneText(args.event, notice, pickSignal);
+          }
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: args.userLink.userId,
+            orgId: args.userLink.orgId,
+            threadId: persisted.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.userLink.userId,
-          orgId: args.userLink.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
   },
 );
 

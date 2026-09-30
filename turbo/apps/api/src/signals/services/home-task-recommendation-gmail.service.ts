@@ -1,13 +1,15 @@
+import { z } from "zod";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
-import { z } from "zod";
 
+import { connectors } from "@okouai/db/schema/connector";
+import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { command } from "ccstate";
 import {
   readBoundedResponseText,
   safeJsonParse,
@@ -16,9 +18,7 @@ import {
 } from "../utils";
 import { loadAgentConnectorScope$ } from "./agent-connector-scope.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
-import { connectors } from "@okouai/db/schema/connector";
-import { and, eq } from "drizzle-orm";
-import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { connectorUrlPermission$ } from "./connector-url-permission.service";
 
 const GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME = "GMAIL_TOKEN";
@@ -170,7 +170,7 @@ const gmailAccessToken$ = command(
     readonly accessToken: string;
     readonly stateRevision: string;
   } | null> => {
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -244,7 +244,7 @@ const currentlyAuthorized$ = command(
     if (!connectorScope.allowedConnectorSlugs.includes("gmail")) {
       return false;
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const decision = await set(
       connectorUrlPermission$,
@@ -291,7 +291,7 @@ const gmailConnectionIsUsable$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

@@ -1,43 +1,43 @@
-import { randomUUID } from "node:crypto";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
+import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
   readPiMemoryStage1DayFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
-import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronExtractPiMemoryStage1RoutesForTest } from "../cron-extract-pi-memory-stage1";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import {
+  createChatEventsFixture,
+  createPiUsagePricingResolution,
+  expectExactPrivatePiMemoryAdmission,
+  expectNoBuiltInModelUsage,
+  requireOrgId,
+  totalChargedCredits,
+} from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { piResponsesTextSse } from "./helpers/pi-responses";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
 } from "./helpers/runtime-state";
-import {
-  createChatEventsFixture,
-  requireOrgId,
-  expectNoBuiltInModelUsage,
-  createPiUsagePricingResolution,
-  expectExactPrivatePiMemoryAdmission,
-  totalChargedCredits,
-} from "./helpers/chat-events-fixture";
-import { piResponsesTextSse } from "./helpers/pi-responses";
 
 const context = testContext();
 const {
@@ -350,9 +350,7 @@ describe("thread-bound Pi Automation execution", () => {
       });
       await expectThreadPiTerminal(actor, threadId, piRunId);
       const piBinding = await readThreadSessionBinding(context, threadId);
-      expect(piBinding.agent_session_id).not.toBe(
-        legacyBinding.agent_session_id,
-      );
+      expect(piBinding.agent_session_id).toBe(legacyBinding.agent_session_id);
       const piHistory = await readPiConversationIdentityFixture(piRunId);
       // An Automation completion never produces memory (EPIC #33892
       // Decision 3): its owned Chat Thread is skipped as a non-interactive

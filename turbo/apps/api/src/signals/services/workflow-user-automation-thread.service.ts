@@ -11,28 +11,28 @@ import {
 } from "@okouai/db/schema/workflow";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { command } from "ccstate";
-import { randomUUID } from "node:crypto";
 import {
   modelSettingsSchema,
   type ModelSettings,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
-  resolveDefaultModelFirstPin$,
-  type DefaultModelFirstPin,
-} from "./model-selection.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
+import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
-} from "./chat-thread-create.service";
+  resolveDefaultModelFirstPin,
+  type DefaultModelFirstPin,
+} from "./model-selection.service";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -127,11 +127,14 @@ export const prepareWorkflowUserAutomationThread$ = command(
         }
       }
     }
-    const initialModel = await set(
-      resolveDefaultModelFirstPin$,
-      { orgId: args.orgId, userId: args.userId },
-      signal,
+    const initialModel = await resolveDefaultModelFirstPin(
+      set(writeDb$),
+      args.orgId,
+      args.userId,
+      undefined,
+      undefined,
     );
+    signal.throwIfAborted();
     return {
       initialModel,
       title,

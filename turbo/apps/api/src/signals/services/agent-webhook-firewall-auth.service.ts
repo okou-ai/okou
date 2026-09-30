@@ -1,34 +1,51 @@
-import {
-  personalSubscriptionAccountAccessCondition,
-  isPersonalSubscriptionProviderType,
-  readPersonalSubscriptionCredentialBundle,
-} from "./model-provider-account.service";
+import { Buffer } from "node:buffer";
+import { performance } from "node:perf_hooks";
+import { isDeepStrictEqual } from "node:util";
 import {
   publishModelPoliciesChangedForOrgSafely,
   publishPersonalModelProvidersChangedSafely,
 } from "../external/realtime";
 import {
+  isPersonalSubscriptionProviderType,
+  personalSubscriptionAccountAccessCondition,
+  readPersonalSubscriptionCredentialBundle,
+} from "./model-provider-account.service";
+import {
   isFetchNetworkError,
   isTransientOAuthRefreshFailure,
 } from "./oauth-refresh-failure.service";
-import { Buffer } from "node:buffer";
-import { performance } from "node:perf_hooks";
-import { isDeepStrictEqual } from "node:util";
 
 import { delay } from "signal-timers";
 
-import {
-  getSecretNameForType,
-  getModelProviderEnvBindings,
-  modelProviderTypeSchema,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import {
+  getModelProviderEnvBindings,
+  getSecretNameForType,
+  modelProviderTypeSchema,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import {
+  refreshConnectorAuthProviderAccessTokenWithMethod,
+  type ProviderEnv,
+} from "@okouai/connectors/auth-providers";
+import {
+  getModelProviderRefreshMetadata,
+  isModelProviderRefreshConfigured,
+  isModelProviderRefreshProviderKey,
+  refreshPreparedModelProviderAccess,
+  type ModelProviderRefreshProviderKey,
+} from "@okouai/connectors/auth-providers/model-provider-auth";
+import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
+import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
+import {
+  isProviderHttpError,
+  isProviderResponseError,
+} from "@okouai/connectors/auth-providers/provider-error";
 import {
   connectorAuthMethodAccessMetadata,
   connectorAuthMethodRuntimeMetadata,
@@ -36,52 +53,36 @@ import {
   getConnectorRuntimeBindingPlatformSecretName,
   getConnectorRuntimeBindingSecretName,
   resolveConnectorAuthClient,
-  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthClient,
-  type ConnectorRefreshTokenInputMetadata,
+  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthMethodRuntimeMetadata,
   type ConnectorOutputTarget,
+  type ConnectorRefreshTokenInputMetadata,
 } from "@okouai/connectors/connector-auth-method";
+import {
+  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   parseBasicAuthTemplates,
   replaceBasicAuthTemplates,
   type BasicAuthTemplateArg,
   type BasicAuthTemplateMatch,
 } from "@okouai/connectors/firewall-types";
-import {
-  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  refreshConnectorAuthProviderAccessTokenWithMethod,
-  type ProviderEnv,
-} from "@okouai/connectors/auth-providers";
-import {
-  isProviderHttpError,
-  isProviderResponseError,
-} from "@okouai/connectors/auth-providers/provider-error";
-import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
-import {
-  getModelProviderRefreshMetadata,
-  isModelProviderRefreshConfigured,
-  refreshPreparedModelProviderAccess,
-  isModelProviderRefreshProviderKey,
-  type ModelProviderRefreshProviderKey,
-} from "@okouai/connectors/auth-providers/model-provider-auth";
-import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { command } from "ccstate";
 import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
 import {
   pgInt8ToBigIntDecoder,
@@ -93,39 +94,10 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { command } from "ccstate";
 import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
-import { runAfterSameProcessRefresh } from "./same-process-refresh";
-import {
-  decryptPersistentSecretsMap,
-  decryptStoredSecretValue,
-  encryptStoredSecretValue,
-} from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
-import {
-  loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability$,
-  runHasActiveCreditAdmission,
-  type RunCreditAdmissionState,
-} from "./run-admission.service";
-import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
-import {
-  connectorRuntimeCredentialStatusForAccess,
-  type ConnectorCredentialStatus,
-} from "./connector-credential-status.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import {
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
-} from "./connector-credential-storage-write.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
   builtinConnectorCredentialVariableReadCondition,
@@ -138,6 +110,25 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import {
+  getConnectorRuntimeConnector,
+  loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeMethod,
+  type ConnectorRuntimeSnapshot,
+} from "./connector-catalog-runtime.service";
+import {
+  connectorRuntimeCredentialStatusForAccess,
+  type ConnectorCredentialStatus,
+} from "./connector-credential-status.service";
+import {
+  upsertConnectorOwnedSecret,
+  upsertConnectorOwnedVariable,
+} from "./connector-credential-storage-write.service";
+import {
+  decryptPersistentSecretsMap,
+  decryptStoredSecretValue,
+  encryptStoredSecretValue,
+} from "./crypto.utils";
+import {
   CustomConnectorOAuth2TokenRefreshError,
   resolveCurrentCustomConnectorOAuth2AccessToken,
 } from "./custom-connector-oauth2.service";
@@ -146,6 +137,15 @@ import {
   customConnectorSecretKey,
   loadCustomConnectorRuntimeData,
 } from "./custom-connector.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  loadRunCreditAdmissionState,
+  resolveOrgCreditAvailability,
+  runHasActiveCreditAdmission,
+  type RunCreditAdmissionState,
+} from "./run-admission.service";
+import { runAfterSameProcessRefresh } from "./same-process-refresh";
+import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
 type StorageSecretSource = Exclude<AccessSecretSource, "platform-secret">;
@@ -508,14 +508,12 @@ export const resolveBillableFirewallCacheExpiry$ = command(
     if (!firewallAuthRunIsActive(run.status)) {
       return forbiddenTerminalRun();
     }
-    const availability = await set(
-      resolveOrgCreditAvailability$,
-      {
-        orgId: params.auth.orgId,
-        userId: params.auth.userId,
-      },
-      signal,
-    );
+    const availability = await resolveOrgCreditAvailability({
+      db: set(writeDb$),
+      orgId: params.auth.orgId,
+      userId: params.auth.userId,
+    });
+    signal.throwIfAborted();
     if (!availability || availability.status !== "active") {
       return insufficientCredits();
     }

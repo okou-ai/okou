@@ -1,44 +1,48 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import { createHash, randomUUID } from "node:crypto";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
 } from "../test-get-started-rewards";
-import { createHash, randomUUID } from "node:crypto";
+import { readGetStartedStatus } from "./helpers/get-started";
 
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
-import {
-  workflowAutomationsContract,
-  type WorkflowSchedule,
-} from "@okouai/api-contracts/contracts/workflows";
 import {
   agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { createStore } from "ccstate";
+import {
+  workflowAutomationsContract,
+  type WorkflowSchedule,
+} from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createStore } from "ccstate";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
+import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import type { ApiTestUser } from "./helpers/api-bdd";
-import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { agentsRoutes } from "../agents";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
+import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   chatEventAutomationPart,
   chatEventDisplayText,
@@ -46,10 +50,6 @@ import {
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { agentsRoutes } from "../agents";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...testWorkflowAutomationExecutionRoutes,
@@ -849,6 +849,7 @@ describe("okou workflow automation scheduler", () => {
         orgId: scenario.orgId,
         orgRole: "org:member",
       });
+      await createBddApi(context).completeOnboarding(member);
       // The same membership cache fixture and real CLI read used by the scheduler's access test.
       await store.set(
         seedOrgMembership$,
@@ -884,22 +885,21 @@ describe("okou workflow automation scheduler", () => {
         await runsApi.requestCancelRun(scenario.actor, blocker, [200]);
       }
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
-      await expect
-        .poll(async () => {
-          return (await workflowRunMessages(threadId)).length;
-        })
-        .toBe(1);
+      // Slot release schedules the next pick. Own that work before checking
+      // the account captured by the newly admitted automation run.
+      await flushWaitUntilForTest();
+      await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
       const message = await onlyWorkflowRunMessage(threadId);
       // The run binds the owner's account current at run creation: the
       // original account for an immediate launch, the later one for a pick.
       const expectedOwner = queuedLaunch
         ? { ...later, identity: "later-owner-account" }
         : { ...owner, identity: "automation-owner" };
-      await expect
-        .poll(async () => {
-          return (await runsApi.readRun(member, message.runId)).status;
-        })
-        .toBe("pending");
+      await expect(
+        runsApi.readRun(member, message.runId),
+      ).resolves.toMatchObject({
+        status: "pending",
+      });
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const claim = await runsApi.claimRunnerJob(message.runId);
       expect(claim.cliAgentType).toBe("codex");
@@ -1353,13 +1353,14 @@ describe("okou workflow automation scheduler", () => {
         1,
         "insufficient_credits",
       );
-      await expect
-        .poll(async () => {
-          const read = await wf.readAutomation(automation.automationId);
-          return { enabled: read.enabled, nextRunAt: read.nextRunAt };
-        })
-        .toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
+      // The completion reschedules the loop in background work; drain it
+      // instead of polling on wall-clock intervals.
+      await flushWaitUntilForTest();
       const read = await wf.readAutomation(automation.automationId);
+      expect({
+        enabled: read.enabled,
+        nextRunAt: read.nextRunAt,
+      }).toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
       if (!read.nextRunAt) {
         throw new Error("Expected the next run after insufficient credits");
       }

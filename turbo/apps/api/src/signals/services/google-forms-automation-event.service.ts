@@ -1,4 +1,23 @@
-import { OAuth2Client } from "google-auth-library";
+import {
+  GoogleFormsSourceTransitionChangedError,
+  persistGoogleFormsWorkflowSource,
+} from "./workflow-google-forms-queue.service";
+
+import {
+  googleFormsResponseSubmittedEventConfigSchema,
+  type GoogleFormsResponseSubmittedEventConfig,
+  type GoogleFormsResponseSubmittedEventCreateConfig,
+} from "@okouai/api-contracts/contracts/workflows";
+import {
+  googleFormsAutomationCursors,
+  googleFormsProcessedEvents,
+  googleFormsWatchStates,
+} from "@okouai/db/schema/google-forms-event";
+import {
+  workflowAutomations,
+  workflows,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import {
   and,
@@ -13,58 +32,43 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
-
-import {
-  googleFormsResponseSubmittedEventConfigSchema,
-  type GoogleFormsResponseSubmittedEventConfig,
-  type GoogleFormsResponseSubmittedEventCreateConfig,
-} from "@okouai/api-contracts/contracts/workflows";
-import {
-  googleFormsAutomationCursors,
-  googleFormsProcessedEvents,
-  googleFormsWatchStates,
-} from "@okouai/db/schema/google-forms-event";
-import {
-  workflowUserAutomationThreads,
-  workflowAutomations,
-  workflows,
-} from "@okouai/db/schema/workflow";
-
-import { optionalEnv } from "../../lib/env";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { pgTextDecoder } from "../../lib/db-structured-result";
+import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  workflowAutomationSnapshotColumns,
-  workflowAutomationSnapshotCondition,
-  type WorkflowAutomationSnapshot,
-} from "./workflow-automation-snapshot";
-import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
-import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
-import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
+import {
+  workflowAutomationSnapshotColumns,
+  workflowAutomationSnapshotCondition,
+  type WorkflowAutomationSnapshot,
+} from "./workflow-automation-snapshot";
+
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { connectors } from "@okouai/db/schema/connector";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import type { AutomationRow } from "./workflow-automation-launch.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 
 const log = logger("api:google-forms-automation-event");
 
@@ -234,7 +238,7 @@ const resolveGoogleFormsAccess$ = command(
     signal: AbortSignal,
   ): Promise<GoogleFormsAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -2241,18 +2245,36 @@ const startGoogleFormsWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: googleFormsTriggerBrief(args),
-          googleFormsSource: {
-            orgId: args.state.orgId,
-            userId: args.state.userId,
-            connectorId: args.state.connectorId,
-            automationId: args.automation.automation.id,
-            watchStateId: args.state.id,
-            formId: args.state.formId,
-            watchId: args.decoded.watchId,
-            pubsubMessageId: args.decoded.messageId,
-            responseId: args.response.responseId,
-            lastSubmittedTime: args.response.lastSubmittedTime,
-            cursor: args.cursor,
+          persistSourceTransition: async (tx) => {
+            await persistGoogleFormsWorkflowSource(
+              tx,
+              {
+                source: {
+                  orgId: args.state.orgId,
+                  userId: args.state.userId,
+                  connectorId: args.state.connectorId,
+                  automationId: args.automation.automation.id,
+                  watchStateId: args.state.id,
+                  formId: args.state.formId,
+                  watchId: args.decoded.watchId,
+                  pubsubMessageId: args.decoded.messageId,
+                  responseId: args.response.responseId,
+                  lastSubmittedTime: args.response.lastSubmittedTime,
+                  cursor: args.cursor,
+                },
+                automationId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
           timing: args.timing.collectorForRunStart(),
         },

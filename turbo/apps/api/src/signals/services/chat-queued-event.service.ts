@@ -1,47 +1,27 @@
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, exists, isNull, notExists, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-
-import {
-  pgBooleanDecoder,
-  nullableDriverValueDecoder,
-  pgTextDecoder,
-  pgNullDecoder,
-} from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
-import {
-  childAutonomyBudget,
-  type ChildAutonomyBudget,
-} from "./autonomy-budget.service";
+import type { ChildAutonomyBudget } from "./autonomy-budget.service";
 import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
-  parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
-import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
 import { loadChatQueueHead } from "./chat-event-queue.service";
-import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   type LoadedChatEventReplacementTarget,
   type NewChatEvent,
   replaceLoadedChatEvent,
 } from "./chat-event.service";
-import {
-  agentRunSourceAnnotation,
-  withRunModelAnnotation,
-} from "./chat-user-message.service";
-import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
+import { withRunModelAnnotation } from "./chat-user-message.service";
 
 type DbTransaction = Tx;
 
@@ -193,182 +173,6 @@ export function queuedUserMessageExists(db: Pick<Db, "select">): SQL {
   );
 }
 
-function resolveQueuedOfficialWorkflowContext(args: {
-  readonly contextType: QueuedUserMessageContextType;
-  readonly contextId: string | null;
-  readonly requiredOfficialWorkflowIds: readonly string[] | null;
-}) {
-  const hasClaim = args.requiredOfficialWorkflowIds !== null;
-  if (hasClaim && !isWebChatContextType(args.contextType)) {
-    throw new Error(
-      `Queued ${args.contextType} input cannot carry an Official Workflow source claim`,
-    );
-  }
-  const webContext =
-    args.contextType === "web"
-      ? webChatQueueContextFromContextId(args.contextId)
-      : null;
-  if (args.contextType === "web" && webContext === null) {
-    throw new Error(`Invalid Web chat context: ${args.contextId}`);
-  }
-  // Both Official agent markers identify the claim here, never the source Run.
-  // Recognizing both also keeps annotation-based source/budget recovery shared.
-  const officialAgentContext =
-    args.contextType === "agent_run"
-      ? webChatQueueContextFromContextId(args.contextId)
-      : null;
-  const contextRequiresClaim =
-    webContext?.officialWorkflowClaimRequired === true ||
-    officialAgentContext !== null;
-  if (
-    (contextRequiresClaim && !hasClaim) ||
-    (hasClaim && webContext === null && officialAgentContext === null)
-  ) {
-    throw new Error(
-      "Queued Official Workflow context and source claim do not match",
-    );
-  }
-  return { webContext, officialAgentContext };
-}
-
-async function loadQueuedSourceAutonomyBudget(
-  db: Db,
-  args: {
-    readonly userMessage: ChatEventUserMessage;
-    readonly sourceAutonomyBudget: number | null;
-    readonly officialAgentClaim: boolean;
-  },
-): Promise<number | null> {
-  if (!args.officialAgentClaim) {
-    return args.sourceAutonomyBudget;
-  }
-  const source = agentRunSourceAnnotation(args.userMessage);
-  if (!source) {
-    throw new Error(
-      "Queued Official agent input is missing its source Run annotation",
-    );
-  }
-  const [sourceRun] = await db
-    .select({ autonomyBudget: agentRuns.autonomyBudget })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, source.runId))
-    .limit(1);
-  return sourceRun?.autonomyBudget ?? null;
-}
-
-function queuedUserMessageAutonomyBudget(
-  contextType: QueuedUserMessageContextType,
-  sourceAutonomyBudget: number | null,
-): QueuedUserMessage["autonomyBudget"] {
-  if (contextType !== "agent_run") {
-    return { kind: "ok", autonomyBudget: INITIAL_AUTONOMY_BUDGET };
-  }
-  if (sourceAutonomyBudget === null) {
-    return {
-      kind: "unavailable",
-      message: "Agent source run no longer exists",
-    };
-  }
-  return childAutonomyBudget(sourceAutonomyBudget);
-}
-
-interface QueuedUserMessageRow {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly userMessage: ChatEventUserMessage | null;
-  readonly requiredOfficialWorkflowIds: readonly string[] | null;
-  readonly selectedModel: string | null;
-  readonly contextType: QueuedUserMessageContextType | null;
-  readonly contextId: string | null;
-  readonly sourceAutonomyBudget: number | null;
-}
-
-async function materializeQueuedUserMessage(
-  db: Db,
-  event: QueuedUserMessageRow,
-): Promise<QueuedUserMessage> {
-  if (!event.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const contextType = requiredQueuedUserMessageContextType(event.contextType);
-  const requiredOfficialWorkflowIds =
-    parseCanonicalChatEventRequiredOfficialWorkflowIds(
-      event.requiredOfficialWorkflowIds,
-    );
-  const { officialAgentContext } = resolveQueuedOfficialWorkflowContext({
-    contextType,
-    contextId: event.contextId,
-    requiredOfficialWorkflowIds,
-  });
-  const sourceAutonomyBudget = await loadQueuedSourceAutonomyBudget(db, {
-    userMessage: event.userMessage,
-    sourceAutonomyBudget: event.sourceAutonomyBudget,
-    officialAgentClaim: officialAgentContext !== null,
-  });
-  const { requiredOfficialWorkflowIds: _storedClaim, ...queuedEvent } = event;
-  return {
-    ...queuedEvent,
-    userMessage: event.userMessage,
-    ...(requiredOfficialWorkflowIds === null
-      ? {}
-      : { requiredOfficialWorkflowIds }),
-    modelProviderId: null,
-    modelProviderType: null,
-    modelProviderCredentialScope: null,
-    contextType,
-    autonomyBudget: queuedUserMessageAutonomyBudget(
-      contextType,
-      sourceAutonomyBudget,
-    ),
-  };
-}
-
-export async function loadNextUnclaimedQueuedUserMessage(
-  db: Db,
-  threadId: string,
-): Promise<QueuedUserMessage | null> {
-  const head = await loadChatQueueHead(db, threadId);
-  if (!head || head.eventType !== "input.prompt") {
-    return null;
-  }
-  const [event] = await db
-    .select({
-      id: chatEvents.id,
-      createdAt: chatEvents.createdAt,
-      userMessage: canonicalChatEventUserMessage(),
-      requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-      modelProviderId: sql`NULL`.mapWith(pgNullDecoder),
-      modelProviderType: sql`NULL`.mapWith(pgNullDecoder),
-      modelProviderCredentialScope: sql`NULL`.mapWith(pgNullDecoder),
-      selectedModel:
-        sql`${chatEvents.modelSelection}->>'selectedModel'`.mapWith(
-          nullableDriverValueDecoder(pgTextDecoder),
-        ),
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      sourceAutonomyBudget: agentRuns.autonomyBudget,
-    })
-    .from(chatEvents)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-    .leftJoin(
-      agentRuns,
-      and(
-        eq(chatEvents.contextType, "agent_run"),
-        eq(agentRuns.id, chatEvents.contextId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, head.id),
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTypeIn(["input.prompt"]),
-        isNull(chatEvents.runId),
-      ),
-    )
-    .limit(1);
-  return event ? await materializeQueuedUserMessage(db, event) : null;
-}
-
 type QueueFirstClaimArgs = QueueFirstRunAssociation & {
   readonly admission: QueueFirstRunAdmission;
   readonly runId: string;
@@ -487,18 +291,6 @@ async function loadQueueFirstAdmissionProjection(
   readonly head: QueueFirstClaimHead;
 } | null> {
   const { threadId, eventId } = args.association;
-  const [thread] = await db
-    .select({
-      admissionBlocked: sql`${chatThreadAdmissionBlockerCondition(db, {
-        threadId,
-      })}`.mapWith(pgBooleanDecoder),
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  if (!thread || thread.admissionBlocked) {
-    return thread ? { admissionBlocked: true, head: null } : null;
-  }
   // The association names a candidate; it must still be the FIFO head.
   const pendingHead = await loadChatQueueHead(db, threadId);
   const isExpectedHead = pendingHead?.id === eventId;

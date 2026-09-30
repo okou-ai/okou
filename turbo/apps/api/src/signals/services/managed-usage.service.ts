@@ -1,27 +1,27 @@
-import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
-import {
-  managedUsageReceiptCredits,
-  receiptQuery,
-  type ManagedUsageRecordArgs,
-  type ManagedUsageResource,
-} from "./managed-usage-record";
+import { randomUUID } from "node:crypto";
 import {
   attributedManagedValues,
   managedAttributionQuery,
   managedAttributionWrite,
   managedBillingRunQuery,
 } from "./managed-usage-attribution";
-import { randomUUID } from "node:crypto";
+import {
+  managedUsageReceiptCredits,
+  receiptQuery,
+  type ManagedUsageRecordArgs,
+  type ManagedUsageResource,
+} from "./managed-usage-record";
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { nowDate } from "../../lib/time";
+import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
+import { nowDate } from "../../lib/time";
 
 import {
   nullableDriverValueDecoder,
@@ -39,10 +39,7 @@ import {
   loadOrgPlanCapabilities,
   loadOrgPlanCapabilities$,
 } from "./org-plan-entitlement-read.service";
-import {
-  resolveActiveRunCreditAdmission,
-  resolveActiveRunCreditAdmission$,
-} from "./run-admission.service";
+import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import { readUsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
@@ -326,15 +323,12 @@ const checkManagedCreditBalance$ = command(
     if (!capabilities || capabilities.status !== "active") {
       return insufficientCredits();
     }
-    const activeRunAdmission = await set(
-      resolveActiveRunCreditAdmission$,
-      {
-        runId: args.runId,
-        orgId: args.orgId,
-        userId: args.userId,
-      },
-      signal,
-    );
+    const activeRunAdmission = await resolveActiveRunCreditAdmission({
+      db: set(writeDb$),
+      runId: args.runId,
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     signal.throwIfAborted();
     if (activeRunAdmission && !args.enforceBalance) {
       return null;

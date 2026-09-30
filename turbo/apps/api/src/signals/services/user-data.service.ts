@@ -1,34 +1,36 @@
-import { command, computed, type Computed } from "ccstate";
-import {
-  colorThemeSchema,
-  type ColorTheme,
-  SUPPORTED_USER_LOCALES,
-  type SendMode,
-  themePreferenceSchema,
-  type ThemePreference,
-  type UserLocale,
-  type UpdateUserPreferencesRequest,
-  type UserPreferencesResponse,
-} from "@okouai/api-contracts/contracts/user-preferences";
-import type {
-  UpdateUserModelPreferenceRequest,
-  UserModelPreferenceResponse,
-} from "@okouai/api-contracts/contracts/user-model-preference";
-import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelSettingsSchema,
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   SecretResponse,
   SecretType,
 } from "@okouai/api-contracts/contracts/secrets";
+import type {
+  UpdateUserModelPreferenceRequest,
+  UserModelPreferenceResponse,
+} from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  colorThemeSchema,
+  SUPPORTED_USER_LOCALES,
+  themePreferenceSchema,
+  type ColorTheme,
+  type SendMode,
+  type ThemePreference,
+  type UpdateUserPreferencesRequest,
+  type UserLocale,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import type { VariableListResponse } from "@okouai/api-contracts/contracts/variables";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { secrets } from "@okouai/db/schema/secret";
+import { storages } from "@okouai/db/schema/storage";
 import { variables } from "@okouai/db/schema/variable";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
@@ -106,27 +108,41 @@ export function userPreferences({
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
   return computed(async (get): Promise<UserPreferencesResponse> => {
     const db = get(db$);
-    const [row] = await db
-      .select({
-        timezone: orgMembersMetadata.timezone,
-        locale: orgMembersMetadata.locale,
-        pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
-        sendMode: orgMembersMetadata.sendMode,
-        cloudBrowserEnabledByDefault:
-          orgMembersMetadata.cloudBrowserEnabledByDefault,
-        theme: orgMembersMetadata.theme,
-        colorTheme: orgMembersMetadata.colorTheme,
-        captureNetworkBodiesRemaining:
-          orgMembersMetadata.captureNetworkBodiesRemaining,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
+    const [[row], [memory]] = await Promise.all([
+      db
+        .select({
+          timezone: orgMembersMetadata.timezone,
+          locale: orgMembersMetadata.locale,
+          pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
+          sendMode: orgMembersMetadata.sendMode,
+          cloudBrowserEnabledByDefault:
+            orgMembersMetadata.cloudBrowserEnabledByDefault,
+          theme: orgMembersMetadata.theme,
+          colorTheme: orgMembersMetadata.colorTheme,
+          captureNetworkBodiesRemaining:
+            orgMembersMetadata.captureNetworkBodiesRemaining,
+        })
+        .from(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.orgId, orgId),
+            eq(orgMembersMetadata.userId, userId),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ headVersionId: storages.headVersionId })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, orgId),
+            eq(storages.userId, userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ),
+        )
+        .limit(1),
+    ]);
+    const memoryInitialized = (memory?.headVersionId ?? null) !== null;
 
     if (!row) {
       return {
@@ -139,6 +155,7 @@ export function userPreferences({
         theme: null,
         colorTheme: null,
         captureNetworkBodiesRemaining: 0,
+        memoryInitialized,
       };
     }
 
@@ -154,6 +171,7 @@ export function userPreferences({
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
+      memoryInitialized,
     };
   });
 }
@@ -247,6 +265,7 @@ function mergeUserPreferences(
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
+    memoryInitialized: existing.memoryInitialized,
   };
 }
 

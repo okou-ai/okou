@@ -1,5 +1,3 @@
-import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { gunzipSync, gzipSync } from "node:zlib";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -9,20 +7,32 @@ import type {
   StandardSchemaWithJSON,
 } from "@modelcontextprotocol/server";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
+import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
-  mcpGetChatThreadInputSchema,
-  mcpGetChatThreadOutputSchema,
-  mcpGetChatIndicatorsInputSchema,
-  mcpGetChatIndicatorsOutputSchema,
-  mcpListChatThreadsInputSchema,
-  mcpListChatThreadsOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-threads";
+  mcpCreateChatThreadInputSchema,
+  mcpCreateChatThreadOutputSchema,
+  mcpCreateChatWithMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpListAgentsInputSchema,
+  mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
+  mcpListModelsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import {
+  mcpCancelRunInputSchema,
+  mcpCancelRunOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
+  mcpRevokeQueuedMessageOutputSchema,
+  mcpSendChatMessageInputSchema,
+  mcpSendChatMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
 import {
   mcpSearchChatMessagesInputSchema,
@@ -33,46 +43,36 @@ import {
   mcpGetChatStatusOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
-  mcpListAgentsInputSchema,
-  mcpListAgentsOutputSchema,
-  mcpListModelsInputSchema,
-  mcpListModelsOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import {
-  mcpCreateChatThreadInputSchema,
-  mcpCreateChatThreadOutputSchema,
-  mcpCreateChatWithMessageOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import {
   mcpUpdateChatThreadInputSchema,
   mcpUpdateChatThreadOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
-  mcpSendChatMessageInputSchema,
-  mcpSendChatMessageOutputSchema,
-  mcpRevokeQueuedMessageInputSchema,
-  mcpRevokeQueuedMessageOutputSchema,
-  mcpCancelRunInputSchema,
-  mcpCancelRunOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+  mcpGetChatIndicatorsInputSchema,
+  mcpGetChatIndicatorsOutputSchema,
+  mcpGetChatThreadInputSchema,
+  mcpGetChatThreadOutputSchema,
+  mcpListChatThreadsInputSchema,
+  mcpListChatThreadsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
-import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   clearMockMonotonicNow,
@@ -81,17 +81,13 @@ import {
   withMockNowForTest,
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { mcpServerRoutes } from "../mcp-server";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import { modelPoliciesRoutes } from "../model-policies";
-import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import {
+  rejectSearchablePromptFixture,
+  setChatSearchEventTimestampPrecisionFixture,
+  updateChatSearchSourceThreadFixture,
+} from "../../../test-fixtures/chat-event-search";
 import {
   completeRunWithoutCallbacksFixture,
   holdAgentRowLockFixture,
@@ -99,24 +95,24 @@ import {
   setQueuedUserMessageCreatedAtFixture,
   timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
-import {
-  rejectSearchablePromptFixture,
-  setChatSearchEventTimestampPrecisionFixture,
-  updateChatSearchSourceThreadFixture,
-} from "../../../test-fixtures/chat-event-search";
-import { createRouteMocks } from "./helpers/route-test";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { mcpServerRoutes } from "../mcp-server";
+import { modelPoliciesRoutes } from "../model-policies";
+import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createBddApi } from "./helpers/api-bdd";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { deleteDiscordFixture } from "./helpers/discord";
 import {
   discordChatThreads,
@@ -125,17 +121,21 @@ import {
   postDiscordMessage,
   setupConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import {
-  seedBuiltInModelCandidateKeys,
-  updateChatEventSnapshotHead,
-} from "./helpers/runtime-state";
 import {
   deleteFakeChatEventObject,
   installFakeChatEventR2,
   writeFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  seedBuiltInModelCandidateKeys,
+  updateChatEventSnapshotHead,
+} from "./helpers/runtime-state";
 
 const context = testContext();
 const resource = "https://api.mcp.example.test/mcp";
@@ -1529,6 +1529,8 @@ describe("MCP chat discovery and creation", () => {
 
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
     const f = await creationFixture({ withDefaultAgent: true });
+    f.runs.configureRunnerGroup();
+    f.runs.acceptStorageDownloads();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
       requestId: randomUUID(),
@@ -6219,10 +6221,6 @@ describe("MCP message search", () => {
       agentId: f.agent.agentId,
       prompt: "Active unrelated task",
     });
-    onTestFinished(async () => {
-      await f.runs.requestCancelRun(f.actor, runId, [200]);
-      await flushWaitUntilForTest();
-    });
     for (const prompt of [
       "staleneedle recall",
       "staleneedle replace",
@@ -6278,6 +6276,11 @@ describe("MCP message search", () => {
     const current = await searchMessages(token, { query: "replacementneedle" });
     expect(current.matches).toHaveLength(1);
     expect(current.matches[0]?.ref.eventId).not.toBe(replaced.ref.eventId);
+
+    // Releasing this run can pick the remaining input. Settle that work
+    // before test teardown clears its Runner and storage configuration.
+    await f.runs.requestCancelRun(f.actor, runId, [200]);
+    await flushWaitUntilForTest();
   });
 
   it("finds retained source messages with valid context references and fails explicitly on a missing archive", async () => {

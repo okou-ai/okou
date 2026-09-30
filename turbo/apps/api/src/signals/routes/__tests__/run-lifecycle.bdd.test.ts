@@ -1,22 +1,31 @@
-import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, randomUUID } from "node:crypto";
+import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   getBuiltInApiModel,
-  getModelProviderFirewall,
-  getProviderRuntimeModel,
   getBuiltInConcreteProviderType,
   getBuiltInVendor,
+  getModelProviderFirewall,
+  getProviderRuntimeModel,
   type ModelProviderType,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
+import type {
+  KnownRunFailureReason,
+  RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -25,77 +34,40 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
-  type Job as RunnerJob,
   type PiModelConfig,
+  type Job as RunnerJob,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  KnownRunFailureReason,
-  RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import {
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
-} from "@okouai/core/storage-names";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type ExecutionFirewallEntry,
   type FirewallApi,
 } from "@okouai/connectors/firewall-types";
-import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  getCustomConnectorSkillStorageName,
+  getCustomSkillStorageName,
+} from "@okouai/core/storage-names";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
 import { v5 as uuidv5 } from "uuid";
+import { describe, expect, it, onTestFinished } from "vitest";
 
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  setSecretKmsClientForTests,
+  type SecretKmsClient,
+  type SecretKmsDataKey,
+  type SecretKmsGenerateDataKeyRequest,
+} from "../../../lib/secret-kms-client";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
-import {
-  deleteUsagePricingRows,
-  seedOrgMetadata,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  API_TEST_CONNECTOR_FIREWALL_CONFIGS,
-  apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
-  corruptApiTestConnectorCatalogActiveSnapshotPayload,
-  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
-  corruptApiTestConnectorCatalogRuntimeProjectionPayload,
-  deleteApiTestConnectorCatalogCompatibility,
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-  readApiTestConnectorCatalogCompatibilityEvaluations,
-  readApiTestConnectorCatalogValidationAuthority,
-  replaceApiTestConnectorCatalogFilteredAuthMethods,
-  replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
-  setApiTestConnectorCatalogValidationAuthority,
-} from "../../../test-fixtures/connector-catalog";
-import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   readRunIdentityMismatchWriteCountsFixture,
   readRunModelRuntimeRouteFixture,
@@ -107,12 +79,55 @@ import {
   timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
 import {
+  API_TEST_CONNECTOR_CATALOG,
+  API_TEST_CONNECTOR_FIREWALL_CONFIGS,
+  apiTestConnectorCatalogValidationAuthority,
+  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
+  corruptApiTestConnectorCatalogActiveSnapshotPayload,
+  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
+  corruptApiTestConnectorCatalogRuntimeProjectionPayload,
+  deleteApiTestConnectorCatalogCompatibility,
+  installApiTestConnectorCatalog,
+  invalidateApiTestConnectorCatalogCompatibility,
+  readApiTestConnectorCatalogCompatibilityEvaluations,
+  readApiTestConnectorCatalogValidationAuthority,
+  replaceApiTestConnectorCatalogFilteredAuthMethods,
+  replaceApiTestConnectorCatalogStoredBytes,
+  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
+  setApiTestConnectorCatalogValidationAuthority,
+} from "../../../test-fixtures/connector-catalog";
+import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
+import {
+  deleteOrgPlanEntitlementFixture,
+  readOrgPlanEntitlementFixture,
+  upsertOrgPlanEntitlementFixture,
+} from "../../../test-fixtures/org-plan-entitlement";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import {
+  deleteUsagePricingRows,
+  seedOrgMetadata,
+  seedUsagePricingRows,
+} from "../../../test-fixtures/system-config-seeds";
+import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { connectorCheckRoutes } from "../connector-check";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
+import {
+  readAgentRunCallbacks$,
+  seedAgentRunCallback$,
+} from "./helpers/agent-run-callback";
+import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -130,24 +145,14 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
 } from "./helpers/chat-events-fixture";
-import {
-  readAgentRunCallbacks$,
-  seedAgentRunCallback$,
-} from "./helpers/agent-run-callback";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackEnvironmentAgent$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import {
   deleteCustomConnectorCredentialValues,
   seedCustomConnectorRuntimeConnectors,
@@ -155,16 +160,23 @@ import {
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
 import {
+  deleteSlackIntegrationFixture$,
+  seedSlackEnvironmentAgent$,
+  seedSlackOrgInstallation$,
+} from "./helpers/integrations-slack";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
+import { createRouteMocks } from "./helpers/route-test";
+import {
   clearRunApiStart,
   mutateRunnerJobConnectorPermissionBaseline,
-  removeRunCanonicalStorageState,
-  readRunAutonomyBudgetFixture,
   readRunApiStart,
+  readRunAutonomyBudgetFixture,
   readRunClaimOwner,
   readRunFailureReasonFixture,
   readRunLaunchSnapshotFixture,
   readRunnerJobStorageState,
   readStoragePersistenceState,
+  removeRunCanonicalStorageState,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setCustomConnectorAuthTemplateFixture,
@@ -174,20 +186,8 @@ import {
   setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import {
-  setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-} from "../../../lib/secret-kms-client";
-import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
-import { builtinConnectorsRoutes } from "../connectors";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorCheckRoutes } from "../connector-check";
-import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
-import { createRouteMocks } from "./helpers/route-test";
+import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
+import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -1469,7 +1469,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
   });
 
-  it("keeps a catalog rejection above concurrent abort and provider failure", async () => {
+  it("fails on provider rejection without waiting for catalog validation", async () => {
     const api = createRunsApi(context);
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -1491,27 +1491,35 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     await invalidateApiTestConnectorCatalogCompatibility();
 
-    const requestController = new AbortController();
-    const abortError = new Error("runtime context priority abort");
-    abortError.name = "AbortError";
-    const providerError = new Error("model provider below catalog failure");
-    let providerDecryptCalls = 0;
-    useSecretKmsClientForTests({
-      decryptError: providerError,
-      onDecrypt: () => {
-        providerDecryptCalls += 1;
-        requestController.abort(abortError);
-      },
+    const catalogStarted = createDeferredPromise<void>(context.signal);
+    const releaseCatalog = createDeferredPromise<void>(context.signal);
+    const catalogFinished = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseCatalog.settled()) {
+        releaseCatalog.resolve(undefined);
+      }
+      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
     });
-    const cancellableApi = createRunsApi({
-      ...context,
-      signal: requestController.signal,
+    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
+      if (!catalogStarted.settled()) {
+        catalogStarted.resolve(undefined);
+      }
+      await releaseCatalog.promise;
+      if (!catalogFinished.settled()) {
+        catalogFinished.resolve(undefined);
+      }
     });
+    const providerError = new Error("first model provider failure");
+    const kms = useSecretKmsProbe(undefined, async () => {
+      await catalogStarted.promise;
+      throw providerError;
+    });
+    const failedPrompt = `fail fast during runtime preparation ${randomUUID()}`;
     await expect(
-      cancellableApi.createDirectRun(actor, {
+      api.createDirectRun(actor, {
         ...agentBackedDirectRunBody({
           agentId,
-          prompt: "prefer catalog failure during runtime preparation",
+          prompt: failedPrompt,
         }),
         modelProviderType: "aws-bedrock",
         connectorScope: {
@@ -1519,9 +1527,19 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           allowedCustomConnectorIds: [],
         },
       }),
-    ).rejects.toThrow("Accepted external connector catalog is unavailable");
-    expect(providerDecryptCalls).toBeGreaterThan(0);
-    expect(requestController.signal.reason).toBe(abortError);
+    ).rejects.toBe(providerError);
+    expect(kms.decryptCalls).toBeGreaterThan(0);
+    releaseCatalog.resolve(undefined);
+    await catalogFinished.promise;
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === failedPrompt;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("reuses scoped runtime entries and materializes sibling connectors", async () => {
@@ -1907,7 +1925,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
   });
 
-  it("overlaps storage presigning with context encryption while preserving storage errors", async () => {
+  it("returns a context encryption failure while storage presigning is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -1929,23 +1947,34 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
 
     const kmsStarted = createDeferredPromise<void>(context.signal);
+    const storageStarted = createDeferredPromise<void>(context.signal);
+    const releaseStorage = createDeferredPromise<void>(context.signal);
+    const storageFinished = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
+      if (!releaseStorage.settled()) {
+        releaseStorage.resolve(undefined);
+      }
+    });
+    const storageError = new Error("later storage manifest presign failure");
+    const contextError = new Error(
+      "first execution context encryption failure",
+    );
+    context.mocks.s3.getSignedUrl.mockImplementation(async () => {
+      if (!storageStarted.settled()) {
+        storageStarted.resolve(undefined);
+      }
+      await releaseStorage.promise;
+      if (!storageFinished.settled()) {
+        storageFinished.resolve(undefined);
+      }
+      throw storageError;
+    });
+    useSecretKmsProbe(async () => {
       if (!kmsStarted.settled()) {
         kmsStarted.resolve(undefined);
       }
-    });
-    const storageError = new Error("storage manifest presign failed");
-    context.mocks.s3.getSignedUrl.mockImplementation(async () => {
-      await kmsStarted.promise;
-      throw storageError;
-    });
-    useSecretKmsClientForTests({
-      failAfterGenerateDataKeys: 0,
-      onGenerateDataKey: () => {
-        if (!kmsStarted.settled()) {
-          kmsStarted.resolve(undefined);
-        }
-      },
+      await storageStarted.promise;
+      throw contextError;
     });
 
     const failed = await api.createRun(actor, {
@@ -1963,14 +1992,17 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     expect(kmsStarted.settled()).toBeTruthy();
     expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(storageError.message);
+    expect(failed.error).toBe(contextError.message);
+    expect(storageStarted.settled()).toBeTruthy();
+    releaseStorage.resolve(undefined);
+    await storageFinished.promise;
     const stored = await api.readRun(actor, failed.runId);
     expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(storageError.message);
+    expect(stored.error).toBe(contextError.message);
     await api.requestClaimRunnerJob(true, failed.runId, [404]);
   });
 
-  it("overlaps large request and session storage preparation while preserving request errors", async () => {
+  it("returns a session storage failure while large request storage is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -2060,6 +2092,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const requestPresignStarted = createDeferredPromise<void>(context.signal);
     const sessionPresignStarted = createDeferredPromise<void>(context.signal);
     const releaseRequestPresign = createDeferredPromise<void>(context.signal);
+    const requestPresignFinished = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
       if (!releaseRequestPresign.settled()) {
         releaseRequestPresign.resolve(undefined);
@@ -2075,6 +2108,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
             requestPresignStarted.resolve(undefined);
           }
           await releaseRequestPresign.promise;
+          if (!requestPresignFinished.settled()) {
+            requestPresignFinished.resolve(undefined);
+          }
           throw requestError;
         }
         if (key === sessionArchiveKey) {
@@ -2107,11 +2143,15 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       requestPresignStarted.promise,
       sessionPresignStarted.promise,
     ]);
-    releaseRequestPresign.resolve(undefined);
-
     const failed = await continuedRunPromise;
     expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(requestError.message);
+    expect(failed.error).toBe(sessionError.message);
+    releaseRequestPresign.resolve(undefined);
+    await requestPresignFinished.promise;
+    const stored = await api.readRun(actor, failed.runId);
+    expect(stored.status).toBe("failed");
+    expect(stored.error).toBe(sessionError.message);
+    await api.requestClaimRunnerJob(true, failed.runId, [404]);
 
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {
@@ -2457,29 +2497,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       versionId: preparedAdditionalStorage.versionId,
       files: [additionalFile],
     });
-    const customArtifactName = `bdd-phase3-artifact-${randomUUID().slice(0, 8)}`;
-    const customArtifactMountPath = "/phase3-writeback";
-    const pinnedArtifactName = `bdd-phase3-pinned-${randomUUID().slice(0, 8)}`;
-    const pinnedArtifactMountPath = "/phase3-pinned";
-    const pinnedArtifactFile = storageTextFile(
-      "pinned.txt",
-      `canonical pinned Storage ${pinnedArtifactName}`,
-    );
-    const preparedPinnedArtifact = await storages.prepareStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      files: [pinnedArtifactFile],
-    });
-    const committedPinnedArtifact = await storages.commitStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      versionId: preparedPinnedArtifact.versionId,
-      files: [pinnedArtifactFile],
-    });
-    expect(committedPinnedArtifact).toMatchObject({
-      versionId: preparedPinnedArtifact.versionId,
-      headVersionId: preparedPinnedArtifact.versionId,
-    });
     const composeName = `bdd-storage-persistence-${randomUUID().slice(0, 8)}`;
     const compose = await api.createDirectAgent(actor, {
       version: "1",
@@ -2502,17 +2519,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const initialRun = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "persist canonical storage mounts",
-      artifacts: [
-        {
-          name: customArtifactName,
-          mountPath: customArtifactMountPath,
-        },
-        {
-          name: pinnedArtifactName,
-          version: preparedPinnedArtifact.versionId,
-          mountPath: pinnedArtifactMountPath,
-        },
-      ],
       additionalVolumes: [
         {
           name: additionalStorageName,
@@ -2546,23 +2552,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         mountPath: "/phase3-additional",
       }),
     );
-    const initialCustomArtifact = initialManifest.storageMounts.find(
-      (mount) => {
-        return mount.name === customArtifactName;
-      },
-    );
-    if (!initialCustomArtifact) {
-      throw new Error("Expected the custom canonical writeback mount");
-    }
-    const initialPinnedArtifact = initialManifest.storageMounts.find(
-      (mount) => {
-        return mount.name === pinnedArtifactName;
-      },
-    );
-    if (!initialPinnedArtifact) {
-      throw new Error("Expected the pinned canonical writeback mount");
-    }
-
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `canonical memory ${initialRun.runId}`,
@@ -2595,26 +2584,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
                 ? {}
                 : { missingRootPolicy: initialMemory.missingRootPolicy }),
             },
-            {
-              name: initialCustomArtifact.name,
-              version: initialCustomArtifact.versionId,
-              mountPath: initialCustomArtifact.mountPath,
-              ...(initialCustomArtifact.missingRootPolicy === undefined
-                ? {}
-                : {
-                    missingRootPolicy: initialCustomArtifact.missingRootPolicy,
-                  }),
-            },
-            {
-              name: initialPinnedArtifact.name,
-              version: initialPinnedArtifact.versionId,
-              mountPath: initialPinnedArtifact.mountPath,
-              ...(initialPinnedArtifact.missingRootPolicy === undefined
-                ? {}
-                : {
-                    missingRootPolicy: initialPinnedArtifact.missingRootPolicy,
-                  }),
-            },
           ],
         },
       },
@@ -2638,48 +2607,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       checkpoint_canonical: true,
     });
 
-    const customArtifactFile = storageTextFile(
-      "checkpoint.txt",
-      `canonical custom writeback ${initialRun.runId}`,
-    );
-    const preparedCustomArtifact = await storages.prepareStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      files: [customArtifactFile],
-    });
-    const committedCustomArtifact = await storages.commitStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      versionId: preparedCustomArtifact.versionId,
-      files: [customArtifactFile],
-    });
-    expect(committedCustomArtifact).toMatchObject({
-      versionId: preparedCustomArtifact.versionId,
-      headVersionId: preparedCustomArtifact.versionId,
-    });
-    const newerPinnedArtifactFile = storageTextFile(
-      "pinned.txt",
-      `newer pinned Storage ${initialRun.runId}`,
-    );
-    const preparedNewerPinnedArtifact = await storages.prepareStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      files: [newerPinnedArtifactFile],
-    });
-    expect(preparedNewerPinnedArtifact.versionId).not.toBe(
-      preparedPinnedArtifact.versionId,
-    );
-    const committedNewerPinnedArtifact = await storages.commitStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      versionId: preparedNewerPinnedArtifact.versionId,
-      files: [newerPinnedArtifactFile],
-    });
-    expect(committedNewerPinnedArtifact).toMatchObject({
-      versionId: preparedNewerPinnedArtifact.versionId,
-      headVersionId: preparedNewerPinnedArtifact.versionId,
-    });
-
     const sessionRun = await api.createDirectRun(actor, {
       sessionId: initialRun.sessionId,
       prompt: "continue canonical storage session",
@@ -2698,20 +2625,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           storageId: initialMemory.storageId,
           versionId: preparedMemory.versionId,
           mountPath: initialMemory.mountPath,
-          writeback: true,
-        }),
-        expect.objectContaining({
-          name: customArtifactName,
-          storageId: initialCustomArtifact.storageId,
-          versionId: preparedCustomArtifact.versionId,
-          mountPath: customArtifactMountPath,
-          writeback: true,
-        }),
-        expect.objectContaining({
-          name: pinnedArtifactName,
-          storageId: initialPinnedArtifact.storageId,
-          versionId: preparedPinnedArtifact.versionId,
-          mountPath: pinnedArtifactMountPath,
           writeback: true,
         }),
       ]),
@@ -4073,62 +3986,53 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("selects reusable-sandbox preferences by profile and history generation", async () => {
-    const { reuseRunnerId, first, heartbeatHolder, pollFollowUp } =
-      await setupSameThreadReuseScenario();
+  it.each(["mismatched profile", "different generation", "exact generation"])(
+    "selects reusable-sandbox preferences by profile and history generation: %s",
+    async (holder) => {
+      const { reuseRunnerId, first, heartbeatHolder, pollFollowUp } =
+        await setupSameThreadReuseScenario();
 
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      workspaceCaches: [{ profile: "vm0/large", workspaceAffinityVersion: 1 }],
-    });
-    const mismatchedCapableWorkspace = await pollFollowUp(
-      "continue with a mismatched capable workspace",
-    );
-    expect(runnerPreference(mismatchedCapableWorkspace.job)).toStrictEqual({
-      kind: "noPreference",
-      reason: "noViableHolder",
-    });
+      if (holder === "mismatched profile") {
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          workspaceCaches: [
+            { profile: "vm0/large", workspaceAffinityVersion: 1 },
+          ],
+        });
+        const mismatchedCapableWorkspace = await pollFollowUp(
+          "continue with a mismatched capable workspace",
+        );
+        expect(runnerPreference(mismatchedCapableWorkspace.job)).toStrictEqual({
+          kind: "noPreference",
+          reason: "noViableHolder",
+        });
+        return;
+      }
 
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: randomUUID(),
-      },
-    });
-    const differentGenerationHolder = await pollFollowUp(
-      "continue with a different reusable generation",
-    );
-    expect(runnerPreference(differentGenerationHolder.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
-        runnerId: reuseRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "reusableSandbox",
-      expiresAt: expect.any(String),
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: first.runId,
-      },
-    });
-    const exactGenerationHolder = await pollFollowUp(
-      "continue with exact reusable generation",
-    );
-    expect(runnerPreference(exactGenerationHolder.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
-        runnerId: reuseRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "exactSandbox",
-      expiresAt: expect.any(String),
-    });
-  });
+      const exactGeneration = holder === "exact generation";
+      await heartbeatHolder({
+        admittableProfiles: [],
+        reusableSandbox: {
+          profile: "vm0/default",
+          historyGenerationRunId: exactGeneration ? first.runId : randomUUID(),
+        },
+      });
+      const reusableHolder = await pollFollowUp(
+        exactGeneration
+          ? "continue with exact reusable generation"
+          : "continue with a different reusable generation",
+      );
+      expect(runnerPreference(reusableHolder.job)).toStrictEqual({
+        kind: "preference",
+        runnerIdentity: {
+          runnerId: reuseRunnerId,
+          heartbeatGeneration: 1,
+        },
+        tier: exactGeneration ? "exactSandbox" : "reusableSandbox",
+        expiresAt: expect.any(String),
+      });
+    },
+  );
 
   it("prefers a recent same-generation predecessor before its producer heartbeat arrives", async () => {
     const sourceCompletedAt = now();
@@ -4613,110 +4517,78 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await flushWaitUntilForTest();
   });
 
-  it("omits same-thread reuse preferences for unavailable holders", async () => {
-    const {
-      actor,
-      api,
-      cliAgentSessionId,
-      first,
-      heartbeatHolder,
-      pollFollowUp,
-      waitForCancellation,
-      webhooks,
-    } = await setupSameThreadReuseScenario();
+  it.each(["starting", "full", "stale", "incompatible profile", "draining"])(
+    "omits same-thread reuse preferences for unavailable holders: %s",
+    async (holder) => {
+      const {
+        actor,
+        api,
+        cliAgentSessionId,
+        first,
+        heartbeatHolder,
+        pollFollowUp,
+        waitForCancellation,
+        webhooks,
+      } = await setupSameThreadReuseScenario();
 
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      mode: "starting",
-    });
-    const startingHolder = await pollFollowUp(
-      "continue while holder is starting",
-    );
-    expect(startingHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(startingHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-    });
-    const unavailableHolder = await pollFollowUp(
-      "continue when holder is full",
-      false,
-    );
-    expect(unavailableHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(unavailableHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-    const unavailableClaim = await api.claimRunnerJob(
-      unavailableHolder.run.runId,
-    );
-    expect(unavailableClaim.prompt).toBe("continue when holder is full");
-    await api.requestCancelRun(actor, unavailableHolder.run.runId, [200]);
-    await webhooks.requestAgentComplete(
-      {
-        runId: unavailableHolder.run.runId,
-        exitCode: 1,
-        error: "Run cancelled",
-      },
-      { authorization: `Bearer ${unavailableClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await waitForCancellation(unavailableHolder.run.runId);
-
-    mockNow(now() - 60_000);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      workspaceCaches: [
-        { profile: "vm0/default", workspaceAffinityVersion: 1 },
-      ],
-    });
-    clearMockNow();
-    const staleHolder = await pollFollowUp(
-      "continue after holder heartbeat is stale",
-    );
-    expect(staleHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(staleHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/large",
-        historyGenerationRunId: first.runId,
-      },
-    });
-    const profileIncompatibleHolder = await pollFollowUp(
-      "continue when holder cannot run requested profile",
-    );
-    expect(profileIncompatibleHolder.job?.cliAgentSessionId).toBe(
-      cliAgentSessionId,
-    );
-    expect(runnerPreference(profileIncompatibleHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: first.runId,
-      },
-      mode: "draining",
-    });
-    const drainingHolder = await pollFollowUp(
-      "continue while holder is draining",
-    );
-    expect(drainingHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(drainingHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-  });
+      if (holder === "starting") {
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          mode: "starting",
+        });
+      } else if (holder === "full") {
+        await heartbeatHolder({ admittableProfiles: [] });
+      } else if (holder === "stale") {
+        mockNow(now() - 60_000);
+        onTestFinished(() => {
+          clearMockNow();
+        });
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          workspaceCaches: [
+            { profile: "vm0/default", workspaceAffinityVersion: 1 },
+          ],
+        });
+        clearMockNow();
+      } else {
+        await heartbeatHolder({
+          admittableProfiles: [],
+          reusableSandbox: {
+            profile: holder === "draining" ? "vm0/default" : "vm0/large",
+            historyGenerationRunId: first.runId,
+          },
+          ...(holder === "draining" ? { mode: "draining" as const } : {}),
+        });
+      }
+      const prompt =
+        holder === "full"
+          ? "continue when holder is full"
+          : `continue with ${holder} holder`;
+      const unavailableHolder = await pollFollowUp(prompt, holder !== "full");
+      expect(unavailableHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
+      expect(runnerPreference(unavailableHolder.job)).toMatchObject({
+        kind: "noPreference",
+      });
+      if (holder === "full") {
+        const unavailableClaim = await api.claimRunnerJob(
+          unavailableHolder.run.runId,
+        );
+        expect(unavailableClaim.prompt).toBe("continue when holder is full");
+        await api.requestCancelRun(actor, unavailableHolder.run.runId, [200]);
+        await webhooks.requestAgentComplete(
+          {
+            runId: unavailableHolder.run.runId,
+            exitCode: 1,
+            error: "Run cancelled",
+          },
+          { authorization: `Bearer ${unavailableClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await waitForCancellation(unavailableHolder.run.runId);
+      }
+    },
+  );
 
   async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);
@@ -5690,6 +5562,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected limited-free bootstrap agent");
     }
+    await bdd.completeOnboarding(actor);
     const agentId = onboarding.defaultAgentId;
     await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
       tier: "limited-free-1",
@@ -13764,6 +13637,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       visibility: "public",
     });
     const member = bdd.user({ orgId: actor.orgId });
+    await bdd.completeOnboarding(member);
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
     const run = await api.createRun(member, {
@@ -15979,6 +15853,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     ]);
 
     const member = bdd.user({ orgId: actor.orgId });
+    await bdd.completeOnboarding(member);
     const memberAgent = await bdd.createAgent(member, {
       displayName: "BDD member usage agent",
       visibility: "private",

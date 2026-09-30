@@ -1,17 +1,15 @@
-import { createHash } from "node:crypto";
-
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
-import { getUserTemplateStorageName } from "@okouai/core/storage-names";
-import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type {
   UserTemplateKind,
   UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
+import { getUserTemplateStorageName } from "@okouai/core/storage-names";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { z } from "zod";
-
 import type { ReadonlyDb } from "../external/db";
 import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
@@ -261,53 +259,6 @@ export function selectedUserTemplateIds(
     }
   }
   return [...templateIds];
-}
-
-/**
- * The subset of those the caller may use, in selection order, each with the
- * kind its row says it is.
- *
- * The row is the authority for its own existence and visibility, and for what
- * it produces. A caller cannot claim a kind: an id that does not come back is
- * indistinguishable from an inaccessible template and from a deleted one, so
- * the answer cannot be used to probe which.
- */
-export async function authorizedUserTemplates(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly templateIds: readonly string[];
-    /**
-     * Whether this member has the feature. Required rather than read here, so
-     * every caller states it: the routes that read and write this catalog are
-     * gated, but a send is not, and a crafted selection would otherwise reach
-     * the table through a path with no gate of its own.
-     */
-    readonly enabled: boolean;
-  },
-): Promise<readonly MountedUserTemplate[]> {
-  if (!args.enabled || args.templateIds.length === 0) {
-    return [];
-  }
-  const rows = await db
-    .select({ id: userTemplates.id, manifest: userTemplates.manifest })
-    .from(userTemplates)
-    .where(
-      and(
-        inArray(userTemplates.id, [...args.templateIds]),
-        accessibleWhere(args),
-      ),
-    );
-  const byId = new Map(
-    rows.map((row) => {
-      return [row.id, row.manifest.kind];
-    }),
-  );
-  return args.templateIds.flatMap((templateId) => {
-    const kind = byId.get(templateId);
-    return kind === undefined ? [] : [{ templateId, kind }];
-  });
 }
 
 /**

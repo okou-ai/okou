@@ -1,36 +1,36 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 
-import { createStore } from "ccstate";
 import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
 } from "@okouai/api-contracts/contracts/runners";
+import { createStore } from "ccstate";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
-import { testContext } from "../../../__tests__/test-context";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
+import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import {
   deleteUsageStateFixture$,
   seedCompose$,
@@ -299,6 +299,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
   it("groups active concurrency by workspace member", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const actorCompose = await createClaudeAgent(actor, "bdd-actor-usage");
     const memberCompose = await createClaudeAgent(member, "bdd-member-usage");
 
@@ -465,6 +466,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const target = await createClaudeAgent(actor, "bdd-target");
     const other = await createClaudeAgent(actor, "bdd-other");
     const memberCompose = await createClaudeAgent(member, "bdd-member");
@@ -1228,9 +1230,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       prompt: "pin the volume by version prefix",
       modelProviderType: "anthropic-api-key",
       vars: { VOL_VERSION: versionPrefix },
-      artifacts: [
-        { name: "memory", mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH },
-      ],
     });
     const claim1 = await api.claimRunnerJob(r1.runId);
     expect(
@@ -1319,72 +1318,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     const byAgentClaim = await api.claimRunnerJob(byAgent.body.runId);
     await api.requestCancelRun(actor, byAgent.body.runId, [200]);
     await finishCancelledRun(byAgent.body.runId, byAgentClaim.sandboxToken);
-
-    const strictMemory = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "user-authored memory stays strict",
-      vars: { VOL_VERSION: volumeVersion },
-      artifacts: [{ name: "memory", mountPath: "/mnt/user-memory" }],
-    });
-    const strictClaim = await api.claimRunnerJob(strictMemory.runId);
-    expect(
-      expectCanonicalStorageManifest(strictClaim.storageManifest)
-        ?.storageMounts.filter((mount) => {
-          return mount.name === "memory";
-        })
-        .map((mount) => {
-          return {
-            name: mount.name,
-            mountPath: mount.mountPath,
-            missingRootPolicy: mount.missingRootPolicy,
-          };
-        }),
-    ).toStrictEqual([
-      {
-        name: "memory",
-        mountPath: "/mnt/user-memory",
-        missingRootPolicy: undefined,
-      },
-    ]);
-    await api.requestCancelRun(actor, strictMemory.runId, [200]);
-    await finishCancelledRun(strictMemory.runId, strictClaim.sandboxToken);
-
-    const customCanonical = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "custom artifact claims the canonical memory mount",
-      vars: { VOL_VERSION: volumeVersion },
-      artifacts: [
-        {
-          name: "custom-memory",
-          mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-        },
-      ],
-    });
-    const customClaim = await api.claimRunnerJob(customCanonical.runId);
-    expect(
-      expectCanonicalStorageManifest(customClaim.storageManifest)
-        ?.storageMounts.filter((mount) => {
-          return (
-            mount.name === "memory" ||
-            mount.mountPath === CANONICAL_CLAUDE_MEMORY_MOUNT_PATH
-          );
-        })
-        .map((mount) => {
-          return {
-            name: mount.name,
-            mountPath: mount.mountPath,
-            missingRootPolicy: mount.missingRootPolicy,
-          };
-        }),
-    ).toStrictEqual([
-      {
-        name: "custom-memory",
-        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-        missingRootPolicy: undefined,
-      },
-    ]);
-    await api.requestCancelRun(actor, customCanonical.runId, [200]);
-    await finishCancelledRun(customCanonical.runId, customClaim.sandboxToken);
 
     const continued = await api.createDirectRun(actor, {
       sessionId: r1.sessionId,
@@ -3095,6 +3028,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   async function setupRunLogFixture() {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     await api.ensureOrgModelProvider(actor);
     const agentOne = await bdd.createAgent(actor, {
       displayName: "BDD logs agent one",

@@ -1,10 +1,4 @@
-import type { WorkflowAutomationRunStart } from "./workflow-automation-launch.service";
-import type {
-  QueuedPromptLaunchContext,
-  QueuedPromptRejectionTarget,
-} from "./internal-chat-run-callback.service";
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
-import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-runs-create.service";
+import type { QueuedPromptRejectionTarget } from "./internal-chat-run-callback.service";
 
 /** Why a head is rejected, and who is told. */
 export interface ChatQueueHeadRejection {
@@ -26,34 +20,4 @@ export interface ChatQueueHeadContext {
   readonly userId: string;
   readonly agentId: string;
   readonly apiStartTime: number;
-  readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
 }
-
-/**
- * What an assembler made of a head:
- * - `assembled`: run parameters, how a create failure is told, and what the
- *   producer records once the run exists;
- * - `rejected`: the head can never launch;
- * - `not-ready`: the input could not be assembled. The picker rechecks the
- *   head and rejects it if it is unchanged and the thread is still idle.
- */
-export type ChatQueueRunAssembly =
-  | {
-      readonly kind: "assembled";
-      readonly run: CreateQueueFirstAgentRunCommandArgs;
-      readonly rejection: (error: {
-        readonly code: string;
-        readonly message: string;
-      }) => ChatQueueHeadRejection;
-      readonly launched:
-        | {
-            readonly kind: "prompt";
-            readonly context: QueuedPromptLaunchContext;
-          }
-        | {
-            readonly kind: "automation";
-            readonly input: WorkflowAutomationRunStart;
-          };
-    }
-  | { readonly kind: "rejected"; readonly rejection: ChatQueueHeadRejection }
-  | { readonly kind: "not-ready" };

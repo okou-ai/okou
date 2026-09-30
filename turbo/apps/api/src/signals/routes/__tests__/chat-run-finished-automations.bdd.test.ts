@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { createHash, randomUUID } from "node:crypto";
+import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
 import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -415,15 +415,13 @@ async function startSplitSlackWatchedRun(
     channel: channelId,
     ts: threadTs,
   });
+  // The webhook enqueues the input; own its background admission before
+  // claiming the watched run used by the callback-recovery scenarios.
+  await flushWaitUntilForTest();
   await api.heartbeatRunner(fixture.runnerGroup);
-  let watchedRunId: string | undefined;
-  await expect
-    .poll(async () => {
-      watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
-        ?.runId;
-      return watchedRunId;
-    })
-    .toBeTruthy();
+  const watchedRunId = (await api.pollRunner(fixture.runnerGroup)).body.job
+    ?.runId;
+  expect(watchedRunId).toBeTruthy();
   if (!watchedRunId) {
     throw new Error("Expected the Slack run to be admitted");
   }

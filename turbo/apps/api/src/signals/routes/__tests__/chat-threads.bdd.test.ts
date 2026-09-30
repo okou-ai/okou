@@ -1,17 +1,13 @@
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import AdmZip from "adm-zip";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
   chatThreadUsageContract,
-  type ChatEventUsagePayload,
   type ChatEvent,
+  type ChatEventUsagePayload,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 import {
   cronCompactUsageEventsContract,
   cronProjectChatEventSearchContract,
@@ -21,9 +17,12 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { HttpResponse, http } from "msw";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import AdmZip from "adm-zip";
+import { http, HttpResponse } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -54,6 +53,7 @@ import {
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
 } from "../../../test-fixtures/chat-thread-events";
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
 import {
@@ -63,8 +63,8 @@ import {
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
-import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
+import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import {
   createBddApi,
@@ -79,9 +79,9 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
+  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -2811,6 +2811,8 @@ describe("CHAT-01 chat thread read state", () => {
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     if (!peer.orgId) {
       throw new Error("Expected an organization-scoped peer");
     }
@@ -2941,6 +2943,8 @@ describe("CHAT-01 chat thread read state", () => {
       runnerGroup,
     } = await entitledChatActor("Active ids owner agent");
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
 
     const peerAgent = await bdd.createAgent(peer, {
@@ -3422,6 +3426,7 @@ describe("CHAT-03 run usage events", () => {
     const { actor, agentId } = await entitledChatActorWithoutRunner(
       "Usage message agent",
     );
+
     const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
     const missingProvider = `${provider}-free`;
     const category = "api_request";
@@ -3433,6 +3438,7 @@ describe("CHAT-03 run usage events", () => {
       agentId,
       prompt: "record billable usage",
     });
+    await cancelChatRun(actor, runId);
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };
@@ -3607,7 +3613,7 @@ describe("CHAT-03 run usage events", () => {
     const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
 
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
+    const { actor, agentId } = await entitledChatActor(
       "Allowance usage message agent",
     );
     const orgId = actor.orgId;
@@ -3646,6 +3652,7 @@ describe("CHAT-03 run usage events", () => {
       prompt: "record allowance-covered usage",
       model: selectedModel,
     });
+    await cancelChatRun(actor, runId);
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };

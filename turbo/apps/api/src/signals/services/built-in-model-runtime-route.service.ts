@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   getBuiltInModelRouteCandidates,
   type BuiltInModelRouteProviderType,
@@ -12,12 +10,12 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { command, computed, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
-
+import { AsyncLocalStorage } from "node:async_hooks";
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 
 export interface BuiltInModelRuntimeRoute {
   readonly selectedModel: string;
@@ -162,18 +160,11 @@ async function loadBuiltInModelKeyIdsByVendor(
 export const builtInModelKeyIdsByVendor$: Computed<
   Promise<BuiltInModelKeyIdsByVendor>
 > = computed(async (get) => {
-  const rows = await get(db$)
-    .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
-    .from(builtInModelKeys);
-  return new Map(
-    rows.map((row) => {
-      return [row.vendor, row.id];
-    }),
-  );
+  return await loadBuiltInModelKeyIdsByVendor(get(db$));
 });
 
 export async function resolveBuiltInModelRuntimeRoute(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
@@ -186,7 +177,7 @@ export async function resolveBuiltInModelRuntimeRoute(
 }
 
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
@@ -233,77 +224,36 @@ export async function resolveBuiltInModelRuntimeRouteWithKeys(
   return null;
 }
 
-export const resolveBuiltInModelRuntimeRouteWithKeys$ = command(
-  async (
-    { set },
-    selectedModel: string,
-    featureSwitchContext: FeatureSwitchContext,
-    keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-    abortSignal?: AbortSignal,
-  ): Promise<BuiltInModelRuntimeRoute | null> => {
-    const db = set(writeDb$);
-    const timestamp = nowDate();
-    for (const target of eligibleBuiltInModelRouteCandidates(
-      selectedModel,
-      featureSwitchContext,
-    )) {
-      if (runtimeRouteUnavailableForTest(target)) {
-        continue;
-      }
-      const keyId = keyIdsByVendor.get(target.vendor);
-      if (keyId === undefined) {
-        continue;
-      }
-
-      const builtInCooldowns = await db
-        .select({
-          unavailableUntil: builtInModelCandidateCooldown.unavailableUntil,
-        })
-        .from(builtInModelCandidateCooldown)
-        .where(
-          and(
-            eq(
-              builtInModelCandidateCooldown.selectedModel,
-              target.selectedModel,
-            ),
-            eq(
-              builtInModelCandidateCooldown.modelRuntimeProvider,
-              target.providerType,
-            ),
-            eq(
-              builtInModelCandidateCooldown.modelRuntimeModel,
-              target.upstreamModel,
-            ),
-            gt(builtInModelCandidateCooldown.unavailableUntil, timestamp),
-          ),
-        )
-        .limit(1);
-      abortSignal?.throwIfAborted();
-      if (builtInCooldowns.length > 0) {
-        continue;
-      }
-
-      return routeFromTarget(target, { id: keyId });
+/** Choose the same first eligible route from one batched cooldown snapshot. */
+export function builtInModelRuntimeRouteFromSnapshot(args: {
+  readonly selectedModel: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly keyIdsByVendor: BuiltInModelKeyIdsByVendor;
+  readonly cooldowns: readonly {
+    readonly modelRuntimeProvider: string;
+    readonly modelRuntimeModel: string;
+  }[];
+}): BuiltInModelRuntimeRoute | null {
+  for (const target of eligibleBuiltInModelRouteCandidates(
+    args.selectedModel,
+    args.featureSwitchContext,
+  )) {
+    if (runtimeRouteUnavailableForTest(target)) {
+      continue;
     }
-    return null;
-  },
-);
-
-export const resolveBuiltInModelRuntimeRoute$ = command(
-  async (
-    { get, set },
-    selectedModel: string,
-    featureSwitchContext: FeatureSwitchContext,
-    abortSignal?: AbortSignal,
-  ): Promise<BuiltInModelRuntimeRoute | null> => {
-    const keys = await get(builtInModelKeyIdsByVendor$);
-    abortSignal?.throwIfAborted();
-    return await set(
-      resolveBuiltInModelRuntimeRouteWithKeys$,
-      selectedModel,
-      featureSwitchContext,
-      keys,
-      abortSignal,
-    );
-  },
-);
+    const id = args.keyIdsByVendor.get(target.vendor);
+    if (
+      id === undefined ||
+      args.cooldowns.some((cooldown) => {
+        return (
+          cooldown.modelRuntimeProvider === target.providerType &&
+          cooldown.modelRuntimeModel === target.upstreamModel
+        );
+      })
+    ) {
+      continue;
+    }
+    return routeFromTarget(target, { id });
+  }
+  return null;
+}

@@ -49,7 +49,7 @@ raw-first cleanup and financial reconciliation remain. Remaining keys are
 financial: billing purchase, usage-pack billing and credit. They are R1 implementation work, not
 outgoing-version/R2 gates. Six application billing triggers also remain. Empty
 org-metadata UPDATEs and application-side failure increments are already fixed;
-allowance duplicate preflight is documented for current migration 1297.
+allowance duplicate preflight is documented for current migration 1298.
 Database-handle propagation remains a non-goal. No merge/release is authorized.
 
 ## Historical source and preparation evidence
@@ -133,7 +133,7 @@ the baseline. A definition can serve multiple runtime callers.
   competing invocation without retry; scoped source writes retain their exact
   identity predicates. Local empty-inventory CLI smoke checks do not establish
   production convergence.
-- Migration `1295_retire_provisional_billing_purge` drops the unused current
+- Migration `1296_retire_provisional_billing_purge` drops the unused current
   `purge_quiescent_provisional_billing_attribution` function. Historical
   migrations stay unchanged. The schema snapshot adds no table columns.
 - The unshipped Forms detachment and cursor-trigger migrations are withdrawn.
@@ -150,7 +150,7 @@ the baseline. A definition can serve multiple runtime callers.
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
 
-Migration `1296_retire_billing_attribution_mutation_guard` also removes the
+Migration `1297_retire_billing_attribution_mutation_guard` also removes the
 redundant canonical attribution mutation guard. Outgoing capture functions and
 the retained operator already compare immutable identity, fill only unknown
 thread grouping, and never regress observation. The writer-by-writer evidence

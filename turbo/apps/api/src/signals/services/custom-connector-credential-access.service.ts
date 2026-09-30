@@ -1,3 +1,12 @@
+import { connectors } from "@okouai/db/schema/connector";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import {
+  orgCustomConnectors,
+  type OrgCustomConnectorAuthMode,
+  type OrgCustomConnectorMcpTransport,
+} from "@okouai/db/schema/org-custom-connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import {
   and,
   eq,
@@ -8,15 +17,6 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import {
-  orgCustomConnectors,
-  type OrgCustomConnectorAuthMode,
-  type OrgCustomConnectorMcpTransport,
-} from "@okouai/db/schema/org-custom-connector";
-import { connectors } from "@okouai/db/schema/connector";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
@@ -72,7 +72,7 @@ export type CustomConnectorStoredValue =
       readonly value: string;
     };
 
-interface CustomConnectorCredentialDefinition {
+export interface CustomConnectorCredentialDefinition {
   readonly id: string;
   readonly authMode: OrgCustomConnectorAuthMode;
   readonly storageVersion: number;
@@ -131,7 +131,7 @@ interface CustomConnectorRuntimeStorageSnapshot {
   readonly values: readonly CustomConnectorStoredValue[];
 }
 
-interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
+export interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
   readonly kind: CustomConnectorRuntimeStorageKind | null;
   readonly key: string | null;
   readonly storedValue: string | null;
@@ -463,7 +463,7 @@ function customConnectorCredentialAccesses(
   return accesses;
 }
 
-function customConnectorRuntimeStorageSnapshot(
+export function customConnectorRuntimeStorageSnapshot(
   definitions: readonly CustomConnectorCredentialDefinition[],
   rows: readonly CustomConnectorRuntimeStorageRow[],
   memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>,

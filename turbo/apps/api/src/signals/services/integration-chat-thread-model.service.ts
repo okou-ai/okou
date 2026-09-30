@@ -1,11 +1,11 @@
-import { command } from "ccstate";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
-import { writeDb$ } from "../external/db";
-import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
+import { resolveChatInputModelSelection } from "./chat-input-model.service";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
 type IntegrationChatThreadModelResult =
@@ -50,16 +50,12 @@ export const readIntegrationChatThreadModel$ = command(
     if (!thread) {
       return null;
     }
-    const model = await set(
-      resolveChatInputModelSelection$,
-      {
-        ...thread,
-        orgId: args.orgId,
-        userId: args.userId,
-        modelSettings: modelSettingsSchema.parse(thread.modelSettings),
-      },
-      signal,
-    );
+    const model = await resolveChatInputModelSelection(set(writeDb$), {
+      ...thread,
+      orgId: args.orgId,
+      userId: args.userId,
+      modelSettings: modelSettingsSchema.parse(thread.modelSettings),
+    });
     signal.throwIfAborted();
     if ("status" in model) {
       throw new Error(model.body.error.message);

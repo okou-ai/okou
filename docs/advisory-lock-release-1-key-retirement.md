@@ -168,9 +168,9 @@ Ordinary failure counters use SQL arithmetic and committed thresholds/returned
 state, not application-side `current + 1`. Both fixes were integrated before
 this continuation and are preserved.
 
-## Allowance index 1297 preflight
+## Allowance index 1298 preflight
 
-The current allowance uniqueness migration is 1297 (earlier references to 1296
+The current allowance uniqueness migration is 1298 (earlier references to 1296
 predate main's migration renumbering). Before an authorized release, query the
 target database read-only:
 
@@ -188,7 +188,7 @@ ownership/limits/expiry; account for raw allocations and hourly window
 references; remap to a canonical existing window; reconcile consumed units
 against immutable receipts. Do not blindly sum counters, delete referenced
 history or skip the index. Conflicting facts require investigation. Repeat the
-query after authorized repair before migration 1297.
+query after authorized repair before migration 1298.
 
 ## Purchase overlap recovery remains implementation work
 

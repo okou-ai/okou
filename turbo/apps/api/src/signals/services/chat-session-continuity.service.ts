@@ -1,11 +1,10 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
-import { and, eq, sql } from "drizzle-orm";
-
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import type { Db, ReadonlyDb } from "../external/db";
+import { alias } from "drizzle-orm/pg-core";
 import {
   canReuseSession,
   type SessionExecutionIdentity,
@@ -27,87 +26,138 @@ export interface ChatThreadSessionSnapshot {
 
 export interface ChatThreadSessionResolution {
   readonly sessionId: string | undefined;
+  /** Native history may reset while the thread keeps its application session. */
   readonly action: ChatThreadSessionResolutionAction;
+  readonly resetNativeSession: boolean;
   readonly expected: ChatThreadSessionSnapshot;
   readonly cloudBrowserEnabled: boolean;
+  readonly executionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-function historylessConversationSql() {
-  return sql`(
-    ${conversations.id} IS NOT NULL
-    AND ${conversations.cliAgentSessionHistory} IS NULL
-    AND ${conversations.cliAgentSessionHistoryHash} IS NULL
-  )`.mapWith(pgBooleanDecoder);
+export interface ChatThreadExecutionSnapshot {
+  readonly session: Pick<
+    typeof agentSessions.$inferSelect,
+    "id" | "agentId" | "storageMounts" | "conversationId"
+  >;
+  readonly agent: Pick<
+    typeof agents.$inferSelect,
+    "id" | "orgId" | "owner"
+  > | null;
+  readonly conversation: Pick<
+    typeof conversations.$inferSelect,
+    | "id"
+    | "runId"
+    | "cliAgentType"
+    | "cliAgentSessionId"
+    | "cliAgentSessionHistory"
+    | "cliAgentSessionHistoryHash"
+  > | null;
+  readonly historyBlob: Pick<
+    typeof blobs.$inferSelect,
+    "hash" | "encoding"
+  > | null;
+  readonly previousRun: Pick<
+    typeof agentRuns.$inferSelect,
+    "id" | "vars" | "storageMounts" | "selectedModel"
+  > | null;
 }
 
-export async function resolveChatThreadSession(args: {
-  readonly db: Db | ReadonlyDb;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-  /** The stored agent when a producer atomically rebinds this thread. */
-  readonly expectedThreadAgentId?: string;
-  readonly route: ChatThreadSessionRoute;
-}): Promise<ChatThreadSessionResolution> {
-  const [thread] = await args.db
-    .select({
-      threadAgentId: chatThreads.agentId,
-      agentSessionId: chatThreads.agentSessionId,
-      agentSessionRunId: chatThreads.agentSessionRunId,
-      sessionId: agentSessions.id,
+export interface ChatThreadSessionQuerySnapshot extends Omit<
+  ChatThreadExecutionSnapshot,
+  "session"
+> {
+  readonly threadAgentId: string | null;
+  readonly agentSessionId: string | null;
+  readonly agentSessionRunId: string | null;
+  readonly selectedModel: string | null;
+  readonly cloudBrowserEnabled: boolean;
+  readonly session: ChatThreadExecutionSnapshot["session"] | null;
+}
+
+export const chatThreadConversationRun = alias(
+  agentRuns,
+  "chat_thread_conversation_run",
+);
+
+export function chatThreadSessionSelection() {
+  return {
+    threadAgentId: chatThreads.agentId,
+    agentSessionId: chatThreads.agentSessionId,
+    agentSessionRunId: chatThreads.agentSessionRunId,
+    selectedModel: agentRuns.selectedModel,
+    cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+    session: {
+      id: agentSessions.id,
+      agentId: agentSessions.agentId,
+      storageMounts: agentSessions.storageMounts,
       conversationId: agentSessions.conversationId,
-      selectedModel: agentRuns.selectedModel,
+    },
+    agent: { id: agents.id, orgId: agents.orgId, owner: agents.owner },
+    conversation: {
+      id: conversations.id,
+      runId: conversations.runId,
       cliAgentType: conversations.cliAgentType,
-      historylessConversation: historylessConversationSql(),
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(chatThreads)
-    .leftJoin(
-      agentSessions,
-      and(
-        eq(agentSessions.id, chatThreads.agentSessionId),
-        eq(agentSessions.userId, args.userId),
-        eq(agentSessions.orgId, args.orgId),
-        eq(agentSessions.agentId, args.agentId),
-      ),
-    )
-    .leftJoin(conversations, eq(conversations.id, agentSessions.conversationId))
-    .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, args.expectedThreadAgentId ?? args.agentId),
-      ),
-    )
-    .limit(1);
-  if (!thread) {
-    throw new Error("Chat thread not found while resolving session binding");
-  }
+      cliAgentSessionId: conversations.cliAgentSessionId,
+      cliAgentSessionHistory: conversations.cliAgentSessionHistory,
+      cliAgentSessionHistoryHash: conversations.cliAgentSessionHistoryHash,
+    },
+    historyBlob: { hash: blobs.hash, encoding: blobs.encoding },
+    previousRun: {
+      id: chatThreadConversationRun.id,
+      vars: chatThreadConversationRun.vars,
+      storageMounts: chatThreadConversationRun.storageMounts,
+      selectedModel: chatThreadConversationRun.selectedModel,
+    },
+  };
+}
 
-  if (thread.agentSessionId !== null && thread.sessionId !== null) {
+export function resolveChatThreadSessionSnapshot(
+  thread: ChatThreadSessionQuerySnapshot,
+  args: { readonly agentId: string; readonly route: ChatThreadSessionRoute },
+): ChatThreadSessionResolution {
+  const session = thread.session;
+  if (thread.agentSessionId !== null && session !== null) {
     const expected = {
       agentSessionId: thread.agentSessionId,
       agentSessionRunId: thread.agentSessionRunId,
-      sessionId: thread.sessionId,
-      conversationId: thread.conversationId,
+      sessionId: session.id,
+      conversationId: session.conversationId,
     };
+    const historylessConversation =
+      thread.conversation !== null &&
+      thread.conversation.cliAgentSessionHistory === null &&
+      thread.conversation.cliAgentSessionHistoryHash === null;
     const rotate =
       thread.threadAgentId !== args.agentId ||
-      thread.historylessConversation ||
-      !canReuseSession(thread, args.route);
+      session.agentId !== args.agentId ||
+      historylessConversation ||
+      !canReuseSession(
+        {
+          selectedModel: thread.selectedModel,
+          cliAgentType: thread.conversation?.cliAgentType ?? null,
+        },
+        args.route,
+      );
     return {
-      sessionId: rotate ? undefined : thread.sessionId,
+      sessionId: session.id,
       action: rotate ? "rotated" : "reused",
+      resetNativeSession: rotate,
       expected,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
+      executionSnapshot: {
+        session,
+        agent: thread.agent,
+        conversation: thread.conversation,
+        historyBlob: thread.historyBlob,
+        previousRun: thread.previousRun,
+      },
     };
   }
 
   return {
     sessionId: undefined,
     action: thread.threadAgentId === args.agentId ? "initialized" : "rotated",
+    resetNativeSession: thread.threadAgentId !== args.agentId,
     expected: {
       agentSessionId: thread.agentSessionId,
       agentSessionRunId: thread.agentSessionRunId,

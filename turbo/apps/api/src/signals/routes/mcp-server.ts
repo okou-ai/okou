@@ -10,8 +10,8 @@ import {
   MCP_REQUIRED_SCOPES,
   mcpServerConfig,
 } from "../../lib/mcp-server-config";
-import type { McpPrincipal } from "../../types/mcp";
 import type { ApiOrgRole } from "../../types/auth";
+import type { McpPrincipal } from "../../types/mcp";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
 import { writeDb$ } from "../external/db";
@@ -20,24 +20,24 @@ import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { chatIndicators } from "../services/chat-thread.service";
 import {
-  getMcpChatThread$,
-  listMcpChatThreads$,
-} from "../services/mcp-chat-threads.service";
-import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
-import { getMcpChatStatus } from "../services/mcp-chat-status.service";
-import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
-import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
-import { createMcpChatThread$ } from "../services/mcp-chat-creation.service";
-import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
-import {
-  listMcpAgents$,
-  listMcpModels$,
-} from "../services/mcp-chat-discovery.service";
-import {
   cancelMcpRun$,
   revokeQueuedMcpMessage$,
 } from "../services/mcp-chat-cancellation.service";
-import { awaitWithSignal, settle, onRejection } from "../utils";
+import { createMcpChatThread$ } from "../services/mcp-chat-creation.service";
+import {
+  listMcpAgents,
+  listMcpModels,
+} from "../services/mcp-chat-discovery.service";
+import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
+import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
+import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
+import { getMcpChatStatus } from "../services/mcp-chat-status.service";
+import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
+import {
+  getMcpChatThread$,
+  listMcpChatThreads$,
+} from "../services/mcp-chat-threads.service";
+import { awaitWithSignal, onRejection, settle } from "../utils";
 
 const L = logger("McpServer");
 
@@ -188,10 +188,10 @@ const serveAuthorizedMcp$ = command(
         readScope: MCP_READ_SCOPE,
         scopes: principal.scopes,
         listAgents: (input, readSignal) => {
-          return set(listMcpAgents$, principal, input, readSignal);
+          return listMcpAgents(set(writeDb$), principal, input, readSignal);
         },
         listModels: (readSignal) => {
-          return set(listMcpModels$, principal, readSignal);
+          return listMcpModels(set(writeDb$), principal, readSignal);
         },
         createThread: async (input, operationSignal) => {
           return await admitMutation((signal) => {

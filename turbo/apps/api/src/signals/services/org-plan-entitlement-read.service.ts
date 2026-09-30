@@ -1,8 +1,7 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command, computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
-
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$, type Db } from "../external/db";
 

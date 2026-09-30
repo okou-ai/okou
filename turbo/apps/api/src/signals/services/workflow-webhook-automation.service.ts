@@ -1,39 +1,40 @@
-import { Buffer } from "node:buffer";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { command } from "ccstate";
-import { and, eq, gte } from "drizzle-orm";
 import type { WebhookReceivedEventConfig } from "@okouai/api-contracts/contracts/workflows";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
-  workflowWebhookDeliveries,
+  workflowUserAutomationThreads,
   workflowWebhookAutomations,
+  workflowWebhookDeliveries,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, eq, gte } from "drizzle-orm";
+import { Buffer } from "node:buffer";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
 import { isUniqueViolation } from "../../lib/pg-errors";
+import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import { nowDate } from "../../lib/time";
 import { safeJsonParse, settle } from "../utils";
+import {
+  AutomationEventSourceTiming,
+  type AutomationEventRunTiming,
+} from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   decryptPersistentSecretValue,
   encryptPersistentSecretValue,
 } from "./crypto.utils";
-import {
-  AutomationEventSourceTiming,
-  type AutomationEventRunTiming,
-} from "./automation-event-source-timing.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type {
-  RunWorkflowAutomationResult,
-  AutomationRow,
-} from "./workflow-automation-launch.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type {
+  AutomationRow,
+  RunWorkflowAutomationResult,
+} from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { persistWorkflowSourceReceipt } from "./workflow-input-queue.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 export const WORKFLOW_WEBHOOK_BODY_LIMIT_BYTES = 1_000_000;
 const WORKFLOW_WEBHOOK_BODY_PREVIEW_CHARS = 16_000;
@@ -614,10 +615,28 @@ const startWorkflowWebhookRun$ = command(
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
         timing: args.timing.collectorForRunStart(),
-        queueReceipt: {
-          kind: "webhook",
-          delivery: args.delivery,
-          receivedAt: args.currentTime,
+        persistSourceTransition: async (tx) => {
+          await persistWorkflowSourceReceipt(
+            tx,
+            {
+              receipt: {
+                kind: "webhook",
+                delivery: args.delivery,
+                receivedAt: args.currentTime,
+              },
+              automationId: {
+                automation: args.row.automation,
+                agentId: args.row.agentId,
+                chatThreadId: args.row.chatThreadId,
+              }.automation.id,
+              chatThreadId: {
+                automation: args.row.automation,
+                agentId: args.row.agentId,
+                chatThreadId: args.row.chatThreadId,
+              }.chatThreadId,
+            },
+            signal,
+          );
         },
       },
       signal,

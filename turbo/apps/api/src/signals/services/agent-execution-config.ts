@@ -12,12 +12,6 @@ export interface AgentExecutionDefinition {
   readonly experimental_profile?: string;
 }
 
-export interface AgentExecutionArtifact {
-  readonly name: string;
-  readonly version?: string;
-  readonly mount_path?: string;
-}
-
 export interface AgentExecutionVolume {
   readonly name: string;
   readonly version: string;
@@ -31,7 +25,6 @@ export interface AgentExecutionConfig {
   readonly agents?: Readonly<
     Record<string, AgentExecutionDefinition | undefined>
   >;
-  readonly artifacts?: readonly AgentExecutionArtifact[];
   readonly volumes?: Readonly<Record<string, AgentExecutionVolume>>;
 }
 

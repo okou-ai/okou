@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
-
 import type {
   PiStableContextBuildInput,
   PiStableContextProjection,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import {
   piStableContextArtifactResources,
   piStableContextArtifacts,
@@ -11,19 +10,18 @@ import {
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { onTestFinished } from "vitest";
-
 import { writeDb$, type Db } from "../signals/external/db";
 import {
   clearStableAgentPromptBuildHookForTest,
   clearStableContextCacheIdentityBuildHookForTest,
   setStableAgentPromptBuildHookForTest,
   setStableContextCacheIdentityBuildHookForTest,
-} from "../signals/services/agent-runs-create.service";
+} from "../signals/services/agent-run-preparation-hooks";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import {
   invalidatePiStableContext,

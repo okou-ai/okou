@@ -1,3 +1,35 @@
+import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
+import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { blobs } from "@okouai/db/schema/blob";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+import { checkpoints } from "@okouai/db/schema/checkpoint";
+import { conversations } from "@okouai/db/schema/conversation";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { storages } from "@okouai/db/schema/storage";
+import { createStore, state } from "ccstate";
+import { and, count, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { db } from "../lib/db";
+import { badRequestMessage, notFound } from "../lib/error";
+import { now } from "../lib/time";
+import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
+import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
+import { agentRunList } from "../signals/services/agent-runs.service";
+import { createAgentRun$ } from "../signals/services/background-agent-run.service";
+import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
+import {
+  isCompressedSessionHistoryBlobEncoding,
+  normalizeSessionHistoryBlobEncoding,
+} from "../signals/services/session-history-blobs";
+import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
+
 /**
  * Test fixtures for retired agent-run API capabilities.
  *
@@ -6,41 +38,6 @@
  * runner state. Keep the exception at this narrow service boundary and assert
  * product behavior through the remaining production routes.
  */
-import { randomUUID } from "node:crypto";
-
-import { createStore, state } from "ccstate";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { agents } from "@okouai/db/schema/agent";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { blobs } from "@okouai/db/schema/blob";
-import { checkpoints } from "@okouai/db/schema/checkpoint";
-import { conversations } from "@okouai/db/schema/conversation";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { storages } from "@okouai/db/schema/storage";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { and, count, eq, inArray } from "drizzle-orm";
-
-import { db } from "../lib/db";
-import { badRequestMessage, notFound } from "../lib/error";
-import { now } from "../lib/time";
-import {
-  createAgentRun$,
-  type CreateAgentRunArgs,
-} from "../signals/services/agent-run-create.service";
-import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
-import { agentRunList } from "../signals/services/agent-runs.service";
-import {
-  isCompressedSessionHistoryBlobEncoding,
-  normalizeSessionHistoryBlobEncoding,
-} from "../signals/services/session-history-blobs";
-import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
-import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
 
 const store = createStore();
 

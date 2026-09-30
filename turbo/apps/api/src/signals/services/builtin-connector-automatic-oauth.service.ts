@@ -1,60 +1,66 @@
-import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import {
   IssuerMismatchError,
   type OAuthClientMetadata,
 } from "@modelcontextprotocol/client";
-import { command } from "ccstate";
-import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
+import { command } from "ccstate";
+import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 import {
   connectorOAuthStateExpiresAt,
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
-import { nowDate } from "../../lib/time";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeSync, settle } from "../utils";
-import { runAfterSameProcessRefresh } from "./same-process-refresh";
+import {
+  publishAutomaticAuthorizationState$,
+  publishAutomaticConnection$,
+  readAutomaticAccountSnapshot$,
+  type AutomaticCallbackAccountSnapshot,
+  type AutomaticConnectionPublication,
+} from "./builtin-connector-automatic-connection.service";
+import {
+  builtinConnectorAutomaticDcrStore,
+  hasBuiltinDcrLinkedAccounts$,
+  publishBuiltinDcrRegistration$,
+  readBuiltinDcrBoundClient$,
+  readBuiltinDcrRegistrationByIssuer$,
+  retireBuiltinDcrRegistration$,
+  type BuiltinConnectorAutomaticContractOwner,
+} from "./builtin-connector-automatic-dcr.service";
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
 import {
   getConnectorRuntimeMethod,
   loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
+import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
 import {
   claimBuiltinConnectorOAuthState$,
   type StoredBuiltinOAuthState,
 } from "./connector-oauth-state.service";
-import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
+import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import {
-  builtinConnectorAutomaticDcrStore,
-  publishBuiltinDcrRegistration$,
-  readBuiltinDcrRegistrationByIssuer$,
-  hasBuiltinDcrLinkedAccounts$,
-  readBuiltinDcrBoundClient$,
-  retireBuiltinDcrRegistration$,
-  type BuiltinConnectorAutomaticContractOwner,
-} from "./builtin-connector-automatic-dcr.service";
 import {
   McpAutomaticOAuthError,
   exchangeMcpAutomaticOAuthCode,
@@ -68,14 +74,7 @@ import {
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
-import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
-import {
-  publishAutomaticConnection$,
-  publishAutomaticAuthorizationState$,
-  readAutomaticAccountSnapshot$,
-  type AutomaticCallbackAccountSnapshot,
-  type AutomaticConnectionPublication,
-} from "./builtin-connector-automatic-connection.service";
+import { runAfterSameProcessRefresh } from "./same-process-refresh";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
 const contextBase = z.object({
@@ -220,7 +219,8 @@ const currentBuiltinAutomaticContract$ = command(
     args: { readonly connectorSlug: string; readonly authMethodId: string },
     signal: AbortSignal,
   ): Promise<BuiltinAutomaticContract | null> => {
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    signal.throwIfAborted();
     return currentContractFromSnapshot(
       snapshot,
       args.connectorSlug,

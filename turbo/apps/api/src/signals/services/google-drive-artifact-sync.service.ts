@@ -1,4 +1,3 @@
-import { command, computed, type Command, type Computed } from "ccstate";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
@@ -14,23 +13,24 @@ import {
   convertsToGoogleSlides,
 } from "@okouai/core/google-slides-conversion";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
-import { connectors } from "@okouai/db/schema/connector";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
+import { agents } from "@okouai/db/schema/agent";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { ZipArchive } from "archiver";
+import { command, computed, type Command, type Computed } from "ccstate";
 import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { ZipArchive } from "archiver";
 
 import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -48,20 +48,20 @@ import {
   tapError,
 } from "../utils";
 import {
-  loadConnectorRuntimeSnapshot$,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  type BuiltinConnectorCredentialConnection,
-} from "./builtin-connector-credential-runtime.service";
-import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import {
+  builtinConnectorCredentialRuntimeValueRef,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
+import {
+  loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSnapshot,
+} from "./connector-catalog-runtime.service";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
@@ -518,7 +518,7 @@ export function googleDriveArtifactStatusLookup(args: {
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,
@@ -1477,7 +1477,7 @@ export const syncArtifactToGoogleDrive$ = command(
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,

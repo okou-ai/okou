@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { BuiltinConnectorListResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   onboardingIndustrySchema,
@@ -12,6 +11,7 @@ import {
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationStatus,
 } from "@okouai/api-contracts/contracts/onboarding";
+import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command, computed } from "ccstate";
@@ -21,26 +21,27 @@ import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
 import { FAST_PATH_MODEL } from "../external/openrouter";
 import { requestPlatformGeneration } from "../external/openrouter-platform-generation";
-import { db$, writeDb$ } from "../external/db";
+import { safeJsonParse, settle } from "../utils";
 import {
-  builtinConnectorCredentialRuntimeValueRef,
-  type BuiltinConnectorCredentialConnection,
-} from "./builtin-connector-credential-runtime.service";
+  claimBackgroundJob$,
+  enqueueBackgroundJob$,
+  transitionBackgroundJob$,
+} from "./background-job-command.service";
+import type { ClaimedBackgroundJob } from "./background-job.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
 import {
-  enqueueBackgroundJob$,
-  claimBackgroundJob$,
-  transitionBackgroundJob$,
-} from "./background-job-command.service";
-import type { ClaimedBackgroundJob } from "./background-job.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
 import {
-  loadConnectorRuntimeSnapshot$,
+  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import { builtinConnectorList } from "./connector-data.service";
@@ -50,7 +51,6 @@ import {
   onboardingConnectorCapabilityContext,
   type OnboardingConnectorContext,
 } from "./onboarding-recommendation-collectors";
-import { safeJsonParse, settle } from "../utils";
 
 const L = logger("onboarding-recommendation.service");
 const JOB_KIND = "onboarding-recommendation";
@@ -584,7 +584,7 @@ const runJob$ = command(
     if (sources.length === 0) {
       throw new Error("No supported connected source was available");
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const collected = await Promise.allSettled(
       sources.map((source) => {

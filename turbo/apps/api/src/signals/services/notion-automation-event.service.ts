@@ -1,6 +1,3 @@
-import { NotionAutomationSourceChangedError } from "./workflow-notion-queue.service";
-import { Buffer } from "node:buffer";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
@@ -23,9 +20,9 @@ import {
   type NotionWorkflowPendingEventContext,
 } from "@okouai/db/schema/notion-event";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import {
@@ -39,36 +36,43 @@ import {
   lte,
   sql,
 } from "drizzle-orm";
+import { Buffer } from "node:buffer";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { logger } from "../../lib/log";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
-import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import type {
-  RunWorkflowAutomationResult,
   AutomationRow,
-} from "./workflow-automation-launch.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+  RunWorkflowAutomationResult,
+} from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  NotionAutomationSourceChangedError,
+  persistNotionWorkflowSource,
+} from "./workflow-notion-queue.service";
+
 import {
   notionConfigConnectorId,
   notionConfigWithConnectorId,
 } from "./notion-automation-account.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 
 const log = logger("api:notion-automation-event");
 
@@ -483,7 +487,7 @@ const resolveNotionCredentialAccess$ = command(
     signal: AbortSignal,
   ): Promise<NotionAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -2653,15 +2657,33 @@ const startNotionWorkflowRun$ = command(
           apiStartTime: now(),
           triggerSource: "automation-event",
           triggerBrief: args.triggerBrief,
-          notionSource: {
-            automationId: args.row.automation.id,
-            orgId: args.row.automation.orgId,
-            userId: args.row.automation.ownerUserId,
-            pending: args.pending,
-            pageTitle: notionTitleFromProperties(args.page.properties),
-            pageUrl: args.page.url ?? null,
-            parentTitle: args.parent.title,
-            parentUrl: args.parent.url,
+          persistSourceTransition: async (tx) => {
+            await persistNotionWorkflowSource(
+              tx,
+              {
+                source: {
+                  automationId: args.row.automation.id,
+                  orgId: args.row.automation.orgId,
+                  userId: args.row.automation.ownerUserId,
+                  pending: args.pending,
+                  pageTitle: notionTitleFromProperties(args.page.properties),
+                  pageUrl: args.page.url ?? null,
+                  parentTitle: args.parent.title,
+                  parentUrl: args.parent.url,
+                },
+                automationId: {
+                  automation: args.row.automation,
+                  agentId: args.row.agentId,
+                  chatThreadId: args.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.row.automation,
+                  agentId: args.row.agentId,
+                  chatThreadId: args.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
         },
         signal,

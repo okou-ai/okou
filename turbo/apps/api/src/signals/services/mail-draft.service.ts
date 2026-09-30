@@ -1,7 +1,3 @@
-import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
-import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
 import {
   mailDraftSchema,
   mailDraftStatusSchema,
@@ -11,39 +7,43 @@ import {
   type MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { command } from "ccstate";
+import { and, eq, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
+import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
+import {
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-command.service";
+import {
+  builtinConnectorCredentialRuntimeValueRef,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
+import {
+  loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSnapshot,
+} from "./connector-catalog-runtime.service";
 import {
   GmailAuthorizationError,
   gmailResponseRequiresReconnect,
   handleGmailSendError,
   type GmailDraftRejection,
 } from "./gmail-error";
-import {
-  loadConnectorRuntimeSnapshot$,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  type BuiltinConnectorCredentialConnection,
-} from "./builtin-connector-credential-runtime.service";
-import {
-  loadBuiltinConnectorCredentialValues$,
-  refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
 
 const L = logger("api:mail-draft");
 
@@ -1610,7 +1610,7 @@ export const linkMailDraft$ = command(
     },
     signal: AbortSignal,
   ): Promise<MailDraftLinkMutationResult> => {
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const thread = await set(loadOwnedMailThreadContext$, { ...args });
     signal.throwIfAborted();
@@ -1727,7 +1727,7 @@ export const getMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     return await set(
       loadMailDraftDetails$,
@@ -1758,7 +1758,7 @@ export const getMailDraftAttachment$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1861,7 +1861,7 @@ export const deleteMailDraft$ = command(
         message: "Only an active draft can be deleted",
       };
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1927,7 +1927,7 @@ export const sendMailDraft$ = command(
         message: "This mail draft can no longer be sent",
       };
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,

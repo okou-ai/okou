@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import { now } from "../../lib/time";
+import { safeSync } from "../utils";
 import {
   measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
@@ -11,7 +12,6 @@ import type {
   ConnectorCatalogRuntimeProjectionFallbackReason,
   ConnectorCatalogRuntimeProjectionValidationTiming,
 } from "./connector-catalog-runtime-projection.service";
-import { safeSync } from "../utils";
 
 type AcceptedConnectorCatalogCacheOutcome = "hit" | "miss" | "in_flight";
 type AcceptedConnectorCatalogCacheMissReason =
@@ -221,9 +221,17 @@ export class ConnectorCatalogLoadTiming {
 
   constructor(
     private readonly collector: ApiDispatchTimingCollector | undefined,
-    private readonly requestedConnectorCount: number | undefined,
-    private readonly metadataConnectorCount: number | undefined = undefined,
+    private requestedConnectorCount: number | undefined,
+    private metadataConnectorCount: number | undefined = undefined,
   ) {}
+
+  recordRequestedConnectorCounts(args: {
+    readonly requestedConnectorCount: number;
+    readonly metadataConnectorCount: number;
+  }): void {
+    this.requestedConnectorCount = args.requestedConnectorCount;
+    this.metadataConnectorCount = args.metadataConnectorCount;
+  }
 
   recordAcceptedCacheOutcome(
     outcome: AcceptedConnectorCatalogCacheOutcome,

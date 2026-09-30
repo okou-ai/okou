@@ -8,13 +8,15 @@ import { command } from "ccstate";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { calculateNextRun } from "./time-automation";
+
+import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
 import {
-  morningBriefScheduleWhere,
   morningBriefLegacyWriterAuthorityFromRow,
+  morningBriefScheduleWhere,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
-import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
+import { calculateNextRun } from "./time-automation";
+
 import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
 
 type Automation = typeof workflowAutomations.$inferSelect;
