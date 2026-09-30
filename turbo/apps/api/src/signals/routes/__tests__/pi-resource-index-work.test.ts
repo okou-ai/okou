@@ -221,7 +221,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
           throw new Error("Expected a storage object");
         }
         objects.set(key, Buffer.from(body));
-        return {};
+        return Promise.resolve({});
       }
       if (
         request instanceof GetObjectCommand ||
@@ -236,16 +236,16 @@ describe("Pi resource indexing of generic Storage commits", () => {
             $metadata: { httpStatusCode: 404 },
           });
         }
-        return {
+        return Promise.resolve({
           ContentLength: body.length,
           Body: {
             async *[Symbol.asyncIterator]() {
               yield body;
             },
           },
-        };
+        });
       }
-      return {};
+      return Promise.resolve({});
     });
     const definition = {
       name: `repair-${randomUUID().slice(0, 8)}`,
