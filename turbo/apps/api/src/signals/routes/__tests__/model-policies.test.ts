@@ -378,13 +378,13 @@ describe("GET/PUT /api/model-policies", () => {
       }),
     ).toStrictEqual([
       "okou-1.0",
-      "claude-sonnet-5-5",
-      "gpt-6-luna",
-      "claude-opus-5-5",
-      "gpt-6.1-sol",
       "claude-fable-5-1",
-      "gpt-6-sol",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "gpt-6-astra",
+      "gpt-6.1-sol",
+      "gpt-6-sol",
+      "gpt-6-luna",
     ]);
     expect(
       after.body.policies.find((policy) => {

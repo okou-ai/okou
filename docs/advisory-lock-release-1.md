@@ -33,7 +33,7 @@ Historical migration SQL is counted separately. The integration branch also
 includes main `3103651`, preserving browser preferences, thread-image schema
 contraction, retired Agent SSH/VNC grants, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
-database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; main's 1291/1292 subscription catalog migrations are preserved; the two PR-only retirements follow at 1293/1294. Integration `/model` controls retain main's routed-thread-only
+database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; main's 1291–1293 subscription catalog migrations are preserved; the two PR-only retirements follow at 1294/1295. Integration `/model` controls retain main's routed-thread-only
 behavior and no longer change a member default or recreate a retired session.
 
 Browser and custom account preparation from #37097 was verified against live
@@ -98,7 +98,7 @@ the baseline. A definition can serve multiple runtime callers.
 - The billing-attribution operator retains the compaction compatibility key but
   now takes live Run parents before source rows and rolls back on contention
   without advancing its checkpoint.
-- Migration `1293_retire_provisional_billing_purge` drops the unused current
+- Migration `1294_retire_provisional_billing_purge` drops the unused current
   `purge_quiescent_provisional_billing_attribution` function. Historical
   migrations stay unchanged. The schema snapshot adds no table columns.
 - The unshipped Forms detachment and cursor-trigger migrations are withdrawn.
@@ -115,7 +115,7 @@ the baseline. A definition can serve multiple runtime callers.
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
 
-Migration `1294_retire_billing_attribution_mutation_guard` also removes the
+Migration `1295_retire_billing_attribution_mutation_guard` also removes the
 redundant canonical attribution mutation guard. Outgoing capture functions and
 the retained operator already compare immutable identity, fill only unknown
 thread grouping, and never regress observation. The writer-by-writer evidence
@@ -161,7 +161,7 @@ triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
 records the historical eleven-definition proposal. The two unshipped Forms
 triggers are withdrawn, main's migration 1290 retires both Cloudflare guards,
-and migration 1294 retires the canonical mutation guard. Six billing capture and
+and migration 1295 retires the canonical mutation guard. Six billing capture and
 observation definitions remain. Their explicit writer replacements remain an
 acceptance requirement; the existing schema-test constant named
 `EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.
