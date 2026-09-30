@@ -82,15 +82,19 @@ Each call invalidates organization capacity/candidate reads. There is no shared
 `internalClaim$`; the acquired claim is a local immutable value. The candidate query and conditional claim update both exclude
 threads with an active run. That slot also covers cancellation recovery until
 Runner completion or the existing stale-run cleanup releases it. A claim contains
-the organization, thread and a random token, with a fixed 60-second lease. Capacity and the FIFO head are read
+the organization, thread and a random token, with a fixed 10-second lease. Capacity and the FIFO head are read
 in parallel after claim. The active count and capacity are independent reads;
 capacity retains the existing soft admission limit, including zero/unlimited
 and the paid-subscription payment grace policy.
 
 A pick handles at most one input. Normal no-capacity, empty-queue and completed
 paths explicitly release or delete using the captured thread/token pair.
-Unexpected errors leave the lease to expire. There is no claim heartbeat,
-session preparation retry, or active-run conflict retry.
+Unexpected errors leave the lease to expire: there is no catch/finally release
+(the release itself can fail), so the thread waits at most about 10 seconds.
+Every lease comparison (claim, organization candidates, wait-notice reads) uses
+the application clock `nowDate()`, never database `now()`, so tests move the
+clock instead of waiting. There is no claim heartbeat, session preparation
+retry, or active-run conflict retry.
 
 `active_agent_runs` is written only by the last statement of the pending
 transaction, so from claim to commit the lease is the only mutual exclusion.
@@ -113,7 +117,15 @@ advances `queuedAt` (strictly, by at least 1 ms). The claim captures the
   frees handles the thread.
 
 Scheduling a pick discovers new work; it is not a retry, and `pick$` never
-loops. A slow picker past the 60-second lease is rejected by the fence.
+loops. A slow picker past the 10-second lease is rejected by the fence.
+
+Integration wait notices (S1) do not use the enqueuer's `pick$` result, because
+another picker may hold the lease. After this enqueue's pick finishes (run,
+null or error), and before the realtime publish, S1 reads the chat event this
+enqueue created: consumed with a run means launched, consumed by
+`input.rejected` or a recall means rejected, and a still-pending input reports
+the current queue/capacity wait reason. A rescheduled pick only picks; it sends
+no notice, running-run notification, sidebar touch or realtime event.
 
 An organization pass captures a finite count of currently pickable threads and
 uses one factory with an oldest-first `(queuedAt, threadId)` cursor and a set of

@@ -4,6 +4,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   and,
@@ -241,14 +242,18 @@ export async function notifyRunningChatRunOfPendingInput(
   return true;
 }
 
-/** User-facing observation for integrations after a pick has completed. */
+/**
+ * User-facing observation of one enqueued input for integrations, taken after
+ * that enqueue's pick has finished.
+ */
 export interface ChatQueuePick extends ChatQueuePickResult {
   readonly orgId: string;
 }
 
 /**
- * Integration wait notices observe current queue state independently of the
- * admission path. An active thread or another picker's lease suppresses an
+ * For an enqueued input that is still pending, integration wait notices
+ * observe current queue state independently of the admission path. An active
+ * thread or another picker's lease suppresses an
  * org-full notice because the input can steer or follow that existing work.
  */
 const enqueuedChatQueueWaitReason$ = command(
@@ -290,11 +295,68 @@ const enqueuedChatQueueWaitReason$ = command(
 );
 
 /**
+ * The integration notice for one enqueued input, read from that input's
+ * current state rather than from any pick's return value: the thread lease may
+ * be held by another picker, which can launch or reject this input while this
+ * enqueue's own pick returns null.
+ *
+ * A later chat_events row whose `revokesEventId` is the input records its
+ * consumption (at most one, by the partial unique index):
+ * - a revoker carrying a `runId` is the run claim → `launched`;
+ * - an `input.rejected` revoker → `rejected`;
+ * - a run-less `control.revoke` (the user recalled the input) is also
+ *   reported as `rejected`: the input was consumed without a run and will
+ *   never run, so no wait notice applies, and `rejected` is the only existing
+ *   reason with that meaning. Any other run-less revoker is treated the same.
+ * Without a revoker the input is still pending, and the current queue state
+ * decides between `org-full` and `thread-busy`.
+ */
+const enqueuedChatInputPick$ = command(
+  async (
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ChatQueuePick> => {
+    const [revoker] = await set(writeDb$)
+      .select({ eventType: chatEvents.eventType, runId: chatEvents.runId })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, input.chatThreadId),
+          eq(chatEvents.revokesEventId, input.eventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!revoker) {
+      return await set(enqueuedChatQueueWaitReason$, input, signal);
+    }
+    if (revoker.runId !== null) {
+      return {
+        reason: "launched",
+        orgId: input.orgId,
+        runId: revoker.runId,
+        eventId: input.eventId,
+      };
+    }
+    return { reason: "rejected", orgId: input.orgId, eventId: input.eventId };
+  },
+);
+
+/**
  * After an enqueue commits: pick the thread once and notify its running run
- * in two independent background tasks. `afterPick` (an integration's wait
- * notice) runs after the pick; `touch` (a direct send's best-effort sidebar
- * touch) and then `publish` (the UI realtime event) run last, also when the
- * pick fails. No entry awaits the pick.
+ * in two independent background tasks. The pick's result (a run, null, or an
+ * error) never drives the notice; once it finishes, `afterPick` (an
+ * integration's wait notice) observes the state of the enqueued input
+ * `eventId` (see `enqueuedChatInputPick$`). `touch` (a direct send's
+ * best-effort sidebar touch) and then `publish` (the UI realtime event) run
+ * last. A failed pick still counts as finished: the notice and `touch` /
+ * `publish` still run, then the pick or notice error is rethrown (both, as an
+ * AggregateError, when both fail). No entry awaits the pick.
  */
 export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
   afterPick$: Command<
@@ -309,10 +371,16 @@ export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
         readonly orgId: string;
         readonly chatThreadId: string;
         readonly enqueueCommit?: ChatInputEnqueueCommit;
-        readonly afterPick?: AfterPickInput;
         readonly touch?: () => Promise<void>;
         readonly publish?: () => Promise<void>;
-      },
+      } & (
+        | { readonly afterPick?: undefined; readonly eventId?: undefined }
+        | {
+            readonly afterPick: AfterPickInput;
+            /** The chat event this enqueue created; the notice observes it. */
+            readonly eventId: string;
+          }
+      ),
       signal: AbortSignal,
     ): void => {
       const receipt = input.enqueueCommit;
@@ -324,13 +392,21 @@ export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
       const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
       waitUntil(
         (async () => {
-          const picked = await settle(
+          const picked = await settle(set(pick$, signal));
+          const noticed = await settle(
             (async () => {
-              const runId = await set(pick$, signal);
-              if (input.afterPick !== undefined) {
-                const pick: ChatQueuePick = runId
-                  ? { reason: "launched", orgId: input.orgId, runId }
-                  : await set(enqueuedChatQueueWaitReason$, input, signal);
+              // `eventId` is present exactly when `afterPick` is; it narrows
+              // the generic `afterPick` input as well.
+              if (input.eventId !== undefined) {
+                const pick = await set(
+                  enqueuedChatInputPick$,
+                  {
+                    orgId: input.orgId,
+                    chatThreadId: input.chatThreadId,
+                    eventId: input.eventId,
+                  },
+                  signal,
+                );
                 signal.throwIfAborted();
                 await set(afterPick$, input.afterPick, pick, signal);
               }
@@ -338,8 +414,17 @@ export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
           );
           await input.touch?.();
           await input.publish?.();
-          if (!picked.ok) {
-            throw picked.error;
+          const errors = [picked, noticed].flatMap((result) => {
+            return result.ok ? [] : [result.error];
+          });
+          if (errors.length > 1) {
+            throw new AggregateError(
+              errors,
+              "Enqueued chat thread pick and wait notice failed",
+            );
+          }
+          if (errors[0] !== undefined) {
+            throw errors[0];
           }
         })(),
       );

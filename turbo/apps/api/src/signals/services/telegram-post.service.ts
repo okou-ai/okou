@@ -1328,6 +1328,7 @@ const runAgentForTelegram$ = command(
       {
         orgId: args.source.orgId,
         chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
         afterPick: async (pick) => {
           const notice = chatQueueWaitNotice(pick.reason);
           if (notice) {

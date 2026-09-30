@@ -127,6 +127,9 @@ type ClaimRunCommit =
 
 const log = logger("ChatQueueConsume");
 
+/** Fixed chat thread lease; it is never renewed. See design §5.1. */
+const CHAT_THREAD_LEASE_MS = 10_000;
+
 type AdmittedClaimRun = {
   readonly kind: "admitted";
   readonly validatedThreadSession: Awaited<
@@ -501,7 +504,10 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     const claimId = randomUUID();
     const [row] = await database
       .update(queuedChatThreads)
-      .set({ claimId, claimExpiresAt: new Date(at.getTime() + 60_000) })
+      .set({
+        claimId,
+        claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
+      })
       .where(
         and(
           eq(queuedChatThreads.orgId, orgId),

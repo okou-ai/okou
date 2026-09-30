@@ -5,8 +5,8 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -595,6 +595,65 @@ describe("CHAT-02: dispatch failure", () => {
     expect(claim?.claimId).toStrictEqual(expect.any(String));
     expect(claim?.claimExpiresAt?.getTime()).toBeGreaterThan(now());
     expect(routeRequests()).toBe(0);
+  });
+
+  it("keeps a failed pick's lease until it expires on the app clock", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+    const claimedAt = now();
+    mockNow(claimedAt);
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
+    const headId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "fail after taking the lease", clientEventId: headId },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the send to be accepted");
+    }
+    const threadId = sent.body.threadId;
+    // The failed pick releases nothing; its lease runs out on the app clock.
+    await expect(clearAllDetached()).rejects.toThrow(
+      "No executor configured: set RUNNER_DEFAULT_GROUP",
+    );
+    const lease = await readQueuedChatThreadClaimFixture(threadId);
+    expect(lease?.claimExpiresAt?.getTime()).toBe(claimedAt + 10_000);
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
+
+    // Before expiry, the next enqueue's pick cannot take the lease.
+    mockNow(claimedAt + 9_999);
+    await chat.requestSendEvent(
+      actor,
+      { agentId, threadId, prompt: "wait behind the lease" },
+      [201],
+    );
+    await clearAllDetached();
+    await expect(
+      readQueuedChatThreadClaimFixture(threadId),
+    ).resolves.toStrictEqual(lease);
+    const blocked = await chat.listThreadEvents(actor, threadId);
+    expect(
+      blocked.events.some((message) => {
+        return message.runId !== undefined;
+      }),
+    ).toBeFalsy();
+
+    // At expiry, the next pick claims the thread and launches its head.
+    mockNow(claimedAt + 10_000);
+    await chat.requestSendEvent(
+      actor,
+      { agentId, threadId, prompt: "pick after the lease expires" },
+      [201],
+    );
+    await clearAllDetached();
+    const launched = await chat.listThreadEvents(actor, threadId);
+    expect(
+      userMessages(launched.events).find((message) => {
+        return message.revokesEventId === headId;
+      })?.runId,
+    ).toStrictEqual(expect.any(String));
   });
 });
 

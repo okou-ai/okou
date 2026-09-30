@@ -1756,6 +1756,7 @@ const runAgentForTeams$ = command(
       {
         orgId: args.installation.orgId,
         chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
         afterPick: async (pick, pickSignal) => {
           await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
         },
