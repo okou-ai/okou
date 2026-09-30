@@ -855,11 +855,11 @@ describe("GET /api/cron/sync-skills", () => {
 
     const modifiedAlpha: MockSkillEntry = {
       ...fixture.alphaSkill,
-      files: fixture.alphaSkill.files.map((file) =>
-        file.path === "SKILL.md"
+      files: fixture.alphaSkill.files.map((file) => {
+        return file.path === "SKILL.md"
           ? { ...file, content: `${file.content}\n\nVersion B.` }
-          : file,
-      ),
+          : file;
+      }),
     };
     setupMswHandlers(
       newCommitSha(),

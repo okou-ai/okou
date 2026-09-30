@@ -799,9 +799,9 @@ describe("PUT /api/agents/:id/instructions", () => {
       [200],
     );
 
-    const commands = context.mocks.s3.send.mock.calls.map(([command]) =>
-      command instanceof Object ? command.constructor.name : "",
-    );
+    const commands = context.mocks.s3.send.mock.calls.map(([command]) => {
+      return command instanceof Object ? command.constructor.name : "";
+    });
     expect(commands).toContain("HeadObjectCommand");
     expect(commands).not.toContain("PutObjectCommand");
   });

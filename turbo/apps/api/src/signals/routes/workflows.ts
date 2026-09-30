@@ -840,9 +840,8 @@ const updateWorkflowInner$ = command(
       }
     }
 
-    let updated: boolean;
-    try {
-      updated = await set(
+    const updateResult = await settle(
+      set(
         updateWorkflow$,
         {
           workflow: visible.workflow,
@@ -850,16 +849,17 @@ const updateWorkflowInner$ = command(
           updatedByUserId: auth.userId,
         },
         signal,
-      );
-    } catch (error) {
-      signal.throwIfAborted();
-      if (error instanceof RegisteredStorageObjectsMissingError) {
-        return conflict(error.message);
+      ),
+      signal,
+    );
+    if (!updateResult.ok) {
+      if (updateResult.error instanceof RegisteredStorageObjectsMissingError) {
+        return conflict(updateResult.error.message);
       }
-      throw error;
+      throw updateResult.error;
     }
     signal.throwIfAborted();
-    if (!updated) {
+    if (!updateResult.value) {
       return conflict("Workflow changed during update; retry the request");
     }
 

@@ -12,21 +12,19 @@ import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import {
   CANONICAL_WORKING_DIR,
   PI_AGENT_DIR,
-  type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { createStore } from "ccstate";
+import { http, HttpResponse } from "msw";
 import { Header } from "tar";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { db } from "../../../lib/db";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { readStorageIdentityFixture } from "../../../test-fixtures/storage";
-import { preparePiResourceSnapshot } from "../../services/pi-resource-snapshot.service";
+import { server } from "../../../mocks/server";
 import {
   prepareEmptyPiWritebackSnapshotFixture,
+  prepareRegisteredPiResourceSnapshotFixture,
   prepareUnpublishedPiVolumeFixture,
   publishEmptyPiVolumeFixture,
 } from "../../../test-fixtures/pi-resource-index";
@@ -295,9 +293,9 @@ describe("Pi resource indexing of generic Storage commits", () => {
     await expect(run(prepared.versionId)).resolves.toMatchObject({
       claimed: 0,
     });
-    const putCount = context.mocks.s3.send.mock.calls.filter(
-      ([command]) => command instanceof PutObjectCommand,
-    ).length;
+    const putCount = context.mocks.s3.send.mock.calls.filter(([command]) => {
+      return command instanceof PutObjectCommand;
+    }).length;
     await prepareUnpublishedPiVolumeFixture(
       {
         orgId: actor.orgId,
@@ -308,9 +306,9 @@ describe("Pi resource indexing of generic Storage commits", () => {
       context.signal,
     );
     expect(
-      context.mocks.s3.send.mock.calls.filter(
-        ([command]) => command instanceof PutObjectCommand,
-      ),
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof PutObjectCommand;
+      }),
     ).toHaveLength(putCount);
     await expect(run(prepared.versionId)).resolves.toMatchObject({
       claimed: 0,
@@ -335,42 +333,38 @@ describe("Pi resource indexing of generic Storage commits", () => {
     if (!published.actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
-    const identity = await readStorageIdentityFixture({
-      orgId: published.actor.orgId,
-      userId: published.actor.userId,
-      name: published.storageName,
-    });
     const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
     expect(recompressed).not.toHaveLength(published.archive.length);
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(new Uint8Array(recompressed), {
-        status: 200,
-        headers: { "content-length": String(recompressed.length) },
+    const archiveUrl = `https://storage.example/${randomUUID()}/alternate-gzip.tar.gz`;
+    let archiveGets = 0;
+    server.use(
+      http.get(archiveUrl, () => {
+        archiveGets++;
+        return new HttpResponse(new Uint8Array(recompressed), {
+          status: 200,
+          headers: { "content-length": String(recompressed.length) },
+        });
       }),
     );
-    onTestFinished(() => fetchSpy.mockRestore());
-    const mount: StoredStorageMountEntry = {
-      name: published.storageName,
-      storageId: identity.id,
-      versionId: published.versionId,
+    const snapshot = {
       orgId: published.actor.orgId,
       userId: published.actor.userId,
+      storageName: published.storageName,
+      versionId: published.versionId,
       mountPath: `${PI_AGENT_DIR}/skills/index-work`,
-      archiveUrl: "https://storage.example/alternate-gzip.tar.gz",
-      archiveSize: published.archive.length,
+      archiveUrl,
     };
-    const first = await createStore().get(
-      preparePiResourceSnapshot({ db: db(), mounts: [mount] }, context.signal),
+    const first = await prepareRegisteredPiResourceSnapshotFixture(
+      { ...snapshot, archiveSize: published.archive.length },
+      context.signal,
     );
     expect(first.snapshot.skills).toHaveLength(1);
-    const second = await createStore().get(
-      preparePiResourceSnapshot(
-        { db: db(), mounts: [{ ...mount, archiveSize: 1 }] },
-        context.signal,
-      ),
+    const second = await prepareRegisteredPiResourceSnapshotFixture(
+      { ...snapshot, archiveSize: 1 },
+      context.signal,
     );
     expect(second.snapshot.skills).toHaveLength(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(archiveGets).toBe(1);
   });
 
   it("does not requeue a ready index when a registered version is reused", async () => {
