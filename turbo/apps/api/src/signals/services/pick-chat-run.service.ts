@@ -1097,20 +1097,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       set(internalReloadPick$, (revision) => {
         return revision + 1;
       });
-      const diagnosticStartedAt = performance.now();
       const claim = await set(claim$, signal);
-      // TEMP(ci-diagnostic): remove after locating the CI pick latency.
-      const diagnostic = (phase: string) => {
-        if (process.env.VITEST) {
-          log.info("PICK_DIAG", {
-            phase,
-            target: fixedThreadId ?? "org",
-            thread: claim?.chatThreadId ?? null,
-            ms: Math.round(performance.now() - diagnosticStartedAt),
-          });
-        }
-      };
-      diagnostic("claimed");
       signal.throwIfAborted();
       if (!claim) {
         return null;
@@ -1141,9 +1128,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         run: new ApiDispatchTimingCollector(),
         phase: new ApiDispatchPhaseCollector(startedAt),
       };
-      diagnostic("capacity-event");
       const context = await set(claimed.prepareRunContext$, timing, signal);
-      diagnostic("prepared");
       signal.throwIfAborted();
       if (context.kind === "passed") {
         await set(releaseClaimAndSchedulePick$, claim, signal);
@@ -1159,10 +1144,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         await set(releaseClaimAndSchedulePick$, claim, signal);
         return null;
       }
-      diagnostic("committed");
       waitUntil(set(claimed.updatePresignedUrlCache$, signal));
       await set(activatePendingRun$, pending, signal);
-      diagnostic("activated");
       return pending.runId;
     },
   );
