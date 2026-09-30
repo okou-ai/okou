@@ -4,6 +4,8 @@ import {
   getModelProviderEnvBindings,
   getModelProviderFirewall,
   getProviderRuntimeModel,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  getSecretNameForType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
@@ -134,12 +136,107 @@ function compileRegisteredRuntime(
   };
 }
 
+function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
+  const { source, selection, credentials } = input;
+  if (
+    selection.kind !== "built-in" ||
+    source.identity.kind !== "built-in" ||
+    source.identity.modelKeyId !== selection.modelKeyId ||
+    source.credentialOwner !== "builtin" ||
+    source.configuration.kind !== "registered-provider"
+  ) {
+    throw new Error("Managed model source and route identity mismatch");
+  }
+  const managedVendor = source.configuration.managedVendor;
+  const type = modelProviderTypeSchema.parse(selection.providerType);
+  const permitted = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).some(
+    ([provider, facts]) => {
+      return provider === type && facts.vendor === managedVendor;
+    },
+  );
+  if (!permitted) {
+    throw new Error(
+      "Managed model vendor does not match its selected provider",
+    );
+  }
+  const secretName = getSecretNameForType(type);
+  if (
+    !secretName ||
+    !source.credentials.some((credential) => {
+      return (
+        credential.kind === "managed-key" &&
+        credential.modelKeyId === selection.modelKeyId &&
+        credential.name === secretName
+      );
+    })
+  ) {
+    throw new Error(
+      "Managed model credential reference does not match its selected route",
+    );
+  }
+  const key = credentials[secretName];
+  if (!key?.trim()) {
+    throw new Error("Managed model credential is missing");
+  }
+  const reference = getModelProviderFirewall(type)
+    ? `\${{ secrets.${secretName} }}`
+    : key;
+  const bindings = getModelProviderEnvBindings(type);
+  const environment = bindings
+    ? Object.fromEntries(
+        Object.entries(bindings).flatMap(([name, value]) => {
+          if (value === "$secret") {
+            return [[name, reference]];
+          }
+          if (value === "$model") {
+            return [[name, selection.upstreamModel]];
+          }
+          if (value.startsWith("$secrets.")) {
+            return value.slice("$secrets.".length) === secretName
+              ? [[name, reference]]
+              : [];
+          }
+          return [[name, value]];
+        }),
+      )
+    : { [secretName]: reference };
+  const protocol =
+    MODEL_PROVIDER_TYPES[type].framework === "claude-code"
+      ? "anthropic-messages"
+      : "openai-responses";
+  const baseUrl =
+    environment.ANTHROPIC_BASE_URL ??
+    environment.OPENAI_BASE_URL ??
+    (protocol === "anthropic-messages"
+      ? "https://api.anthropic.com"
+      : "https://api.openai.com/v1");
+  return {
+    selectedModel: selection.selectedModel,
+    upstreamModel: selection.upstreamModel,
+    providerType: type,
+    credentialOwner: "builtin",
+    transport: { kind: "http", protocol, baseUrl },
+    authentication: {
+      kind: "header",
+      headerName: type === "anthropic-api-key" ? "x-api-key" : "Authorization",
+      valueTemplate:
+        type === "anthropic-api-key" ? "{{secret}}" : "Bearer {{secret}}",
+      secretName,
+    },
+    environment,
+    secrets: { [secretName]: key },
+  };
+}
+
 /** Pure selected-route conversion. It neither reads nor decrypts a source. */
 export function compileModelRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
   const config = source.configuration;
+  if (selection.kind === "built-in") {
+    return compileManagedRuntime(input);
+  }
   if (config.kind === "registered-provider") {
     return compileRegisteredRuntime(input);
   }

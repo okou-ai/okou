@@ -8639,10 +8639,30 @@ export function createThreadClaimRunObjects(
   });
   const selectedConfiguredModelSource$ = computed(async (get) => {
     const context = await get(pinnedContext$);
-    const args = context?.environmentArgs;
+    if (!context) {
+      return null;
+    }
+    const args = context.environmentArgs;
+    if (isBuiltInModelProviderType(args.modelProviderType)) {
+      const route = args?.builtInModelRuntimeRoute;
+      if (
+        !route ||
+        route.selectedModel !== args.selectedModelOverride ||
+        !isBuiltInModelRuntimeRoutePermitted(route) ||
+        getFrameworkForType(route.providerType) !== args.framework
+      ) {
+        return null;
+      }
+      return await get(
+        createModelSourceSnapshot({
+          orgId: args.orgId,
+          userId: args.userId,
+          source: { kind: "built-in", modelKeyId: route.modelKeyId },
+        }),
+      );
+    }
     if (
-      !context ||
-      !args?.modelProviderId ||
+      !args.modelProviderId ||
       !args.selectedModelOverride ||
       isBuiltInModelProviderType(args.modelProviderType) ||
       (args.modelProviderType &&
@@ -8806,6 +8826,82 @@ export function createThreadClaimRunObjects(
       };
     },
   );
+  const prepareManagedModelRuntime$ = command(
+    async (
+      { set },
+      source: ModelSourceSnapshot,
+      args: ResolveModelProviderEnvironmentArgs,
+      signal: AbortSignal,
+    ): Promise<ResolvedModelProviderEnvironment | null> => {
+      if (source.identity.kind !== "built-in") {
+        throw new Error("Managed preparation requires a managed source");
+      }
+      const route = args.builtInModelRuntimeRoute;
+      if (
+        !route ||
+        route.selectedModel !== args.selectedModelOverride ||
+        !isBuiltInModelRuntimeRoutePermitted(route) ||
+        getFrameworkForType(route.providerType) !== args.framework ||
+        route.modelKeyId !== source.identity.modelKeyId
+      ) {
+        return null;
+      }
+      const credentials = await set(
+        resolveModelCredentialValues$,
+        source,
+        signal,
+      );
+      if (!credentials) {
+        return null;
+      }
+      const compiled = compileModelRuntime({
+        source,
+        selection: {
+          kind: "built-in",
+          selectedModel: route.selectedModel,
+          providerType: route.providerType,
+          upstreamModel: route.upstreamModel,
+          modelKeyId: route.modelKeyId,
+        },
+        credentials,
+      });
+      const secretName = getSecretNameForType(route.providerType);
+      if (!secretName || !credentials[secretName]) {
+        return null;
+      }
+      // Preserve private US-routing/firewall/Codex protocol without a query.
+      const protocol = builtInModelProviderEnvironmentFromSnapshot({
+        route,
+        selectedModel: route.selectedModel,
+        featureSwitchContext: args.featureSwitchContext,
+        apiKey: credentials[secretName],
+      });
+      if (!protocol) {
+        return null;
+      }
+      const environment = { ...compiled.environment };
+      if (route.providerType === "openrouter-api-key") {
+        const endpoint = protocol.environment.ANTHROPIC_BASE_URL;
+        if (!endpoint) {
+          throw new Error("Managed messages endpoint is missing");
+        }
+        environment.ANTHROPIC_BASE_URL = endpoint;
+      }
+      if (route.providerType === "openrouter-codex") {
+        const endpoint = protocol.environment.OPENAI_BASE_URL;
+        if (!endpoint) {
+          throw new Error("Managed responses endpoint is missing");
+        }
+        environment.OPENAI_BASE_URL = endpoint;
+      }
+      return {
+        ...protocol,
+        selectedModel: compiled.selectedModel,
+        environment,
+        secrets: { ...compiled.secrets },
+      };
+    },
+  );
   const resolveConfiguredModelRuntime$ = command(
     async (
       { get, set },
@@ -8823,6 +8919,14 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       if (!context || !source) {
         return null;
+      }
+      if (source.identity.kind === "built-in") {
+        return await set(
+          prepareManagedModelRuntime$,
+          source,
+          context.environmentArgs,
+          signal,
+        );
       }
       const config = source.configuration;
       if (config.kind === "registered-provider") {
@@ -8852,7 +8956,7 @@ export function createThreadClaimRunObjects(
           signal,
         );
       }
-      if (config.kind !== "gateway" || source.identity.kind !== "gateway") {
+      if (source.identity.kind !== "gateway") {
         throw new Error("Selected gateway has an invalid source kind");
       }
       const selectedModel = context.environmentArgs.selectedModelOverride;
@@ -8923,40 +9027,13 @@ export function createThreadClaimRunObjects(
   const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
     return await get(internalPreparedConfiguredEnvironment$);
   });
-  const pinnedBuiltInProviderSnapshot$ = computed(
-    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
-      const context = await get(pinnedContext$);
-      if (
-        !context ||
-        !isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ) {
-        return null;
-      }
-      const args = context.environmentArgs;
-      const route = args.builtInModelRuntimeRoute;
-      if (
-        !route ||
-        route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(route) ||
-        getFrameworkForType(route.providerType) !== args.framework
-      ) {
-        return null;
-      }
-      const [key] = await context.input.db
-        .select({ apiKey: builtInModelKeys.apiKey })
-        .from(builtInModelKeys)
-        .where(eq(builtInModelKeys.id, route.modelKeyId))
-        .limit(1);
-      return key?.apiKey
-        ? builtInModelProviderEnvironmentFromSnapshot({
-            route,
-            selectedModel: route.selectedModel,
-            featureSwitchContext: args.featureSwitchContext,
-            apiKey: key.apiKey,
-          })
-        : null;
-    },
-  );
+  const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
+    const context = await get(pinnedContext$);
+    return context &&
+      isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
+      ? await get(internalPreparedConfiguredEnvironment$)
+      : null;
+  });
   const pinnedPersonalProviderSnapshot$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     const args = context?.environmentArgs;

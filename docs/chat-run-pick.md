@@ -433,12 +433,14 @@ Vercel protocol twins. `member-provider` explicitly identifies a user-owned
 `modelProviders` record, unlike `member` subscription-account identity. The
 reader applies exact owner scope without trying another source table or account.
 Thread retains deferred firewall alias metadata, conditional Pi credential capture
-and Codex protocol assembly. Cloud multi-auth, subscription-account, DeepSeek
-specialized and builtin runtime paths are not yet migrated and retain their
-existing behavior. The
-source reader's encrypted contract does not disguise builtin plaintext keys as
-encrypted credentials. This is a real gateway slice, not complete model-source
-or fifteen-interface parity.
+and Codex protocol assembly. Cloud multi-auth and subscription-account runtime
+conversion remains unfinished. Builtin paths now consume the approved managed-key
+credential variant: source reads nonsecret exact-key facts/reference, an effect
+explicitly resolves that same key, and the converter checks source/route/vendor/key
+binding without I/O. No ciphertext is fabricated, no default key is selected and
+no credential storage migration occurs. Thread retains its private US-routing,
+firewall and Codex projection from those same already-resolved values. This is
+real source execution progress, not complete model-source or fifteen-interface parity.
 
 ## Selected connector source migration (in progress)
 
