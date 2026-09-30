@@ -15,13 +15,14 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   GPT_PI_BDD_MODELS,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
   claimEnvironment,
   userMessages,
   assistantMessages,
 } from "./helpers/chat-events-fixture";
+
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -278,7 +279,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
 
       expect(firstClaim.claim.cliAgentType).toBe("pi");
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       if (selectedModel.startsWith("gpt-")) {
         const firstRun = await api.readRun(actor, run.runId);
         const sessionId = firstRun.result?.agentSessionId;
@@ -332,7 +333,12 @@ describe("CHAT-02: model-first provider policies", () => {
             status: "completed",
             result: { agentSessionId: sessionId },
           });
-          await expectNoBuiltInModelUsage(continuation.runId);
+          await expectThreadModelCredits(
+            context,
+            actor,
+            continuation.threadId,
+            0,
+          );
         }
       }
     },
@@ -377,7 +383,7 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       );
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
 
       await accept(
         setupApp({ context, routes: modelProviderGatewayRoutes })(
@@ -574,7 +580,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: outcome,
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       expect(
         JSON.stringify({
           h2,
@@ -765,7 +771,7 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: gateway.upstreamModel },
         usagePricingResolution,
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       for (const bytes of objects.values()) {
         expect(bytes.toString("utf8")).not.toContain(gateway.secret);
       }
@@ -835,7 +841,7 @@ describe("CHAT-02: model-first provider policies", () => {
       source: { model: "gpt-6-luna" },
     });
     await cancelChatRun(actor, promoted.runId, claim.sandboxHeaders);
-    await expectNoBuiltInModelUsage(promoted.runId);
+    await expectThreadModelCredits(context, actor, promoted.threadId, 0);
   }, 90_000);
 
   it.each([
@@ -859,7 +865,7 @@ describe("CHAT-02: model-first provider policies", () => {
         OPENAI_MODEL: gateway.upstreamModel,
       });
       await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
     },
     90_000,
   );
