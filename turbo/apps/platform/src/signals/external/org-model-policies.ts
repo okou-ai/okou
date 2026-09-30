@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type {
+  OrgModelMode,
   OrgModelPoliciesResponse,
   UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -72,6 +73,21 @@ export const refreshOrgModelPolicies$ = command(
     const response = await get(orgModelPolicies$);
     signal.throwIfAborted();
     return response;
+  },
+);
+
+export const updateOrgModelMode$ = command(
+  async ({ get, set }, mode: OrgModelMode, signal: AbortSignal) => {
+    const client = get(apiClient$)(modelPoliciesMainContract, {
+      apiBase: "api",
+    });
+    const result = await accept(
+      client.updateMode({ body: { mode }, fetchOptions: { signal } }),
+      [200],
+    );
+    signal.throwIfAborted();
+    set(invalidateOrgModelPolicies$);
+    return result.body;
   },
 );
 

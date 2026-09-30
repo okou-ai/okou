@@ -4902,6 +4902,15 @@
         "upgradePro": "Actualizar a Pro para usarlo",
         "upgradeToPro": "Actualizar a Pro"
       },
+      "autoMode": {
+        "cancel": "Cancelar",
+        "confirm": "Cambiar a Auto Model",
+        "confirmDescription": "Esto elimina permanentemente las políticas de modelos de la organización, sus conexiones de proveedores y las credenciales que ya no se utilicen. Solo quedará Auto como política de la organización. Las suscripciones personales de los miembros seguirán conectadas y podrán añadir modelos. Volver a Custom no restaurará la configuración eliminada.",
+        "confirmTitle": "¿Cambiar este espacio de trabajo a Auto Model?",
+        "description": "Usa Auto como política de la organización; las suscripciones personales añaden modelos para los miembros.",
+        "failed": "No se pudo cambiar el modo de modelos. Actualiza la configuración e inténtalo de nuevo.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "La página de aprobación no se pudo abrir. Usa el enlace manualmente y pega el código aquí.",
@@ -5004,6 +5013,7 @@
           "stale": "Atención",
           "week": "Semana"
         },
+        "subscriptionsSectionTitle": "Suscripciones de modelos personales",
         "useAccount": "Usar"
       },
       "picker": {

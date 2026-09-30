@@ -18,6 +18,11 @@ import {
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import {
+  loadMemberSubscriptionModels$,
+  type MemberSubscriptionModel,
+} from "./subscription-model-catalog.service";
 import { and, eq, or } from "drizzle-orm";
 
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
@@ -60,6 +65,9 @@ interface ModelRoutingFacts {
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
   readonly sources: ModelRouteSources;
+  readonly modelMode: "auto" | "custom";
+  /** Connected subscription catalog models; loaded only in Auto mode. */
+  readonly subscriptionModels: readonly MemberSubscriptionModel[];
 }
 
 export type ExternalModelProviderPlanCapabilitiesSource =
@@ -145,21 +153,37 @@ const prepareModelRoutingFacts$ = command(
             params.orgPlanCapabilities,
             abortSignal,
           );
+    const [org] = await set(writeDb$)
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, params.orgId))
+      .limit(1);
+    abortSignal?.throwIfAborted();
+    const modelMode = org?.mode === "auto" ? "auto" : "custom";
     const sources = await set(
       loadModelRouteSources$,
       params.orgId,
       params.userId,
       params.selectedModel
         ? [params.selectedModel]
-        : policyFacts.policies.map((policy) => {
-            return policy.model;
-          }),
+        : modelMode === "auto"
+          ? // Auto members may prefer a subscription model outside the policies.
+            undefined
+          : policyFacts.policies.map((policy) => {
+              return policy.model;
+            }),
       abortSignal,
     );
+    const subscriptionModels =
+      modelMode === "auto"
+        ? await set(loadMemberSubscriptionModels$, sources.member, abortSignal)
+        : [];
     return {
       orgPlanCapabilities: policyFacts.orgPlanCapabilities,
       policies: policyFacts.policies,
       sources,
+      modelMode,
+      subscriptionModels,
     };
   },
 );
@@ -178,12 +202,29 @@ function resolveValidPolicyRoute(params: {
   const policy = params.facts.policies.find((candidate) => {
     return candidate.model === params.selectedModel;
   });
-  return policy
-    ? resolveEffectivePolicyRoute({
-        sources: params.facts.sources,
-        capabilities: params.capabilities,
-        policy,
-      })
+  if (policy) {
+    return resolveEffectivePolicyRoute({
+      sources: params.facts.sources,
+      capabilities: params.capabilities,
+      policy,
+    });
+  }
+  if (params.facts.modelMode !== "auto") {
+    return null;
+  }
+  const personal = params.facts.subscriptionModels.find((entry) => {
+    return entry.model === params.selectedModel;
+  });
+  return personal
+    ? {
+        modelProviderId: personal.providerId,
+        modelProviderType: personal.providerType,
+        modelProviderCredentialScope: "member",
+        selectedModel: personal.model,
+        personalConnectionState: personal.needsReconnect
+          ? "reconnect_required"
+          : "capture_required",
+      }
     : null;
 }
 
@@ -242,8 +283,16 @@ export const resolveDefaultModelFirstPin$ = command(
           selectedModel: preference.selectedModel,
         });
         if (preferredRoute) {
+          const catalogTier =
+            facts.modelMode === "auto" &&
+            preferredRoute.modelProviderCredentialScope === "member"
+              ? facts.subscriptionModels.find((entry) => {
+                  return entry.model === preferredRoute.selectedModel;
+                })?.serviceTier
+              : undefined;
           const serviceTier =
             preference.serviceTier === "priority" &&
+            (facts.modelMode !== "auto" || catalogTier === "priority") &&
             isCodexFastServiceTierSupported({
               selectedModel: preferredRoute.selectedModel,
             })
@@ -311,6 +360,15 @@ export const resolveModelSelectionPin$ = command(
       return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
     if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
+      const [org] = await db
+        .select({ mode: orgMetadata.modelMode })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      abortSignal?.throwIfAborted();
+      if (org?.mode === "auto") {
+        return badRequestMessage("Use the available models for this workspace");
+      }
       const capabilities = modelRouteCapabilities(
         params.orgPlanCapabilities === undefined
           ? await set(loadOrgPlanCapabilities$, orgId, abortSignal)
@@ -388,6 +446,8 @@ export const resolveModelSelectionPin$ = command(
     }
     const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
     if (
+      (facts.modelMode === "auto" &&
+        route.modelProviderCredentialScope === "member") ||
       modelRouteAllowedForOrgPlan({
         capabilities: planCapabilities,
         selectedModel: route.selectedModel,

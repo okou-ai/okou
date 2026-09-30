@@ -4820,6 +4820,15 @@
         "upgradePro": "升級Pro後可用",
         "upgradeToPro": "升級到Pro"
       },
+      "autoMode": {
+        "cancel": "取消",
+        "confirm": "切換至 Auto Model",
+        "confirmDescription": "此操作會永久刪除組織模型策略、組織 Provider Connections 及不再被引用的密鑰，僅保留 Auto 組織策略。成員的個人訂閱會保留，並可帶入模型。切回 Custom 不會還原已刪除的組織設定。",
+        "confirmTitle": "將此組織切換至 Auto Model？",
+        "description": "組織使用 Auto 策略；成員連接個人訂閱後可增加可用模型。",
+        "failed": "切換模型模式失敗。請重新整理設定後再試。",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "授權頁面打不開。請手動開啟連結，再把授權碼貼上到這裡。",
@@ -4922,6 +4931,7 @@
           "stale": "需處理",
           "week": "本週"
         },
+        "subscriptionsSectionTitle": "個人模型訂閱",
         "useAccount": "使用"
       },
       "picker": {

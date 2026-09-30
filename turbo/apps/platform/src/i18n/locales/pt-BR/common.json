@@ -4902,6 +4902,15 @@
         "upgradePro": "Faça upgrade para o Pro para usar",
         "upgradeToPro": "Fazer upgrade para o Pro"
       },
+      "autoMode": {
+        "cancel": "Cancelar",
+        "confirm": "Mudar para Auto Model",
+        "confirmDescription": "Esta ação exclui permanentemente as políticas de modelos da organização, as conexões com provedores e os segredos que não são mais usados. Auto será a única política da organização. As assinaturas pessoais dos membros continuam conectadas e podem adicionar modelos. Voltar para Custom não restaurará as configurações excluídas.",
+        "confirmTitle": "Mudar este espaço de trabalho para Auto Model?",
+        "description": "Use Auto como política da organização; assinaturas pessoais adicionam modelos para os membros.",
+        "failed": "Não foi possível mudar o modo de modelos. Atualize as configurações e tente novamente.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "Não foi possível abrir a página de aprovação. Use o link manualmente e cole o código aqui.",
@@ -5004,6 +5013,7 @@
           "stale": "Atenção",
           "week": "Semana"
         },
+        "subscriptionsSectionTitle": "Assinaturas pessoais de modelos",
         "useAccount": "Usar"
       },
       "picker": {

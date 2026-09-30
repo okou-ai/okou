@@ -20,6 +20,7 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { modelProviders } from "@okouai/db/schema/model-provider";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
@@ -31,6 +32,11 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 const ORG_SENTINEL_USER_ID = "__org__";
 const SECRET_PLACEHOLDER = "{{secret}}";
 const HEADER_NAME_REGEX = /^[A-Za-z][A-Za-z0-9-]*$/;
+
+/** Pure condition; a missing metadata row reads as Custom, matching every other mode check. */
+function autoModeOrg(orgId: string) {
+  return and(eq(orgMetadata.orgId, orgId), eq(orgMetadata.modelMode, "auto"));
+}
 
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -313,6 +319,14 @@ const loadConnection$ = command(
 export const modelProviderConnectionsForOrg = (orgId: string) => {
   return computed(async (get) => {
     const db = get(db$);
+    const [org] = await db
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    if (org?.mode === "auto") {
+      return { connections: [] };
+    }
     const connections = await db
       .select()
       .from(modelProviderConnections)
@@ -364,7 +378,15 @@ export const createModelProviderConnection$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const connectionId = randomUUID();
-    await db.transaction(async (tx) => {
+    const created = await db.transaction(async (tx) => {
+      const [autoOrg] = await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(autoModeOrg(args.orgId))
+        .limit(1);
+      if (autoOrg) {
+        return false;
+      }
       const [secret] = await tx
         .insert(secrets)
         .values({
@@ -390,20 +412,26 @@ export const createModelProviderConnection$ = command(
           return { connectionId, ...surface };
         }),
       );
+      return true;
     });
     signal.throwIfAborted();
-    const created = await set(
+    if (!created) {
+      return badRequestMessage(
+        "Provider connections cannot be configured in Auto mode",
+      );
+    }
+    const connection = await set(
       loadConnection$,
       { orgId: args.orgId, connectionId },
       signal,
     );
     signal.throwIfAborted();
-    if (!created) {
+    if (!connection) {
       throw new Error("Expected custom model provider connection insert");
     }
     await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
-    return created;
+    return connection;
   },
 );
 
@@ -429,6 +457,14 @@ export const updateModelProviderConnection$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
+      const [autoOrg] = await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(autoModeOrg(args.orgId))
+        .limit(1);
+      if (autoOrg) {
+        return "auto";
+      }
       const [connection] = await tx
         .select({ secretId: modelProviderConnections.secretId })
         .from(modelProviderConnections)
@@ -480,6 +516,11 @@ export const updateModelProviderConnection$ = command(
       return true;
     });
     signal.throwIfAborted();
+    if (result === "auto") {
+      return badRequestMessage(
+        "Provider connections cannot be configured in Auto mode",
+      );
+    }
     if (!result) {
       return notFound("Resource not found");
     }

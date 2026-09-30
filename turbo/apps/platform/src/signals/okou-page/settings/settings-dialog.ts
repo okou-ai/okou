@@ -10,6 +10,7 @@ import { resetSignal } from "../../utils.ts";
 import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
 import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
 import { retryEmailSubscription$ } from "./email-subscription.ts";
+import { setAutoModelConfirmationOpen$ } from "./org-model-mode.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import {
   billingPlansStandalone$,
@@ -199,6 +200,7 @@ export const openSettingsUsagePackUpgrade$ = command(
 
 const releaseSettingsDialogSession$ = command(({ set }) => {
   set(internalSettingsDialogSignal$, null);
+  set(setAutoModelConfirmationOpen$, false);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
   set(resetDeleteConfirm$);

@@ -8701,12 +8701,19 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   const setModelSelection = useSet(signals.model.setModelSelection$);
   const pageSignal = useGet(pageSignal$);
+  const policies = useLastResolved(orgModelPolicies$);
   const value = modelSelection.state === "hasData" ? modelSelection.data : null;
   const modelPickerLoading = modelSelection.state === "loading";
   const onModelPickerChange = (selection: ModelProviderSelection | null) => {
     detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
   };
-  if (modelPickerLoading || value === null) {
+  // Auto offers a choice only once a personal subscription adds models.
+  const autoOnly =
+    policies?.modelMode === "auto" &&
+    !policies.policies.some((policy) => {
+      return policy.subscriptionOptions;
+    });
+  if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }
 

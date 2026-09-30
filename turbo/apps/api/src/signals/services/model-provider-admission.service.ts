@@ -27,6 +27,7 @@ import {
   checkOrgCreditsForRunAdmission$,
   checkOrgPlanRunAdmission,
 } from "./run-admission.service";
+import { isAutoPersonalSubscriptionRoute$ } from "./subscription-model-catalog.service";
 
 interface ProviderAdmissionInput {
   readonly orgId: string;
@@ -136,6 +137,16 @@ export const resolveModelFirstProviderAdmission$ = command(
       };
     }
     const selectedModel = params.modelPin.selectedModel;
+    const autoPersonalSubscription = await set(
+      isAutoPersonalSubscriptionRoute$,
+      {
+        orgId: params.orgId,
+        userId: params.userId,
+        model: selectedModel,
+        providerType: effectiveModelProvider,
+      },
+      signal,
+    );
     const error = isBuiltInModelProviderType(effectiveModelProvider)
       ? await set(
           checkOrgCreditsForRunAdmission$,
@@ -154,6 +165,7 @@ export const resolveModelFirstProviderAdmission$ = command(
               : await set(loadOrgPlanCapabilities$, params.orgId, signal),
           modelProviderType: effectiveModelProvider,
           selectedModel,
+          autoPersonalSubscription,
         });
     signal?.throwIfAborted();
     return { effectiveModelProvider, cliAgentType, error };

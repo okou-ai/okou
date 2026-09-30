@@ -372,6 +372,7 @@ import {
   isFreePlanForCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
+import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import {
   activateUsageAllowanceWindowsForRun,
   prepareUsageAllowanceRefresh$,
@@ -5922,12 +5923,20 @@ async function checkFinalRunAdmission(
   }
 
   const capabilities = await loadOrgPlanCapabilities(db, args.orgId);
+  const autoPersonalSubscription = await isAutoPersonalSubscriptionRoute({
+    db,
+    orgId: args.orgId,
+    userId: args.userId,
+    model: args.selectedModel,
+    providerType: args.modelProviderType,
+  });
   signal.throwIfAborted();
   return (
     checkOrgPlanRunAdmission({
       capabilities,
       modelProviderType: args.modelProviderType,
       selectedModel: args.selectedModel,
+      autoPersonalSubscription,
     }) ?? null
   );
 }

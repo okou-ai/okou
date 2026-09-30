@@ -4820,6 +4820,15 @@
         "upgradePro": "Pro로 업그레이드하여 사용",
         "upgradeToPro": "Pro로 업그레이드"
       },
+      "autoMode": {
+        "cancel": "취소",
+        "confirm": "Auto Model로 전환",
+        "confirmDescription": "조직의 모델 정책, Provider Connections 및 더 이상 사용하지 않는 보안 정보를 영구적으로 삭제합니다. 조직 정책은 Auto만 남습니다. 멤버의 개인 구독은 연결된 상태로 유지되며 모델을 추가할 수 있습니다. Custom으로 돌아가도 삭제된 조직 설정은 복원되지 않습니다.",
+        "confirmTitle": "워크스페이스를 Auto Model로 전환할까요?",
+        "description": "조직 정책으로 Auto를 사용합니다. 개인 구독에서 멤버의 모델을 추가할 수 있습니다.",
+        "failed": "모델 모드를 변경하지 못했습니다. 설정을 새로고침하고 다시 시도하세요.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "승인 페이지를 열 수 없습니다. 링크를 수동으로 사용하고 코드를 여기에 붙여넣으세요.",
@@ -4922,6 +4931,7 @@
           "stale": "주의 필요",
           "week": "주간"
         },
+        "subscriptionsSectionTitle": "개인 모델 구독",
         "useAccount": "사용"
       },
       "picker": {

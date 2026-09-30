@@ -45,6 +45,10 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
+import {
+  loadMemberSubscriptionModels$,
+  type MemberSubscriptionModel,
+} from "./subscription-model-catalog.service";
 
 interface Principal {
   readonly orgId: string;
@@ -474,12 +478,63 @@ const readMcpModelSnapshot$ = command(
           )
           .limit(1);
         budget.check();
-        return { capabilities, policies, preference };
+        await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+        const [org] = await tx
+          .select({ mode: orgMetadata.modelMode })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, principal.orgId))
+          .limit(1);
+        budget.check();
+        return {
+          capabilities,
+          policies,
+          preference,
+          modelMode: org?.mode === "auto" ? "auto" : "custom",
+        };
       },
       { isolationLevel: "repeatable read", accessMode: "read only" },
     );
   },
 );
+
+function appendAutoMemberMcpModels({
+  personalModels,
+  capabilities,
+  policiesByModel,
+  models,
+}: {
+  personalModels: readonly MemberSubscriptionModel[];
+  capabilities: OrgPlanCapabilities | null;
+  policiesByModel: ReadonlyMap<string, unknown>;
+  models: McpListModelsOutput["models"];
+}): void {
+  for (const personal of personalModels) {
+    if (policiesByModel.has(personal.model)) {
+      continue;
+    }
+    const denied = checkOrgPlanRunAdmission({
+      capabilities,
+      selectedModel: personal.model,
+      modelProviderType: personal.providerType,
+      autoPersonalSubscription: true,
+    });
+    models.push({
+      id: personal.model,
+      name: personal.displayName,
+      selectable: true,
+      availability: denied
+        ? "plan_restricted"
+        : personal.needsReconnect
+          ? "reconnect_required"
+          : "available",
+      reason: denied
+        ? "This organization is not currently active."
+        : personal.needsReconnect
+          ? "Reconnect your personal model subscription before sending a message."
+          : null,
+    });
+  }
+}
 
 const prepareMcpModelDiscovery$ = command(
   async (
@@ -488,7 +543,7 @@ const prepareMcpModelDiscovery$ = command(
     signal: AbortSignal,
   ): Promise<McpListModelsOutput> => {
     const budget = discoveryBudget(signal);
-    const { capabilities, policies, preference } = await set(
+    const { capabilities, policies, preference, modelMode } = await set(
       readMcpModelSnapshot$,
       principal,
       signal,
@@ -519,9 +574,12 @@ const prepareMcpModelDiscovery$ = command(
       loadModelRouteSources$,
       principal.orgId,
       principal.userId,
-      policies.map((policy) => {
-        return policy.model;
-      }),
+      // Auto members also list connected subscriptions outside the policies.
+      modelMode === "auto"
+        ? undefined
+        : policies.map((policy) => {
+            return policy.model;
+          }),
       signal,
     );
     const featureSwitchContext = await set(
@@ -574,6 +632,20 @@ const prepareMcpModelDiscovery$ = command(
         }
       }
       models.push(entry);
+    }
+    if (modelMode === "auto") {
+      const personalModels = await set(
+        loadMemberSubscriptionModels$,
+        sources.member,
+        signal,
+      );
+      budget.check();
+      appendAutoMemberMcpModels({
+        personalModels,
+        capabilities,
+        policiesByModel,
+        models,
+      });
     }
     const preferred = models.find((model) => {
       return model.id === preference?.model && model.selectable;

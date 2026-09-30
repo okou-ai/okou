@@ -22,9 +22,10 @@ import {
   type ModelProviderInfo,
 } from "../services/model-provider.service";
 import type { RouteEntry } from "../route-entry";
+import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
-  isPersonalSubscriptionProviderType,
   upsertPersonalModelProviderAccount$,
   type PersonalSubscriptionProviderType,
 } from "../services/model-provider-account.service";
@@ -167,6 +168,21 @@ const upsertPersonalCodexAuthJson$ = command(
   },
 );
 
+async function personalAccountsAvailableForProvider(
+  db: Db,
+  orgId: string,
+  featureSwitchContext: FeatureSwitchContext,
+): Promise<boolean> {
+  return await personalAccountsEnabledForOrg(
+    db,
+    orgId,
+    isFeatureEnabled(
+      FeatureSwitchKey.PersonalModelProviderAccounts,
+      featureSwitchContext,
+    ),
+  );
+}
+
 const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
 
@@ -188,12 +204,12 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  const accountsEnabled =
-    isPersonalSubscriptionProviderType(type) &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    );
+  const accountsEnabled = await personalAccountsAvailableForProvider(
+    set(writeDb$),
+    auth.orgId,
+    featureSwitchContext,
+  );
+  signal.throwIfAborted();
 
   // Branch 1: codex-oauth-token + auth_json paste flow
   if (type === "codex-oauth-token" && authMethod === "auth_json") {

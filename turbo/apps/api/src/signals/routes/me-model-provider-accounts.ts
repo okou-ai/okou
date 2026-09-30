@@ -9,6 +9,8 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
+import { resetStaleAutoMemberSelection$ } from "../services/subscription-model-catalog.service";
 import {
   activatePersonalModelProviderAccount$,
   disconnectPersonalModelProviderAccounts$,
@@ -94,10 +96,14 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
+    !(await personalAccountsEnabledForOrg(
+      set(writeDb$),
+      auth.orgId,
+      isFeatureEnabled(
+        FeatureSwitchKey.PersonalModelProviderAccounts,
+        featureSwitchContext,
+      ),
+    ))
   ) {
     return notFound("Resource not found");
   }
@@ -124,10 +130,14 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
+    !(await personalAccountsEnabledForOrg(
+      set(writeDb$),
+      auth.orgId,
+      isFeatureEnabled(
+        FeatureSwitchKey.PersonalModelProviderAccounts,
+        featureSwitchContext,
+      ),
+    ))
   ) {
     return notFound("Resource not found");
   }
@@ -145,7 +155,12 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  return result ?? { status: 204 as const, body: undefined };
+  if (result) {
+    return result;
+  }
+  await set(resetStaleAutoMemberSelection$, auth.orgId, auth.userId, signal);
+  signal.throwIfAborted();
+  return { status: 204 as const, body: undefined };
 });
 
 function resetAccountSubscriptionUsage(
@@ -162,10 +177,14 @@ function resetAccountSubscriptionUsage(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      ) &&
+      !(await personalAccountsEnabledForOrg(
+        set(writeDb$),
+        auth.orgId,
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalModelProviderAccounts,
+          featureSwitchContext,
+        ),
+      )) &&
       !runId
     ) {
       return notFound("Resource not found");

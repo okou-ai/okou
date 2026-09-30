@@ -12,7 +12,9 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
@@ -314,6 +316,46 @@ describe("POST /api/onboarding/complete", () => {
     expect(policies.body.workspaceDefaultModel).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
+  });
+
+  it("seeds only Auto for an Auto organization despite a subscription choice", async () => {
+    const actor = orgActor();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    await accept(
+      modelPoliciesClient().updateMode({
+        headers: authHeaders(),
+        body: { mode: "auto" },
+      }),
+      [200],
+    );
+    await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        query: { modelProvider: "codex" },
+        body: {},
+      }),
+      [200],
+    );
+    const response = await accept(
+      modelPoliciesClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(response.body.modelMode).toBe("auto");
+    expect(response.body.policies).toStrictEqual([
+      expect.objectContaining({
+        model: "okou-1.0",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+      }),
+    ]);
   });
 
   it.each([

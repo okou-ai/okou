@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   ACTIVE_RUN_MODELS,
@@ -35,6 +36,50 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
+
+test("switches to Auto from Debug and simplifies model settings", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
+  await setupPage({
+    context,
+    path: "/agents?settings=model",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("dialog", { name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+  await screen.findByRole("heading", { name: "Available models" });
+  expect(
+    screen.queryByRole("switch", { name: "Auto Model" }),
+  ).not.toBeInTheDocument();
+
+  click(routeButtonByName("Debug"));
+  const toggle = await screen.findByRole("switch", { name: "Auto Model" });
+  expect(toggle).not.toBeChecked();
+  click(toggle);
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Switch this workspace to Auto Model?",
+  });
+  expect(
+    within(confirmation).getByText(/provider connections/),
+  ).toBeInTheDocument();
+  click(routeButtonByName("Switch to Auto Model", confirmation));
+  await waitFor(() => {
+    expect(toggle).toBeChecked();
+  });
+
+  click(routeButtonByName("Models"));
+  await screen.findByRole("heading", { name: "Personal Model Subscriptions" });
+  expect(screen.queryByText("Default model")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "Available models" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("switch", { name: "Auto Model" }),
+  ).not.toBeInTheDocument();
+});
 
 function routeButtonByName(
   name: string | RegExp,

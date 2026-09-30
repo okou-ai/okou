@@ -450,9 +450,7 @@ export function ModelFirstPolicyRowContent({
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
-      <span className="min-w-0 flex-1 truncate">
-        {getCanonicalModelDisplayName(policy.model)}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
       {builtInPriceTier !== undefined ? (
         <PriceTierBadge
           tier={builtInPriceTier}
@@ -487,9 +485,11 @@ function ModelFirstPolicyRow({
   const { t } = useTranslation();
   const fastAvailable =
     isMemberModelPolicyConfigurable(policy) &&
-    isCodexFastModeModel(policy.model);
+    (policy.subscriptionOptions
+      ? policy.subscriptionOptions.serviceTier === "priority"
+      : isCodexFastModeModel(policy.model));
   if (fastAvailable) {
-    const modelLabel = getCanonicalModelDisplayName(policy.model);
+    const modelLabel = policy.modelLabel;
     const selected = selection?.selectedModel === policy.model;
     const fastSelected = selected && selection.codexServiceTier === "fast";
     const fastLabel = t(($) => {
@@ -900,7 +900,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
         options={state.policies.map((policy) => {
           return {
             model: policy.model,
-            label: getCanonicalModelDisplayName(policy.model),
+            label: policy.modelLabel,
             content: (
               <ModelFirstPolicyRowContent
                 policy={policy}
