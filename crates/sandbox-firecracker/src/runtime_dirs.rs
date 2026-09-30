@@ -52,10 +52,11 @@ const MAX_UNIX_SOCKET_PATH_BYTES: usize = 107;
 /// `runtime_paths.sock_base()/<sock_id>`, where [`RuntimePaths::sock_base`]
 /// supplies the base. This helper only derives and validates the path; it does
 /// not create, inspect, or modify filesystem entries. It also checks that the
-/// port-suffixed Guest control and Guest-to-Runner RPC listeners derived from
-/// [`SockPaths::vsock`] fit within the 107-byte usable Unix socket pathname
-/// limit. Because it does not inspect filesystem entries, it does not apply
-/// the directory ownership or access checks used by the preparation helpers.
+/// port-suffixed Guest control, Guest-to-Runner RPC and private Guest duplex
+/// listeners derived from [`SockPaths::vsock`] fit within the 107-byte usable
+/// Unix socket pathname limit. Because it does not inspect filesystem entries,
+/// it does not apply the directory ownership or access checks used by the
+/// preparation helpers.
 ///
 /// # Errors
 ///
@@ -139,13 +140,13 @@ pub(crate) fn prepare_runtime_socket_dir(sock_paths: &SockPaths) -> io::Result<(
 /// `vsock_bind_dir` must have the lexical shape
 /// `<sock-base>/<sock-id>/vsock`, where `<sock-base>` is supplied by
 /// [`RuntimePaths::sock_base`] and `sock-id` follows the same single-segment
-/// ASCII rule as [`checked_runtime_sock_dir`]. The port-suffixed Guest control
-/// and RPC listener paths must fit within the 107-byte usable Unix socket
-/// pathname limit. The socket base and per-ID directory are created or
-/// normalized to `0711`; the `vsock` directory is created or normalized to
-/// `0700`. Each checked directory must be a non-symlink directory owned by
-/// root or the effective UID and must be writable and traversable by the
-/// effective user.
+/// ASCII rule as [`checked_runtime_sock_dir`]. The port-suffixed Guest control,
+/// RPC and private duplex listener paths must fit within the 107-byte usable
+/// Unix socket pathname limit. The socket base and per-ID directory are
+/// created or normalized to `0711`; the `vsock` directory is created or
+/// normalized to `0700`. Each checked directory must be a non-symlink
+/// directory owned by root or the effective UID and must be writable and
+/// traversable by the effective user.
 ///
 /// This helper uses [`RuntimePaths::new`] and therefore validates against the
 /// default runtime socket base rather than an arbitrary base supplied by the
