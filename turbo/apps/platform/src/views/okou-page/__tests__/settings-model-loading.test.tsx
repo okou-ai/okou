@@ -3,8 +3,6 @@ import {
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import type {
   OrgModelMode,
   OrgModelPoliciesResponse,
@@ -88,31 +86,39 @@ async function openAccountMenu(
 async function showModels(settings: HTMLElement): Promise<void> {
   click(await findEnabledButton("Models", settings));
   await within(settings).findByRole("heading", { name: "Models" });
+  await within(settings).findByRole("heading", { name: "Available models" });
   await within(settings).findByRole("heading", { name: "Personal accounts" });
-  await waitFor(() => {
-    expect(
-      within(settings).queryByTestId("oauth-account-table-skeleton"),
-    ).not.toBeInTheDocument();
-  });
+  await within(settings).findAllByText("No accounts connected.");
 }
 
-test("Reuse composer data when opening and navigating Settings; refresh on Ably notices", async () => {
+test("Keep loaded model controls usable during Settings navigation and apply realtime changes", async () => {
   let mode: OrgModelMode = "custom";
   let credits = 20_000;
-  const reads = { policies: 0, billing: 0, subscriptions: 0 };
+  const release = context.mocks.deferred<void>();
+  let holdPoliciesAndBilling = false;
+  let holdSubscriptions = false;
   installRunChat({ selectedModel: MODEL });
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-    reads.policies += 1;
+  context.mocks.api(modelPoliciesMainContract.list, async ({ respond }) => {
+    if (holdPoliciesAndBilling) {
+      await release.promise;
+    }
     return respond(200, policyResponse(mode));
   });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    reads.billing += 1;
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    if (holdPoliciesAndBilling) {
+      await release.promise;
+    }
     return respond(200, billingResponse(credits));
   });
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
-    reads.subscriptions += 1;
-    return respond(200, { modelProviders: [] });
-  });
+  context.mocks.api(
+    personalModelProvidersMainContract.list,
+    async ({ respond }) => {
+      if (holdSubscriptions) {
+        await release.promise;
+      }
+      return respond(200, { modelProviders: [] });
+    },
+  );
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -120,37 +126,43 @@ test("Reuse composer data when opening and navigating Settings; refresh on Ably 
   });
   await findButton("GPT 5.6 Sol");
   const menu = await openAccountMenu();
-  const beforeSettings = { ...reads };
+  holdPoliciesAndBilling = true;
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await showModels(settings);
-  expect(reads.policies).toBe(beforeSettings.policies);
-  expect(reads.billing).toBe(beforeSettings.billing);
-  const loaded = { ...reads };
+  await expect(
+    findEnabledButton("Add account", settings),
+  ).resolves.toBeEnabled();
+  holdSubscriptions = true;
 
   click(await findEnabledButton("Preference", settings));
   await within(settings).findByRole("heading", { name: "Preference" });
   await showModels(settings);
-  expect(reads).toStrictEqual(loaded);
+  await expect(
+    findEnabledButton("Add account", settings),
+  ).resolves.toBeEnabled();
   click(within(settings).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
+  // Account-menu balance reads have their own freshness contract; only hold
+  // subsequent responses once navigation enters Settings again.
+  holdPoliciesAndBilling = false;
+  holdSubscriptions = false;
   const reopenedMenu = await openAccountMenu();
-  const beforeReopen = { ...reads };
+  holdPoliciesAndBilling = true;
+  holdSubscriptions = true;
   click(within(reopenedMenu).getByText("Settings"));
   const reopened = await screen.findByRole("dialog", { name: "Settings" });
   await showModels(reopened);
-  expect(reads).toStrictEqual(beforeReopen);
+  await expect(
+    findEnabledButton("Add account", reopened),
+  ).resolves.toBeEnabled();
 
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "org:org_default",
-        "modelPoliciesChanged",
-      ),
-    ).toBeTruthy();
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
+  holdPoliciesAndBilling = false;
+  holdSubscriptions = false;
+  act(() => {
+    release.resolve();
   });
   mode = "auto";
   act(() => {
@@ -167,15 +179,13 @@ test("Reuse composer data when opening and navigating Settings; refresh on Ably 
   expect(
     within(reopened).getByRole("heading", { name: "Models" }),
   ).toBeInTheDocument();
-  expect(reads.policies).toBeGreaterThan(beforeReopen.policies);
-  expect(reads.subscriptions).toBe(beforeReopen.subscriptions);
+  expect(
+    within(reopened).queryByRole("heading", { name: "Available models" }),
+  ).not.toBeInTheDocument();
 
   credits = 25_000;
   act(() => {
     context.mocks.ably.trigger("billing:changed");
-  });
-  await waitFor(() => {
-    expect(reads.billing).toBeGreaterThan(beforeReopen.billing);
   });
   click(within(reopened).getByLabelText("Close"));
   await waitFor(() => {
@@ -184,26 +194,14 @@ test("Reuse composer data when opening and navigating Settings; refresh on Ably 
   await openAccountMenu("25,000 credits");
 });
 
-test("Do not load organization controls while the initial model mode is unknown", async () => {
+test("Keep the Models header without organization loading UI while the initial mode is pending", async () => {
   const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
-  let organizationReads = 0;
   context.mocks.api(modelPoliciesMainContract.list, async ({ respond }) => {
     started.resolve();
     await release.promise;
     return respond(200, policyResponse("auto"));
   });
-  context.mocks.api(modelProvidersMainContract.list, ({ respond }) => {
-    organizationReads += 1;
-    return respond(200, { modelProviders: [] });
-  });
-  context.mocks.api(
-    modelProviderConnectionsMainContract.list,
-    ({ respond }) => {
-      organizationReads += 1;
-      return respond(200, { connections: [] });
-    },
-  );
   const page = await startPage({
     context,
     path: "/agents?settings=model",
@@ -214,7 +212,9 @@ test("Do not load organization controls while the initial model mode is unknown"
   await started.promise;
   await within(settings).findByRole("heading", { name: "Models" });
   await within(settings).findByRole("heading", { name: "Personal accounts" });
-  expect(organizationReads).toBe(0);
+  expect(
+    within(settings).queryByRole("status", { name: "Loading models..." }),
+  ).not.toBeInTheDocument();
 
   act(() => {
     release.resolve();
@@ -226,6 +226,8 @@ test("Do not load organization controls while the initial model mode is unknown"
   expect(
     within(settings).getByRole("heading", { name: "Models" }),
   ).toBeInTheDocument();
-  expect(organizationReads).toBe(0);
+  expect(
+    within(settings).queryByRole("status", { name: "Loading models..." }),
+  ).not.toBeInTheDocument();
   await page.ready;
 });

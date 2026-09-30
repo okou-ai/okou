@@ -475,7 +475,7 @@ function SettingsDialog({
                   {meta.title}
                 </h2>
                 {resolvedSection === "model" && autoModel && (
-                  <Badge className="rounded-full bg-gray-50 text-xs font-normal text-muted-foreground">
+                  <Badge className="text-xs font-normal text-muted-foreground">
                     <Sparkles />
                     {t(($) => {
                       return $.settings.dialog.sections.model.autoLabel;
