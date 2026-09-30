@@ -34,6 +34,10 @@ const {
 describe("chat agent bootstrap prefetch", () => {
   it("returns the accepted input while bootstrap is still reading", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const clientEventId = randomUUID();
     const sent = await withDatabaseTransactionBarrierFixture(
@@ -41,8 +45,9 @@ describe("chat agent bootstrap prefetch", () => {
         select: (queryArgs) => {
           const text = barrierQueryText(queryArgs);
           return (
-            text.includes('from "user_cache"') &&
-            text.includes("union all") &&
+            text.includes('from "user_permission_grants"') &&
+            barrierQueryBinds(queryArgs, actor.userId) &&
+            barrierQueryBinds(queryArgs, orgId) &&
             barrierQueryBinds(queryArgs, agentId)
           );
         },

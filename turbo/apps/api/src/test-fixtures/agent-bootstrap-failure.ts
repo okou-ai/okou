@@ -8,7 +8,7 @@ import {
 } from "./database-transaction-barrier";
 
 /**
- * Fail only the first bootstrap metadata read for one test-owned identity.
+ * Fail only the first bootstrap permission read for one test-owned identity.
  * No production API can request a database cancellation. PostgreSQL produces
  * the real error; later reads remain healthy, so a retry would be observable
  * as a launched run instead of the required input rejection.
@@ -30,8 +30,7 @@ export async function withAgentBootstrapFailureFixture<T>(
       const text = barrierQueryText(queryArgs);
       if (
         injected ||
-        !text.includes('from "user_cache"') ||
-        !text.includes("union all") ||
+        !text.includes('from "user_permission_grants"') ||
         !barrierQueryBinds(queryArgs, identity.userId) ||
         !barrierQueryBinds(queryArgs, identity.orgId) ||
         !barrierQueryBinds(queryArgs, identity.agentId)
