@@ -1,7 +1,5 @@
 //! Pi RPC response bursts must fail without blocking stdout or leaking the child.
 
-#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-
 mod common;
 
 use std::collections::HashMap;
@@ -66,9 +64,9 @@ async fn run_overload_case(
     std::fs::create_dir_all(&bin_dir)?;
     let child_pid_path = case_dir.join("pi-child.pid");
     let prompt_started_path = case_dir.join("pi-prompt-started");
-    let mock_cli = bin_dir.join("mock_cli");
+    let npx = bin_dir.join("npx");
     std::fs::write(
-        &mock_cli,
+        &npx,
         r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
@@ -104,9 +102,9 @@ while :; do
 done
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&mock_cli)?.permissions();
+    let mut permissions = std::fs::metadata(&npx)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&mock_cli, permissions)?;
+    std::fs::set_permissions(&npx, permissions)?;
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(&case_dir, case.run_id)?;
     let payload_path = common::write_run_payload_file_for_test(
@@ -114,7 +112,6 @@ done
         &guest_contracts::env::RunPayload {
             prompt: "x".repeat(PROMPT_BYTES),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-            pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.to_string(),
             pi_model_config: "{}".to_string(),
             pi_session_id: case.session_id.to_string(),
             ..guest_contracts::env::RunPayload::default()
@@ -175,7 +172,6 @@ done
             "reused",
         )
         .env("HOME", &case_dir)
-        .env("OKOU_TEST_CLI_SCRIPT_PATH", &mock_cli)
         .env(
             "PATH",
             std::env::join_paths([bin_dir.as_path(), Path::new("/usr/bin"), Path::new("/bin")])?,

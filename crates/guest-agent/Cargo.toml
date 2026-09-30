@@ -3,11 +3,6 @@ name = "guest-agent"
 version = "0.102.2"
 edition.workspace = true
 
-[features]
-# Local/coverage integration fixtures only; production release builds never
-# substitute installed rootfs CLI paths, even if all features are selected.
-cli-test-fixtures = []
-
 [dependencies]
 aho-corasick = { workspace = true, features = ["perf-literal", "std"] }
 api-contracts.workspace = true

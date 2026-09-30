@@ -77,7 +77,7 @@ use guest_contracts::diagnostics::{
     CliObservedExitDiagnostic, CliTerminationDiagnostic, EventDeliveryDiagnostic,
     FailureDetailSource, FailureReason, HeartbeatFailureDiagnostic,
 };
-use guest_contracts::okou_cli::InstalledOkouCli;
+use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
 use guest_telemetry::telemetry::{
     SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
@@ -104,6 +104,7 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
+const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
 const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
 const LANGFUSE_PUBLIC_KEY_ENV_KEY: &str = "LANGFUSE_PUBLIC_KEY";
 const LANGFUSE_SECRET_KEY_ENV_KEY: &str = "LANGFUSE_SECRET_KEY";
@@ -613,7 +614,7 @@ fn build_pi_command_for_runtime(
     );
     if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
         return Ok(vec![
-            okou_cli_launch::installed_cli_launcher_path().to_string(),
+            OKOU_CLI_LAUNCHER_PATH.to_string(),
             "__agent-loop".to_string(),
         ]);
     }
@@ -621,10 +622,12 @@ fn build_pi_command_for_runtime(
     // substitute a moving latest package or execute the incompatible install.
     let package_url = runtime
         .user_env
-        .get("CLI_PKG_URL")
+        .get(CLI_PACKAGE_URL_ENV_KEY)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            AgentError::Execution("CLI_PKG_URL is required for Pi execution".to_string())
+            AgentError::Execution(format!(
+                "{CLI_PACKAGE_URL_ENV_KEY} is required for Pi execution"
+            ))
         })?;
     Ok(vec![
         "npx".to_string(),
@@ -2459,7 +2462,7 @@ mod tests {
     use crate::{constants, env};
     use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
     use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
-    use guest_contracts::okou_cli::InstalledOkouCli;
+    use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
     use std::borrow::Cow;
     use std::collections::HashMap;
     #[cfg(unix)]
@@ -2648,7 +2651,7 @@ mod tests {
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
             vec![
-                super::okou_cli_launch::installed_cli_launcher_path().to_string(),
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
                 "__agent-loop".to_string()
             ]
         );
@@ -2699,7 +2702,7 @@ mod tests {
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
             vec![
-                super::okou_cli_launch::installed_cli_launcher_path().to_string(),
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
                 "__agent-loop".to_string()
             ]
         );

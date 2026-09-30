@@ -6,19 +6,21 @@
 //! floor the bundle satisfies. Parity is the session-construction digest when
 //! the launch config carries one (it moves only when code feeding the
 //! constructed session changes), and the exact `pi-agent-runtime` version
-//! otherwise. Every other case keeps the commit-addressed `npx` launch,
-//! using the package URL captured by the API. The requirements travel in the execution
-//! context (`piInstalledCliRequirement`).
+//! otherwise. Every other case keeps the commit-addressed `npx` launch, which
+//! is always built from the API's commit. The requirements travel in the
+//! execution context (`piInstalledCliRequirement`).
 
 use std::path::Path;
 
-use guest_contracts::okou_cli::{InstalledOkouCli, parse_release_version};
+use guest_contracts::okou_cli::{
+    InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_PATH, parse_release_version,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PiCliLaunchSource {
     /// Exec the bundle installed in the rootfs.
     Installed,
-    /// Install and run the task's commit-addressed package through `npx`.
+    /// Install and run the commit-addressed package through `npx`.
     Npx,
 }
 
@@ -50,8 +52,8 @@ impl PiCliLaunchDecision {
 /// Installed-CLI launch requirements the API captured for the run.
 ///
 /// Every field is absent when the execution context carries no requirement;
-/// such runs launch through `npx`. The session-construction
-/// digest, when present, replaces the runtime version as the parity key.
+/// such runs always launch through `npx`. The session-construction digest,
+/// when present, replaces the runtime version as the parity key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PiRuntimeRequirement<'a> {
     pub(super) required_pi_agent_runtime_version: Option<&'a str>,
@@ -78,47 +80,20 @@ impl<'a> PiRuntimeRequirement<'a> {
 
 /// Read the manifest the runner build installed, if any.
 ///
-/// A missing or invalid manifest disables the installed fast path; the caller
-/// uses the task's package URL through `npx` instead.
+/// A missing manifest is the legacy rootfs layout. An unreadable or invalid
+/// manifest is reported and treated the same way so a broken install degrades
+/// to the slower launch instead of failing the run.
 pub(super) fn load_installed_okou_cli() -> Option<InstalledOkouCli> {
-    let path = installed_cli_manifest_path();
-    match load_installed_okou_cli_from(Path::new(path)) {
+    match load_installed_okou_cli_from(Path::new(OKOU_CLI_INSTALLED_MANIFEST_PATH)) {
         Ok(installed) => installed,
         Err(error) => {
             guest_telemetry::log_warn!(
                 super::LOG_TAG,
-                "Ignoring installed Okou CLI manifest at {path}: {error}"
+                "Ignoring installed Okou CLI manifest at {OKOU_CLI_INSTALLED_MANIFEST_PATH}: {error}"
             );
             None
         }
     }
-}
-
-// A compiled test fixture stands in for rootfs absolute paths in integration
-// tests. The release profile has debug assertions disabled, so this override
-// cannot be used in the deployed Guest, even with all Cargo features enabled.
-fn installed_cli_manifest_path() -> &'static str {
-    #[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-    {
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/installed-okou-cli.json"
-        )
-    }
-    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
-    guest_contracts::okou_cli::OKOU_CLI_INSTALLED_MANIFEST_PATH
-}
-
-pub(super) fn installed_cli_launcher_path() -> &'static str {
-    #[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-    {
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/mock-pi-cli-launcher.sh"
-        )
-    }
-    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
-    guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
 }
 
 pub(super) fn load_installed_okou_cli_from(
@@ -183,19 +158,6 @@ mod tests {
     use guest_contracts::okou_cli::{
         OkouCliInstalledPackage, OkouCliSessionConstruction, OkouCliVersions,
     };
-
-    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
-    #[test]
-    fn production_cli_paths_are_canonical() {
-        assert_eq!(
-            installed_cli_manifest_path(),
-            guest_contracts::okou_cli::OKOU_CLI_INSTALLED_MANIFEST_PATH
-        );
-        assert_eq!(
-            installed_cli_launcher_path(),
-            guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
-        );
-    }
 
     fn installed(cli: &str, runtime: &str) -> InstalledOkouCli {
         InstalledOkouCli {
@@ -269,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_execution_context_requirement_uses_npx() {
+    fn missing_execution_context_requirement_keeps_npx() {
         let absent = PiRuntimeRequirement::from_value(None);
         assert_eq!(absent, requirement(None, None));
         let decision = select_pi_cli_launch(&absent, Some(&installed("9.353.0", "1.36.0")));
@@ -299,7 +261,7 @@ mod tests {
     fn session_construction_digest_replaces_the_runtime_version_as_parity_key() {
         let digest = "d".repeat(64);
         let cli = installed_with_digest("9.353.0", "1.36.0", &digest);
-        // A dependency-only runtime bump remains compatible by digest.
+        // A dependency-only runtime bump no longer forces the npx launch.
         let decision = select_pi_cli_launch(
             &requirement_with_digest(Some("1.36.1"), Some("9.352.7"), Some(&digest)),
             Some(&cli),
@@ -339,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn every_other_case_uses_npx_with_a_bounded_reason() {
+    fn every_other_case_keeps_npx_with_a_bounded_reason() {
         let cli = installed("9.353.0", "1.36.0");
         let cases = [
             (
@@ -381,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_invalid_manifest_cannot_launch_cli() {
+    fn missing_manifest_is_legacy_and_invalid_manifest_is_reported() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("installed.json");
         assert_eq!(load_installed_okou_cli_from(&path).unwrap(), None);

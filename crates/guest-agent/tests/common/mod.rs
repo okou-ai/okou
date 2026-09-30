@@ -17,18 +17,6 @@
 
 #![allow(dead_code)] // consumed across multiple test binaries
 
-/// Matches the debug-only installed-CLI manifest fixture used by Pi tests.
-pub const PI_TEST_INSTALLED_CLI_REQUIREMENT: &str =
-    r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.353.0"}"#;
-
-/// Route the installed-CLI test launcher to an existing local mock script.
-#[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-pub fn use_mock_installed_cli(path: &std::path::Path) {
-    // Integration test binaries are isolated processes; no production path
-    // reads this variable, and test children receive only this exact fixture.
-    unsafe { std::env::set_var("OKOU_TEST_CLI_SCRIPT_PATH", path) };
-}
-
 pub(crate) mod delivery_image;
 pub(crate) mod process_session;
 mod system_log;

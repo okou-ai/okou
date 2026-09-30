@@ -1,7 +1,5 @@
 //! Pi user cancellation must interrupt a steer blocked on child stdin.
 
-#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-
 mod common;
 
 use std::collections::HashMap;
@@ -27,9 +25,9 @@ async fn pi_cancellation_reaps_child_with_stalled_steer_write()
     std::fs::create_dir_all(&bin_dir)?;
     let child_pid_path = tmp.path().join("pi-child.pid");
     let steer_started_path = tmp.path().join("pi-steer-started");
-    let mock_cli = bin_dir.join("mock_cli");
+    let npx = bin_dir.join("npx");
     std::fs::write(
-        &mock_cli,
+        &npx,
         r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
@@ -52,10 +50,9 @@ while :; do
 done
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&mock_cli)?.permissions();
+    let mut permissions = std::fs::metadata(&npx)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&mock_cli, permissions)?;
-    common::use_mock_installed_cli(&mock_cli);
+    std::fs::set_permissions(&npx, permissions)?;
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), RUN_ID)?;
     unsafe {
@@ -86,7 +83,6 @@ done
             &guest_contracts::env::RunPayload {
                 prompt: "cancel Pi while steer is blocked on stdin".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-                pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: SESSION_ID.to_string(),
                 ..guest_contracts::env::RunPayload::default()

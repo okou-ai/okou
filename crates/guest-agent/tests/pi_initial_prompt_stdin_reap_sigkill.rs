@@ -1,7 +1,5 @@
 //! Pi initial-prompt stdin failures keep neutral diagnostics and bounded reaping.
 
-#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-
 mod common;
 
 use guest_agent::masker::SecretMasker;
@@ -16,9 +14,9 @@ async fn pi_initial_prompt_stdin_failure_reap_escalates_to_sigkill()
     let tmp = tempfile::tempdir()?;
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
-    let mock_cli = bin_dir.join("mock_cli");
+    let npx = bin_dir.join("npx");
     std::fs::write(
-        &mock_cli,
+        &npx,
         r#"#!/bin/sh
 set -eu
 trap '' TERM
@@ -32,10 +30,9 @@ exec 0<&-
 exec tail -f /dev/null
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&mock_cli)?.permissions();
+    let mut permissions = std::fs::metadata(&npx)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&mock_cli, permissions)?;
-    common::use_mock_installed_cli(&mock_cli);
+    std::fs::set_permissions(&npx, permissions)?;
 
     let run_id = "00000000-0000-4000-8000-000000000146";
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
@@ -80,7 +77,6 @@ exec tail -f /dev/null
             &guest_contracts::env::RunPayload {
                 prompt: large_prompt,
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-                pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111146".to_string(),
                 ..guest_contracts::env::RunPayload::default()

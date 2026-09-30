@@ -1,7 +1,5 @@
 //! Real RPC stdout -> projection -> private citation isolation -> canonical
 //! sequencing/masking -> bounded sender/HTTP. The official session is immutable.
-#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
-
 mod common;
 use common::delivery_image;
 
@@ -467,10 +465,9 @@ async fn deliver_pi_rpc(
     }
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");
-    let mock_cli = bin.join("mock_cli");
-    std::fs::write(&mock_cli, include_str!("fixtures/pi_rpc_delivery.py"))?;
-    std::fs::set_permissions(&mock_cli, std::fs::Permissions::from_mode(0o700))?;
-    common::use_mock_installed_cli(&mock_cli);
+    let npx = bin.join("npx");
+    std::fs::write(&npx, include_str!("fixtures/pi_rpc_delivery.py"))?;
+    std::fs::set_permissions(&npx, std::fs::Permissions::from_mode(0o700))?;
     let run_id = "00000000-0000-4000-8000-000000000124";
     let paths = GuestPaths::from_home(tmp.path(), run_id)?;
     let payload_path = common::write_run_payload_file_for_test(
@@ -478,7 +475,6 @@ async fn deliver_pi_rpc(
         &guest_contracts::env::RunPayload {
             prompt: "test bounded Pi delivery".into(),
             pi_launch_config: r#"{"schemaVersion":2}"#.into(),
-            pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.into(),
             pi_model_config: "{}".into(),
             pi_session_id: session_id.clone(),
             secret_values: secrets
