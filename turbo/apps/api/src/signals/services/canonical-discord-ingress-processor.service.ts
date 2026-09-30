@@ -38,6 +38,7 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { safeJsonParse, settle } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
@@ -57,7 +58,9 @@ import {
   type DiscordChatEventContext,
 } from "./chat-event.service";
 import {
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
   enqueueChatInput,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
@@ -1212,40 +1215,65 @@ export const processCanonicalDiscordIngress$ = command(
       return false;
     }
     const ingress = result.value;
-    await publishThreadListChanged({
-      userId: ingress.userId,
-      orgId: ingress.orgId,
-    });
-    signal.throwIfAborted();
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: ingress.orgId,
-        chatThreadId: ingress.chatThreadId,
-        // The ingress id is the enqueued input's chat event id.
-        eventId: args.ingressId,
-        afterPick: async (pick, pickSignal) => {
-          await set(
-            sendIngressQueueWaitNotice$,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
             {
-              ingressId: args.ingressId,
-              connectionId: ingress.connectionId,
-              channelId: ingress.destinationChannelId,
+              orgId: ingress.orgId,
+              chatThreadId: ingress.chatThreadId,
             },
-            pick,
-            pickSignal,
+            signal,
+          ),
+        );
+        await publishThreadListChanged({
+          userId: ingress.userId,
+          orgId: ingress.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: ingress.userId,
+          orgId: ingress.orgId,
+          threadId: ingress.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: ingress.orgId,
+                chatThreadId: ingress.chatThreadId,
+                eventId: args.ingressId,
+              },
+              signal,
+            );
+            await set(
+              sendIngressQueueWaitNotice$,
+              {
+                ingressId: args.ingressId,
+                connectionId: ingress.connectionId,
+                channelId: ingress.destinationChannelId,
+              },
+              pick,
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
           );
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: ingress.userId,
-            orgId: ingress.orgId,
-            threadId: ingress.chatThreadId,
-          });
-        },
-      },
-      signal,
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
+    waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
     return true;
   },
 );

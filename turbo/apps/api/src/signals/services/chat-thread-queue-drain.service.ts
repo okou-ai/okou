@@ -15,7 +15,6 @@ import {
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
@@ -177,7 +176,7 @@ export interface ChatQueuePick extends ChatQueuePickResult {
  * Rare cases, such as an earlier queued input rejected ahead of this one, may
  * report `org-full` for an idle thread; that gap is accepted.
  */
-const enqueuedChatQueueWaitReason$ = command(
+export const enqueuedChatQueueWaitReason$ = command(
   async (
     { get },
     input: {
@@ -212,43 +211,17 @@ const enqueuedChatQueueWaitReason$ = command(
   },
 );
 
-/**
- * After an enqueue commits: pick the thread once and notify its running run
- * in two independent background tasks. The pick's result (a run, org-full,
- * none, or an error) never drives the notice. Once the pick finishes, `touch`
- * (a direct send's best-effort sidebar ordering), `publish` (the UI realtime
- * event), and then `afterPick` (an integration's wait notice) run in that
- * order. `afterPick` receives the state of the enqueued input `eventId` and
- * its thread at that point (see `enqueuedChatQueueWaitReason$`). A failed pick still counts as finished: the later
- * steps still run, then the pick or notice error is rethrown (both, as an
- * AggregateError, when both fail). No entry awaits the pick.
- *
- * `touch`, `publish`, and `afterPick` stay entry-owned callbacks: turning them
- * into data would make this module dispatch to every integration's notice
- * sender, and those modules import this one.
- */
-export const scheduleEnqueuedChatThreadPick$ = command(
-  (
+/** Pick once. The entry owns background scheduling and all post-pick work. */
+export const pickEnqueuedChatThread$ = command(
+  async (
     { set },
     input: {
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
-      readonly touch?: () => Promise<void>;
-      readonly publish?: () => Promise<void>;
-    } & (
-      | { readonly afterPick?: undefined; readonly eventId?: undefined }
-      | {
-          readonly afterPick: (
-            pick: ChatQueuePick,
-            signal: AbortSignal,
-          ) => Promise<void>;
-          /** The chat event this enqueue created; the notice observes it. */
-          readonly eventId: string;
-        }
-    ),
+    },
     signal: AbortSignal,
-  ): void => {
+  ) => {
     const receipt = input.enqueueCommit;
     if (receipt) {
       set(chatInputEnqueueCommits$, (previous) => {
@@ -256,46 +229,7 @@ export const scheduleEnqueuedChatThreadPick$ = command(
       });
     }
     const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
-    waitUntil(
-      (async () => {
-        const picked = await settle(set(pick$, signal));
-        await input.touch?.();
-        await input.publish?.();
-        const noticed = await settle(
-          (async () => {
-            // `eventId` is present exactly when `afterPick` is.
-            if (input.eventId !== undefined) {
-              const pick = await set(
-                enqueuedChatQueueWaitReason$,
-                {
-                  orgId: input.orgId,
-                  chatThreadId: input.chatThreadId,
-                  eventId: input.eventId,
-                },
-                signal,
-              );
-              signal.throwIfAborted();
-              await input.afterPick(pick, signal);
-            }
-          })(),
-        );
-        const errors = [picked, noticed].flatMap((result) => {
-          return result.ok ? [] : [result.error];
-        });
-        if (errors.length > 1) {
-          throw new AggregateError(
-            errors,
-            "Enqueued chat thread pick and wait notice failed",
-          );
-        }
-        if (errors[0] !== undefined) {
-          throw errors[0];
-        }
-      })(),
-    );
-    waitUntil(
-      notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
-    );
+    return await set(pick$, signal);
   },
 );
 

@@ -35,9 +35,12 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import {
   isFeishuInstallationEnabled,
@@ -737,40 +740,65 @@ export const processCanonicalFeishuIngress$ = command(
       success: true,
     });
 
-    await publishThreadListChangedSafely({
-      userId: result.value.userId,
-      orgId: result.value.orgId,
-    });
-    signal.throwIfAborted();
     const persisted = result.value;
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: persisted.orgId,
-        chatThreadId: persisted.chatThreadId,
-        // The ingress id is the enqueued input's chat event id.
-        eventId: args.ingressId,
-        afterPick: async (pick, pickSignal) => {
-          await notifyFeishuChatQueueWait(
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
             {
-              db,
-              ingressId: args.ingressId,
-              message: persisted.message,
-              reason: pick.reason,
+              orgId: persisted.orgId,
+              chatThreadId: persisted.chatThreadId,
             },
-            pickSignal,
+            signal,
+          ),
+        );
+        await publishThreadListChangedSafely({
+          userId: persisted.userId,
+          orgId: persisted.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: persisted.userId,
+          orgId: persisted.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: persisted.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: args.ingressId,
+              },
+              signal,
+            );
+            await notifyFeishuChatQueueWait(
+              {
+                db,
+                ingressId: args.ingressId,
+                message: persisted.message,
+                reason: pick.reason,
+              },
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
           );
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: persisted.userId,
-            orgId: persisted.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
+    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
     return true;
   },
 );

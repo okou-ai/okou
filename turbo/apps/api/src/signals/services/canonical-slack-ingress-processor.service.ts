@@ -28,6 +28,7 @@ import {
   type SlackClient,
 } from "../external/slack-message-client";
 import { settle, tapError } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import {
   canonicalInputMessageFiles,
   materializeCanonicalSlackInputAssets$,
@@ -39,7 +40,9 @@ import {
 } from "./canonical-slack-thread-status.service";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -835,34 +838,64 @@ export const processCanonicalSlackIngress$ = command(
         );
         signal.throwIfAborted();
         // Enqueue, then the background pick, then the UI realtime events.
-        set(
-          scheduleEnqueuedChatThreadPick$,
-          {
-            orgId: ingress.orgId,
-            chatThreadId: ingress.chatThreadId,
-            // The ingress id is the enqueued input's chat event id.
-            eventId: args.ingressId,
-            afterPick: async (pick, pickSignal) => {
-              await settleCanonicalSlackStatusAfterPick(
-                db,
-                { ingress, ingressId: args.ingressId, reason: pick.reason },
-                pickSignal,
+        waitUntil(
+          (async () => {
+            const picked = await settle(
+              set(
+                pickEnqueuedChatThread$,
+                {
+                  orgId: ingress.orgId,
+                  chatThreadId: ingress.chatThreadId,
+                },
+                signal,
+              ),
+            );
+            await publishChatThreadMessageCreatedSafely({
+              userId: ingress.userId,
+              orgId: ingress.orgId,
+              threadId: ingress.chatThreadId,
+            });
+            await publishThreadListChangedSafely({
+              userId: ingress.userId,
+              orgId: ingress.orgId,
+            });
+            const noticed = await settle(
+              (async () => {
+                const pick = await set(
+                  enqueuedChatQueueWaitReason$,
+                  {
+                    orgId: ingress.orgId,
+                    chatThreadId: ingress.chatThreadId,
+                    eventId: args.ingressId,
+                  },
+                  signal,
+                );
+                await settleCanonicalSlackStatusAfterPick(
+                  db,
+                  {
+                    ingress,
+                    ingressId: args.ingressId,
+                    reason: pick.reason,
+                  },
+                  signal,
+                );
+              })(),
+            );
+            if (!picked.ok && !noticed.ok) {
+              throw new AggregateError(
+                [picked.error, noticed.error],
+                "Enqueued chat thread pick and wait notice failed",
               );
-            },
-            publish: async () => {
-              await publishChatThreadMessageCreatedSafely({
-                userId: ingress.userId,
-                orgId: ingress.orgId,
-                threadId: ingress.chatThreadId,
-              });
-              await publishThreadListChangedSafely({
-                userId: ingress.userId,
-                orgId: ingress.orgId,
-              });
-            },
-          },
-          signal,
+            }
+            if (!picked.ok) {
+              throw picked.error;
+            }
+            if (!noticed.ok) {
+              throw noticed.error;
+            }
+          })(),
         );
+        waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
         return true;
       })(),
       signal,

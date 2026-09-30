@@ -26,7 +26,8 @@ import {
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
-import { bestEffort, safeUrlParse } from "../utils";
+import { bestEffort, safeUrlParse, settle } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import {
   agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
@@ -53,7 +54,9 @@ import {
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
@@ -1531,32 +1534,60 @@ const runAgentForAgentPhone$ = command(
       return;
     }
 
-    await publishThreadListChangedSafely({
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-    });
-    signal.throwIfAborted();
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: args.userLink.orgId,
-        chatThreadId: persisted.chatThreadId,
-        eventId: persisted.chatEventId,
-        afterPick: async (pick, pickSignal) => {
-          const notice = chatQueueWaitNotice(pick.reason);
-          if (notice) {
-            await sendAgentPhoneText(args.event, notice, pickSignal);
-          }
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: args.userLink.userId,
-            orgId: args.userLink.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.userLink.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await publishThreadListChangedSafely({
+          userId: args.userLink.userId,
+          orgId: args.userLink.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.userLink.userId,
+          orgId: args.userLink.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.userLink.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            const notice = chatQueueWaitNotice(pick.reason);
+            if (notice) {
+              await sendAgentPhoneText(args.event, notice, signal);
+            }
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
+    );
+    waitUntil(
+      notifyRunningChatRunOfPendingInput(args.db, persisted.chatThreadId),
     );
   },
 );

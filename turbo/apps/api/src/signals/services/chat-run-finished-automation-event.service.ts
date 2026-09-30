@@ -23,7 +23,8 @@ import { loadRunAutonomyBudget } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { waitUntil } from "../context/wait-until";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
@@ -289,13 +290,12 @@ const admitChatRunFinishedAutomation$ = command(
         throw admission.error;
       }
       // A competing callback committed this input; wake the thread anyway.
-      set(
-        scheduleEnqueuedChatThreadPick$,
-        {
-          orgId: automation.orgId,
-          chatThreadId,
-        },
-        signal,
+      waitUntil(
+        set(
+          pickEnqueuedChatThread$,
+          { orgId: automation.orgId, chatThreadId },
+          signal,
+        ),
       );
     }
   },
@@ -370,13 +370,12 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // Queue admission is durable independently of its launch. A source retry
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
-          set(
-            scheduleEnqueuedChatThreadPick$,
-            {
-              orgId: row.automation.orgId,
-              chatThreadId: row.chatThreadId,
-            },
-            signal,
+          waitUntil(
+            set(
+              pickEnqueuedChatThread$,
+              { orgId: row.automation.orgId, chatThreadId: row.chatThreadId },
+              signal,
+            ),
           );
         }
         continue;

@@ -3,6 +3,8 @@ import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
+import { waitUntil } from "../context/wait-until";
+import { settle, bestEffort, safeJsonParse } from "../utils";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import type {
@@ -45,10 +47,11 @@ import {
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort, safeJsonParse } from "../utils";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -1736,30 +1739,56 @@ const runAgentForTeams$ = command(
       return { kind: "ignored" };
     }
 
-    await publishThreadListChangedSafely({
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-    });
-    signal.throwIfAborted();
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: args.installation.orgId,
-        chatThreadId: persisted.chatThreadId,
-        eventId: persisted.chatEventId,
-        afterPick: async (pick, pickSignal) => {
-          await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: args.connection.userId,
-            orgId: args.installation.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.installation.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await publishThreadListChangedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.installation.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            await replyTeamsChatQueueWait(args.activity, pick.reason, signal);
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
+    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
     return { kind: "accepted" };
   },
 );
