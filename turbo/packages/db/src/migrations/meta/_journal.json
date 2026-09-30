@@ -1527,6 +1527,13 @@
       "when": 1790756094146,
       "tag": "1295_chat_thread_canonical_session",
       "breakpoints": true
+    },
+    {
+      "idx": 1296,
+      "version": "7",
+      "when": 1790781322987,
+      "tag": "1296_little_electro",
+      "breakpoints": true
     }
   ]
 }
