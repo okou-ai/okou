@@ -368,7 +368,6 @@ import {
 import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import {
   catalogBuiltInCandidates,
-  loadModelCatalog,
   loadSystemDefaultRunModel,
   catalogProviderUpstreamModel,
   type ModelCatalog,
@@ -1066,6 +1065,12 @@ interface PiStableContextCacheIdentity {
 }
 
 export interface CreateAgentRunArgs {
+  /**
+   * The run's model catalog snapshot. The entry point (or the queue pick,
+   * against the current catalog) loads it once; every model decision of this
+   * run reads it.
+   */
+  readonly catalog: ModelCatalog;
   readonly retainedRunId?: string;
   readonly userId: string;
   readonly orgId: string;
@@ -1548,17 +1553,16 @@ function modelProviderFramework(
   return getFrameworkForType(modelProvider.concreteType ?? modelProvider.type);
 }
 
-async function frameworkForProviderSelection(
-  db: Db,
+function frameworkForProviderSelection(
+  catalog: ModelCatalog,
   providerType: ModelProviderType,
   selectedModel: string | null | undefined,
-): Promise<SupportedFramework | null> {
+): SupportedFramework | null {
   if (!isBuiltInModelProviderType(providerType)) {
     return getFrameworkForType(providerType);
   }
   // The Built-in framework follows the primary catalog candidate's concrete
   // provider protocol.
-  const catalog = await loadModelCatalog(db);
   const [primary] = catalogBuiltInCandidates(
     catalog,
     selectedModel ?? catalog.systemDefaultModel,
@@ -1576,11 +1580,11 @@ async function resolveRequestedRunFramework(
 ): Promise<SupportedFramework> {
   if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
     return (
-      (await frameworkForProviderSelection(
-        db,
+      frameworkForProviderSelection(
+        args.catalog,
         args.modelProviderType,
         args.selectedModelOverride,
-      )) ?? composeFramework
+      ) ?? composeFramework
     );
   }
 
@@ -1627,11 +1631,11 @@ async function resolveRequestedRunFramework(
   }
 
   return (
-    (await frameworkForProviderSelection(
-      db,
+    frameworkForProviderSelection(
+      args.catalog,
       provider.type,
       args.selectedModelOverride ?? provider.selectedModel,
-    )) ?? composeFramework
+    ) ?? composeFramework
   );
 }
 
@@ -5940,11 +5944,11 @@ async function checkFinalRunAdmission(
     readonly selectedModel: string | null | undefined;
     readonly enforceBuiltInCredits: boolean;
     readonly timing: ApiDispatchTimingCollector;
+    readonly catalog: ModelCatalog;
   },
   signal: AbortSignal,
 ): Promise<CreateRunErrorResult | null> {
-  const catalog = await loadModelCatalog(db);
-  signal.throwIfAborted();
+  const { catalog } = args;
   if (args.enforceBuiltInCredits) {
     return await args.timing.measure(
       "api_dispatch_check_built_in_credits",
@@ -9365,9 +9369,7 @@ async function resolveRunModelProvider(
     hasProviderOverride ||
     !hasFrameworkKey ||
     isBuiltInModelProviderType(args.modelProviderType);
-  // One catalog snapshot serves provider resolution and admission.
-  const catalog = await loadModelCatalog(db);
-  signal.throwIfAborted();
+  const { catalog } = args;
   const modelProvider = shouldResolveModelProvider
     ? await resolveModelProviderEnvironment(db, {
         catalog,
@@ -10399,7 +10401,7 @@ async function prepareRunRuntimeContext(
   }
   const { connectorContext, permissionManifest } = preparedConnectorContext;
   const modelUsageContext = prepareModelUsageContext({
-    catalog: await loadModelCatalog(args.db),
+    catalog: args.createArgs.catalog,
     modelProvider,
     permissionManifest,
   });
@@ -11353,6 +11355,7 @@ export const completeAgentRun$ = command(
             selectedModel,
             enforceBuiltInCredits,
             timing,
+            catalog: args.catalog,
           },
           signal,
         );

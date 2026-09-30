@@ -42,7 +42,10 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
+import {
+  readThreadSessionBinding,
+  seedBuiltInModelKey,
+} from "./helpers/runtime-state";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
@@ -1389,21 +1392,18 @@ describe("workflow queue", () => {
       [204],
     );
 
+    // Without the Anthropic key the launch falls back to the fixed default,
+    // whose Built-in route has no operator key yet, so the launch fast-fails.
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
-    // Operator-managed key availability has no user mutation API; scope the
-    // fixed default's unavailable Built-in route to these launches.
-    await withBuiltInModelRuntimeRouteUnavailableForTest(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-      async () => {
-        await executeDueWorkflowAutomations(created.body.id);
-        await executeDueWorkflowAutomations(created.body.id);
-      },
-    );
+    await executeDueWorkflowAutomations(created.body.id);
+    await executeDueWorkflowAutomations(created.body.id);
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.nextRunAt).not.toBeNull();
 
-    await runsApi.ensureOrgModelProvider(scenario.actor);
+    // The failed tick pins the thread to the fixed default; provisioning its
+    // operator key lets the re-armed schedule launch.
+    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
 
     if (!automation.nextRunAt) {
       throw new Error("Expected the failed recurring schedule to re-arm");

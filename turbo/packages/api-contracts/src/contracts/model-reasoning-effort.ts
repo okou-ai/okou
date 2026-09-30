@@ -1,10 +1,25 @@
 import { z } from "zod";
 
 import { runModelIdSchema } from "./model-providers";
-import {
-  CLAUDE_CODE_EFFORTS,
-  CODEX_REASONING_EFFORTS,
-} from "./model-run-options";
+
+/** The effort vocabulary of the Codex and Claude Code harnesses. */
+const CODEX_REASONING_EFFORTS = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const;
+
+const CLAUDE_CODE_EFFORTS = [
+  "low",
+  "medium",
+  "high",
+  "extra",
+  "max",
+  "ultracode",
+] as const;
 
 export const reasoningEffortSchema = z.union([
   z.enum(CODEX_REASONING_EFFORTS),

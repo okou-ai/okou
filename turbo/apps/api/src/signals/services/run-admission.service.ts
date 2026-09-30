@@ -271,11 +271,29 @@ function checkCatalogRunRoute(
     return undefined;
   }
   const model = normalizeBuiltInModelId(params.selectedModel);
-  if (!isCatalogModelRunnable(catalog, model)) {
+  const builtIn = isBuiltInModelProviderType(params.modelProviderType);
+  if (catalog.byModel.has(model)) {
+    if (!isCatalogModelRunnable(catalog, model)) {
+      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    }
+    return builtIn && !catalogHasProviderRoute(catalog, model, "built-in")
+      ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
+      : undefined;
+  }
+  // Built-in only runs catalog models.
+  if (builtIn) {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
-  return isBuiltInModelProviderType(params.modelProviderType) &&
-    !catalogHasProviderRoute(catalog, model, "built-in")
+  // A provider-native ID is an upstream model of catalog routes. It is
+  // retired only when every catalog model it is an upstream of is retired;
+  // an ID the catalog does not know stays the provider's own model.
+  const upstreamOf = catalog.routes.filter((route) => {
+    return route.upstreamModel === params.selectedModel;
+  });
+  return upstreamOf.length > 0 &&
+    !upstreamOf.some((route) => {
+      return route.enabled && isCatalogModelRunnable(catalog, route.model);
+    })
     ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
     : undefined;
 }

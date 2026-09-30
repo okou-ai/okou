@@ -8,10 +8,11 @@ the system default, retirement and replacement, price tiers and route
 capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
 product authority, and the system default is the DB row with
 `is_system_default = true`. Code still owns runtime adapters. Limited-free
-plan access moves to catalog flags (`built_in_on_restricted_plans`,
-`own_routes_on_restricted_plans`, migration 1298, uncommitted at the time of
-writing); model policy writes read them, but run admission still uses the
-static `isLimitedFree1RestrictedRunModel` allowlist (not finished). The organization default is not configurable: the
+plan access is catalog data (`built_in_on_restricted_plans`,
+`own_routes_on_restricted_plans`, migration 1298), read by model policy
+writes, run admission and the Platform; the static
+`isLimitedFree1RestrictedRunModel` allowlist is gone. Custom-gateway mapping
+follows the model's routes instead of hard-coded model IDs. The organization default is not configurable: the
 catalog system default (`okou-1.0`, Auto) is projected into every
 organization's `GET /api/model-policies` as a non-deletable system policy and
 is not stored per organization. Resolution is thread selection, then member
@@ -69,8 +70,8 @@ Migrations:
   session conversations) or custom-gateway `model_mappings`; the API rechecks
   queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
   is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
-  turns on the code's limited-free restricted-model rule and stores no model
-  IDs, so 1297 has nothing to rewrite there.
+  turns on the catalog's restricted-plan flags and stores no model IDs, so
+  1297 has nothing to rewrite there.
 - Production impact of 1297: as of MaskDB on 2026-09-30, no chat thread,
   organization policy, member preference, agent or model provider references
   any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
@@ -84,7 +85,7 @@ Migrations:
   map before the chat thread scan; without it the planner sorted every thread
   first (2.0 s at 5x). Evidence and the verified/unverified boundary:
   `turbo/packages/db/MIGRATIONS.md`, "Migration 1297 performance evidence".
-- `1298_model_catalog_restricted_plans` (in progress, uncommitted) adds the
+- `1298_model_catalog_restricted_plans` adds the
   two restricted-plan flags to `run_model_catalog` with defaults and seeds
   them from the former code allowlist. Additive; the previous API ignores the
   columns.

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 
+import { db } from "../lib/db";
 import { now } from "../lib/time";
 import { createAgentRun$ } from "../signals/services/agent-run-create.service";
 import {
@@ -12,6 +13,7 @@ import {
 } from "../signals/services/agent-runs-create.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { createDeferredPromise } from "../signals/utils";
+import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 const USER_ID = "thread-run-invariant-user";
 const ORG_ID = "thread-run-invariant-org";
@@ -84,6 +86,7 @@ export async function createUnassociatedThreadBoundAgentRunFixture(
   await createStore().set(
     createAgentRun$,
     {
+      catalog: await loadModelCatalog(db()),
       userId: USER_ID,
       orgId: ORG_ID,
       body: {

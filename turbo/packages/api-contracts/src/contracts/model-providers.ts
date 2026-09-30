@@ -269,31 +269,6 @@ export function isSupportedRunModel(
   return typeof model === "string" && SUPPORTED_RUN_MODEL_SET.has(model);
 }
 
-/** Models supported by the Codex Fast service tier. */
-export const CODEX_FAST_MODE_MODELS = [
-  "gpt-6-astra",
-  "gpt-6.1-sol",
-  "gpt-6-sol",
-  "gpt-6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-luna",
-] as const satisfies readonly SupportedRunModel[];
-
-const CODEX_FAST_MODE_MODEL_SET: ReadonlySet<string> = new Set(
-  CODEX_FAST_MODE_MODELS,
-);
-
-export function isCodexFastModeModel(
-  model: string | null | undefined,
-): boolean {
-  const bareModel = model?.startsWith("openai/")
-    ? model.slice("openai/".length)
-    : model;
-  return (
-    typeof bareModel === "string" && CODEX_FAST_MODE_MODEL_SET.has(bareModel)
-  );
-}
-
 /**
  * Mapping from built-in model names to their concrete provider type and vendor.
  * Used at build-context time to resolve the meta-provider to a real provider.
@@ -1197,23 +1172,6 @@ export function getBuiltInConcreteProviderType(
   model: string,
 ): BuiltInModelRouteProviderType {
   return builtInPrimaryCandidate(model).concreteType;
-}
-
-/**
- * Get the vendor name for a built-in model.
- * Used for key pool lookup.
- */
-export function getBuiltInVendor(model: string): string {
-  const providerType = builtInPrimaryCandidate(model).concreteType;
-  return BUILT_IN_MODEL_ROUTE_PROVIDERS[providerType].vendor;
-}
-
-/**
- * Get the upstream API model identifier for a built-in model.
- * Falls back to the display name when no override is configured.
- */
-export function getBuiltInApiModel(model: string): string {
-  return builtInPrimaryCandidate(model).apiModel ?? model;
 }
 
 /**

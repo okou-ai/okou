@@ -125,8 +125,6 @@ export {
   getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
   getBuiltInConcreteProviderType,
-  getBuiltInVendor,
-  getBuiltInApiModel,
   chatThreadsContract,
   chatThreadByIdContract,
   chatThreadDraftContract,

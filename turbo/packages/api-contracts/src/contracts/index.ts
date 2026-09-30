@@ -554,8 +554,6 @@ export {
   getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
   getBuiltInConcreteProviderType,
-  getBuiltInVendor,
-  getBuiltInApiModel,
   normalizeBuiltInModelId,
 } from "./model-providers";
 export {

@@ -216,6 +216,8 @@ describe("GET /api/model-catalog", () => {
         replacedBy: null,
         resolvedModel: "okou-1.0",
         priceTier: "$",
+        builtInOnRestrictedPlans: true,
+        ownRoutesOnRestrictedPlans: true,
       },
     ]);
     expect(
@@ -230,6 +232,8 @@ describe("GET /api/model-catalog", () => {
       replacedBy: "claude-fable-5-1",
       resolvedModel: "claude-fable-5-1",
       priceTier: null,
+      builtInOnRestrictedPlans: false,
+      ownRoutesOnRestrictedPlans: true,
     });
     expect(
       models.find((row) => {
@@ -459,6 +463,8 @@ describe("stored selections of replaced models", () => {
       replacedBy: "test-chain-hop-b",
       resolvedModel: "claude-opus-5-5",
       priceTier: null,
+      builtInOnRestrictedPlans: false,
+      ownRoutesOnRestrictedPlans: true,
     });
 
     const preference = await accept(

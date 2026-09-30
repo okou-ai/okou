@@ -7,8 +7,9 @@ retirement and replacement, display price tiers and route capabilities
 (service tiers and reasoning efforts). App, iOS, CLI and integrations read it
 instead of code constants for names, order, the default and replacement. Code
 still keeps runtime knowledge that is not catalog data: the protocol adapter
-of each executable model (framework, environment bindings, context limits), and
-the plan policy described under [Plan restriction](#plan-restriction). A
+of each executable model (framework, environment bindings, context limits).
+Plan access of restricted plans is catalog data too (see
+[Plan restriction](#plan-restriction)). A
 catalog model without an adapter cannot be the system default, is never
 offered for a new policy and is rejected when selected.
 
@@ -189,15 +190,16 @@ per execution (Pi or not, and the concrete provider for DeepSeek).
 Run creation loads the catalog once (`loadModelCatalog` in
 `agent-run-create.service.ts`) and passes that snapshot to provider
 resolution and run admission, so one run's route decision does not mix two
-catalog reads. Admission
-(`checkCatalogRunRoute` in `run-admission.service.ts`) requires the selected
-model to be an active catalog model with an enabled route of the selected
-provider type, and a Built-in run to have an enabled Built-in route.
-Reasoning efforts come from the route (`catalogRouteEfforts`,
-`catalogRouteDefaultEffort`). Service tiers for member preferences are being
-moved to route `service_tiers` (`isCatalogFastServiceTierSupported`,
-`isCatalogUltrafastServiceTierSupported`); as of this writing that change is
-uncommitted work in progress.
+catalog reads. Admission (`checkOrgPlanRunAdmission` and
+`checkCatalogRunRoute` in `run-admission.service.ts`) requires the selected
+model to be an active catalog model and a Built-in run to have an enabled
+Built-in route. A provider-native model ID outside the catalog is accepted on
+the provider's own route; it is rejected as retired only when every catalog
+model it is the `upstream_model` of is retired. Reasoning efforts come from
+the route (`catalogRouteEfforts`, `catalogRouteDefaultEffort`), and member
+preference service tiers from the route's `service_tiers`
+(`isCatalogFastServiceTierSupported`, `isCatalogUltrafastServiceTierSupported`
+in `model-selection.service.ts`).
 
 ## Queued inputs and history
 
@@ -272,17 +274,17 @@ data (migration `1298_model_catalog_restricted_plans`, returned by
   organization's or member's own routes (BYOK, subscriptions). Seeded false
   for `claude-sonnet-5-5` and `gpt-6.1-sol`.
 
-A model outside the catalog is never allowed on a restricted Built-in route.
-`getCatalogRunModelRouteAccess` applies these flags; the API
-(`model-route-capabilities.service.ts`, used by model policy writes) and the
-Platform read them.
+`getCatalogRunModelRouteAccess` (`@okouai/api-contracts`) applies the flags;
+a model outside the catalog is never allowed on a restricted Built-in route.
+The API reads them through `catalogRunModelRouteAccess` for policy writes and
+run admission, and admission names the model's `display_name` in the paid-plan
+error when the model is off restricted plans on every route. The Platform
+reads the same flags from the catalog response. Adding a model therefore needs
+no code change for plan access: its flags decide.
 
-Not finished: run admission (`run-admission.service.ts`) still calls the
-static `getRunModelRouteAccess` / `LIMITED_FREE1_ALLOWED_RUN_MODELS` rule in
-`@okouai/api-contracts` and hard-codes `claude-sonnet-5-5` and `gpt-6.1-sol`
-for the paid-plan message; `model-policy.service.ts` still hard-codes those
-two models as unmappable on custom gateways. Migration 1298 is uncommitted
-work in progress.
+Custom-gateway mapping is also route data: a model may be served by a custom
+gateway when it has no enabled non-Built-in route, or when one of those routes
+is a third-party gateway type (`catalogModelAllowsCustomGateway`).
 
 ## Constraint design
 

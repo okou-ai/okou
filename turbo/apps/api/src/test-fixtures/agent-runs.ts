@@ -41,6 +41,7 @@ import {
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
 import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
+import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 const store = createStore();
 
@@ -497,6 +498,7 @@ export async function createDirectRunFixture(args: {
   return await store.set(
     createAgentRun$,
     {
+      catalog: await loadModelCatalog(db()),
       userId: args.userId,
       orgId: args.orgId,
       apiStartTime: now(),

@@ -85,6 +85,7 @@ import {
   buildAgentToolsPromptInputs,
 } from "./agent-tools-prompt.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import { loadModelCatalog } from "./model-catalog.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // Emitted as the agent_run_origin observability dimension. The values name what
@@ -1010,7 +1011,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
 
 function buildCreateAgentRunArgs(
   args: BuildCreateAgentRunArgsInput,
-): CreateAgentRunArgs {
+): Omit<CreateAgentRunArgs, "catalog"> {
   const command = args.command;
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
@@ -1359,6 +1360,10 @@ const createAgentRunAfterPreCreate$ = command(
       return initialPreparation;
     }
     const { postAuthorization } = initialPreparation;
+    // One catalog snapshot per run. A queued input picked later reads the
+    // catalog current at the pick, not at enqueue.
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
     for (
       let attempt = 0;
       attempt < THREAD_SESSION_PREPARATION_ATTEMPTS;
@@ -1382,6 +1387,7 @@ const createAgentRunAfterPreCreate$ = command(
       signal.throwIfAborted();
       const createAgentRunArgs: CreateAgentRunArgs = {
         ...baseCreateAgentRunArgs,
+        catalog,
         timingDimensions: {
           ...baseCreateAgentRunArgs.timingDimensions,
           run_preparation_retry_count: String(attempt),

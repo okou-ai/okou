@@ -57,7 +57,10 @@ import {
   resolveCatalogModel,
   type ModelCatalog,
 } from "./model-catalog.service";
-import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
+import {
+  catalogModelAllowsCustomGateway,
+  catalogRunModelRouteAccess,
+} from "./model-route-capabilities.service";
 import {
   conflict,
   insufficientCredits,
@@ -233,7 +236,7 @@ function surfaceSupportsModel(
   surface: SurfaceRouteInfo,
   model: string,
 ): boolean {
-  if (model === "claude-sonnet-5-5" || model === "gpt-6.1-sol") {
+  if (!catalogModelAllowsCustomGateway(catalog, model)) {
     return false;
   }
   // A custom gateway serves the model through the same protocol framework as

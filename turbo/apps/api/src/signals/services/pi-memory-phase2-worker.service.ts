@@ -289,9 +289,12 @@ const dispatchClaim$ = command(
         };
       }),
     } as const;
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
     const result = await set(
       createAgentRun$,
       {
+        catalog,
         userId: claim.userId,
         orgId: claim.orgId,
         body: {

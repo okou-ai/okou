@@ -229,3 +229,37 @@ export async function loadSystemDefaultBuiltInVendor(
   const catalog = await loadModelCatalog(db);
   return catalogBuiltInPrimaryVendor(catalog, catalog.systemDefaultModel);
 }
+
+function isThirdPartyGatewayProviderType(providerType: string): boolean {
+  return (
+    providerType === "openrouter-api-key" ||
+    providerType === "vercel-ai-gateway" ||
+    providerType === "openrouter-codex" ||
+    providerType === "vercel-ai-gateway-codex"
+  );
+}
+
+/**
+ * Whether an organization's custom gateway may serve the model. A model the
+ * catalog offers on its own routes only through the vendor's API and
+ * subscription (no third-party gateway route) is not served through custom
+ * gateways either; models without own routes are left to the gateway mapping.
+ */
+export function catalogModelAllowsCustomGateway(
+  catalog: ModelCatalog,
+  model: string,
+): boolean {
+  const ownRoutes = catalog.routes.filter((route) => {
+    return (
+      route.enabled &&
+      route.model === model &&
+      !isBuiltInModelProviderType(route.providerType)
+    );
+  });
+  return (
+    ownRoutes.length === 0 ||
+    ownRoutes.some((route) => {
+      return isThirdPartyGatewayProviderType(route.providerType);
+    })
+  );
+}

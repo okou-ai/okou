@@ -2,6 +2,7 @@ import nativePiFixtures from "../../../../../../packages/api-contracts/src/contr
 import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
@@ -9,11 +10,7 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  getBuiltInApiModel,
   getModelProviderFirewall,
-  getProviderRuntimeModel,
-  getBuiltInConcreteProviderType,
-  getBuiltInVendor,
   type ModelProviderType,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -412,13 +409,14 @@ async function expectBuiltInModelRunRuntimeRoute(
   runId: string,
   selectedModel: string,
 ): Promise<void> {
+  const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
   await expect(readRunModelRuntimeRouteFixture(runId)).resolves.toStrictEqual({
     modelProvider: "built-in",
     selectedModel,
-    modelRuntimeProvider: getBuiltInConcreteProviderType(selectedModel),
-    modelRuntimeModel: getProviderRuntimeModel("built-in", selectedModel),
+    modelRuntimeProvider: primary.concreteProviderType,
+    modelRuntimeModel: primary.upstreamModel,
     builtInModelKeyId: expect.any(String),
-    builtInModelKeyVendor: getBuiltInVendor(selectedModel),
+    builtInModelKeyVendor: primary.vendor,
   });
 }
 
@@ -5766,7 +5764,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   it("claims built-in model runs with billable model firewall and usage provider", async () => {
     const api = createRunsApi(context);
     const selectedModel = await seedBuiltInDefaultModelKey();
-    const concreteProvider = getBuiltInConcreteProviderType(selectedModel);
+    const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
+    const concreteProvider = primary.concreteProviderType;
     const expectedFirewall = getModelProviderFirewall(concreteProvider)?.name;
     if (!expectedFirewall) {
       throw new Error(
@@ -5787,7 +5786,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
     expect(claim.environment).toMatchObject({
-      OPENAI_MODEL: getBuiltInApiModel(selectedModel),
+      OPENAI_MODEL: primary.upstreamModel,
     });
 
     expect(
@@ -6028,7 +6027,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(claim.piModelConfig).toMatchObject({
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        model: getBuiltInApiModel(selectedModel),
+        model: (await readPrimaryBuiltInRouteFixture(selectedModel))
+          .upstreamModel,
       });
       expect(
         claim.firewalls?.map((firewall) => {

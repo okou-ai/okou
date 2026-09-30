@@ -13,13 +13,10 @@ import {
   getSelectableProviderTypes,
   getProviderRuntimeModel,
   getProvidersForModel,
-  getBuiltInApiModel,
   getBuiltInConcreteProviderType,
-  getBuiltInVendor,
   getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
   isModelSupportedByProvider,
-  isCodexFastModeModel,
   isSupportedRunModel,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
@@ -39,7 +36,6 @@ import {
   updateOrgModelPolicySchema,
   updateOrgModelPoliciesRequestSchema,
   BUILT_IN_MODEL_TO_PROVIDER,
-  CODEX_FAST_MODE_MODELS,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
   ACTIVE_RUN_MODELS,
@@ -57,28 +53,6 @@ import { getModelProviderTypeForSurfaceProtocol } from "../model-provider-gatewa
 import { modelProvidersByTypeContract } from "../model-provider-routes";
 
 describe("model-first canonical catalog", () => {
-  it("recognizes Codex fast mode models", () => {
-    expect(CODEX_FAST_MODE_MODELS).toEqual([
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ]);
-    expect(isCodexFastModeModel("gpt-5.5")).toBe(false);
-    expect(isCodexFastModeModel("gpt-6-astra")).toBe(true);
-    expect(isCodexFastModeModel("openai/gpt-6-astra")).toBe(true);
-    expect(isCodexFastModeModel("gpt-6-sol")).toBe(true);
-    expect(isCodexFastModeModel("openai/gpt-6-sol")).toBe(true);
-    expect(isCodexFastModeModel("gpt-6-luna")).toBe(true);
-    expect(isCodexFastModeModel("openai/gpt-6-luna")).toBe(true);
-    expect(isCodexFastModeModel("openai/gpt-5.6-sol")).toBe(true);
-    expect(isCodexFastModeModel("gpt-5.6-luna")).toBe(true);
-    expect(isCodexFastModeModel("custom-model")).toBe(false);
-    expect(isCodexFastModeModel(null)).toBe(false);
-  });
-
   it("exposes canonical model provider env placeholders", () => {
     expect(Object.keys(MODEL_PROVIDER_ENV_PLACEHOLDERS).sort()).toEqual([
       "ANTHROPIC_API_KEY",
@@ -547,7 +521,6 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInConcreteProviderType("gpt-6-astra")).toBe(
       "openai-api-key",
     );
-    expect(getBuiltInVendor("gpt-6-astra")).toBe("openai");
     expect(getProviderRuntimeModel("openai-api-key", "gpt-5.6-sol")).toBe(
       "gpt-5.6-sol",
     );
@@ -557,7 +530,6 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInConcreteProviderType("gpt-5.6-sol")).toBe(
       "openai-api-key",
     );
-    expect(getBuiltInVendor("gpt-5.6-sol")).toBe("openai");
     expect(
       getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
     ).toBe("deepseek/deepseek-v4.1-flash");
@@ -649,15 +621,12 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInConcreteProviderType("deepseek-v4.1-flash")).toBe(
       "deepseek",
     );
-    expect(getBuiltInVendor("deepseek-v4.1-flash")).toBe("deepseek");
   });
 
   it.each(["deepseek-v4-flash"] as const)(
     "routes built-in model %s directly through DeepSeek",
     (model) => {
       expect(getBuiltInConcreteProviderType(model)).toBe("deepseek");
-      expect(getBuiltInVendor(model)).toBe("deepseek");
-      expect(getBuiltInApiModel(model)).toBe(model);
       expect(getProviderRuntimeModel("built-in", model)).toBe(model);
     },
   );
@@ -672,8 +641,6 @@ describe("model-first canonical catalog", () => {
     "routes built-in model %s directly through Anthropic",
     (model) => {
       expect(getBuiltInConcreteProviderType(model)).toBe("anthropic-api-key");
-      expect(getBuiltInVendor(model)).toBe("anthropic");
-      expect(getBuiltInApiModel(model)).toBe(model);
       expect(getProviderRuntimeModel("built-in", model)).toBe(model);
     },
   );
@@ -714,7 +681,6 @@ describe("model-first canonical catalog", () => {
       expect(candidates[0]?.providerType).toBe(
         getBuiltInConcreteProviderType(model),
       );
-      expect(candidates[0]?.upstreamModel).toBe(getBuiltInApiModel(model));
       expect(
         new Set(
           candidates.map((candidate) => {

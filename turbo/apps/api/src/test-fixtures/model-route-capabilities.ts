@@ -1,4 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
+import {
+  getBuiltInRouteProviderVendor,
+  modelProviderTypeSchema,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { db } from "../lib/db";
@@ -41,4 +46,41 @@ export async function updateRestrictedPlanAccessFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one catalog model to be updated");
   }
+}
+
+/** The model's first-priority enabled Built-in route in the catalog. */
+export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
+  readonly concreteProviderType: ModelProviderType;
+  readonly upstreamModel: string;
+  readonly vendor: string;
+}> {
+  const [route] = await db()
+    .select({
+      concreteProviderType: modelRoutes.concreteProviderType,
+      upstreamModel: modelRoutes.upstreamModel,
+    })
+    .from(modelRoutes)
+    .where(
+      and(
+        eq(modelRoutes.model, model),
+        eq(modelRoutes.providerType, "built-in"),
+        eq(modelRoutes.enabled, true),
+      ),
+    )
+    .orderBy(asc(modelRoutes.priority))
+    .limit(1);
+  const vendor = route
+    ? getBuiltInRouteProviderVendor(route.concreteProviderType)
+    : undefined;
+  const concreteProviderType = modelProviderTypeSchema.safeParse(
+    route?.concreteProviderType,
+  );
+  if (!route || !vendor || !concreteProviderType.success) {
+    throw new Error(`Expected an enabled Built-in route for ${model}`);
+  }
+  return {
+    concreteProviderType: concreteProviderType.data,
+    upstreamModel: route.upstreamModel,
+    vendor,
+  };
 }
