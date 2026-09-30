@@ -9321,6 +9321,10 @@ describe("usage pack allocation management", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       teamSubscription,
     );
+    await Promise.all([
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+    ]);
     await postManagedUsagePackEvent("invoice.paid", paidInvoice);
 
     const completedState = await readUsagePackState(
@@ -9330,6 +9334,11 @@ describe("usage pack allocation management", () => {
     expect(completedState.org?.tier).toBe("team");
     expect(completedState.allocations).toHaveLength(1);
     expect(completedState.grants).toStrictEqual(grantsBefore);
+    expect(
+      completedState.fulfillmentInvoiceIds.filter((id) => {
+        return id === paidInvoice.id;
+      }),
+    ).toHaveLength(1);
   });
 
   it("retries a grouped subscription change after a Stripe failure", async () => {
@@ -12973,7 +12982,10 @@ describe("usage pack allocation management", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       managedUsagePackSubscription(fixture, newQuantities),
     );
-    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    await Promise.all([
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+    ]);
     await postManagedUsagePackEvent("invoice.paid", paidInvoice);
 
     const upgraded = await readUsagePackState(

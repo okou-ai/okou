@@ -122,6 +122,35 @@ sequence/queue lock order changes. Admission errors still reject before commit.
 The attempted issuance/settlement retirement is withdrawn for the distinct-Run
 financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
+## Key-free paid allocation invoice fulfillment
+
+Two further `usage_pack_billing` acquisitions are removed: standalone upgrade
+invoice commit and grouped subscription-change invoice fulfillment. These
+paths do not create an invoice, charge Stripe or synchronize configuration;
+they apply an already-paid, validated invoice to local financial facts.
+
+The existing invoice-fulfillment primary key is inserted before completing the
+allocation changes or publishing purchased/bonus grants. `ON CONFLICT DO NOTHING`
+selects one actual receipt writer. A losing insertion reads the same committed
+receipt once and requires the same subscription and period; no transaction is
+retried. The receipt, state transitions and grants commit together, so any
+failure rolls back every mutation. The ordinary receipt FK keeps its existing
+subscription parent; no new parent/row lock is introduced.
+
+Allocation completion matches the prepared organization, subscription, recipient,
+source/replacement allocation, source/target Price and package values. Grant
+identities still contain change/invoice/grant type; refundable amounts retain
+the original invoice-line source. Paid invoice replay cannot publish another
+grant or complete a change that was reassigned while amounts were prepared.
+
+Public billing API cases now deliver two matching paid invoices concurrently,
+then replay once more. Original standalone upgrade credit/refund amounts and
+allocation assertions remain; grouped Plan upgrade keeps its prior grants and
+asserts exactly one invoice receipt. These narrow retirements do **not** certify
+all configuration writers or the organization key independent. Three production
+SQL definitions remain, and `billing_purchase` and the remaining
+`usage_pack_billing` writers are unfinished R1 work, not compatibility gates.
+
 ## Serving compaction retirement
 
 Both advisory definitions, every settlement/deletion/cleanup acquisition and the

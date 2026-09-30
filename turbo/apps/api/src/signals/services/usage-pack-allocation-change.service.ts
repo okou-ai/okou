@@ -3642,6 +3642,40 @@ async function findUsagePackChangeForInvoice(
   return candidate;
 }
 
+async function insertInvoiceFulfillmentReceipt(
+  tx: WriteTx,
+  values: typeof usagePackInvoiceFulfillments.$inferInsert,
+): Promise<boolean> {
+  const [inserted] = await tx
+    .insert(usagePackInvoiceFulfillments)
+    .values(values)
+    .onConflictDoNothing()
+    .returning({
+      stripeInvoiceId: usagePackInvoiceFulfillments.stripeInvoiceId,
+    });
+  if (inserted) {
+    return true;
+  }
+  const [existing] = await tx
+    .select()
+    .from(usagePackInvoiceFulfillments)
+    .where(
+      eq(usagePackInvoiceFulfillments.stripeInvoiceId, values.stripeInvoiceId),
+    )
+    .limit(1);
+  if (
+    !existing ||
+    existing.usagePackSubscriptionId !== values.usagePackSubscriptionId ||
+    existing.periodStart?.getTime() !== values.periodStart?.getTime() ||
+    existing.periodEnd.getTime() !== values.periodEnd.getTime()
+  ) {
+    throw new Error(
+      "Invoice fulfillment receipt belongs to different business facts",
+    );
+  }
+  return false;
+}
+
 async function commitUsagePackUpgradeInvoice(
   db: Db,
   args: {
@@ -3653,7 +3687,6 @@ async function commitUsagePackUpgradeInvoice(
   },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.execute(usagePackBillingLockSql(args.change.orgId));
     const [subscription] = await tx
       .select()
       .from(
@@ -3700,6 +3733,19 @@ async function commitUsagePackUpgradeInvoice(
       throw new Error(`Usage pack change ${change.id} has another invoice`);
     }
     const completedAt = nowDate();
+    // The existing financial receipt is the real invoice identity, not a
+    // coordination marker. Only its insertion winner proceeds; rollback of
+    // any later amount/state check also rolls back this receipt.
+    const inserted = await insertInvoiceFulfillmentReceipt(tx, {
+      stripeInvoiceId: args.invoice.id,
+      usagePackSubscriptionId: change.usagePackSubscriptionId,
+      periodStart: new Date(args.prorationPeriod.start * 1000),
+      periodEnd: new Date(args.prorationPeriod.end * 1000),
+      createdAt: completedAt,
+    });
+    if (!inserted) {
+      return;
+    }
     // Claim the exact validated state before any grant: a concurrent writer
     // that moved the change leaves zero rows and rolls the whole receipt back.
     const [claimed] = await tx
@@ -3715,6 +3761,7 @@ async function commitUsagePackUpgradeInvoice(
           eq(usagePackAllocationChanges.id, change.id),
           eq(usagePackAllocationChanges.kind, "upgrade"),
           eq(usagePackAllocationChanges.status, "applied"),
+          fulfillmentChangeIdentity(change),
           isNotNull(usagePackAllocationChanges.replacementAllocationId),
           or(
             isNull(usagePackAllocationChanges.stripeInvoiceId),
@@ -3757,13 +3804,6 @@ async function commitUsagePackUpgradeInvoice(
         expiresAt: new Date(args.prorationPeriod.end * 1000),
       });
     }
-    await tx.insert(usagePackInvoiceFulfillments).values({
-      stripeInvoiceId: args.invoice.id,
-      usagePackSubscriptionId: change.usagePackSubscriptionId,
-      periodStart: new Date(args.prorationPeriod.start * 1000),
-      periodEnd: new Date(args.prorationPeriod.end * 1000),
-      createdAt: completedAt,
-    });
   });
 }
 
@@ -3895,14 +3935,31 @@ async function prepareSubscriptionChangeFulfillment(
   return { expectedRoot, preparedGrants };
 }
 
+function fulfillmentChangeIdentity(change: UsagePackAllocationChangeRow) {
+  return and(
+    eq(usagePackAllocationChanges.orgId, change.orgId),
+    eq(
+      usagePackAllocationChanges.usagePackSubscriptionId,
+      change.usagePackSubscriptionId,
+    ),
+    sql`${usagePackAllocationChanges.userId} IS NOT DISTINCT FROM ${change.userId}`,
+    sql`${usagePackAllocationChanges.sourceAllocationId} IS NOT DISTINCT FROM ${change.sourceAllocationId}`,
+    sql`${usagePackAllocationChanges.replacementAllocationId} IS NOT DISTINCT FROM ${change.replacementAllocationId}`,
+    sql`${usagePackAllocationChanges.sourceStripePriceId} IS NOT DISTINCT FROM ${change.sourceStripePriceId}`,
+    sql`${usagePackAllocationChanges.targetStripePriceId} IS NOT DISTINCT FROM ${change.targetStripePriceId}`,
+    sql`${usagePackAllocationChanges.sourceUsagePackUsd} IS NOT DISTINCT FROM ${change.sourceUsagePackUsd}`,
+    sql`${usagePackAllocationChanges.targetUsagePackUsd} IS NOT DISTINCT FROM ${change.targetUsagePackUsd}`,
+  );
+}
+
 async function fulfillPreparedSubscriptionChange(
   tx: WriteTx,
   args: SubscriptionChangeFulfillmentArgs,
   expectedRoot: UsagePackSubscriptionChangeRow,
   preparedGrants: readonly PreparedSubscriptionChangeGrant[],
 ): Promise<void> {
-  // Root identity is immutable; the retained usage_pack_billing key and the
-  // invoice receipt primary key arbitrate duplicate fulfillment.
+  // Root identity and invoice receipt are existing business facts. The
+  // unique receipt insertion arbitrates duplicate fulfillment without a key.
   const [root] = await tx
     .select()
     .from(usagePackSubscriptionChanges)
@@ -3926,6 +3983,15 @@ async function fulfillPreparedSubscriptionChange(
   ) {
     return;
   }
+  const inserted = await insertInvoiceFulfillmentReceipt(tx, {
+    stripeInvoiceId: args.invoice.id,
+    usagePackSubscriptionId: root.usagePackSubscriptionId,
+    periodStart: new Date(args.prorationTimestamp * 1000),
+    periodEnd: new Date(args.periodEnd * 1000),
+  });
+  if (!inserted) {
+    return;
+  }
   for (const prepared of preparedGrants) {
     const completedAt = nowDate();
     // Conditional transition instead of a row lock: only an applied
@@ -3938,6 +4004,7 @@ async function fulfillPreparedSubscriptionChange(
           eq(usagePackAllocationChanges.id, prepared.change.id),
           inArray(usagePackAllocationChanges.kind, ["addition", "upgrade"]),
           eq(usagePackAllocationChanges.status, "applied"),
+          fulfillmentChangeIdentity(prepared.change),
           isNotNull(usagePackAllocationChanges.replacementAllocationId),
         ),
       )
@@ -3974,12 +4041,6 @@ async function fulfillPreparedSubscriptionChange(
       });
     }
   }
-  await tx.insert(usagePackInvoiceFulfillments).values({
-    stripeInvoiceId: args.invoice.id,
-    usagePackSubscriptionId: root.usagePackSubscriptionId,
-    periodStart: new Date(args.prorationTimestamp * 1000),
-    periodEnd: new Date(args.periodEnd * 1000),
-  });
 }
 
 export async function fulfillUsagePackSubscriptionChangeInvoice(
@@ -3989,7 +4050,6 @@ export async function fulfillUsagePackSubscriptionChangeInvoice(
   const { expectedRoot, preparedGrants } =
     await prepareSubscriptionChangeFulfillment(db, args);
   await db.transaction(async (tx) => {
-    await tx.execute(usagePackBillingLockSql(expectedRoot.orgId));
     const [subscription] = await tx
       .select()
       .from(
