@@ -34,7 +34,7 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   and,
   asc,
@@ -57,10 +57,9 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
-  deleteS3Objects,
-  listS3Objects,
-  listS3ObjectsUnderPrefix,
-} from "../external/s3";
+  enqueueStorageObjectCleanup,
+  executeStorageObjectCleanupWork$,
+} from "./storage-object-cleanup.service";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -604,111 +603,149 @@ async function isClerkOrgEmptyAfterDeletingUser(
   }
 }
 
-function deleteObjectsForPrefixes(
-  bucket: string,
-  prefixes: readonly string[],
-): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    for (const prefix of prefixes) {
-      const objects = await get(listS3Objects(bucket, prefix));
-      if (objects.length === 0) {
-        continue;
-      }
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
-    }
-  });
-}
+type ClerkStorageCleanupScope =
+  | { readonly kind: "organization"; readonly orgId: string }
+  | { readonly kind: "user"; readonly userId: string };
 
-function deleteUserObjectsForPrefixes(
-  bucket: string,
-  prefixes: readonly string[],
-): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    for (const prefix of prefixes) {
-      const objects = await get(listS3ObjectsUnderPrefix(bucket, prefix));
-      if (objects.length === 0) {
-        continue;
-      }
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
-    }
-  });
-}
-
-function deleteOrgS3Data(db: Db, orgId: string): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const storageRows = await db
-      .select({ s3Prefix: storages.s3Prefix })
+async function deleteClerkStorageReferences(
+  db: Db,
+  scope: ClerkStorageCleanupScope,
+  signal: AbortSignal,
+): Promise<string[]> {
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: storages.id,
+        orgId: storages.orgId,
+        userId: storages.userId,
+        s3Prefix: storages.s3Prefix,
+      })
       .from(storages)
-      .where(eq(storages.orgId, orgId));
-    await get(
-      deleteObjectsForPrefixes(
-        bucket,
-        storageRows.map((row) => {
-          return row.s3Prefix;
+      .where(
+        scope.kind === "organization"
+          ? eq(storages.orgId, scope.orgId)
+          : eq(storages.userId, scope.userId),
+      )
+      .orderBy(asc(storages.id));
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return [];
+    }
+    await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      inArray(
+        storages.id,
+        rows.map((row) => {
+          return row.id;
         }),
       ),
     );
-
-    const exportRows = await db
-      .select({ s3Key: exportJobs.s3Key })
-      .from(exportJobs)
-      .where(and(eq(exportJobs.orgId, orgId), isNotNull(exportJobs.s3Key)));
-    const exportKeys = exportRows.flatMap((row) => {
-      return row.s3Key ? [row.s3Key] : [];
-    });
-    await get(deleteS3Objects(bucket, exportKeys));
+    signal.throwIfAborted();
+    const jobIds: string[] = [];
+    for (const row of rows) {
+      // Preserve the existing user-deletion boundary: legacy prefixes may be
+      // shared. Org-owned instruction Storage belongs to retained Agents.
+      if (scope.kind === "user" && row.s3Prefix !== `${row.orgId}/${row.id}`) {
+        continue;
+      }
+      jobIds.push(
+        await enqueueStorageObjectCleanup(
+          tx,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "prefix", value: row.s3Prefix },
+            userId: row.userId,
+            orgId: row.orgId,
+          },
+          signal,
+        ),
+      );
+    }
+    return jobIds;
   });
 }
 
-function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const userStorageRows = await db
-      .select({ s3Prefix: storages.s3Prefix })
-      .from(storages)
+async function deleteClerkExportReferences(
+  db: Db,
+  scope: ClerkStorageCleanupScope,
+  signal: AbortSignal,
+): Promise<string[]> {
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: exportJobs.id,
+        orgId: exportJobs.orgId,
+        userId: exportJobs.userId,
+        s3Key: exportJobs.s3Key,
+      })
+      .from(exportJobs)
       .where(
-        and(
-          eq(storages.userId, userId),
-          eq(
-            storages.s3Prefix,
-            sql`${storages.orgId} || '/' || ${storages.id}::text`,
-          ),
-        ),
-      );
-
-    // Agents the user owns are retained, so their instructions Storage is too.
-    const prefixes = [
-      ...new Set(
-        userStorageRows.map((row) => {
-          return row.s3Prefix;
+        scope.kind === "organization"
+          ? eq(exportJobs.orgId, scope.orgId)
+          : eq(exportJobs.userId, scope.userId),
+      )
+      .orderBy(asc(exportJobs.id));
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return [];
+    }
+    await tx.delete(exportJobs).where(
+      inArray(
+        exportJobs.id,
+        rows.map((row) => {
+          return row.id;
         }),
       ),
-    ];
-    await get(deleteUserObjectsForPrefixes(bucket, prefixes));
+    );
+    signal.throwIfAborted();
+    const jobIds: string[] = [];
+    for (const row of rows) {
+      if (row.s3Key === null) {
+        continue;
+      }
+      jobIds.push(
+        await enqueueStorageObjectCleanup(
+          tx,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "key", value: row.s3Key },
+            userId: row.userId,
+            orgId: row.orgId,
+          },
+          signal,
+        ),
+      );
+    }
+    return jobIds;
+  });
+}
 
-    const exportRows = await db
-      .select({ s3Key: exportJobs.s3Key })
-      .from(exportJobs)
-      .where(and(eq(exportJobs.userId, userId), isNotNull(exportJobs.s3Key)));
-    const exportKeys = exportRows.flatMap((row) => {
-      return row.s3Key ? [row.s3Key] : [];
-    });
-    await get(deleteS3Objects(bucket, exportKeys));
+async function deleteClerkSshResources(
+  db: Db,
+  scope: ClerkStorageCleanupScope,
+) {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(sshConnections)
+      .where(
+        scope.kind === "organization"
+          ? eq(sshConnections.orgId, scope.orgId)
+          : eq(sshConnections.userId, scope.userId),
+      );
+    await tx
+      .delete(sshCredentials)
+      .where(
+        scope.kind === "organization"
+          ? eq(sshCredentials.orgId, scope.orgId)
+          : eq(sshCredentials.userId, scope.userId),
+      );
+    await tx
+      .delete(cloudflareAccessConfigs)
+      .where(
+        scope.kind === "organization"
+          ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
+          : eq(cloudflareAccessConfigs.userId, scope.userId),
+      );
   });
 }
 
@@ -717,7 +754,10 @@ const deleteOrgData$ = command(
     { set },
     orgId: string,
     signal: AbortSignal,
-  ): Promise<readonly ReleasedRunSlot[]> => {
+  ): Promise<{
+    readonly slots: readonly ReleasedRunSlot[];
+    readonly cleanupJobIds: string[];
+  }> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
     await cancelOrgRuns(db, orgId, released.collect);
@@ -772,19 +812,7 @@ const deleteOrgData$ = command(
     // VNC references were removed at the start of organization cleanup. Remove
     // Access rows before SSH hosts: rotation takes config then host locks.
     // Delete hosts before credentials and configs for the restrictive FK.
-    await db.transaction(async (tx) => {
-      await tx
-        .select({ id: cloudflareAccessConfigs.id })
-        .from(cloudflareAccessConfigs)
-        .where(eq(cloudflareAccessConfigs.orgId, orgId))
-        .orderBy(asc(cloudflareAccessConfigs.id))
-        .for("update");
-      await tx.delete(sshConnections).where(eq(sshConnections.orgId, orgId));
-      await tx.delete(sshCredentials).where(eq(sshCredentials.orgId, orgId));
-      await tx
-        .delete(cloudflareAccessConfigs)
-        .where(eq(cloudflareAccessConfigs.orgId, orgId));
-    });
+    await deleteClerkSshResources(db, { kind: "organization", orgId });
     signal.throwIfAborted();
     await deleteConnectorOwnerState(
       db,
@@ -792,9 +820,11 @@ const deleteOrgData$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await db.transaction(async (tx) => {
-      await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));
-    });
+    const cleanupJobIds = await deleteClerkStorageReferences(
+      db,
+      { kind: "organization", orgId },
+      signal,
+    );
     signal.throwIfAborted();
     for (const table of [
       modelProviders,
@@ -803,11 +833,17 @@ const deleteOrgData$ = command(
       variables,
       builtinConnectorOauthDeviceAuthorizationSessions,
       builtinConnectorExternalCodeSessions,
-      exportJobs,
     ]) {
       await db.delete(table).where(eq(table.orgId, orgId));
       signal.throwIfAborted();
     }
+    cleanupJobIds.push(
+      ...(await deleteClerkExportReferences(
+        db,
+        { kind: "organization", orgId },
+        signal,
+      )),
+    );
     await db
       .delete(orgConcurrencyEntitlements)
       .where(eq(orgConcurrencyEntitlements.orgId, orgId));
@@ -845,7 +881,7 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
     signal.throwIfAborted();
-    return released.slots;
+    return { slots: released.slots, cleanupJobIds };
   },
 );
 
@@ -854,7 +890,10 @@ const deleteUserData$ = command(
     { set },
     userId: string,
     signal: AbortSignal,
-  ): Promise<readonly ReleasedRunSlot[]> => {
+  ): Promise<{
+    readonly slots: readonly ReleasedRunSlot[];
+    readonly cleanupJobIds: string[];
+  }> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
     await cancelUserRuns(db, userId, released.collect);
@@ -892,26 +931,13 @@ const deleteUserData$ = command(
     // SSH resources and personal Access configurations; organization Access
     // configurations have no user owner and must survive creator deletion.
     // Take config locks first to match token rotation's config-then-host order.
-    await db.transaction(async (tx) => {
-      await tx
-        .select({ id: cloudflareAccessConfigs.id })
-        .from(cloudflareAccessConfigs)
-        .where(eq(cloudflareAccessConfigs.userId, userId))
-        .orderBy(asc(cloudflareAccessConfigs.id))
-        .for("update");
-      await tx.delete(sshConnections).where(eq(sshConnections.userId, userId));
-      await tx.delete(sshCredentials).where(eq(sshCredentials.userId, userId));
-      await tx
-        .delete(cloudflareAccessConfigs)
-        .where(eq(cloudflareAccessConfigs.userId, userId));
-    });
+    await deleteClerkSshResources(db, { kind: "user", userId });
     signal.throwIfAborted();
-    await db.transaction(async (tx) => {
-      await deleteStoragesWithPiMemoryCandidates(
-        tx,
-        eq(storages.userId, userId),
-      );
-    });
+    const cleanupJobIds = await deleteClerkStorageReferences(
+      db,
+      { kind: "user", userId },
+      signal,
+    );
     signal.throwIfAborted();
     await db
       .delete(piMemoryStage1Days)
@@ -928,7 +954,13 @@ const deleteUserData$ = command(
     signal.throwIfAborted();
     await db.delete(variables).where(eq(variables.userId, userId));
     signal.throwIfAborted();
-    await db.delete(exportJobs).where(eq(exportJobs.userId, userId));
+    cleanupJobIds.push(
+      ...(await deleteClerkExportReferences(
+        db,
+        { kind: "user", userId },
+        signal,
+      )),
+    );
     signal.throwIfAborted();
     await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
     signal.throwIfAborted();
@@ -977,12 +1009,12 @@ const deleteUserData$ = command(
     signal.throwIfAborted();
     await db.delete(users).where(eq(users.id, userId));
     signal.throwIfAborted();
-    return released.slots;
+    return { slots: released.slots, cleanupJobIds };
   },
 );
 
 export const cleanupClerkDeletedOrg$ = command(
-  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
     await set(eraseVncOwnerData$, { kind: "organization", orgId }, signal);
@@ -1004,13 +1036,17 @@ export const cleanupClerkDeletedOrg$ = command(
     );
     await set(cleanupOrgExternalServices$, orgId, false, signal);
     signal.throwIfAborted();
-    await get(deleteOrgS3Data(db, orgId));
-    signal.throwIfAborted();
-    released.collect(await set(deleteOrgData$, orgId, signal));
+    const removed = await set(deleteOrgData$, orgId, signal);
+    released.collect(removed.slots);
     signal.throwIfAborted();
     // Picked only once the data is gone: deleting the organization's Agents
     // cascaded its chat threads and their queued rows, so nothing launches.
     set(scheduleReleasedSlotPicks$, released.slots, signal);
+    await set(
+      executeStorageObjectCleanupWork$,
+      { jobIds: removed.cleanupJobIds },
+      signal,
+    );
   },
 );
 
@@ -1084,22 +1120,24 @@ export const cleanupClerkDeletedUser$ = command(
       signal.throwIfAborted();
     }
 
-    await get(deleteUserS3Data(db, userId));
+    const removed = await set(deleteUserData$, userId, signal);
+    released.collect(removed.slots);
+    const cleanupJobIds = removed.cleanupJobIds;
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      await get(deleteOrgS3Data(db, orgId));
-      signal.throwIfAborted();
-    }
-
-    released.collect(await set(deleteUserData$, userId, signal));
-    signal.throwIfAborted();
-    for (const orgId of emptyOrgIds) {
-      released.collect(await set(deleteOrgData$, orgId, signal));
+      const removedOrg = await set(deleteOrgData$, orgId, signal);
+      released.collect(removedOrg.slots);
+      cleanupJobIds.push(...removedOrg.cleanupJobIds);
       signal.throwIfAborted();
     }
     // Picked only once the user's data is gone, so the slots go to other
     // members' waiting threads.
     set(scheduleReleasedSlotPicks$, released.slots, signal);
+    await set(
+      executeStorageObjectCleanupWork$,
+      { jobIds: cleanupJobIds },
+      signal,
+    );
   },
 );
 

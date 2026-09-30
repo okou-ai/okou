@@ -53,7 +53,6 @@ async function instructionSource(args: InstructionsArgs, signal: AbortSignal) {
       storageId: storages.id,
       versionId: storageVersions.id,
       s3Key: storageVersions.s3Key,
-      archiveSize: storageVersions.archiveSize,
     })
     .from(storages)
     .innerJoin(
@@ -126,11 +125,7 @@ export const readUserExportAgentInstructions$ = command(
     );
     signal.throwIfAborted();
     const indexed = indexes.get(source.versionId);
-    if (
-      indexed &&
-      (indexed.storageId !== source.storageId ||
-        indexed.archiveSize !== source.archiveSize)
-    ) {
+    if (indexed && indexed.storageId !== source.storageId) {
       throw new Error(
         "Agent instruction index does not match its source version",
       );
@@ -142,11 +137,9 @@ export const readUserExportAgentInstructions$ = command(
     if (indexedFile?.text?.kind === "text") {
       bytes = Buffer.from(indexedFile.text.value, "utf8");
     } else {
-      if (source.archiveSize > MAX_LEGACY_ARCHIVE_BYTES) {
-        throw new Error(
-          "Unindexed agent instructions exceed the 32 MiB archive limit",
-        );
-      }
+      // A registered archive length may describe an older gzip encoding.
+      // Bound the actual download and authenticate extracted bytes against
+      // the manifest instead of requiring its byte length to match that hint.
       const archive = await get(
         downloadS3BufferWithMaxBytes(
           args.bucket,
@@ -156,11 +149,6 @@ export const readUserExportAgentInstructions$ = command(
         ),
       );
       signal.throwIfAborted();
-      if (archive.length !== source.archiveSize) {
-        throw new Error(
-          "Agent instruction archive size does not match its source version",
-        );
-      }
       const file = extractBinaryFilesFromTarGz(
         archive,
         [instruction.path],

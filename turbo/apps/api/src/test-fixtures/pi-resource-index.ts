@@ -128,3 +128,55 @@ export async function prepareEmptyPiWritebackSnapshotFixture(
     preparePiResourceSnapshot({ db: db(), mounts: [mount] }, signal),
   );
 }
+
+/** No public endpoint prepares a resource snapshot in isolation. Resolve only
+ * a test-owned committed version, then exercise the production snapshot loader
+ * with a captured archive length that may differ from the R2 response. */
+export async function prepareRegisteredPiResourceSnapshotFixture(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly storageName: string;
+    readonly versionId: string;
+    readonly mountPath: string;
+    readonly archiveUrl: string;
+    readonly archiveSize: number;
+  },
+  signal: AbortSignal,
+) {
+  const [version] = await db()
+    .select({
+      storageId: storages.id,
+      name: storages.name,
+      orgId: storages.orgId,
+      userId: storages.userId,
+    })
+    .from(storageVersions)
+    .innerJoin(storages, eq(storages.id, storageVersions.storageId))
+    .where(
+      and(
+        eq(storageVersions.id, args.versionId),
+        eq(storages.orgId, args.orgId),
+        eq(storages.userId, args.userId),
+        eq(storages.name, args.storageName),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (!version) {
+    throw new Error("Expected a test-owned committed Storage version");
+  }
+  const mount: StoredStorageMountEntry = {
+    name: version.name,
+    storageId: version.storageId,
+    versionId: args.versionId,
+    mountPath: args.mountPath,
+    orgId: version.orgId,
+    userId: version.userId,
+    archiveUrl: args.archiveUrl,
+    archiveSize: args.archiveSize,
+  };
+  return await createStore().get(
+    preparePiResourceSnapshot({ db: db(), mounts: [mount] }, signal),
+  );
+}

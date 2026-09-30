@@ -2554,7 +2554,7 @@ describe("workflows", () => {
     await api.requestCancelRun(actor, sourceRun.runId, [200]);
   });
 
-  it("reuses and repairs immutable workflow volume versions without moving HEAD during preparation", async () => {
+  it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Immutable Volume Agent",
@@ -2669,49 +2669,39 @@ describe("workflows", () => {
       firstVersionId,
       firstArchive.length + 1,
     );
-    s3.objects.delete(firstArchiveKey);
     s3.clearWrites();
-    let observedRepairPreparation = false;
-    s3.beforeNextArchiveWrite(async (key, body) => {
-      expect(key).toBe(firstArchiveKey);
-      expect(body).toStrictEqual(firstArchive);
-      expect(
-        (await readWorkflowStorageState(actor, workflow.body.id))
-          ?.head_version_id,
-      ).toBe(secondVersionId);
-      observedRepairPreparation = true;
-    });
-
+    context.mocks.s3.send.mockClear();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: firstInstruction,
       files: firstFiles,
     });
-    expect(observedRepairPreparation).toBeTruthy();
-    expect(
-      s3.writes.map((write) => {
-        return write.key;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        firstArchiveKey,
-        `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
-      ]),
-    );
-    expect(
-      s3.writes.find((write) => {
-        return write.key === firstArchiveKey;
-      })?.body,
-    ).toStrictEqual(firstArchive);
+    expect(s3.writes).toHaveLength(0);
     expect(
       (await readWorkflowStorageState(actor, workflow.body.id))
         ?.head_version_id,
     ).toBe(firstVersionId);
     await expect(
       readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
-    ).resolves.toMatchObject({ archive_size: firstArchive.length });
+    ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
+    // Detail reads may GET the manifest on a cache miss. Registered-version
+    // reuse must not probe or PUT the archive/manifest again.
+    const registeredKeys = new Set([
+      firstArchiveKey,
+      `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
+    ]);
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return (
+          (command instanceof HeadObjectCommand ||
+            command instanceof PutObjectCommand) &&
+          command.input.Key !== undefined &&
+          registeredKeys.has(command.input.Key)
+        );
+      }),
+    ).toHaveLength(0);
   });
 
-  it("repairs workflow archives deterministically across path order and umask", async () => {
+  it("reuses an existing workflow archive across path order and umask", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Duplicate Path Volume Agent",
@@ -2747,21 +2737,15 @@ describe("workflows", () => {
       throw new Error("Expected the duplicate-path workflow archive");
     }
 
-    s3.objects.delete(archiveKey);
-    let observedRepair = false;
-    s3.beforeNextArchiveWrite((key, body) => {
-      expect(key).toBe(archiveKey);
-      expect(body).toStrictEqual(initialArchive);
-      observedRepair = true;
-    });
-
+    s3.clearWrites();
     process.umask(0o077);
     await updateWorkflow(actor, workflow.body.id, {
       files: [...duplicateFiles].reverse(),
     });
     process.umask(originalUmask);
 
-    expect(observedRepair).toBeTruthy();
+    expect(s3.writes).toHaveLength(0);
+    expect(s3.objects.get(archiveKey)).toStrictEqual(initialArchive);
     expect(
       (await readWorkflowStorageState(actor, workflow.body.id))
         ?.head_version_id,

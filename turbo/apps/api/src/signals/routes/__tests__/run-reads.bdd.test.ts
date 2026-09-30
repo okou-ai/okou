@@ -1164,25 +1164,30 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       versionId: volumeVersion,
       files: [volumeFile],
     });
-    const refreshedVolumeArchiveSize = 23_456;
-    const forcedPrepare = await storages.prepareStorage(actor, {
+    const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+    context.mocks.s3.send.mockClear();
+    context.mocks.s3.send.mockRejectedValue(
+      new Error("Registered version reuse must not access R2"),
+    );
+    const repeatedPrepare = await storages.prepareStorage(actor, {
       storageName: volumeName,
       storageOwner: "organization",
       files: [volumeFile],
       force: true,
     });
-    expect(forcedPrepare).toMatchObject({
+    expect(repeatedPrepare).toStrictEqual({
       versionId: volumeVersion,
-      existing: false,
-      uploads: expect.any(Object),
+      existing: true,
     });
-    storages.mockStorageObjectsExist(refreshedVolumeArchiveSize);
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
     await storages.commitStorage(actor, {
       storageName: volumeName,
       storageOwner: "organization",
       versionId: volumeVersion,
       files: [volumeFile],
     });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    storages.mockStorageObjectsExist(volumeArchiveSize);
 
     const composeName = `bdd-resume-${randomUUID().slice(0, 8)}`;
     const compose = await api.createDirectAgent(actor, {
@@ -1240,7 +1245,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
           name: volumeName,
           mountPath: "/data",
           versionId: volumeVersion,
-          archiveSize: refreshedVolumeArchiveSize,
+          archiveSize: volumeArchiveSize,
         }),
       ]),
     );

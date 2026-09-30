@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
+import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -13,7 +14,9 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
@@ -6708,13 +6711,11 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       );
     });
-    const survivingRun = await runs.requestReadRun(actor, run.runId, [200]);
-    expect(survivingRun.status).toBe(200);
-    // The onboarding default agent and the teardown agent both survive.
-    await expect(bdd.listAgents(actor)).resolves.toHaveLength(2);
+    await runs.requestReadRun(actor, run.runId, [404]);
+    await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
 
-    // The redelivered event completes the teardown, deleting storage
-    // objects and all org-scoped resources.
+    // R2 failure no longer preserves live DB references. The durable cleanup
+    // inventory survives those deletions and owns the later object retry.
     const deletedS3Keys: string[] = [];
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const input = commandInput(command);
@@ -6739,22 +6740,15 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       }
       return Promise.resolve({});
     });
-    api.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgOf(actor) },
-    });
-    const redelivery = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(redelivery.body).toBe("OK");
-    await flushWaitUntilForTest();
-
-    await expect
-      .poll(() => {
-        return deletedS3Keys.length;
-      })
-      .toBeGreaterThan(0);
-    // The redelivered webhook responds OK before the teardown finishes, so
-    // the resource deletions land asynchronously — poll instead of asserting
-    // a single snapshot.
+    await accept(
+      setupApp({ context, routes: testStorageObjectCleanupRoutes })(
+        testStorageObjectCleanupContract,
+      ).retry({
+        body: { kind: "organization", orgId: orgOf(actor) },
+      }),
+      [200],
+    );
+    expect(deletedS3Keys.length).toBeGreaterThan(0);
     await waitForExpectation(async () => {
       await runs.requestReadRun(actor, run.runId, [404]);
     });
