@@ -32,7 +32,7 @@ import { logger } from "../../lib/log";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
@@ -2204,11 +2204,6 @@ export interface QueuedChatPromptData {
   readonly userId: string;
   readonly agent: AgentForAutoSend;
   readonly queuedMessage: QueuedUserMessage;
-}
-
-interface CreateQueuedChatRunInputArgs extends QueuedChatPromptData {
-  readonly db: ReadonlyDb;
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
 }
 
 type QueuedIntegrationDeliveries = Pick<
