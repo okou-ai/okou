@@ -1,55 +1,88 @@
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import type { Tx } from "../../lib/db-types";
+import { waitUntil } from "../context/wait-until";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
-  type PgPoolAcquisitionCapture,
-  withPgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
+  isFreePlanForCreditAdmission,
+  checkOrgPlanRunAdmission,
+  type OrgCreditAvailability,
+  type RunAdmissionInput,
+} from "./run-admission.service";
+import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
+import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
-  nullableDriverValueDecoder,
-  zodDriverValueDecoder,
-  zodEnumDriverValueDecoder,
-  pgBooleanDecoder,
-  pgInt8ToBigIntDecoder,
-  pgInt8ToSafeIntegerDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
-import { env, optionalEnv } from "../../lib/env";
+  acquireOfficialWorkflowRunCatalogAdmissionLock,
+  validateOfficialWorkflowRunForInsert,
+  acceptedRunCandidates,
+  assembleRunObservation,
+  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
+  OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowRunObservation,
+} from "./official-workflow-run.service";
 import {
-  AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-  badRequestMessage,
-  conflict,
-  notFound,
-  insufficientCredits as pickChatRunModelInsufficientCredits,
-  providerUnavailable,
-} from "../../lib/error";
-import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
-import { logger } from "../../lib/log";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
+  resolveQueueFirstRunAdmission,
+  claimQueueFirstRunAssociation,
+  isWebChatContextType,
+  type QueuedUserMessage,
+  type QueuedUserMessageContextType,
+  queuedUserMessageTriggerSource,
+} from "./chat-queued-event.service";
 import {
-  buildSlackSystemPrompt,
-  canonicalSlackAgentPrompt,
-  resolveUserMentions,
-} from "../../lib/slack-webhook-context";
-import { now, nowDate } from "../../lib/time";
-import { previewAutomationBypass$ } from "../context/hono";
-import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
-import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
+  activateUsageAllowanceWindowsForRun,
+  ACTIVE_ALLOWANCE_STATUSES,
+  activeAllowanceCutoff,
+  lockOrgCredits,
+  remainingUnits,
+  resolveAvailabilityInLockedTransaction,
+  type UsageAllowanceAvailabilitySnapshot,
+} from "./usage-allowance.service";
 import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
-import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { publicPresignedGetUrlSigner$ } from "../external/s3";
-import type { SlackUserInfo } from "../external/slack-message-client";
-import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { onRejection, safeSync, settle, tapError } from "../utils";
-import { buildAgentExecutionConfig } from "./agent-execution-config";
+  bindMorningBriefScheduleClaimRun,
+  morningBriefScheduleClaimBound,
+  morningBriefScheduleClaimSuperseded,
+} from "./morning-brief-schedule-claim.service";
+import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
+import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
+import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import {
-  createAgentBootstrapObjects,
-  type PrefetchedAgentBootstrap,
-} from "./agent-bootstrap";
-import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
+  recordQueuedPromptRunLaunch$,
+  buildChatPriorRunsContext,
+  buildQueuedCreateAgentRunArgs,
+  ChatCallbackPreCreateTimingCollector,
+  type CreateQueuedChatRunInput,
+  type CreateQueuedChatRunInputArgs,
+  deliverQueuedPromptRejection$,
+  deliverUnexpectedQueuedPromptRejection$,
+  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
+  type PriorRunEvent,
+  queuedChatRunCallbackInputs,
+  queuedIntegrationLaunchFields,
+  type QueuedLaunchMaterial,
+  queuedMessageAdmissionFailure,
+  type QueuedMessageAdmissionFailure,
+  type QueuedMessageModelRouteResolution,
+  queuedMessageRejection,
+  type QueuedPromptLaunchContext,
+  type QueuedRunAdmissionFailureInput,
+  queuedUserMessageProjection,
+  rejectedQueuedRunAdmissionFailure,
+  routeQueuedMessagePiExecution,
+} from "./internal-chat-run-callback.service";
+import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
+  type AtomicLaunchCommitCompletion,
+  type AtomicLaunchCommitResult,
+  type PreparedCommitPreparedLaunchArgs,
+  timingDimensionsForCreateArgs,
+  admissionAttemptOutcome,
+  validateThreadSessionSnapshot,
+  validateCapturedSubscriptionAccount,
+  buildAtomicLaunchCteContext,
+  persistPendingAtomicLaunch,
+  persistThreadSessionBinding,
+  committedAtomicLaunchResponse,
+  flushQueueFirstClaimLostTiming,
   type AgentRunAfterPreCreate,
   type AgentRunCreateBody,
   type AgentRunGraphInput,
@@ -204,6 +237,58 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
   withPaidToolPlatformEnvironment,
 } from "./agent-run-execution.service";
+import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  type PgPoolAcquisitionCapture,
+  withPgPoolAcquisitionCapture,
+} from "../../lib/db-instrumentation";
+import { executeRawRows } from "../../lib/db-raw-rows";
+import {
+  nullableDriverValueDecoder,
+  zodDriverValueDecoder,
+  zodEnumDriverValueDecoder,
+  pgBooleanDecoder,
+  pgInt8ToBigIntDecoder,
+  pgInt8ToSafeIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
+import { env, optionalEnv } from "../../lib/env";
+import {
+  AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+  badRequestMessage,
+  conflict,
+  notFound,
+  insufficientCredits as pickChatRunModelInsufficientCredits,
+  providerUnavailable,
+} from "../../lib/error";
+import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
+import { logger } from "../../lib/log";
+import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
+import {
+  buildSlackSystemPrompt,
+  canonicalSlackAgentPrompt,
+  resolveUserMentions,
+} from "../../lib/slack-webhook-context";
+import { now, nowDate } from "../../lib/time";
+import { previewAutomationBypass$ } from "../context/hono";
+import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
+import {
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
+} from "../external/realtime";
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
+import { publicPresignedGetUrlSigner$ } from "../external/s3";
+import type { SlackUserInfo } from "../external/slack-message-client";
+import { getOfficialTelegramBotConfig } from "../external/telegram-official";
+import { onRejection, safeSync, settle, tapError } from "../utils";
+import { buildAgentExecutionConfig } from "./agent-execution-config";
+import {
+  createAgentBootstrapObjects,
+  type PrefetchedAgentBootstrap,
+} from "./agent-bootstrap";
+import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
+
 import {
   observeAgentRunPiExecutionSnapshot,
   observeAgentRunPreCreateParallelStage,
@@ -250,12 +335,7 @@ import type {
   ChatQueueHeadRejection,
   ChatQueueHeadContext,
 } from "./chat-queue-run-assembly";
-import {
-  isWebChatContextType,
-  type QueuedUserMessage,
-  type QueuedUserMessageContextType,
-  queuedUserMessageTriggerSource,
-} from "./chat-queued-event.service";
+
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import {
   chatThreadConversationRun,
@@ -339,29 +419,7 @@ import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import {
-  buildChatPriorRunsContext,
-  buildQueuedCreateAgentRunArgs,
-  ChatCallbackPreCreateTimingCollector,
-  type CreateQueuedChatRunInput,
-  type CreateQueuedChatRunInputArgs,
-  deliverQueuedPromptRejection$,
-  deliverUnexpectedQueuedPromptRejection$,
-  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
-  type PriorRunEvent,
-  queuedChatRunCallbackInputs,
-  queuedIntegrationLaunchFields,
-  type QueuedLaunchMaterial,
-  queuedMessageAdmissionFailure,
-  type QueuedMessageAdmissionFailure,
-  type QueuedMessageModelRouteResolution,
-  queuedMessageRejection,
-  type QueuedPromptLaunchContext,
-  type QueuedRunAdmissionFailureInput,
-  queuedUserMessageProjection,
-  rejectedQueuedRunAdmissionFailure,
-  routeQueuedMessagePiExecution,
-} from "./internal-chat-run-callback.service";
+
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   type MemorySummaryProjectionReadInput,
@@ -395,13 +453,7 @@ import {
   dispatchConfiguredOfficialWorkflowReconciliation$,
   type OfficialWorkflowReconciliationResult,
 } from "./official-workflow-reconciliation-dispatch.service";
-import {
-  acceptedRunCandidates,
-  assembleRunObservation,
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowRunObservation,
-} from "./official-workflow-run.service";
+
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -413,11 +465,6 @@ import {
   selectedUserPresentationTemplateIds,
   userPresentationTemplateVolumes,
 } from "./presentation-template-data.service";
-import {
-  checkOrgPlanRunAdmission,
-  type OrgCreditAvailability,
-  type RunAdmissionInput,
-} from "./run-admission.service";
 import {
   planStorageManifestMixedLookup,
   signStorageManifestPresignedUrls,
@@ -436,14 +483,7 @@ import {
   telegramDeliveryTargetSchema,
 } from "./telegram-chat-callback-payload";
 import { buildTelegramPrompt } from "./telegram-prompt";
-import {
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
-  lockOrgCredits,
-  remainingUnits,
-  resolveAvailabilityInLockedTransaction,
-  type UsageAllowanceAvailabilitySnapshot,
-} from "./usage-allowance.service";
+
 import {
   selectedUserTemplateIds,
   userTemplateVolumes,
@@ -597,7 +637,7 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { variables } from "@okouai/db/schema/variable";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
 import {
   and,
@@ -630,7 +670,6 @@ export interface ThreadClaim {
   readonly chatThreadId: string;
   readonly claimId: string;
   /** App-clock time the pick claimed the thread; the run's API start. */
-  readonly pickStartedAt: number;
 }
 
 interface QueuedModelInput {
@@ -1759,14 +1798,14 @@ function claimAssemblyRejection(
 
 /**
  * Dispatch timing for one pick, created by the parent after its claim and
- * passed as a plain argument; it is not part of the prepared RunContext.
+ * passed as a plain argument; it is not part of the prepared ThreadRunContext.
  */
-export interface ClaimRunTiming {
+interface ClaimRunTiming {
   readonly run: ApiDispatchTimingCollector;
   readonly phase: ApiDispatchPhaseCollector;
 }
 
-export interface RunContext {
+interface ThreadRunContext {
   readonly kind: "prepared";
   readonly input: Omit<
     RunPlan,
@@ -1795,7 +1834,7 @@ export interface RunContext {
 
 function claimCommitArguments(
   args: CreateAgentRunArgs,
-): RunContext["input"]["args"] {
+): ThreadRunContext["input"]["args"] {
   return {
     userId: args.userId,
     orgId: args.orgId,
@@ -1834,9 +1873,9 @@ function firstPreparationFailure(
 
 /** Encode the final pending payload before it crosses the claim boundary. */
 function finalizeClaimRunContext(
-  context: Omit<RunContext, "persistence">,
+  context: Omit<ThreadRunContext, "persistence">,
   timing: ApiDispatchTimingCollector,
-): RunContext {
+): ThreadRunContext {
   return {
     ...context,
     persistence: prepareAtomicLaunchPersistence({
@@ -2268,7 +2307,7 @@ const runCustomConnectorStoredValueKindDecoder = zodEnumDriverValueDecoder(
   z.enum(["secret", "variable"]),
 );
 
-function claimCommitInput(input: RunPlan): RunContext["input"] {
+function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   const args = claimCommitArguments(input.args);
   return {
     args,
@@ -2299,7 +2338,7 @@ function claimCommitInput(input: RunPlan): RunContext["input"] {
 
 function claimRejectionContext(
   rejection: ClaimRejectionContext,
-): RunContext["rejection"] {
+): ThreadRunContext["rejection"] {
   if (rejection.kind === "automation") {
     return rejection;
   }
@@ -2376,75 +2415,367 @@ function storageManifestCacheLookupCondition(
   );
 }
 
-export function createClaimRunObjects(
+type PendingClaimRun = {
+  readonly kind: "pending";
+  readonly runId: string;
+  readonly activation: PendingRunActivation;
+  readonly context: ThreadRunContext;
+};
+
+type ClaimRunCommit =
+  | PendingClaimRun
+  | { readonly kind: "passed" }
+  | {
+      readonly kind: "rejected";
+      readonly error: { readonly code: string; readonly message: string };
+    };
+
+/** A picked input whose preparation or commit failed unexpectedly. */
+const ABANDONED_HEAD_ERROR = {
+  code: "INTERNAL_ERROR",
+  message: "The input could not be started",
+} as const;
+
+type AdmittedClaimRun = {
+  readonly kind: "admitted";
+  readonly validatedThreadSession: Awaited<
+    ReturnType<typeof validateThreadSessionSnapshot>
+  >;
+  readonly validatedAccountIdentity: string | null;
+  readonly queueFirstClaim: Extract<
+    Awaited<ReturnType<typeof claimQueueFirstRunAssociation>>,
+    { kind: "claimed" }
+  >;
+};
+
+type ClaimRunAdmission =
+  | AdmittedClaimRun
+  | Exclude<AtomicLaunchCommitCompletion["result"], { kind: "pending" }>;
+
+/** Revalidate only the captured admission facts under the pending transaction. */
+async function validateClaimedRunAdmission(
+  tx: Tx,
   claim: ThreadClaim,
-  prefetchedBootstrap?: PrefetchedAgentBootstrap,
-) {
-  const appendChatQueueHeadRejection$ = command(
-    async (
-      { set },
-      args: {
-        readonly chatThreadId: string;
-        readonly eventId: string;
-        readonly errorMarker: string;
-        readonly displayError: string;
+  context: ThreadRunContext,
+  preparedCommit: PreparedCommitPreparedLaunchArgs,
+  timing: ApiDispatchTimingCollector,
+): Promise<ClaimRunAdmission> {
+  const { input, identity, launch } = context;
+  const { admissionTiming } = preparedCommit;
+  const validateOfficialAdmission = () => {
+    return timing.measure(
+      "api_dispatch_validate_official_workflow_admission",
+      "nested",
+      () => {
+        return validateOfficialWorkflowRunForInsert(tx, {
+          observation: input.context.officialWorkflowRun,
+          orgId: input.args.orgId,
+          userId: input.args.userId,
+          agentId: input.context.resolved.agentId,
+          automationId: input.args.agentRunMetadata?.workflowAutomationId,
+          runStorageMounts: launch.runStorageMounts,
+          allowMissingMountsForFailedRun: false,
+        });
       },
-      signal: AbortSignal,
-    ): Promise<{ readonly assistantEventId: string } | null> => {
-      signal.throwIfAborted();
-      const result = await set(writeDb$).transaction(async (tx) => {
-        const [head] = await tx
-          .select({
-            userMessage: canonicalChatEventUserMessage(),
-            createdAt: chatEvents.createdAt,
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, args.eventId),
-              eq(chatEvents.chatThreadId, args.chatThreadId),
-            ),
-          )
-          .limit(1);
-        if (!head?.userMessage) {
-          throw new Error("Queued input event is missing userMessage");
-        }
-        const rejectedAt = new Date(
-          Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
-        );
-        const rejected = await replaceChatEvent(tx, args.eventId, {
-          chatThreadId: args.chatThreadId,
-          eventType: "input.rejected",
-          userMessage: head.userMessage,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: rejectedAt,
-        });
-        if (!rejected) {
-          return null;
-        }
-        const assistant = await insertChatEvent(tx, {
-          chatThreadId: args.chatThreadId,
-          eventType: "output.error",
-          content: args.displayError,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: new Date(rejectedAt.getTime() + 1),
-        });
-        if (!assistant) {
-          throw new Error("Failed to append queued input rejection");
-        }
-        await touchChatThreadLastMessageAt(
-          tx,
-          args.chatThreadId,
-          assistant.createdAt,
-        );
-        return { assistantEventId: assistant.id };
+    );
+  };
+  const officialFailure = input.context.officialWorkflowRun
+    ? await admissionTiming.measureLeaf(
+        "official_workflow",
+        validateOfficialAdmission,
+      )
+    : await validateOfficialAdmission();
+  if (officialFailure) {
+    return conflict(officialFailure.message);
+  }
+  const validatedThreadSession = await admissionTiming.measureLeaf(
+    "thread_session",
+    () => {
+      return validateThreadSessionSnapshot(tx, {
+        createArgs: input.args,
+        identity,
+        timing: timing,
       });
-      signal.throwIfAborted();
-      return result;
     },
   );
+  const subscription = await validateCapturedSubscriptionAccount(
+    tx,
+    preparedCommit,
+  );
+  if (subscription && !("identity" in subscription)) {
+    return subscription;
+  }
+  const association = input.args.queueFirstAssociation;
+  const modelPin = input.args.agentRunModelPin;
+  if (
+    !association ||
+    association.threadId !== claim.chatThreadId ||
+    !modelPin
+  ) {
+    throw new Error(
+      "Chat run commit requires its captured input association and model pin",
+    );
+  }
+  const queueFirstClaim = await admissionTiming.measureLeaf(
+    "queue_first",
+    async () => {
+      const admission = await resolveQueueFirstRunAdmission(tx, {
+        association,
+        sessionSnapshotState: validatedThreadSession
+          ? "current"
+          : "unvalidated",
+        timing: timing,
+      });
+      return await claimQueueFirstRunAssociation(tx, {
+        ...association,
+        admission,
+        runId: identity.runId,
+        selectedModel: modelPin.selectedModel,
+        ...(input.args.codexServiceTier
+          ? {
+              serviceTier:
+                input.args.codexServiceTier === "fast"
+                  ? ("priority" as const)
+                  : ("ultrafast" as const),
+            }
+          : {}),
+        timing: timing,
+      });
+    },
+  );
+  if (queueFirstClaim.kind === "lost") {
+    return { kind: "queue-first-claim-lost" };
+  }
+  return {
+    kind: "admitted",
+    validatedThreadSession,
+    validatedAccountIdentity: subscription?.identity ?? null,
+    queueFirstClaim,
+  };
+}
+
+/** Producer ownership is persisted with the run rather than carried as a callback. */
+async function persistClaimProducerBinding(
+  tx: Tx,
+  context: ThreadRunContext,
+  runId: string,
+): Promise<void> {
+  const producer = context.producerBinding;
+  if (producer?.kind === "automation") {
+    await bindMorningBriefScheduleClaimRun(tx, {
+      queueEventId: producer.queueEventId,
+      runId,
+    });
+  } else if (producer?.kind === "reassign-agent") {
+    await tx
+      .update(chatThreads)
+      .set({ agentId: producer.agentId })
+      .where(
+        and(
+          eq(chatThreads.id, producer.threadId),
+          eq(chatThreads.userId, producer.userId),
+          eq(chatThreads.agentId, producer.expectedAgentId),
+        ),
+      );
+    await appendChatThreadEvent(tx, {
+      kind: "sort_touched",
+      chatThreadId: producer.threadId,
+      userId: producer.userId,
+      orgId: producer.orgId,
+      agentId: producer.agentId,
+      reassignedAgentId: producer.agentId,
+    });
+  }
+}
+
+/** All writes here use the parent's one pending transaction. */
+async function persistClaimedRun(
+  tx: Tx,
+  context: ThreadRunContext,
+  preparedCommit: PreparedCommitPreparedLaunchArgs,
+  admission: AdmittedClaimRun,
+  timing: ApiDispatchTimingCollector,
+): Promise<Extract<AtomicLaunchCommitResult, { kind: "pending" }>> {
+  const { input, identity, launch } = context;
+  const { admissionTiming, persistence } = preparedCommit;
+  const persisted = await admissionTiming.measureLeaf(
+    "persistence",
+    async () => {
+      const capabilities = input.enforceBuiltInCredits
+        ? await loadOrgPlanCapabilities(tx, input.args.orgId, {
+            forUpdate: true,
+          })
+        : null;
+      const creditAdmitted =
+        input.enforceBuiltInCredits &&
+        isFreePlanForCreditAdmission(capabilities?.planKey);
+      if (input.args.threadSessionResolution?.resetNativeSession) {
+        await tx
+          .update(agentSessions)
+          .set({
+            agentId: input.context.resolved.agentId,
+            conversationId: null,
+            storageMounts: [...launch.sessionStorageMounts],
+          })
+          .where(eq(agentSessions.id, identity.sessionId));
+      }
+      const rows = {
+        tx,
+        commit: preparedCommit,
+        payload: persistence.payload,
+        validatedThreadSession: admission.validatedThreadSession,
+        validatedAccountIdentity: admission.validatedAccountIdentity,
+      };
+      const ctes = buildAtomicLaunchCteContext(rows, creditAdmitted);
+      const rowsPersisted = await timing.measure(
+        "api_dispatch_persist_atomic_launch",
+        "nested",
+        () => {
+          return persistPendingAtomicLaunch(rows, ctes);
+        },
+      );
+      await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
+      await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
+      observePreparedLaunchPersistenceForTest(
+        input.args.agentRunMetadata?.workflowAutomationId,
+      );
+      const threadSessionBinding =
+        input.args.chatThreadId && !admission.validatedThreadSession
+          ? await persistThreadSessionBinding(tx, {
+              chatThreadId: input.args.chatThreadId,
+              identity,
+              resolution: input.args.threadSessionResolution,
+              timing: timing,
+            })
+          : rowsPersisted.threadSessionBinding;
+      return { ...rowsPersisted, threadSessionBinding };
+    },
+  );
+  if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
+    await admissionTiming.measureLeaf("usage_allowance", async () => {
+      const startedAt = now();
+      await activateUsageAllowanceWindowsForRun(tx, {
+        orgId: input.args.orgId,
+        runId: persisted.run.id,
+        runCreatedAt: persisted.run.createdAt,
+      });
+      timing.recordElapsed(
+        "api_dispatch_activate_usage_allowance_windows",
+        "nested",
+        startedAt,
+      );
+    });
+  }
+  return {
+    ...persisted,
+    runnerJobPayload: persistence.payload,
+    runContextSnapshot: launch.runContextSnapshot,
+    queueFirstClaim: admission.queueFirstClaim,
+  };
+}
+
+/**
+ * Reuse this outer graph for one organization pass. Each successful claim gets
+ * one isolated child graph in the same request Store. The cursor advances over
+ * selected work; it never retries a failed launch within this pass.
+ */
+/**
+ * Replace an unconsumed queued input with `input.rejected` and append its
+ * visible error. Returns null when the input was already consumed.
+ */
+async function appendQueueHeadRejection(
+  tx: Tx,
+  args: {
+    readonly chatThreadId: string;
+    readonly eventId: string;
+    readonly errorMarker: string;
+    readonly displayError: string;
+  },
+): Promise<{
+  readonly assistantEventId: string;
+  readonly contextType: string | null;
+  readonly contextId: string | null;
+} | null> {
+  const [head] = await tx
+    .select({
+      userMessage: canonicalChatEventUserMessage(),
+      createdAt: chatEvents.createdAt,
+      contextType: chatEvents.contextType,
+      contextId: chatEvents.contextId,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+      ),
+    )
+    .limit(1);
+  if (!head?.userMessage) {
+    throw new Error("Queued input event is missing userMessage");
+  }
+  const rejectedAt = new Date(
+    Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
+  );
+  const rejected = await replaceChatEvent(tx, args.eventId, {
+    chatThreadId: args.chatThreadId,
+    eventType: "input.rejected",
+    userMessage: head.userMessage,
+    runId: null,
+    error: args.errorMarker,
+    createdAt: rejectedAt,
+  });
+  if (!rejected) {
+    return null;
+  }
+  const assistant = await insertChatEvent(tx, {
+    chatThreadId: args.chatThreadId,
+    eventType: "output.error",
+    content: args.displayError,
+    runId: null,
+    error: args.errorMarker,
+    createdAt: new Date(rejectedAt.getTime() + 1),
+  });
+  if (!assistant) {
+    throw new Error("Failed to append queued input rejection");
+  }
+  await touchChatThreadLastMessageAt(
+    tx,
+    args.chatThreadId,
+    assistant.createdAt,
+  );
+  return {
+    assistantEventId: assistant.id,
+    contextType: head.contextType,
+    contextId: head.contextId,
+  };
+}
+
+/** A picked queue head a rejection records, publishes and reports. */
+interface RejectedQueueHead {
+  readonly id: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  /** Null once the thread's agent is deleted; the source reply needs it. */
+  readonly agentId: string | null;
+  readonly contextType: string | null;
+  readonly contextId: string | null;
+}
+
+export interface ThreadClaimRunObjects {
+  readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
+  readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
+}
+
+export function createThreadClaimRunObjects(
+  claim: ThreadClaim,
+  prefetchedBootstrap?: PrefetchedAgentBootstrap,
+): ThreadClaimRunObjects {
+  const pickStartedAt$ = computed(() => {
+    return now();
+  });
+  const internalCommittedRunId$ = state<string | null>(null);
   const publishChatQueueHeadConsumed$ = command(
     async (
       _context,
@@ -2612,7 +2943,7 @@ export function createClaimRunObjects(
       get(input$),
       get(queueHeadContext$),
     ]);
-    const apiStartTime = claim.pickStartedAt;
+    const apiStartTime = get(pickStartedAt$);
     return context
       ? {
           id: input.head.id,
@@ -11471,109 +11802,125 @@ export function createClaimRunObjects(
   );
 
   const checkAdmission$ = runAdmissionCheckCheckAdmission$;
-  const capturedDirectSendInsufficientCreditsMessage$ = computed(
-    async (get) => {
-      const input = await get(input$);
-      if (!input) {
-        throw new Error("Rejection guidance requires a selected input");
-      }
-      const db = get(db$);
-      const [capabilities] = await db
-        .select({
-          canBuyCredits: orgPlanEntitlements.canBuyCredits,
-          restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-        })
-        .from(orgPlanEntitlements)
-        .where(eq(orgPlanEntitlements.orgId, input.orgId))
+  const directSendInsufficientCreditsMessage$ = computed(async (get) => {
+    const db = get(db$);
+    const [capabilities] = await db
+      .select({
+        canBuyCredits: orgPlanEntitlements.canBuyCredits,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, claim.orgId))
+      .limit(1);
+    if (!capabilities) {
+      const [org] = await db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, claim.orgId))
         .limit(1);
-      if (!capabilities) {
-        const [org] = await db
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, input.orgId))
-          .limit(1);
-        if (org) {
-          throw new Error(`Missing org plan entitlement for ${input.orgId}`);
-        }
-      } else if (capabilities.restrictedBuiltInModels === null) {
-        throw new Error(
-          `Unexpected NULL restricted_built_in_models for org plan entitlement ${input.orgId}`,
-        );
+      if (org) {
+        throw new Error(`Missing org plan entitlement for ${claim.orgId}`);
       }
-      const appUrl = env("APP_URL");
-      return [
-        "Insufficient credits. This workspace has no spendable credits right now.",
-        "",
-        capabilities?.canBuyCredits === true
-          ? `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`
-          : `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
-      ].join("\n");
-    },
-  );
-  const queueHeadRejectionRejectChatQueueHead$ = command(
+    } else if (capabilities.restrictedBuiltInModels === null) {
+      throw new Error(
+        `Unexpected NULL restricted_built_in_models for org plan entitlement ${claim.orgId}`,
+      );
+    }
+    const appUrl = env("APP_URL");
+    return [
+      "Insufficient credits. This workspace has no spendable credits right now.",
+      "",
+      capabilities?.canBuyCredits === true
+        ? `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`
+        : `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
+    ].join("\n");
+  });
+
+  /**
+   * The one rejection of a picked queue head, for business rejections and
+   * unexpected preparation or commit failures alike: record the rejected input
+   * and its error message, settle an automation tick, publish the realtime
+   * event and deliver the failure to the source integration. With `lease`, the
+   * rejection and the release of that lease commit together, and only while
+   * the claim still holds it; otherwise the transaction rolls back and nothing
+   * changes. The queue row is locked last, as enqueue does.
+   */
+  const rejectChatQueueHead$ = command(
     async (
       { get, set },
       args: {
-        readonly head: ChatQueueHeadContext;
+        readonly head: RejectedQueueHead;
         readonly rejection: ChatQueueHeadRejection;
+        readonly lease?: ThreadClaim;
       },
       signal: AbortSignal,
     ): Promise<void> => {
-      const { head, rejection } = args;
+      const { head, rejection, lease } = args;
+      const { error } = rejection;
       const displayError =
-        rejection.error.code === "CONFLICT"
-          ? rejection.error.message
-          : rejection.error.code === "INSUFFICIENT_CREDITS" &&
+        error.code === "CONFLICT"
+          ? error.message
+          : error.code === "INSUFFICIENT_CREDITS" &&
               isDirectSendContext(head.contextType)
-            ? await get(capturedDirectSendInsufficientCreditsMessage$)
+            ? await get(directSendInsufficientCreditsMessage$)
             : await set(
                 formatIntegrationRunError$,
                 {
                   orgId: head.orgId,
                   userId: rejection.userId,
-                  code: rejection.error.code,
-                  message: rejection.error.message,
+                  code: error.code,
+                  message: error.message,
                 },
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(
-        appendChatQueueHeadRejection$,
-        {
+      const rejected = await set(writeDb$).transaction(async (tx) => {
+        const appended = await appendQueueHeadRejection(tx, {
           chatThreadId: head.chatThreadId,
           eventId: head.id,
-          errorMarker: rejection.error.code.toLowerCase(),
+          errorMarker: error.code.toLowerCase(),
           displayError,
-        },
-        signal,
-      );
+        });
+        if (lease) {
+          const [released] = await tx
+            .update(queuedChatThreads)
+            .set({ claimId: null, claimExpiresAt: null })
+            .where(
+              and(
+                eq(queuedChatThreads.orgId, lease.orgId),
+                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
+                eq(queuedChatThreads.claimId, lease.claimId),
+              ),
+            )
+            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+          if (!released) {
+            tx.rollback();
+          }
+        }
+        return appended;
+      });
       signal.throwIfAborted();
       if (!rejected) {
         return;
       }
       const logRejection =
-        rejection.error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
+        error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
       logRejection("Rejected queued chat input", {
         chatThreadId: head.chatThreadId,
         eventId: head.id,
         contextType: head.contextType,
-        code: rejection.error.code,
-        error: rejection.error.message,
+        code: error.code,
+        error: error.message,
       });
       if (head.contextType === "automation") {
         await settleRejectedAutomationInput(
           set(writeDb$),
-          {
-            contextId: head.contextId,
-            queueEventId: head.id,
-            error: rejection.error,
-          },
+          { contextId: head.contextId, queueEventId: head.id, error },
           signal,
         );
       }
-      signal.throwIfAborted();
       await set(publishChatQueueHeadConsumed$, head, signal);
-      signal.throwIfAborted();
+      const agentId = head.agentId;
       const delivery = rejection.delivery
         ? set(
             deliverQueuedPromptRejection$,
@@ -11581,26 +11928,28 @@ export function createClaimRunObjects(
             rejected.assistantEventId,
             signal,
           )
-        : rejection.error.code === "INTERNAL_ERROR"
+        : error.code === "INTERNAL_ERROR" && agentId !== null
           ? set(
               deliverUnexpectedQueuedPromptRejection$,
-              { head, assistantEventId: rejected.assistantEventId },
+              {
+                head: { ...head, agentId },
+                assistantEventId: rejected.assistantEventId,
+              },
               signal,
             )
           : undefined;
-      if (!delivery) {
-        return;
-      }
-      await tapError(delivery, (error) => {
-        log.warn("Failed to deliver queued input rejection", {
-          chatThreadId: head.chatThreadId,
-          eventId: head.id,
-          error,
+      if (delivery) {
+        await tapError(delivery, (deliveryError) => {
+          log.warn("Failed to deliver queued input rejection", {
+            chatThreadId: head.chatThreadId,
+            eventId: head.id,
+            error: deliveryError,
+          });
         });
-      });
+      }
     },
   );
-  const rejectChatQueueHead$ = queueHeadRejectionRejectChatQueueHead$;
+
   const preparePiLaunchResourcesInput$ = computed(async (get) => {
     const [args, storage] = await Promise.all([
       get(runnerArgs$),
@@ -12336,7 +12685,7 @@ export function createClaimRunObjects(
       { set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
-    ): Promise<RunContext | { readonly kind: "passed" }> => {
+    ): Promise<ThreadRunContext | { readonly kind: "passed" }> => {
       const head = await set(initializeRunPreparation$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
@@ -12454,9 +12803,346 @@ export function createClaimRunObjects(
       return preparedContext;
     },
   );
-  return {
-    pickedEvent$: pickedEvent$,
-    prepareRunContext$: prepareRunContext$,
-    updatePresignedUrlCache$,
-  };
+  const rejectEvent$ = command(
+    async (
+      { set },
+      context: ThreadRunContext,
+      error: { readonly code: string; readonly message: string },
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const rejection: ChatQueueHeadRejection =
+        context.rejection.kind === "prompt"
+          ? queuedMessageRejection(
+              rejectedQueuedRunAdmissionFailure(
+                context.rejection.runInput,
+                error,
+              ),
+            )
+          : { userId: context.rejection.userId, error };
+      await set(
+        rejectChatQueueHead$,
+        { head: context.head, rejection },
+        signal,
+      );
+    },
+  );
+
+  // Record the committed result and its activation metadata only after the
+  // pending transaction returns. This command does no launch preparation.
+  const recordRunCommit$ = command(
+    (
+      _store,
+      context: ThreadRunContext,
+      committed: AtomicLaunchCommitCompletion,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ): ClaimRunCommit => {
+      const { input, identity, launch } = context;
+      signal.throwIfAborted();
+      if ("status" in committed.result) {
+        return { kind: "rejected", error: committed.result.body.error };
+      }
+      if (committed.result.kind === "queue-first-claim-lost") {
+        flushQueueFirstClaimLostTiming({
+          createArgs: input.args,
+          identity,
+          launch,
+          timing: timing.run,
+          phaseTiming: timing.phase,
+        });
+        return { kind: "passed" };
+      }
+      const result = committedAtomicLaunchResponse({
+        createArgs: { ...input.args, body: input.context.body },
+        committed: committed.result,
+        transactionReturnedAt: committed.transactionReturnedAt,
+        timing: timing.run,
+        phaseTiming: timing.phase,
+      });
+      if (!result.pendingActivation) {
+        throw new Error("Pending run is missing activation metadata");
+      }
+      return {
+        kind: "pending",
+        runId: result.body.runId,
+        activation: result.pendingActivation,
+        context,
+      };
+    },
+  );
+
+  const createRun$ = command(
+    async (
+      { set },
+      {
+        claim,
+        context,
+        timing,
+      }: {
+        readonly claim: ThreadClaim;
+        readonly context: ThreadRunContext;
+        readonly timing: ClaimRunTiming;
+      },
+      signal: AbortSignal,
+    ): Promise<ClaimRunCommit> => {
+      signal.throwIfAborted();
+      const { input, identity, callbackRows, launch } = context;
+      if (
+        input.args.orgId !== claim.orgId ||
+        input.args.chatThreadId !== claim.chatThreadId ||
+        context.head.chatThreadId !== claim.chatThreadId
+      ) {
+        throw new Error("Prepared run does not belong to this thread claim");
+      }
+      const database = set(writeDb$);
+      const commit: CommitPreparedLaunchArgs = {
+        db: database,
+        createArgs: input.args,
+        enforceBuiltInCredits: input.enforceBuiltInCredits,
+        context: input.context,
+        identity,
+        callbackRows,
+        launch,
+        timing: timing.run,
+      };
+      const admissionTiming = new AdmissionAttemptTiming({
+        runId: identity.runId,
+        runnerGroup: launch.runnerJobPayload.runnerGroup,
+        profile: launch.runnerJobPayload.profile,
+        dimensions: timingDimensionsForCreateArgs(input.args),
+        ...(input.context.body.triggerSource
+          ? { triggerSource: input.context.body.triggerSource }
+          : {}),
+      });
+      const preparedCommit: PreparedCommitPreparedLaunchArgs = {
+        ...commit,
+        persistence: context.persistence,
+        admissionTiming,
+      };
+      const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
+        "api_dispatch_insert_run_with_concurrency",
+        "top_level",
+        async () => {
+          const result = await database.transaction(
+            async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
+              admissionTiming.transactionStarted();
+              await acquireOfficialWorkflowRunCatalogAdmissionLock(
+                tx,
+                input.context.officialWorkflowRun,
+              );
+              // Keep credit-plan acquisition ahead of workflow/automation locks.
+              if (
+                input.context.officialWorkflowRun &&
+                input.enforceBuiltInCredits
+              ) {
+                await loadOrgPlanCapabilities(tx, input.args.orgId, {
+                  forUpdate: true,
+                });
+              }
+              admissionTiming.admissionStarted();
+              const admission = await validateClaimedRunAdmission(
+                tx,
+                claim,
+                context,
+                preparedCommit,
+                timing.run,
+              );
+              if (!("kind" in admission) || admission.kind !== "admitted") {
+                admissionTiming.callbackFinished();
+                return admission;
+              }
+              // Fence the lease before the run writes. Admission above already
+              // appended the input claim (locking the thread's event sequence
+              // row, which every enqueue takes first) and took the
+              // automation/plan locks that enqueue takes before its upsert.
+              const [fenced] = await tx
+                .update(queuedChatThreads)
+                .set({ claimId: null, claimExpiresAt: null })
+                .where(
+                  and(
+                    eq(queuedChatThreads.orgId, claim.orgId),
+                    eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
+                    eq(queuedChatThreads.claimId, claim.claimId),
+                  ),
+                )
+                .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+              if (!fenced) {
+                throw new Error(
+                  "Chat thread claim was lost before the pending commit",
+                );
+              }
+              const pending = await persistClaimedRun(
+                tx,
+                context,
+                preparedCommit,
+                admission,
+                timing.run,
+              );
+              // This unique insert is deliberately the final SQL statement.
+              // A concurrent active run rolls the entire pending commit back.
+              await tx.insert(activeAgentRuns).values({
+                runId: pending.run.id,
+                orgId: input.args.orgId,
+                userId: input.args.userId,
+                chatThreadId: claim.chatThreadId,
+                lastHeartbeatAt: pending.run.createdAt,
+              });
+              admissionTiming.callbackFinished();
+              return pending;
+            },
+          );
+          if ("kind" in result && result.kind === "pending") {
+            set(internalCommittedRunId$, result.run.id);
+          }
+          const transactionReturnedAt = now();
+          await admissionTiming.finish(admissionAttemptOutcome(result));
+          return { result, transactionReturnedAt };
+        },
+      );
+      signal.throwIfAborted();
+      return set(recordRunCommit$, context, committed, timing, signal);
+    },
+  );
+
+  const activatePendingRun$ = command(
+    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+      await set(
+        activateCommittedRun$,
+        { activation: pending.activation, activationScheduledAt: now() },
+        signal,
+      );
+      const launched = pending.context.launchRecord;
+      if (launched.kind === "prompt") {
+        set(
+          recordQueuedPromptRunLaunch$,
+          launched.context,
+          pending.runId,
+          signal,
+        );
+      } else {
+        await finalizeClaimedRunUserMessage({
+          orgId: launched.orgId,
+          threadId: launched.threadId,
+          userId: launched.userId,
+        });
+        signal.throwIfAborted();
+        const database = set(writeDb$);
+        const lastRunFields = () => {
+          return {
+            ...(launched.recordLastRunId ? { lastRunId: pending.runId } : {}),
+            ...(launched.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
+            ...(launched.disableClaimedOnceSchedule ? { enabled: false } : {}),
+            updatedAt: nowDate(),
+          };
+        };
+        if (await morningBriefScheduleClaimBound(database, pending.runId)) {
+          signal.throwIfAborted();
+          // Only journaled occurrences require this post-commit lock. Read
+          // supersession after acquiring it so a concurrent claim is visible.
+          await database.transaction(async (tx) => {
+            const [locked] = await tx
+              .select({ id: workflowAutomations.id })
+              .from(workflowAutomations)
+              .where(eq(workflowAutomations.id, launched.automationId))
+              .limit(1)
+              .for("update");
+            if (
+              !locked ||
+              (await morningBriefScheduleClaimSuperseded(tx, pending.runId))
+            ) {
+              return;
+            }
+            await tx
+              .update(workflowAutomations)
+              .set(lastRunFields())
+              .where(eq(workflowAutomations.id, launched.automationId));
+          });
+        } else {
+          await database
+            .update(workflowAutomations)
+            .set(lastRunFields())
+            .where(eq(workflowAutomations.id, launched.automationId));
+        }
+        signal.throwIfAborted();
+      }
+      await set(publishChatQueueHeadConsumed$, pending.context.head, signal);
+    },
+  );
+
+  const hasFirstPickableChatEvent$ = computed(async (get) => {
+    get(pickStartedAt$);
+    return (await get(pickedEvent$)) !== null;
+  });
+  const startRun$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+      const event = await get(pickedEvent$);
+      signal.throwIfAborted();
+      if (!event) {
+        return null;
+      }
+      const timing: ClaimRunTiming = {
+        run: new ApiDispatchTimingCollector(),
+        phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
+      };
+      const settled = await settle(
+        (async (): Promise<PendingClaimRun | null> => {
+          const context = await set(prepareRunContext$, timing, signal);
+          signal.throwIfAborted();
+          if (context.kind === "passed") {
+            return null;
+          }
+          const committed = await set(
+            createRun$,
+            { claim, context, timing },
+            signal,
+          );
+          if (committed.kind === "pending") {
+            return committed;
+          }
+          if (committed.kind === "rejected") {
+            await set(rejectEvent$, context, committed.error, signal);
+          }
+          return null;
+        })(),
+        signal,
+      );
+      if (!settled.ok) {
+        // A durable run/job commit is creation success, even if subsequent
+        // telemetry or cancellation fails. Never reject its consumed input.
+        if (get(internalCommittedRunId$) !== null) {
+          throw settled.error;
+        }
+        await settle(
+          set(
+            rejectChatQueueHead$,
+            {
+              head: {
+                id: event.id,
+                chatThreadId: claim.chatThreadId,
+                orgId: claim.orgId,
+                userId: event.userId,
+                agentId: event.agentId,
+                contextType: event.contextType,
+                contextId: event.contextId,
+              },
+              rejection: { userId: event.userId, error: ABANDONED_HEAD_ERROR },
+              lease: claim,
+            },
+            signal,
+          ),
+          signal,
+        );
+        throw settled.error;
+      }
+      const pending = settled.value;
+      if (!pending) {
+        return null;
+      }
+      // Both effects are deliberately outside the creation-failure boundary.
+      waitUntil(set(updatePresignedUrlCache$, signal));
+      await set(activatePendingRun$, pending, signal);
+      return pending.runId;
+    },
+  );
+  return { hasFirstPickableChatEvent$, startRun$ };
 }

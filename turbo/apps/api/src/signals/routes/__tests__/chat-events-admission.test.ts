@@ -72,6 +72,46 @@ async function entitledChatActor() {
 }
 
 describe("CHAT-02: thread run admission invariant", () => {
+  it("keeps a committed run claimable when its Runner notification fails", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    context.mocks.ably.publish.mockImplementation((name) => {
+      return name === "job"
+        ? Promise.reject(new Error("Runner notification unavailable"))
+        : Promise.resolve(undefined);
+    });
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "Keep the committed execution", clientEventId },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected accepted input");
+    }
+    await flushWaitUntilForTest();
+    const messages = await chat.listThreadEvents(actor, sent.body.threadId);
+    const consumed = userMessages(messages.events).filter((message) => {
+      return (
+        message.revokesEventId === clientEventId && message.runId !== undefined
+      );
+    });
+    expect(consumed).toHaveLength(1);
+    expect(
+      messages.events.some((message) => {
+        return (
+          message.eventType === "input.rejected" ||
+          message.eventType === "output.error"
+        );
+      }),
+    ).toBeFalsy();
+    const runId = consumed[0]?.runId;
+    if (!runId) {
+      throw new Error("Committed input has no run");
+    }
+    const { claim } = await claimChatRun(runnerGroup, runId);
+    expect(claim.runId).toBe(runId);
+    await cancelChatRun(actor, runId);
+  });
   it("rejects thread-bound run creation without a queue association at both service boundaries", async () => {
     await expect(
       createUnassociatedThreadBoundAgentRunsServiceFixture(),

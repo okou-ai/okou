@@ -231,7 +231,7 @@ export default [
   {
     files: [
       "src/signals/services/pick-chat-run.service.ts",
-      "src/signals/services/claim-run-context.ts",
+      "src/signals/services/thread-claim-run.service.ts",
     ],
     plugins: { api: apiLintPlugin },
     rules: {
@@ -242,7 +242,7 @@ export default [
         "error",
         {
           max: 128,
-          owners: ["createPickObjects", "createClaimRunObjects"],
+          owners: ["createPickObjects", "createThreadClaimRunObjects"],
         },
       ],
     },

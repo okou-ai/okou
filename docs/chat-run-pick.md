@@ -3,12 +3,14 @@
 `createPickObjects(orgId, threadId?, prefetchedBootstrap?)` in
 `turbo/apps/api/src/signals/services/pick-chat-run.service.ts` returns only
 `{ pick$ }`. The parent owns organization capacity, thread selection, the lease,
-overall control flow, the pending transaction, token-bound cleanup and activation.
-`createClaimRunObjects(claim, prefetchedBootstrap?)` in `claim-run-context.ts` returns only
-`{ pickedEvent$, prepareRunContext$, updatePresignedUrlCache$ }`. It owns selection
-of the claimed thread's input, execution identity, pinned model, prompt,
-connectors, storage, complete resource preparation and the deferred URL-cache
-write. These are the two S2/S3 business-object boundaries.
+outer scheduling and token-bound cleanup for no-capacity, empty or passed work.
+`createThreadClaimRunObjects(claim, prefetchedBootstrap?)` in
+`thread-claim-run.service.ts` returns only
+`{ hasFirstPickableChatEvent$, startRun$ }`. It owns selection of the claimed
+thread's input, execution identity, pinned model, prompt, connectors, storage,
+private preparation, final admission, the pending transaction, selected-input
+rejection, post-commit activation and deferred URL-cache writes. No prepared
+execution context or selected raw event crosses this public boundary.
 
 Both factories accept ordinary business identities and an optional ordinary
 prefetch object containing identity values and a Promise. The child claim contains
@@ -16,7 +18,7 @@ prefetch object containing identity values and a Promise. The child claim contai
 `queuedAt`. No factory in this path receives a `State`,
 `Computed`, `Command`, getter, setter, Store, signal or business callback, including
 inside a dependency object. Nodes are defined directly in their owning closure.
-The child exposes only the three signals needed by the parent; private state is not
+The child exposes only its boolean observation and start command; private state is not
 forwarded into another factory. Plain conversion and decoding functions and
 transaction-local consistency primitives may remain ordinary functions.
 
@@ -43,28 +45,27 @@ const claim = await set(claim$, signal);
 signal.throwIfAborted();
 if (!claim) return null;
 
-const claimed = createClaimRunObjects(claim);
-const [hasCapacity, event] = await Promise.all([
+// The captured plain claim drives a memoized child-graph computed.
+set(internalSelectedClaim$, claim);
+const claimed = get(selectedClaimRunObjects$);
+if (!claimed) throw new Error("Selected claim is missing");
+const [hasCapacity, hasInput] = await Promise.all([
   get(orgHasCapacity$),
-  get(claimed.pickedEvent$),
+  get(claimed.hasFirstPickableChatEvent$),
 ]);
 signal.throwIfAborted();
 if (!hasCapacity) {
   await set(releaseClaim$, claim, signal);
   return null;
 }
-if (!event) {
+if (!hasInput) {
   await set(deleteEmptyQueue$, claim, signal);
   return null;
 }
 
-const context = await set(claimed.prepareRunContext$, signal);
-signal.throwIfAborted();
-const pending = await set(createRun$, { claim, context }, signal);
-waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-await set(releaseClaim$, claim, signal);
-await set(activatePendingRun$, pending, signal);
-return pending.runId;
+const runId = await set(claimed.startRun$, signal);
+if (runId === null) await set(releaseClaim$, claim, signal);
+return runId;
 ```
 
 After agent authorization,
@@ -248,18 +249,18 @@ batched. The internal `runPlan$` is a thin `Promise.all` of pure read branches.
 The pure `RunPlan` never escapes as a commit-ready context.
 `prepareRunContext$` starts it alongside the pure storage-mount read graph,
 callback preparation and stored-context preparation. Each branch waits only for
-its actual dependencies. Its final `RunContext` contains selected mounts,
+its actual dependencies. Its private `ThreadRunContext` contains selected mounts,
 versions and URLs, encrypted callback rows, the final stored execution context
 and the final pending-persistence encoding. Runner payload construction, run
-metadata and diagnostic-payload validation finish before the child returns.
+metadata and diagnostic-payload validation finish before the private preparation returns.
 There is no storage plan, cache request or intermediate context draft in this
 result. It returns ordinary prepared data, not commands or business callbacks,
 and never submits the pending run.
 
 Explicit commands initialize or repair model policy facts when needed, refresh
 an expired usage allowance when required and reconcile an official automation.
-The parent separately submits the pending transaction and activates the committed
-run. Official reconciliation starts alongside independent resource work. Only
+The Thread owner separately submits the pending transaction and activates the committed
+run; the parent receives only its run ID or null. Official reconciliation starts alongside independent resource work. Only
 reads of its actual results wait: the final automation target, launch prompt and
 event policy, autonomy budget, and automation callback definitions. Reconciliation
 invalidates those snapshots before their final read. Session, model, member,
@@ -338,9 +339,12 @@ that carries the run token is produced by its command and passed on as a plain
 value to storage and stored-context preparation. An automation's independent
 Get Started reward is recorded alongside the launch reads, not ahead of them.
 
-Dispatch timing collectors are created by the parent `pick$` after its claim
-and passed as plain arguments to `prepareRunContext$` and `createRun$`;
-`RunContext` does not carry them.
+Dispatch timing collectors are private to the Thread `startRun$` owner.
+The child's first pickable-input observation captures its timing origin; preparation
+and commit share those collectors without exposing them or a run context to pick.
+The durable run/job commit is recorded before post-transaction telemetry and
+cancellation checks. Failures after that boundary propagate without rejecting the
+consumed input, compensating, retrying or creating a replacement execution.
 
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection uses fixed
@@ -363,12 +367,12 @@ compatibility behavior. Catalog publication locks remain unchanged.
 
 ## Pending atomic boundary
 
-The parent's `createRun$` receives `{ claim, context }` after resource preparation
-has completed. It directly owns the database transaction, rather than delegating
-to an asynchronous launch helper. It consumes the child's completed persistence
+The Thread child's private `createRun$` receives its privately prepared context.
+It directly owns the database transaction, rather than delegating to an
+asynchronous launch helper or passing context to pick. It consumes the child's completed persistence
 encoding; commit timestamps, account validation, credit admission and returned-ID
 bindings remain transaction-local. Producer binding and post-commit bookkeeping
-are ordinary data in the context; their owning parent commands perform the
+are ordinary data in the context; their owning Thread commands perform the
 writes. The transaction keeps input consumption, the necessary session/run and thread
 binding, the runner job, callbacks, producer binding and accounting together.
 `active_agent_runs` is inserted last. Its uniqueness violation escapes and rolls
