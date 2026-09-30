@@ -6578,9 +6578,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     state<ApiDispatchTimingCollector | null>(null);
   const workflowAutomationLaunchReadGraphInternalModel$ =
     state<ModelContext | null>(null);
-  const workflowAutomationLaunchReadGraphInternalAssembly$ = state<
-    AssembledWorkflowAutomationRun | RunFailure | null
-  >(null);
   const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
     const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
     if (!timing) {
@@ -6662,7 +6659,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const internalTiming$ = workflowAutomationLaunchReadGraphInternalTiming$;
   const workflowAutomationLaunchInternalModel$ =
     workflowAutomationLaunchReadGraphInternalModel$;
-  const internalAssembly$ = workflowAutomationLaunchReadGraphInternalAssembly$;
   const timing$ = workflowAutomationLaunchReadGraphTiming$;
   const workflowAutomationLaunchModel$ =
     workflowAutomationLaunchReadGraphModel$;
@@ -6685,11 +6681,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : await set(resolveAutomationModel$, args, get(timing$), signal);
     },
   );
-  const assembleWorkflowAutomationRun$ = command(
-    async (
-      { get },
-      signal: AbortSignal,
-    ): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
+  const assembleWorkflowAutomationRun$ = computed(
+    async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = get(workflowAutomationLaunchInput$);
       const timing = get(timing$);
       const [selection, model, computerUseHostGrant, runInput, readiness] =
@@ -6700,7 +6693,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(workflowAutomationLaunchRunInput$),
           get(readiness$),
         ]);
-      signal.throwIfAborted();
       if (readiness) {
         return readiness;
       }
@@ -6748,26 +6740,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const initializeWorkflowAutomationRun$ = command(
     async (
-      { set },
+      { get, set },
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
       set(workflowAutomationLaunchInternalInput$, args);
-      const assembly = await set(assembleWorkflowAutomationRun$, signal);
+      const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
-      set(internalAssembly$, assembly);
       // An assembled launch records its independent Get Started reward; the
       // caller runs it alongside the launch reads rather than ahead of them.
       return assembly.kind === "assembled" ? args : null;
     },
   );
-  const workflowAutomationLaunchAssembly$ = computed((get) => {
-    const assembly = get(internalAssembly$);
-    if (!assembly) {
-      throw new Error("Automation assembly has not been resolved");
-    }
-    return assembly;
-  });
+  const workflowAutomationLaunchAssembly$ = assembleWorkflowAutomationRun$;
   const workflowAutomationLaunchMemberAccountSnapshot$ = computed(
     async (get) => {
       const model = await get(workflowAutomationLaunchModel$);
@@ -11740,14 +11725,32 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return undefined;
     },
   );
-  const runAdmissionCheckInternalInput$ = state<RunAdmissionInput | null>(null);
-  const runAdmissionCheckInput$ = computed((get) => {
-    const input = get(runAdmissionCheckInternalInput$);
-    if (!input) {
-      throw new Error("Run admission input is not installed");
-    }
-    return input;
-  });
+  const runAdmissionCheckInput$ = computed(
+    async (get): Promise<RunAdmissionInput> => {
+      const [input, model] = await Promise.all([
+        get(preCreateInput$),
+        get(modelRoute$),
+      ]);
+      return isRouteError(model)
+        ? {
+            catalog: await get(claimCatalog$),
+            orgId: claim.orgId,
+            userId: input.command.auth.userId,
+            modelProviderType: "built-in",
+            selectedModel: input.command.selectedModelOverride,
+            enforceBuiltInCredits: true,
+          }
+        : {
+            catalog: await get(claimCatalog$),
+            orgId: claim.orgId,
+            userId: input.command.auth.userId,
+            modelProviderType: model?.type ?? input.command.body.modelProvider,
+            selectedModel:
+              model?.selectedModel ?? input.command.selectedModelOverride,
+            enforceBuiltInCredits: isBuiltInModelProviderType(model?.type),
+          };
+    },
+  );
   const capturedRunAdmissionReadInput$ = computed(async (get) => {
     return { ...(await get(runAdmissionCheckInput$)), at: nowDate() };
   });
@@ -12022,15 +12025,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : insufficientCredits();
     },
   );
-  const runAdmissionCheckCheckAdmission$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      set(runAdmissionCheckInternalInput$, input);
-      return await set(runAdmissionCheckAdmission$, signal);
-    },
-  );
-
-  const checkAdmission$ = runAdmissionCheckCheckAdmission$;
+  const checkAdmission$ = runAdmissionCheckAdmission$;
   const capturedDirectSendInsufficientCreditsMessage$ = computed(
     async (get) => {
       const input = await get(input$);
@@ -12616,37 +12611,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           model.body.error.code === "PROVIDER_UNAVAILABLE" &&
           isBuiltInModelProviderType(input.command.body.modelProvider)
         ) {
-          const credits = await set(
-            checkAdmission$,
-            {
-              catalog: await get(claimCatalog$),
-              orgId: claim.orgId,
-              userId: input.command.auth.userId,
-              modelProviderType: "built-in",
-              selectedModel: input.command.selectedModelOverride,
-              enforceBuiltInCredits: true,
-            },
-            signal,
-          );
+          const credits = await set(checkAdmission$, signal);
           if (credits) {
             return credits;
           }
         }
         return model;
       }
-      return await set(
-        checkAdmission$,
-        {
-          catalog: await get(claimCatalog$),
-          orgId: claim.orgId,
-          userId: input.command.auth.userId,
-          modelProviderType: model?.type ?? input.command.body.modelProvider,
-          selectedModel:
-            model?.selectedModel ?? input.command.selectedModelOverride,
-          enforceBuiltInCredits: isBuiltInModelProviderType(model?.type),
-        },
-        signal,
-      );
+      return await set(checkAdmission$, signal);
     },
   );
   const authorizeIdentity$ = command(
