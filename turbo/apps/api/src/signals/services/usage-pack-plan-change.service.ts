@@ -1321,11 +1321,8 @@ const persistSubscriptionChangePreview$ = command(
     const db = set(writeDb$);
     const { context } = args.prepared;
     const result = await db.transaction(async (tx) => {
-      await tx.execute(
-        usagePackBillingCompatibilityLockSql(context.subscription.orgId),
-      );
-      // No row locks: preview rows are written only under the retained
-      // usage_pack_billing key, and confirmation revalidates this snapshot.
+      // This only publishes an unpaid quote. A competing unique quote can
+      // reject this transaction; payment confirmation revalidates its source.
       const [subscription] = await tx
         .select()
         .from(usagePackSubscriptions)

@@ -1317,53 +1317,6 @@ const syncInvitationSubscriptionConfiguration$ = command(
   },
 );
 
-const removeRefundedInvitationProjection$ = command(
-  async (
-    { set },
-    purchase: UsagePackInvitationPurchaseRow,
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    signal?.throwIfAborted();
-    const db = set(writeDb$);
-    if (purchase.stripeCheckoutSessionId || !purchase.allocationId) {
-      return;
-    }
-    const allocationId = purchase.allocationId;
-    await db.transaction(async (tx) => {
-      // The org-level financial protocol remains separate. Refund attempt
-      // identity and status are rechecked before retiring the allocation.
-      await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
-      const [current] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .limit(1);
-      if (
-        !current ||
-        current.status === "refunded" ||
-        current.refundAttempt !== purchase.refundAttempt ||
-        current.allocationId !== purchase.allocationId
-      ) {
-        return;
-      }
-      if (current.status !== "refunding") {
-        throw new Error("Invitation refund changed during projection removal");
-      }
-      await tx
-        .update(usagePackAllocations)
-        .set({ status: "inactive", updatedAt: nowDate() })
-        .where(eq(usagePackAllocations.id, allocationId));
-    });
-    signal?.throwIfAborted();
-    await set(
-      syncInvitationSubscriptionConfiguration$,
-      purchase.usagePackSubscriptionId,
-      signal,
-    );
-    signal?.throwIfAborted();
-  },
-);
-
 const completeSuccessfulRefund$ = command(
   async (
     { set },
@@ -1371,8 +1324,17 @@ const completeSuccessfulRefund$ = command(
     refundId: string | null,
     signal?: AbortSignal,
   ): Promise<void> => {
-    await set(removeRefundedInvitationProjection$, purchase, signal);
+    // The real refund transition and allocation retirement commit together.
+    // Configuration repair follows that commit, never an intermediate
+    // refunding projection or a captured provider quantity.
     await set(finalizeRefund$, purchase, refundId, signal);
+    if (!purchase.stripeCheckoutSessionId && purchase.allocationId) {
+      await set(
+        syncInvitationSubscriptionConfiguration$,
+        purchase.usagePackSubscriptionId,
+        signal,
+      );
+    }
   },
 );
 
@@ -2312,25 +2274,27 @@ const activateAcceptedPurchase$ = command(
     if (!purchase?.acceptedUserId || !purchase.allocationId) {
       return;
     }
+    const claimedUserId = purchase.acceptedUserId;
+    const claimedAllocationId = purchase.allocationId;
     await db.transaction(async (tx) => {
-      // Grant receipts and final purchase publication commit atomically;
-      // a lost accepted transition rolls back this delivery's grants. The
-      // remaining org-level financial protocol is audited separately.
-      await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
+      // A real business transition arbitrates this delivery, not an org key
+      // or an empty write. Grants and allocation activation share its commit;
+      // a failed financial write rolls the accepted transition back as well.
+      const at = nowDate();
       const [current] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .limit(1);
-      if (!current || current.status === "accepted") {
+        .update(usagePackInvitationPurchases)
+        .set({ status: "accepted", updatedAt: at })
+        .where(
+          and(
+            eq(usagePackInvitationPurchases.id, purchase.id),
+            eq(usagePackInvitationPurchases.status, "activating"),
+            eq(usagePackInvitationPurchases.acceptedUserId, claimedUserId),
+            eq(usagePackInvitationPurchases.allocationId, claimedAllocationId),
+          ),
+        )
+        .returning();
+      if (!current) {
         return;
-      }
-      if (
-        current.status !== "activating" ||
-        current.acceptedUserId !== purchase.acceptedUserId ||
-        current.allocationId !== purchase.allocationId
-      ) {
-        throw new Error("Invitation acceptance changed during activation");
       }
       const acceptedUserId = current.acceptedUserId;
       const allocationId = current.allocationId;
@@ -2355,7 +2319,6 @@ const activateAcceptedPurchase$ = command(
           throw new Error("Invitation credit grant payment identity changed");
         }
       }
-      const at = nowDate();
       const [activated] = await tx
         .update(usagePackAllocations)
         .set({ status: "active", updatedAt: at })
@@ -2374,21 +2337,6 @@ const activateAcceptedPurchase$ = command(
         throw new Error(
           "Invitation allocation was retired or reassigned during activation",
         );
-      }
-      const [accepted] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({ status: "accepted", updatedAt: at })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, current.id),
-            eq(usagePackInvitationPurchases.status, "activating"),
-            eq(usagePackInvitationPurchases.acceptedUserId, acceptedUserId),
-            eq(usagePackInvitationPurchases.allocationId, allocationId),
-          ),
-        )
-        .returning({ id: usagePackInvitationPurchases.id });
-      if (!accepted) {
-        throw new Error("Invitation acceptance changed during activation");
       }
     });
     signal?.throwIfAborted();

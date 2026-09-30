@@ -1160,9 +1160,8 @@ const persistUsagePackChangePreview$ = command(
     const { context, source, args, preview } = input;
     const db = set(writeDb$);
     const [change] = await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      // No row locks: every preview/admission writer holds the retained
-      // usage_pack_billing key, and confirmation revalidates this snapshot.
+      // A quote is not accepted financial intent. Existing uniqueness handles
+      // competing quotes; confirmation revalidates before claiming payment.
       const [root] = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -1180,7 +1179,8 @@ const persistUsagePackChangePreview$ = command(
         return [];
       }
       // A Plan preview may have committed while Stripe prepared these prices.
-      // Both preview writers hold the same usage_pack_billing key.
+      // This observation rejects an already-visible competing quote; it is not
+      // cross-table payment arbitration.
       const [planChange] = await tx
         .select({ id: usagePackSubscriptionChanges.id })
         .from(usagePackSubscriptionChanges)

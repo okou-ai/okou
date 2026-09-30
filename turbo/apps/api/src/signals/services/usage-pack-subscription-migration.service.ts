@@ -935,7 +935,6 @@ const persistMigrationPreview$ = command(
     const db = set(writeDb$);
 
     const result = await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(context.org.orgId));
       const [source] = await tx
         .select({ orgId: orgMetadata.orgId })
         .from(orgMetadata)
@@ -954,8 +953,8 @@ const persistMigrationPreview$ = command(
           ),
         )
         .limit(1);
-      // No row lock: previews are written only under the retained
-      // usage_pack_billing key and confirmation works from the stored row.
+      // This is an unpaid quote, not accepted migration intent. Existing
+      // uniqueness rejects competing previews; confirmation rechecks the source.
       if (!source) {
         return null;
       }

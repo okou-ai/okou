@@ -17509,6 +17509,74 @@ describe("usage pack allocation management", () => {
     );
   });
 
+  it("keeps a completed invitation refund when post-commit configuration sync fails", async () => {
+    const purchase = await beginInvitationPurchase();
+    const invitationId = `inv_refund_sync_${randomUUID()}`;
+    await payInvitationPurchase(purchase, invitationId);
+    const creditsBeforeRefund = await readDeferredReplayCredits(
+      purchase.fixture,
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [{ id: invitationId }] },
+    );
+    context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValue(
+      {},
+    );
+    context.mocks.stripe.refunds.create.mockImplementation(() => {
+      // The financial outcome is known, but the later configuration read is
+      // unavailable. The refund must remain committed, not merely refunding.
+      context.mocks.stripe.subscriptions.retrieve.mockRejectedValueOnce(
+        new Error("Stripe configuration read unavailable"),
+      );
+      return Promise.resolve({ id: `re_${randomUUID()}`, status: "succeeded" });
+    });
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+    await accept(
+      client.revoke({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { invitationId },
+      }),
+      [200],
+    );
+    const refunded = await readUsagePackState(
+      purchase.fixture.orgId,
+      purchase.fixture.usagePackSubscriptionId,
+    );
+    expect(refunded.invitationPurchases[0]).toMatchObject({
+      status: "refunded",
+    });
+    expect(
+      refunded.allocations.find((allocation) => {
+        return allocation.invitationId === invitationId;
+      }),
+    ).toMatchObject({ status: "inactive" });
+    await expect(
+      readDeferredReplayCredits(purchase.fixture),
+    ).resolves.toStrictEqual(creditsBeforeRefund);
+    await runBillingReconciliation(purchase.fixture.orgId);
+    await accept(
+      client.revoke({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { invitationId },
+      }),
+      [200],
+    );
+    const reconciled = await readUsagePackState(
+      purchase.fixture.orgId,
+      purchase.fixture.usagePackSubscriptionId,
+    );
+    expect(reconciled.invitationPurchases[0]).toMatchObject({
+      status: "refunded",
+      stripeRefundId: refunded.invitationPurchases[0]?.stripeRefundId,
+      refundAttempt: refunded.invitationPurchases[0]?.refundAttempt,
+    });
+    await expect(
+      readDeferredReplayCredits(purchase.fixture),
+    ).resolves.toStrictEqual(creditsBeforeRefund);
+  });
+
   it("honors acceptance just before expiration when reconciliation races the boundary", async () => {
     const purchase = await beginInvitationPurchase();
     const invitationId = `inv_near_expiry_${randomUUID()}`;

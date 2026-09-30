@@ -26,7 +26,7 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 ## Per-key inventory
 
 Initial inventory: **17 API + 1 operator** definitions. At `0ea5f20d`:
-**6 API + 0 operator**. Now: **2 API + 0 operator** after credit, invitation and serving
+**6 API + 0 operator**. Now: **3 API + 0 operator** after the unsafe credit retirement was withdrawn; invitation and serving
 compaction retirement; shared/exclusive compaction counted separately before
 removal. A later main integration must recheck any imported definitions. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
@@ -39,7 +39,7 @@ removed; that simplification remains explicit R1 implementation work below.
 | `usage_pack_billing:<org>`                 | **Still present, R1 financial work.** Plan/migration/legacy Plan/concurrency/cancel/restore and last-member/deferred changes are not all declarative. No outgoing-version-only exemption is claimed.                                                                                                                                                                                                                                        |
 | `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
 | `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
-| `credit_<org>`                             | **Deleted.** Exact window identity uses existing unique-index insertion and one committed-winner read; original-anchor selection retains allowed historical overlap. Consumption/grant/lot publication is conditional with complete-write checks; wallet debit and expiry use arithmetic. A rejected financial snapshot rolls back once and remains for the next existing settlement cycle.                                                 |
+| `credit_<org>`                             | **Unfinished R1 financial work.** Attempted issuance retirement was withdrawn after distinct-Run overissue. Same-identity unique insertion and conditional financial writes remain, but cannot alone prevent contemporary first-window duplication; see the diagnostic and decision boundary below.                                                 |
 | `usage_event_compaction` shared            | **Deleted.** Settlement claims pending rows conditionally; compaction consumes only actual version-matching DELETE RETURNING rows and publishes their immutable totals in the same transaction. Raw-first cleanup sees committed rollups in its next SQL snapshot.                                                                                                                                                                          |
 | `usage_event_compaction` exclusive         | **Deleted.** No compactor reads/replaces old hourly fragments or selects rows FOR UPDATE. A competing batch may consume zero; the next normal cron visit handles the remainder without an in-process retry.                                                                                                                                                                                                                                 |
 | `usage_event_compaction` operator          | **Deleted.** Existing `--migrate --ack-writer-drain` operator opt-in and one conditional business-checkpoint UPDATE; rejected batch rolls back once, without retry. No serving compatibility acquisition remains in the script.                                                                                                                                                                                                             |
@@ -56,48 +56,46 @@ removed; that simplification remains explicit R1 implementation work below.
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
 
-## Credit key retirement
+## Credit issuance retirement is withdrawn pending its financial protocol
 
-`orgCreditCompatibilityLockSql`, its briefly renamed `orgCreditLockSql`, the
-`lockOrgCredits` helper and every actual acquisition are deleted. This covers
-Run activation in both direct and Pick launches, firewall backfill, standalone
-and Social settlement. No parent/entitlement SELECT lock replaces the key.
+The same-identity unique-index insertion and one committed-winner read remain,
+and explicit wallet/entitlement/window read locks remain removed. Pure refresh
+paths, including all three claim graph refresh nodes, stay key-free. However the
+credit issuance/backfill/settlement acquisitions are restored as unfinished R1
+financial work, **not** an outgoing-version compatibility exemption. The helper
+is `orgCreditLockSql`, not `orgCreditCompatibilityLockSql`; `lockOrgCredits` stays
+deleted. No new key namespace or row-lock substitute is introduced.
 
-Both initial Run-window issuance and firewall Run-window backfill now use the
-existing `(entitlement_id, kind, starts_at)` unique index with `ON CONFLICT DO
-NOTHING`. A missing INSERT result resolves that exact committed identity once,
-with its current consumed balance; it does not repeat INSERT, reset consumption,
-loop or introduce new state. Disappearing identity rejects the operation. The
-settlement planner already conditions its monetary writes and rejects incomplete
-window/allocation counts with the batch left for the next settlement cycle.
+A public API diagnostic constructs two different BYOK Runs one minute apart,
+starts their first billable firewall admissions concurrently, then records and
+settles two units each. With a two-unit allowance and initial wallet -10, expected
+single-window funding leaves wallet -12; the removed-key source can leave -10.
+The earlier same-Run test did not cover this case. Its strict diagnostic patch
+and logs are retained separately; the money assertion is not weakened into a
+passing test. The original acquisition also sometimes permits the later Run to
+win first and then issues a historical earlier window, so restoring it reduces
+the new simultaneous-read-empty race but is **not a complete fix** or acceptance
+proof. Historical overlap semantics alone do not excuse contemporary overissue.
 
-The public firewall regression sends three concurrent admissions for one BYOK
-Run, observes exactly two zero-consumption windows through billing status, then
-settles usage, verifies both windows consumed exactly two units, and verifies
-subsequent admission is denied rather than refilling allowance. Credits and
-visible settled usage retain exact assertions. This verifies ordinary business
-outcomes without a key; it does not assert which exact unique-conflict branch
-won the interleaving.
+Earliest-covering selection can unify already committed unused windows, but
+changes the existing latest-covering history rule. It also cannot by itself
+arbitrate windows inserted and consumed inside concurrent settlement transactions,
+where the other root is invisible, or account for immutable allocations already
+committed to another root. No global non-overlap rule or wall-clock bucketing is
+invented. Exact-start uniqueness only closes the exact identity collision.
 
-**Correction to the earlier different-anchor inventory.** Existing allowance
-semantics explicitly select the latest covering window per kind and permit
-historical overlap (see the existing allocator and usage-boundaries inventory).
-Even a serialized late older anchor can issue a historical window before a
-later window's start. Exact-start uniqueness is not a global non-overlap promise;
-adding range exclusion or wall-clock bucketing would introduce a different
-product rule and can permanently defer legitimate late usage. Neither is added.
-Original Run anchors, per-window unit limits and immutable allocations remain.
+If the complete no-key financial protocol cannot preserve current history,
+Ethan must choose between accepting bounded contemporary overissue and adding an
+existing-column range exclusion with reviewed historical-overlap handling and
+explicit late-anchor policy. The conservative recommendation is constraint-based
+non-overissue rather than silently relaxing paid allowance. No data cleanup,
+constraint or relaxed amount assertion is implemented without that decision.
+Other financial keys continue independently; this stays R1, not R2 or drain-only.
 
-Settlement owns pending events through a conditional processed transition. It
-compares every planned window insert, consumed-window update, allocation receipt,
-grant deduction and expiry-lot deduction against the actual affected count. A
-short write rolls back the entire financial batch and leaves it for the next
-existing settlement cycle, without retry. Window consumption compares the
-observed counter/limit before publishing its exact delta; wallet debit and lot
-expiry retain atomic arithmetic. Different historical windows are not combined
-into a new global budget or reported as a new grant. The financial contract is
-per selected window/receipt, not an invented non-overlap constraint. Production
-legacy convergence remains unproven and separate from source retirement.
+The public same-Run firewall regression still verifies three admissions reuse
+exactly two windows, settlement consumes two units once, later admission cannot
+refill them, and organization credits/visible usage remain exact. This remains
+useful but is not proof for distinct Run anchors.
 
 ## Key-free allowance refresh inside the Pick graph
 
@@ -121,9 +119,8 @@ same objects; the authorized resource `Promise.all`, computed runner arguments,
 10-second lease and parent pending transaction are unchanged. No pending SQL or
 sequence/queue lock order changes. Admission errors still reject before commit.
 
-The later issuance/settlement changes above now retire the `credit_` definition
-and its remaining calls as well. No serving/in-flight/rollback compatibility
-gate is retained.
+The attempted issuance/settlement retirement is withdrawn for the distinct-Run
+financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
 ## Serving compaction retirement
 
@@ -172,6 +169,25 @@ Public billing API coverage includes concurrent payment/acceptance delivery,
 exactly-once credits, hosted and saved-card payments, invalid payment preview,
 revocation/refund, failed-refund recovery, migrated invitations and missed
 post-commit Stripe synchronization. No test asserts key waiting or order.
+
+## Unpaid quotes and invitation terminal subpaths
+
+Three unpaid allocation/Plan/migration preview acquisitions and two invitation
+terminal acquisitions are removed. Quote publication is not paid intent;
+existing unique quote identities and confirmation source validation remain.
+Invitation activation first conditionally performs the real activating-to-accepted
+transition; grant receipts and exact allocation activation share that transaction,
+so a failed financial write rolls back the accepted state. Refund completion
+uses its existing refund-attempt transition and allocation retirement atomically,
+then synchronizes current configuration by subscription identity after commit.
+There is no separate intermediate refund projection transaction or new fence.
+
+These five removals leave the usage-pack organization key and its remaining
+financial admission/deferred/provider-first writers unfinished. The new public
+refund regression verifies failed post-commit configuration sync does not undo
+successful local refund, charge again or resurrect the purchase. It does not
+certify every provider-specific quantity/Plan/cancellation writer declarative.
+The existing grant conflict-update helper retains a separate financial audit.
 
 ## Gmail rolling behavior
 
