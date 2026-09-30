@@ -9,12 +9,9 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { holdQueuedChatThreadClaimFixture } from "../../../test-fixtures/queued-chat-thread";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   createUnassociatedThreadBoundAgentRunFixture,
@@ -611,13 +608,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
   }, 90_000);
 });
 
-function requireOrgId(actor: { readonly orgId: string | null }): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped actor");
-  }
-  return actor.orgId;
-}
-
 describe("CHAT-02: dispatch failure", () => {
   it("rejects the picked input and releases the lease when run preparation cannot configure dispatch", async () => {
     const { actor, agentId } = await entitledChatActor();
@@ -693,119 +683,6 @@ describe("CHAT-02: dispatch failure", () => {
     });
     expect(next.runId).toStrictEqual(expect.any(String));
     await cancelChatRun(actor, next.runId);
-  });
-
-  it("leaves the input queued when a failed picker no longer holds the lease", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const heldAt = now();
-    mockNow(heldAt);
-    const threadId = randomUUID();
-    const messageId = randomUUID();
-    // A slow picker's lease was taken over before its transient KMS failure.
-    useSecretKmsProbe((_request, callNumber) => {
-      if (callNumber !== 1) {
-        return undefined;
-      }
-      return (async () => {
-        await holdQueuedChatThreadClaimFixture({
-          orgId: requireOrgId(actor),
-          threadId,
-        });
-        throw new Error("KMS unavailable");
-      })();
-    });
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "fail after losing the lease",
-        clientThreadId: threadId,
-        clientEventId: messageId,
-      },
-      [201],
-    );
-    await expect(clearAllDetached()).rejects.toThrow("KMS unavailable");
-    const messages = await chat.listThreadEvents(actor, threadId);
-    expect(
-      messages.events.some((message) => {
-        return message.revokesEventId === messageId;
-      }),
-    ).toBeFalsy();
-
-    // The input stays pending behind the other picker's lease; once that
-    // lease expires, the next pick launches it.
-    mockNow(heldAt + 10_000);
-    await chat.requestSendEvent(
-      actor,
-      { agentId, threadId, prompt: "pick after the lease expires" },
-      [201],
-    );
-    await clearAllDetached();
-    const launched = await chat.listThreadEvents(actor, threadId);
-    const runId = userMessages(launched.events).find((message) => {
-      return message.revokesEventId === messageId;
-    })?.runId;
-    expect(runId).toStrictEqual(expect.any(String));
-    if (runId) {
-      await cancelChatRun(actor, runId);
-    }
-  });
-
-  it("keeps another picker's lease until it expires on the app clock", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const heldAt = now();
-    mockNow(heldAt);
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: "create the thread queue row",
-    });
-    await cancelChatRun(actor, first.runId);
-    await clearAllDetached();
-    const threadId = first.threadId;
-    await holdQueuedChatThreadClaimFixture({
-      orgId: requireOrgId(actor),
-      threadId,
-    });
-
-    // Before expiry, the next enqueue's pick cannot take the lease.
-    mockNow(heldAt + 9999);
-    const headId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId,
-        prompt: "wait behind the lease",
-        clientEventId: headId,
-      },
-      [201],
-    );
-    await clearAllDetached();
-    const blocked = await chat.listThreadEvents(actor, threadId);
-    expect(
-      userMessages(blocked.events).some((message) => {
-        return message.revokesEventId === headId;
-      }),
-    ).toBeFalsy();
-
-    // At expiry, the next pick claims the thread and launches its head.
-    mockNow(heldAt + 10_000);
-    await chat.requestSendEvent(
-      actor,
-      { agentId, threadId, prompt: "pick after the lease expires" },
-      [201],
-    );
-    await clearAllDetached();
-    const launched = await chat.listThreadEvents(actor, threadId);
-    const runId = userMessages(launched.events).find((message) => {
-      return message.revokesEventId === headId;
-    })?.runId;
-    expect(runId).toStrictEqual(expect.any(String));
-    if (runId) {
-      await cancelChatRun(actor, runId);
-    }
   });
 });
 

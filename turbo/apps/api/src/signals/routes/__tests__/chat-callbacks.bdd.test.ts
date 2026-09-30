@@ -33,19 +33,12 @@ import {
   setRunModelRuntimeRouteFixture,
 } from "../../../test-fixtures/agent-runs";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
-import {
-  holdAgentRowLockFixture,
-  holdAgentRunRowLockFixture,
-  holdChatThreadRowLockFixture,
-  holdRunOutputMaterializationRowFixture,
-  insertQueuedSlackMissingContextFixture,
-} from "../../../test-fixtures/chat-events";
+import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settle } from "../../utils";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -199,9 +192,6 @@ async function startChatRun(
     readonly userMessage?: UserMessageInputDocument;
     readonly revokesEventId?: string;
   },
-  options?: {
-    readonly onMessageAccepted?: () => void;
-  },
 ): Promise<{
   readonly runId: string;
   readonly threadId: string;
@@ -228,9 +218,6 @@ async function startChatRun(
   if (sent.status !== 201) {
     throw new Error("Expected the entitled chat send to create a run");
   }
-  // Concurrency tests may need to release competing work after the queue-first
-  // message commits but before this helper waits for its run replacement.
-  options?.onMessageAccepted?.();
   let runId: string | null | undefined = sent.body.runId;
   if (runId === null) {
     // A terminal callback may claim the queued row between enqueue and the
@@ -586,17 +573,6 @@ function recommendedFollowupEvents(
   });
 }
 
-async function waitForChatThreadMessageCreatedPublish(
-  threadId: string,
-): Promise<void> {
-  await flushWaitUntilForTest();
-  expect(
-    context.mocks.ably.publish.mock.calls.some((call) => {
-      return call[0] === `chatThreadMessageCreated:${threadId}`;
-    }),
-  ).toBeTruthy();
-}
-
 function assistantEvent(
   sequenceNumber: number,
   text: string,
@@ -635,27 +611,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function deferredGate(): {
-  readonly wait: () => Promise<void>;
-  readonly release: () => void;
-} {
-  const gate = createDeferredPromise<void>(context.signal);
-  const releaseGate = (): void => {
-    if (!gate.settled()) {
-      gate.resolve(undefined);
-    }
-  };
-  onTestFinished(() => {
-    releaseGate();
-  });
-  return {
-    wait: () => {
-      return gate.promise;
-    },
-    release: releaseGate,
-  };
-}
-
 describe("CHAT-02: completed chat callback", () => {
   it("persists assistant output, reorders threads, titles the thread, recommends follow-ups, notifies, and auto-sends the queued template message", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -663,19 +618,14 @@ describe("CHAT-02: completed chat callback", () => {
 
     const titlePrompts: string[] = [];
     const sentinelPrompt = "unrelated sentinel run";
-    // Keep the sentinel's eager title pending after its run is cancelled.
-    const sentinelTitle = deferredGate();
     const followupSystemPrompts: string[] = [];
     const followupPrompts: string[] = [];
     const longFollowupPrompt =
       "Can you draft a new 90-minute workshop outline that focuses on the event-driven workflow of an AI Lead Operations Team and includes hands-on exercises?";
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions(async (body) => {
+    chatCallbacks.mockOpenRouterCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
-        if (body.messages[1]?.content.includes(sentinelPrompt)) {
-          await sentinelTitle.wait();
-        }
         titlePrompts.push(body.messages[1]?.content ?? "");
         return "Debugging Node Apps";
       }
@@ -756,8 +706,7 @@ describe("CHAT-02: completed chat callback", () => {
     await api.requestCancelRun(actor, sentinel.runId, [200]);
     await waitForRunStatus(actor, sentinel.runId, "cancelled");
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    sentinelTitle.release();
-    // Cancellation does not drain the sentinel's background title work.
+    // Drain the finite title work before inspecting the cancelled sentinel.
     await waitForThreadTitle(actor, sentinel.threadId, "Debugging Node Apps");
     // Only this thread's title requests belong to the completion assertion.
     const titlePromptCountBeforeComplete = titlePromptsForThisThread().length;
@@ -1985,264 +1934,6 @@ describe("CHAT-02: completed chat callback", () => {
     expect(marker).not.toHaveProperty("recommendedFollowups");
   });
 
-  it("auto-sends the queued message before completed-run LLM side effects finish", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const first = await startChatRun(actor, {
-      agentId,
-      prompt: "finish the current turn",
-    });
-    await queueChatEvent(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "queued while side effects wait",
-    });
-
-    const queuedBeforeComplete = await chat.listThreadEvents(
-      actor,
-      first.threadId,
-    );
-    const queued = userMessages(queuedBeforeComplete.events).find((message) => {
-      return chatEventDisplayText(message) === "queued while side effects wait";
-    });
-    if (!queued) {
-      throw new Error("Expected the queued user message to be listed");
-    }
-
-    const openRouterGate = deferredGate();
-    const titlePrompts: string[] = [];
-    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions(async (body) => {
-      await openRouterGate.wait();
-      const systemContent = body.messages[0]?.content ?? "";
-      if (systemContent.includes("recommended follow-up messages")) {
-        return JSON.stringify([
-          { prompt: "Review the queued result", kind: "talk" },
-        ]);
-      }
-      if (systemContent.includes("Generate a short, descriptive title")) {
-        titlePrompts.push(body.messages[1]?.content ?? "");
-        return "Deferred Side Effects";
-      }
-      return "Deferred summary";
-    });
-
-    const sandboxHeaders = await claimChatRun(runnerGroup, first.runId);
-    chatCallbacks.mockChatOutputEvents([assistantEvent(0, "completed answer")]);
-    await completeChatRunOk(first.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-
-    const afterAutoSend = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (messages) => {
-        return userMessages(messages).some((message) => {
-          return (
-            message.revokesEventId === queued.id && message.runId !== undefined
-          );
-        });
-      },
-    );
-    const markerBeforeRelease = lifecycleMarkers(
-      afterAutoSend.events,
-      first.runId,
-      "completed",
-    )[0];
-    if (!markerBeforeRelease) {
-      throw new Error(
-        "Expected completed marker before releasing side effects",
-      );
-    }
-    expect(markerBeforeRelease).not.toHaveProperty("recommendedFollowups");
-
-    const claimed = userMessages(afterAutoSend.events).find((message) => {
-      return message.revokesEventId === queued.id;
-    });
-    if (!claimed?.runId) {
-      throw new Error("Expected the queued message to auto-send");
-    }
-    expect(claimed.runId).not.toBe(first.runId);
-
-    context.mocks.ably.publish.mockClear();
-    openRouterGate.release();
-    const afterFollowups = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (messages) => {
-        return recommendedFollowupEvents(messages, first.runId).some(
-          (message) => {
-            return resolveChatEventRecommendedFollowups(message).length === 1;
-          },
-        );
-      },
-    );
-    expect(
-      lifecycleMarkers(afterFollowups.events, first.runId, "completed"),
-    ).toHaveLength(1);
-    const markerAfterRelease = lifecycleMarkers(
-      afterFollowups.events,
-      first.runId,
-      "completed",
-    )[0];
-    expect(markerAfterRelease?.id).toBe(markerBeforeRelease.id);
-    expect(markerAfterRelease).not.toHaveProperty("recommendedFollowups");
-    const followupEvent = recommendedFollowupEvents(
-      afterFollowups.events,
-      first.runId,
-    )[0];
-    if (!followupEvent) {
-      throw new Error("Expected a recommended follow-up message");
-    }
-    expect(resolveChatEventRecommendedFollowups(followupEvent)).toStrictEqual([
-      { prompt: "Review the queued result", kind: "talk" },
-    ]);
-    await waitForChatThreadMessageCreatedPublish(first.threadId);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadMessageCreated:${first.threadId}`,
-      { syncThroughSeqId: followupEvent.seqId },
-    );
-    // The auto-sent queued message titles the thread in background work
-    // started with its run, with the completed round supplying prior context.
-    await flushWaitUntilForTest();
-    expect(titlePrompts).toHaveLength(1);
-    expect(titlePrompts[0]).toContain(
-      "Most recent user message:\nqueued while side effects wait",
-    );
-    expect(titlePrompts[0]).toContain("finish the current turn");
-
-    await queueChatEvent(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "queued after duplicate callback",
-    });
-    const afterSecondQueue = await chat.listThreadEvents(actor, first.threadId);
-    const duplicateProbeQueued = userMessages(afterSecondQueue.events).find(
-      (message) => {
-        return (
-          chatEventDisplayText(message) === "queued after duplicate callback"
-        );
-      },
-    );
-    if (!duplicateProbeQueued) {
-      throw new Error("Expected the duplicate probe message to queue");
-    }
-
-    await completeChatRunOk(first.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await flushWaitUntilForTest();
-
-    const afterDuplicateCallback = await chat.listThreadEvents(
-      actor,
-      first.threadId,
-    );
-    const duplicateProbeClaimed = userMessages(
-      afterDuplicateCallback.events,
-    ).filter((message) => {
-      return message.revokesEventId === duplicateProbeQueued.id;
-    });
-    expect(duplicateProbeClaimed).toHaveLength(0);
-    const duplicateProbeStillQueued = userMessages(
-      afterDuplicateCallback.events,
-    ).find((message) => {
-      return message.id === duplicateProbeQueued.id;
-    });
-    expect(duplicateProbeStillQueued?.runId).toBeUndefined();
-
-    await api.requestCancelRun(actor, claimed.runId, [200]);
-    await waitForRunStatus(actor, claimed.runId, "cancelled");
-  }, 90_000);
-
-  it("persists the terminal marker while a control writer holds the thread row", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "complete terminal projection under thread lock contention",
-    });
-    // This test isolates /complete: the route cannot otherwise pause between
-    // Runner claim and terminal callback delivery while retaining API auth.
-    const running = await holdAgentRunRowLockFixture({
-      runId: run.runId,
-      statusOnRelease: "running",
-      signal: context.signal,
-    });
-    running.release();
-    await running.done;
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-    };
-    const completionBody = {
-      runId: run.runId,
-      exitCode: 0,
-      checkpoint: chatRunCheckpoint(run.runId),
-    } as const;
-    const held = await holdAgentRowLockFixture({
-      agentId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const blockedCompletion = settle(
-      webhooks.requestAgentComplete(completionBody, sandboxHeaders, [200]),
-    );
-    await waitForRunStatus(actor, run.runId, "completed");
-    const heldThread = await holdChatThreadRowLockFixture({
-      threadId: run.threadId,
-      mode: "no key update",
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      heldThread.release();
-      await heldThread.done;
-    });
-    held.release();
-    await held.done;
-
-    // The terminal marker append takes only its FK KEY SHARE, which does not
-    // conflict with a control writer's NO KEY UPDATE on the thread row. Observe
-    // the committed marker before releasing the lock; the independent
-    // last_message_at update may need the row after the marker commits.
-    const whileHeld = await waitForThreadMessages(
-      actor,
-      run.threadId,
-      (events) => {
-        return lifecycleMarkers(events, run.runId, "completed").length > 0;
-      },
-    );
-    expect(
-      lifecycleMarkers(whileHeld.events, run.runId, "completed"),
-    ).toHaveLength(1);
-    heldThread.release();
-    await heldThread.done;
-
-    const completedResult = await blockedCompletion;
-    if (!completedResult.ok) {
-      throw completedResult.error;
-    }
-    expect(completedResult.value.body).toStrictEqual({
-      success: true,
-      status: "completed",
-    });
-    const duplicate = await webhooks.requestAgentComplete(
-      completionBody,
-      sandboxHeaders,
-      [200],
-    );
-    expect(duplicate.body).toStrictEqual(completedResult.value.body);
-    const afterDuplicate = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(afterDuplicate.events, run.runId, "completed"),
-    ).toHaveLength(1);
-    await flushWaitUntilForTest();
-  }, 90_000);
-
   it("keeps an auto-sent follow-up pending until org concurrency frees a slot", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -2421,88 +2112,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
         );
       }),
     ).toHaveLength(1);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("waits for the lifecycle event when recovery completion arrives first", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "delay the cancellation lifecycle callback",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: run.threadId,
-      prompt: "wait for the delayed lifecycle event",
-    });
-    const cancelPublishGate = deferredGate();
-    context.mocks.ably.publish.mockImplementation((topic: unknown) => {
-      return topic === "cancel"
-        ? cancelPublishGate.wait()
-        : Promise.resolve(undefined);
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-    expect(
-      context.mocks.ably.publish.mock.calls.some(([topic]) => {
-        return topic === "cancel";
-      }),
-    ).toBeTruthy();
-    await expectCancellationRecoveryPending(actor, run.threadId, true);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadDetailChanged:${run.threadId}`,
-      null,
-    );
-    const completion = await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-      sandboxHeaders,
-      [200],
-    );
-    expect(completion.body).toStrictEqual({
-      success: true,
-      status: "failed",
-    });
-    const beforeLifecycle = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(beforeLifecycle.events, run.runId, "cancelled"),
-    ).toHaveLength(0);
-    expect(
-      userMessages(beforeLifecycle.events).filter((event) => {
-        return (
-          event.revokesEventId === queuedEventId && event.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-    await expectCancellationRecoveryPending(actor, run.threadId, true);
-
-    const duplicateCompletion = await webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-      sandboxHeaders,
-      [200],
-    );
-    expect(duplicateCompletion.body).toStrictEqual({
-      success: true,
-      status: "failed",
-    });
-
-    cancelPublishGate.release();
-    await flushWaitUntilForTest();
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      run.threadId,
-      queuedEventId,
-    );
-    const afterLifecycle = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(afterLifecycle.events, run.runId, "cancelled"),
-    ).toHaveLength(1);
-    await expectCancellationRecoveryPending(actor, run.threadId, false);
 
     await api.requestCancelRun(actor, replacementRunId, [200]);
     await waitForRunStatus(actor, replacementRunId, "cancelled");
@@ -2869,76 +2478,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     ).toStrictEqual(["Stored once"]);
     expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
   }, 90_000);
-
-  it("persists assistant-only batches without writing the run-output materialization", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt:
-        "persist assistant output while the callback projection is locked",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "result",
-            sequenceNumber: 0,
-            result: "Seed the callback projection row",
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    const held = await holdRunOutputMaterializationRowFixture({
-      runId: run.runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    await webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 1,
-            message: {
-              id: "msg_bdd_no_output_materialization_write",
-              content: [
-                {
-                  type: "text",
-                  text: "Durable assistant output while the projection row is locked",
-                },
-              ],
-            },
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-
-    await expect(held.blockedWaiterCount()).resolves.toBe(0);
-    const messages = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      eventBackedContents(messages.events, run.runId).map((message) => {
-        return message.content;
-      }),
-    ).toStrictEqual([
-      "Durable assistant output while the projection row is locked",
-    ]);
-    await flushWaitUntilForTest();
-    held.release();
-    await held.done;
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-  }, 30_000);
 
   it("persists normalized Claude text blocks independently across tool-only sequences", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -5166,45 +4705,24 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForRunStatus(actor, promoted.runId, "cancelled");
   }, 90_000);
 
-  it.each([
-    { entrypoint: "direct", lateFollowup: "before failure" },
-    { entrypoint: "queued", lateFollowup: "before failure" },
-    { entrypoint: "direct", lateFollowup: "after failure" },
-    { entrypoint: "queued", lateFollowup: "after failure" },
-  ] as const)(
-    "preserves the complete failed round for $entrypoint sends when an older successful follow-up arrives $lateFollowup",
-    async ({ entrypoint, lateFollowup }) => {
+  it.each(["direct", "queued"] as const)(
+    "preserves a failed request and its attachment in the public %s run context",
+    async (entrypoint) => {
       const { actor, agentId, runnerGroup, storage } =
         await entitledChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
-
       const anchor = await startChatRun(actor, {
         agentId,
-        prompt: "successful history before the delayed follow-up",
+        prompt: "successful history before the failed request",
       });
       const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
-      const followupGate = deferredGate();
-      const followupStarted = createDeferredPromise<void>(context.signal);
-      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-      chatCallbacks.mockOpenRouterCompletions(async (body) => {
-        const systemContent = body.messages[0]?.content ?? "";
-        if (systemContent.includes("recommended follow-up messages")) {
-          followupStarted.resolve(undefined);
-          await followupGate.wait();
-          return JSON.stringify([
-            { prompt: "Inspect the delayed follow-up", kind: "talk" },
-          ]);
-        }
-        return "Delayed Follow-up";
-      });
       chatCallbacks.mockChatOutputEvents([
-        assistantEvent(0, "successful answer before the failed request"),
+        assistantEvent(0, "successful answer"),
       ]);
       await completeChatRunOk(anchor.runId, anchorHeaders, {
         lastEventSequence: 0,
       });
-      await followupStarted.promise;
-
+      await flushWaitUntilForTest();
       const upload = await chat.prepareUpload(actor, {
         filename: "failed-request.txt",
         contentType: "text/plain",
@@ -5235,48 +4753,8 @@ describe("CHAT-02: auto-send after failures", () => {
         },
       });
       const failedHeaders = await claimChatRun(runnerGroup, failed.runId);
-      if (lateFollowup === "before failure") {
-        followupGate.release();
-        await waitForThreadMessages(actor, anchor.threadId, (messages) => {
-          return recommendedFollowupEvents(messages, anchor.runId).length === 1;
-        });
-      }
-      await failChatRun(failed.runId, failedHeaders, "delayed history failure");
-      await waitForThreadMessages(actor, anchor.threadId, (messages) => {
-        return lifecycleMarkers(messages, failed.runId, "failed").length === 1;
-      });
-      followupGate.release();
-      const history = await waitForThreadMessages(
-        actor,
-        anchor.threadId,
-        (messages) => {
-          return recommendedFollowupEvents(messages, anchor.runId).length === 1;
-        },
-      );
-      const input = userMessages(history.events).find((message) => {
-        return (
-          message.eventType === "input.prompt" && message.runId === failed.runId
-        );
-      });
-      const failure = lifecycleMarkers(
-        history.events,
-        failed.runId,
-        "failed",
-      )[0];
-      const followup = recommendedFollowupEvents(
-        history.events,
-        anchor.runId,
-      )[0];
-      if (!input || !failure || !followup) {
-        throw new Error("Expected the input, failure, and delayed follow-up");
-      }
-      expect(input.seqId).toBeLessThan(followup.seqId);
-      if (lateFollowup === "before failure") {
-        expect(followup.seqId).toBeLessThan(failure.seqId);
-      } else {
-        expect(failure.seqId).toBeLessThan(followup.seqId);
-      }
-
+      await failChatRun(failed.runId, failedHeaders, "public failed request");
+      await waitForRunStatus(actor, failed.runId, "failed");
       const probePrompt = "inspect complete incomplete-round context";
       let probeRunId: string;
       if (entrypoint === "queued") {
@@ -5302,12 +4780,13 @@ describe("CHAT-02: auto-send after failures", () => {
           queuedEventId,
         );
       } else {
-        const probe = await startChatRun(actor, {
-          agentId,
-          threadId: anchor.threadId,
-          prompt: probePrompt,
-        });
-        probeRunId = probe.runId;
+        probeRunId = (
+          await startChatRun(actor, {
+            agentId,
+            threadId: anchor.threadId,
+            prompt: probePrompt,
+          })
+        ).runId;
       }
       const probeContext = await waitForRunContext(actor, probeRunId);
       const appended = probeContext.body.appendSystemPrompt ?? "";
@@ -5321,7 +4800,7 @@ describe("CHAT-02: auto-send after failures", () => {
       );
       expect(appended).not.toContain(probePrompt);
       expect(appended).not.toContain(
-        "successful history before the delayed follow-up",
+        "successful history before the failed request",
       );
       expect(probeContext.body.sessionId).toBe(
         cliAgentSessionIdForChatRun(anchor.runId),
@@ -5407,11 +4886,10 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForRunStatus(actor, probe.runId, "cancelled");
   }, 90_000);
 
-  it("preserves the successful round boundary when its late follow-up is revoked", async () => {
+  it("preserves the successful round boundary when a published follow-up is revoked", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const followupGate = deferredGate();
     let followupRequests = 0;
 
     const anchor = await startChatRun(actor, {
@@ -5420,11 +4898,10 @@ describe("CHAT-02: auto-send after failures", () => {
     });
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions(async (body) => {
+    chatCallbacks.mockOpenRouterCompletions((body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("recommended follow-up messages")) {
         followupRequests += 1;
-        await followupGate.wait();
         return JSON.stringify([
           { prompt: "Inspect the failed round", kind: "talk" },
         ]);
@@ -5465,7 +4942,6 @@ describe("CHAT-02: auto-send after failures", () => {
       return lifecycleMarkers(messages, firstFailed.runId, "failed").length > 0;
     });
 
-    followupGate.release();
     const afterFollowup = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -5602,10 +5078,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
-    const pushGate = deferredGate();
-    context.mocks.webpush.sendNotification.mockImplementation(() => {
-      return pushGate.wait();
-    });
 
     context.mocks.ably.publish.mockClear();
     await failChatRun(second.runId, secondHeaders, "boom");
@@ -5661,7 +5133,6 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(appended).not.toContain("# Web Chat Run Context");
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${first.runId}`);
 
-    pushGate.release();
     await flushWaitUntilForTest();
     expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);
 

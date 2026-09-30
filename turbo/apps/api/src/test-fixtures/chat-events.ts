@@ -10,7 +10,6 @@ import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-team
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
@@ -22,7 +21,6 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
-import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -863,63 +861,6 @@ export async function timeoutRunWithoutCallbacksFixture(args: {
   }
 }
 
-/** Holds one unique run row so route tests can order lifecycle competitors. */
-export async function holdAgentRunRowLockFixture(args: {
-  readonly statusOnRelease?: "running";
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly waiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [run] = await tx
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, args.runId))
-      .for("update")
-      .limit(1);
-    if (!run) {
-      throw new Error("Expected the agent run row to lock");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the agent run row lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-    if (args.statusOnRelease === "running") {
-      await tx
-        .update(agentRuns)
-        .set({ status: "running", startedAt: nowDate() })
-        .where(eq(agentRuns.id, args.runId));
-    }
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    waiterCount: () => {
-      return transitiveBlockedWaiterCount(holderPid);
-    },
-  };
-}
-
 /**
  * Product APIs cannot pause a completed SQL response or physically remove an
  * event at that boundary. Preserve the real selected rows, delete only the
@@ -1191,55 +1132,6 @@ export async function holdChatThreadRowLockFixture(args: {
     },
     firstBlockedStatementKind: async () => {
       return await firstDirectBlockedStatementKind(holderPid);
-    },
-  };
-}
-
-/**
- * Holds one Agent row exclusively, the lock a transfer or deletion would take.
- * Product APIs never expose this boundary, and the fixture changes no column.
- */
-export async function holdAgentRowLockFixture(args: {
-  readonly agentId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(eq(agents.id, args.agentId))
-      .for("update")
-      .limit(1);
-    if (!agent) {
-      throw new Error("Expected the Agent row");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    if (!pidRows[0]) {
-      throw new Error("Expected the Agent lock holder pid");
-    }
-    started.resolve(pidRows[0].pid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
     },
   };
 }
@@ -1608,56 +1500,6 @@ export async function holdChatEventInsertTransactionFixture(args: {
     },
     blocks: async (waiterPid) => {
       return await pidIsDirectlyBlockedBy(waiterPid, pid);
-    },
-  };
-}
-
-/** Holds one existing run-output row to expose writes from later event batches. */
-export async function holdRunOutputMaterializationRowFixture(args: {
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the run-output row lock holder pid");
-    }
-    const [row] = await tx
-      .select({ runId: runOutputMaterializations.runId })
-      .from(runOutputMaterializations)
-      .where(eq(runOutputMaterializations.runId, args.runId))
-      .for("update")
-      .limit(1);
-    if (!row) {
-      throw new Error("Expected an existing run-output materialization");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
     },
   };
 }
