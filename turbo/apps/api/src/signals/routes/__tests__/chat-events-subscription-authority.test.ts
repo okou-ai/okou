@@ -25,6 +25,7 @@ const {
   chatCallbacks,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureUserOwnedGptPiModel,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
@@ -43,7 +44,7 @@ const {
 describe("CHAT-02: run-level model overrides", () => {
   describe("subscription account preparation", () => {
     it("rejects a personal account disconnected while its input is queued", async () => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await sendChatRun(actor, {
         agentId,

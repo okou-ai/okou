@@ -53,6 +53,7 @@ const {
   misc,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   seedBuiltInModelKey,
   configureBuiltInPiModel,
   configureBuiltInPiModelOnOpenRouter,
@@ -639,7 +640,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["deleted", "wrong-provider-key"] as const)(
     "rejects V4.1 %s credentials without borrowing another route",
     async (boundary) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await sendChatRun(actor, {
         agentId,

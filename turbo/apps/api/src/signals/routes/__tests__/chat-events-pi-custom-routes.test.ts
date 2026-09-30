@@ -35,6 +35,7 @@ const {
   webhooks,
   chatCallbacks,
   entitledChatActor,
+  entitledNativeChatActor,
   configureBuiltInPiModel,
   sendChatRun,
   sendWaitingChatInput,
@@ -614,7 +615,7 @@ describe("CHAT-02: model-first provider policies", () => {
   ] as const)(
     "fails custom $selectedModel when its $removed disappears before credential capture",
     async ({ selectedModel, removed }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await sendChatRun(actor, {
         agentId,
@@ -789,7 +790,7 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it("keeps the queued input's model and tier after the thread settings change", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const anchor = await sendChatRun(actor, {
       agentId,
