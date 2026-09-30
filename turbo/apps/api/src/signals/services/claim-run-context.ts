@@ -3088,6 +3088,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     customSurface$: queuedProviderAdmissionCustomSurface$,
   } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
+  /** Auto: the member's catalog subscription route is plan-exempt. */
+  const autoPersonalSubscription$ = computed(async (get) => {
+    const [pin, subscriptionModels] = await Promise.all([
+      get(queuedProviderAdmissionModelPin$),
+      get(subscriptionModels$),
+    ]);
+    return (
+      !("status" in pin) &&
+      pin.modelProviderCredentialScope === "member" &&
+      subscriptionModels.some((entry) => {
+        return (
+          entry.model === pin.selectedModel &&
+          entry.providerType === pin.modelProviderType
+        );
+      })
+    );
+  });
   const queuedProviderAdmissionProviderAdmission$ = computed(async (get) => {
     const pin = await get(queuedProviderAdmissionModelPin$);
     if ("status" in pin) {
@@ -3129,14 +3146,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
-    const autoPersonalSubscription =
-      pin.modelProviderCredentialScope === "member" &&
-      (await get(subscriptionModels$)).some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === effectiveModelProvider
-        );
-      });
+    const autoPersonalSubscription = await get(autoPersonalSubscription$);
     const error = checkOrgPlanRunAdmission({
       capabilities: get(queuedProviderAdmissionPolicyFacts$)
         .orgPlanCapabilities,
@@ -6191,6 +6201,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelRouting;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$2 } =
     queuedModelCredits;
+  /** Auto: the member's catalog subscription route is plan-exempt. */
+  const autoPersonalSubscription$2 = computed(async (get) => {
+    const [pin, subscriptionModels] = await Promise.all([
+      get(queuedProviderAdmissionModelPin$2),
+      get(subscriptionModels$2),
+    ]);
+    return (
+      !("status" in pin) &&
+      pin.modelProviderCredentialScope === "member" &&
+      subscriptionModels.some((entry) => {
+        return (
+          entry.model === pin.selectedModel &&
+          entry.providerType === pin.modelProviderType
+        );
+      })
+    );
+  });
   const queuedProviderAdmissionProviderAdmission$2 = computed(async (get) => {
     const pin = await get(queuedProviderAdmissionModelPin$2);
     if ("status" in pin) {
@@ -6232,14 +6259,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
-    const autoPersonalSubscription =
-      pin.modelProviderCredentialScope === "member" &&
-      (await get(subscriptionModels$2)).some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === effectiveModelProvider
-        );
-      });
+    const autoPersonalSubscription = await get(autoPersonalSubscription$2);
     const error = checkOrgPlanRunAdmission({
       capabilities: get(queuedProviderAdmissionPolicyFacts$2)
         .orgPlanCapabilities,

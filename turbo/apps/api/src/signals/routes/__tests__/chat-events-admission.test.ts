@@ -623,7 +623,7 @@ describe("CHAT-02: dispatch failure", () => {
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
 
     // Before expiry, the next enqueue's pick cannot take the lease.
-    mockNow(claimedAt + 9_999);
+    mockNow(claimedAt + 9999);
     await chat.requestSendEvent(
       actor,
       { agentId, threadId, prompt: "wait behind the lease" },
