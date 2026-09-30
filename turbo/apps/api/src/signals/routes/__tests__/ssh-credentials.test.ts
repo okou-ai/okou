@@ -203,7 +203,9 @@ describe("reusable SSH credential owner routes", () => {
         expect.objectContaining({
           id: attached.body.id,
           username: "rotated-user",
-          generation: attached.body.username === "deploy" ? 2 : 1,
+          // Attachment can commit before or after rotation's host UPDATE.
+          // The host always resolves the current credential independently.
+          generation: expect.toBeOneOf([1, 2]),
           credentialId: created.body.id,
         }),
       ]),
@@ -219,6 +221,128 @@ describe("reusable SSH credential owner routes", () => {
           { id: attached.body.id, displayName: "New host" },
         ]),
       }),
+    ]);
+  });
+
+  it("commits one concurrent rotation and rolls back the losing host invalidation", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Shared",
+          host: "ssh.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const results = await Promise.all(
+      ["first-user", "second-user"].map((username) => {
+        return accept(
+          credentials().update({
+            headers,
+            params: { credentialId: created.body.id },
+            body: { expectedRevision: 1, username },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map(({ status }) => {
+          return status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const winner = results.find((result) => {
+      return result.status === 200;
+    });
+    if (!winner || winner.status !== 200) {
+      throw new Error("Expected one successful credential rotation");
+    }
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toStrictEqual([
+      expect.objectContaining({
+        id: host.body.id,
+        credentialId: created.body.id,
+        username: winner.body.username,
+        generation: 2,
+      }),
+    ]);
+    const current = await accept(credentials().list({ headers }), [200]);
+    expect(current.body.credentials).toStrictEqual([
+      expect.objectContaining({
+        id: created.body.id,
+        revision: 2,
+        username: winner.body.username,
+      }),
+    ]);
+  });
+
+  it("preserves rotation and rejects a stale host edit without losing generations", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Original",
+          host: "ssh.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const [edited] = await Promise.all([
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: { expectedGeneration: 1, displayName: "Edited" },
+        }),
+        [200, 409],
+      ),
+      accept(
+        credentials().update({
+          headers,
+          params: { credentialId: created.body.id },
+          body: { expectedRevision: 1, username: "rotated-user" },
+        }),
+        [200],
+      ),
+    ]);
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toStrictEqual([
+      expect.objectContaining({
+        id: host.body.id,
+        credentialId: created.body.id,
+        username: "rotated-user",
+        displayName: edited.status === 200 ? "Edited" : "Original",
+        generation: edited.status === 200 ? 3 : 2,
+      }),
+    ]);
+    const current = await accept(credentials().list({ headers }), [200]);
+    expect(current.body.credentials).toStrictEqual([
+      expect.objectContaining({ id: created.body.id, revision: 2 }),
     ]);
   });
 

@@ -11,7 +11,6 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import {
-  sshOwnerCompatibilitySql,
   ownedSshCredential,
   prepareSshCredentialSelection,
   isSshCredentialReferenceViolation,
@@ -355,7 +354,6 @@ const commitSshConnectionCreation$ = command(
     const accessId = args.accessId;
     const transaction = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(sshOwnerCompatibilitySql(args));
         const [existing] = await tx
           .select({
             orgId: sshConnections.orgId,
@@ -535,7 +533,6 @@ const commitSshConnectionUpdate$ = command(
     const committed = await settle(
       db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
         async (tx) => {
-          await tx.execute(sshOwnerCompatibilitySql(args));
           const [current] = await tx
             .select()
             .from(sshConnections)

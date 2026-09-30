@@ -78,11 +78,6 @@ export function isSshCredentialReferenceViolation(error: unknown): boolean {
     error.cause.constraint === "ssh_connections_credential_owner_fk"
   );
 }
-/** Retain the outgoing writer key until all supported writers use member ownership. */
-export function sshOwnerCompatibilitySql(owner: Owner) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- Existing R1 compatibility key; outgoing writers do not own the member row.
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ssh_connection_owner:${owner.orgId}:${owner.userId}`}, 0))`;
-}
 const sshCredentialMetadata = Object.freeze({
   id: sshCredentials.id,
   name: sshCredentials.name,
@@ -338,8 +333,9 @@ export const updateSshCredential$ = command(
         args.body.username !== initial.username);
     const transaction = await settle(
       db.transaction(async (tx) => {
-        // Outgoing API writers only take this key. R2 removes it after their drain.
-        await tx.execute(sshOwnerCompatibilitySql(args.owner));
+        // Revision CAS arbitrates rotation with both current and outgoing
+        // writers. Outgoing rotation reads the revision after its own row
+        // acquisition; no shared advisory key is required by this writer.
         const hosts = await tx
           .select({
             id: sshConnections.id,
