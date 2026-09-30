@@ -427,8 +427,15 @@ independent reads are not serialized behind an early full-command await.
 The pure converter has no query, KMS or provider call. Thread privately assembles
 supplementary firewall and Codex protocol from the same configuration snapshot;
 no hidden configuration query is added. Existing framework/model availability
-checks remain caller-owned. Registered-provider/member and builtin runtime paths
-are not yet migrated to this converter and retain their existing behavior. The
+checks remain caller-owned. Org and member-owned single-secret provider records now use the same source,
+effect and pure-conversion path for Anthropic/OpenAI keys and the OpenRouter/
+Vercel protocol twins. `member-provider` explicitly identifies a user-owned
+`modelProviders` record, unlike `member` subscription-account identity. The
+reader applies exact owner scope without trying another source table or account.
+Thread retains deferred firewall alias metadata, conditional Pi credential capture
+and Codex protocol assembly. Cloud multi-auth, subscription-account, DeepSeek
+specialized and builtin runtime paths are not yet migrated and retain their
+existing behavior. The
 source reader's encrypted contract does not disguise builtin plaintext keys as
 encrypted credentials. This is a real gateway slice, not complete model-source
 or fifteen-interface parity.

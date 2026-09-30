@@ -1,3 +1,10 @@
+import {
+  MODEL_PROVIDER_TYPES,
+  modelProviderTypeSchema,
+  getModelProviderEnvBindings,
+  getModelProviderFirewall,
+  getProviderRuntimeModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
   compileModelProviderGatewayRuntime,
@@ -57,12 +64,85 @@ export interface CompiledModelRuntime {
   readonly secrets: Readonly<Record<string, string>>;
 }
 
+function compileRegisteredRuntime(
+  input: ModelRuntimeInput,
+): CompiledModelRuntime {
+  const { source, selection, credentials } = input;
+  if (
+    selection.kind !== "configured" ||
+    source.configuration.kind !== "registered-provider"
+  ) {
+    throw new Error("Registered source requires configured selection");
+  }
+  const type = modelProviderTypeSchema.parse(source.configuration.providerType);
+  const config = MODEL_PROVIDER_TYPES[type];
+  if (
+    !("secretName" in config) ||
+    !("envBindings" in config) ||
+    type === "deepseek" ||
+    type === "claude-code-oauth-token"
+  ) {
+    throw new Error(
+      "This registered protocol has not migrated to the pure runtime contract",
+    );
+  }
+  const secretName = config.secretName;
+  const key = credentials[secretName];
+  if (!key?.trim()) {
+    throw new Error(`Model credential ${secretName} is missing`);
+  }
+  const upstreamModel = getProviderRuntimeModel(type, selection.selectedModel);
+  const reference = getModelProviderFirewall(type)
+    ? `\${{ secrets.${secretName} }}`
+    : key;
+  const bindings = getModelProviderEnvBindings(type) ?? config.envBindings;
+  const environment = Object.fromEntries(
+    Object.entries(bindings).map(([name, value]) => {
+      return [
+        name,
+        value
+          .replaceAll("$secret", reference)
+          .replaceAll("$model", upstreamModel),
+      ];
+    }),
+  );
+  const protocol =
+    config.framework === "claude-code"
+      ? "anthropic-messages"
+      : "openai-responses";
+  const baseUrl =
+    environment.ANTHROPIC_BASE_URL ??
+    environment.OPENAI_BASE_URL ??
+    (protocol === "anthropic-messages"
+      ? "https://api.anthropic.com"
+      : "https://api.openai.com/v1");
+  return {
+    selectedModel: selection.selectedModel,
+    upstreamModel,
+    providerType: type,
+    credentialOwner: source.credentialOwner,
+    transport: { kind: "http", protocol, baseUrl },
+    authentication: {
+      kind: "header",
+      headerName: type === "anthropic-api-key" ? "x-api-key" : "Authorization",
+      valueTemplate:
+        type === "anthropic-api-key" ? "{{secret}}" : "Bearer {{secret}}",
+      secretName,
+    },
+    environment,
+    secrets: { [secretName]: key },
+  };
+}
+
 /** Pure selected-route conversion. It neither reads nor decrypts a source. */
 export function compileModelRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
   const config = source.configuration;
+  if (config.kind === "registered-provider") {
+    return compileRegisteredRuntime(input);
+  }
   if (
     selection.kind !== "configured" ||
     source.identity.kind !== "gateway" ||

@@ -1,5 +1,10 @@
+import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
+import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { createConnectorSourceSnapshots } from "./execution-connector-sources.service";
-import { createModelSourceSnapshot } from "./execution-model-source.service";
+import {
+  createModelSourceSnapshot,
+  type ModelSourceSnapshot,
+} from "./execution-model-source.service";
 import { compileModelRuntime } from "./execution-model-runtime";
 import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -523,6 +528,7 @@ import {
   ACTIVE_RUN_MODELS,
   getBuiltInConcreteProviderType,
   getFrameworkForType,
+  getSecretNameForType,
   getModelProviderFirewall,
   getRunModelAccess,
   hasAuthMethods,
@@ -8606,7 +8612,7 @@ export function createThreadClaimRunObjects(
     }
     return context;
   });
-  const selectedGatewaySource$ = computed(async (get) => {
+  const selectedConfiguredModelSource$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     const args = context?.environmentArgs;
     if (
@@ -8619,6 +8625,32 @@ export function createThreadClaimRunObjects(
     ) {
       return null;
     }
+    const type = args.modelProviderType;
+    const registered =
+      type !== undefined &&
+      [
+        "anthropic-api-key",
+        "openai-api-key",
+        "openrouter-api-key",
+        "openrouter-codex",
+        "vercel-ai-gateway",
+        "vercel-ai-gateway-codex",
+      ].includes(type);
+    if (registered && args.modelProviderCredentialScope !== undefined) {
+      return await get(
+        createModelSourceSnapshot({
+          orgId: args.orgId,
+          userId: args.userId,
+          source: {
+            kind:
+              args.modelProviderCredentialScope === "member"
+                ? "member-provider"
+                : "organization",
+            modelProviderId: args.modelProviderId,
+          },
+        }),
+      );
+    }
     return await get(
       createModelSourceSnapshot({
         orgId: args.orgId,
@@ -8629,11 +8661,94 @@ export function createThreadClaimRunObjects(
   });
   // A prepared model runtime is an effect-produced business fact, not a
   // temporary argument slot. Source identity/read graphs remain immutable.
-  const internalPreparedGatewayEnvironment$ =
+  const internalPreparedConfiguredEnvironment$ =
     state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
-  const resolveGatewayModelRuntime$ = command(
+  const prepareRegisteredModelRuntime$ = command(
     async (
-      { get },
+      _context,
+      source: ModelSourceSnapshot,
+      selectedModel: string,
+      options: {
+        readonly userId: string;
+        readonly sourceId: string;
+        readonly piExecution: boolean | undefined;
+      },
+      signal: AbortSignal,
+    ): Promise<ResolvedModelProviderEnvironment | null> => {
+      const { userId, sourceId, piExecution } = options;
+      const type = modelProviderTypeSchema.parse(
+        source.configuration.providerType,
+      );
+      const credentials = Object.fromEntries(
+        await Promise.all(
+          source.credentials.map(async (credential) => {
+            const value = await decryptStoredSecretValue(
+              credential.encryptedValue,
+            );
+            signal.throwIfAborted();
+            return [credential.name, value] as const;
+          }),
+        ),
+      );
+      const credentialName = getSecretNameForType(type);
+      if (!credentialName || !credentials[credentialName]?.trim()) {
+        return null;
+      }
+      const compiled = compileModelRuntime({
+        source,
+        selection: { kind: "configured", selectedModel },
+        credentials,
+      });
+      const deferred = getModelProviderFirewall(type) !== undefined;
+      const capture =
+        piExecution &&
+        (isPiNativeModel(selectedModel) || isPiDeepSeekModel(selectedModel));
+      const names = Object.keys(compiled.secrets);
+      const sourceUserId =
+        source.credentialOwner === "organization"
+          ? ORG_SENTINEL_USER_ID
+          : userId;
+      const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
+        type,
+        logicalModel: compiled.selectedModel,
+        runtimeModel: compiled.upstreamModel,
+        environment: compiled.environment,
+      });
+      return {
+        id: sourceId,
+        type,
+        credentialOwner: compiled.credentialOwner,
+        environment: { ...compiled.environment },
+        secrets: deferred && !capture ? {} : { ...compiled.secrets },
+        selectedModel: compiled.selectedModel,
+        ...(deferred
+          ? {
+              secretConnectorMap: Object.fromEntries(
+                names.map((name) => {
+                  return [name, type];
+                }),
+              ),
+              secretConnectorMetadataMap: Object.fromEntries(
+                names.map((name) => {
+                  return [
+                    name,
+                    {
+                      sourceType: "model-provider" as const,
+                      sourceUserId,
+                      metadataKey: type,
+                    },
+                  ];
+                }),
+              ),
+            }
+          : {}),
+        ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
+      };
+    },
+  );
+  const resolveConfiguredModelRuntime$ = command(
+    async (
+      { get, set },
       signal: AbortSignal,
     ): Promise<ResolvedModelProviderEnvironment | null> => {
       const selection = await get(selectionInput$);
@@ -8643,13 +8758,40 @@ export function createThreadClaimRunObjects(
       }
       const [context, source] = await Promise.all([
         get(pinnedContext$),
-        get(selectedGatewaySource$),
+        get(selectedConfiguredModelSource$),
       ]);
       signal.throwIfAborted();
       if (!context || !source) {
         return null;
       }
       const config = source.configuration;
+      if (config.kind === "registered-provider") {
+        const selectedModel = context.environmentArgs.selectedModelOverride;
+        const type = modelProviderTypeSchema.parse(config.providerType);
+        if (
+          !selectedModel ||
+          getFrameworkForType(type) !== context.environmentArgs.framework ||
+          (context.environmentArgs.modelProviderType !== undefined &&
+            context.environmentArgs.modelProviderType !== type)
+        ) {
+          return null;
+        }
+        const sourceId = context.environmentArgs.modelProviderId;
+        if (!sourceId) {
+          throw new Error("Selected registered source has no identity");
+        }
+        return await set(
+          prepareRegisteredModelRuntime$,
+          source,
+          selectedModel,
+          {
+            userId: context.environmentArgs.userId,
+            sourceId,
+            piExecution: context.environmentArgs.piExecution,
+          },
+          signal,
+        );
+      }
       if (config.kind !== "gateway" || source.identity.kind !== "gateway") {
         throw new Error("Selected gateway has an invalid source kind");
       }
@@ -8714,15 +8856,15 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const prepareGatewayModelRuntime$ = command(
+  const prepareConfiguredModelRuntime$ = command(
     ({ set }, signal: AbortSignal) => {
-      const preparation = set(resolveGatewayModelRuntime$, signal);
-      set(internalPreparedGatewayEnvironment$, preparation);
+      const preparation = set(resolveConfiguredModelRuntime$, signal);
+      set(internalPreparedConfiguredEnvironment$, preparation);
       return preparation;
     },
   );
   const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
-    return await get(internalPreparedGatewayEnvironment$);
+    return await get(internalPreparedConfiguredEnvironment$);
   });
   const pinnedBuiltInProviderSnapshot$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
@@ -12375,7 +12517,10 @@ export function createThreadClaimRunObjects(
         await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
-      const gatewayPreparation = set(prepareGatewayModelRuntime$, signal);
+      const configuredModelPreparation = set(
+        prepareConfiguredModelRuntime$,
+        signal,
+      );
       const connectorPreparation = set(prepareConnectorSecrets$, signal);
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
@@ -12384,7 +12529,7 @@ export function createThreadClaimRunObjects(
         set(checkClaimAdmission$, signal),
         set(prepareLaunchResources$, head, signal),
         get(storageMounts$),
-        gatewayPreparation,
+        configuredModelPreparation,
         connectorPreparation,
       ]);
       signal.throwIfAborted();

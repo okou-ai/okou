@@ -26,6 +26,7 @@ export type ModelSourceIdentity =
   | { readonly kind: "built-in"; readonly modelKeyId: string }
   | { readonly kind: "organization"; readonly modelProviderId: string }
   | { readonly kind: "member"; readonly accountId: string }
+  | { readonly kind: "member-provider"; readonly modelProviderId: string }
   | { readonly kind: "gateway"; readonly surfaceId: string };
 
 export interface ModelSourceRequest {
@@ -175,7 +176,9 @@ export function createModelSourceSnapshot(
         accountIdentity: first.account.externalAccountId,
       };
     }
-    if (source.kind === "organization") {
+    if (source.kind === "organization" || source.kind === "member-provider") {
+      const ownerUserId =
+        source.kind === "organization" ? ORG_SENTINEL_USER_ID : request.userId;
       const [provider] = await db
         .select({
           type: modelProviders.type,
@@ -187,7 +190,7 @@ export function createModelSourceSnapshot(
           and(
             eq(modelProviders.id, source.modelProviderId),
             eq(modelProviders.orgId, request.orgId),
-            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+            eq(modelProviders.userId, ownerUserId),
           ),
         )
         .limit(1);
@@ -201,7 +204,7 @@ export function createModelSourceSnapshot(
         .where(
           and(
             eq(secrets.orgId, request.orgId),
-            eq(secrets.userId, ORG_SENTINEL_USER_ID),
+            eq(secrets.userId, ownerUserId),
             hasAuthMethods(providerType)
               ? eq(secrets.type, "model-provider")
               : provider.secretId === null
@@ -211,7 +214,8 @@ export function createModelSourceSnapshot(
         );
       return {
         identity: source,
-        credentialOwner: "organization",
+        credentialOwner:
+          source.kind === "organization" ? "organization" : "member",
         configuration: {
           kind: "registered-provider",
           providerType: provider.type,
