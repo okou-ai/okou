@@ -20,7 +20,7 @@ import {
   OfficialWorkflowRunAdmissionError,
 } from "./official-workflow-run.service";
 import { now, nowDate } from "../../lib/time";
-import { type Db, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, type Db, writeDb$, type ReadonlyDb } from "../external/db";
 import {
   measureApiDispatchTiming,
   ApiDispatchTimingCollector,
@@ -569,7 +569,7 @@ interface AgentExecutionConfig {
 }
 
 interface PrepareAgentRunStorageManifestArgs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly content: AgentExecutionConfig;
   readonly vars: Record<string, string> | undefined;
   readonly agentOrgId: string;
@@ -705,7 +705,7 @@ interface PreparedAgentRunStorage<
 }
 
 interface BuildStorageManifestEntriesArgs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly agentOrgId: string;
@@ -1622,7 +1622,7 @@ export function buildStorageIndex(
 }
 
 export interface StorageIndexInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly requests: readonly StorageRequest[];
   readonly timing: ApiDispatchTimingCollector | undefined;
 }
@@ -1951,7 +1951,7 @@ function volumeStorageLookup(
 }
 
 function resolveVolumeStorage(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly volume: ResolvedVolume | AdditionalVolume;
   readonly primaryOrgId: string;
@@ -1981,7 +1981,7 @@ function resolveVolumeStorage(args: {
 }
 
 function resolveComposeStorageInput(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly agentOrgId: string;
   readonly volume: ResolvedVolume;
@@ -2015,7 +2015,7 @@ function resolveComposeStorageInput(args: {
 }
 
 function resolveAdditionalStorageInput(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly volume: AdditionalVolume;
@@ -2181,7 +2181,7 @@ function resolveOfficialWorkflowStorageInput(args: {
 }
 
 export function resolveArtifactStorageInput(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly userId: string;
@@ -2459,7 +2459,7 @@ const buildStorageEntriesFromPlans$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
+      readonly db: ReadonlyDb;
       readonly bucket: string;
       readonly plans: readonly ResolvedManifestStoragePlan[];
       readonly requests: StorageManifestPresignedUrlRequests;
@@ -2663,7 +2663,7 @@ function buildPreparedWritebackStorageEntry(args: {
 }
 
 async function buildComposeStorageEntry(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly agentOrgId: string;
   readonly volume: ResolvedVolume;
@@ -2687,7 +2687,7 @@ async function buildComposeStorageEntry(args: {
 }
 
 async function buildAdditionalStorageEntry(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly volume: AdditionalVolume;
@@ -3381,7 +3381,7 @@ export function persistedStorageMountRequests(
 }
 
 function resolvePersistedStorageMounts(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
 }): ResolvedStorageManifestEntryPlans {
@@ -3457,7 +3457,7 @@ function resolvePersistedStorageMounts(args: {
 }
 
 export function resolveValidatedPersistedStorageMounts(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
@@ -3511,7 +3511,7 @@ export function resolveValidatedPersistedStorageMounts(args: {
 }
 
 export function resolveSessionWritebackStorageMounts(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
@@ -3693,7 +3693,7 @@ export function prepareRequestStorageResolution(
 }
 
 interface CapturedAgentRunStorageArgs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly mounts: readonly PersistedStorageMount[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
@@ -4287,7 +4287,7 @@ interface ResolveAgentExecutionOptions {
 }
 
 type TestOnlyDirectRunResolver = (args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly body: CreateRunBody;
   readonly userId: string;
   readonly orgId: string;
@@ -4772,7 +4772,7 @@ interface PersistedRunEnvironmentSnapshot {
 }
 
 interface RunResourceScope {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
 }
@@ -6063,7 +6063,7 @@ interface ModelProviderEnvironmentSecret {
 }
 
 async function loadModelProviderEnvironmentSecretRows(
-  db: Db,
+  db: ReadonlyDb,
   args: {
     readonly accountId?: string;
     readonly orgId: string;
@@ -6120,7 +6120,7 @@ async function loadModelProviderEnvironmentSecretRows(
 }
 
 async function multiAuthModelProviderEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: {
     readonly id: string | null;
     readonly orgId: string;
@@ -6155,7 +6155,7 @@ async function multiAuthModelProviderEnvironment(
 }
 
 async function builtInModelProviderEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
   resolvedRoute?: BuiltInModelRuntimeRoute,
@@ -6208,7 +6208,7 @@ export interface ResolveModelProviderEnvironmentArgs {
 }
 
 async function customGatewayModelProviderEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (!args.modelProviderId || !args.selectedModelOverride) {
@@ -6291,7 +6291,7 @@ function isCandidateModelProviderRow(
 }
 
 async function resolvePersonalModelProviderAccountEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
   account: PersonalModelProviderAccountRow,
   selectedModel: string | null,
@@ -6359,7 +6359,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
 }
 
 async function resolveExactPersonalModelProviderAccount(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
@@ -6437,7 +6437,7 @@ function shouldResolveActivePersonalModelProviderAccount(
 }
 
 async function resolveActivePersonalModelProviderAccountEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
 ): Promise<ResolvedModelProviderEnvironment | null> {
@@ -6458,7 +6458,7 @@ async function resolveActivePersonalModelProviderAccountEnvironment(
 }
 
 async function resolveMultiAuthCandidate(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
 ): Promise<ResolvedModelProviderEnvironment | null> {
@@ -6477,7 +6477,7 @@ async function resolveMultiAuthCandidate(
 }
 
 async function resolveCandidateModelProviderEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
 ): Promise<ResolvedModelProviderEnvironment | null> {
@@ -6521,7 +6521,7 @@ async function resolveCandidateModelProviderEnvironment(
 }
 
 async function resolveModelProviderEnvironment(
-  db: Db,
+  db: ReadonlyDb,
   args: ResolveModelProviderEnvironmentArgs,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (isBuiltInModelProviderType(args.modelProviderType)) {
@@ -8418,7 +8418,7 @@ function requireResolvedAgentIdMatch(
 }
 
 export async function resolveAgentExecution(
-  db: Db,
+  db: ReadonlyDb,
   body: CreateRunBody,
   userId: string,
   orgId: string,
@@ -11335,7 +11335,7 @@ export function resolvePreparedPiModelConfig(args: {
 }
 
 async function resolveRunModelProvider(
-  db: Db,
+  db: ReadonlyDb,
   args: RunModelProviderArgs,
   options: {
     readonly content: agentRunCreateAgentExecutionConfig;
@@ -11657,7 +11657,7 @@ export function agentRunResolutionOptions(
 }
 
 export async function resolvePreparedRunModelProvider(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly createArgs: RunModelProviderArgs;
   readonly timing: ApiDispatchTimingCollector;
   readonly bodyContext: Pick<
@@ -11697,7 +11697,7 @@ export function piConfigurationRouteError(
 }
 
 export interface RunPreparedConnectorInputs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
@@ -11916,7 +11916,7 @@ function isImageRecognitionAvailableForRun(args: {
 }
 
 export interface PrepareRunContextInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly args: CreateAgentRunArgs;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -12413,7 +12413,7 @@ type RunModelProviderArgs = Pick<
 >;
 
 export interface RunModelProviderReadInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: RunModelProviderArgs;
 }
@@ -12995,7 +12995,7 @@ type RunConnectorScopeObject = Computed<
 >;
 
 export interface RunConnectorReadInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: Pick<
     CreateAgentRunArgs,
@@ -14571,7 +14571,7 @@ function createRunMemberSnapshotObject(input$: AsyncRead<RunMemberReadInput>) {
 }
 
 export interface RunWorkflowReadInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly args: Pick<
     CreateAgentRunArgs,
     | "orgId"
@@ -16694,7 +16694,6 @@ export type AgentRunSelectionInput = Omit<
   readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
 };
 export interface AgentRunIdentityInput {
-  readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
   readonly auth: CreateAgentRunCommandArgs["auth"];
   readonly agentId: string;
@@ -16731,7 +16730,6 @@ export type AgentRunIdentityCommand = Omit<
 };
 export interface AgentRunGraphInput {
   readonly command: AgentRunIdentityCommand;
-  readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
 }
 
@@ -16779,7 +16777,8 @@ function createPreCreateAgentId(
   input$: ReturnType<typeof createPreCreateInput>,
 ) {
   const agentId$ = computed(async (get) => {
-    const { command: args, db, timing } = await get(input$);
+    const { command: args, timing } = await get(input$);
+    const db = get(db$);
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_resolve_agent_id",
@@ -16836,7 +16835,8 @@ function createPreCreateAgent(
   requestObservation$: ReturnType<typeof createPreCreateRequestObservation>,
 ) {
   const agent$ = computed(async (get): Promise<AgentRunRecord | null> => {
-    const { db, timing } = await get(input$);
+    const { timing } = await get(input$);
+    const db = get(db$);
     const [agentId, observation] = await Promise.all([
       get(agentId$),
       get(requestObservation$),
@@ -16907,7 +16907,8 @@ function createPreCreateBootstrapMetadataRows(
 ) {
   const bootstrapMetadataRows$ = computed(
     async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      const { db } = await get(input$);
+      await get(input$);
+      const db = get(db$);
       const [args, featureContext] = await Promise.all([
         get(bootstrapQueryArgs$),
         get(featureSwitchObservation$),
@@ -17031,7 +17032,8 @@ function createPreCreateWorkflowRows(
 ) {
   const workflowRows$ = computed(
     async (get): Promise<RunWorkflowSourceRow[]> => {
-      const { db } = await get(input$);
+      await get(input$);
+      const db = get(db$);
       const args = await get(bootstrapQueryArgs$);
       return await db
         .select({
@@ -17192,7 +17194,8 @@ function createPreCreateSubscriptionAccount(
         }
       | ReturnType<typeof conflict>
     > => {
-      const { command, db, timing } = await get(input$);
+      const { command, timing } = await get(input$);
+      const db = get(db$);
       const pin = command.agentRunModelPin;
       if (
         !pin ||
@@ -17331,7 +17334,7 @@ function createPreCreateModelObjects(
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        db: input.db,
+        db: get(db$),
         timing: input.timing,
         args: selectedRunModelProviderArgs(
           account.command,
@@ -17373,7 +17376,8 @@ function createPreCreateOfficialWorkflowObjects(
 ) {
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
-      const { db, command } = await get(input$);
+      const { command } = await get(input$);
+      const db = get(db$);
       const workflows = workflowsForRunFromRows(
         await get(workflowRows$),
         command.auth.userId,
@@ -17417,7 +17421,8 @@ function createPreCreateConnectorCatalog(
   bootstrapMetadata$: ReturnType<typeof createPreCreateBootstrapMetadata>,
 ) {
   const catalogInput$ = computed(async (get) => {
-    const { db, timing } = await get(input$);
+    const { timing } = await get(input$);
+    const db = get(db$);
     return { db, timing };
   });
   const requestedSlugs$ = computed(async (get) => {
@@ -17484,7 +17489,8 @@ function createPreCreateThreadSession(
 ) {
   const threadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, db, timing } = await get(input$);
+      const { command, timing } = await get(input$);
+      const db = get(db$);
       if (!command.chatThreadId) {
         return undefined;
       }
@@ -17562,14 +17568,13 @@ function createPreCreateThreadSession(
 function createPreCreateSessionPrompt(
   input$: AsyncRead<{
     readonly command: AnyCreateAgentRunCommandArgs;
-    readonly db: Db;
     readonly timing: ApiDispatchTimingCollector;
   }>,
   threadSession$: AsyncRead<ChatThreadSessionResolution | undefined>,
 ) {
   const promptInput$ = computed(
     async (get): Promise<WebChatSessionPromptInput | undefined> => {
-      const { command, db } = await get(input$);
+      const { command } = await get(input$);
       const resolution = await get(threadSession$);
       if (
         !command.chatThreadId ||
@@ -17579,7 +17584,6 @@ function createPreCreateSessionPrompt(
         return undefined;
       }
       return {
-        db,
         threadId: command.chatThreadId,
         sessionAction: resolution.action,
         context: command.webChatSessionPromptContext,
@@ -17743,7 +17747,8 @@ function createPreCreateConnectorObjects(
 ) {
   const connectorInput$ = computed(
     async (get): Promise<RunConnectorReadInput> => {
-      const { db, command, timing } = await get(input$);
+      const { command, timing } = await get(input$);
+      const db = get(db$);
       return {
         db,
         timing,
@@ -17786,7 +17791,8 @@ function createPreCreateResourceObjects(
   agent$: ReturnType<typeof createPreCreateAgent>,
 ) {
   const scope$ = computed(async (get) => {
-    const { db, command } = await get(input$);
+    const { command } = await get(input$);
+    const db = get(db$);
     return { db, orgId: command.auth.orgId, userId: command.auth.userId };
   });
   const environmentInput$ = computed(async (get) => {
@@ -17897,7 +17903,7 @@ function createPreCreatePreparedConnectorObjects(args: {
         throw new Error("Authorized selected run preparation is missing");
       }
       return {
-        db: input.db,
+        db: get(db$),
         timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -18054,7 +18060,6 @@ function createSelectedIdentityInput(
           throw new Error("Run identity is unavailable");
         }
         return {
-          db: input.db,
           timing: input.timing,
           command: {
             auth: input.auth,
@@ -18313,7 +18318,7 @@ function createSelectedStorageInputObject(
       return {
         kind: "requested",
         args: {
-          db: input.db,
+          db: get(db$),
           content: resolved.content,
           vars: withoutLegacyAgentRunEnvironmentEntries(
             buildMergedVariables({
@@ -18366,7 +18371,7 @@ function createSelectedStorageObjects(
 function createSelectedRunContextObjects(
   graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
 ) {
-  const { input$, runArgs$, shared } = graph;
+  const { runArgs$, shared } = graph;
   const contextInput$ = computed(
     async (get): Promise<PrepareRunContextInput> => {
       const selected = await get(runArgs$);
@@ -18384,7 +18389,7 @@ function createSelectedRunContextObjects(
           }
         : selected.args;
       return {
-        db: (await get(input$)).db,
+        db: get(db$),
         args,
         timing: selected.input.timing,
       };

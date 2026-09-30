@@ -15,7 +15,7 @@ import { computed, type Computed } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import { db$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 
 export interface BuiltInModelRuntimeRoute {
   readonly selectedModel: string;
@@ -164,7 +164,7 @@ export const builtInModelKeyIdsByVendor$: Computed<
 });
 
 export async function resolveBuiltInModelRuntimeRoute(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
@@ -177,7 +177,7 @@ export async function resolveBuiltInModelRuntimeRoute(
 }
 
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,

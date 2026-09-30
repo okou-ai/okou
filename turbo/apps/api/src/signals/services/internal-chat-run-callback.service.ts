@@ -32,7 +32,7 @@ import { logger } from "../../lib/log";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
@@ -2197,7 +2197,7 @@ export type QueuedMessageModelRouteResolution =
 
 export interface CreateQueuedChatRunInputArgs {
   readonly expectedThreadAgentId?: string;
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly threadId: string;
   readonly userId: string;
   readonly agent: AgentForAutoSend;

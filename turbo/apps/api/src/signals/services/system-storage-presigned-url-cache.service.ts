@@ -12,7 +12,7 @@ import {
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
@@ -978,7 +978,7 @@ function storageManifestExceedsObjectKeyLowerBound(
 }
 
 interface StorageManifestPresignedUrlCacheReadInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
   readonly groups: readonly RunStoragePresignedUrlsArgs["requests"][];
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
@@ -1251,7 +1251,7 @@ export function createStorageManifestPresignedUrlCacheRows(
 }
 
 async function lookupStoragePresignedUrlCacheRows(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly cacheKeys: readonly string[];
 }): Promise<readonly SelectedStoragePresignedUrlCacheRow[]> {
@@ -1271,7 +1271,7 @@ async function lookupStoragePresignedUrlCacheRows(args: {
 }
 
 async function storagePresignedUrlCacheRows(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly cacheKeys: readonly string[];
   readonly timing: StorageManifestCacheTiming | undefined;
@@ -1391,7 +1391,7 @@ interface StoragePresignedUrlSigningRequest extends StoragePresignedUrlFreshRequ
 }
 
 async function prepareStoragePresignedUrls<TRequest extends object>(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly requests: readonly TRequest[];
   readonly ttlSeconds: number;
@@ -1655,7 +1655,7 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
 }
 
 interface RunStoragePresignedUrlsArgs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly requests:
     | {
         readonly kind: "system";

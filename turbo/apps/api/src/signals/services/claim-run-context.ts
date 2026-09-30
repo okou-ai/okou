@@ -33,7 +33,7 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
 import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
-import { type Db, db$, writeDb$ } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -658,7 +658,6 @@ interface QueuedModelInput {
 }
 
 interface QueuedPromptGraphInput {
-  readonly db: Db;
   readonly head: ChatQueueHeadContext;
   readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly runTiming: ApiDispatchTimingCollector;
@@ -3458,7 +3457,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return input;
   });
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
-    const { db, head } = get(promptInputInput$);
+    const { head } = get(promptInputInput$);
+    const db = get(db$);
     const [event] = await db
       .select({
         id: chatEvents.id,
@@ -3534,7 +3534,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           "Queued Official agent input is missing its source Run annotation",
         );
       }
-      const { db } = get(promptInputInput$);
+      const db = get(db$);
       const [run] = await db
         .select({ autonomyBudget: agentRuns.autonomyBudget })
         .from(agentRuns)
@@ -3573,7 +3573,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptAgentAgent$ = computed(
     async (get): Promise<QueuedPromptAgent | null> => {
-      const { db, head } = get(promptInputInput$);
+      const { head } = get(promptInputInput$);
+      const db = get(db$);
       if (
         ![
           "slack",
@@ -3616,7 +3617,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { db, head, timing } = get(promptInputInput$);
+      const { head, timing } = get(promptInputInput$);
+      const db = get(db$);
       const [queuedMessage, agent] = await Promise.all([
         get(promptQueuedMessageQueuedMessage$),
         get(promptAgentAgent$),
@@ -3637,7 +3639,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptFeaturesFeatures$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const { db, head } = get(promptInputInput$);
+      const { head } = get(promptInputInput$);
+      const db = get(db$);
       const rows = await db
         .select({
           userId: userFeatureSwitches.userId,
@@ -3683,7 +3686,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const promptSlackContextSlackContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "slack") {
       return null;
@@ -3754,7 +3757,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return requiredSlackLaunchContext(row);
   });
   const promptFeishuRawContextFeishuRawContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "feishu") {
       return undefined;
@@ -3849,7 +3852,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           args.featureSwitchContext,
         );
       }
-      const { db } = get(promptInputInput$);
+      const db = get(db$);
       const overrides = await db
         .select({
           userId: userFeatureSwitches.userId,
@@ -3883,7 +3886,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return enabled ? requiredFeishuLaunchContext(row) : null;
   });
   const promptTeamsContextTeamsContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "teams") {
       return null;
@@ -3958,7 +3961,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return requiredTeamsLaunchContext(row);
   });
   const promptTelegramContextTelegramContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "telegram") {
       return null;
@@ -4018,7 +4021,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return requiredTelegramLaunchContext(row);
   });
   const promptAgentphoneContextAgentphoneContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "agentphone") {
       return null;
@@ -4075,7 +4078,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return requiredAgentPhoneLaunchContext(row);
   });
   const promptDiscordContextDiscordContext$ = computed(async (get) => {
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptLoaderArgsLoaderArgs$);
     if (args.contextType !== "discord") {
       return null;
@@ -4128,7 +4131,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (args.contextType !== "discord") {
       return null;
     }
-    const { db } = get(promptInputInput$);
+    const db = get(db$);
     if (!context) {
       const [route] = await db
         .select({ id: discordChatThreadRoutes.id })
@@ -4458,7 +4461,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!isWebChatContextType(args.queuedMessage.contextType)) {
         return [];
       }
-      const { db } = args;
+      // Handwritten raw SQL needs `execute`; see rawSqlReadDb$.
+      const db = get(rawSqlReadDb$);
       const { newestAnchor, precedingAnchor } = await get(
         incompleteRoundAnchors$,
       );
@@ -4788,7 +4792,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const promptHostHost$ = computed(async (get) => {
-    const { db, head } = get(promptInputInput$);
+    const { head } = get(promptInputInput$);
+    const db = get(db$);
     const [host] = await db
       .select({
         hostId: computerUseHosts.id,
@@ -4812,7 +4817,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return host ?? null;
   });
   const promptCaptureCapture$ = computed(async (get) => {
-    const { db, head } = get(promptInputInput$);
+    const { head } = get(promptInputInput$);
+    const db = get(db$);
     const [row] = await db
       .select({ id: chatNetworkBodyCaptures.chatEventId })
       .from(chatNetworkBodyCaptures)
@@ -5051,10 +5057,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<boolean> => {
-      const db = set(writeDb$);
       const timing = new ChatCallbackPreCreateTimingCollector();
       set(promptInternalInputInternalInput$, {
-        db,
         head,
         timing,
         runTiming,
@@ -5183,7 +5187,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (get(internalEarlyAssembly$)) {
       return null;
     }
-    const { db, head, runTiming: timing } = get(promptInputInput$);
+    const { head, runTiming: timing } = get(promptInputInput$);
+    const db = get(db$);
     const args = await get(promptArgsArgs$);
     return {
       db,
@@ -5544,12 +5549,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const reconciliation = {
     reconcileOfficialWorkflow$: reconcileOfficialWorkflow$,
   };
-  const automationLaunchReadinessInternalInput$ = state<
-    | (AssembleWorkflowAutomationRunArgs & {
-        readonly db: Db;
-      })
-    | null
-  >(null);
+  const automationLaunchReadinessInternalInput$ =
+    state<AssembleWorkflowAutomationRunArgs | null>(null);
   const automationLaunchReadinessInput$ = computed((get) => {
     const input = get(automationLaunchReadinessInternalInput$);
     if (!input) {
@@ -6635,7 +6636,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return model;
   });
-  const internalAutomationDatabase$ = state<Db | null>(null);
   const automationExecutionInput$ = computed(async (get) => {
     const [head, event, target] = await Promise.all([
       get(head$),
@@ -6645,12 +6645,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!head || !event || !target) {
       return null;
     }
-    const database = get(internalAutomationDatabase$);
-    if (!database) {
-      throw new Error("Automation execution has not started");
-    }
     return {
-      db: database,
       due: { ...target, chatThreadId: event.chatThreadId },
       apiStartTime: head.apiStartTime,
       queueEventId: event.id,
@@ -6665,7 +6660,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return null;
       }
       return {
-        db: args.db,
         timing: get(workflowAutomationLaunchReadGraphTiming$),
         auth: workflowAutomationAgentRunAuth(args.due.automation),
         apiStartTime: args.apiStartTime,
@@ -6687,7 +6681,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ]);
       return identity && model.ok && args
         ? {
-            db: identity.db,
             timing: identity.timing,
             command: automationSelectionCommand(args, model, identity.timing),
           }
@@ -6800,10 +6793,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(workflowAutomationLaunchInternalInput$, {
-        ...args,
-        db: set(writeDb$),
-      });
+      set(workflowAutomationLaunchInternalInput$, args);
       const assembly = await set(assembleWorkflowAutomationRun$, signal);
       signal.throwIfAborted();
       set(internalAssembly$, assembly);
@@ -6855,7 +6845,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
-      set(internalAutomationDatabase$, set(writeDb$));
       set(initializeQueuedAutomationInternalHead$, head);
       set(
         internalTiming$,
@@ -7142,7 +7131,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Run identity is unavailable");
       }
       return {
-        db: input.db,
         timing: input.timing,
         command: {
           auth: input.auth,
@@ -7156,11 +7144,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreateAgentIdAgentId$ = computed(async (get) => {
-    const {
-      command: args,
-      db,
-      timing,
-    } = await get(selectedIdentityInputIdentityInput$);
+    const { command: args, timing } = await get(
+      selectedIdentityInputIdentityInput$,
+    );
+    const db = get(db$);
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_resolve_agent_id",
@@ -7197,7 +7184,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
-      const { db, timing } = await get(selectedIdentityInputIdentityInput$);
+      const { timing } = await get(selectedIdentityInputIdentityInput$);
+      const db = get(db$);
       const [agentId, observation] = await Promise.all([
         get(preCreateAgentIdAgentId$),
         get(preCreateRequestObservationRequestObservation$),
@@ -7255,10 +7243,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const bootstrapCustomConnectorQuery$ = computed(async (get) => {
-    const [{ db }, args] = await Promise.all([
+    const [, args] = await Promise.all([
       get(selectedIdentityInputIdentityInput$),
       get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
     ]);
+    const db = get(db$);
     return {
       query: db
         .select({
@@ -7307,7 +7296,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const preCreateBootstrapMetadataRowsBootstrapMetadataRows$ = computed(
     async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      const { db } = await get(selectedIdentityInputIdentityInput$);
+      await get(selectedIdentityInputIdentityInput$);
+      const db = get(db$);
       const [args, featureContext, { query: customConnectorQuery }] =
         await Promise.all([
           get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
@@ -7422,7 +7412,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateWorkflowRowsWorkflowRows$ = computed(
     async (get): Promise<RunWorkflowSourceRow[]> => {
-      const { db } = await get(selectedIdentityInputIdentityInput$);
+      await get(selectedIdentityInputIdentityInput$);
+      const db = get(db$);
       const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
       return await db
         .select({
@@ -7518,7 +7509,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         }
       | ReturnType<typeof conflict>
     > => {
-      const { command, db, timing } = await get(preCreateInput$);
+      const { command, timing } = await get(preCreateInput$);
+      const db = get(db$);
       const pin = command.agentRunModelPin;
       if (
         !pin ||
@@ -7598,7 +7590,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const catalogInput$ = computed(async (get) => {
-    const { db, timing } = await get(selectedIdentityInputIdentityInput$);
+    const { timing } = await get(selectedIdentityInputIdentityInput$);
+    const db = get(db$);
     return { db, timing };
   });
   const requestedSlugs$ = computed(async (get) => {
@@ -8392,7 +8385,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
   const scope$ = computed(async (get) => {
-    const { db, command } = await get(preCreateExecutionIdentityInput$);
+    const { command } = await get(preCreateExecutionIdentityInput$);
+    const db = get(db$);
     return { db, orgId: command.auth.orgId, userId: command.auth.userId };
   });
   const environmentInput$ = computed(async (get) => {
@@ -8547,7 +8541,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        db: input.db,
+        db: get(db$),
         timing: input.timing,
         args: selectedRunModelProviderArgs(
           account.command,
@@ -9030,9 +9024,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const connectorInput$ = computed(
     async (get): Promise<RunConnectorReadInput> => {
-      const { db, command, timing } = await get(
-        preCreateExecutionIdentityInput$,
-      );
+      const { command, timing } = await get(preCreateExecutionIdentityInput$);
+      const db = get(db$);
       return {
         db,
         timing,
@@ -9985,7 +9978,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Authorized selected run preparation is missing");
       }
       return {
-        db: input.db,
+        db: get(db$),
         timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -10119,7 +10112,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const prepared = { connectorContext$: connectorContext$ };
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
-      const { db, command } = await get(preCreateExecutionInput$);
+      const { command } = await get(preCreateExecutionInput$);
+      const db = get(db$);
       const workflows = workflowsForRunFromRows(
         await get(preCreateExecutionWorkflowRows$),
         command.auth.userId,
@@ -10360,7 +10354,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, db, timing } = await get(preCreateInput$);
+      const { command, timing } = await get(preCreateInput$);
+      const db = get(db$);
       if (!command.chatThreadId) {
         return undefined;
       }
@@ -10510,7 +10505,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         kind: "requested",
         args: {
-          db: input.db,
+          db: get(db$),
           content: resolved.content,
           vars: withoutLegacyAgentRunEnvironmentEntries(
             buildMergedVariables({
@@ -11451,7 +11446,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return isRouteError(input) ? input : get(agentRunStorageStoragePlan$);
   });
   const {
-    input$: selectedRunContextInput$,
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
   } = graph;
@@ -11472,7 +11466,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           }
         : selected.args;
       return {
-        db: (await get(selectedRunContextInput$)).db,
+        db: get(db$),
         args,
         timing: selected.input.timing,
       };

@@ -975,7 +975,7 @@ export async function deletePersonalModelProviderAccount(
 }
 
 export async function activePersonalModelProviderAccount(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly modelProviderId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -997,7 +997,7 @@ export async function activePersonalModelProviderAccount(args: {
 }
 
 export async function personalModelProviderAccountById(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly runId?: string;
   readonly id: string;
   readonly orgId: string;
@@ -1292,7 +1292,7 @@ export async function validatePersonalSubscriptionAdmission(args: {
 /** Environment preparation reads the connected account, its logical provider
  * selection and its ciphertext bundle in one statement. */
 export async function readPersonalSubscriptionAccount(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;

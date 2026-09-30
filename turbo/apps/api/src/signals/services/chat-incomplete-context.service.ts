@@ -26,7 +26,7 @@ import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import type { Db } from "../external/db";
+import { db$, rawSqlReadDb$, type Db } from "../external/db";
 import {
   chatEventTextCondition,
   chatEventTypeIn,
@@ -68,7 +68,6 @@ interface IncompleteRound extends IncompleteRoundSelection {
 }
 
 export interface WebChatIncompleteContextInput {
-  readonly db: Db;
   readonly threadId: string;
 }
 
@@ -187,7 +186,8 @@ function createIncompleteRoundFrontierObject(
     if (!input) {
       return [];
     }
-    const { db, threadId } = input;
+    const { threadId } = input;
+    const db = get(rawSqlReadDb$);
     const newestAnchor = incompleteRoundAnchorQuery(db, threadId, undefined);
     const precedingAnchor = incompleteRoundAnchorQuery(
       db,
@@ -250,7 +250,8 @@ function createIncompleteRoundEventsObject(
     if (!input || selection.length === 0) {
       return [];
     }
-    const { db, threadId } = input;
+    const { threadId } = input;
+    const db = get(db$);
 
     const runIds = selection.map((round) => {
       return round.runId;

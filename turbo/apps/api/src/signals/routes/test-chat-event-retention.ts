@@ -3,7 +3,6 @@ import { command, computed, state } from "ccstate";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { retainChatEvents$ } from "../services/cron-retain-chat-events.service";
 import {
@@ -66,7 +65,6 @@ const resolveSessionPromptFixturesRoute$ = command(
       return bodyResult.response;
     }
     set(internalSessionPromptInput$, {
-      db: set(writeDb$),
       threadId: bodyResult.data.chat_thread_id,
       sessionAction: "rotated",
       context: {

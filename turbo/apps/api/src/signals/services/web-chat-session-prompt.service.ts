@@ -20,7 +20,7 @@ import {
 } from "drizzle-orm";
 import { computed, type Computed } from "ccstate";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
 import { createWebChatIncompleteContextObjects } from "./chat-incomplete-context.service";
@@ -78,7 +78,6 @@ export interface WebChatSessionPromptContext {
 }
 
 export interface WebChatSessionPromptInput {
-  readonly db: Db;
   readonly threadId: string;
   readonly sessionAction: ChatThreadSessionResolutionAction;
   readonly context: WebChatSessionPromptContext;
@@ -303,7 +302,8 @@ function createWebChatPriorRunRowsObject(input$: SessionPromptInputObject) {
     if (!input || input.sessionAction !== "rotated") {
       return [];
     }
-    const { db, threadId } = input;
+    const { threadId } = input;
+    const db = get(db$);
     const runRows = await db
       .select({
         runId: agentRuns.id,
@@ -337,7 +337,8 @@ function createWebChatPriorRunEventRowsObject(
     if (!input || runs.length === 0) {
       return [];
     }
-    const { db, threadId } = input;
+    const { threadId } = input;
+    const db = get(db$);
     const runIds = runs.map((run) => {
       return run.runId;
     });
