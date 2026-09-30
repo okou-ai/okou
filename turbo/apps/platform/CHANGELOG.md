@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.988.3](https://github.com/okou-ai/okou/compare/app-v0.988.2...app-v0.988.3) (2026-09-30)
+
+
+### Refactoring
+
+* **api:** centralize chat run picking and preparation ([#37360](https://github.com/okou-ai/okou/issues/37360)) ([04d2b09](https://github.com/okou-ai/okou/commit/04d2b09a1e4feddbf3b73adc27c7290d89e0b66d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.2
+    * @okouai/core bumped to 8.724.2
+
 ## [0.988.2](https://github.com/okou-ai/okou/compare/app-v0.988.1...app-v0.988.2) (2026-09-30)
 
 
