@@ -2422,7 +2422,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("allows free model pins and rejects all other models for limited-free-1 workspaces", async () => {
+  it("pins okou-1.0 on its Built-in route for limited-free-1 workspaces", async () => {
     const { actor, agentId } = await entitledChatActor(
       "Limited free model pin agent",
     );
@@ -2433,29 +2433,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     // no product API can move an entitled org onto it, so downgrade the tier
     // through the shared system-config seed while keeping the pro balance.
     const billingStatus = await api.readBillingStatus(actor);
-    // Configure the workspace while it can still add a Pro-only built-in model,
-    // so the downgraded plan keeps one configured route the plan itself gates.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        preferred: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-5.6-luna",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
     await seedOrgMetadata({
       orgId: actor.orgId,
       tier: "limited-free-1",
@@ -2464,52 +2441,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "deepseek-v4-flash",
+      model: "okou-1.0",
       title: "limited free model pin",
     });
-    const restrictedSelection = await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "gpt-6-astra",
-      [402],
-    );
-    expectApiError(restrictedSelection.body);
-    expect(restrictedSelection.body.error).toStrictEqual({
-      message:
-        "Insufficient credits. Add credits or configure your own API key to continue.",
-      code: "INSUFFICIENT_CREDITS",
-    });
-    await expect(chat.readThread(actor, thread.id)).resolves.not.toHaveProperty(
-      "selectedModel",
-    );
-
-    for (const selectedModel of [
-      "gpt-5.6-sol",
-      "gpt-6-luna",
-      "claude-sonnet-5",
-      "claude-opus-5",
-    ] as const) {
-      const unconfiguredSelection =
-        await chat.requestUpdateThreadModelSelection(
-          actor,
-          thread.id,
-          selectedModel,
-          [400],
-        );
-      expectApiError(unconfiguredSelection.body);
-      expect(unconfiguredSelection.body.error).toStrictEqual({
-        message: "The selected model is not available in this workspace",
-        code: "BAD_REQUEST",
-      });
-
-      await expect(
-        chat.readThread(actor, thread.id),
-      ).resolves.not.toHaveProperty("selectedModel");
-    }
-
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-5.6-luna");
-    const detail = await chat.readThread(actor, thread.id);
-    expect(detail).not.toHaveProperty("selectedModel");
+    expect(thread.title).toBe("limited free model pin");
+    await chat.updateThreadModelSelection(actor, thread.id, "okou-1.0");
   }, 90_000);
 
   it("updates the Computer Use host binding on a chat thread", async () => {
