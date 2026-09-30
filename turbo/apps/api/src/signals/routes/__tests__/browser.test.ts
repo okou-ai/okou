@@ -5913,6 +5913,9 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").not.toContain(
       "okou browser input-request",
     );
+    expect(claim.appendSystemPrompt ?? "").not.toContain(
+      "Browser tab continuity:",
+    );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
       sent.runId,
@@ -5950,6 +5953,21 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).not.toContain("okou browser input-request");
     expect(appendSystemPrompt).toContain(
+      "Browser tab continuity: When resuming a page after `okou browser use`",
+    );
+    expect(appendSystemPrompt).toContain("`okou browser tab list`");
+    expect(appendSystemPrompt).toContain(
+      "Keep the selected tab only if non-sensitive page evidence confirms it",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Origin or selection alone is not proof, even with one match",
+    );
+    expect(appendSystemPrompt).not.toContain("a local binding may restore");
+    expect(appendSystemPrompt).toContain(
+      "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
+    );
+    expect(appendSystemPrompt).not.toContain("Browser input completion:");
+    expect(appendSystemPrompt).toContain(
       "Direct Browser takeover is a last resort, not the default for login",
     );
     expect(appendSystemPrompt).not.toContain("Browser user input priority:");
@@ -5981,6 +5999,17 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "After it succeeds, return its exact action URL and use no further Browser commands in this turn",
     );
+    expect(appendSystemPrompt).toContain("`okou browser tab select <id>`");
+    expect(appendSystemPrompt).toContain(
+      "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
+    );
+    expect(appendSystemPrompt).toContain(
+      "If safe commands are unavailable or the page remains unclear, stop",
+    );
+    expect(appendSystemPrompt).toContain(
+      "On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page",
+    );
+    expect(appendSystemPrompt).toContain("submit at most once");
     expect(appendSystemPrompt).toContain(
       "If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write",
     );

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.20...runner-storage-v0.1.21) (2026-09-30)
+
+
+### Bug Fixes
+
+* **runner-storage:** accept compressed archive size drift ([#37407](https://github.com/okou-ai/okou/issues/37407)) ([06257e9](https://github.com/okou-ai/okou/commit/06257e98eb4156d023629240d2035d16fef1e631))
+
 ## [0.1.20](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.19...runner-storage-v0.1.20) (2026-09-30)
 
 ## [0.1.19](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.18...runner-storage-v0.1.19) (2026-09-29)

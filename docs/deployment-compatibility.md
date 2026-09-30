@@ -698,6 +698,33 @@ feature-prompt digest so a changed switch state cannot silently reuse the old
 cached guidance. Older API versions ignore the new semantic field; no database
 migration or rollback floor is needed.
 
+### Safe tab inspection across native-input callbacks (#37311)
+
+A fresh `agent-browser` attachment may restore a locally persisted tab binding
+or select an unrelated live tab; the binding is not guaranteed across sandboxes
+or provider restarts, and `okou browser use` does not enable strict `--pin-tab`.
+Browser continuation guidance uses `okou browser tab list` to inspect safe
+current-session IDs, selected state and HTTP(S) origins. If non-sensitive page
+and step evidence confirms the selected tab, the agent keeps it; otherwise it
+uses `okou browser tab select <id>` only to inspect a candidate, then confirms
+the intended page before any navigation or submission. Neither an origin nor a
+selected flag proves the page identity, even with a single matching tab. The
+CLI discards untrusted child output, and the prompt forbids directly invoking
+raw `agent-browser` tab-list or tab-switch commands: their tool output can
+expose full URLs, titles and OAuth parameters even if not quoted to the user.
+The CLI cannot recover the native action's exact page target. If identification
+remains ambiguous or the page is missing, the agent stops instead of guessing.
+A successful native input write still does not submit the website form or
+establish login.
+
+The API prompt and these CLI commands are delivered in the same code change.
+New launch contexts bind the serving API's CLI package, but queued runs may
+retain an older CLI that lacks the safe commands. The prompt explicitly stops
+when safe tab inspection is unavailable and never invokes the raw commands as
+a fallback. No stored Browser action, callback, provider contract, or
+feature-switch state changes, so older API/CLI pairs retain their previous
+guidance and behavior.
+
 ## Member source-first onboarding completion column (2026-09-27)
 
 Migration `1269_org_member_onboarding_completed_at` adds the nullable
