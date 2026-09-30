@@ -1163,14 +1163,13 @@ describe("MCP chat discovery and creation", () => {
     ).toHaveLength(20);
   });
 
-  it("does not initialize missing model policies through a discovery read", async () => {
+  it("discovers the projected system default without stored policies", async () => {
     const auth = await fixture();
-    const first = await callTool(auth.token(), "list_models");
-    expect(first.isError).toBeTruthy();
-    structuredToolError(first);
-    await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
-      first,
-    );
+    const models = await listModels(auth.token());
+    expect(models.defaultModel).toStrictEqual({
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      source: "org_default",
+    });
   });
 
   it("lists connected personal subscription models for the Auto member", async () => {

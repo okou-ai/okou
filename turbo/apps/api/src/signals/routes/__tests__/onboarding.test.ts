@@ -438,7 +438,12 @@ describe("POST /api/onboarding/complete", () => {
         body: {
           revision: before.body.revision,
           policies: (
-            ["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"] as const
+            [
+              SEEDED_SYSTEM_DEFAULT_MODEL,
+              "claude-fable-5-1",
+              "gpt-6-astra",
+              "gpt-5.6-luna",
+            ] as const
           ).map((model) => {
             return {
               model,
@@ -496,7 +501,12 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]);
+    ).toStrictEqual([
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "claude-sonnet-5",
+    ]);
   });
 
   it("keeps a customized model policy when onboarding completes", async () => {

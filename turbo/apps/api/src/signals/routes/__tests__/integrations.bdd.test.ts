@@ -4331,7 +4331,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     // An existing thread without a pin uses the fixed org default, not the
     // member preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
-    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe();
+    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();

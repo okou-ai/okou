@@ -799,13 +799,13 @@ describe("GET/PUT /api/model-policies", () => {
 
   it.each([
     ["claude-fable-5", "claude-fable-5-1"],
-    ["gpt-5.5", "gpt-5.6-luna"],
-    ["claude-sonnet-4-6", "claude-sonnet-5"],
-    ["claude-opus-4-8", "claude-opus-5"],
-    ["deepseek-v4-pro", "deepseek-v4.1-flash"],
+    ["gpt-5.5", "gpt-6-luna"],
+    ["claude-sonnet-4-6", "claude-sonnet-5-5"],
+    ["claude-opus-4-8", "claude-opus-5-5"],
+    ["deepseek-v4-pro", "gpt-6-luna"],
   ] as const)(
-    "rejects retired %s policy and preference writes while keeping %s usable",
-    async (retiredModel, activeModel) => {
+    "rejects a %s policy and stores a preference for it as %s",
+    async (retiredModel, replacement) => {
       const fixture = seedFixture();
       useSession(fixture);
       const client = apiClient();
@@ -834,41 +834,36 @@ describe("GET/PUT /api/model-policies", () => {
         context,
         routes: userModelPreferenceRoutes,
       })(userModelPreferenceContract);
-      const oldPreference = await accept(
+      // Without a policy for the replacement the selection is unavailable.
+      await accept(
         preferences.update({
           headers: authHeaders(),
           body: { selectedModel: retiredModel, serviceTier: null },
         }),
         [400],
       );
-      expect(oldPreference.body.error.message).toBe(retired.body.error.message);
-      if (
-        !existing.body.policies.some((policy) => {
-          return policy.model === activeModel;
-        })
-      ) {
-        await accept(
-          client.update({
-            headers: authHeaders(),
-            body: {
-              revision: await currentPolicyRevision(),
-              policies: [
-                ...toUpdate(existing.body),
-                makeBuiltInPolicy(activeModel),
-              ],
-            },
-          }),
-          [200],
-        );
-      }
-      const successor = await accept(
-        preferences.update({
+      await accept(
+        client.update({
           headers: authHeaders(),
-          body: { selectedModel: activeModel, serviceTier: null },
+          body: {
+            revision: await currentPolicyRevision(),
+            policies: [
+              ...toUpdate(existing.body),
+              makeBuiltInPolicy(replacement),
+            ],
+          },
         }),
         [200],
       );
-      expect(successor.body.selectedModel).toBe(activeModel);
+      // A legacy client sending the replaced ID stores the final model.
+      const stored = await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: retiredModel, serviceTier: null },
+        }),
+        [200],
+      );
+      expect(stored.body.selectedModel).toBe(replacement);
     },
   );
 
@@ -1035,11 +1030,20 @@ describe("GET/PUT /api/model-policies", () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
-    await accept(client.list({ headers: authHeaders() }), [200]);
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [makeBuiltInPolicy("gpt-6-luna")],
+        },
+      }),
+      [200],
+    );
 
     await setOrgModelPolicyProviderTypeFixture({
       orgId: fixture.orgId,
-      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      model: "gpt-6-luna",
       defaultProviderType: "built-in",
     });
 
@@ -1049,7 +1053,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
     expect(
       response.body.policies.find((policy) => {
-        return policy.model === SEEDED_SYSTEM_DEFAULT_MODEL;
+        return policy.model === "gpt-6-luna";
       }),
     ).toMatchObject({
       defaultProviderType: "built-in",
@@ -2367,17 +2371,13 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     const updates = toUpdate(listResponse.body);
-    const duplicatedPolicy = updates[0]!;
+    const duplicatedPolicy = makeBuiltInPolicy("gpt-6-luna");
 
     const response = await client.update({
       headers: authHeaders(),
       body: {
         revision: await currentPolicyRevision(),
-        policies: [
-          duplicatedPolicy,
-          { ...duplicatedPolicy },
-          ...updates.slice(1),
-        ],
+        policies: [...updates, duplicatedPolicy, { ...duplicatedPolicy }],
       },
     });
 
@@ -2442,22 +2442,23 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it("rejects incomplete update payloads", async () => {
+  it("accepts an empty list as the projected system default alone", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
-    const response = await apiClient().update({
-      headers: authHeaders(),
-      body: { revision: await currentPolicyRevision(), policies: [] },
-    });
+    const response = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: { revision: await currentPolicyRevision(), policies: [] },
+      }),
+      [200],
+    );
 
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Request must include at least one model",
-        code: "BAD_REQUEST",
-      },
-    });
+    expect(
+      response.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 });
 
@@ -2634,7 +2635,11 @@ describe("conditional organization model policy writes", () => {
       edited.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["gpt-5.6-luna", "deepseek-v4-flash"]);
+    ).toStrictEqual([
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+      "gpt-5.6-luna",
+      "deepseek-v4-flash",
+    ]);
   });
 
   it.each([

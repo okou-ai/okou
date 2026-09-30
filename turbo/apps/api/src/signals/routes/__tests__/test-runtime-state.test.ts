@@ -80,7 +80,10 @@ interface ClaimedBuiltInRun {
 }
 
 async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
-  const keyFixture = await seedBuiltInModelCandidateKeys(context);
+  const keyFixture = await seedBuiltInModelCandidateKeys(
+    context,
+    SEEDED_SYSTEM_DEFAULT_MODEL,
+  );
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();

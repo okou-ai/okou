@@ -1306,7 +1306,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     if (!runId) {
       throw new Error("Expected an AgentPhone run to be dispatched");
     }
-    expect((await runs.readRun(actor, runId)).source.model).toBe();
+    expect((await runs.readRun(actor, runId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     const metadata = await createChatFilesBddApi(context).readThreadMetadata(
       actor,
       preferred.threadId,

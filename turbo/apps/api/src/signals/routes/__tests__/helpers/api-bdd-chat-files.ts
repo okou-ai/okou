@@ -44,9 +44,7 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import {
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   agentsMainContract,
@@ -348,7 +346,7 @@ export function createChatFilesBddApi(context: TestContext) {
   /** The member preference, else the fixed org default, as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
-  ): Promise<SupportedRunModel> {
+  ): Promise<string> {
     if (!actor?.orgId) {
       return SEEDED_SYSTEM_DEFAULT_MODEL;
     }
@@ -470,7 +468,7 @@ export function createChatFilesBddApi(context: TestContext) {
   return {
     async getDefaultCreateThreadModel(
       actor: ApiTestUser,
-    ): Promise<SupportedRunModel> {
+    ): Promise<string> {
       return await defaultCreateThreadModel(actor);
     },
 

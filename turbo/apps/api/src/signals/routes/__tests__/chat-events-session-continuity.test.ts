@@ -1067,7 +1067,9 @@ describe("CHAT-02: run-level model overrides", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-luna",
     });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe();
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     await cancelChatRun(actor, fallback.runId);
   }, 60_000);
 });

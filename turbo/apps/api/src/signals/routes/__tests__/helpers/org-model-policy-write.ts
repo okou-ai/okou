@@ -1,8 +1,5 @@
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import {
-  type SupportedRunModel,
-  type UpdateOrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { UpdateOrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -27,7 +24,7 @@ export type TestOrgModelPolicy = UpdateOrgModelPolicy & {
  */
 export function orgModelPolicyWrite(policies: readonly TestOrgModelPolicy[]): {
   readonly policies: UpdateOrgModelPolicy[];
-  readonly preferredModel: SupportedRunModel | null;
+  readonly preferredModel: string | null;
 } {
   const request = policies.map((policy): UpdateOrgModelPolicy => {
     return {

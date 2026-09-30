@@ -257,7 +257,9 @@ describe("CHAT-02: run-level model overrides", () => {
       threadId: thread.id,
       prompt: "use the fixed organization default",
     });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe();
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({

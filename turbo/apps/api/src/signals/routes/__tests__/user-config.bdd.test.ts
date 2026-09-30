@@ -395,7 +395,7 @@ describe("AUTH-03 user model preference", () => {
     expectApiError(emptyBody.body);
     expect(emptyBody.body.error.code).toBe("BAD_REQUEST");
     expect(emptyBody.body.error.message).toContain(
-      "selectedModel: Invalid option",
+      "selectedModel: Invalid input",
     );
 
     const removedModel = await cfg.rawUpdateModelPreference(
@@ -405,8 +405,9 @@ describe("AUTH-03 user model preference", () => {
     );
     expectApiError(removedModel.body);
     expect(removedModel.body.error.code).toBe("BAD_REQUEST");
-    expect(removedModel.body.error.message).toContain(
-      "selectedModel: Invalid option",
+    // Model IDs are catalog strings; the API rejects IDs the catalog lacks.
+    expect(removedModel.body.error.message).toBe(
+      'Unknown model "claude-haiku-4-5"',
     );
 
     const unauthenticated = await cfg.requestReadModelPreference(null, [401]);
