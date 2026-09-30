@@ -1,7 +1,7 @@
 import { onTestFinished } from "vitest";
+import { SEEDED_ROUTED_MODELS } from "@okouai/core/__tests__/seeded-model-catalog";
 import { randomUUID } from "node:crypto";
 import {
-  ACTIVE_RUN_MODELS,
   isBuiltInModelProviderType,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPolicy,
@@ -1358,7 +1358,7 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).toStrictEqual(
-      ACTIVE_RUN_MODELS.filter((model) => {
+      SEEDED_ROUTED_MODELS.filter((model) => {
         return configuredModels.has(model);
       }),
     );

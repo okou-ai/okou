@@ -12,7 +12,10 @@ import {
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
-import { checkOrgPlanRunAdmission } from "./run-admission.service";
+import {
+  checkOrgPlanRunAdmission,
+  restrictedPlanModelRequired,
+} from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
@@ -203,8 +206,9 @@ function bad<T>(message: string): ServiceResult<T> {
 }
 
 /**
- * A model the catalog keeps off restricted plans on every route asks for a
- * paid plan by name; other restrictions report insufficient credits.
+ * A catalog model a free plan cannot configure on the route asks for a paid
+ * plan by name and names the free alternatives; other restrictions report
+ * insufficient credits.
  */
 function planRestricted<T>(
   catalog: ModelCatalog,
@@ -213,10 +217,9 @@ function planRestricted<T>(
   const row = model === undefined ? undefined : catalog.byModel.get(model);
   return {
     ok: false,
-    response:
-      row && !row.ownRoutesOnRestrictedPlans
-        ? paidPlanRequired(row.displayName)
-        : insufficientCredits(),
+    response: row
+      ? restrictedPlanModelRequired(catalog, row.displayName)
+      : insufficientCredits(),
   };
 }
 

@@ -191,11 +191,12 @@ describe("model route capabilities", () => {
     const model = await insertRouteModel();
     await accept(updateBuiltInPolicy(model, await policiesRevision()), [402]);
 
-    await updateRestrictedPlanAccessFixture({
-      model,
-      builtInOnRestrictedPlans: true,
-      ownRoutesOnRestrictedPlans: true,
-    });
+    onTestFinished(
+      await updateRestrictedPlanAccessFixture({
+        model,
+        builtInOnRestrictedPlans: true,
+      }),
+    );
     const added = await addBuiltInPolicy(model);
     expect(
       added.body.policies.map((policy) => {

@@ -191,23 +191,8 @@ export function isOkouRunModel(
   return typeof model === "string" && OKOU_RUN_MODEL_SET.has(model);
 }
 
-const RETIRED_RUN_MODELS = [
-  "claude-fable-5",
-  "claude-opus-4-8",
-  "claude-sonnet-4-6",
-  "deepseek-v4-pro",
-  "gpt-5.5",
-] as const satisfies readonly SupportedRunModel[];
-
-type RetiredRunModel = (typeof RETIRED_RUN_MODELS)[number];
-
-const RETIRED_RUN_MODEL_SET: ReadonlySet<string> = new Set(RETIRED_RUN_MODELS);
-
-export type ActiveRunModel = Exclude<SupportedRunModel, RetiredRunModel>;
-
 // Retirement and replacement are owned by the global model catalog
-// (`run_model_catalog.replaced_by`). RETIRED_RUN_MODELS above only records
-// which recognized IDs have no runtime execution route in this code.
+// (`run_model_catalog.replaced_by`).
 export const RETIRED_RUN_MODEL_MESSAGE =
   "This model has been retired. Select another available model.";
 
@@ -217,14 +202,17 @@ export const RETIRED_RUN_MODEL_MESSAGE =
  */
 export interface RestrictedPlanModelAccess {
   readonly builtInOnRestrictedPlans: boolean;
-  readonly ownRoutesOnRestrictedPlans: boolean;
 }
 
 /**
- * Plan access of a catalog model on a route. A known non-Built-in provider
- * type is the organization's or member's own route; anything else (Built-in,
- * missing or unknown) is treated as Built-in. A model outside the catalog
- * (`access` undefined) is never allowed on a restricted Built-in route.
+ * Plan access of a catalog model on a route. A restricted plan runs only
+ * catalog models flagged `builtInOnRestrictedPlans`, and only on Built-in
+ * routes (a missing or unknown provider type is treated as Built-in). Every
+ * other route is the organization's or member's own and is not a plan
+ * entitlement; the one exception, a member's verified personal subscription
+ * route, is decided by the API before it calls this (it passes an
+ * unrestricted plan). A model outside the catalog (`access` undefined) is
+ * never allowed on a restricted plan.
  */
 export function getCatalogRunModelRouteAccess(
   access: RestrictedPlanModelAccess | undefined,
@@ -237,17 +225,9 @@ export function getCatalogRunModelRouteAccess(
   const ownRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
-  const allowed = ownRoute
-    ? (access?.ownRoutesOnRestrictedPlans ?? true)
-    : (access?.builtInOnRestrictedPlans ?? false);
-  return allowed ? "allowed" : "pro_required";
-}
-
-/** Whether this code has a runtime execution route for the model. */
-export function isActiveRunModel(
-  model: string | null | undefined,
-): model is ActiveRunModel {
-  return isSupportedRunModel(model) && !RETIRED_RUN_MODEL_SET.has(model);
+  return !ownRoute && access?.builtInOnRestrictedPlans === true
+    ? "allowed"
+    : "pro_required";
 }
 
 export function isSupportedRunModel(
@@ -314,9 +294,6 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
 export function normalizeBuiltInModelId(model: string): string {
   return BUILT_IN_MODEL_ALIAS_LOOKUP[model] ?? model;
 }
-
-export const ACTIVE_RUN_MODELS: readonly SupportedRunModel[] =
-  SUPPORTED_RUN_MODELS.filter(isActiveRunModel);
 
 export type ModelImageInputSupport = "supported" | "unsupported" | "unknown";
 
@@ -408,7 +385,6 @@ export function modelSupportsImageInput(
 const BUILT_IN_MODEL_PROVIDER_CONFIG = {
   framework: "claude-code" as const,
   label: "Built-in model",
-  models: [...ACTIVE_RUN_MODELS],
 };
 
 export const MODEL_PROVIDER_TYPES = {
@@ -785,86 +761,6 @@ export function getModelProviderPresentationLabel(
   return MODEL_PROVIDER_TYPES[type].label;
 }
 
-const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
-  "okou-1.0": ["built-in"],
-  "claude-fable-5-1": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-opus-5-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-opus-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-sonnet-5-5": [
-    "built-in",
-    "anthropic-api-key",
-    "claude-code-oauth-token",
-  ],
-  "claude-sonnet-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "gpt-6-astra": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-6.1-sol": ["built-in", "openai-api-key", "codex-oauth-token"],
-  "gpt-6-sol": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-6-luna": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-  ],
-  "gpt-5.6-sol": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
-  "gpt-5.6-luna": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
-  "deepseek-v4.1-flash": ["built-in", "openrouter-codex"],
-  "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
-} as const satisfies Record<ActiveRunModel, readonly ModelProviderType[]>;
-
 const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
   {
     "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
@@ -882,23 +778,6 @@ const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
 
 export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;
-}
-
-export function getProvidersForModel(model: string): ModelProviderType[] {
-  const canonical = normalizeRunModelId(model);
-  if (!isActiveRunModel(canonical)) {
-    return [];
-  }
-  return [...MODEL_FIRST_PROVIDER_COMPATIBILITY[canonical]];
-}
-
-export function isModelSupportedByProvider(
-  model: string,
-  type: ModelProviderType,
-): boolean {
-  return getProvidersForModel(model).includes(
-    isBuiltInModelProviderType(type) ? "built-in" : type,
-  );
 }
 
 /**
@@ -1050,12 +929,11 @@ export function getModelProviderCodexRuntimeCapabilities(
   return MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES[type];
 }
 
-const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
-  Partial<Record<ActiveRunModel, Record<string, unknown>>>
-> = {
-  "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
-  "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
-};
+const CODEX_MODEL_CATALOGS: Readonly<Record<string, Record<string, unknown>>> =
+  {
+    "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
+    "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
+  };
 
 /**
  * Project a Codex catalog record onto the model ID and provider used at
@@ -1072,50 +950,42 @@ export function getModelProviderCodexCatalogForModel(
     (logicalModel === "deepseek-v4.1-flash" ||
       logicalModel === "deepseek-v4-flash");
   const catalogModel = normalizeRunModelId(logicalModel);
-  // The native V4 alias serves V4.1. Other providers keep the original
-  // legacy catalog until their upstream mapping is verified.
-  const overrideCatalog =
-    catalogModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
-      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
-      : isActiveRunModel(catalogModel)
-        ? CODEX_MODEL_CATALOG_OVERRIDES[catalogModel]
+  // The native V4 alias serves V4.1 (the DeepSeek provider catalog). Other
+  // providers keep the original legacy catalog until their upstream mapping
+  // is verified.
+  const sourceCatalog =
+    catalogModel === "deepseek-v4-flash"
+      ? runtimeProviderType === "deepseek"
+        ? DEEPSEEK_MODEL_CATALOG
+        : DEEPSEEK_V4_FLASH_MODEL_CATALOG
+      : Object.hasOwn(CODEX_MODEL_CATALOGS, catalogModel)
+        ? CODEX_MODEL_CATALOGS[catalogModel]
         : undefined;
-  const sourceCatalogs = overrideCatalog
-    ? [overrideCatalog]
-    : getProvidersForModel(catalogModel).flatMap((type) => {
-        const sourceCatalog =
-          MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
-        return sourceCatalog ? [sourceCatalog] : [];
-      });
-  for (const sourceCatalog of sourceCatalogs) {
-    const sourceModels = sourceCatalog.models;
-    const sourceModel = Array.isArray(sourceModels)
-      ? sourceModels.find(
-          (model: unknown): model is Record<string, unknown> => {
-            return (
-              typeof model === "object" &&
-              model !== null &&
-              !Array.isArray(model) &&
-              "slug" in model &&
-              model.slug === catalogModel
-            );
-          },
-        )
-      : undefined;
-    if (sourceCatalog && sourceModel) {
-      return {
-        ...sourceCatalog,
-        models: [
-          {
-            ...sourceModel,
-            ...(disableApplyPatch ? { apply_patch_tool_type: null } : {}),
-            slug: runtimeModel,
-          },
-        ],
-      };
-    }
+  const sourceModels = sourceCatalog?.models;
+  const sourceModel = Array.isArray(sourceModels)
+    ? sourceModels.find((model: unknown): model is Record<string, unknown> => {
+        return (
+          typeof model === "object" &&
+          model !== null &&
+          !Array.isArray(model) &&
+          "slug" in model &&
+          model.slug === catalogModel
+        );
+      })
+    : undefined;
+  if (!sourceCatalog || !sourceModel) {
+    return undefined;
   }
-  return undefined;
+  return {
+    ...sourceCatalog,
+    models: [
+      {
+        ...sourceModel,
+        ...(disableApplyPatch ? { apply_patch_tool_type: null } : {}),
+        slug: runtimeModel,
+      },
+    ],
+  };
 }
 
 const CUSTOM_GATEWAY_PROVIDER_TYPES: ReadonlySet<ModelProviderType> = new Set([

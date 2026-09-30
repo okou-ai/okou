@@ -283,34 +283,50 @@ needs no batching: measured on synthetic data at production and 5x scale it
 finishes in 0.2 s and 1.3 s (see `turbo/packages/db/MIGRATIONS.md`,
 "Migration 1298 performance evidence").
 
-## Plan restriction
+## Plan restriction (free plans)
 
-`org_plan_entitlements.restricted_built_in_models` is a boolean that marks a
-restricted (limited-free) plan. Which models such a plan may run is catalog
-data (migration `1299_model_catalog_restricted_plans`, returned by
-`GET /api/model-catalog`):
+`org_plan_entitlements.restricted_built_in_models` marks a free plan. It is
+true for every free plan key: `limited-free-1` and legacy `free` (migration
+1299 backfills legacy Free rows, and `ORG_PLAN_ENTITLEMENT_TIER_VALUES.free`
+writes it for new ones). Paid plans (`pro`, `team`, `custom`) keep it false
+and their model access is unchanged.
 
-- `built_in_on_restricted_plans` (default false): the model may run on
-  Built-in routes. Seeded true for `okou-1.0`, `gpt-6-luna`, `gpt-5.6-luna`,
-  `deepseek-v4.1-flash` and `deepseek-v4-flash`, the former code allowlist.
-- `own_routes_on_restricted_plans` (default true): the model may run on the
-  organization's or member's own routes (BYOK, subscriptions). Seeded false
-  for `claude-sonnet-5-5` and `gpt-6.1-sol`.
+A free organization may run a model only on:
 
-`getCatalogRunModelRouteAccess` (`@okouai/api-contracts`) applies the flags;
-a model outside the catalog is never allowed on a restricted Built-in route.
-The API reads them through `catalogRunModelRouteAccess` for policy writes and
-run admission, after normalizing the selected ID through the catalog (a
-provider-prefixed upstream ID of exactly one catalog model is that model),
-consistently with `checkCatalogRunRoute`, and admission names the model's `display_name` in the paid-plan
-error when the model is off restricted plans on every route. The Platform
-reads the same flags from the catalog response. Adding a model therefore needs
-no code change for plan access: its flags decide.
+1. **Built-in**, when the catalog row has `built_in_on_restricted_plans`
+   (default false; migration `1299_model_catalog_restricted_plans` seeds it
+   true only for `okou-1.0`). Every other model, and every model added later,
+   is paid-only on Built-in until an operator flips the row; no code list
+   exists.
+2. **The member's own personal subscription**: a connected, valid (not
+   reconnect-required) Claude Code or Codex account held by the requesting
+   member, used with member credential scope through the model's catalog
+   subscription route (`model_routes.subscription_type`). The API verifies the
+   account and the route (`isAutoPersonalSubscriptionRoute`, and the claim's
+   member pin against `loadMemberSubscriptionModels`); a model name or provider
+   type alone is never exempt. Such a run is billed to the subscription, never
+   to Built-in usage, and does not fall back to Built-in.
+
+Organization API keys (BYOK), organization-scoped credentials and custom
+gateways are not a free-plan entitlement on any model.
+
+`getCatalogRunModelRouteAccess` (`@okouai/api-contracts`) applies rule 1; the
+API decides rule 2 first and passes an unrestricted plan when it holds. The
+API reads the flag through `catalogRunModelRouteAccess` for policy writes and
+run admission (send, queue pick, claim), after normalizing the selected ID
+through the catalog (a provider-prefixed upstream ID of exactly one catalog
+model is that model), consistently with `checkCatalogRunRoute`. A denied
+catalog model returns `PRO_REQUIRED` naming the model's `display_name`, the
+catalog's free Built-in models and the subscription alternative
+(`restrictedPlanModelRequired`); member policy projections report
+`plan_restricted`. Stored selections of a now-restricted model (member
+preferences, thread selections, stored policies) are kept and fail explicitly
+with that error; they are not replaced (`replaced_by` is a global retirement,
+not a plan rule). The Platform reads the same flag from the catalog response.
 
 `packages/db/scripts/test-model-catalog-seed.ts` (run by the migration
-consistency check) verifies the seeded entitlement: both flags are set on
-every row, `built_in_on_restricted_plans` is true for exactly the five models
-above and `own_routes_on_restricted_plans` is false for exactly the two above.
+consistency check) verifies the seeded entitlement: the flag is set on every
+row and is true for exactly `okou-1.0`.
 
 Custom-gateway mapping is also route data: a model may be served by a custom
 gateway when it has no enabled non-Built-in route, or when one of those routes

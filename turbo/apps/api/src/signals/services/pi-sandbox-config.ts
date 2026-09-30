@@ -1,5 +1,6 @@
 import {
   isPiExecutionRoute,
+  isPresetUpstreamModel,
   type PiCatalogModel,
   type PiRouteClass,
 } from "@okouai/core/pi-execution";
@@ -17,7 +18,6 @@ import {
   getModelProviderPiEndpoint,
   getSecretNameForType,
   isBuiltInModelProviderType,
-  isOkouRunModel,
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -106,13 +106,20 @@ function piCatalogProvider(
   return routeClass === "deepseek" ? "deepseek" : null;
 }
 
+/**
+ * An OpenRouter preset upstream (`@preset/...`, the Okou models) configures
+ * reasoning and service tier itself, so the client sends neither.
+ */
 function piRuntimeContract(args: {
   readonly providerType: string;
-  readonly selectedModel: string;
+  readonly upstreamModel: string | undefined;
   readonly routeClass: PiRouteClass | null;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): PiRuntimeContract {
-  if (args.routeClass === "gpt-codex" && !isOkouRunModel(args.selectedModel)) {
+  if (
+    args.routeClass === "gpt-codex" &&
+    !isPresetUpstreamModel(args.upstreamModel)
+  ) {
     return {
       thinkingLevel: "max",
       ...((isBuiltInModelProviderType(args.providerType) ||
@@ -273,7 +280,7 @@ function resolveCustomGatewayPiModelConfig(
   }
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
-    selectedModel: provider.selectedModel,
+    upstreamModel: provider.upstreamModel,
     routeClass,
     codexServiceTier,
   });
@@ -473,7 +480,7 @@ function resolveResponsesPiModelConfig(
   const apiKeyEnv = "OPENAI_API_KEY";
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
-    selectedModel: provider.selectedModel,
+    upstreamModel: provider.upstreamModel,
     routeClass,
     codexServiceTier,
   });
@@ -483,7 +490,7 @@ function resolveResponsesPiModelConfig(
     model,
     apiKeyEnv,
     credentialSecretName,
-    ...(isOkouRunModel(provider.selectedModel)
+    ...(isPresetUpstreamModel(provider.upstreamModel)
       ? { catalogModel: provider.selectedModel }
       : {}),
     ...runtimeContract,
@@ -516,7 +523,7 @@ export function resolvePiSandboxModelConfig(
   );
   if (
     !config ||
-    isOkouRunModel(provider?.selectedModel) ||
+    isPresetUpstreamModel(provider?.upstreamModel) ||
     reasoningEffort === null ||
     reasoningEffort === undefined
   ) {

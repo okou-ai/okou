@@ -2689,8 +2689,8 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
-          # Fresh Clerk organizations bootstrap onto limited-free-1, so the
-          # deterministic runner policy must stay within that plan's catalog.
+          # The runner account is upgraded to Pro (runner-token.ts): free plans
+          # run only okou-1.0 on Built-in, and this policy pins DeepSeek and Luna.
           # The model policy write precondition is mandatory, so send the
           # revision this read observed. The server projects the catalog system
           # default into every policy list, so writes list only other models;
@@ -2747,6 +2747,14 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          # New organizations start in Auto mode, where provider connections and
+          # policy writes are rejected. Runner accounts pin explicit models, so
+          # switch them to Custom first. The mode switch is Debug-gated: enable
+          # Debug for the switch, then drop it again.
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
+
           provider_payload=$(jq -nc \
             --arg secret "$OPENAI_API_KEY" \
             '{type: "openai-api-key", secret: $secret}')
@@ -2757,35 +2765,31 @@ jobs:
           provider_id=$(jq -er '.provider.id | select(type == "string" and length > 0)' \
             <<< "$provider_response")
 
-          # New organizations start in Auto mode, where policy writes are rejected.
-          # Runner accounts pin explicit models, so switch them to Custom. The mode
-          # switch is Debug-gated: enable Debug for the switch, then drop it again.
-          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
-          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
-          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
-
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           # The server projects the catalog system default into every policy
           # list and ignores it on writes, so listed policies are re-sent as-is.
+          # A fresh Custom organization stores no Luna policy, so add the Luna
+          # BYOK route explicitly instead of rewriting a listed one.
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
               revision,
               policies: (
                 [
                   .policies[] |
+                    select(.model != "gpt-5.6-luna") |
                     {
                       model,
                       defaultProviderType,
                       credentialScope,
                       modelProviderId
-                    } |
-                    if .model == "gpt-5.6-luna" then
-                      . + {
-                        defaultProviderType: "openai-api-key",
-                        credentialScope: "org",
-                        modelProviderId: $providerId
-                      }
-                    else . end
+                    }
+                ] + [
+                  {
+                    model: "gpt-5.6-luna",
+                    defaultProviderType: "openai-api-key",
+                    credentialScope: "org",
+                    modelProviderId: $providerId
+                  }
                 ]
               )
             }

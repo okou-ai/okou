@@ -1,8 +1,38 @@
 import {
   isBuiltInModelProviderType,
-  isModelSupportedByProvider,
   type OrgModelPolicy,
 } from "./model-providers";
+
+/**
+ * The global model catalog lookups configurability reads. The API adapts its
+ * loaded catalog snapshot; the Platform catalog view satisfies it directly.
+ */
+export interface MemberModelPolicyCatalog {
+  /** The active model a stored selection resolves to; undefined when unknown. */
+  resolve(model: string): string | undefined;
+  /** Enabled routes of a model for one selected provider route type. */
+  routes(
+    model: string,
+    query: { readonly providerType: string },
+  ): readonly unknown[];
+}
+
+/** Whether the catalog has an enabled route of this provider type for the model. */
+function hasCatalogProviderRoute(
+  catalog: MemberModelPolicyCatalog,
+  model: string,
+  providerType: string,
+): boolean {
+  const resolved = catalog.resolve(model);
+  return (
+    resolved !== undefined &&
+    catalog.routes(resolved, {
+      providerType: isBuiltInModelProviderType(providerType)
+        ? "built-in"
+        : providerType,
+    }).length > 0
+  );
+}
 
 /** Response-only member view. Never serialize this as an administrative policy. */
 export function getMemberModelPolicyRoute(policy: OrgModelPolicy) {
@@ -31,9 +61,14 @@ export function isMemberModelPolicyAvailable(policy: OrgModelPolicy): boolean {
   return getMemberModelPolicyRoute(policy).availability === "available";
 }
 
-/** A missing/reconnecting subscription stays selectable so its owner can connect it. */
+/**
+ * A missing/reconnecting subscription stays selectable so its owner can
+ * connect it, when the catalog has an enabled route of that provider type for
+ * the model. Without a loaded catalog there is no route evidence for it.
+ */
 export function isMemberModelPolicyConfigurable(
   policy: OrgModelPolicy,
+  catalog: MemberModelPolicyCatalog | null | undefined,
 ): boolean {
   if (!policy.memberEffective) {
     return policy.routeStatus === "valid";
@@ -44,6 +79,7 @@ export function isMemberModelPolicyConfigurable(
     route.availability === "reconnect_required" ||
     (route.availability === "unavailable" &&
       route.credentialScope === "member" &&
-      isModelSupportedByProvider(policy.model, route.providerType))
+      !!catalog &&
+      hasCatalogProviderRoute(catalog, policy.model, route.providerType))
   );
 }

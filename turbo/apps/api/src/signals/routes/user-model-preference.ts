@@ -20,6 +20,7 @@ import type { RouteEntry } from "../route-entry";
 import { listOrgModelPolicies$ } from "../services/model-policy.service";
 import {
   loadModelCatalog,
+  memberModelPolicyCatalog,
   type ModelCatalog,
   resolveCatalogRunModel,
 } from "../services/model-catalog.service";
@@ -37,9 +38,11 @@ import {
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
 function configuredPolicyProviderType(
+  catalog: ModelCatalog,
   policy: OrgModelPolicy | undefined,
 ): string | null {
-  return policy && isMemberModelPolicyConfigurable(policy)
+  return policy &&
+    isMemberModelPolicyConfigurable(policy, memberModelPolicyCatalog(catalog))
     ? getMemberModelPolicyRoute(policy).providerType
     : null;
 }
@@ -61,7 +64,7 @@ function validateModelSettingsPatch(args: {
       args.catalog,
       args.patch.model,
       args.patch.effort,
-      configuredPolicyProviderType(args.configuredPolicy),
+      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
     )
   ) {
     return badRequestMessage(
@@ -84,7 +87,7 @@ function validateUltrafastServiceTier(args: {
     !isCatalogUltrafastServiceTierSupported(
       args.catalog,
       args.configuredPolicy.model,
-      configuredPolicyProviderType(args.configuredPolicy),
+      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
     )
   ) {
     return badRequestMessage(
@@ -104,7 +107,10 @@ function validatePriorityServiceTier(args: {
   }
   if (
     !args.configuredPolicy ||
-    !isMemberModelPolicyConfigurable(args.configuredPolicy)
+    !isMemberModelPolicyConfigurable(
+      args.configuredPolicy,
+      memberModelPolicyCatalog(args.catalog),
+    )
   ) {
     return badRequestMessage("Invalid request");
   }
@@ -114,7 +120,7 @@ function validatePriorityServiceTier(args: {
     !isCatalogFastServiceTierSupported(
       args.catalog,
       args.configuredPolicy.model,
-      configuredPolicyProviderType(args.configuredPolicy),
+      configuredPolicyProviderType(args.catalog, args.configuredPolicy),
     )
   ) {
     return badRequestMessage(

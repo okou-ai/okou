@@ -616,15 +616,17 @@ describe("CHAT-02: model-first provider policies", () => {
       supportByok: true,
       restrictedBuiltInModels: true,
     });
+    // A free plan's own API key is not a plan entitlement: the stored BYOK
+    // policy stays listed, but the pick rejects it rather than borrowing
+    // another route.
     const restrictedByok = await sendUntilPicked(actor, {
       agentId,
       threadId: initial.threadId,
-      prompt: "keep BYOK when built-in models are restricted",
+      prompt: "free plans do not run models on their own API keys",
     });
-    const restrictedByokRunId = restrictedByok.picked.runId;
-    if (restrictedByokRunId === undefined) {
-      throw new Error("Expected restricted-plan BYOK policy to create a run");
-    }
+    expect(restrictedByok.picked).toMatchObject({
+      eventType: "input.rejected",
+    });
     const restrictedPolicies = await misc.listModelPolicies(actor);
     expect(restrictedPolicies.policies).toContainEqual(
       expect.objectContaining({
@@ -633,7 +635,6 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: providerId,
       }),
     );
-    await cancelChatRun(actor, restrictedByokRunId);
   }, 90_000);
 
   it.each(["deleted", "wrong-provider-key"] as const)(

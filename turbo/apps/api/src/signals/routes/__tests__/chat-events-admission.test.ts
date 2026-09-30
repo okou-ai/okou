@@ -142,8 +142,11 @@ describe("CHAT-02: on-demand member memory initialization", () => {
       displayName: "Member memory agent",
       visibility: "private",
     });
+    // The owner's preferred model is the owner's own; the member selects the
+    // organization's configured model explicitly.
     const launched = await sendChatRun(member, {
       agentId: agent.agentId,
+      model: "claude-fable-5-1",
       prompt: "run after on-demand memory initialization",
     });
     expect(launched.runId).toStrictEqual(expect.any(String));

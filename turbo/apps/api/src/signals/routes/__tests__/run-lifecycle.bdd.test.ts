@@ -2,7 +2,10 @@ import nativePiFixtures from "../../../../../../packages/api-contracts/src/contr
 import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
+import {
+  readPrimaryBuiltInRouteFixture,
+  updateRestrictedPlanAccessFixture,
+} from "../../../test-fixtures/model-route-capabilities";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
@@ -5673,10 +5676,17 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("runs a provider-prefixed ID of a restricted-plan model on Built-in", async () => {
+  it("runs a provider-prefixed ID of a model the catalog frees for restricted plans", async () => {
     const api = createRunsApi(context);
     const selectedModel = "deepseek-v4-flash";
     await seedBuiltInModelKey(selectedModel);
+    // Free-plan Built-in access is the catalog row's flag, not a code list.
+    onTestFinished(
+      await updateRestrictedPlanAccessFixture({
+        model: selectedModel,
+        builtInOnRestrictedPlans: true,
+      }),
+    );
     const { actor, runnerGroup } = await entitledRunActor();
     if (!actor.orgId) {
       throw new Error("Expected the restricted-plan actor to have an org");
@@ -5693,7 +5703,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     });
 
     // The OpenRouter upstream ID names exactly one catalog model, which the
-    // catalog allows on restricted plans.
+    // catalog now allows on restricted plans.
     const run = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "provider-prefixed built-in model",

@@ -414,49 +414,53 @@ describe("personal subscription run identity", () => {
     ).resolves.toMatchObject({ runs: [] });
   });
 
-  it("admits an Auto member's catalog subscription model on the limited-free plan", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    // Run creation requires the member memory that onboarding initializes.
-    expect((await bdd.completeOnboarding(actor)).status).toBe(200);
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
-    // Plan state is infrastructure-owned; limited-free has no general BYOK.
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    await support.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    await runs.updateOrgModelMode(actor, "auto");
-    const connected = await connect(
-      actor,
-      "codex-oauth-token",
-      "identity-auto",
-    );
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Auto subscription",
-      visibility: "private",
-    });
-    const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "use my subscription model",
-      model: "gpt-6-sol",
-    });
-    const state = await runs.readRun(actor, sent.runId);
-    expect(state.status, JSON.stringify(state)).toBe("pending");
-    await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(sent.runId);
-    expect(accountId(claim, "codex-oauth-token")).toBe(connected.id);
-    await finish(actor, sent.runId, claim, "failed");
-  });
+  it.each([
+    ["claude-code-oauth-token", "claude-opus-5-5"],
+    ["codex-oauth-token", "gpt-6-sol"],
+  ] as const)(
+    "runs a free-plan member's %s subscription model on its subscription route",
+    async (type, model) => {
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      if (!actor.orgId) {
+        throw new Error("Expected an organization-scoped actor");
+      }
+      bdd.acceptAgentStorageWrites();
+      // Run creation requires the member memory that onboarding initializes.
+      expect((await bdd.completeOnboarding(actor)).status).toBe(200);
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      // Plan state is infrastructure-owned. The free plan runs only okou-1.0 on
+      // Built-in; the member's own subscription is the other way in.
+      await seedOrgMetadata({
+        orgId: actor.orgId,
+        tier: "limited-free-1",
+        credits: 0,
+      });
+      await support.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouDebug]: true,
+      });
+      await runs.updateOrgModelMode(actor, "auto");
+      const connected = await connect(actor, type, "identity-auto");
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Auto subscription",
+        visibility: "private",
+      });
+      const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "use my subscription model",
+        model,
+      });
+      const state = await runs.readRun(actor, sent.runId);
+      expect(state.status, JSON.stringify(state)).toBe("pending");
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(sent.runId);
+      // The member's own subscription account serves the run, not Built-in.
+      expect(accountId(claim, type)).toBe(connected.id);
+      await finish(actor, sent.runId, claim, "failed");
+    },
+  );
 
   it("preserves proven singleton recovery while both UI switches remain off", async () => {
     const f = await fixture("codex-oauth-token", false);

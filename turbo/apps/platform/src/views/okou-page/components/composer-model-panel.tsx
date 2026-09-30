@@ -106,7 +106,7 @@ function ComposerModelPanelBody({
   });
   const configurable =
     selectedPolicy !== undefined &&
-    isMemberModelPolicyConfigurable(selectedPolicy);
+    isMemberModelPolicyConfigurable(selectedPolicy, catalog);
   const ultrafastAvailable =
     selectedPolicy !== undefined &&
     configurable &&
@@ -158,7 +158,7 @@ function ComposerModelPanelBody({
                   <RadioPrimitive.Root
                     key={policy.model}
                     value={policy.model}
-                    disabled={!isMemberModelPolicyConfigurable(policy)}
+                    disabled={!isMemberModelPolicyConfigurable(policy, catalog)}
                     nativeButton
                     render={<button type="button" />}
                     className={cn(

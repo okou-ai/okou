@@ -79,7 +79,11 @@ export function isPolicyFastModeAvailable(
   policy: OrgModelPolicy | undefined,
   catalog: ModelCatalog | null | undefined,
 ): boolean {
-  if (!policy || !catalog || !isMemberModelPolicyConfigurable(policy)) {
+  if (
+    !policy ||
+    !catalog ||
+    !isMemberModelPolicyConfigurable(policy, catalog)
+  ) {
     return false;
   }
   if (policy.subscriptionOptions) {
@@ -112,6 +116,7 @@ export function isCodexFastModeAvailableForSelection(params: {
 
 function hasUsableModelRoute(
   policies: OrgModelPoliciesResponse | null | undefined,
+  catalog: ModelCatalog,
   model: string,
 ): boolean {
   // Before policies load there is no route evidence to reject the preference.
@@ -123,7 +128,7 @@ function hasUsableModelRoute(
   return policies.policies.some((policy) => {
     return (
       policy.model === model &&
-      (isMemberModelPolicyConfigurable(policy) ||
+      (isMemberModelPolicyConfigurable(policy, catalog) ||
         getMemberModelPolicyRoute(policy).availability === "plan_restricted")
     );
   });
@@ -145,7 +150,11 @@ export function resolveDefaultModelSelection(params: {
   const userSelection = resolveModelFirstStoredUserSelection(params);
   if (
     userSelection &&
-    hasUsableModelRoute(params.policies, userSelection.selectedModel)
+    hasUsableModelRoute(
+      params.policies,
+      params.catalog,
+      userSelection.selectedModel,
+    )
   ) {
     return userSelection;
   }

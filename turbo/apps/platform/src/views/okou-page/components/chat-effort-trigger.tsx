@@ -54,7 +54,7 @@ export function ChatEffortTrigger({
   const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
   const disabled =
-    policy === undefined || !isMemberModelPolicyConfigurable(policy);
+    policy === undefined || !isMemberModelPolicyConfigurable(policy, catalog);
   const fastAvailable = isPolicyFastModeAvailable(policy, catalog);
   return (
     <Popover>

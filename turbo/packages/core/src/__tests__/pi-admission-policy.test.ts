@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVE_RUN_MODELS,
-  getProvidersForModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   isFrontierModelProductLine,
   modelProductLine,
 } from "../model-product-line";
@@ -16,11 +12,15 @@ import {
   type PiExecutionRouteArgs,
 } from "../pi-execution";
 import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
-import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
+import {
+  SEEDED_MODEL_CATALOG,
+  SEEDED_ROUTED_MODELS,
+  seededProviderTypes,
+} from "./seeded-model-catalog";
 
 /**
- * Every active model against every provider in its
- * `MODEL_FIRST_PROVIDER_COMPATIBILITY` row plus both custom gateways, for each
+ * Every routed catalog model against every provider type of its enabled
+ * seeded `model_routes` plus both custom gateways, for each
  * runtime route the Built-in vendor picker can land on and both Codex service
  * tiers.
  *
@@ -180,7 +180,7 @@ const EXPECTED_ADMITTED_ROUTES = [
 ] as const;
 
 /**
- * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
+ * The enumeration is driven by the seeded catalog routes, so it
  * shrinks only when a model is retired or a route is removed. The remaining
  * 218 combinations are all evaluated.
  */
@@ -238,9 +238,9 @@ function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
 
 function enumerateCombinations(): readonly Combination[] {
   const combinations: Combination[] = [];
-  for (const selectedModel of ACTIVE_RUN_MODELS) {
+  for (const selectedModel of SEEDED_ROUTED_MODELS) {
     const providers = new Set<string>([
-      ...getProvidersForModel(selectedModel),
+      ...seededProviderTypes(selectedModel),
       "custom-anthropic-messages",
       "custom-openai-responses",
     ]);
@@ -265,14 +265,6 @@ function enumerateCombinations(): readonly Combination[] {
 }
 
 describe("Pi route classes in the seeded catalog", () => {
-  it("carries a catalog row for every active run model", () => {
-    for (const model of ACTIVE_RUN_MODELS) {
-      expect(piCatalogModel(SEEDED_MODEL_CATALOG, model)?.model, model).toBe(
-        model,
-      );
-    }
-  });
-
   it("keeps the route classes credential capture and billing read", () => {
     // `agent-run-create.service.ts` captures a provider secret for the native
     // and DeepSeek classes, and the Pi usage services select API-owned billing
@@ -323,7 +315,7 @@ describe("Pi route classes in the seeded catalog", () => {
     // the frontier rule silently inapplicable to it. Failing here forces the
     // line into `MODEL_PRODUCT_LINES`, next to the frontier set, where the
     // vendor-harness question has to be answered.
-    const unclassified = ACTIVE_RUN_MODELS.filter((model) => {
+    const unclassified = SEEDED_ROUTED_MODELS.filter((model) => {
       return modelProductLine(model) === null;
     });
     expect(unclassified).toStrictEqual([]);
@@ -338,8 +330,9 @@ describe("Pi admission decisions", () => {
       .filter((combination) => {
         return isPiExecutionRoute(routeArgs(combination));
       })
-      .map(label);
-    expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES]);
+      .map(label)
+      .sort();
+    expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES].sort());
   });
 
   it("keeps claude-fable-5-1 on the vendor harness on every route", () => {

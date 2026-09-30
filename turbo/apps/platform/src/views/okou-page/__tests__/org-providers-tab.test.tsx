@@ -1376,7 +1376,6 @@ test("Offer Built-in routes the catalog allows on restricted plans", async () =>
   });
   context.mocks.data.modelCatalogRestrictedPlanAccess("gpt-5.6-sol", {
     builtInOnRestrictedPlans: true,
-    ownRoutesOnRestrictedPlans: true,
   });
   context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
   context.mocks.data.orgModelPolicies([

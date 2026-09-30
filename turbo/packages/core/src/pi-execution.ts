@@ -318,7 +318,12 @@ function builtInCatalogProvider(type: string): PiCatalogProvider | null {
  * An OpenRouter preset (`@preset/...`) is an opaque upstream name; Pi resolves
  * its capabilities from the catalog model it is pinned to.
  */
-function isPresetUpstreamModel(upstreamModel: string): boolean {
+export function isPresetUpstreamModel(
+  upstreamModel: string | null | undefined,
+): boolean {
+  if (typeof upstreamModel !== "string") {
+    return false;
+  }
   return upstreamModel.startsWith("@preset/");
 }
 

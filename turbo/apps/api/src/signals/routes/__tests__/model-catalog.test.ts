@@ -217,7 +217,6 @@ describe("GET /api/model-catalog", () => {
         resolvedModel: "okou-1.0",
         priceTier: "$",
         builtInOnRestrictedPlans: true,
-        ownRoutesOnRestrictedPlans: true,
         piRouteClass: "gpt-codex",
       },
     ]);
@@ -234,7 +233,6 @@ describe("GET /api/model-catalog", () => {
       resolvedModel: "claude-fable-5-1",
       priceTier: null,
       builtInOnRestrictedPlans: false,
-      ownRoutesOnRestrictedPlans: true,
       piRouteClass: null,
     });
     expect(
@@ -466,7 +464,6 @@ describe("stored selections of replaced models", () => {
       resolvedModel: "claude-opus-5-5",
       priceTier: null,
       builtInOnRestrictedPlans: false,
-      ownRoutesOnRestrictedPlans: true,
       piRouteClass: null,
     });
 

@@ -119,7 +119,11 @@ export async function loadMemberSubscriptionModels(
   });
 }
 
-/** Only an Auto member's connected, catalog-listed subscription is plan-exempt. */
+/**
+ * Only an Auto member's connected, valid (not reconnect-required) personal
+ * subscription on the model's catalog subscription route is plan-exempt.
+ * The provider type alone never is: the member must hold that account.
+ */
 export async function isAutoPersonalSubscriptionRoute(args: {
   db: ReadonlyDb;
   orgId: string;
@@ -150,7 +154,9 @@ export async function isAutoPersonalSubscriptionRoute(args: {
   const models = await loadMemberSubscriptionModels(args.db, member);
   return models.some((entry) => {
     return (
-      entry.model === args.model && entry.providerType === args.providerType
+      entry.model === args.model &&
+      entry.providerType === args.providerType &&
+      !entry.needsReconnect
     );
   });
 }

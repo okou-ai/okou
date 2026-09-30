@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVE_RUN_MODELS,
-  getProvidersForModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   isPiExecutionRoute,
   isPiPolicyAdmittedRoute,
   isPiRouteRuntimeCapable,
@@ -11,7 +7,11 @@ import {
   piRouteCatalogIdentities,
   type PiExecutionRouteArgs,
 } from "@okouai/core/pi-execution";
-import { SEEDED_MODEL_CATALOG } from "@okouai/core/__tests__/seeded-model-catalog";
+import {
+  SEEDED_MODEL_CATALOG,
+  SEEDED_ROUTED_MODELS,
+  seededProviderTypes,
+} from "@okouai/core/__tests__/seeded-model-catalog";
 import {
   PI_CATALOG_PROVIDERS,
   PI_RUNTIME_RESOLVABLE_MODELS,
@@ -125,9 +125,9 @@ function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
  */
 function policyAdmittedRoutes(): readonly AdmittedRoute[] {
   const routes: AdmittedRoute[] = [];
-  for (const selectedModel of ACTIVE_RUN_MODELS) {
+  for (const selectedModel of SEEDED_ROUTED_MODELS) {
     const providers = new Set<string>([
-      ...getProvidersForModel(selectedModel),
+      ...seededProviderTypes(selectedModel),
       "custom-anthropic-messages",
       "custom-openai-responses",
     ]);
@@ -195,7 +195,7 @@ describe("pinned Pi runtime capability", () => {
     expect(
       resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
     ).toBe(true);
-    for (const modelProviderType of getProvidersForModel("claude-opus-5-5")) {
+    for (const modelProviderType of seededProviderTypes("claude-opus-5-5")) {
       expect(
         isPiExecutionRoute({
           catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "claude-opus-5-5"),
@@ -218,7 +218,7 @@ describe("pinned Pi runtime capability", () => {
       for (const identity of identities) {
         expect(resolvesInRuntime(identity)).toBe(true);
       }
-      for (const modelProviderType of getProvidersForModel(model)) {
+      for (const modelProviderType of seededProviderTypes(model)) {
         expect(
           isPiExecutionRoute({
             catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, model),

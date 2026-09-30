@@ -35,14 +35,12 @@ const modelCatalogModelSchema = z.object({
   priceTier: z.string().nullable(),
   /**
    * Plan policy for organizations whose plan restricts Built-in models:
-   * whether they may run this model on a Built-in route.
+   * whether they may run this model on a Built-in route. Their own routes
+   * (BYOK, organization credentials, custom gateways) are never a plan
+   * entitlement; only a member's connected personal subscription on the
+   * model's catalog subscription route is.
    */
   builtInOnRestrictedPlans: z.boolean(),
-  /**
-   * The same plan policy for routes the organization or member provides
-   * (BYOK, personal subscriptions and custom gateways).
-   */
-  ownRoutesOnRestrictedPlans: z.boolean(),
   /**
    * Which family of Pi route rules admits the model; null when the model is
    * not Pi-eligible and always runs on its vendor harness.

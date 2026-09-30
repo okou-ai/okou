@@ -26940,13 +26940,6 @@
           "notNull": true,
           "default": false
         },
-        "own_routes_on_restricted_plans": {
-          "name": "own_routes_on_restricted_plans",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",

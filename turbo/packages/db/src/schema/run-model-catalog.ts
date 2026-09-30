@@ -58,19 +58,16 @@ export const runModelCatalog = pgTable(
     allowNewOrgPolicy: boolean("allow_new_org_policy").notNull().default(false),
     /**
      * Plan policy for organizations whose plan restricts Built-in models
-     * (`org_plan_entitlements.restricted_built_in_models`): whether they may
-     * run this model on a Built-in route.
+     * (`org_plan_entitlements.restricted_built_in_models`, every free plan):
+     * whether they may run this model on a Built-in route. A new model
+     * defaults to paid-only. Restricted plans never get their own BYOK,
+     * organization or gateway routes as a plan entitlement; only a member's
+     * connected personal subscription on the model's catalog subscription
+     * route (`model_routes.subscription_type`) is exempt.
      */
     builtInOnRestrictedPlans: boolean("built_in_on_restricted_plans")
       .notNull()
       .default(false),
-    /**
-     * The same plan policy for routes the organization or member provides
-     * (BYOK, personal subscriptions and custom gateways).
-     */
-    ownRoutesOnRestrictedPlans: boolean("own_routes_on_restricted_plans")
-      .notNull()
-      .default(true),
     /**
      * The family of Pi route rules that admits the model
      * (`claude-native`, `gpt-codex` or `deepseek`). NULL means the model is

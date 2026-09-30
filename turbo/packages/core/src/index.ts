@@ -107,8 +107,6 @@ export {
   hasModelSelection,
   allowsCustomModel,
   getCustomModelPlaceholder,
-  getProvidersForModel,
-  isModelSupportedByProvider,
   isSupportedRunModel,
   normalizeRunModelId,
   getSelectableProviderTypes,

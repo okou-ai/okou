@@ -507,8 +507,6 @@ export {
   allowsCustomModel,
   getCustomModelPlaceholder,
   // Provider compatibility
-  getProvidersForModel,
-  isModelSupportedByProvider,
   isSupportedRunModel,
   normalizeRunModelId,
   // Selectable provider filtering

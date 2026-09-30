@@ -53,7 +53,7 @@ export function availableChatReasoningEfforts(
     !selection ||
     !policy ||
     !catalog ||
-    !isMemberModelPolicyConfigurable(policy)
+    !isMemberModelPolicyConfigurable(policy, catalog)
   ) {
     return [];
   }

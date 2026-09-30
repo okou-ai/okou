@@ -489,12 +489,42 @@ export function checkCatalogRunRoute(
     : undefined;
 }
 
+/**
+ * The denial for a catalog model a free (restricted) plan cannot run on the
+ * requested route. It names the catalog's free Built-in models and the one
+ * other way in: the member's own connected subscription.
+ */
+export function restrictedPlanModelRequired(
+  catalog: ModelCatalog,
+  displayName: string,
+): ReturnType<typeof paidPlanRequired> {
+  const freeModels = catalog.models
+    .filter((model) => {
+      return model.builtInOnRestrictedPlans && model.replacedBy === null;
+    })
+    .map((model) => {
+      return model.displayName;
+    });
+  const choose =
+    freeModels.length > 0 ? `choose ${freeModels.join(" or ")} or ` : "";
+  return paidPlanRequired(
+    displayName,
+    `On the free plan, ${choose}connect your own Claude Code or Codex subscription.`,
+  );
+}
+
 export function checkOrgPlanRunAdmission(params: {
   /** The run's catalog snapshot, loaded once by the caller. */
   readonly catalog: ModelCatalog;
   readonly capabilities: OrgPlanRunAdmissionCapabilities | null;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
+  /**
+   * The run uses the member's own connected subscription on the model's
+   * catalog subscription route, verified by the caller
+   * (`isAutoPersonalSubscriptionRoute` or the claim's member pin). It is the
+   * only route a free plan may use besides its free Built-in models.
+   */
   readonly autoPersonalSubscription?: boolean;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
@@ -511,16 +541,19 @@ export function checkOrgPlanRunAdmission(params: {
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
   }
-  // A model the catalog keeps off restricted plans on every route asks for a
-  // paid plan by name.
+  // A catalog model a free plan cannot run on this route asks for a paid
+  // plan by name and points at the free alternatives.
   const restrictedModel =
     modelAccess === "pro_required" && params.selectedModel
       ? params.catalog.byModel.get(
           catalogModelForSelectedId(params.catalog, params.selectedModel) ?? "",
         )
       : undefined;
-  if (restrictedModel && !restrictedModel.ownRoutesOnRestrictedPlans) {
-    return paidPlanRequired(restrictedModel.displayName);
+  if (restrictedModel) {
+    return restrictedPlanModelRequired(
+      params.catalog,
+      restrictedModel.displayName,
+    );
   }
   return (!capabilities.supportByok &&
     !params.autoPersonalSubscription &&

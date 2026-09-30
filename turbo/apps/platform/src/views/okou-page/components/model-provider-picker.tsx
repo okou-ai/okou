@@ -639,7 +639,7 @@ function ModelFirstPolicyRow({
     <SelectItem
       key={policy.id}
       value={policy.model}
-      disabled={!isMemberModelPolicyConfigurable(policy)}
+      disabled={!isMemberModelPolicyConfigurable(policy, catalog)}
     >
       <ModelFirstPolicyRowContent
         policy={policy}
@@ -1014,7 +1014,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
                 modelCapabilities={modelCapabilities}
               />
             ),
-            disabled: !isMemberModelPolicyConfigurable(policy),
+            disabled: !isMemberModelPolicyConfigurable(policy, catalog),
           };
         })}
       />

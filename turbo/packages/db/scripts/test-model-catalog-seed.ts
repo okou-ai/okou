@@ -12,25 +12,14 @@ interface CatalogRow {
   is_system_default: boolean;
   replaced_by: string | null;
   built_in_on_restricted_plans: boolean | null;
-  own_routes_on_restricted_plans: boolean | null;
 }
 
 /**
- * Restricted (limited-free) plan entitlement seeded by migration 1299, the
- * former code allowlist. `org_plan_entitlements.restricted_built_in_models`
- * is only the boolean plan capability; these catalog flags decide the models.
+ * Free-plan Built-in entitlement seeded by migration 1299: free plans
+ * (`org_plan_entitlements.restricted_built_in_models`) run only okou-1.0 on
+ * Built-in routes; these catalog flags, not code, decide the models.
  */
-const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = [
-  "deepseek-v4-flash",
-  "deepseek-v4.1-flash",
-  "gpt-5.6-luna",
-  "gpt-6-luna",
-  "okou-1.0",
-];
-const OWN_ROUTES_OFF_RESTRICTED_PLANS: readonly string[] = [
-  "claude-sonnet-5-5",
-  "gpt-6.1-sol",
-];
+const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = ["okou-1.0"];
 
 function modelsWhere(
   rows: readonly CatalogRow[],
@@ -51,11 +40,6 @@ function assertRestrictedPlanFlags(rows: readonly CatalogRow[]): void {
       "boolean",
       `${row.model}: built_in_on_restricted_plans`,
     );
-    assert.equal(
-      typeof row.own_routes_on_restricted_plans,
-      "boolean",
-      `${row.model}: own_routes_on_restricted_plans`,
-    );
   }
   assert.deepEqual(
     modelsWhere(rows, (row) => {
@@ -63,13 +47,6 @@ function assertRestrictedPlanFlags(rows: readonly CatalogRow[]): void {
     }),
     [...BUILT_IN_ON_RESTRICTED_PLANS].sort(),
     "Built-in models allowed on restricted plans",
-  );
-  assert.deepEqual(
-    modelsWhere(rows, (row) => {
-      return row.own_routes_on_restricted_plans === false;
-    }),
-    [...OWN_ROUTES_OFF_RESTRICTED_PLANS].sort(),
-    "models kept off restricted plans on own routes",
   );
 }
 
@@ -219,7 +196,7 @@ export async function validateModelCatalogSeed(
   try {
     const catalog = await client.query<CatalogRow>(
       `SELECT model, display_name, sort_order, is_system_default, replaced_by,
-         built_in_on_restricted_plans, own_routes_on_restricted_plans
+         built_in_on_restricted_plans
        FROM run_model_catalog ORDER BY sort_order, model`,
     );
     assertCatalogRows(catalog.rows);

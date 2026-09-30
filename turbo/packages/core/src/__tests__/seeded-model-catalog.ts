@@ -828,3 +828,28 @@ export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
     },
   ],
 };
+
+/** Distinct provider types of a model's enabled seeded routes. */
+export function seededProviderTypes(model: string): readonly string[] {
+  return [
+    ...new Set(
+      SEEDED_MODEL_CATALOG.routes
+        .filter((route) => {
+          return route.enabled && route.model === model;
+        })
+        .map((route) => {
+          return route.providerType;
+        }),
+    ),
+  ];
+}
+
+/** Seeded catalog models with at least one enabled route, in catalog order. */
+export const SEEDED_ROUTED_MODELS: readonly string[] =
+  SEEDED_MODEL_CATALOG.models
+    .map((entry) => {
+      return entry.model;
+    })
+    .filter((model) => {
+      return seededProviderTypes(model).length > 0;
+    });

@@ -3,6 +3,7 @@ import {
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import type { ReadonlyDb } from "../external/db";
@@ -13,10 +14,8 @@ type CatalogModel = Readonly<{
   sortOrder: number;
   isSystemDefault: boolean;
   replacedBy: string | null;
-  /** Restricted plans may run the model on Built-in routes. */
+  /** Restricted (free) plans may run the model on Built-in routes. */
   builtInOnRestrictedPlans: boolean;
-  /** Restricted plans may run the model on their own provider routes. */
-  ownRoutesOnRestrictedPlans: boolean;
   /** Pi route class (`run_model_catalog.pi_route_class`); null = not Pi-eligible. */
   piRouteClass: string | null;
 }>;
@@ -272,6 +271,29 @@ export function catalogHasProviderRoute(
   });
 }
 
+/** The catalog lookups member policy configurability reads. */
+export function memberModelPolicyCatalog(
+  catalog: ModelCatalog,
+): MemberModelPolicyCatalog {
+  return {
+    resolve(model) {
+      const resolution = resolveCatalogModel(catalog, model);
+      return resolution.kind === "unknown"
+        ? undefined
+        : resolution.resolvedModel;
+    },
+    routes(model, query) {
+      return catalog.routes.filter((route) => {
+        return (
+          route.enabled &&
+          route.model === model &&
+          route.providerType === query.providerType
+        );
+      });
+    },
+  };
+}
+
 /** Display price tier of the model's primary Built-in route. */
 export function catalogBuiltInPriceTier(
   catalog: ModelCatalog,
@@ -322,7 +344,6 @@ export async function loadModelCatalog(
         isSystemDefault: runModelCatalog.isSystemDefault,
         replacedBy: runModelCatalog.replacedBy,
         builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
-        ownRoutesOnRestrictedPlans: runModelCatalog.ownRoutesOnRestrictedPlans,
         piRouteClass: runModelCatalog.piRouteClass,
       })
       .from(runModelCatalog)

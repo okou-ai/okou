@@ -29,23 +29,33 @@ export async function updateModelRouteCapabilitiesFixture(args: {
   }
 }
 
-/** Operators change a model's plan policy directly in the database. */
+/**
+ * Operators change a model's free-plan Built-in policy directly in the
+ * database. Returns the restore of the previous value.
+ */
 export async function updateRestrictedPlanAccessFixture(args: {
   readonly model: string;
   readonly builtInOnRestrictedPlans: boolean;
-  readonly ownRoutesOnRestrictedPlans: boolean;
-}): Promise<void> {
-  const updated = await db()
-    .update(runModelCatalog)
-    .set({
-      builtInOnRestrictedPlans: args.builtInOnRestrictedPlans,
-      ownRoutesOnRestrictedPlans: args.ownRoutesOnRestrictedPlans,
+}): Promise<() => Promise<void>> {
+  const [previous] = await db()
+    .select({
+      builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
     })
-    .where(eq(runModelCatalog.model, args.model))
-    .returning({ model: runModelCatalog.model });
-  if (updated.length !== 1) {
+    .from(runModelCatalog)
+    .where(eq(runModelCatalog.model, args.model));
+  if (!previous) {
     throw new Error("Expected one catalog model to be updated");
   }
+  await db()
+    .update(runModelCatalog)
+    .set({ builtInOnRestrictedPlans: args.builtInOnRestrictedPlans })
+    .where(eq(runModelCatalog.model, args.model));
+  return async () => {
+    await db()
+      .update(runModelCatalog)
+      .set({ builtInOnRestrictedPlans: previous.builtInOnRestrictedPlans })
+      .where(eq(runModelCatalog.model, args.model));
+  };
 }
 
 /** The model's first-priority enabled Built-in route in the catalog. */

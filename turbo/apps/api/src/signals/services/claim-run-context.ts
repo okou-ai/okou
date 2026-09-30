@@ -3158,7 +3158,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       subscriptionModels.some((entry) => {
         return (
           entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType
+          entry.providerType === pin.modelProviderType &&
+          !entry.needsReconnect
         );
       })
     );
@@ -6213,7 +6214,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       subscriptionModels.some((entry) => {
         return (
           entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType
+          entry.providerType === pin.modelProviderType &&
+          !entry.needsReconnect
         );
       })
     );

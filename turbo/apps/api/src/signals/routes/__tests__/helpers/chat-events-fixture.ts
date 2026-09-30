@@ -1,4 +1,5 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { seededProviderTypes } from "@okouai/core/__tests__/seeded-model-catalog";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -22,7 +23,6 @@ import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/cont
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
-  getProvidersForModel,
   type UpsertModelProviderRequest,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -155,7 +155,7 @@ export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
         },
       ] as const
     ).filter((route) => {
-      return getProvidersForModel(selectedModel).includes(route.type);
+      return seededProviderTypes(selectedModel).includes(route.type);
     });
   },
 );

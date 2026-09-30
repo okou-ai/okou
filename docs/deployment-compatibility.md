@@ -7,11 +7,18 @@ The server model catalog (`run_model_catalog` plus `model_routes`, served by
 the system default, retirement and replacement, price tiers and route
 capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
 product authority, and the system default is the DB row with
-`is_system_default = true`. Code still owns runtime adapters. Limited-free
-plan access is catalog data (`built_in_on_restricted_plans`,
-`own_routes_on_restricted_plans`, migration 1299), read by model policy
-writes, run admission and the Platform; the static
-`isLimitedFree1RestrictedRunModel` allowlist is gone. Custom-gateway mapping
+`is_system_default = true`. Code still owns runtime adapters. Free-plan
+model access is catalog data (`built_in_on_restricted_plans`, migration 1299,
+true only for `okou-1.0`), read by model policy writes, run admission and the
+Platform; the static `isLimitedFree1RestrictedRunModel` allowlist is gone and
+is not reproduced. Free plans (`limited-free-1` and legacy `free`, whose
+`restricted_built_in_models` migration 1299 backfills to true) run only
+`okou-1.0` on Built-in, or a model on the member's own connected Claude Code or
+Codex subscription route; organization BYOK and custom gateways are no longer
+free-plan entitlements. During the rolling window the old API still enforces
+its code allowlist against the backfilled legacy Free rows, which only narrows
+access earlier; stored selections that become restricted fail explicitly
+(`PRO_REQUIRED`) rather than being rewritten. Custom-gateway mapping
 follows the model's routes instead of hard-coded model IDs. The organization default is not configurable: the
 catalog system default (`okou-1.0`, Auto) is projected into every
 organization's `GET /api/model-policies` as a non-deletable system policy and

@@ -34,7 +34,6 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
               : resolution.resolvedModel,
           priceTier: catalogBuiltInPriceTier(catalog, row.model),
           builtInOnRestrictedPlans: row.builtInOnRestrictedPlans,
-          ownRoutesOnRestrictedPlans: row.ownRoutesOnRestrictedPlans,
           piRouteClass: isPiRouteClass(row.piRouteClass)
             ? row.piRouteClass
             : null,

@@ -181,17 +181,10 @@ function resolveReplacement(model: string): string {
 }
 
 // Plan policy seeded by migration 1299.
-const RESTRICTED_PLAN_BUILT_IN_MODELS: readonly string[] = [
+/** Seeded `run_model_catalog.built_in_on_restricted_plans` (migration 1299). */
+const RESTRICTED_PLAN_BUILT_IN_MODELS: ReadonlySet<string> = new Set([
   "okou-1.0",
-  "gpt-6-luna",
-  "gpt-5.6-luna",
-  "deepseek-v4.1-flash",
-  "deepseek-v4-flash",
-];
-const RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS: readonly string[] = [
-  "claude-sonnet-5-5",
-  "gpt-6.1-sol",
-];
+]);
 
 /** Seeded `run_model_catalog.pi_route_class` (migration 1300). */
 const PI_ROUTE_CLASS_BY_MODEL: Readonly<
@@ -227,10 +220,7 @@ export function createMockModelCatalog(
         replacedBy,
         resolvedModel: resolveReplacement(model),
         priceTier: profileFor(model).priceTier,
-        builtInOnRestrictedPlans:
-          RESTRICTED_PLAN_BUILT_IN_MODELS.includes(model),
-        ownRoutesOnRestrictedPlans:
-          !RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS.includes(model),
+        builtInOnRestrictedPlans: RESTRICTED_PLAN_BUILT_IN_MODELS.has(model),
         piRouteClass: PI_ROUTE_CLASS_BY_MODEL[model] ?? null,
       };
     },
@@ -290,10 +280,7 @@ export function setMockModelCatalogSystemDefault(model: string): void {
 /** Operators change a model's plan policy for restricted plans. */
 export function setMockModelCatalogRestrictedPlanAccess(
   model: string,
-  access: Pick<
-    MockCatalogModel,
-    "builtInOnRestrictedPlans" | "ownRoutesOnRestrictedPlans"
-  >,
+  access: Pick<MockCatalogModel, "builtInOnRestrictedPlans">,
 ): void {
   mockModelCatalog = {
     ...mockModelCatalog,
