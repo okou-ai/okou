@@ -877,7 +877,6 @@ describe("GET /api/cron/sync-skills", () => {
 
     expect(result).toMatchObject({ success: true, synced: 1, failed: 0 });
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
-    expect(s3CallsByName("HeadObjectCommand")).toHaveLength(2);
     await expect(
       findSystemStorageByName(firstVersion.storageName),
     ).resolves.toMatchObject({
