@@ -81,7 +81,6 @@ import {
   requireAllowanceWrite,
 } from "./usage-allowance-settlement-plan";
 import {
-  orgCreditLockSql,
   prepareUsageAllowanceRefresh$,
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
@@ -132,7 +131,6 @@ const commitUsageBatch$ = command(
         return null;
       }
       const { usage: managed, processPending } = socialPlan(batch.social, job);
-      await tx.execute(orgCreditLockSql(orgId));
       if (managed) {
         const [run] = await tx
           .select()

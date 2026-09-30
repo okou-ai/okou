@@ -428,22 +428,6 @@ async function applyPreparedUsageAllowanceRefresh(
   };
 }
 
-export function orgCreditLockSql(orgId: string) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`;
-}
-
-export async function lockOrgCredits(
-  tx: UsageAllowanceStore,
-  orgId: string,
-): Promise<void> {
-  // Unfinished R1 financial protocol, not an outgoing-version compatibility
-  // gate. Different Run anchors can still issue overlapping missing windows;
-  // exact-start uniqueness alone does not settle that boundary. No explicit
-  // parent/entitlement locks substitute for the key during its retirement.
-  await tx.execute(orgCreditLockSql(orgId));
-}
-
 async function loadActiveUsageAllowanceEntitlement(
   tx: UsageAllowanceStore,
   orgId: string,
@@ -1031,7 +1015,6 @@ export async function activateUsageAllowanceWindowsForRun(
     readonly refresh?: PreparedUsageAllowanceRefresh;
   },
 ): Promise<UsageAllowanceAvailability | null> {
-  await lockOrgCredits(tx, args.orgId);
   const windows = await ensureWindowsForRun(tx, args);
   return windows ? availabilityFromWindows(windows) : null;
 }

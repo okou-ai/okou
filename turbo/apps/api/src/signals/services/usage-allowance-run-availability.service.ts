@@ -20,10 +20,7 @@ import {
   planPreparedAllowanceEntitlement,
   type AllowanceEntitlement,
 } from "./usage-allowance-settlement-plan";
-import {
-  orgCreditLockSql,
-  prepareUsageAllowanceRefresh$,
-} from "./usage-allowance.service";
+import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
 
 function runWindowsQuery(
   orgId: string,
@@ -221,7 +218,6 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
     signal?.throwIfAborted();
     const outcome = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(orgCreditLockSql(args.orgId));
         const [run] = await tx
           .select({ createdAt: agentRuns.createdAt })
           .from(agentRuns)
@@ -297,9 +293,8 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
     if (outcome.ok) {
       return outcome.value;
     }
-    // The entitlement row is owned above, so the only FK a window insert can
-    // lose is created_by_run_id: the Run was deleted after our read. A deleted
-    // Run has no allowance, the same result as a Run that was never found.
+    // A Run or entitlement deleted during issuance has no usable allowance;
+    // natural FK enforcement prevents a permanently dangling window.
     if (isForeignKeyViolation(outcome.error)) {
       return null;
     }

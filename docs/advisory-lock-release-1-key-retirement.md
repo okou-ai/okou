@@ -26,7 +26,7 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 ## Per-key inventory
 
 Initial inventory: **17 API + 1 operator** definitions. At `0ea5f20d`:
-**6 API + 0 operator**. Now: **3 API + 0 operator** after invitation and serving
+**6 API + 0 operator**. Now: **2 API + 0 operator** after credit, invitation and serving
 compaction retirement; shared/exclusive compaction counted separately before
 removal. A later main integration must recheck any imported definitions. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
@@ -39,7 +39,7 @@ removed; that simplification remains explicit R1 implementation work below.
 | `usage_pack_billing:<org>`                 | **Still present, R1 financial work.** Plan/migration/legacy Plan/concurrency/cancel/restore and last-member/deferred changes are not all declarative. No outgoing-version-only exemption is claimed.                                                                                                                                                                                                                                        |
 | `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
 | `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
-| `credit_<org>`                             | **Still present, R1 financial work.** Window issuance, consumption and all settlement callers need a complete no-key protocol. Existing window uniqueness alone does not prove independent issuance across different Run start times.                                                                                                                                                                                                       |
+| `credit_<org>`                             | **Deleted.** Exact window identity uses existing unique-index insertion and one committed-winner read; original-anchor selection retains allowed historical overlap. Consumption/grant/lot publication is conditional with complete-write checks; wallet debit and expiry use arithmetic. A rejected financial snapshot rolls back once and remains for the next existing settlement cycle.                                                 |
 | `usage_event_compaction` shared            | **Deleted.** Settlement claims pending rows conditionally; compaction consumes only actual version-matching DELETE RETURNING rows and publishes their immutable totals in the same transaction. Raw-first cleanup sees committed rollups in its next SQL snapshot.                                                                                                                                                                          |
 | `usage_event_compaction` exclusive         | **Deleted.** No compactor reads/replaces old hourly fragments or selects rows FOR UPDATE. A competing batch may consume zero; the next normal cron visit handles the remainder without an in-process retry.                                                                                                                                                                                                                                 |
 | `usage_event_compaction` operator          | **Deleted.** Existing `--migrate --ack-writer-drain` operator opt-in and one conditional business-checkpoint UPDATE; rejected batch rolls back once, without retry. No serving compatibility acquisition remains in the script.                                                                                                                                                                                                             |
@@ -56,13 +56,12 @@ removed; that simplification remains explicit R1 implementation work below.
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
 
-## Allowance issuance preparation — still unfinished key retirement
+## Credit key retirement
 
-`orgCreditCompatibilityLockSql` is renamed `orgCreditLockSql`: this is explicitly
-unfinished new-writer financial work, not an outgoing-version exemption. The
-`lockOrgCredits` helper no longer SELECT-locks the wallet or entitlement; no
-explicit row lock replaces the retained key. Its existing financial acquisition
-remains until different-anchor window issuance is correct.
+`orgCreditCompatibilityLockSql`, its briefly renamed `orgCreditLockSql`, the
+`lockOrgCredits` helper and every actual acquisition are deleted. This covers
+Run activation in both direct and Pick launches, firewall backfill, standalone
+and Social settlement. No parent/entitlement SELECT lock replaces the key.
 
 Both initial Run-window issuance and firewall Run-window backfill now use the
 existing `(entitlement_id, kind, starts_at)` unique index with `ON CONFLICT DO
@@ -77,16 +76,28 @@ Run, observes exactly two zero-consumption windows through billing status, then
 settles usage, verifies both windows consumed exactly two units, and verifies
 subsequent admission is denied rather than refilling allowance. Credits and
 visible settled usage retain exact assertions. This verifies ordinary business
-outcomes, not a claim that the retained key has been removed or that the unique
-conflict branch necessarily won that particular interleaving.
+outcomes without a key; it does not assert which exact unique-conflict branch
+won the interleaving.
 
-**Different Run anchors remain an R1 gap.** Exact-start uniqueness does not
-prevent overlapping first windows at distinct original Run timestamps. A naive
-range-exclusion constraint can permanently defer a late historical settlement,
-and bucketing by wall-clock period would change the existing Run-anchor product
-semantics. Neither is introduced without a complete recovery/amount protocol.
-No financial correctness or production-data convergence is claimed for those
-unfinished cases.
+**Correction to the earlier different-anchor inventory.** Existing allowance
+semantics explicitly select the latest covering window per kind and permit
+historical overlap (see the existing allocator and usage-boundaries inventory).
+Even a serialized late older anchor can issue a historical window before a
+later window's start. Exact-start uniqueness is not a global non-overlap promise;
+adding range exclusion or wall-clock bucketing would introduce a different
+product rule and can permanently defer legitimate late usage. Neither is added.
+Original Run anchors, per-window unit limits and immutable allocations remain.
+
+Settlement owns pending events through a conditional processed transition. It
+compares every planned window insert, consumed-window update, allocation receipt,
+grant deduction and expiry-lot deduction against the actual affected count. A
+short write rolls back the entire financial batch and leaves it for the next
+existing settlement cycle, without retry. Window consumption compares the
+observed counter/limit before publishing its exact delta; wallet debit and lot
+expiry retain atomic arithmetic. Different historical windows are not combined
+into a new global budget or reported as a new grant. The financial contract is
+per selected window/receipt, not an invented non-overlap constraint. Production
+legacy convergence remains unproven and separate from source retirement.
 
 ## Key-free allowance refresh inside the Pick graph
 
@@ -110,10 +121,9 @@ same objects; the authorized resource `Promise.all`, computed runner arguments,
 10-second lease and parent pending transaction are unchanged. No pending SQL or
 sequence/queue lock order changes. Admission errors still reject before commit.
 
-**The `credit_` definition is not retired yet.** Issuance and settlement retain
-separate call sites; in particular, existing exact-start window uniqueness does
-not alone arbitrate overlapping windows at different Run anchors. Those are R1
-financial implementation work, not old-version compatibility or an R2 gate.
+The later issuance/settlement changes above now retire the `credit_` definition
+and its remaining calls as well. No serving/in-flight/rollback compatibility
+gate is retained.
 
 ## Serving compaction retirement
 
