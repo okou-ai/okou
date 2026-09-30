@@ -28,7 +28,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -853,7 +853,7 @@ function readyProjectionIsAuthentic(
 }
 
 export interface MemorySummaryProjectionReadInput {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly args: ReadMemorySummaryProjectionArgs;
 }
 

@@ -9752,7 +9752,7 @@ export function assemblePiLaunchResources(args: {
 }
 
 export interface PreparePiLaunchResourcesArgs {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
   readonly piMemoryEnabled: boolean;

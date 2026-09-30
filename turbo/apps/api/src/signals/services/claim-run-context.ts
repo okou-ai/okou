@@ -2382,6 +2382,11 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   };
 }
 
+type RunnerInputResult =
+  | ReturnType<typeof prepareRunnerStorageInput>
+  | CreateRunErrorResult
+  | null;
+
 export function createClaimRunObjects(claim: ThreadClaim) {
   const appendChatQueueHeadRejection$ = command(
     async (
@@ -12292,16 +12297,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const rejectChatQueueHead$ = queueHeadRejectionRejectChatQueueHead$;
   const preparePiLaunchResourcesInput$ = computed(async (get) => {
-    const [input, storage] = await Promise.all([
-      get(runnerInput$),
+    const [args, storage] = await Promise.all([
+      get(runnerArgs$),
       get(preparedStorage$),
     ]);
-    if (!input || isRouteError(input) || !storage || isRouteError(storage)) {
+    if (!args || isRouteError(args) || !storage || isRouteError(storage)) {
       return null;
     }
-    const { args, db } = input;
     return {
-      db,
+      db: get(db$),
       orgId: args.orgId,
       userId: args.userId,
       piMemoryEnabled: isFeatureEnabled(
@@ -12581,33 +12585,41 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ]);
     return !!selection && validSource;
   });
+  /** Launch payload arguments without the run token; a pure read join. */
+  const runnerArgs$ = computed(async (get) => {
+    const [input, identity, allowed] = await Promise.all([
+      get(runPlan$),
+      get(runIdentity$),
+      get(resourceAllowed$),
+    ]);
+    if (!allowed) {
+      return null;
+    }
+    if (!input || isRouteError(input)) {
+      return input;
+    }
+    if (!identity) {
+      throw new Error("Selected claim has no run identity");
+    }
+    return atomicLaunchPayloadInput({
+      createArgs: input.args,
+      context: input.context,
+      run: {
+        id: identity.runId,
+        sessionId: identity.sessionId,
+        shouldCreateSession: identity.shouldCreateSession,
+      },
+      timing: input.timing,
+    });
+  });
+  /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [input, identity, allowed] = await Promise.all([
-        get(runPlan$),
-        get(runIdentity$),
-        get(resourceAllowed$),
-      ]);
+      const args = await get(runnerArgs$);
       signal.throwIfAborted();
-      if (!allowed) {
-        return null;
+      if (!args || isRouteError(args)) {
+        return args;
       }
-      if (!input || isRouteError(input)) {
-        return input;
-      }
-      if (!identity) {
-        throw new Error("Selected claim has no run identity");
-      }
-      const args = atomicLaunchPayloadInput({
-        createArgs: input.args,
-        context: input.context,
-        run: {
-          id: identity.runId,
-          sessionId: identity.sessionId,
-          shouldCreateSession: identity.shouldCreateSession,
-        },
-        timing: input.timing,
-      });
       return prepareRunnerStorageInput({
         db: set(writeDb$),
         args,
@@ -12615,19 +12627,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
     },
   );
-  const internalRunnerInput$ = state<{
-    readonly input:
-      | Awaited<ReturnType<typeof prepareRunnerStorageInput>>
-      | CreateRunErrorResult
-      | null;
-  } | null>(null);
-  const runnerInput$ = computed((get) => {
-    const prepared = get(internalRunnerInput$);
-    if (prepared === null) {
-      throw new Error("Runner input has not been prepared");
-    }
-    return prepared.input;
-  });
   const prepareCallbacks$ = command(async ({ get }, signal: AbortSignal) => {
     const identity = get(internalRunIds$);
     if (!identity) {
@@ -12667,20 +12666,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const storageMounts$ = computed((get) => {
     return get(preparedStorage$);
   });
-  const runnerStorage$ = computed(async (get) => {
-    const [input, preparedStorage, piResources] = await Promise.all([
-      get(runnerInput$),
-      get(preparedStorage$),
-      get(piLaunchResources$),
-    ]);
-    if (!input || isRouteError(input)) {
-      return input;
-    }
-    if (!preparedStorage || isRouteError(preparedStorage)) {
-      return preparedStorage;
-    }
-    return { input, preparedStorage, piResources };
-  });
+  const prepareRunnerStorage$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const [input, preparedStorage, piResources] = await Promise.all([
+        set(prepareRunnerInput$, signal),
+        get(preparedStorage$),
+        get(piLaunchResources$),
+      ]);
+      signal.throwIfAborted();
+      if (!input || isRouteError(input)) {
+        return input;
+      }
+      if (!preparedStorage || isRouteError(preparedStorage)) {
+        return preparedStorage;
+      }
+      return { input, preparedStorage, piResources };
+    },
+  );
   const storedSecretsInput$ = computed(async (get) => {
     if (!(await get(selectionInput$))) {
       return null;
@@ -12732,12 +12734,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const claimRunPrepareStoredContextDraft$ = command(
     (
-      { get },
+      _store,
+      input: RunnerInputResult,
       encrypted: Awaited<ReturnType<typeof prepareEncryptedSecrets$.write>>,
       signal: AbortSignal,
     ) => {
       signal.throwIfAborted();
-      const input = get(runnerInput$);
       if (!input || isRouteError(input)) {
         return input;
       }
@@ -12903,10 +12905,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   /** Runner input owns the random token; storage then reads its result. */
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const runnerInput = await set(prepareRunnerInput$, signal);
+      const [plan, storage] = await Promise.all([
+        get(runPlan$),
+        set(prepareRunnerStorage$, signal),
+      ]);
       signal.throwIfAborted();
-      set(internalRunnerInput$, { input: runnerInput });
-      return await Promise.all([get(runPlan$), get(runnerStorage$)]);
+      const runnerInput: RunnerInputResult =
+        storage && !isRouteError(storage) ? storage.input : storage;
+      return [plan, storage, runnerInput] as const;
     },
   );
   /**
@@ -12956,9 +12962,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(storageMounts$),
       ]);
       signal.throwIfAborted();
-      const [input, storage] = launch.runner;
+      const [input, storage, runnerInput] = launch.runner;
       const contextDraft = set(
         claimRunPrepareStoredContextDraft$,
+        runnerInput,
         encrypted,
         signal,
       );
