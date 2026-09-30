@@ -2330,6 +2330,67 @@ describe("Morning Brief preference", () => {
     }
   });
 
+  it("does not treat outstanding membership qualification as enable intent", async () => {
+    const actor = bdd.user();
+    mockBriefMemberships([
+      { actor, createdAt: new Date("2020-01-01T00:00:00.000Z") },
+    ]);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const respond = membershipReads.getMockImplementation();
+    if (!respond) {
+      throw new Error("Expected the historical membership response");
+    }
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    membershipReads.mockImplementation(async (...args) => {
+      if (!started.settled()) {
+        started.resolve(undefined);
+      }
+      await release.promise;
+      return await respond(...args);
+    });
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await flushWaitUntilForTest();
+    });
+
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    await started.promise;
+    // The worker revisit can finish while the timezone request still owns
+    // the qualification attempt. Unknown eligibility is not an enable choice.
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+
+    // A user's explicit enable is real intent even before qualification or
+    // prerequisites complete, and the older eligibility read cannot erase it.
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+  });
+
   it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
@@ -3080,7 +3141,7 @@ describe("Morning Brief default onboarding", () => {
       ]);
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
-        enabled: true,
+        enabled: false,
         status: "error",
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
@@ -3136,7 +3197,7 @@ describe("Morning Brief default onboarding", () => {
       ).rejects.toBe(interrupted);
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
-        enabled: true,
+        enabled: false,
         status: "preparing",
       });
       await expect(readUserTimezone(actor)).resolves.toBe(timezone);

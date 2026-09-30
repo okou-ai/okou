@@ -180,8 +180,9 @@ async function loadPendingPreference(
   return {
     kind: "ok",
     preference: {
-      enabled:
-        enrollment?.state === "pending" || enrollment?.state === "checking",
+      // Checking is unknown membership eligibility, not an enable choice.
+      // Only a qualified membership or an explicit toggle creates pending intent.
+      enabled: enrollment?.state === "pending",
       status:
         enrollment?.state === "pending" || enrollment?.state === "checking"
           ? enrollment.lastError
