@@ -9,9 +9,11 @@ of preference:
    (account `connectors` row, `workflow_automations`, watch/subscription state),
    with existing unique indexes and `ON CONFLICT`.
 2. For writers that change or project the member's whole builtin account set,
-   `builtinConnectorAccountRowsLockSql` (ordered `FOR NO KEY UPDATE` of all of
-   that member's account rows for the slug), the same protocol custom accounts
-   already use. It does not block foreign-key `KEY SHARE` checks.
+   `builtinConnectorAccountRowsLockSql` (ordered `FOR UPDATE` of all of that member's
+   account rows for the slug), the same ordering custom accounts use. It is
+   `FOR UPDATE` because account writers later lock the same rows; builtin
+   sibling reads after it do not lock again, since relocking siblings committed
+   meanwhile would take them out of id order and deadlock.
 3. An absent owner has no account state to protect; the first account's
    default is decided by `idx_connectors_org_user_slug_default` (a concurrent
    loser inserts as a sibling, or rolls back for retry when the serialized
