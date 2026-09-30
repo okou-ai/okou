@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type {
   OnboardingIndustry,
   OnboardingSubscriptionProvider,
@@ -14,12 +14,9 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import {
-  modelPolicyParentLockSql,
   modelPolicyWriterLockSql,
   onboardingModelPolicyWritePlan,
   policySeedValues,
-  policySetOwned,
-  type OrgModelPolicyRow,
 } from "./model-policy.service";
 
 interface OrgOnboardingCompletion {
@@ -55,12 +52,12 @@ export const markOrgOnboardingComplete$ = command(
       args.industry === undefined ? {} : { onboardingIndustry: args.industry };
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
-      const [existingOrg] = await tx
-        .select({ id: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .for("update");
-      const [written] = await tx
+      // No row lock: the INSERT ... ON CONFLICT DO NOTHING result tells this
+      // writer whether it created the organization's metadata row, which is
+      // the only case that bootstraps the default entitlement. An existing row
+      // is completed by a conditional UPDATE; zero rows means onboarding was
+      // already complete (or the row was deleted concurrently).
+      const [created] = await tx
         .insert(orgMetadataCanonicalWrites)
         .values({
           orgId: args.orgId,
@@ -68,18 +65,24 @@ export const markOrgOnboardingComplete$ = command(
           ...industry,
           updatedAt: now,
         })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: { onboardingComplete: true, ...industry, updatedAt: now },
-          setWhere: eq(orgMetadataCanonicalWrites.onboardingComplete, false),
-        })
+        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
         .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+      const [written] = created
+        ? [created]
+        : await tx
+            .update(orgMetadataCanonicalWrites)
+            .set({ onboardingComplete: true, ...industry, updatedAt: now })
+            .where(
+              and(
+                eq(orgMetadataCanonicalWrites.orgId, args.orgId),
+                eq(orgMetadataCanonicalWrites.onboardingComplete, false),
+              ),
+            )
+            .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
       if (!written) {
         return false;
       }
-      const entitlement = existingOrg
-        ? null
-        : onboardingEntitlementValues(written);
+      const entitlement = created ? onboardingEntitlementValues(created) : null;
       if (entitlement) {
         await tx
           .insert(orgPlanEntitlements)
@@ -102,27 +105,11 @@ export const markOrgOnboardingComplete$ = command(
           .returning({ id: orgModelPolicies.id });
         initializeSeed = inserted.length > 0;
       }
-      let existing: OrgModelPolicyRow[] = [];
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        for (const statement of modelPolicyParentLockSql(args.orgId)) {
-          await tx.execute(statement);
-        }
-        const locked = await tx
-          .select()
-          .from(orgModelPolicies)
-          .where(owner)
-          .orderBy(asc(orgModelPolicies.id))
-          .for("no key update");
-        existing = await tx.select().from(orgModelPolicies).where(owner);
-        if (policySetOwned(locked, existing)) {
-          break;
-        }
-        if (attempt === 2) {
-          throw new Error(
-            "Model policies changed concurrently; retry the operation",
-          );
-        }
-      }
+      // Every policy-set writer takes the pre-existing model-policy advisory
+      // key above, so the current set is read without parent or policy row
+      // locks. Onboarding writes only provider-less seed rows, so a concurrent
+      // provider/surface deletion (FK SET NULL) cannot invalidate its plan.
+      const existing = await tx.select().from(orgModelPolicies).where(owner);
       const plan = onboardingModelPolicyWritePlan({
         ...args,
         provider: args.modelProvider,

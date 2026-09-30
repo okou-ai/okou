@@ -4,11 +4,13 @@ import { command } from "ccstate";
 import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   morningBriefNativeOwnerCompatibilitySql,
@@ -77,12 +79,30 @@ function logPreRunFailure(
   }
 }
 
+/** A concurrent writer changed the selected automation or its durable mirror. */
+class StalePreRunFailure extends Error {}
+
+const STALE_PRE_RUN_FAILURE = {
+  disabled: false,
+  consecutiveFailures: 0,
+} as const;
+
 interface PreRunFailureInput {
   readonly automation: AutomationRow;
   readonly failure: PreRunFailure;
   readonly stillDueAt?: Date;
 }
 
+/**
+ * No row locks: the native row and automation are read plainly and each write
+ * is conditional on what was read — the native mirror on its epoch, phase and
+ * lineage, then the automation on its exact row version, in the documented
+ * native -> automation order. A concurrent claim, settlement, toggle or edit
+ * that wins makes a write match zero rows; the whole transaction rolls back and
+ * this failure publishes nothing (the winner's state stands, and a still-due
+ * anchor is polled again). The pre-existing owner-key advisory lock still
+ * covers a member without a durable row.
+ */
 const recordSelectedMorningBriefPreRunFailure$ = command(
   async (
     { set },
@@ -102,85 +122,101 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
       workflowId: automation.workflowId,
       automationId: automation.id,
     };
-    const outcome = await db.transaction(async (tx) => {
-      let [native] = await tx
-        .select()
-        .from(morningBriefNativeSchedules)
-        .where(morningBriefScheduleWhere(lineage))
-        .limit(1)
-        .for("update");
-      if (!native) {
-        await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
-        [native] = await tx
+    const settled = await settle(
+      db.transaction(async (tx) => {
+        let [native] = await tx
           .select()
           .from(morningBriefNativeSchedules)
           .where(morningBriefScheduleWhere(lineage))
-          .limit(1)
-          .for("update");
-      }
-      const authority = morningBriefLegacyWriterAuthorityFromRow(
-        native,
-        lineage,
-      );
-      if (authority.kind === "ordinary") {
-        return undefined;
-      }
-      if (authority.kind === "stale") {
-        return { disabled: false, consecutiveFailures: 0 };
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, automation.id))
-        .limit(1)
-        .for("update");
-      if (
-        !current ||
-        authority.row.phase !== "legacy" ||
-        (stillDueAt !== undefined &&
-          current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
-        (current.scheduleType !== "once" && !current.enabled)
-      ) {
-        return { disabled: false, consecutiveFailures: 0 };
-      }
-      const failureTime = nowDate();
-      const consecutiveFailures =
-        current.consecutiveFailures + (failure.isCreditError ? 0 : 1);
-      const shouldDisable =
-        !failure.isCreditError &&
-        consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
-      const nextRunAt = advanceAfterPreRunFailure(
-        current,
-        failureTime,
-        shouldDisable,
-      );
-      await tx
-        .update(workflowAutomations)
-        .set({
-          consecutiveFailures,
-          ...(shouldDisable
-            ? { enabled: false, officialIntendedEnabled: false }
-            : {}),
-          nextRunAt,
-          updatedAt: failureTime,
-        })
-        .where(eq(workflowAutomations.id, current.id));
-      const { rowCount } = await tx.execute(
-        settleLegacyMorningBriefSql(lineage, authority.row, {
-          enabled: !shouldDisable,
-          cronExpression: current.cronExpression,
-          timezone: current.timezone,
-          nextRunAt,
-          at: failureTime,
-        }),
-      );
-      if (rowCount !== 1) {
-        throw new Error("Morning Brief settlement authority changed");
-      }
-      signal.throwIfAborted();
-      return { disabled: shouldDisable, consecutiveFailures };
-    });
+          .limit(1);
+        if (!native) {
+          await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
+          [native] = await tx
+            .select()
+            .from(morningBriefNativeSchedules)
+            .where(morningBriefScheduleWhere(lineage))
+            .limit(1);
+        }
+        const authority = morningBriefLegacyWriterAuthorityFromRow(
+          native,
+          lineage,
+        );
+        if (authority.kind === "ordinary") {
+          return undefined;
+        }
+        const [current] = await tx
+          .select({
+            ...workflowAutomationColumns(),
+            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, automation.id))
+          .limit(1);
+        if (
+          authority.kind === "stale" ||
+          !current ||
+          authority.row.phase !== "legacy" ||
+          (stillDueAt !== undefined &&
+            current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
+          (current.scheduleType !== "once" && !current.enabled)
+        ) {
+          return STALE_PRE_RUN_FAILURE;
+        }
+        const failureTime = nowDate();
+        const consecutiveFailures =
+          current.consecutiveFailures + (failure.isCreditError ? 0 : 1);
+        const shouldDisable =
+          !failure.isCreditError &&
+          consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+        const nextRunAt = advanceAfterPreRunFailure(
+          current,
+          failureTime,
+          shouldDisable,
+        );
+        const { rowCount } = await tx.execute(
+          settleLegacyMorningBriefSql(lineage, authority.row, {
+            enabled: !shouldDisable,
+            cronExpression: current.cronExpression,
+            timezone: current.timezone,
+            nextRunAt,
+            at: failureTime,
+          }),
+        );
+        if (rowCount !== 1) {
+          throw new StalePreRunFailure();
+        }
+        const [updated] = await tx
+          .update(workflowAutomations)
+          .set({
+            consecutiveFailures,
+            ...(shouldDisable
+              ? { enabled: false, officialIntendedEnabled: false }
+              : {}),
+            nextRunAt,
+            updatedAt: failureTime,
+          })
+          .where(
+            and(
+              eq(workflowAutomations.id, current.id),
+              sql`${workflowAutomations}.xmin::text = ${current.rowVersion}`,
+            ),
+          )
+          .returning({ id: workflowAutomations.id });
+        if (!updated) {
+          throw new StalePreRunFailure();
+        }
+        signal.throwIfAborted();
+        return { disabled: shouldDisable, consecutiveFailures };
+      }),
+      signal,
+    );
     signal.throwIfAborted();
+    if (!settled.ok && !(settled.error instanceof StalePreRunFailure)) {
+      throw settled.error;
+    }
+    const outcome = settled.ok ? settled.value : STALE_PRE_RUN_FAILURE;
     if (outcome === undefined) {
       return false;
     }

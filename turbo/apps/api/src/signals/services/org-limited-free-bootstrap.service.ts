@@ -14,7 +14,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
@@ -53,6 +53,8 @@ interface BootstrapCandidate extends EnsureOrgLimitedFreeBootstrapArgs {
 }
 
 class BootstrapPublicationLost extends Error {}
+
+const PAID_BOOTSTRAP_TIERS: readonly string[] = ["pro", "team", "custom"];
 
 const prepareBootstrapMembership$ = command(
   async (
@@ -123,8 +125,7 @@ const publishBootstrapCandidate$ = command(
           defaultAgentId: orgMetadata.defaultAgentId,
         })
         .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, candidate.orgId))
-        .for("update");
+        .where(eq(orgMetadata.orgId, candidate.orgId));
       if (!metadata) {
         throw new Error(
           "Organization disappeared before bootstrap publication",
@@ -133,7 +134,7 @@ const publishBootstrapCandidate$ = command(
       if (metadata.defaultAgentId) {
         throw new BootstrapPublicationLost();
       }
-      const paid = ["pro", "team", "custom"].includes(metadata.tier);
+      const paid = PAID_BOOTSTRAP_TIERS.includes(metadata.tier);
       if (!paid) {
         const [grant] = await tx
           .select({ id: creditExpiresRecord.id })
@@ -185,12 +186,28 @@ const publishBootstrapCandidate$ = command(
           and(
             eq(orgMetadata.orgId, candidate.orgId),
             isNull(orgMetadata.defaultAgentId),
+            // The paid/free decision above was read without a row lock; a
+            // concurrent tier change must not be overwritten by this CAS.
+            paid
+              ? inArray(orgMetadata.tier, [...PAID_BOOTSTRAP_TIERS])
+              : eq(orgMetadata.tier, metadata.tier),
           ),
         )
         .returning({ agentId: orgMetadata.defaultAgentId });
       if (!published) {
-        // The candidate Agent must never become visible after losing the CAS.
-        throw new BootstrapPublicationLost();
+        const [current] = await tx
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, candidate.orgId));
+        if (current?.defaultAgentId) {
+          // The candidate Agent must never become visible after losing the CAS.
+          throw new BootstrapPublicationLost();
+        }
+        // Like the paid-to-free grant race above: retry through the normal
+        // entrypoint, which re-reads the tier before publishing.
+        throw new Error(
+          "Organization tier changed during bootstrap publication",
+        );
       }
       if (!paid) {
         const entitlement = orgPlanEntitlementValues(

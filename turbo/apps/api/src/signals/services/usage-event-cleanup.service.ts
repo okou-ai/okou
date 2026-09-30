@@ -55,15 +55,10 @@ export const deleteUsageData$ = command(
       await tx.execute(usageEventCompactionLockSql());
       const [jobs, ...targets] = usageCleanupTargets(args);
       await tx.delete(jobs.table).where(jobs.condition);
-      // Entitlement ownership precedes ledger rows, matching settlement. A user
-      // cleanup leaves the shared organization's entitlement intact.
-      if (args.scope === "organization") {
-        await tx
-          .select({ id: orgUsageAllowanceEntitlements.id })
-          .from(orgUsageAllowanceEntitlements)
-          .where(eq(orgUsageAllowanceEntitlements.orgId, args.id))
-          .for("update");
-      }
+      // The exclusive compaction barrier above already excludes settlement,
+      // which holds it shared. The entitlement DELETE owns its row before the
+      // window/allocation cascade, the same order as admission and Stripe
+      // publication. A user cleanup leaves the organization's entitlement.
       for (const target of targets) {
         await tx.delete(target.table).where(target.condition);
       }

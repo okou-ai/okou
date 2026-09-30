@@ -217,17 +217,21 @@ export const enqueueStripeWorkflowInput$ = command(
         }
         return null;
       }
+      // Target validation reads the current rows without row locks. The
+      // delivery receipt below is the conditional write that decides this
+      // publication (zero rows rolls the append back). A concurrent disable,
+      // reconnect or feature change is not serialized with it: an input that
+      // commits just before that change is admitted, exactly as if it had
+      // arrived a moment earlier.
       const [connector] = await tx
         .select()
         .from(connectors)
         .where(eq(connectors.id, source.connectorId))
-        .for("update")
         .limit(1);
       const [automation] = await tx
         .select()
         .from(workflowAutomations)
         .where(eq(workflowAutomations.id, source.automationId))
-        .for("update")
         .limit(1);
       const access = stripeSourceCredentialAccess(
         source,
@@ -249,8 +253,7 @@ export const enqueueStripeWorkflowInput$ = command(
               ORG_SENTINEL_USER_ID,
             ]),
           ),
-        )
-        .for("update");
+        );
       if (
         !isFeatureEnabled(
           FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations,

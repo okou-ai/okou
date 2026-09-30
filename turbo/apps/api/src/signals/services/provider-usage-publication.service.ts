@@ -5,6 +5,8 @@ import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import {
   attributedUsageIdentity,
@@ -70,87 +72,97 @@ export const recordRunnerUsageBatch$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    await db.transaction(async (tx) => {
-      const [run] = await tx
-        .select({
-          id: agentRuns.id,
-          orgId: agentRuns.orgId,
-          userId: agentRuns.userId,
-          startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
-          triggerSource: agentRuns.triggerSource,
-          threadId: agentRuns.chatThreadId,
-          modelProvider: agentRuns.modelProvider,
-        })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.runId),
-            eq(agentRuns.orgId, args.orgId),
-            eq(agentRuns.userId, args.userId),
-          ),
-        )
-        .for("share");
-      if (!run) {
-        throw new RunnerUsageRunMissingError("Run not found");
-      }
-      const events = billableRunnerEvents(args.events, run);
-      if (events.length === 0) {
-        return;
-      }
-      let [attribution] = await tx
-        .select()
-        .from(managedAttributionQuery(args.runId));
-      if (!attribution) {
-        const capture = managedAttributionWrite({ actor: args }, run);
-        [attribution] = await tx
-          .insert(billingRunAttribution)
-          .values(capture.values)
-          .onConflictDoUpdate(capture.conflict)
-          .returning({
-            runId: billingRunAttribution.runId,
-            orgId: billingRunAttribution.orgId,
-            userId: billingRunAttribution.userId,
-            startedAt: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
-              pgTextDecoder,
-            ),
-          });
-        if (!attribution) {
-          throw new Error("Runner usage attribution conflicts with history");
-        }
-      }
-      const identity = attributedUsageIdentity(
-        { actor: args },
-        run,
-        attribution,
-      );
-      const inserted = await tx
-        .insert(usageEvent)
-        .values(
-          events.map((event) => {
-            return {
-              ...event,
-              ...identity,
-              orgId: args.orgId,
-              userId: args.userId,
-            };
-          }),
-        )
-        .onConflictDoNothing({ target: usageEvent.idempotencyKey })
-        .returning({ id: usageEvent.id });
-      if (inserted.length > 0) {
-        await tx
-          .update(billingRunAttribution)
-          .set({ usageObserved: true })
+    const outcome = await settle(
+      db.transaction(async (tx) => {
+        const [run] = await tx
+          .select({
+            id: agentRuns.id,
+            orgId: agentRuns.orgId,
+            userId: agentRuns.userId,
+            startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+            triggerSource: agentRuns.triggerSource,
+            threadId: agentRuns.chatThreadId,
+            modelProvider: agentRuns.modelProvider,
+          })
+          .from(agentRuns)
           .where(
             and(
-              eq(billingRunAttribution.runId, args.runId),
-              eq(billingRunAttribution.usageObserved, false),
+              eq(agentRuns.id, args.runId),
+              eq(agentRuns.orgId, args.orgId),
+              eq(agentRuns.userId, args.userId),
             ),
           );
-      }
-      signal.throwIfAborted();
-    });
-    signal.throwIfAborted();
+        if (!run) {
+          throw new RunnerUsageRunMissingError("Run not found");
+        }
+        const events = billableRunnerEvents(args.events, run);
+        if (events.length === 0) {
+          return;
+        }
+        let [attribution] = await tx
+          .select()
+          .from(managedAttributionQuery(args.runId));
+        if (!attribution) {
+          const capture = managedAttributionWrite({ actor: args }, run);
+          [attribution] = await tx
+            .insert(billingRunAttribution)
+            .values(capture.values)
+            .onConflictDoUpdate(capture.conflict)
+            .returning({
+              runId: billingRunAttribution.runId,
+              orgId: billingRunAttribution.orgId,
+              userId: billingRunAttribution.userId,
+              startedAt:
+                sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
+                  pgTextDecoder,
+                ),
+            });
+          if (!attribution) {
+            throw new Error("Runner usage attribution conflicts with history");
+          }
+        }
+        const identity = attributedUsageIdentity(
+          { actor: args },
+          run,
+          attribution,
+        );
+        const inserted = await tx
+          .insert(usageEvent)
+          .values(
+            events.map((event) => {
+              return {
+                ...event,
+                ...identity,
+                orgId: args.orgId,
+                userId: args.userId,
+              };
+            }),
+          )
+          .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+          .returning({ id: usageEvent.id });
+        if (inserted.length > 0) {
+          await tx
+            .update(billingRunAttribution)
+            .set({ usageObserved: true })
+            .where(
+              and(
+                eq(billingRunAttribution.runId, args.runId),
+                eq(billingRunAttribution.usageObserved, false),
+              ),
+            );
+        }
+        signal.throwIfAborted();
+      }),
+      signal,
+    );
+    // usage_event.run_id is the only FK written here. Its implicit key-share
+    // check replaces a Run row lock; losing it means the Run was deleted after
+    // the read above, the same outcome as a Run that was never found.
+    if (!outcome.ok) {
+      throw isForeignKeyViolation(outcome.error)
+        ? new RunnerUsageRunMissingError("Run not found")
+        : outcome.error;
+    }
   },
 );
 

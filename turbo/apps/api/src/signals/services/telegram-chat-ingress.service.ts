@@ -214,7 +214,11 @@ export const ensureTelegramChatThreadRoute$ = command(
     const candidateId = randomUUID();
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      // No row lock: a route that disappears between the read and the DM
+      // destination move is re-resolved, and a concurrent creator is found
+      // through the unique route index (ON CONFLICT waits for its commit).
+      let inserting = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
         const [existing] = await tx
           .select(ROUTE_COLUMNS)
           .from(telegramChatThreadRoutes)
@@ -223,8 +227,7 @@ export const ensureTelegramChatThreadRoute$ = command(
             eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
           )
           .where(routeWhere(args))
-          .limit(1)
-          .for("update");
+          .limit(1);
         if (existing) {
           if (
             args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
@@ -241,15 +244,16 @@ export const ensureTelegramChatThreadRoute$ = command(
               )
               .returning({ chatId: telegramChatThreadRoutes.chatId });
             if (!updated) {
-              throw new Error("Failed to update Telegram DM route destination");
+              continue;
             }
             return { ...existing, ...updated };
           }
           return existing;
         }
-        if (attempt === 1) {
+        if (inserting) {
           break;
         }
+        inserting = true;
         const thread = integrationChatThreadValues(args, candidateId, defaults);
         await tx.insert(chatThreads).values(thread);
         const [route] = await tx

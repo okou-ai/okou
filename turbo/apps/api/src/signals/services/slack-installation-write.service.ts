@@ -4,7 +4,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -34,6 +34,14 @@ interface SlackInstallationWrite {
   readonly mode: "install" | "reinstall" | "connect";
 }
 
+/** Terminal claims are never rewritten by a later completion. */
+function unsettledSlackClaim(id: string) {
+  return and(
+    eq(getStartedClaims.id, id),
+    notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
+  );
+}
+
 const commitSlackInstallation$ = command(
   async (
     { set },
@@ -49,11 +57,6 @@ const commitSlackInstallation$ = command(
           .values({ orgId })
           .onConflictDoNothing()
           .returning({ orgId: orgMetadata.orgId });
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .for("update");
         if (inserted) {
           await tx
             .insert(orgPlanEntitlements)
@@ -122,11 +125,12 @@ const commitSlackInstallation$ = command(
             getStartedClaims.sourceKey,
           ],
         });
+      // Every Slack reward writer first writes this workspace's installation
+      // row, so the implicit row lock of that write orders claims per source.
       const [claim] = await tx
         .select()
         .from(getStartedClaims)
-        .where(reward.where)
-        .for("update");
+        .where(reward.where);
       if (!claim) {
         throw new Error("Slack completion claim was not persisted");
       }
@@ -149,7 +153,7 @@ const commitSlackInstallation$ = command(
             leaseId: null,
             leaseExpiresAt: null,
           })
-          .where(eq(getStartedClaims.id, claim.id));
+          .where(unsettledSlackClaim(claim.id));
         return installed;
       }
       const [pending] = await tx

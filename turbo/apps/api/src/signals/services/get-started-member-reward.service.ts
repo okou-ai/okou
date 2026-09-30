@@ -6,7 +6,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   getRewardAvailabilityFromAwards,
@@ -16,13 +16,28 @@ import {
   memberRewardWalletQuery,
   getStartedRewardAvailabilityQuery,
   getStartedMemberRewardSql,
+  unresolvedClaimWhere,
 } from "./get-started-member-reward";
 import {
   slackRewardWalletEntitlement,
   slackRewardIneligibleValues,
 } from "./slack-installation-reward";
 
-/** No grant becomes visible without the wallet owner used by settlement. */
+async function currentClaim(
+  tx: Pick<Db, "select">,
+  id: string,
+): Promise<GetStartedClaimRow> {
+  const [current] = await tx
+    .select()
+    .from(getStartedClaims)
+    .where(eq(getStartedClaims.id, id));
+  if (!current) {
+    throw new Error("Get started claim disappeared during redemption");
+  }
+  return current;
+}
+
+/** The claim transition and its member grant commit in one statement. */
 export const grantGetStartedClaim$ = command(
   async (
     { set },
@@ -58,8 +73,7 @@ export const grantGetStartedClaim$ = command(
                 eq(getStartedClaims.id, args.claim.id),
                 eq(getStartedClaims.orgId, args.claim.orgId),
               ),
-            )
-            .for("update");
+            );
           if (!claim) {
             throw new Error("Get started claim disappeared before redemption");
           }
@@ -82,14 +96,9 @@ export const grantGetStartedClaim$ = command(
             const [ineligible] = await tx
               .update(getStartedClaims)
               .set(slackRewardIneligibleValues(availability.reason, nowDate()))
-              .where(eq(getStartedClaims.id, claim.id))
+              .where(unresolvedClaimWhere(claim))
               .returning();
-            if (!ineligible) {
-              throw new Error(
-                "Get started claim disappeared during redemption",
-              );
-            }
-            return ineligible;
+            return ineligible ?? (await currentClaim(tx, claim.id));
           }
           const slot = availability.slots[0];
           if (slot === undefined) {
@@ -106,16 +115,12 @@ export const grantGetStartedClaim$ = command(
               ),
             )
           ).rowCount;
-          if (granted !== 1) {
+          // Zero rows: another redeemer resolved the claim or took its lease
+          // after our read; its committed state is the deterministic result.
+          if (granted !== 0 && granted !== 1) {
             throw new Error("Get started grant was not committed");
           }
-          const [current] = await tx
-            .select()
-            .from(getStartedClaims)
-            .where(eq(getStartedClaims.id, claim.id));
-          if (!current) {
-            throw new Error("Get started granted claim disappeared");
-          }
+          const current = await currentClaim(tx, claim.id);
           signal.throwIfAborted();
           return current;
         }),

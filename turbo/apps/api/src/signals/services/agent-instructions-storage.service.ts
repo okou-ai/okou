@@ -92,27 +92,20 @@ export const deleteAgentInstructionsStorage$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    const s3Prefix = await writeDb.transaction(async (tx) => {
-      const [storage] = await tx
-        .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-        .from(storages)
-        .where(
-          and(
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            eq(storages.name, getInstructionsStorageName(args.agentName)),
-          ),
-        )
-        .for("update");
-      signal.throwIfAborted();
-      if (!storage) {
-        return null;
-      }
-      await tx.delete(storages).where(eq(storages.id, storage.id));
-      signal.throwIfAborted();
-      return storage.s3Prefix;
-    });
+    // One DELETE owns and removes the Storage row; a concurrent delete wins
+    // deterministically and this caller then has no prefix to clean up.
+    const [deleted] = await writeDb
+      .delete(storages)
+      .where(
+        and(
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.name, getInstructionsStorageName(args.agentName)),
+        ),
+      )
+      .returning({ s3Prefix: storages.s3Prefix });
     signal.throwIfAborted();
+    const s3Prefix = deleted?.s3Prefix ?? null;
 
     if (s3Prefix) {
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");

@@ -7,7 +7,7 @@ import { resolveConnectorAuthClient } from "@okouai/connectors/connector-auth-me
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -15,7 +15,7 @@ import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import type { Db, ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import type {
   ConnectorRuntimeMethod,
   ConnectorRuntimeSnapshot,
@@ -452,47 +452,56 @@ export function connectorRefreshInputConditions(args: {
   return { secretCondition, variableCondition };
 }
 
-export function connectorRefreshStateSelection() {
-  return {
-    authMethod: connectors.authMethod,
-    externalEmail: connectors.externalEmail,
-    externalId: connectors.externalId,
-    needsReconnect: connectors.needsReconnect,
-    reconnectReason: connectors.reconnectReason,
-    stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
-    storageVersion: connectors.storageVersion,
-  };
+/**
+ * Exact-row compare-and-set for a refresh publication. Every account
+ * replacement, deletion and refresh writer updates or deletes this row, so a
+ * concurrent change leaves the conditional UPDATE with zero rows. A refresh
+ * may still publish over a reasonless needs-reconnect mark set after it read.
+ */
+export function connectorRefreshPublicationCondition(args: {
+  readonly connection: BuiltinConnectorCredentialConnection;
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  const { connection } = args;
+  const sameRevision = eq(
+    sql`${connectors.updatedAt}::text`,
+    connection.stateRevision,
+  );
+  return and(
+    eq(connectors.id, connection.connectorId),
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    eq(connectors.connectorSlug, connection.connectorSlug),
+    eq(connectors.authMethod, connection.runtimeMethod.authMethodId),
+    connection.externalEmail === null
+      ? isNull(connectors.externalEmail)
+      : eq(connectors.externalEmail, connection.externalEmail),
+    connection.externalId === null
+      ? isNull(connectors.externalId)
+      : eq(connectors.externalId, connection.externalId),
+    eq(
+      connectors.storageVersion,
+      connection.runtimeMethod.method.storage.version,
+    ),
+    connection.needsReconnect
+      ? sameRevision
+      : or(
+          sameRevision,
+          and(
+            eq(connectors.needsReconnect, true),
+            isNull(connectors.reconnectReason),
+          ),
+        ),
+  );
 }
 
-export function connectorRefreshStateMatches(
-  current:
-    | {
-        readonly authMethod: string;
-        readonly externalEmail: string | null;
-        readonly externalId: string | null;
-        readonly storageVersion: number;
-        readonly stateRevision: string;
-        readonly needsReconnect: boolean;
-        readonly reconnectReason: string | null;
-      }
-    | undefined,
-  expected: BuiltinConnectorCredentialConnection,
-): boolean {
-  if (!current) {
-    return false;
+/** Rolls back a publication whose refresh inputs changed after it was read. */
+export class ConnectorRefreshInputsChangedError extends Error {
+  constructor() {
+    super("Connector refresh inputs changed before publication");
+    this.name = "ConnectorRefreshInputsChangedError";
   }
-  const revisionCanAcceptRefresh =
-    current.stateRevision === expected.stateRevision ||
-    (!expected.needsReconnect &&
-      current.needsReconnect &&
-      current.reconnectReason === null);
-  return (
-    current.authMethod === expected.runtimeMethod.authMethodId &&
-    current.externalEmail === expected.externalEmail &&
-    current.externalId === expected.externalId &&
-    current.storageVersion === expected.runtimeMethod.method.storage.version &&
-    revisionCanAcceptRefresh
-  );
 }
 
 async function persistConnectorRefresh(
@@ -564,110 +573,99 @@ async function commitConnectorRefresh(
   },
   signal: AbortSignal,
 ): Promise<ConnectorRefreshPublicationResult> {
-  const result = await args.db.transaction(async (tx) => {
-    // The exact account row lock arbitrates this publication: every account
-    // replacement, deletion and refresh writer updates or deletes that row,
-    // so a concurrent change surfaces here as a changed state revision.
-    const [currentConnector] = await tx
-      .select(connectorRefreshStateSelection())
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, args.connection.connectorId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, args.connection.connectorSlug),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!connectorRefreshStateMatches(currentConnector, args.connection)) {
-      return { kind: "connection-changed" } as const;
-    }
-    const secretQuery = tx
-      .select({
-        kind: sql`'secret'`.mapWith(pgTextDecoder).as("kind"),
-        name: secrets.name,
-        value: secrets.encryptedValue,
-      })
-      .from(secrets)
-      .where(args.secretCondition);
-    const variableQuery = tx
-      .select({
-        kind: sql`'variable'`.mapWith(pgTextDecoder).as("kind"),
-        name: variables.name,
-        value: variables.value,
-      })
-      .from(variables)
-      .where(args.variableCondition);
-    const currentInputs = storedValueSnapshot(
-      await secretQuery.unionAll(variableQuery),
-    );
-    for (const valueRef of args.inputRefs) {
-      if (
-        currentInputs.get(valueRef)?.storedValue !==
-        args.inputSnapshot.get(valueRef)?.storedValue
-      ) {
+  const settled = await settle(
+    args.db.transaction(async (tx) => {
+      // The exact-row CAS publishes first; its ordinary row write also orders
+      // this publication after any account writer that touched the same row.
+      const [published] = await tx
+        .update(connectors)
+        .set(refreshedConnectorMetadata(args))
+        .where(connectorRefreshPublicationCondition(args))
+        .returning({
+          stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
+        });
+      if (!published) {
         return { kind: "connection-changed" } as const;
       }
-    }
-    for (const output of args.prepared) {
-      const identity = {
-        connectorId: args.connection.connectorId,
-        orgId: args.orgId,
-        userId: args.userId,
-        name: output.name,
-        type: "connector",
-      };
-      if (output.kind === "secret") {
-        await tx
-          .insert(secrets)
-          .values({
-            ...identity,
-            encryptedValue: output.encryptedValue,
-            description: `Connector token output for ${args.connection.connectorSlug}: ${output.name}`,
-          })
-          .onConflictDoUpdate({
-            target: [secrets.connectorId, secrets.name],
-            targetWhere: isNotNull(secrets.connectorId),
-            set: {
-              encryptedValue: output.encryptedValue,
-              updatedAt: nowDate(),
-            },
-          });
-      } else {
-        await tx
-          .insert(variables)
-          .values({ ...identity, value: output.value, description: null })
-          .onConflictDoUpdate({
-            target: [variables.connectorId, variables.name],
-            targetWhere: isNotNull(variables.connectorId),
-            set: { value: output.value, updatedAt: nowDate() },
-          });
-      }
-    }
-    const [published] = await tx
-      .update(connectors)
-      .set(refreshedConnectorMetadata(args))
-      .where(eq(connectors.id, args.connection.connectorId))
-      .returning({
-        stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
-          pgTextDecoder,
-        ),
-      });
-    if (!published) {
-      throw new Error(
-        "Connector disappeared while publishing refreshed credentials",
+      const secretQuery = tx
+        .select({
+          kind: sql`'secret'`.mapWith(pgTextDecoder).as("kind"),
+          name: secrets.name,
+          value: secrets.encryptedValue,
+        })
+        .from(secrets)
+        .where(args.secretCondition);
+      const variableQuery = tx
+        .select({
+          kind: sql`'variable'`.mapWith(pgTextDecoder).as("kind"),
+          name: variables.name,
+          value: variables.value,
+        })
+        .from(variables)
+        .where(args.variableCondition);
+      const currentInputs = storedValueSnapshot(
+        await secretQuery.unionAll(variableQuery),
       );
+      for (const valueRef of args.inputRefs) {
+        if (
+          currentInputs.get(valueRef)?.storedValue !==
+          args.inputSnapshot.get(valueRef)?.storedValue
+        ) {
+          throw new ConnectorRefreshInputsChangedError();
+        }
+      }
+      for (const output of args.prepared) {
+        const identity = {
+          connectorId: args.connection.connectorId,
+          orgId: args.orgId,
+          userId: args.userId,
+          name: output.name,
+          type: "connector",
+        };
+        if (output.kind === "secret") {
+          await tx
+            .insert(secrets)
+            .values({
+              ...identity,
+              encryptedValue: output.encryptedValue,
+              description: `Connector token output for ${args.connection.connectorSlug}: ${output.name}`,
+            })
+            .onConflictDoUpdate({
+              target: [secrets.connectorId, secrets.name],
+              targetWhere: isNotNull(secrets.connectorId),
+              set: {
+                encryptedValue: output.encryptedValue,
+                updatedAt: nowDate(),
+              },
+            });
+        } else {
+          await tx
+            .insert(variables)
+            .values({ ...identity, value: output.value, description: null })
+            .onConflictDoUpdate({
+              target: [variables.connectorId, variables.name],
+              targetWhere: isNotNull(variables.connectorId),
+              set: { value: output.value, updatedAt: nowDate() },
+            });
+        }
+      }
+      return {
+        kind: "ok",
+        tokenExpiresAt: args.tokenExpiresAt,
+        stateRevision: published.stateRevision,
+      } as const;
+    }),
+  );
+  if (!settled.ok) {
+    if (settled.error instanceof ConnectorRefreshInputsChangedError) {
+      return { kind: "connection-changed" };
     }
-    return {
-      kind: "ok",
-      tokenExpiresAt: args.tokenExpiresAt,
-      stateRevision: published.stateRevision,
-    } as const;
-  });
+    throw settled.error;
+  }
   signal.throwIfAborted();
-  return result;
+  return settled.value;
 }
 
 async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(

@@ -1920,20 +1920,6 @@ function isAutomationEventConnectorMissing(error: unknown): boolean {
   );
 }
 
-function workflowAutomationThreadParentLocksSql(
-  owner: ReturnType<typeof eventAutomationThreadOwner>,
-) {
-  return [
-    sql`SELECT ${agents.id} FROM ${agents}
-      WHERE ${agents.orgId} = ${owner.orgId} AND ${agents.id} = ${owner.agentId}::uuid
-      FOR KEY SHARE`,
-    sql`SELECT ${workflows.id} FROM ${workflows}
-      WHERE ${workflows.orgId} = ${owner.orgId} AND ${workflows.id} = ${owner.workflowId}::uuid
-        AND ${workflows.agentId} = ${owner.agentId}::uuid
-      FOR KEY SHARE`,
-  ];
-}
-
 /**
  * No account row lock: the automation is published with the account current
  * at this read. A selection/default change committing concurrently converges
@@ -1985,10 +1971,12 @@ const insertEventAutomation$ = command(
         ) {
           return null;
         }
-        for (const statement of workflowAutomationThreadParentLocksSql(owner)) {
-          await tx.execute(statement);
-        }
-        await tx
+        // No explicit row locks. The unique owner key arbitrates the first
+        // binding, and this ordinary upsert write records the join; its
+        // implicit row lock orders destination creation and thread deletion
+        // until the automation INSERT commits. Parent existence is enforced by
+        // the binding, thread and automation FK checks.
+        const [binding] = await tx
           .insert(workflowUserAutomationThreads)
           .values({
             orgId: owner.orgId,
@@ -1997,19 +1985,17 @@ const insertEventAutomation$ = command(
             createdAt: args.currentTime,
             updatedAt: args.currentTime,
           })
-          .onConflictDoNothing({
+          .onConflictDoUpdate({
             target: [
               workflowUserAutomationThreads.orgId,
               workflowUserAutomationThreads.userId,
               workflowUserAutomationThreads.workflowId,
             ],
+            set: { updatedAt: args.currentTime },
+          })
+          .returning({
+            chatThreadId: workflowUserAutomationThreads.chatThreadId,
           });
-        const [binding] = await tx
-          .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-          .from(workflowUserAutomationThreads)
-          .where(workflowUserAutomationThreadOwnerCondition(owner))
-          .limit(1)
-          .for("update");
         let chatThreadId = binding?.chatThreadId;
         if (!chatThreadId) {
           const values = preparedWorkflowThreadValues(

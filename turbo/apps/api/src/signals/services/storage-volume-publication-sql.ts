@@ -11,7 +11,10 @@ import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { nowDate } from "../../lib/time";
 import type { PreparedStorageVersion } from "./storage-version-registration.service";
 
-/** One immutable version per publication; insert-first distinguishes new work from encoding repair. */
+/** One immutable version per publication; insert-first distinguishes new work from encoding repair.
+ * The head invalidation predicate lives in the UPDATE itself, so a concurrently
+ * changed head is rechecked against its committed row version instead of being
+ * pre-locked. */
 export function repairVolumeIndexSql(version: PreparedStorageVersion) {
   const at = nowDate().toISOString();
   return sql`WITH repaired AS (
@@ -21,22 +24,22 @@ export function repairVolumeIndexSql(version: PreparedStorageVersion) {
     WHERE storage_version_id = ${version.versionId} AND extractor_version = ${PI_RESOURCE_EXTRACTOR_VERSION}
       AND source_archive_size IS DISTINCT FROM ${version.archiveSize}
     RETURNING storage_version_id
-  ), locked_heads AS MATERIALIZED (
-    SELECT id FROM ${piStableContextHeads} WHERE EXISTS (SELECT 1 FROM repaired) AND (
+  ) UPDATE ${piStableContextHeads} SET generation = generation + 1, status = 'missing', input = NULL,
+    input_digest = NULL, artifact_digest = NULL, validity_horizon = NULL, lease_id = NULL,
+    lease_expires_at = NULL, available_at = ${at}::timestamp, attempt_count = 0, last_error_class = NULL, updated_at = ${at}::timestamp
+    WHERE EXISTS (SELECT 1 FROM repaired) AND (
       EXISTS (SELECT 1 FROM ${piStableContextArtifactResources}
         WHERE ${piStableContextArtifactResources.artifactDigest} = ${piStableContextHeads.artifactDigest}
           AND ${piStableContextArtifactResources.storageVersionId} = ${version.versionId})
       OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)) AS mount
         WHERE mount->>'versionId' = ${version.versionId})
-    ) ORDER BY id FOR UPDATE
-  ) UPDATE ${piStableContextHeads} SET generation = generation + 1, status = 'missing', input = NULL,
-    input_digest = NULL, artifact_digest = NULL, validity_horizon = NULL, lease_id = NULL,
-    lease_expires_at = NULL, available_at = ${at}::timestamp, attempt_count = 0, last_error_class = NULL, updated_at = ${at}::timestamp
-    WHERE id IN (SELECT id FROM locked_heads)`;
+    )`;
 }
 
 /** Register one prepared immutable version, Storage HEAD and eager index together.
  * This builds SQL only; each owning command executes it in its local transaction.
+ * The version insert's FK check and the HEAD UPDATE take the Storage row's
+ * implicit locks; a missing Storage publishes no row and the caller rejects it.
  */
 export function preparedVolumePublicationSql(
   volume: PreparedServerSideVolume,
@@ -54,7 +57,7 @@ export function preparedVolumePublicationSql(
     publishedAt,
   );
   return sql`WITH retained_storage AS MATERIALIZED (
-    SELECT id FROM ${storages} WHERE id = ${version.storageId}::uuid FOR UPDATE
+    SELECT id FROM ${storages} WHERE id = ${version.storageId}::uuid
   ), registered AS (
     INSERT INTO ${storageVersions}
       (id, storage_id, s3_key, size, archive_size, file_count, message, created_by)

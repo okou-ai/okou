@@ -2,8 +2,7 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
-import { eq, sql } from "drizzle-orm";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -35,19 +34,24 @@ export class WorkflowScheduleAdmissionError extends Error {
   }
 }
 
-/** The automation row owns claim sequence allocation; its queue event is bound immediately. */
-function claimWorkflowScheduleSql(
+/**
+ * Consume the exact due anchor with one conditional UPDATE.
+ *
+ * A selected Morning Brief first consumes the durable legacy-owned anchor on
+ * its native row, then the automation row; that is the documented native ->
+ * automation order, taken here by the writes themselves rather than by row
+ * locks. Both predicates are re-checked against the current row versions, so a
+ * concurrent claim, expiry, toggle or settlement that moved the anchor makes
+ * this statement return no row.
+ */
+function consumeWorkflowScheduleAnchorSql(
   claim: WorkflowScheduleClaimPlan,
-  queueEventId: string,
   native: MorningBriefNativeScheduleRow | undefined,
   admittedAt: Date,
 ) {
   const selected =
     native?.legacyWorkflowId === claim.workflowId &&
     native.legacyAutomationId === claim.automationId;
-  const nativeGuard = selected
-    ? sql`AND EXISTS (SELECT 1 FROM consumed)`
-    : sql.empty();
   const consumeNative = selected
     ? sql`UPDATE morning_brief_native_schedules SET next_run_at = NULL,
         schedule_owner = NULL, updated_at = ${claim.claimedAt}
@@ -57,34 +61,49 @@ function claimWorkflowScheduleSql(
         AND next_run_at = ${claim.scheduledAnchorAt}
         AND legacy_workflow_id = ${claim.workflowId}::uuid
         AND legacy_automation_id = ${claim.automationId}::uuid
-        AND EXISTS (SELECT 1 FROM eligible)
       RETURNING owner_epoch`
     : sql`SELECT 1 WHERE false`;
+  const nativeGuard = selected
+    ? sql`AND EXISTS (SELECT 1 FROM consumed)`
+    : sql.empty();
   return sql`
-    WITH locked AS MATERIALIZED (
-      SELECT * FROM workflow_automations WHERE id = ${claim.automationId}::uuid
-    ), eligible AS MATERIALIZED (
-      SELECT * FROM locked
-      WHERE enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
-        AND workflow_id = ${claim.workflowId}::uuid
-        AND next_run_at = ${claim.scheduledAnchorAt}
-        AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
-    ), consumed AS (${consumeNative}), claimed AS (
-      INSERT INTO morning_brief_schedule_claims (
-        id, automation_id, org_id, owner_user_id, workflow_id,
-        scheduled_anchor_at, claimed_at, claim_sequence, queue_event_id, updated_at
-      )
-      SELECT ${claim.claimId}::uuid, eligible.id, eligible.org_id,
-        eligible.owner_user_id, eligible.workflow_id, ${claim.scheduledAnchorAt},
-        ${claim.claimedAt}, coalesce((SELECT claim_sequence
-          FROM morning_brief_schedule_claims WHERE automation_id = eligible.id
-          ORDER BY claim_sequence DESC LIMIT 1), 0) + 1,
-        ${queueEventId}::uuid, ${admittedAt}
-      FROM eligible WHERE true ${nativeGuard}
-      RETURNING automation_id
-    ) UPDATE workflow_automations SET next_run_at = NULL,
+    WITH consumed AS (${consumeNative})
+    UPDATE workflow_automations SET next_run_at = NULL,
       last_run_at = ${claim.claimedAt}, updated_at = ${claim.claimedAt}
-      WHERE id IN (SELECT automation_id FROM claimed)
+    WHERE id = ${claim.automationId}::uuid
+      AND enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
+      AND workflow_id = ${claim.workflowId}::uuid
+      AND next_run_at = ${claim.scheduledAnchorAt}
+      AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
+      ${nativeGuard}
+    RETURNING id
+  `;
+}
+
+/**
+ * Journal the consumed occurrence; its queue event is bound immediately.
+ *
+ * Runs after this transaction's own anchor-consuming UPDATE, so no other
+ * claim for this automation can be in flight and the next sequence is read
+ * from a snapshot that includes every committed claim.
+ */
+function journalWorkflowScheduleClaimSql(
+  claim: WorkflowScheduleClaimPlan,
+  queueEventId: string,
+  admittedAt: Date,
+) {
+  return sql`
+    INSERT INTO morning_brief_schedule_claims (
+      id, automation_id, org_id, owner_user_id, workflow_id,
+      scheduled_anchor_at, claimed_at, claim_sequence, queue_event_id, updated_at
+    )
+    SELECT ${claim.claimId}::uuid, ${claim.automationId}::uuid, ${claim.orgId},
+      ${claim.ownerUserId}, ${claim.workflowId}::uuid, ${claim.scheduledAnchorAt},
+      ${claim.claimedAt}, coalesce((SELECT claim_sequence
+        FROM morning_brief_schedule_claims
+        WHERE automation_id = ${claim.automationId}::uuid
+        ORDER BY claim_sequence DESC LIMIT 1), 0) + 1,
+      ${queueEventId}::uuid, ${admittedAt}
   `;
 }
 
@@ -160,37 +179,38 @@ export const enqueueWorkflowScheduleInput$ = command(
             orgId: scheduleClaim.orgId,
             userId: scheduleClaim.ownerUserId,
           };
+          // A plain read classifies the owner; the consuming UPDATE below
+          // re-checks the exact native state it relies on. The pre-existing
+          // owner-key advisory lock still covers a member without a row.
           let [native] = await tx
             .select()
             .from(morningBriefNativeSchedules)
             .where(morningBriefScheduleWhere(owner))
-            .limit(1)
-            .for("update");
+            .limit(1);
           if (!native) {
             await tx.execute(morningBriefNativeOwnerCompatibilitySql(owner));
             [native] = await tx
               .select()
               .from(morningBriefNativeSchedules)
               .where(morningBriefScheduleWhere(owner))
-              .limit(1)
-              .for("update");
+              .limit(1);
           }
-          await tx
-            .select({ id: workflowAutomations.id })
-            .from(workflowAutomations)
-            .where(eq(workflowAutomations.id, scheduleClaim.automationId))
-            .limit(1)
-            .for("update");
+          const admittedAt = nowDate();
+          const { rowCount: consumed } = await tx.execute(
+            consumeWorkflowScheduleAnchorSql(scheduleClaim, native, admittedAt),
+          );
+          if (consumed !== 1) {
+            throw new ScheduleOccurrenceUnavailableError();
+          }
           const { rowCount } = await tx.execute(
-            claimWorkflowScheduleSql(
+            journalWorkflowScheduleClaimSql(
               scheduleClaim,
               event.id,
-              native,
-              nowDate(),
+              admittedAt,
             ),
           );
           if (rowCount !== 1) {
-            throw new ScheduleOccurrenceUnavailableError();
+            throw new Error("Morning Brief schedule claim was not journaled");
           }
           claimCreated = true;
         }

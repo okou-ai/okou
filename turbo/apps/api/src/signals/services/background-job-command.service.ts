@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { BackgroundJobData } from "@okouai/db/jsonb-contracts/background-job";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command } from "ccstate";
-import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
 import {
@@ -78,7 +78,14 @@ interface ClaimBackgroundJobArgs {
   readonly handlerVersion: number;
 }
 
-/** Claim exactly one compatible job without waiting on another claimant. */
+/**
+ * Claim exactly one compatible job with one conditional UPDATE.
+ *
+ * The bounded candidate subquery picks the oldest claimable row; the outer
+ * predicate re-checks claimability against the current row version, so two
+ * workers racing for the same candidate cannot both win. The loser gets `null`
+ * (nothing claimed this round) instead of waiting for or skipping a row lock.
+ */
 export const claimBackgroundJob$ = command(
   async (
     { set },
@@ -87,52 +94,44 @@ export const claimBackgroundJob$ = command(
   ): Promise<ClaimedBackgroundJob | null> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      signal.throwIfAborted();
-      const [candidate] = await tx
-        .select({ id: backgroundJobs.id })
-        .from(backgroundJobs)
-        .where(
-          and(
-            eq(backgroundJobs.kind, args.kind),
-            eq(backgroundJobs.handlerVersion, args.handlerVersion),
-            args.jobId === undefined
-              ? undefined
-              : eq(backgroundJobs.id, args.jobId),
-            lte(backgroundJobs.availableAt, databaseNow),
-            or(
-              eq(backgroundJobs.status, "pending"),
-              and(
-                eq(backgroundJobs.status, "running"),
-                lte(backgroundJobs.leaseExpiresAt, databaseNow),
-              ),
-            ),
-          ),
-        )
-        .orderBy(asc(backgroundJobs.availableAt), asc(backgroundJobs.id))
-        .limit(1)
-        .for("update", { skipLocked: true });
-      signal.throwIfAborted();
-      if (!candidate) {
-        return null;
-      }
-      const leaseId = randomUUID();
-      const [claimed] = await tx
-        .update(backgroundJobs)
-        .set({
-          status: "running",
-          leaseId,
-          leaseExpiresAt: sql`${databaseNow} + ${BACKGROUND_JOB_LEASE_MS} * interval '1 millisecond'`,
-          updatedAt: databaseNow,
-        })
-        .where(eq(backgroundJobs.id, candidate.id))
-        .returning();
-      signal.throwIfAborted();
-      if (!claimed?.leaseExpiresAt) {
-        throw new Error("Background job claim did not retain its lease");
-      }
-      return { ...claimed, leaseId, leaseExpiresAt: claimed.leaseExpiresAt };
-    });
+    const claimable = and(
+      eq(backgroundJobs.kind, args.kind),
+      eq(backgroundJobs.handlerVersion, args.handlerVersion),
+      args.jobId === undefined ? undefined : eq(backgroundJobs.id, args.jobId),
+      lte(backgroundJobs.availableAt, databaseNow),
+      or(
+        eq(backgroundJobs.status, "pending"),
+        and(
+          eq(backgroundJobs.status, "running"),
+          lte(backgroundJobs.leaseExpiresAt, databaseNow),
+        ),
+      ),
+    );
+    const candidate = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(claimable)
+      .orderBy(asc(backgroundJobs.availableAt), asc(backgroundJobs.id))
+      .limit(1);
+    const leaseId = randomUUID();
+    const [claimed] = await db
+      .update(backgroundJobs)
+      .set({
+        status: "running",
+        leaseId,
+        leaseExpiresAt: sql`${databaseNow} + ${BACKGROUND_JOB_LEASE_MS} * interval '1 millisecond'`,
+        updatedAt: databaseNow,
+      })
+      .where(and(inArray(backgroundJobs.id, candidate), claimable))
+      .returning();
+    signal.throwIfAborted();
+    if (!claimed) {
+      return null;
+    }
+    if (!claimed.leaseExpiresAt) {
+      throw new Error("Background job claim did not retain its lease");
+    }
+    return { ...claimed, leaseId, leaseExpiresAt: claimed.leaseExpiresAt };
   },
 );
 
@@ -201,7 +200,13 @@ function transitionValues(
   }
 }
 
-/** Commit one existing job's business transition under its current lease. */
+/**
+ * Commit one existing job's business transition under its current lease.
+ *
+ * One conditional UPDATE: the lease predicate (including the wall-clock expiry)
+ * is evaluated against the current row version, so a lost or expired lease
+ * returns `false` without a separate row lock.
+ */
 export const transitionBackgroundJob$ = command(
   async (
     { set },
@@ -212,26 +217,12 @@ export const transitionBackgroundJob$ = command(
     const db = set(writeDb$);
     const values = transitionValues(transition);
     signal.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      // Acquire this one row before the final wall-clock expiry check. No worker
-      // work, external I/O, or handle-bearing helper runs in this transaction.
-      const [locked] = await tx
-        .select({ id: backgroundJobs.id })
-        .from(backgroundJobs)
-        .where(activeLease(job))
-        .limit(1)
-        .for("update", { skipLocked: true });
-      signal.throwIfAborted();
-      if (!locked) {
-        return false;
-      }
-      const [updated] = await tx
-        .update(backgroundJobs)
-        .set({ ...values, updatedAt: databaseNow })
-        .where(activeLease(job))
-        .returning({ id: backgroundJobs.id });
-      signal.throwIfAborted();
-      return updated !== undefined;
-    });
+    const [updated] = await db
+      .update(backgroundJobs)
+      .set({ ...values, updatedAt: databaseNow })
+      .where(activeLease(job))
+      .returning({ id: backgroundJobs.id });
+    signal.throwIfAborted();
+    return updated !== undefined;
   },
 );

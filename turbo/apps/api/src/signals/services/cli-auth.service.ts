@@ -7,7 +7,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { command, computed, type Computed } from "ccstate";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, ne, notExists, sql } from "drizzle-orm";
 
 import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
@@ -16,9 +16,10 @@ import { nowDate } from "../../lib/time";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
+  expiredOrgCreditsWhere,
   OrgCreditExpirationRequired,
-  pendingOrgCreditExpirationQuery,
 } from "./org-credit-expiration";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 
 export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
@@ -175,28 +176,31 @@ const ensureTestOrgBillingRow$ = command(
             )
             .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
         }
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .for("update");
-        const [expired] = await tx
-          .select()
-          .from(pendingOrgCreditExpirationQuery(orgId, nowDate()));
-        if (expired) {
-          return false;
-        }
-        await tx
+        // The wallet UPDATE owns the row and admits the top-up only while no
+        // expired remainder exists; zero rows sends this caller to expiration.
+        const at = nowDate();
+        const [provisioned] = await tx
           .update(orgMetadata)
           .set({
             tier: "pro",
             credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
-            updatedAt: nowDate(),
+            updatedAt: at,
           })
-          .where(eq(orgMetadata.orgId, orgId));
+          .where(
+            and(
+              eq(orgMetadata.orgId, orgId),
+              notExists(
+                tx
+                  .select({ id: creditExpiresRecord.id })
+                  .from(creditExpiresRecord)
+                  .where(expiredOrgCreditsWhere(orgId, at)),
+              ),
+            ),
+          )
+          .returning({ orgId: orgMetadata.orgId });
 
         signal.throwIfAborted();
-        return true;
+        return provisioned !== undefined;
       });
       signal.throwIfAborted();
       if (complete) {

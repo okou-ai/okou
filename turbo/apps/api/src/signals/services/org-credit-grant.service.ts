@@ -22,7 +22,7 @@ interface OrgCreditGrant {
   readonly clearAutoRechargePending?: boolean;
 }
 
-/** The unique grant identity and its wallet increment have one local owner. */
+/** The unique grant identity and its wallet increment commit together. */
 export const grantPurchasedOrgCredits$ = command(
   async (
     { set },
@@ -52,11 +52,10 @@ export const grantPurchasedOrgCredits$ = command(
             )
             .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
         }
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, grant.orgId))
-          .for("update");
+        // No wallet row lock: the unique invoice receipt admits one increment,
+        // and the increment is atomic arithmetic. An expiration that has not
+        // committed still shows its expired remainder here, so this adder
+        // retries after it instead of interleaving with a partial clamp.
         const [existing] = await tx
           .select({ id: creditExpiresRecord.id })
           .from(creditExpiresRecord)

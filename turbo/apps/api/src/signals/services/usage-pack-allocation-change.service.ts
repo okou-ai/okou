@@ -1161,15 +1161,18 @@ const persistUsagePackChangePreview$ = command(
     const db = set(writeDb$);
     const [change] = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      const roots = await tx
+      // No row locks: every preview/admission writer holds the retained
+      // usage_pack_billing key, and confirmation revalidates this snapshot.
+      const [root] = await tx
         .select()
         .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.orgId, args.orgId))
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
-      const root = roots.find((row) => {
-        return row.id === context.subscription.id;
-      });
+        .where(
+          and(
+            eq(usagePackSubscriptions.orgId, args.orgId),
+            eq(usagePackSubscriptions.id, context.subscription.id),
+          ),
+        )
+        .limit(1);
       if (
         !root ||
         !usagePackPreviewSubscriptionMatches(context.subscription, root)
@@ -1177,7 +1180,7 @@ const persistUsagePackChangePreview$ = command(
         return [];
       }
       // A Plan preview may have committed while Stripe prepared these prices.
-      // Both admission writers lock the real subscription before its children.
+      // Both preview writers hold the same usage_pack_billing key.
       const [planChange] = await tx
         .select({ id: usagePackSubscriptionChanges.id })
         .from(usagePackSubscriptionChanges)
@@ -1214,7 +1217,6 @@ const persistUsagePackChangePreview$ = command(
         .select()
         .from(usagePackAllocations)
         .where(eq(usagePackAllocations.id, source.id))
-        .for("update")
         .limit(1);
       signal.throwIfAborted();
       if (
@@ -3653,7 +3655,6 @@ async function commitUsagePackUpgradeInvoice(
       .select()
       .from(usagePackAllocationChanges)
       .where(eq(usagePackAllocationChanges.id, args.change.id))
-      .for("update")
       .limit(1);
     if (
       !change ||
@@ -3682,6 +3683,35 @@ async function commitUsagePackUpgradeInvoice(
     }
     if (change.stripeInvoiceId && change.stripeInvoiceId !== args.invoice.id) {
       throw new Error(`Usage pack change ${change.id} has another invoice`);
+    }
+    const completedAt = nowDate();
+    // Claim the exact validated state before any grant: a concurrent writer
+    // that moved the change leaves zero rows and rolls the whole receipt back.
+    const [claimed] = await tx
+      .update(usagePackAllocationChanges)
+      .set({
+        status: "completed",
+        stripeInvoiceId: args.invoice.id,
+        completedAt,
+        updatedAt: completedAt,
+      })
+      .where(
+        and(
+          eq(usagePackAllocationChanges.id, change.id),
+          eq(usagePackAllocationChanges.kind, "upgrade"),
+          eq(usagePackAllocationChanges.status, "applied"),
+          isNotNull(usagePackAllocationChanges.replacementAllocationId),
+          or(
+            isNull(usagePackAllocationChanges.stripeInvoiceId),
+            eq(usagePackAllocationChanges.stripeInvoiceId, args.invoice.id),
+          ),
+        ),
+      )
+      .returning({ id: usagePackAllocationChanges.id });
+    if (!claimed) {
+      throw new Error(
+        `Usage pack change ${change.id} changed before fulfillment`,
+      );
     }
     if (args.purchasedCredits > 0) {
       const refundSource = upgradeRefundInvoiceSource(args.invoice, change);
@@ -3712,7 +3742,6 @@ async function commitUsagePackUpgradeInvoice(
         expiresAt: new Date(args.prorationPeriod.end * 1000),
       });
     }
-    const completedAt = nowDate();
     await tx.insert(usagePackInvoiceFulfillments).values({
       stripeInvoiceId: args.invoice.id,
       usagePackSubscriptionId: change.usagePackSubscriptionId,
@@ -3720,15 +3749,6 @@ async function commitUsagePackUpgradeInvoice(
       periodEnd: new Date(args.prorationPeriod.end * 1000),
       createdAt: completedAt,
     });
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({
-        status: "completed",
-        stripeInvoiceId: args.invoice.id,
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(eq(usagePackAllocationChanges.id, change.id));
   });
 }
 
@@ -3866,11 +3886,12 @@ async function fulfillPreparedSubscriptionChange(
   expectedRoot: UsagePackSubscriptionChangeRow,
   preparedGrants: readonly PreparedSubscriptionChangeGrant[],
 ): Promise<void> {
+  // Root identity is immutable; the retained usage_pack_billing key and the
+  // invoice receipt primary key arbitrate duplicate fulfillment.
   const [root] = await tx
     .select()
     .from(usagePackSubscriptionChanges)
     .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
-    .for("update")
     .limit(1);
   if (
     !root ||
@@ -3891,18 +3912,22 @@ async function fulfillPreparedSubscriptionChange(
     return;
   }
   for (const prepared of preparedGrants) {
+    const completedAt = nowDate();
+    // Conditional transition instead of a row lock: only an applied
+    // addition/upgrade with a replacement can be completed, exactly once.
     const [change] = await tx
-      .select()
-      .from(usagePackAllocationChanges)
-      .where(eq(usagePackAllocationChanges.id, prepared.change.id))
-      .for("update")
-      .limit(1);
-    if (
-      !change ||
-      (change.kind !== "addition" && change.kind !== "upgrade") ||
-      change.status !== "applied" ||
-      !change.replacementAllocationId
-    ) {
+      .update(usagePackAllocationChanges)
+      .set({ status: "completed", completedAt, updatedAt: completedAt })
+      .where(
+        and(
+          eq(usagePackAllocationChanges.id, prepared.change.id),
+          inArray(usagePackAllocationChanges.kind, ["addition", "upgrade"]),
+          eq(usagePackAllocationChanges.status, "applied"),
+          isNotNull(usagePackAllocationChanges.replacementAllocationId),
+        ),
+      )
+      .returning();
+    if (!change) {
       throw new Error(
         `Subscription change allocation ${prepared.change.id} is not ready for fulfillment`,
       );
@@ -3933,11 +3958,6 @@ async function fulfillPreparedSubscriptionChange(
         expiresAt: new Date(args.periodEnd * 1000),
       });
     }
-    const completedAt = nowDate();
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({ status: "completed", completedAt, updatedAt: completedAt })
-      .where(eq(usagePackAllocationChanges.id, change.id));
   }
   await tx.insert(usagePackInvoiceFulfillments).values({
     stripeInvoiceId: args.invoice.id,
@@ -4491,30 +4511,31 @@ export const prepareUsagePackChangeConfirmation$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const result = await db.transaction(async (tx) => {
+      // No row locks: all admission writers hold the retained
+      // usage_pack_billing key; every transition below is conditional on the
+      // previewed state it was decided from.
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      const parentCount = (
-        await tx.execute(sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}
-      JOIN ${usagePackAllocationChanges}
-        ON ${usagePackAllocationChanges.usagePackSubscriptionId} = ${usagePackSubscriptions.id}
-        AND ${usagePackAllocationChanges.orgId} = ${usagePackSubscriptions.orgId}
-      WHERE ${usagePackAllocationChanges.id} = ${args.changeId}
-        AND ${usagePackSubscriptions.orgId} = ${args.orgId}
-      FOR UPDATE OF ${usagePackSubscriptions}`)
-      ).rowCount;
-      if (parentCount !== 1) {
-        return { status: "not_found" as const };
-      }
-      const [change] = await tx
-        .select()
+      const [found] = await tx
+        .select({ change: usagePackAllocationChanges })
         .from(usagePackAllocationChanges)
+        .innerJoin(
+          usagePackSubscriptions,
+          and(
+            eq(
+              usagePackSubscriptions.id,
+              usagePackAllocationChanges.usagePackSubscriptionId,
+            ),
+            eq(usagePackSubscriptions.orgId, usagePackAllocationChanges.orgId),
+          ),
+        )
         .where(
           and(
             eq(usagePackAllocationChanges.id, args.changeId),
             eq(usagePackAllocationChanges.orgId, args.orgId),
           ),
         )
-        .for("update")
         .limit(1);
+      const change = found?.change;
       if (!change) {
         return { status: "not_found" as const };
       }
@@ -4540,8 +4561,12 @@ export const prepareUsagePackChangeConfirmation$ = command(
       if (change.status === "applying") {
         return { status: "resuming" as const, change };
       }
+      const previewedChange = and(
+        eq(usagePackAllocationChanges.id, change.id),
+        eq(usagePackAllocationChanges.status, "previewed"),
+      );
       if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
-        await tx
+        const [expired] = await tx
           .update(usagePackAllocationChanges)
           .set({
             status: "failed",
@@ -4549,17 +4574,20 @@ export const prepareUsagePackChangeConfirmation$ = command(
             completedAt: at,
             updatedAt: at,
           })
-          .where(eq(usagePackAllocationChanges.id, change.id));
-        return { status: "expired" as const };
+          .where(previewedChange)
+          .returning({ id: usagePackAllocationChanges.id });
+        return expired
+          ? { status: "expired" as const }
+          : { status: "conflict" as const };
       }
       if (!change.sourceAllocationId) {
         throw new Error(`Usage pack change ${change.id} has no source`);
       }
+      // The source is revalidated again when the Stripe result is reflected.
       const [source] = await tx
         .select()
         .from(usagePackAllocations)
         .where(eq(usagePackAllocations.id, change.sourceAllocationId))
-        .for("update")
         .limit(1);
       if (
         !source ||
@@ -4576,18 +4604,13 @@ export const prepareUsagePackChangeConfirmation$ = command(
             completedAt: at,
             updatedAt: at,
           })
-          .where(eq(usagePackAllocationChanges.id, change.id));
+          .where(previewedChange);
         return { status: "conflict" as const };
       }
       const [prepared] = await tx
         .update(usagePackAllocationChanges)
         .set({ status: "applying", updatedAt: at })
-        .where(
-          and(
-            eq(usagePackAllocationChanges.id, change.id),
-            eq(usagePackAllocationChanges.status, "previewed"),
-          ),
-        )
+        .where(previewedChange)
         .returning();
       return prepared
         ? { status: "ready" as const, change: prepared }

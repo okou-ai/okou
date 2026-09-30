@@ -5,9 +5,9 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -32,6 +32,76 @@ import {
   type SlackWorkspaceConnectionResult,
 } from "./slack-workspace-write-plan";
 
+const SLACK_CONNECTION_WORKSPACE_FK =
+  "slack_org_connections_slack_workspace_id_slack_org_installation";
+
+type SlackWorkspaceConnectionDenial = Extract<
+  SlackWorkspaceConnectionResult,
+  { readonly message: string }
+>;
+
+/** Rolls back the connection writes when a concurrent binder won the workspace. */
+class SlackWorkspaceConnectionDenied extends Error {
+  constructor(readonly result: SlackWorkspaceConnectionDenial) {
+    super(result.message);
+    this.name = "SlackWorkspaceConnectionDenied";
+  }
+}
+
+/** The installation was deleted after admission; the connection FK rejected it. */
+function isDeletedInstallationReference(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === SLACK_CONNECTION_WORKSPACE_FK
+  );
+}
+
+/** Terminal claims are never rewritten by a later completion. */
+function unsettledSlackClaim(id: string) {
+  return and(
+    eq(getStartedClaims.id, id),
+    notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
+  );
+}
+
+function installationWhere(workspaceId: string) {
+  return eq(slackOrgInstallations.slackWorkspaceId, workspaceId);
+}
+
+const slackAccountTaken = {
+  kind: "forbidden",
+  message: "This Slack account is already connected to another user.",
+} as const;
+
+/** A concurrent binder won; only a binding to this organization may proceed. */
+function readmitBoundInstallation(
+  args: SlackWorkspaceConnection,
+  winner: typeof slackOrgInstallations.$inferSelect | undefined,
+  connectionId: string,
+  replaced: readonly { readonly slackUserId: string }[],
+): SlackWorkspaceConnectionResult {
+  const readmission = slackWorkspaceAdmission(args, winner);
+  if (readmission.kind !== "allowed") {
+    throw new SlackWorkspaceConnectionDenied(readmission);
+  }
+  if (readmission.installation.orgId !== args.orgId) {
+    throw new SlackWorkspaceConnectionDenied({
+      kind: "not_found",
+      message: "Workspace not found. Please install the Slack app first.",
+    });
+  }
+  return connectedSlackWorkspace(
+    args,
+    readmission.installation,
+    connectionId,
+    replaced,
+  );
+}
+
 const commitSlackWorkspaceConnection$ = command(
   async (
     { set },
@@ -46,11 +116,6 @@ const commitSlackWorkspaceConnection$ = command(
           .values({ orgId: args.orgId })
           .onConflictDoNothing()
           .returning({ orgId: orgMetadata.orgId });
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .for("update");
         if (inserted) {
           await tx
             .insert(orgPlanEntitlements)
@@ -60,8 +125,7 @@ const commitSlackWorkspaceConnection$ = command(
         const [currentInstallation] = await tx
           .select()
           .from(slackOrgInstallations)
-          .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-          .for("update");
+          .where(installationWhere(args.workspaceId));
         const admission = slackWorkspaceAdmission(args, currentInstallation);
         if (admission.kind !== "allowed") {
           return admission;
@@ -85,10 +149,7 @@ const commitSlackWorkspaceConnection$ = command(
           .onConflictDoUpdate(plan.conflict)
           .returning({ id: slackOrgConnections.id });
         if (!connection) {
-          return {
-            kind: "forbidden",
-            message: "This Slack account is already connected to another user.",
-          };
+          return slackAccountTaken;
         }
         const replaced = await tx
           .delete(slackOrgConnections)
@@ -113,7 +174,16 @@ const commitSlackWorkspaceConnection$ = command(
           .where(plan.bindWhere)
           .returning();
         if (!bound) {
-          throw new Error("Locked Slack installation could not be bound");
+          const [winner] = await tx
+            .select()
+            .from(slackOrgInstallations)
+            .where(installationWhere(args.workspaceId));
+          return readmitBoundInstallation(
+            args,
+            winner,
+            connection.id,
+            replaced,
+          );
         }
         const reward = slackRewardIdentity(
           args.orgId,
@@ -128,8 +198,7 @@ const commitSlackWorkspaceConnection$ = command(
         const [claim] = await tx
           .select()
           .from(getStartedClaims)
-          .where(reward.where)
-          .for("update");
+          .where(reward.where);
         if (!claim) {
           throw new Error("Slack completion claim was not persisted");
         }
@@ -144,7 +213,7 @@ const commitSlackWorkspaceConnection$ = command(
             await tx
               .update(getStartedClaims)
               .set(slackRewardIneligibleValues(reason, at))
-              .where(eq(getStartedClaims.id, claim.id));
+              .where(unsettledSlackClaim(claim.id));
           } else {
             const [pending] = await tx
               .select()
@@ -176,6 +245,15 @@ export const connectSlackWorkspace$ = command(
       signal.throwIfAborted();
       if (result.ok) {
         return result.value;
+      }
+      if (result.error instanceof SlackWorkspaceConnectionDenied) {
+        return result.error.result;
+      }
+      if (isDeletedInstallationReference(result.error)) {
+        return {
+          kind: "not_found",
+          message: "Workspace not found. Please install the Slack app first.",
+        };
       }
       if (attempt >= 3) {
         throw result.error;

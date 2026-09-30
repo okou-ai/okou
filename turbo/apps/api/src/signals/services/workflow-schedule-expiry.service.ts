@@ -5,7 +5,9 @@ import { workflowScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip"
 import { and, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { calculateNextRun } from "./time-automation";
 import {
   morningBriefNativeOwnerCompatibilitySql,
@@ -151,10 +153,71 @@ function scheduleExpiryLineage(
   };
 }
 
+/** The automation row changed after it was read; the anchor is no longer this job's. */
+class ExpiredScheduleMoved extends Error {}
+
+/** The durable Morning Brief authority changed after it was read. */
+class ExpiredScheduleHeld extends Error {}
+
+/** The durable mirror a selected legacy owner owes for this skip, if any. */
+function nativeExpiryMirrorSql(
+  authority: Authority,
+  current: Automation,
+  successor: {
+    readonly nextRunAt: Date | null;
+    readonly mirrorNative: boolean;
+  },
+  args: {
+    readonly lineage: ReturnType<typeof scheduleExpiryLineage>;
+    readonly at: Date;
+  },
+) {
+  if (
+    !successor.mirrorNative ||
+    authority.kind !== "selected" ||
+    authority.row.phase !== "legacy"
+  ) {
+    return undefined;
+  }
+  return settleLegacyMorningBriefSql(args.lineage, authority.row, {
+    enabled: current.scheduleType !== "once",
+    cronExpression: current.cronExpression,
+    timezone: current.timezone,
+    nextRunAt: successor.nextRunAt,
+    at: args.at,
+  });
+}
+
+type ExpiryResult = "skipped" | "moved" | "held";
+
+/** A lost conditional write is a deterministic poll outcome, never an error. */
+function expiryOutcome(
+  settled:
+    | { readonly ok: true; readonly value: ExpiryResult }
+    | { readonly ok: false; readonly error: unknown },
+): ExpiryResult {
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof ExpiredScheduleMoved) {
+    return "moved";
+  }
+  if (settled.error instanceof ExpiredScheduleHeld) {
+    return "held";
+  }
+  throw settled.error;
+}
+
 /**
  * Settle only the old, unclaimed occurrence. No Run, failure or queue event is
- * created; the next recurring obligation is strictly in the future. Lock the
- * native owner before the legacy row, as all Morning Brief writers do.
+ * created; the next recurring obligation is strictly in the future.
+ *
+ * Nothing is row-locked. The native row and the automation are read plainly and
+ * every write is conditional on what was read: the native mirror on its epoch,
+ * phase and lineage, then the automation on its exact row version (`xmin`), in
+ * the documented native -> automation order. A concurrent claim, settlement,
+ * toggle or edit makes a write match zero rows; the transaction rolls back and
+ * the job reports `moved`/`held` for the next poll to re-evaluate.
  */
 export const skipExpiredWorkflowSchedule$ = command(
   async (
@@ -163,124 +226,121 @@ export const skipExpiredWorkflowSchedule$ = command(
     signal: AbortSignal,
   ): Promise<"skipped" | "moved" | "held"> => {
     const db = set(writeDb$);
-    const result = await db.transaction(async (tx) => {
-      const [initial] = await tx
-        .select({
-          id: workflowAutomations.id,
-          orgId: workflowAutomations.orgId,
-          ownerUserId: workflowAutomations.ownerUserId,
-          workflowId: workflowAutomations.workflowId,
-          officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1);
-      if (!initial) {
-        return "moved";
-      }
-      const lineage = scheduleExpiryLineage(initial);
-      let authority: MorningBriefLegacyWriterAuthority = {
-        kind: "ordinary",
-        fence: { kind: "ordinary" },
-      };
-      if (
-        initial.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-      ) {
-        let [native] = await tx
-          .select()
-          .from(morningBriefNativeSchedules)
-          .where(morningBriefScheduleWhere(lineage))
-          .limit(1)
-          .for("update");
-        if (!native) {
-          await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
-          [native] = await tx
+    const settled = await settle(
+      db.transaction(async (tx) => {
+        const [initial] = await tx
+          .select({
+            id: workflowAutomations.id,
+            orgId: workflowAutomations.orgId,
+            ownerUserId: workflowAutomations.ownerUserId,
+            workflowId: workflowAutomations.workflowId,
+            officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, args.automationId))
+          .limit(1);
+        if (!initial) {
+          return "moved";
+        }
+        const lineage = scheduleExpiryLineage(initial);
+        let authority: MorningBriefLegacyWriterAuthority = {
+          kind: "ordinary",
+          fence: { kind: "ordinary" },
+        };
+        if (
+          initial.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+        ) {
+          let [native] = await tx
             .select()
             .from(morningBriefNativeSchedules)
             .where(morningBriefScheduleWhere(lineage))
-            .limit(1)
-            .for("update");
+            .limit(1);
+          if (!native) {
+            // Pre-existing owner-key advisory lock for a member without a row.
+            await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
+            [native] = await tx
+              .select()
+              .from(morningBriefNativeSchedules)
+              .where(morningBriefScheduleWhere(lineage))
+              .limit(1);
+          }
+          authority = morningBriefLegacyWriterAuthorityFromRow(native, lineage);
         }
-        authority = morningBriefLegacyWriterAuthorityFromRow(native, lineage);
-      }
-      if (authority.kind === "stale") {
-        return "held";
-      }
-      const [current] = await tx
-        .select()
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      if (!stillExpired(current, initial, args)) {
-        return "moved";
-      }
-      const [pending] = await tx
-        .select({
-          held: workflowScheduleAlreadyClaimedSql(
-            current,
-            args.anchor,
-            authority,
-          ).mapWith(workflowAutomations.enabled),
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, current.id))
-        .limit(1);
-      if (pending?.held) {
-        return "held";
-      }
-      const successor = successorAfterExpiry(current, authority, args);
-      if (!successor) {
-        return "held";
-      }
-      const nextLegacyRunAt =
-        authority.kind === "selected" && authority.row.phase !== "legacy"
-          ? null
-          : successor.nextRunAt;
-      if (
-        successor.mirrorNative &&
-        authority.kind === "selected" &&
-        authority.row.phase === "legacy"
-      ) {
-        const { rowCount } = await tx.execute(
-          settleLegacyMorningBriefSql(lineage, authority.row, {
-            enabled: current.scheduleType !== "once",
-            cronExpression: current.cronExpression,
-            timezone: current.timezone,
-            nextRunAt: successor.nextRunAt,
-            at: args.at,
-          }),
-        );
-        if (rowCount !== 1) {
-          throw new Error("Morning Brief settlement authority changed");
+        if (authority.kind === "stale") {
+          return "held";
         }
-      }
-      const [updated] = await tx
-        .update(workflowAutomations)
-        .set(expiredScheduleValues(current, nextLegacyRunAt, args.at))
-        .where(
-          and(
-            eq(workflowAutomations.id, current.id),
-            eq(workflowAutomations.nextRunAt, args.anchor),
-          ),
-        )
-        .returning({ id: workflowAutomations.id });
-      if (!updated) {
-        throw new Error("Expired schedule anchor moved while locked");
-      }
-      await tx
-        .insert(workflowScheduleSkips)
-        .values({
-          automationId: current.id,
-          scheduledAnchorAt: args.anchor,
-          skippedAt: args.at,
-        })
-        .onConflictDoNothing();
-      signal.throwIfAborted();
-      return "skipped";
-    });
+        const [read] = await tx
+          .select({
+            automation: workflowAutomations,
+            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, args.automationId))
+          .limit(1);
+        const current = read?.automation;
+        if (!read || !stillExpired(current, initial, args)) {
+          return "moved";
+        }
+        const [pending] = await tx
+          .select({
+            held: workflowScheduleAlreadyClaimedSql(
+              current,
+              args.anchor,
+              authority,
+            ).mapWith(workflowAutomations.enabled),
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, current.id))
+          .limit(1);
+        if (pending?.held) {
+          return "held";
+        }
+        const successor = successorAfterExpiry(current, authority, args);
+        if (!successor) {
+          return "held";
+        }
+        const nextLegacyRunAt =
+          authority.kind === "selected" && authority.row.phase !== "legacy"
+            ? null
+            : successor.nextRunAt;
+        const mirror = nativeExpiryMirrorSql(authority, current, successor, {
+          lineage,
+          at: args.at,
+        });
+        if (mirror && (await tx.execute(mirror)).rowCount !== 1) {
+          throw new ExpiredScheduleHeld();
+        }
+        const [updated] = await tx
+          .update(workflowAutomations)
+          .set(expiredScheduleValues(current, nextLegacyRunAt, args.at))
+          .where(
+            and(
+              eq(workflowAutomations.id, current.id),
+              eq(workflowAutomations.nextRunAt, args.anchor),
+              sql`${workflowAutomations}.xmin::text = ${read.rowVersion}`,
+            ),
+          )
+          .returning({ id: workflowAutomations.id });
+        if (!updated) {
+          throw new ExpiredScheduleMoved();
+        }
+        await tx
+          .insert(workflowScheduleSkips)
+          .values({
+            automationId: current.id,
+            scheduledAnchorAt: args.anchor,
+            skippedAt: args.at,
+          })
+          .onConflictDoNothing();
+        signal.throwIfAborted();
+        return "skipped" as const;
+      }),
+      signal,
+    );
     signal.throwIfAborted();
-    return result;
+    return expiryOutcome(settled);
   },
 );
 

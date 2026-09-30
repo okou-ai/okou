@@ -184,14 +184,6 @@ const commitSlackStarterDefault$ = command(
         .values({ orgId: input.orgId, tier: initialTier })
         .onConflictDoNothing()
         .returning({ orgId: orgMetadataCanonicalWrites.orgId });
-      const [wallet] = await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, input.orgId))
-        .for("update");
-      if (!wallet) {
-        throw new Error("Seeded Slack wallet disappeared during publication");
-      }
       if (inserted) {
         await tx.execute(atomicOrgCreditExpirationSql(input.orgId, nowDate()));
         const expiresAt = nowDate();
@@ -231,10 +223,14 @@ const commitSlackStarterDefault$ = command(
           )
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
-      await tx
+      const [wallet] = await tx
         .update(orgMetadata)
         .set({ defaultAgentId: input.agentId, updatedAt: nowDate() })
-        .where(eq(orgMetadata.orgId, input.orgId));
+        .where(eq(orgMetadata.orgId, input.orgId))
+        .returning({ orgId: orgMetadata.orgId });
+      if (!wallet) {
+        throw new Error("Seeded Slack wallet disappeared during publication");
+      }
       signal.throwIfAborted();
     });
     signal.throwIfAborted();

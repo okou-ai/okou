@@ -17,7 +17,7 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
@@ -68,6 +68,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import {
   loadOrgPlanCapabilities$,
   orgPlanCapabilitiesFromRow,
@@ -515,27 +516,11 @@ export const ensureOrgModelPolicyFacts$ = command(
           .returning({ id: orgModelPolicies.id });
         initializeSeed = inserted !== undefined;
       }
-      let existing: OrgModelPolicyRow[] = [];
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        for (const statement of modelPolicyParentLockSql(orgId)) {
-          await tx.execute(statement);
-        }
-        const locked = await tx
-          .select()
-          .from(orgModelPolicies)
-          .where(owner)
-          .orderBy(asc(orgModelPolicies.id))
-          .for("no key update");
-        existing = await tx.select().from(orgModelPolicies).where(owner);
-        if (policySetOwned(locked, existing)) {
-          break;
-        }
-        if (attempt === 2) {
-          throw new Error(
-            "Model policies changed concurrently; retry the operation",
-          );
-        }
-      }
+      // Every policy-set writer holds the writer key above, so this fresh
+      // statement sees the complete current set. The repair writes no provider
+      // or surface reference; a concurrent parent deletion's FK SET NULL only
+      // waits on, or is waited on by, the ordinary row updates below.
+      const existing = await tx.select().from(orgModelPolicies).where(owner);
       const [entitlement] = await tx
         .select(ORG_PLAN_CAPABILITY_SELECTION)
         .from(orgPlanEntitlements)
@@ -1267,22 +1252,6 @@ export function onboardingModelPolicyWritePlan(params: {
   };
 }
 
-/** Parent-before-policy order, shared as SQL values without a database handle. */
-export function modelPolicyParentLockSql(orgId: string) {
-  return [
-    sql`SELECT ${modelProviders.id} FROM ${modelProviders}
-      WHERE ${modelProviders.orgId} = ${orgId} AND ${modelProviders.userId} = ${ORG_SENTINEL_USER_ID}
-      ORDER BY ${modelProviders.id} FOR SHARE`,
-    sql`SELECT ${modelProviderConnections.id} FROM ${modelProviderConnections}
-      WHERE ${modelProviderConnections.orgId} = ${orgId}
-      ORDER BY ${modelProviderConnections.id} FOR SHARE`,
-    sql`SELECT ${modelProviderSurfaces.id} FROM ${modelProviderSurfaces}
-      INNER JOIN ${modelProviderConnections} ON ${modelProviderSurfaces.connectionId} = ${modelProviderConnections.id}
-      WHERE ${modelProviderConnections.orgId} = ${orgId}
-      ORDER BY ${modelProviderSurfaces.id} FOR SHARE OF ${modelProviderSurfaces}`,
-  ];
-}
-
 export const listOrgModelPolicies$ = command(
   async (
     { get, set },
@@ -1365,24 +1334,6 @@ function policyUpdateValues(
     updatedAt: now,
     updatedByUserId: userId,
   };
-}
-
-export function policySetOwned(
-  locked: readonly OrgModelPolicyRow[],
-  current: readonly OrgModelPolicyRow[],
-) {
-  const ids = new Set(
-    locked.map((row) => {
-      return row.id;
-    }),
-  );
-  return (
-    current.length > 0 &&
-    current.length === ids.size &&
-    current.every((row) => {
-      return ids.has(row.id);
-    })
-  );
 }
 
 function policyWriteCapabilities(
@@ -1547,48 +1498,23 @@ const commitOrgModelPolicyReplacement$ = command(
           .values(policySeedValues(params.orgId, params.userId))
           .onConflictDoNothing();
       }
-      let existing: OrgModelPolicyRow[] = [];
-      let routes: PolicyRouteSnapshot = { providers: [], surfaces: [] };
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const providers = await tx
-          .select(POLICY_PROVIDER_SELECTION)
-          .from(modelProviders)
-          .where(ownedPolicyProviders(params.orgId))
-          .orderBy(asc(modelProviders.id))
-          .for("share");
-        await tx
-          .select({ id: modelProviderConnections.id })
-          .from(modelProviderConnections)
-          .where(eq(modelProviderConnections.orgId, params.orgId))
-          .orderBy(asc(modelProviderConnections.id))
-          .for("share");
-        const surfaces = await tx
-          .select(POLICY_SURFACE_SELECTION)
-          .from(modelProviderSurfaces)
-          .innerJoin(
-            modelProviderConnections,
-            eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-          )
-          .where(eq(modelProviderConnections.orgId, params.orgId))
-          .orderBy(asc(modelProviderSurfaces.id))
-          .for("share", { of: modelProviderSurfaces });
-        const locked = await tx
-          .select()
-          .from(orgModelPolicies)
-          .where(owner)
-          .orderBy(asc(orgModelPolicies.id))
-          .for("no key update");
-        existing = await tx.select().from(orgModelPolicies).where(owner);
-        if (policySetOwned(locked, existing)) {
-          routes = { providers, surfaces };
-          break;
-        }
-        if (attempt === 2) {
-          throw new Error(
-            "Model policies changed concurrently; retry the operation",
-          );
-        }
-      }
+      // Every policy-set writer holds the writer key above. Parents are read
+      // without row locks: a parent deleted after this read makes the FK check
+      // of the write below fail, which the caller maps to a refresh conflict.
+      const providers = await tx
+        .select(POLICY_PROVIDER_SELECTION)
+        .from(modelProviders)
+        .where(ownedPolicyProviders(params.orgId));
+      const surfaces = await tx
+        .select(POLICY_SURFACE_SELECTION)
+        .from(modelProviderSurfaces)
+        .innerJoin(
+          modelProviderConnections,
+          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+        )
+        .where(eq(modelProviderConnections.orgId, params.orgId));
+      const existing = await tx.select().from(orgModelPolicies).where(owner);
+      const routes: PolicyRouteSnapshot = { providers, surfaces };
       assertPolicyRevision(params.revision, existing);
       const [entitlement] = await tx
         .select(POLICY_ENTITLEMENT_SELECTION)
@@ -1601,8 +1527,7 @@ const commitOrgModelPolicyReplacement$ = command(
       const catalog = await tx
         .select(POLICY_CATALOG_SELECTION)
         .from(runModelCatalog)
-        .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]))
-        .for("share");
+        .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]));
       const plan = replacementWritePlan(params, nowDate(), {
         existing,
         routes,
@@ -1675,6 +1600,10 @@ export const updateOrgModelPolicies$ = command(
     if (!written.ok) {
       if (written.error instanceof RejectedModelPolicyUpdate) {
         return written.error.result;
+      }
+      // A provider or surface deleted after validation lost the race.
+      if (isForeignKeyViolation(written.error)) {
+        return policyRefreshConflict();
       }
       throw written.error;
     }

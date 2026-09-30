@@ -6,7 +6,9 @@ import {
 import { command } from "ccstate";
 import { and, asc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import {
   currentAllowanceEntitlement,
@@ -59,7 +61,6 @@ function runWindowsQuery(
       sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
       asc(orgUsageAllowanceWindows.id),
     )
-    .for("update")
     .as("run_allowance_windows");
 }
 
@@ -123,94 +124,106 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
       ? undefined
       : await set(prepareUsageAllowanceRefresh$, { orgId: args.orgId }, signal);
     signal?.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      await tx.execute(orgCreditCompatibilityLockSql(args.orgId));
-      const [run] = await tx
-        .select({ createdAt: agentRuns.createdAt })
-        .from(agentRuns)
-        .where(runCondition)
-        .limit(1)
-        .for("key share");
-      signal?.throwIfAborted();
-      if (!run) {
-        return null;
-      }
-      const [owned] = await tx.select().from(entitlementQuery(args.orgId));
-      signal?.throwIfAborted();
-      const issued = runWindowAvailability(
-        await tx.select().from(runWindowsQuery(args.orgId, run.createdAt)),
-      );
-      signal?.throwIfAborted();
-      if (issued) {
-        return issued;
-      }
-      const at = nowDate();
-      const prepared = planPreparedAllowanceEntitlement(
-        currentAllowanceEntitlement(owned, at),
-        refresh,
-        at,
-      );
-      if (prepared.update && owned) {
-        await tx
-          .update(orgUsageAllowanceEntitlements)
-          .set(prepared.update)
-          .where(eq(orgUsageAllowanceEntitlements.id, owned.id));
+    const outcome = await settle(
+      db.transaction(async (tx) => {
+        await tx.execute(orgCreditCompatibilityLockSql(args.orgId));
+        const [run] = await tx
+          .select({ createdAt: agentRuns.createdAt })
+          .from(agentRuns)
+          .where(runCondition)
+          .limit(1);
         signal?.throwIfAborted();
-      }
-      const entitlement = prepared.entitlement;
-      if (
-        !entitlement ||
-        entitlement.effectiveAt > run.createdAt ||
-        (entitlement.expiresAt && entitlement.expiresAt <= run.createdAt)
-      ) {
-        return null;
-      }
-      const windows = await tx
-        .select()
-        .from(runWindowsQuery(args.orgId, run.createdAt, entitlement));
-      signal?.throwIfAborted();
-      for (const kind of ["short", "weekly"] as const) {
+        if (!run) {
+          return null;
+        }
+        const [owned] = await tx.select().from(entitlementQuery(args.orgId));
+        signal?.throwIfAborted();
+        const issued = runWindowAvailability(
+          await tx.select().from(runWindowsQuery(args.orgId, run.createdAt)),
+        );
+        signal?.throwIfAborted();
+        if (issued) {
+          return issued;
+        }
+        const at = nowDate();
+        const prepared = planPreparedAllowanceEntitlement(
+          currentAllowanceEntitlement(owned, at),
+          refresh,
+          at,
+        );
+        if (prepared.update && owned) {
+          await tx
+            .update(orgUsageAllowanceEntitlements)
+            .set(prepared.update)
+            .where(eq(orgUsageAllowanceEntitlements.id, owned.id));
+          signal?.throwIfAborted();
+        }
+        const entitlement = prepared.entitlement;
         if (
-          windows.some((window) => {
-            return window.kind === kind;
-          })
+          !entitlement ||
+          entitlement.effectiveAt > run.createdAt ||
+          (entitlement.expiresAt && entitlement.expiresAt <= run.createdAt)
         ) {
-          continue;
+          return null;
         }
-        const [window] = await tx
-          .insert(orgUsageAllowanceWindows)
-          .values({
-            orgId: args.orgId,
-            entitlementId: entitlement.id,
-            kind,
-            startsAt: run.createdAt,
-            expiresAt: new Date(
-              run.createdAt.getTime() +
-                1000 *
-                  (kind === "short"
-                    ? entitlement.shortWindowSeconds
-                    : entitlement.weeklyWindowSeconds),
-            ),
-            unitLimit:
-              kind === "short"
-                ? entitlement.shortWindowUnits
-                : entitlement.weeklyWindowUnits,
-            consumedUnits: 0,
-            createdByRunId: args.runId,
-          })
-          .returning({
-            id: orgUsageAllowanceWindows.id,
-            kind: orgUsageAllowanceWindows.kind,
-            unitLimit: orgUsageAllowanceWindows.unitLimit,
-            consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-          });
+        const windows = await tx
+          .select()
+          .from(runWindowsQuery(args.orgId, run.createdAt, entitlement));
         signal?.throwIfAborted();
-        if (!window) {
-          throw new Error("Usage allowance window insert returned no row");
+        for (const kind of ["short", "weekly"] as const) {
+          if (
+            windows.some((window) => {
+              return window.kind === kind;
+            })
+          ) {
+            continue;
+          }
+          const [window] = await tx
+            .insert(orgUsageAllowanceWindows)
+            .values({
+              orgId: args.orgId,
+              entitlementId: entitlement.id,
+              kind,
+              startsAt: run.createdAt,
+              expiresAt: new Date(
+                run.createdAt.getTime() +
+                  1000 *
+                    (kind === "short"
+                      ? entitlement.shortWindowSeconds
+                      : entitlement.weeklyWindowSeconds),
+              ),
+              unitLimit:
+                kind === "short"
+                  ? entitlement.shortWindowUnits
+                  : entitlement.weeklyWindowUnits,
+              consumedUnits: 0,
+              createdByRunId: args.runId,
+            })
+            .returning({
+              id: orgUsageAllowanceWindows.id,
+              kind: orgUsageAllowanceWindows.kind,
+              unitLimit: orgUsageAllowanceWindows.unitLimit,
+              consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+            });
+          signal?.throwIfAborted();
+          if (!window) {
+            throw new Error("Usage allowance window insert returned no row");
+          }
+          windows.push(window);
         }
-        windows.push(window);
-      }
-      return runWindowAvailability(windows);
-    });
+        return runWindowAvailability(windows);
+      }),
+      signal,
+    );
+    if (outcome.ok) {
+      return outcome.value;
+    }
+    // The entitlement row is owned above, so the only FK a window insert can
+    // lose is created_by_run_id: the Run was deleted after our read. A deleted
+    // Run has no allowance, the same result as a Run that was never found.
+    if (isForeignKeyViolation(outcome.error)) {
+      return null;
+    }
+    throw outcome.error;
   },
 );

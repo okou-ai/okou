@@ -8,8 +8,10 @@ import { sql } from "drizzle-orm";
 
 /**
  * Existing business operations retain admission until their provider result is
- * reconciled. Execute only after locking this subscription's parent row. A
- * completed or scheduled result is not an in-flight mutation claim.
+ * reconciled. Execute only while holding the org's retained usage_pack_billing
+ * key: every admission writer (plan, allocation and invitation) takes that key
+ * before this check, so no parent row lock is needed. A completed or scheduled
+ * result is not an in-flight mutation claim.
  */
 export function conflictingUsagePackMutationSql(input: {
   readonly subscriptionId: string;
@@ -39,12 +41,15 @@ export function conflictingUsagePackMutationSql(input: {
   ) AS active_mutations LIMIT 1`;
 }
 
-/** A plain SQL expression, executed inside the command's local transaction. */
+/**
+ * A plain SQL expression, executed inside the command's local transaction
+ * after the retained usage_pack_billing key. It resolves the purchase's
+ * subscription without a row lock; admission is serialized by that key.
+ */
 export function invitationMutationSubscriptionSql(purchaseId: string) {
   return sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}
     JOIN ${usagePackInvitationPurchases}
       ON ${usagePackInvitationPurchases.usagePackSubscriptionId} = ${usagePackSubscriptions.id}
       AND ${usagePackInvitationPurchases.orgId} = ${usagePackSubscriptions.orgId}
-    WHERE ${usagePackInvitationPurchases.id} = ${purchaseId}
-    FOR UPDATE OF ${usagePackSubscriptions}`;
+    WHERE ${usagePackInvitationPurchases.id} = ${purchaseId}`;
 }

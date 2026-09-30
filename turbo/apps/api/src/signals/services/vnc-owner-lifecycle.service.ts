@@ -1,6 +1,6 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -126,25 +126,12 @@ export const eraseVncOwnerData$ = command(
               eq(vncCredentials.orgId, scope.orgId),
               eq(vncCredentials.userId, scope.userId),
             );
+    // No explicit row locks: each DELETE takes only its implicit row locks.
+    // Writers recheck the exact member identity in their conditional write, so
+    // later writes are rejected; a single write statement already in flight
+    // may still land (accepted late-write tradeoff). Connections go first because their
+    // credential references are RESTRICT.
     await db.transaction(async (tx) => {
-      await tx
-        .select({ orgId: orgMembersMetadata.orgId })
-        .from(orgMembersMetadata)
-        .where(memberCondition)
-        .orderBy(asc(orgMembersMetadata.orgId), asc(orgMembersMetadata.userId))
-        .for("update");
-      await tx
-        .select({ id: vncConnections.id })
-        .from(vncConnections)
-        .where(connectionCondition)
-        .orderBy(asc(vncConnections.id))
-        .for("update");
-      await tx
-        .select({ id: vncCredentials.id })
-        .from(vncCredentials)
-        .where(credentialCondition)
-        .orderBy(asc(vncCredentials.id))
-        .for("update");
       await tx.delete(vncConnections).where(connectionCondition);
       await tx.delete(vncCredentials).where(credentialCondition);
       // This is the existing preference-row lifecycle, not a new authority flag.

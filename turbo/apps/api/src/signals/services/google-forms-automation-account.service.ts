@@ -24,19 +24,23 @@ export async function resolveGoogleFormsAutomationConnectorId(
   });
 }
 
-/** Publish the selected business source and discard an incompatible cursor. */
+/**
+ * Publish the selected business source and discard an incompatible cursor.
+ * No row locks: the desired account is read from the statement snapshot and
+ * the conditional UPDATE computes the new config from the current target row,
+ * so a concurrent config edit is preserved and a concurrent reprojection
+ * leaves nothing to change.
+ */
 export function googleFormsAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
 }) {
   return sql`
-    WITH candidates AS MATERIALIZED (
+    WITH desired AS (
       SELECT ${workflowAutomations.id} AS id,
-        ${workflowAutomations.eventConnectorId} AS connector_id,
-        ${workflowAutomations.eventConfig} AS event_config,
         CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
           THEN ${chatThreadConnectorSelections.connectorId}
-          ELSE ${connectors.id} END AS desired_connector_id
+          ELSE ${connectors.id} END AS connector_id
       FROM ${workflowAutomations}
       LEFT JOIN ${workflowUserAutomationThreads}
         ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
@@ -54,23 +58,20 @@ export function googleFormsAccountProjectionStatement(args: {
         AND ${workflowAutomations.ownerUserId} = ${args.userId}
         AND ${workflowAutomations.kind} = 'event'
         AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
-      ORDER BY ${workflowAutomations.id}
-      FOR UPDATE OF ${workflowAutomations}
-    ), projection AS (
-      SELECT id,
-        desired_connector_id AS connector_id,
-        CASE WHEN desired_connector_id IS NOT NULL
-          AND event_config ->> 'connectorId' IS DISTINCT FROM desired_connector_id::text
-          THEN jsonb_set(event_config, '{connectorId}', to_jsonb(desired_connector_id::text))
-          ELSE event_config END AS event_config
-      FROM candidates
     ), changed AS (
       UPDATE ${workflowAutomations}
-      SET event_connector_id = projection.connector_id, event_config = projection.event_config
-      FROM projection
-      WHERE ${workflowAutomations.id} = projection.id
-        AND (${workflowAutomations.eventConnectorId} IS DISTINCT FROM projection.connector_id
-          OR ${workflowAutomations.eventConfig} IS DISTINCT FROM projection.event_config)
+      SET event_connector_id = desired.connector_id,
+        event_config = CASE WHEN desired.connector_id IS NOT NULL
+          AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text
+          THEN jsonb_set(${workflowAutomations.eventConfig}, '{connectorId}', to_jsonb(desired.connector_id::text))
+          ELSE ${workflowAutomations.eventConfig} END
+      FROM desired
+      WHERE ${workflowAutomations.id} = desired.id
+        AND ${workflowAutomations.kind} = 'event'
+        AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
+        AND (${workflowAutomations.eventConnectorId} IS DISTINCT FROM desired.connector_id
+          OR (desired.connector_id IS NOT NULL
+            AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text))
       RETURNING ${workflowAutomations.id}
     )
     DELETE FROM ${googleFormsAutomationCursors}

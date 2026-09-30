@@ -26,7 +26,12 @@ function onboardingCreditsExpiresAt(grantedAt: Date): Date {
   return new Date(grantedAt.getTime() + ONBOARDING_CREDIT_TTL_MS);
 }
 
-/** The grant identity and its balance change commit together before publication. */
+/**
+ * The grant identity and its balance change commit together before publication.
+ * The unique onboarding receipt admits one increment, which is atomic
+ * arithmetic; no wallet row lock is taken. An uncommitted expiration still
+ * shows its expired remainder, so this adder retries after it.
+ */
 const commitOnboardingCredits$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
@@ -42,8 +47,7 @@ const commitOnboardingCredits$ = command(
           defaultAgentId: orgMetadata.defaultAgentId,
         })
         .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .for("update");
+        .where(eq(orgMetadata.orgId, orgId));
       if (!metadata) {
         throw new Error(
           "Organization disappeared before onboarding credit grant",

@@ -14,6 +14,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -358,6 +359,30 @@ export async function listThreadRemoteAccess(
   };
 }
 
+async function findOwnedRemoteHost(
+  db: ReadonlyDb,
+  owner: HostOwner,
+  protocol: RemoteAccessProtocol,
+) {
+  const table = protocol === "ssh" ? sshConnections : vncConnections;
+  const [host] = await db
+    .select({
+      id: table.id,
+      displayName: table.displayName,
+      defaultEnabledForChats: table.defaultEnabledForChats,
+    })
+    .from(table)
+    .where(
+      and(
+        eq(table.id, owner.connectionId),
+        eq(table.orgId, owner.orgId),
+        eq(table.userId, owner.userId),
+      ),
+    )
+    .limit(1);
+  return host;
+}
+
 /** Explicit choices are retained even when they equal today's host default. */
 export const setThreadRemoteAccessOverride$ = command(
   async (
@@ -368,103 +393,56 @@ export const setThreadRemoteAccessOverride$ = command(
     signal: AbortSignal,
   ): Promise<ThreadRemoteHostAccess | null> => {
     const db = set(writeDb$);
-    const result = await db.transaction(async (tx) => {
-      const [thread] = await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.id, chatThreads.agentId),
-            eq(agents.orgId, owner.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(chatThreads.id, owner.chatThreadId),
-            eq(chatThreads.userId, owner.userId),
-          ),
-        )
-        .for("key share", { of: [chatThreads, agents] });
-      signal.throwIfAborted();
-      if (!thread) {
-        return null;
-      }
-      if (protocol === "ssh") {
-        const [host] = await tx
-          .select({
-            id: sshConnections.id,
-            displayName: sshConnections.displayName,
-            defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-          })
-          .from(sshConnections)
-          .where(
-            and(
-              eq(sshConnections.id, owner.connectionId),
-              eq(sshConnections.orgId, owner.orgId),
-              eq(sshConnections.userId, owner.userId),
-            ),
-          )
-          .limit(1)
-          .for("key share");
-        if (!host) {
-          return null;
-        }
-        await tx
-          .insert(chatThreadSshAccessOverrides)
-          .values({
-            chatThreadId: owner.chatThreadId,
-            connectionId: owner.connectionId,
-            enabled,
-          })
-          .onConflictDoUpdate({
-            target: [
-              chatThreadSshAccessOverrides.chatThreadId,
-              chatThreadSshAccessOverrides.connectionId,
-            ],
-            set: { enabled },
-          });
-        return toThreadAccess(host, enabled);
-      }
-      const [host] = await tx
-        .select({
-          id: vncConnections.id,
-          displayName: vncConnections.displayName,
-          defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-        })
-        .from(vncConnections)
-        .where(
-          and(
-            eq(vncConnections.id, owner.connectionId),
-            eq(vncConnections.orgId, owner.orgId),
-            eq(vncConnections.userId, owner.userId),
-          ),
-        )
-        .limit(1)
-        .for("key share");
-      if (!host) {
-        return null;
-      }
-      await tx
-        .insert(chatThreadVncAccessOverrides)
-        .values({
-          chatThreadId: owner.chatThreadId,
-          connectionId: owner.connectionId,
-          enabled,
-        })
-        .onConflictDoUpdate({
-          target: [
-            chatThreadVncAccessOverrides.chatThreadId,
-            chatThreadVncAccessOverrides.connectionId,
-          ],
-          set: { enabled },
-        });
-      return toThreadAccess(host, enabled);
-    });
+    const threadExists = await ownedThreadExists(db, owner);
     signal.throwIfAborted();
-    if (result) {
-      await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
+    if (!threadExists) {
+      return null;
     }
+    const host = await findOwnedRemoteHost(db, owner, protocol);
+    signal.throwIfAborted();
+    if (!host) {
+      return null;
+    }
+    const values = {
+      chatThreadId: owner.chatThreadId,
+      connectionId: owner.connectionId,
+      enabled,
+    };
+    // The thread and host foreign keys reject an override whose parent was
+    // deleted after the reads above; that lost race is the same "not found".
+    const written = await settle<unknown>(
+      protocol === "ssh"
+        ? db
+            .insert(chatThreadSshAccessOverrides)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [
+                chatThreadSshAccessOverrides.chatThreadId,
+                chatThreadSshAccessOverrides.connectionId,
+              ],
+              set: { enabled },
+            })
+        : db
+            .insert(chatThreadVncAccessOverrides)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [
+                chatThreadVncAccessOverrides.chatThreadId,
+                chatThreadVncAccessOverrides.connectionId,
+              ],
+              set: { enabled },
+            }),
+      signal,
+    );
+    if (!written.ok) {
+      if (isForeignKeyViolation(written.error)) {
+        return null;
+      }
+      throw written.error;
+    }
+    const result = toThreadAccess(host, enabled);
+    await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
+    signal.throwIfAborted();
     return result;
   },
 );
@@ -477,76 +455,27 @@ export const clearThreadRemoteAccessOverride$ = command(
     signal: AbortSignal,
   ): Promise<ThreadRemoteHostAccess | null> => {
     const db = set(writeDb$);
-    const result = await db.transaction(async (tx) => {
-      const [thread] = await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.id, chatThreads.agentId),
-            eq(agents.orgId, owner.orgId),
-          ),
-        )
+    const threadExists = await ownedThreadExists(db, owner);
+    signal.throwIfAborted();
+    if (!threadExists) {
+      return null;
+    }
+    const host = await findOwnedRemoteHost(db, owner, protocol);
+    signal.throwIfAborted();
+    if (!host) {
+      return null;
+    }
+    if (protocol === "ssh") {
+      await db
+        .delete(chatThreadSshAccessOverrides)
         .where(
           and(
-            eq(chatThreads.id, owner.chatThreadId),
-            eq(chatThreads.userId, owner.userId),
+            eq(chatThreadSshAccessOverrides.chatThreadId, owner.chatThreadId),
+            eq(chatThreadSshAccessOverrides.connectionId, owner.connectionId),
           ),
-        )
-        .for("key share", { of: [chatThreads, agents] });
-      signal.throwIfAborted();
-      if (!thread) {
-        return null;
-      }
-      if (protocol === "ssh") {
-        const [host] = await tx
-          .select({
-            id: sshConnections.id,
-            displayName: sshConnections.displayName,
-            defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-          })
-          .from(sshConnections)
-          .where(
-            and(
-              eq(sshConnections.id, owner.connectionId),
-              eq(sshConnections.orgId, owner.orgId),
-              eq(sshConnections.userId, owner.userId),
-            ),
-          )
-          .limit(1);
-        if (!host) {
-          return null;
-        }
-        await tx
-          .delete(chatThreadSshAccessOverrides)
-          .where(
-            and(
-              eq(chatThreadSshAccessOverrides.chatThreadId, owner.chatThreadId),
-              eq(chatThreadSshAccessOverrides.connectionId, owner.connectionId),
-            ),
-          );
-        return toThreadAccess(host, null);
-      }
-      const [host] = await tx
-        .select({
-          id: vncConnections.id,
-          displayName: vncConnections.displayName,
-          defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-        })
-        .from(vncConnections)
-        .where(
-          and(
-            eq(vncConnections.id, owner.connectionId),
-            eq(vncConnections.orgId, owner.orgId),
-            eq(vncConnections.userId, owner.userId),
-          ),
-        )
-        .limit(1);
-      if (!host) {
-        return null;
-      }
-      await tx
+        );
+    } else {
+      await db
         .delete(chatThreadVncAccessOverrides)
         .where(
           and(
@@ -554,12 +483,10 @@ export const clearThreadRemoteAccessOverride$ = command(
             eq(chatThreadVncAccessOverrides.connectionId, owner.connectionId),
           ),
         );
-      return toThreadAccess(host, null);
-    });
-    signal.throwIfAborted();
-    if (result) {
-      await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
     }
-    return result;
+    signal.throwIfAborted();
+    await notifyRemoteAccessChange(db, owner, protocol, owner.chatThreadId);
+    signal.throwIfAborted();
+    return toThreadAccess(host, null);
   },
 );

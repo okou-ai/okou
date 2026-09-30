@@ -1,7 +1,5 @@
 import { command } from "ccstate";
 import { repairVolumeIndexSql } from "./storage-volume-publication-sql";
-import { z } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
@@ -130,18 +128,23 @@ function reboundHeadValues(
     updatedAt: at,
   };
 }
-const publicationCompletionSchema = z.object({ completed: z.literal(1) });
-function completeVolumePublicationSql(fence: PiStableContextPublicationFence) {
+
+/** Remaining keys are read by a later statement, after the generation UPDATE owns its row. */
+function publicationReadinessSql(fence: PiStableContextPublicationFence) {
   const scope = fence.scope;
-  return sql`WITH completed AS (
-    DELETE FROM ${piStableContextPublications} WHERE ${publicationScopeCondition(fence)} RETURNING token
-  ) UPDATE ${piStableContextGenerations} SET publication_state = CASE WHEN EXISTS (
+  return sql`UPDATE ${piStableContextGenerations} SET publication_state = CASE WHEN EXISTS (
     SELECT 1 FROM ${piStableContextPublications} WHERE org_id = ${scope.orgId} AND agent_id = ${scope.agentId}
-      AND subject = ${subjectForScope(scope)} AND token NOT IN (SELECT token FROM completed)
+      AND subject = ${subjectForScope(scope)}
   ) THEN 'pending' ELSE 'ready' END, updated_at = ${nowDate().toISOString()}::timestamp
-    WHERE ${generationScopeCondition(scope)} AND EXISTS (SELECT 1 FROM completed)
-    RETURNING 1::integer AS completed`;
+    WHERE ${generationScopeCondition(scope)}`;
 }
+
+const HEAD_REBIND_ATTEMPTS = 8;
+const headColumns = Object.freeze({
+  id: piStableContextHeads.id,
+  generation: piStableContextHeads.generation,
+  input: piStableContextHeads.input,
+});
 
 function preparedProjection(volume: PreparedServerSideVolume) {
   return volume.piResourceIndex
@@ -169,17 +172,8 @@ const commitPreparedVolumeUpload$ = command(
     const fence = args.stableContextPublication;
     const projection = preparedProjection(args.volume);
     await db.transaction(async (tx) => {
-      // Own the existing Storage parent before its immutable version, index and
-      // publication generation. This is the same order as every source publisher.
-      const [storage] = await tx
-        .select({ id: storages.id })
-        .from(storages)
-        .where(eq(storages.id, version.storageId))
-        .for("update");
-      signal.throwIfAborted();
-      if (!storage) {
-        throw new Error("Prepared volume Storage no longer exists");
-      }
+      // The version insert's FK check keeps the Storage parent from being
+      // deleted, and the HEAD UPDATE below then owns that row implicitly.
       await tx
         .insert(storageVersions)
         .values(storageVersionValues(version))
@@ -191,10 +185,15 @@ const commitPreparedVolumeUpload$ = command(
       if (!stored || !storageVersionMatches(stored, version)) {
         throw new StorageVersionIdentityConflictError(version.versionId);
       }
-      await tx
+      const [storage] = await tx
         .update(storages)
         .set(storageHeadValues(args.volume))
-        .where(eq(storages.id, version.storageId));
+        .where(eq(storages.id, version.storageId))
+        .returning({ id: storages.id });
+      signal.throwIfAborted();
+      if (!storage) {
+        throw new Error("Prepared volume Storage no longer exists");
+      }
       if (projection) {
         await tx
           .insert(piResourceVersionIndexes)
@@ -225,19 +224,18 @@ const commitPreparedVolumeUpload$ = command(
       if (!fence) {
         return;
       }
+      // Generation before publication, matching beginPiStableContextPublication.
+      // Both are ordinary writes; zero rows means this fence was superseded.
       const [generation] = await tx
-        .select({ generation: piStableContextGenerations.generation })
-        .from(piStableContextGenerations)
+        .update(piStableContextGenerations)
+        .set({ updatedAt: nowDate() })
         .where(generationScopeCondition(fence.scope))
-        .for("update")
-        .limit(1);
+        .returning({ generation: piStableContextGenerations.generation });
       const [publication] = generation
         ? await tx
-            .select({ token: piStableContextPublications.token })
-            .from(piStableContextPublications)
+            .delete(piStableContextPublications)
             .where(publicationScopeCondition(fence))
-            .for("update")
-            .limit(1)
+            .returning({ token: piStableContextPublications.token })
         : [];
       if (!publication) {
         throw new StalePiStableContextPublicationError(
@@ -245,11 +243,7 @@ const commitPreparedVolumeUpload$ = command(
         );
       }
       const heads = await tx
-        .select({
-          id: piStableContextHeads.id,
-          generation: piStableContextHeads.generation,
-          input: piStableContextHeads.input,
-        })
+        .select(headColumns)
         .from(piStableContextHeads)
         .where(
           and(
@@ -259,32 +253,47 @@ const commitPreparedVolumeUpload$ = command(
           ),
         )
         .orderBy(asc(piStableContextHeads.id))
-        .limit(16)
-        .for("update");
-      for (const head of heads) {
-        const values = reboundHeadValues(head, version);
-        if (!values) {
-          continue;
+        .limit(16);
+      for (const listed of heads) {
+        // Generation compare-and-set per head. A miss means another writer
+        // committed first; re-read its row and rebind on top of it so neither
+        // Storage mount rebind is lost.
+        let head: typeof listed | undefined = listed;
+        for (let attempt = 0; head; attempt += 1) {
+          const values = reboundHeadValues(head, version);
+          if (!values) {
+            break;
+          }
+          if (attempt >= HEAD_REBIND_ATTEMPTS) {
+            throw new Error("Stable-context head kept changing during rebind");
+          }
+          const [updated] = await tx
+            .update(piStableContextHeads)
+            .set(values)
+            .where(
+              and(
+                eq(piStableContextHeads.id, head.id),
+                eq(piStableContextHeads.generation, head.generation),
+              ),
+            )
+            .returning({ id: piStableContextHeads.id });
+          if (updated) {
+            break;
+          }
+          [head] = await tx
+            .select(headColumns)
+            .from(piStableContextHeads)
+            .where(
+              and(
+                eq(piStableContextHeads.id, listed.id),
+                isNotNull(piStableContextHeads.input),
+                isNotNull(piStableContextHeads.inputDigest),
+              ),
+            )
+            .limit(1);
         }
-        await tx
-          .update(piStableContextHeads)
-          .set(values)
-          .where(
-            and(
-              eq(piStableContextHeads.id, head.id),
-              eq(piStableContextHeads.generation, head.generation),
-            ),
-          );
       }
-      const [completed] = parseRawRows(
-        publicationCompletionSchema,
-        await tx.execute(completeVolumePublicationSql(fence)),
-      );
-      if (!completed) {
-        throw new Error(
-          "Stable-context publication fence changed while locked",
-        );
-      }
+      await tx.execute(publicationReadinessSql(fence));
       signal.throwIfAborted();
     });
   },

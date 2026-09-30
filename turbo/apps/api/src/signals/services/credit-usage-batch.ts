@@ -107,6 +107,7 @@ export function requireCompleteUsageClaim(
   }
 }
 
+/** Pricing is a read-only input; the xmin comparison rejects a changed row. */
 export function settlementPricingQuery(
   keys: ReturnType<typeof settlementPricingKeys>,
 ) {
@@ -117,7 +118,6 @@ export function settlementPricingQuery(
     })
     .from(usagePricing)
     .where(settlementPricingCondition(keys))
-    .for("share")
     .as("current_settlement_pricing");
 }
 

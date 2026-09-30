@@ -42,6 +42,7 @@ export function managedBillingRunQuery(runId: string | undefined) {
     .as("managed_billing_run");
 }
 
+/** Captured identity is immutable; usage_observed only moves false -> true by CAS. */
 export function managedAttributionQuery(runId: string | undefined) {
   return new QueryBuilder()
     .select({
@@ -55,7 +56,6 @@ export function managedAttributionQuery(runId: string | undefined) {
     })
     .from(billingRunAttribution)
     .where(runId ? eq(billingRunAttribution.runId, runId) : sql`false`)
-    .for("update")
     .as("managed_billing_attribution");
 }
 

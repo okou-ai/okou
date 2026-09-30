@@ -6,7 +6,7 @@ import {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 
@@ -40,7 +40,12 @@ export function getStartedRewardAvailabilityQuery(
     .as("reward_availability");
 }
 
-/** The owner holds the wallet and claim before executing this finite write. */
+/**
+ * One conditional claim transition publishes at most one member grant. The
+ * claim must still be unresolved under the observed lease; otherwise nothing
+ * is written and the statement reports zero rows. Reward key and slot
+ * uniqueness remain enforced by their unique indexes.
+ */
 export function getStartedMemberRewardSql(
   claim: GetStartedClaimRow,
   rewardKey: string,
@@ -59,24 +64,41 @@ export function getStartedMemberRewardSql(
   if (evidenceText !== undefined) {
     evidence = memberRewardEvidenceSql(evidenceText, at);
   }
-  return sql`WITH granted AS (
-    INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
-    VALUES (${grantId}::uuid, ${claim.orgId}, ${claim.beneficiaryUserId}, 'bonus', ${`get-started:${claim.id}`}, ${claim.rewardAmount}, ${claim.rewardAmount}, ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)})
-    RETURNING id
-  ) UPDATE ${getStartedClaims} SET status = 'granted', reward_key = ${rewardKey}, reward_slot = ${rewardSlot},
-    member_credit_grant_id = granted.id, org_credit_record_id = NULL,
+  return sql`WITH claimed AS (
+    UPDATE ${getStartedClaims} SET status = 'granted', reward_key = ${rewardKey}, reward_slot = ${rewardSlot},
+    member_credit_grant_id = ${grantId}::uuid, org_credit_record_id = NULL,
     granted_at = ${sql.param(at, getStartedClaims.grantedAt)}, expires_at = ${sql.param(expiresAt, getStartedClaims.expiresAt)},
     completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)}),
     updated_at = ${sql.param(at, getStartedClaims.updatedAt)}, reason = NULL, lease_id = NULL, lease_expires_at = NULL ${evidence}
-    FROM granted WHERE ${getStartedClaims.id} = ${claim.id}`;
+    WHERE ${unresolvedClaimWhere(claim)}
+    RETURNING ${getStartedClaims.id}
+  ) INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
+    SELECT ${grantId}::uuid, ${claim.orgId}, ${claim.beneficiaryUserId}, 'bonus', ${`get-started:${claim.id}`}, ${claim.rewardAmount}, ${claim.rewardAmount}, ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)}
+    FROM claimed`;
 }
 
+/** The claim is still unresolved under the lease its redeemer observed. */
+export function unresolvedClaimWhere(claim: GetStartedClaimRow) {
+  return and(
+    eq(getStartedClaims.id, claim.id),
+    notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
+    claim.leaseId === null
+      ? isNull(getStartedClaims.leaseId)
+      : eq(getStartedClaims.leaseId, claim.leaseId),
+  );
+}
+
+/**
+ * Reads the organization wallet identity without a row lock. Member grants are
+ * new rows with unique idempotency keys; settlement verifies its grant prefix
+ * with xmin and an unseen-prefix probe, so a grant published concurrently is
+ * ordered after that settlement rather than blocked by the wallet row.
+ */
 export function memberRewardWalletQuery(orgId: string) {
   return new QueryBuilder()
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
-    .for("update")
     .as("reward_wallet");
 }
 

@@ -17,7 +17,17 @@ import {
   usagePackSubscriptionMigrationSelections,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -38,6 +48,7 @@ import {
   type StripeSubscriptionItem,
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { usagePackBillingCompatibilityLockSql } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
@@ -90,6 +101,20 @@ type RevisionPreviewTokenPayload = z.infer<
 >;
 
 type MigrationRow = typeof usagePackSubscriptionMigrations.$inferSelect;
+
+/** The migration row plus its tuple version for exact-row CAS updates. */
+function migrationColumnsWithRowVersion() {
+  return {
+    ...getTableColumns(usagePackSubscriptionMigrations),
+    rowVersion: sql`${usagePackSubscriptionMigrations}.xmin::text`.mapWith(
+      pgTextDecoder,
+    ),
+  };
+}
+
+function migrationRowVersionIs(rowVersion: string) {
+  return sql`${usagePackSubscriptionMigrations}.xmin::text = ${rowVersion}`;
+}
 type MigrationSelectionRow =
   typeof usagePackSubscriptionMigrationSelections.$inferSelect;
 
@@ -708,7 +733,7 @@ export const getUsagePackMigrationState$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const stored = await db.transaction(async (tx) => {
-      const [open] = await tx
+      const openMigrationQuery = tx
         .select()
         .from(usagePackSubscriptionMigrations)
         .where(
@@ -719,13 +744,15 @@ export const getUsagePackMigrationState$ = command(
             ]),
           ),
         )
-        .for("update")
         .limit(1);
+      let [open] = await openMigrationQuery;
       if (!open) {
         return null;
       }
       if (open.status === "previewed" && open.previewExpiresAt <= at) {
-        await tx
+        // Conditional expiry instead of a row lock. Zero rows means a
+        // concurrent confirmation or preview moved it; read the current row.
+        const [expired] = await tx
           .update(usagePackSubscriptionMigrations)
           .set({
             status: "failed",
@@ -737,9 +764,20 @@ export const getUsagePackMigrationState$ = command(
             and(
               eq(usagePackSubscriptionMigrations.id, open.id),
               eq(usagePackSubscriptionMigrations.status, "previewed"),
+              lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
             ),
-          );
-        return null;
+          )
+          .returning({ id: usagePackSubscriptionMigrations.id });
+        if (expired) {
+          return null;
+        }
+        [open] = await openMigrationQuery;
+        if (
+          !open ||
+          (open.status === "previewed" && open.previewExpiresAt <= at)
+        ) {
+          return null;
+        }
       }
       const selections = await tx
         .select()
@@ -915,8 +953,9 @@ const persistMigrationPreview$ = command(
             isNull(orgMetadata.pendingSubscriptionScheduleId),
           ),
         )
-        .for("update")
         .limit(1);
+      // No row lock: previews are written only under the retained
+      // usage_pack_billing key and confirmation works from the stored row.
       if (!source) {
         return null;
       }
@@ -1157,6 +1196,8 @@ const loadMigrationForRevision$ = command(
     readonly selections: readonly MigrationSelectionRow[];
   } | null> => {
     const db = set(writeDb$);
+    // Read-only preparation: persistMigrationRevisionIntent$ revalidates the
+    // stored configuration with an exact-row CAS before any write.
     const result = await db.transaction(async (tx) => {
       const [migration] = await tx
         .select()
@@ -1167,7 +1208,6 @@ const loadMigrationForRevision$ = command(
             eq(usagePackSubscriptionMigrations.orgId, orgId),
           ),
         )
-        .for("update")
         .limit(1);
       if (!migration) {
         return null;
@@ -1400,7 +1440,7 @@ const persistMigrationRevisionIntent$ = command(
     const result = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
       const [migration] = await tx
-        .select()
+        .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
         .where(
           and(
@@ -1408,7 +1448,6 @@ const persistMigrationRevisionIntent$ = command(
             eq(usagePackSubscriptionMigrations.orgId, args.orgId),
           ),
         )
-        .for("update")
         .limit(1);
       if (!migration) {
         return { status: "not_found" as const };
@@ -1462,6 +1501,8 @@ const persistMigrationRevisionIntent$ = command(
           and(
             eq(usagePackSubscriptionMigrations.id, migration.id),
             eq(usagePackSubscriptionMigrations.status, "scheduled"),
+            // Exact-row CAS: the configuration validated above is current.
+            migrationRowVersionIs(migration.rowVersion),
           ),
         )
         .returning();
@@ -1790,11 +1831,13 @@ const materializeUsagePackSnapshot$ = command(
     );
     await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
+      // No row locks: materialization runs under the retained
+      // usage_pack_billing key and the snapshot insert is keyed by the
+      // migration id, so a duplicate materialization cannot insert twice.
       const [existing] = await tx
         .select()
         .from(usagePackSubscriptions)
         .where(eq(usagePackSubscriptions.id, migration.id))
-        .for("update")
         .limit(1);
       const [locked] = await tx
         .select()
@@ -1805,7 +1848,6 @@ const materializeUsagePackSnapshot$ = command(
             eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
           ),
         )
-        .for("update")
         .limit(1);
       if (!locked || locked.status === "failed") {
         throw new Error(`Usage pack migration ${migration.id} is not active`);
@@ -2082,6 +2124,44 @@ function invoicePaidAt(invoice: StripeInvoice): Date {
   return typeof paidAt === "number" ? new Date(paidAt * 1000) : nowDate();
 }
 
+/**
+ * Exact-row CAS replaces the row lock: a concurrent writer that moved the
+ * migration rolls back the caller's purchases for a retry.
+ */
+async function completeLockedMigration(
+  tx: Pick<Db, "update">,
+  args: {
+    readonly migrationId: string;
+    readonly rowVersion: string;
+    readonly invoice: StripeInvoice;
+    readonly paymentIntentId: string | null;
+  },
+): Promise<void> {
+  const completedAt = nowDate();
+  const [completed] = await tx
+    .update(usagePackSubscriptionMigrations)
+    .set({
+      status: "completed",
+      stripeInvoiceId: args.invoice.id,
+      stripePaymentIntentId: args.paymentIntentId,
+      hostedInvoiceUrl: args.invoice.hosted_invoice_url ?? null,
+      completedAt,
+      updatedAt: completedAt,
+    })
+    .where(
+      and(
+        eq(usagePackSubscriptionMigrations.id, args.migrationId),
+        migrationRowVersionIs(args.rowVersion),
+      ),
+    )
+    .returning({ id: usagePackSubscriptionMigrations.id });
+  if (!completed) {
+    throw new Error(
+      `Usage pack migration ${args.migrationId} changed during completion`,
+    );
+  }
+}
+
 const completeMigrationInvitations$ = command(
   async (
     { set },
@@ -2113,10 +2193,9 @@ const completeMigrationInvitations$ = command(
     await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
       const [locked] = await tx
-        .select()
+        .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
         .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-        .for("update")
         .limit(1);
       if (!locked || locked.status === "failed") {
         throw new Error(`Usage pack migration ${migration.id} cannot complete`);
@@ -2195,18 +2274,12 @@ const completeMigrationInvitations$ = command(
           paidAt: invoicePaidAt(invoice),
         });
       }
-      const completedAt = nowDate();
-      await tx
-        .update(usagePackSubscriptionMigrations)
-        .set({
-          status: "completed",
-          stripeInvoiceId: invoice.id,
-          stripePaymentIntentId: paymentIntentId,
-          hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-          completedAt,
-          updatedAt: completedAt,
-        })
-        .where(eq(usagePackSubscriptionMigrations.id, migration.id));
+      await completeLockedMigration(tx, {
+        migrationId: migration.id,
+        rowVersion: locked.rowVersion,
+        invoice,
+        paymentIntentId,
+      });
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
@@ -2640,7 +2713,6 @@ const claimMigrationConfirmation$ = command(
             eq(usagePackSubscriptionMigrations.orgId, args.orgId),
           ),
         )
-        .for("update")
         .limit(1);
       signal.throwIfAborted();
       if (!migration) {
@@ -2650,6 +2722,12 @@ const claimMigrationConfirmation$ = command(
         return { status: "conflict" as const };
       }
       if (migration.status === "previewed") {
+        // Every transition below is conditional on the previewed state it
+        // was decided from; zero rows is a deterministic conflict.
+        const previewedMigration = and(
+          eq(usagePackSubscriptionMigrations.id, migration.id),
+          eq(usagePackSubscriptionMigrations.status, "previewed"),
+        );
         const selections = await tx
           .select()
           .from(usagePackSubscriptionMigrationSelections)
@@ -2661,7 +2739,7 @@ const claimMigrationConfirmation$ = command(
           );
         if (!paidOwnersStillPresent(selections, args.ownerIds)) {
           const completedAt = nowDate();
-          await tx
+          const [failed] = await tx
             .update(usagePackSubscriptionMigrations)
             .set({
               status: "failed",
@@ -2669,12 +2747,15 @@ const claimMigrationConfirmation$ = command(
               completedAt,
               updatedAt: completedAt,
             })
-            .where(eq(usagePackSubscriptionMigrations.id, migration.id));
-          return { status: "owners_changed" as const };
+            .where(previewedMigration)
+            .returning({ id: usagePackSubscriptionMigrations.id });
+          return failed
+            ? { status: "owners_changed" as const }
+            : { status: "conflict" as const };
         }
         if (migration.previewExpiresAt <= nowDate()) {
           const completedAt = nowDate();
-          await tx
+          const [expired] = await tx
             .update(usagePackSubscriptionMigrations)
             .set({
               status: "failed",
@@ -2682,18 +2763,16 @@ const claimMigrationConfirmation$ = command(
               completedAt,
               updatedAt: completedAt,
             })
-            .where(eq(usagePackSubscriptionMigrations.id, migration.id));
-          return { status: "expired" as const };
+            .where(previewedMigration)
+            .returning({ id: usagePackSubscriptionMigrations.id });
+          return expired
+            ? { status: "expired" as const }
+            : { status: "conflict" as const };
         }
         const [claimed] = await tx
           .update(usagePackSubscriptionMigrations)
           .set({ status: "applying", updatedAt: nowDate() })
-          .where(
-            and(
-              eq(usagePackSubscriptionMigrations.id, migration.id),
-              eq(usagePackSubscriptionMigrations.status, "previewed"),
-            ),
-          )
+          .where(previewedMigration)
           .returning();
         if (!claimed) {
           return { status: "conflict" as const };

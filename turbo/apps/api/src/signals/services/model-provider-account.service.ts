@@ -1060,11 +1060,14 @@ const publishPersonalAccountDisconnection$ = command(
     const db = set(writeDb$);
     const mutation = await settle(
       db.transaction(async (tx) => {
-        // Account publication takes the same existing parent row first. This
-        // bounds all-account deletion without racing a new connected sibling.
+        // Recording the account-set change on the logical parent is the same
+        // row write account publication's upsert makes, so publication of a
+        // new sibling either committed before this point or waits for this
+        // transaction, and the final unreferenced-parent delete cannot cascade
+        // it away.
         const [provider] = await tx
-          .select({ id: modelProviders.id })
-          .from(modelProviders)
+          .update(modelProviders)
+          .set({ updatedAt: nowDate() })
           .where(
             and(
               eq(modelProviders.id, args.providerId),
@@ -1072,11 +1075,12 @@ const publishPersonalAccountDisconnection$ = command(
               eq(modelProviders.userId, args.userId),
             ),
           )
-          .for("update")
-          .limit(1);
+          .returning({ id: modelProviders.id });
         if (!provider) {
           return notFound("Resource not found");
         }
+        // Every per-account statement below is conditional on the account
+        // still being connected, so a concurrent change is a no-op here.
         const accounts = await tx
           .select()
           .from(modelProviderAccounts)
@@ -1087,7 +1091,6 @@ const publishPersonalAccountDisconnection$ = command(
             ),
           )
           .orderBy(asc(modelProviderAccounts.id))
-          .for("update")
           .limit(MAX_PERSONAL_PROVIDER_ACCOUNTS + 1);
         if (accounts.length === 0) {
           return notFound("Resource not found");
@@ -1117,6 +1120,8 @@ const publishPersonalAccountDisconnection$ = command(
             )
             .limit(1);
           if (replacement) {
+            // A concurrent activation that already won keeps its account; one
+            // still in flight loses through the one-active unique index (409).
             await tx
               .update(modelProviderAccounts)
               .set({ isActive: true, updatedAt: nowDate() })
@@ -1124,6 +1129,11 @@ const publishPersonalAccountDisconnection$ = command(
                 and(
                   eq(modelProviderAccounts.id, replacement.id),
                   isNull(modelProviderAccounts.disconnectedAt),
+                  sql`NOT EXISTS (
+                    SELECT 1 FROM ${modelProviderAccounts} AS active_sibling
+                    WHERE active_sibling.model_provider_id = ${provider.id}
+                      AND active_sibling.is_active = true
+                  )`,
                 ),
               );
           }
@@ -1340,9 +1350,12 @@ export function visiblePersonalModelProviderCondition() {
 }
 
 /** The caller executes both statements in its terminal transaction. The first
- * locks only the affected existing parents, in the same order as account
- * publication. The second gets a fresh statement snapshot after any publisher
- * finishes, so deleting an empty parent cannot cascade a new sibling account.
+ * records the pending account-set change on the parents of affected retired
+ * accounts; it is the same row write account publication's upsert makes, so a
+ * publisher either committed before it or waits for this transaction. The
+ * second then gets a fresh statement snapshot, so deleting an empty parent
+ * cannot cascade a new sibling account. Connected accounts are never deleted
+ * here, so their parents are not written.
  * The builder receives only the actual terminal transition's business values. */
 export function disconnectedPersonalAccountCleanupSql(
   runs: readonly {
@@ -1370,12 +1383,13 @@ export function disconnectedPersonalAccountCleanupSql(
       }),
     ) ?? sql`false`;
   return [
-    sql`SELECT ${modelProviders.id} FROM ${modelProviders}
+    sql`UPDATE ${modelProviders} SET updated_at = ${nowDate()}
       WHERE ${modelProviders.id} IN (
         SELECT ${modelProviderAccounts.modelProviderId}
-        FROM ${modelProviderAccounts} WHERE ${affectedAccounts}
-      )
-      ORDER BY ${modelProviders.id} FOR UPDATE`,
+        FROM ${modelProviderAccounts}
+        WHERE ${affectedAccounts}
+          AND ${modelProviderAccounts.disconnectedAt} IS NOT NULL
+      )`,
     sql`WITH deleted_accounts AS (
       DELETE FROM ${modelProviderAccounts}
       WHERE ${affectedAccounts}

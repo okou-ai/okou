@@ -1324,15 +1324,18 @@ const persistSubscriptionChangePreview$ = command(
       await tx.execute(
         usagePackBillingCompatibilityLockSql(context.subscription.orgId),
       );
-      const roots = await tx
+      // No row locks: preview rows are written only under the retained
+      // usage_pack_billing key, and confirmation revalidates this snapshot.
+      const [subscription] = await tx
         .select()
         .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.orgId, context.subscription.orgId))
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
-      const subscription = roots.find((row) => {
-        return row.id === context.subscription.id;
-      });
+        .where(
+          and(
+            eq(usagePackSubscriptions.orgId, context.subscription.orgId),
+            eq(usagePackSubscriptions.id, context.subscription.id),
+          ),
+        )
+        .limit(1);
       if (!subscription) {
         return null;
       }
@@ -1342,13 +1345,11 @@ const persistSubscriptionChangePreview$ = command(
         .where(
           eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
         )
-        .orderBy(asc(usagePackAllocations.id))
-        .for("update");
+        .orderBy(asc(usagePackAllocations.id));
       const [org] = await tx
         .select()
         .from(orgMetadata)
         .where(eq(orgMetadata.orgId, subscription.orgId))
-        .for("update")
         .limit(1);
       signal.throwIfAborted();
       const [openAllocation, openSubscription] = await Promise.all([
@@ -2292,16 +2293,20 @@ const markPreparedChangeApplying$ = command(
   ): Promise<UsagePackSubscriptionChangeRow | null> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
+      // No row locks: every admission writer holds the retained
+      // usage_pack_billing key, and each transition below is conditional on
+      // the previewed state it was decided from.
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      const roots = await tx
+      const [subscription] = await tx
         .select({ id: usagePackSubscriptions.id })
         .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.orgId, args.orgId))
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
-      const subscription = roots.find((row) => {
-        return row.id === args.subscriptionId;
-      });
+        .where(
+          and(
+            eq(usagePackSubscriptions.orgId, args.orgId),
+            eq(usagePackSubscriptions.id, args.subscriptionId),
+          ),
+        )
+        .limit(1);
       if (!subscription) {
         return null;
       }
@@ -2330,15 +2335,18 @@ const markPreparedChangeApplying$ = command(
             ),
           ),
         )
-        .for("update")
         .limit(1);
       signal.throwIfAborted();
       if (!root || root.status !== "previewed") {
         return null;
       }
       const at = nowDate();
+      const previewedRoot = and(
+        eq(usagePackSubscriptionChanges.id, root.id),
+        eq(usagePackSubscriptionChanges.status, "previewed"),
+      );
       if (root.previewExpiresAt <= at) {
-        await tx
+        const [expired] = await tx
           .update(usagePackSubscriptionChanges)
           .set({
             status: "failed",
@@ -2346,23 +2354,31 @@ const markPreparedChangeApplying$ = command(
             completedAt: at,
             updatedAt: at,
           })
-          .where(eq(usagePackSubscriptionChanges.id, root.id));
-        await tx
-          .update(usagePackAllocationChanges)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt: at,
-            updatedAt: at,
-          })
-          .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
+          .where(previewedRoot)
+          .returning({ id: usagePackSubscriptionChanges.id });
+        if (expired) {
+          await tx
+            .update(usagePackAllocationChanges)
+            .set({
+              status: "failed",
+              failureReason: "preview_expired",
+              completedAt: at,
+              updatedAt: at,
+            })
+            .where(
+              eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
+            );
+        }
         return null;
       }
       const [updated] = await tx
         .update(usagePackSubscriptionChanges)
         .set({ status: "applying", updatedAt: at })
-        .where(eq(usagePackSubscriptionChanges.id, root.id))
+        .where(previewedRoot)
         .returning();
+      if (!updated) {
+        return null;
+      }
       await tx
         .update(usagePackAllocationChanges)
         .set({ status: "applying", updatedAt: at })

@@ -4,7 +4,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { command } from "ccstate";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
@@ -66,20 +66,31 @@ export const linkAgentPhoneIdentity$ = command(
     );
     const result = await db.transaction(async (tx) => {
       const at = nowDate();
+      // Consuming the one active code is the conditional write itself: a
+      // concurrent consumer re-checks consumed_at after the first commits and
+      // gets zero rows (invalid). An ambiguous hash still consumes nothing.
       const codes =
         args.source.kind === "code"
           ? await tx
-              .select()
-              .from(agentphoneConnectionCodes)
+              .update(agentphoneConnectionCodes)
+              .set({
+                consumedAt: at,
+                consumedPhoneHandle: phoneHandle,
+                updatedAt: at,
+              })
               .where(
                 and(
                   eq(agentphoneConnectionCodes.codeHash, args.source.codeHash),
                   isNull(agentphoneConnectionCodes.consumedAt),
                   gt(agentphoneConnectionCodes.expiresAt, at),
+                  sql`(SELECT count(*) FROM (SELECT 1 FROM ${agentphoneConnectionCodes} AS active_code
+                    WHERE active_code.code_hash = ${args.source.codeHash}
+                      AND active_code.consumed_at IS NULL
+                      AND active_code.expires_at > ${sql.param(at, agentphoneConnectionCodes.expiresAt)}
+                    LIMIT 2) AS matching) = 1`,
                 ),
               )
-              .for("update")
-              .limit(2)
+              .returning()
           : [];
       const code = codes.length === 1 ? codes[0] : undefined;
       const identity = args.source.kind === "direct" ? args.source : code;
@@ -138,16 +149,6 @@ export const linkAgentPhoneIdentity$ = command(
         } else {
           linked = { kind: "conflict", reason: "conflict" };
         }
-      }
-      if (code) {
-        await tx
-          .update(agentphoneConnectionCodes)
-          .set({
-            consumedAt: at,
-            consumedPhoneHandle: phoneHandle,
-            updatedAt: at,
-          })
-          .where(eq(agentphoneConnectionCodes.id, code.id));
       }
       signal.throwIfAborted();
       return linked;

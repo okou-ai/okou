@@ -75,19 +75,24 @@ export async function reprojectGoogleCalendarAutomationsForOwner(
   }
 }
 
-/** Publish the selected business source and discard an incompatible cursor. */
+/**
+ * Publish the selected business source. No row locks: the desired account is
+ * read from the statement snapshot and the conditional UPDATE re-checks the
+ * current target row, so a concurrent reprojection leaves nothing to change.
+ */
 export function googleCalendarAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
 }) {
+  const eventTypes = inArray(workflowAutomations.eventType, [
+    ...GOOGLE_CALENDAR_EVENT_TYPES,
+  ]);
   return sql`
-    WITH candidates AS MATERIALIZED (
+    WITH desired AS (
       SELECT ${workflowAutomations.id} AS id,
-        ${workflowAutomations.eventConnectorId} AS connector_id,
-        ${workflowAutomations.eventConfig} AS event_config,
         CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
           THEN ${chatThreadConnectorSelections.connectorId}
-          ELSE ${connectors.id} END AS desired_connector_id
+          ELSE ${connectors.id} END AS connector_id
       FROM ${workflowAutomations}
       LEFT JOIN ${workflowUserAutomationThreads}
         ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
@@ -104,15 +109,15 @@ export function googleCalendarAccountProjectionStatement(args: {
       WHERE ${workflowAutomations.orgId} = ${args.orgId}
         AND ${workflowAutomations.ownerUserId} = ${args.userId}
         AND ${workflowAutomations.kind} = 'event'
-        AND ${inArray(workflowAutomations.eventType, [...GOOGLE_CALENDAR_EVENT_TYPES])}
-      ORDER BY ${workflowAutomations.id}
-      FOR UPDATE OF ${workflowAutomations}
+        AND ${eventTypes}
     )
     UPDATE ${workflowAutomations}
-    SET event_connector_id = candidates.desired_connector_id
-    FROM candidates
-    WHERE ${workflowAutomations.id} = candidates.id
-      AND ${workflowAutomations.eventConnectorId} IS DISTINCT FROM candidates.desired_connector_id
+    SET event_connector_id = desired.connector_id
+    FROM desired
+    WHERE ${workflowAutomations.id} = desired.id
+      AND ${workflowAutomations.kind} = 'event'
+      AND ${eventTypes}
+      AND ${workflowAutomations.eventConnectorId} IS DISTINCT FROM desired.connector_id
   `;
 }
 

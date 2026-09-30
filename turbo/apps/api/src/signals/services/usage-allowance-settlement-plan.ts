@@ -159,6 +159,9 @@ export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
   // Only the latest covering window of each kind can affect a candidate.
   // The existing org/kind/starts index serves each finite anchor lookup.
   // The UUID tie break matches latestWindow's stable sort over owned rows.
+  // Every window writer first owns the entitlement row (settlement's
+  // entitlementQuery, admission, Stripe publication), so these rows are stable
+  // for the settlement; consumption itself is atomic arithmetic.
   const selected = sql`SELECT chosen.id FROM unnest(${sql.param(anchors)}::timestamp[]) AS anchors(at)
     CROSS JOIN (VALUES ('short'), ('weekly')) AS kinds(kind)
     CROSS JOIN LATERAL (
@@ -181,7 +184,6 @@ export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
       sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
       asc(orgUsageAllowanceWindows.id),
     )
-    .for("update")
     .as("settlement_windows");
 }
 
