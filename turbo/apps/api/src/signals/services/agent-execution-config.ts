@@ -64,7 +64,9 @@ export function agentEnvironmentSecretNames(
   return [
     ...new Set(
       environment
-        ? extractAndGroupVariables(environment).secrets.map((ref) => {return ref.name})
+        ? extractAndGroupVariables(environment).secrets.map((ref) => {
+            return ref.name;
+          })
         : [],
     ),
   ].sort();
