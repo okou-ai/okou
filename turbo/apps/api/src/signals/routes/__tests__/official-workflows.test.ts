@@ -9746,11 +9746,9 @@ describe("Official Workflow Run admission", () => {
           );
         }),
       ).toHaveLength(1);
-      // One pick terminalizes only the Official source. The ordinary input
-      // remains queued until the next explicit organization pass below.
-      await expect(
-        readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual(beforeQueuedRunFamily);
+      // Terminalizing the Official source releases the claim and schedules
+      // one new pick, which drains the ordinary input behind it.
+      await flushWaitUntilForTest();
 
       await assertOfficialQueueSnapshot(
         actor,

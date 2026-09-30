@@ -94,14 +94,26 @@ session preparation retry, or active-run conflict retry.
 
 `active_agent_runs` is written only by the last statement of the pending
 transaction, so from claim to commit the lease is the only mutual exclusion.
-Enqueue therefore never clears a lease: it only advances `queuedAt` (strictly,
-by at least 1 ms). An empty or expired lease is claimed as usual. The claim
-captures the `queuedAt` it observed. The empty-queue delete also requires that
-`queuedAt` is unchanged; when it misses, the lease is released instead. Every
-release reports whether `queuedAt` changed while the lease was held. If it did,
-new input arrived that the enqueuer's own pick could not claim, so the picker
-schedules one fresh fixed-thread pick for that thread in the background. This
-discovers new work; it is not a retry, and `pick$` never loops.
+Only the holder or expiry ends a lease: enqueue never touches it and only
+advances `queuedAt` (strictly, by at least 1 ms). The claim captures the
+`queuedAt` it observed.
+
+- The pending transaction fences the lease as its first write: it clears the
+  lease only while `claimId` is still this pick's token and throws, rolling back,
+  when no row matches (the lease expired and was taken). It runs after the
+  admission locks that enqueue also takes before its queue upsert, so both
+  transactions lock the queue row last. The success path has no separate
+  release; the active run protects the thread afterwards.
+- Empty queue: the delete also requires an unchanged `queuedAt`. When it misses
+  while the lease is still ours, input arrived under the lease, so the picker
+  releases it and schedules one fresh fixed-thread pick.
+- Rejected head and `passed` preparation: release with the token, then schedule
+  one fresh fixed-thread pick for any remaining input.
+- No capacity: release with the token; the organization pick after a slot
+  frees handles the thread.
+
+Scheduling a pick discovers new work; it is not a retry, and `pick$` never
+loops. A slow picker past the 60-second lease is rejected by the fence.
 
 An organization pass captures a finite count of currently pickable threads and
 uses one factory with an oldest-first `(queuedAt, threadId)` cursor and a set of

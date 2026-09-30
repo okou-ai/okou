@@ -535,8 +535,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   });
 
   /**
-   * Release this claim's lease. Returns whether `queuedAt` moved while the
-   * lease was held, i.e. new input arrived that this pick did not consume.
+   * Release this claim's lease. Returns whether the lease was still ours; a
+   * lease lost to expiry and another picker releases nothing.
    */
   const releaseClaim$ = command(
     async (
@@ -554,25 +554,53 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
             eq(queuedChatThreads.claimId, claim.claimId),
           ),
         )
-        .returning({ queuedAt: queuedChatThreads.queuedAt });
+        .returning({ chatThreadId: queuedChatThreads.chatThreadId });
       signal.throwIfAborted();
-      return (
-        row !== undefined && row.queuedAt.getTime() !== claim.queuedAt.getTime()
-      );
+      return row !== undefined;
     },
   );
 
   /**
-   * Delete the empty queue row only while `queuedAt` is unchanged. Returns
-   * whether new input arrived under this lease (the delete missed while the
-   * lease is still ours); the lease is then released instead.
+   * New input may remain behind this claim, so discover it with one fresh
+   * fixed-thread pick in the background, as the enqueue scheduler does after
+   * a commit. The scheduler lives in chat-thread-queue-drain, which imports
+   * this module, so the pick is built here on the same request Store. This is
+   * new work, not a retry: `pick$` never loops.
+   */
+  const scheduleThreadPick$ = command(
+    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
+      const { pick$: nextPick$ } = createPickObjects(
+        claim.orgId,
+        claim.chatThreadId,
+      );
+      waitUntil(set(nextPick$, signal));
+    },
+  );
+
+  /** Release a claim that left input in the queue and pick the thread again. */
+  const releaseClaimAndSchedulePick$ = command(
+    async (
+      { set },
+      claim: LeasedThreadClaim,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (await set(releaseClaim$, claim, signal)) {
+        set(scheduleThreadPick$, claim, signal);
+      }
+    },
+  );
+
+  /**
+   * Delete the empty queue row only while both the token and `queuedAt` are
+   * unchanged. A miss while the lease is still ours means input arrived under
+   * this lease; its enqueuer's pick could not claim, so release and pick again.
    */
   const deleteEmptyQueue$ = command(
     async (
       { set },
       claim: LeasedThreadClaim,
       signal: AbortSignal,
-    ): Promise<boolean> => {
+    ): Promise<void> => {
       const [deleted] = await set(writeDb$)
         .delete(queuedChatThreads)
         .where(
@@ -585,40 +613,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         )
         .returning({ chatThreadId: queuedChatThreads.chatThreadId });
       signal.throwIfAborted();
-      if (deleted) {
-        return false;
-      }
-      return await set(releaseClaim$, claim, signal);
-    },
-  );
-
-  /**
-   * New input arrived while this claim held the lease, so its enqueuer's own
-   * pick could not claim the thread. Discover it with one fresh fixed-thread
-   * pick in the background, as the enqueue scheduler does after a commit. The
-   * scheduler lives in chat-thread-queue-drain, which imports this module, so
-   * the pick is built here on the same request Store. This is new work, not a
-   * retry: `pick$` never loops, and the next pick schedules again only if
-   * input keeps arriving under its own lease.
-   */
-  const scheduleNewInputPick$ = command(
-    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
-      const { pick$: nextPick$ } = createPickObjects(
-        claim.orgId,
-        claim.chatThreadId,
-      );
-      waitUntil(set(nextPick$, signal));
-    },
-  );
-
-  const releaseClaimAndScheduleNewInput$ = command(
-    async (
-      { set },
-      claim: LeasedThreadClaim,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      if (await set(releaseClaim$, claim, signal)) {
-        set(scheduleNewInputPick$, claim, signal);
+      if (!deleted) {
+        await set(releaseClaimAndSchedulePick$, claim, signal);
       }
     },
   );
@@ -959,6 +955,25 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                   admissionTiming.callbackFinished();
                   return admission;
                 }
+                // Fence the lease before the first write. Admission above
+                // already took the automation/plan locks that enqueue takes
+                // before its queue upsert, so both orders end on this row.
+                const [fenced] = await tx
+                  .update(queuedChatThreads)
+                  .set({ claimId: null, claimExpiresAt: null })
+                  .where(
+                    and(
+                      eq(queuedChatThreads.orgId, claim.orgId),
+                      eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
+                      eq(queuedChatThreads.claimId, claim.claimId),
+                    ),
+                  )
+                  .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+                if (!fenced) {
+                  throw new Error(
+                    "Chat thread claim was lost before the pending commit",
+                  );
+                }
                 const pending = await persistClaimedRun(
                   tx,
                   context,
@@ -1075,32 +1090,30 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       ]);
       signal.throwIfAborted();
       if (!hasCapacity) {
-        await set(releaseClaimAndScheduleNewInput$, claim, signal);
+        await set(releaseClaim$, claim, signal);
         return null;
       }
       if (!event) {
-        if (await set(deleteEmptyQueue$, claim, signal)) {
-          set(scheduleNewInputPick$, claim, signal);
-        }
+        await set(deleteEmptyQueue$, claim, signal);
         return null;
       }
       const context = await set(claimed.prepareRunContext$, signal);
       signal.throwIfAborted();
       if (context.kind === "passed") {
-        await set(releaseClaimAndScheduleNewInput$, claim, signal);
+        await set(releaseClaimAndSchedulePick$, claim, signal);
         return null;
       }
+      // A pending commit fences and clears this claim's lease in its own
+      // transaction, so the success path has no separate release.
       const pending = await set(createRun$, { claim, context }, signal);
-      if (pending.kind === "rejected") {
-        await set(rejectEvent$, context, pending.error, signal);
-      }
-      if (pending.kind === "pending") {
-        waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-      }
-      await set(releaseClaimAndScheduleNewInput$, claim, signal);
       if (pending.kind !== "pending") {
+        if (pending.kind === "rejected") {
+          await set(rejectEvent$, context, pending.error, signal);
+        }
+        await set(releaseClaimAndSchedulePick$, claim, signal);
         return null;
       }
+      waitUntil(set(claimed.updatePresignedUrlCache$, signal));
       await set(activatePendingRun$, pending, signal);
       return pending.runId;
     },

@@ -3367,9 +3367,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const promptInternalInputInternalInput$ =
     state<QueuedPromptGraphInput | null>(null);
   const promptInternalModelInternalModel$ =
-    state<Promise<QueuedMessageModelRouteResolution> | null>(null);
-  const promptInternalDiscordMaterialInternalDiscordMaterial$ =
-    state<Promise<QueuedLaunchMaterial | null> | null>(null);
+    state<QueuedMessageModelRouteResolution | null>(null);
+  const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
+    readonly material: QueuedLaunchMaterial | null;
+  } | null>(null);
   const promptInputInput$ = computed((get) => {
     const input = get(promptInternalInputInternalInput$);
     if (!input) {
@@ -4176,13 +4177,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           break;
         }
         case "discord": {
-          const pending = get(
+          const resolved = get(
             promptInternalDiscordMaterialInternalDiscordMaterial$,
           );
-          if (!pending) {
-            throw new Error("Discord material command has not started");
+          if (!resolved) {
+            throw new Error("Discord material has not been resolved");
           }
-          const material = await pending;
+          const { material } = resolved;
           if (material) {
             return material;
           }
@@ -4195,12 +4196,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptModelModel$ = computed(async (get) => {
-    const pending = get(promptInternalModelInternalModel$);
-    if (!pending) {
-      throw new Error("Prompt model command has not started");
+  const promptModelModel$ = computed((get) => {
+    const model = get(promptInternalModelInternalModel$);
+    if (!model) {
+      throw new Error("Prompt model has not been resolved");
     }
-    return await pending;
+    return model;
   });
   const promptSessionSession$ = computed(async (get) => {
     const [args, model] = await Promise.all([
@@ -4969,7 +4970,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       const db = set(writeDb$);
       const timing = new ChatCallbackPreCreateTimingCollector();
       set(promptInternalInputInternalInput$, {
@@ -4994,12 +4995,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           internalEarlyAssembly$,
           queuedPromptPreparationRejection(selected.error, head),
         );
-        return;
+        return false;
       }
       const [queued, agent] = selected.value;
       if (queued?.id !== head.id) {
         set(internalEarlyAssembly$, { kind: "not-ready" });
-        return;
+        return false;
       }
       timing.recordElapsed({
         actionType:
@@ -5010,21 +5011,29 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
       if (!agent) {
         set(internalEarlyAssembly$, missingQueuedAgentRejection(head));
-        return;
+        return false;
       }
-      set(
-        promptInternalModelInternalModel$,
+      return true;
+    },
+  );
+  const resolvePromptLaunchInputs$ = command(
+    async (
+      { set },
+      head: ChatQueueHeadContext,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const [model, material] = await Promise.all([
         set(promptResolvePromptModelResolvePromptModel$, signal),
-      );
-      if (head.contextType === "discord") {
-        set(
-          promptInternalDiscordMaterialInternalDiscordMaterial$,
-          set(
-            promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$,
-            signal,
-          ),
-        );
-      }
+        head.contextType === "discord"
+          ? set(
+              promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$,
+              signal,
+            )
+          : null,
+      ]);
+      signal.throwIfAborted();
+      set(promptInternalModelInternalModel$, model);
+      set(promptInternalDiscordMaterialInternalDiscordMaterial$, { material });
     },
   );
   const promptAssembleQueuedPromptRunAssembly$ = computed(
@@ -6483,10 +6492,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const workflowAutomationLaunchReadGraphInternalTiming$ =
     state<ApiDispatchTimingCollector | null>(null);
   const workflowAutomationLaunchReadGraphInternalModel$ =
-    state<Promise<ModelContext> | null>(null);
-  const workflowAutomationLaunchReadGraphInternalAssembly$ = state<Promise<
-    AssembledWorkflowAutomationRun | RunFailure
-  > | null>(null);
+    state<ModelContext | null>(null);
+  const workflowAutomationLaunchReadGraphInternalAssembly$ = state<
+    AssembledWorkflowAutomationRun | RunFailure | null
+  >(null);
   const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
     const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
     if (!timing) {
@@ -6494,12 +6503,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return timing;
   });
-  const workflowAutomationLaunchReadGraphModel$ = computed(async (get) => {
+  const workflowAutomationLaunchReadGraphModel$ = computed((get) => {
     const model = get(workflowAutomationLaunchReadGraphInternalModel$);
     if (!model) {
-      throw new Error("Automation model command has not started");
+      throw new Error("Automation model has not been resolved");
     }
-    return await model;
+    return model;
   });
   const internalAutomationDatabase$ = state<Db | null>(null);
   const automationExecutionInput$ = computed(async (get) => {
@@ -6662,20 +6671,26 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const initializeWorkflowAutomationRun$ = command(
-    ({ set }, args: AssembleWorkflowAutomationRunArgs, signal: AbortSignal) => {
+    async (
+      { set },
+      args: AssembleWorkflowAutomationRunArgs,
+      signal: AbortSignal,
+    ): Promise<void> => {
       set(workflowAutomationLaunchInternalInput$, {
         ...args,
         db: set(writeDb$),
       });
-      set(internalAssembly$, set(assembleWorkflowAutomationRun$, signal));
+      const assembly = await set(assembleWorkflowAutomationRun$, signal);
+      signal.throwIfAborted();
+      set(internalAssembly$, assembly);
     },
   );
-  const workflowAutomationLaunchAssembly$ = computed(async (get) => {
+  const workflowAutomationLaunchAssembly$ = computed((get) => {
     const assembly = get(internalAssembly$);
     if (!assembly) {
-      throw new Error("Automation assembly command has not started");
+      throw new Error("Automation assembly has not been resolved");
     }
-    return await assembly;
+    return assembly;
   });
   const workflowAutomationLaunchMemberAccountSnapshot$ = computed(
     async (get) => {
@@ -6706,9 +6721,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     reconcileOfficialWorkflow$:
       initializeQueuedAutomationReconcileOfficialWorkflow$,
   } = reconciliation;
-  const internalAutomationPreparation$ = state<Promise<void> | null>(null);
   const initializeAutomationExecution$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      signal: AbortSignal,
+    ): Promise<false> => {
       set(internalAutomationDatabase$, set(writeDb$));
       set(initializeQueuedAutomationInternalHead$, head);
       set(internalTiming$, workflowAutomationTiming(head));
@@ -6725,8 +6743,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           },
         });
-        return;
       }
+      return false;
     },
   );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
@@ -6734,7 +6752,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
       set(initializeQueuedAutomationInternalHead$, head);
       set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
       const unreadable = (message: string): ChatQueueRunAssembly => {
@@ -6761,7 +6779,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
               : "Workflow automation no longer exists",
           ),
         );
-        return;
+        return null;
       }
       if (loadedTarget.automation.officialBlueprintKey !== null) {
         const reconciled = await set(
@@ -6780,7 +6798,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
               userId: loadedTarget.automation.ownerUserId,
             },
           });
-          return;
+          return null;
         }
       }
       const [target, material, autonomyBudget] = await Promise.all([
@@ -6800,7 +6818,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           },
         });
-        return;
+        return null;
       }
       if (!material) {
         set(queuedAutomationAssemblerInternalEarlyAssembly$, {
@@ -6813,7 +6831,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           },
         });
-        return;
+        return null;
       }
       if (autonomyBudget.kind === "invalid") {
         set(queuedAutomationAssemblerInternalEarlyAssembly$, {
@@ -6823,27 +6841,26 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             error: autonomyBudget.error,
           },
         });
-        return;
+        return null;
       }
-      set(
-        initializeWorkflowAutomationRun$,
-        queuedAutomationLaunchArguments({
-          head,
-          event,
-          target,
-          material,
-          autonomyBudget: autonomyBudget.autonomyBudget,
-        }),
-        signal,
-      );
+      return queuedAutomationLaunchArguments({
+        head,
+        event,
+        target,
+        material,
+        autonomyBudget: autonomyBudget.autonomyBudget,
+      });
+    },
+  );
+  const resolveAutomationModelSnapshot$ = command(
+    async ({ set }, signal: AbortSignal): Promise<void> => {
+      const model = await set(prepareAutomationModel$, signal);
+      signal.throwIfAborted();
+      set(workflowAutomationLaunchInternalModel$, model);
     },
   );
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const preparation = get(internalAutomationPreparation$);
-      if (preparation) {
-        await preparation;
-      }
       const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
@@ -6893,10 +6910,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
-    const preparation = get(internalAutomationPreparation$);
-    if (preparation) {
-      await preparation;
-    }
     if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
@@ -12410,16 +12423,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const internalAdmission$ = state<Promise<
-    CreateRunErrorResult | undefined
-  > | null>(null);
+  const internalAdmission$ = state<{
+    readonly failure: CreateRunErrorResult | undefined;
+  } | null>(null);
   const resourceReady$ = computed(async (get) => {
     const admission = get(internalAdmission$);
     if (admission === null) {
-      throw new Error("Claim admission has not started");
+      throw new Error("Claim admission has not been checked");
     }
-    const [failure, selection, validSource] = await Promise.all([
-      admission,
+    const { failure } = admission;
+    const [selection, validSource] = await Promise.all([
       get(selectionInput$),
       (await get(isAutomation$)) ? true : get(resourceValidation$),
     ]);
@@ -12462,15 +12475,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
     },
   );
-  const internalRunnerInput$ = state<Promise<
-    ReturnType<typeof prepareRunnerStorageInput> | CreateRunErrorResult | null
-  > | null>(null);
-  const runnerInput$ = computed(async (get) => {
-    const input = get(internalRunnerInput$);
-    if (input === null) {
-      throw new Error("Runner input preparation has not started");
+  const internalRunnerInput$ = state<{
+    readonly input:
+      | Awaited<ReturnType<typeof prepareRunnerStorageInput>>
+      | CreateRunErrorResult
+      | null;
+  } | null>(null);
+  const runnerInput$ = computed((get) => {
+    const prepared = get(internalRunnerInput$);
+    if (prepared === null) {
+      throw new Error("Runner input has not been prepared");
     }
-    return await input;
+    return prepared.input;
   });
   const prepareCallbacks$ = command(async ({ get }, signal: AbortSignal) => {
     const identity = get(internalRunIds$);
@@ -12575,12 +12591,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const claimRunPrepareStoredContextDraft$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const [encrypted, input] = await Promise.all([
-        set(prepareEncryptedSecrets$, signal),
-        get(runnerInput$),
-      ]);
+    (
+      { get },
+      encrypted: Awaited<ReturnType<typeof prepareEncryptedSecrets$.write>>,
+      signal: AbortSignal,
+    ) => {
       signal.throwIfAborted();
+      const input = get(runnerInput$);
       if (!input || isRouteError(input)) {
         return input;
       }
@@ -12653,6 +12670,35 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     },
   );
+  const authorizeIdentity$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const identityInput = await get(identityInput$);
+      signal.throwIfAborted();
+      if (!identityInput) {
+        return { identityInput, authorization: undefined };
+      }
+      const authorization = await set(authorizeSelectedAgentRun$, signal);
+      signal.throwIfAborted();
+      return { identityInput, authorization };
+    },
+  );
+  const authorizeClaimIdentity$ = command(
+    async (
+      { set },
+      resolvePromptInputs: boolean,
+      head: ChatQueueHeadContext,
+      signal: AbortSignal,
+    ) => {
+      const [, authorized] = await Promise.all([
+        resolvePromptInputs
+          ? set(resolvePromptLaunchInputs$, head, signal)
+          : undefined,
+        set(authorizeIdentity$, signal),
+      ]);
+      signal.throwIfAborted();
+      return authorized;
+    },
+  );
   const initializeRunPreparation$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -12666,15 +12712,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         internalPhaseTiming$,
         new ApiDispatchPhaseCollector(head.apiStartTime),
       );
-      await set(
+      const resolvePromptInputs =
         head.contextType === "automation"
-          ? initializeAutomationExecution$
-          : initializeQueuedPrompt$,
+          ? await set(initializeAutomationExecution$, head, signal)
+          : await set(initializeQueuedPrompt$, head, signal);
+      signal.throwIfAborted();
+      const { identityInput, authorization } = await set(
+        authorizeClaimIdentity$,
+        resolvePromptInputs,
         head,
         signal,
       );
-      signal.throwIfAborted();
-      const identityInput = await get(identityInput$);
       signal.throwIfAborted();
       if (!identityInput) {
         const assembly =
@@ -12695,7 +12743,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
         return null;
       }
-      const authorization = await set(authorizeSelectedAgentRun$, signal);
       if (authorization) {
         const rejection =
           head.contextType === "automation"
@@ -12716,25 +12763,78 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return head;
     },
   );
-  const startClaimResources$ = command(
-    ({ set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+  const admitStorage$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const admission = await set(checkClaimAdmission$, signal);
       signal.throwIfAborted();
+      set(internalAdmission$, { failure: admission });
+      await get(storageMounts$);
+      signal.throwIfAborted();
+    },
+  );
+  const prepareAdmittedStorage$ = command(
+    async ({ set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
       if (head.contextType === "automation") {
-        set(
-          workflowAutomationLaunchInternalModel$,
-          set(prepareAutomationModel$, signal),
-        );
-        set(
-          internalAutomationPreparation$,
-          set(
-            initializeQueuedAutomationInitializeQueuedAutomation$,
-            head,
-            signal,
-          ),
-        );
+        await set(resolveAutomationModelSnapshot$, signal);
+        signal.throwIfAborted();
       }
-      set(internalAdmission$, set(checkClaimAdmission$, signal));
-      set(internalRunnerInput$, set(prepareRunnerInput$, signal));
+      const [encrypted] = await Promise.all([
+        set(prepareEncryptedSecrets$, signal),
+        set(admitStorage$, signal),
+      ]);
+      signal.throwIfAborted();
+      return encrypted;
+    },
+  );
+  const prepareClaimResources$ = command(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      const [encrypted, launch] = await Promise.all([
+        set(prepareAdmittedStorage$, head, signal),
+        head.contextType === "automation"
+          ? set(
+              initializeQueuedAutomationInitializeQueuedAutomation$,
+              head,
+              signal,
+            )
+          : null,
+      ]);
+      signal.throwIfAborted();
+      if (launch) {
+        await set(initializeWorkflowAutomationRun$, launch, signal);
+        signal.throwIfAborted();
+      }
+      const [runnerInput, callbackRows, assembly, identity] = await Promise.all(
+        [
+          set(prepareRunnerInput$, signal),
+          set(prepareCallbacks$, signal),
+          get(assembly$),
+          get(runIdentity$),
+          set(observeExecution$, signal),
+          get(runMemberSnapshot$),
+          get(runDisabledPaidToolsSnapshot$),
+          get(runEnvironmentSnapshot$),
+        ],
+      );
+      signal.throwIfAborted();
+      set(internalRunnerInput$, { input: runnerInput });
+      const [input, storage] = await Promise.all([
+        get(runPlan$),
+        get(runnerStorage$),
+      ]);
+      signal.throwIfAborted();
+      const contextDraft = set(
+        claimRunPrepareStoredContextDraft$,
+        encrypted,
+        signal,
+      );
+      return [
+        input,
+        storage,
+        callbackRows,
+        contextDraft,
+        assembly,
+        identity,
+      ] as const;
     },
   );
   const prepareRunContext$ = command(
@@ -12747,21 +12847,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!head) {
         return { kind: "passed" };
       }
-      set(startClaimResources$, head, signal);
       const resources = await settle(
-        Promise.all([
-          get(runPlan$),
-          get(runnerStorage$),
-          set(prepareCallbacks$, signal),
-          set(claimRunPrepareStoredContextDraft$, signal),
-          get(assembly$),
-          get(runIdentity$),
-          set(observeExecution$, signal),
-          get(runMemberSnapshot$),
-          get(runDisabledPaidToolsSnapshot$),
-          get(runEnvironmentSnapshot$),
-          get(storageMounts$),
-        ]),
+        set(prepareClaimResources$, head, signal),
         signal,
       );
       if (!resources.ok) {

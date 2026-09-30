@@ -1221,14 +1221,11 @@ describe("workflow queue", () => {
 
     await completeRunThroughSandbox(scenario, runningRunId);
 
-    // One organization pass rejects this thread's invalid head. A later
-    // business wake visits the remaining automation without retrying the pick.
-    await expect(
-      workflowRunIds(webhookAutomation.threadId),
-    ).resolves.toStrictEqual([runningRunId]);
+    // Rejecting the invalid head releases the claim and schedules one new
+    // pick for the thread, which drains the remaining automation event.
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
-    ).resolves.toStrictEqual([scheduleEvent]);
+    ).resolves.toStrictEqual([]);
     await refreshConcurrencyEntitlement(
       scenario.actor,
       scenario.customerId,
