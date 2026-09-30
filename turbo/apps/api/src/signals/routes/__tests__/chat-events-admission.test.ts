@@ -13,7 +13,11 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { readQueuedChatThreadClaimFixture } from "../../../test-fixtures/queued-chat-thread";
+import {
+  holdQueuedChatThreadClaimFixture,
+  readQueuedChatThreadClaimFixture,
+} from "../../../test-fixtures/queued-chat-thread";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   createUnassociatedThreadBoundAgentRunFixture,
@@ -603,10 +607,18 @@ describe("CHAT-02: interrupting active chat runs", () => {
   }, 90_000);
 });
 
+function requireOrgId(actor: { readonly orgId: string | null }): string {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  return actor.orgId;
+}
+
 describe("CHAT-02: dispatch failure", () => {
-  it("preserves the queued input and lease when run preparation cannot configure dispatch", async () => {
+  it("rejects the picked input and releases the lease when run preparation cannot configure dispatch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const routeRequests = chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
     const messageId = randomUUID();
 
@@ -629,26 +641,30 @@ describe("CHAT-02: dispatch failure", () => {
     });
     const threadId = sent.body.threadId;
 
-    // Preparation failed before pending admission. Observe the owned
-    // background failure instead of waiting for a fabricated terminal run.
+    // The original failure still propagates; the picked input ends rejected
+    // instead of staying at the queue head, and the lease is released.
     await expect(clearAllDetached()).rejects.toThrow(
       "No executor configured: set RUNNER_DEFAULT_GROUP",
     );
     const messages = await chat.listThreadEvents(actor, threadId);
-    expect(userMessages(messages.events)).toStrictEqual([
+    expect(messages.events).toContainEqual(
       expect.objectContaining({
-        id: messageId,
-        eventType: "input.prompt",
+        eventType: "input.rejected",
+        revokesEventId: messageId,
+        error: "internal_error",
       }),
-    ]);
+    );
+    expect(messages.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "internal_error",
+      }),
+    );
     expect(
       messages.events.some((message) => {
-        return (
-          message.runId !== undefined || message.revokesEventId !== undefined
-        );
+        return message.runId !== undefined;
       }),
     ).toBeFalsy();
-    expect(assistantMessages(messages.events)).toStrictEqual([]);
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -661,43 +677,94 @@ describe("CHAT-02: dispatch failure", () => {
       agent_session_run_id: null,
       run_session_id: null,
     });
-
-    const claim = await readQueuedChatThreadClaimFixture(threadId);
-    expect(claim?.claimId).toStrictEqual(expect.any(String));
-    expect(claim?.claimExpiresAt?.getTime()).toBeGreaterThan(now());
+    await expect(
+      readQueuedChatThreadClaimFixture(threadId),
+    ).resolves.toStrictEqual({ claimId: null, claimExpiresAt: null });
     expect(routeRequests()).toBe(0);
+
+    // The next input on the thread is picked normally.
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
+    const next = await sendChatRun(actor, {
+      agentId,
+      threadId,
+      prompt: "send again after the rejection",
+    });
+    expect(next.runId).toStrictEqual(expect.any(String));
+    await cancelChatRun(actor, next.runId);
   });
 
-  it("keeps a failed pick's lease until it expires on the app clock", async () => {
+  it("leaves the input queued when a failed picker no longer holds the lease", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
-    const claimedAt = now();
-    mockNow(claimedAt);
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
-    const headId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "fail after taking the lease", clientEventId: headId },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the send to be accepted");
-    }
-    const threadId = sent.body.threadId;
-    // The failed pick releases nothing; its lease runs out on the app clock.
-    await expect(clearAllDetached()).rejects.toThrow(
-      "No executor configured: set RUNNER_DEFAULT_GROUP",
-    );
-    const lease = await readQueuedChatThreadClaimFixture(threadId);
-    expect(lease?.claimExpiresAt?.getTime()).toBe(claimedAt + 10_000);
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
-
-    // Before expiry, the next enqueue's pick cannot take the lease.
-    mockNow(claimedAt + 9999);
+    const threadId = randomUUID();
+    const messageId = randomUUID();
+    let heldClaimId: string | undefined;
+    // A slow picker's lease was taken over before its transient KMS failure.
+    useSecretKmsProbe(async (_request, callNumber) => {
+      if (callNumber === 1) {
+        heldClaimId = await holdQueuedChatThreadClaimFixture({
+          orgId: requireOrgId(actor),
+          threadId,
+        });
+        throw new Error("KMS unavailable");
+      }
+      return await Promise.reject(new Error("Unexpected KMS call"));
+    });
     await chat.requestSendEvent(
       actor,
-      { agentId, threadId, prompt: "wait behind the lease" },
+      {
+        agentId,
+        prompt: "fail after losing the lease",
+        clientThreadId: threadId,
+        clientEventId: messageId,
+      },
+      [201],
+    );
+    await expect(clearAllDetached()).rejects.toThrow("KMS unavailable");
+    const messages = await chat.listThreadEvents(actor, threadId);
+    expect(
+      messages.events.some((message) => {
+        return message.revokesEventId === messageId;
+      }),
+    ).toBeFalsy();
+    await expect(
+      readQueuedChatThreadClaimFixture(threadId),
+    ).resolves.toMatchObject({ claimId: heldClaimId });
+  });
+
+  it("keeps another picker's lease until it expires on the app clock", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const heldAt = now();
+    mockNow(heldAt);
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "create the thread queue row",
+    });
+    await cancelChatRun(actor, first.runId);
+    await clearAllDetached();
+    const threadId = first.threadId;
+    const heldClaimId = await holdQueuedChatThreadClaimFixture({
+      orgId: requireOrgId(actor),
+      threadId,
+    });
+    const lease = await readQueuedChatThreadClaimFixture(threadId);
+    expect(lease).toStrictEqual({
+      claimId: heldClaimId,
+      claimExpiresAt: new Date(heldAt + 10_000),
+    });
+
+    // Before expiry, the next enqueue's pick cannot take the lease.
+    mockNow(heldAt + 9999);
+    const headId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId,
+        prompt: "wait behind the lease",
+        clientEventId: headId,
+      },
       [201],
     );
     await clearAllDetached();
@@ -706,13 +773,13 @@ describe("CHAT-02: dispatch failure", () => {
     ).resolves.toStrictEqual(lease);
     const blocked = await chat.listThreadEvents(actor, threadId);
     expect(
-      blocked.events.some((message) => {
-        return message.runId !== undefined;
+      userMessages(blocked.events).some((message) => {
+        return message.revokesEventId === headId;
       }),
     ).toBeFalsy();
 
     // At expiry, the next pick claims the thread and launches its head.
-    mockNow(claimedAt + 10_000);
+    mockNow(heldAt + 10_000);
     await chat.requestSendEvent(
       actor,
       { agentId, threadId, prompt: "pick after the lease expires" },
@@ -720,11 +787,13 @@ describe("CHAT-02: dispatch failure", () => {
     );
     await clearAllDetached();
     const launched = await chat.listThreadEvents(actor, threadId);
-    expect(
-      userMessages(launched.events).find((message) => {
-        return message.revokesEventId === headId;
-      })?.runId,
-    ).toStrictEqual(expect.any(String));
+    const runId = userMessages(launched.events).find((message) => {
+      return message.revokesEventId === headId;
+    })?.runId;
+    expect(runId).toStrictEqual(expect.any(String));
+    if (runId) {
+      await cancelChatRun(actor, runId);
+    }
   });
 });
 

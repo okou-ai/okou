@@ -89,8 +89,16 @@ and the paid-subscription payment grace policy.
 
 A pick handles at most one input. Normal no-capacity, empty-queue and completed
 paths explicitly release or delete using the captured thread/token pair.
-Unexpected errors leave the lease to expire: there is no catch/finally release
-(the release itself can fail), so the thread waits at most about 10 seconds.
+A picked input always ends terminal. When preparation or commit throws after
+the head was read, one transaction rejects that head if nothing consumed it
+(`input.rejected` plus a visible `internal_error` message, and the usual
+schedule settlement for an automation tick) and then releases the lease on this
+claim's token; if the lease is no longer ours the transaction rolls back and
+nothing changes. The original error is then rethrown: there is no retry or
+fallback. Transient failures (KMS, a brief database outage) are handled the
+same way and the user sends again. The no-capacity exit never does this. If the
+marking write itself fails, the lease simply expires; there is no other
+catch/finally cleanup, so the thread waits at most about 10 seconds.
 Every lease comparison (claim, organization candidates, wait-notice reads) uses
 the application clock `nowDate()`, never database `now()`, so tests move the
 clock instead of waiting. There is no claim heartbeat, session preparation
@@ -111,13 +119,15 @@ advances `queuedAt` (strictly, by at least 1 ms). The claim captures the
 - Empty queue: the delete also requires an unchanged `queuedAt`. When it misses
   while the lease is still ours, input arrived under the lease, so the picker
   releases it and schedules one fresh fixed-thread pick.
-- Rejected head and `passed` preparation: release with the token, then schedule
-  one fresh fixed-thread pick for any remaining input.
+- Rejected head and `passed` preparation: release with the token only. The
+  rejection is a business result inside `pick$`; the organization pass
+  continues with the next thread, and the thread's remaining input waits for
+  the next enqueue, slot release or cron pass.
 - No capacity: release with the token; the organization pick after a slot
   frees handles the thread.
 
-Scheduling a pick discovers new work; it is not a retry, and `pick$` never
-loops. A slow picker past the 10-second lease is rejected by the fence.
+Scheduling a pick happens only after an empty-queue delete misses. It
+discovers new work; it is not a retry, and `pick$` never loops. A slow picker past the 10-second lease is rejected by the fence.
 
 Integration wait notices (S1) do not use the enqueuer's `pick$` result, because
 another picker may hold the lease. After this enqueue's pick finishes (run,

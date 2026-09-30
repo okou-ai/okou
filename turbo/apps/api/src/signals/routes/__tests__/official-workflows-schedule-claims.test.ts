@@ -15,7 +15,6 @@ import {
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowInstallationsContract } from "@okouai/api-contracts/contracts/official-workflows";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
@@ -60,7 +59,6 @@ import {
 } from "../cron-official-workflow-catalog";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
@@ -681,19 +679,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
     );
   }
 
-  /** Run the real cron pick sweep scoped to one thread. */
-  async function sweepQueuedThread(threadId: string): Promise<void> {
-    await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: { chatThreadIds: [threadId], runIds: [], exportJobIds: [] },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-  }
-
   async function briefThreadId(
     actor: ApiTestUser,
     workflowId: string,
@@ -1243,7 +1228,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(recovered[1]?.queueEventId).toStrictEqual(expect.any(String));
   });
 
-  it("rolls back the journal binding and retains the input when Run persistence fails", async () => {
+  it("rolls back the journal binding and rejects the input when Run persistence fails", async () => {
     const brief = await installJournaledBrief();
     const firedAt = brief.anchor + 60_000;
     const fault = await withWorkflowAutomationRunPersistenceFailureFixture({
@@ -1261,54 +1246,29 @@ describe("Morning Brief legacy schedule claim journal", () => {
       brief.automationId,
     );
     expect(claims).toHaveLength(1);
+    // The picked occurrence ends terminal: the Run and journal binding roll
+    // back, the input is rejected and the occurrence settles as a pre-run
+    // failure instead of waiting at the queue head for lease expiry.
     expect(claims[0]).toMatchObject({
       runId: null,
       queueDisposition: "queued",
-      settlement: "unsettled",
-      settledAt: null,
+      settlement: "pre_run_failure",
+      settledAt: expect.any(Date),
     });
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    // The fault raises inside pending persistence: both the Run and the
-    // journal binding roll back, while the already-enqueued input survives.
     await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
     const queueEventId = claims[0]?.queueEventId;
     const events = await workflowBdd.readThreadEvents(threadId);
     expect(events).toContainEqual(
       expect.objectContaining({
-        id: queueEventId,
-        eventType: "input.automation",
+        eventType: "input.rejected",
+        revokesEventId: queueEventId,
+        error: "internal_error",
       }),
     );
-    expect(events).not.toContainEqual(
-      expect.objectContaining({ revokesEventId: queueEventId }),
-    );
-
-    // An independent sweep cannot take the failed pick's current lease.
-    await sweepQueuedThread(threadId);
-    await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
-    mockNow(firedAt + 61_000);
-    await sweepQueuedThread(threadId);
-    const recoveredRunIds = await briefRunIds(threadId);
-    expect(recoveredRunIds).toHaveLength(1);
-    const recoveredRunId = recoveredRunIds[0];
-    if (!recoveredRunId) {
-      throw new Error("Expected the retained occurrence after lease expiry");
-    }
-    await expect(
-      readMorningBriefScheduleClaimsFixture(brief.automationId),
-    ).resolves.toMatchObject([
-      {
-        id: claims[0]?.id,
-        queueEventId,
-        runId: recoveredRunId,
-        queueDisposition: "claimed",
-        settlement: "unsettled",
-      },
-    ]);
-    await deliverBriefCallback(recoveredRunId);
   });
 
-  it("retains the occurrence without a Run or settlement when launch preparation fails", async () => {
+  it("rejects the occurrence without a Run when launch preparation fails", async () => {
     const brief = await installJournaledBrief();
     // Evict the accepted Definition's cached URL, then fail its resource
     // preparation before pending admission can bind the journal to a Run.
@@ -1338,8 +1298,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(claims[0]).toMatchObject({
       runId: null,
       queueDisposition: "queued",
-      settlement: "unsettled",
-      settledAt: null,
+      settlement: "pre_run_failure",
+      settledAt: expect.any(Date),
     });
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
     await expect(briefRunIds(threadId)).resolves.toStrictEqual([]);
@@ -1347,12 +1307,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
     const events = await workflowBdd.readThreadEvents(threadId);
     expect(events).toContainEqual(
       expect.objectContaining({
-        id: queueEventId,
-        eventType: "input.automation",
+        eventType: "input.rejected",
+        revokesEventId: queueEventId,
+        error: "internal_error",
       }),
-    );
-    expect(events).not.toContainEqual(
-      expect.objectContaining({ revokesEventId: queueEventId }),
     );
   });
 

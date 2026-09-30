@@ -32,7 +32,7 @@ import { now, nowDate } from "../../lib/time";
 import { conflict } from "../../lib/error";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   activeConcurrencySubscriptionPredicate,
   totalConcurrencyLimit,
@@ -132,6 +132,10 @@ type ClaimRunCommit =
     };
 
 const log = logger("ChatQueueConsume");
+
+/** Shown when a picked input's preparation or commit failed unexpectedly. */
+const ABANDONED_HEAD_MESSAGE =
+  "This message could not be started because of an internal error. Please send it again.";
 
 /** Fixed chat thread lease; it is never renewed. See design §5.1. */
 const CHAT_THREAD_LEASE_MS = 10_000;
@@ -379,6 +383,78 @@ async function persistClaimedRun(
  * one isolated child graph in the same request Store. The cursor advances over
  * selected work; it never retries a failed launch within this pass.
  */
+/**
+ * Replace an unconsumed queued input with `input.rejected` and append its
+ * visible error. Returns null when the input was already consumed.
+ */
+async function appendQueueHeadRejection(
+  tx: Tx,
+  args: {
+    readonly chatThreadId: string;
+    readonly eventId: string;
+    readonly errorMarker: string;
+    readonly displayError: string;
+  },
+): Promise<{
+  readonly assistantEventId: string;
+  readonly contextType: string | null;
+  readonly contextId: string | null;
+} | null> {
+  const [head] = await tx
+    .select({
+      userMessage: canonicalChatEventUserMessage(),
+      createdAt: chatEvents.createdAt,
+      contextType: chatEvents.contextType,
+      contextId: chatEvents.contextId,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+      ),
+    )
+    .limit(1);
+  if (!head?.userMessage) {
+    throw new Error("Queued input event is missing userMessage");
+  }
+  const rejectedAt = new Date(
+    Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
+  );
+  const rejected = await replaceChatEvent(tx, args.eventId, {
+    chatThreadId: args.chatThreadId,
+    eventType: "input.rejected",
+    userMessage: head.userMessage,
+    runId: null,
+    error: args.errorMarker,
+    createdAt: rejectedAt,
+  });
+  if (!rejected) {
+    return null;
+  }
+  const assistant = await insertChatEvent(tx, {
+    chatThreadId: args.chatThreadId,
+    eventType: "output.error",
+    content: args.displayError,
+    runId: null,
+    error: args.errorMarker,
+    createdAt: new Date(rejectedAt.getTime() + 1),
+  });
+  if (!assistant) {
+    throw new Error("Failed to append queued input rejection");
+  }
+  await touchChatThreadLastMessageAt(
+    tx,
+    args.chatThreadId,
+    assistant.createdAt,
+  );
+  return {
+    assistantEventId: assistant.id,
+    contextType: head.contextType,
+    contextId: head.contextId,
+  };
+}
+
 export function createPickObjects(orgId: string, fixedThreadId?: string) {
   const internalReloadPick$ = state(0);
   const internalOrgCursor$ = state<OrgPickCursor | null>(null);
@@ -651,56 +727,67 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     ): Promise<{ readonly assistantEventId: string } | null> => {
       signal.throwIfAborted();
       const result = await set(writeDb$).transaction(async (tx) => {
-        const [head] = await tx
-          .select({
-            userMessage: canonicalChatEventUserMessage(),
-            createdAt: chatEvents.createdAt,
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, args.eventId),
-              eq(chatEvents.chatThreadId, args.chatThreadId),
-            ),
-          )
-          .limit(1);
-        if (!head?.userMessage) {
-          throw new Error("Queued input event is missing userMessage");
-        }
-        const rejectedAt = new Date(
-          Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
-        );
-        const rejected = await replaceChatEvent(tx, args.eventId, {
-          chatThreadId: args.chatThreadId,
-          eventType: "input.rejected",
-          userMessage: head.userMessage,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: rejectedAt,
-        });
-        if (!rejected) {
-          return null;
-        }
-        const assistant = await insertChatEvent(tx, {
-          chatThreadId: args.chatThreadId,
-          eventType: "output.error",
-          content: args.displayError,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: new Date(rejectedAt.getTime() + 1),
-        });
-        if (!assistant) {
-          throw new Error("Failed to append queued input rejection");
-        }
-        await touchChatThreadLastMessageAt(
-          tx,
-          args.chatThreadId,
-          assistant.createdAt,
-        );
-        return { assistantEventId: assistant.id };
+        return await appendQueueHeadRejection(tx, args);
       });
       signal.throwIfAborted();
       return result;
+    },
+  );
+
+  /**
+   * A picked head whose preparation or commit threw still ends terminal: in one
+   * transaction, reject it if nothing consumed it, then release this claim's
+   * lease; when the lease is no longer ours the transaction rolls back and
+   * nothing changes. The queue row is locked last, as enqueue does. A failure
+   * here is left to lease expiry.
+   */
+  const rejectAbandonedHead$ = command(
+    async (
+      { set },
+      args: {
+        readonly claim: LeasedThreadClaim;
+        readonly eventId: string;
+      },
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      const { claim } = args;
+      const rejected = await set(writeDb$).transaction(async (tx) => {
+        const appended = await appendQueueHeadRejection(tx, {
+          chatThreadId: claim.chatThreadId,
+          eventId: args.eventId,
+          errorMarker: "internal_error",
+          displayError: ABANDONED_HEAD_MESSAGE,
+        });
+        const [released] = await tx
+          .update(queuedChatThreads)
+          .set({ claimId: null, claimExpiresAt: null })
+          .where(
+            and(
+              eq(queuedChatThreads.orgId, claim.orgId),
+              eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
+              eq(queuedChatThreads.claimId, claim.claimId),
+            ),
+          )
+          .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+        if (!released) {
+          tx.rollback();
+        }
+        return appended;
+      });
+      signal.throwIfAborted();
+      // A rejected automation tick settles its schedule as other rejections do.
+      if (rejected?.contextType === "automation") {
+        await settleRejectedAutomationInput(
+          set(writeDb$),
+          {
+            contextId: rejected.contextId,
+            queueEventId: args.eventId,
+            error: { code: "INTERNAL_ERROR", message: ABANDONED_HEAD_MESSAGE },
+          },
+          signal,
+        );
+      }
     },
   );
 
@@ -1091,6 +1178,50 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     },
   );
 
+  /**
+   * Prepare and commit the claimed head. A rejected head or `passed`
+   * preparation only releases this claim; no extra pick is scheduled.
+   */
+  const launchPickedHead$ = command(
+    async (
+      { set },
+      {
+        claim,
+        claimed,
+      }: {
+        readonly claim: LeasedThreadClaim;
+        readonly claimed: ReturnType<typeof createClaimRunObjects>;
+      },
+      signal: AbortSignal,
+    ): Promise<string | null> => {
+      const startedAt = now();
+      const timing: ClaimRunTiming = {
+        startedAt,
+        run: new ApiDispatchTimingCollector(),
+        phase: new ApiDispatchPhaseCollector(startedAt),
+      };
+      const context = await set(claimed.prepareRunContext$, timing, signal);
+      signal.throwIfAborted();
+      if (context.kind === "passed") {
+        await set(releaseClaim$, claim, signal);
+        return null;
+      }
+      // A pending commit fences and clears this claim's lease in its own
+      // transaction, so the success path has no separate release.
+      const pending = await set(createRun$, { claim, context, timing }, signal);
+      if (pending.kind !== "pending") {
+        if (pending.kind === "rejected") {
+          await set(rejectEvent$, context, pending.error, signal);
+        }
+        await set(releaseClaim$, claim, signal);
+        return null;
+      }
+      waitUntil(set(claimed.updatePresignedUrlCache$, signal));
+      await set(activatePendingRun$, pending, signal);
+      return pending.runId;
+    },
+  );
+
   const pick$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
       signal.throwIfAborted();
@@ -1122,31 +1253,20 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         await set(deleteEmptyQueue$, claim, signal);
         return null;
       }
-      const startedAt = now();
-      const timing: ClaimRunTiming = {
-        startedAt,
-        run: new ApiDispatchTimingCollector(),
-        phase: new ApiDispatchPhaseCollector(startedAt),
-      };
-      const context = await set(claimed.prepareRunContext$, timing, signal);
-      signal.throwIfAborted();
-      if (context.kind === "passed") {
-        await set(releaseClaimAndSchedulePick$, claim, signal);
-        return null;
+      const launched = await settle(
+        set(launchPickedHead$, { claim, claimed }, signal),
+        signal,
+      );
+      if (launched.ok) {
+        return launched.value;
       }
-      // A pending commit fences and clears this claim's lease in its own
-      // transaction, so the success path has no separate release.
-      const pending = await set(createRun$, { claim, context, timing }, signal);
-      if (pending.kind !== "pending") {
-        if (pending.kind === "rejected") {
-          await set(rejectEvent$, context, pending.error, signal);
-        }
-        await set(releaseClaimAndSchedulePick$, claim, signal);
-        return null;
-      }
-      waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-      await set(activatePendingRun$, pending, signal);
-      return pending.runId;
+      // The picked head must not stay queued after an unexpected failure.
+      // The marking write's own failure is left to lease expiry.
+      await settle(
+        set(rejectAbandonedHead$, { claim, eventId: event.id }, signal),
+        signal,
+      );
+      throw launched.error;
     },
   );
   return { pick$ };

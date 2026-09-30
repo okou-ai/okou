@@ -6462,56 +6462,18 @@ async function resolveMultiAuthCandidate(
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
 ): Promise<ResolvedModelProviderEnvironment | null> {
-  const resolve = (
-    reader: Db,
-    selected: Pick<
-      ResolvableModelProviderEnvironmentRow,
-      "authMethod" | "selectedModel"
-    >,
-  ) => {
-    return multiAuthModelProviderEnvironment(reader, {
-      id: row.id,
-      orgId: args.orgId,
-      userId: row.userId,
-      type: row.type,
-      authMethod: selected.authMethod,
-      selectedModel: args.selectedModelOverride ?? selected.selectedModel,
-      configuredModel: selected.selectedModel,
-      piExecution: args.piExecution,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-  };
-  if (
-    args.piExecution &&
-    (row.type === "azure-foundry" || row.type === "aws-bedrock")
-  ) {
-    // Hold the selected row while reading its atomic resource/region/key
-    // bundle. A concurrent settings write cannot mix old and new identities.
-    return await db.transaction(async (tx) => {
-      const [selected] = await tx
-        .select({
-          authMethod: modelProviders.authMethod,
-          selectedModel: modelProviders.selectedModel,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.id, row.id),
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, row.userId),
-            eq(modelProviders.type, row.type),
-          ),
-        )
-        .for("share");
-      if (!selected) {
-        throw new PiNativeConfigurationError(
-          "Selected cloud provider is unavailable",
-        );
-      }
-      return await resolve(tx, selected);
-    });
-  }
-  return await resolve(db, row);
+  // Plain reads without a transaction or row lock, Azure and Bedrock included.
+  return await multiAuthModelProviderEnvironment(db, {
+    id: row.id,
+    orgId: args.orgId,
+    userId: row.userId,
+    type: row.type,
+    authMethod: row.authMethod,
+    selectedModel: args.selectedModelOverride ?? row.selectedModel,
+    configuredModel: row.selectedModel,
+    piExecution: args.piExecution,
+    featureSwitchContext: args.featureSwitchContext,
+  });
 }
 
 async function resolveCandidateModelProviderEnvironment(

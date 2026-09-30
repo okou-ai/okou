@@ -257,7 +257,7 @@ describe("CHAT-02: thread connector account selection", () => {
   });
 
   it.each(["projection", "complete catalog", "unready projection"] as const)(
-    "keeps the input queued when its captured %s is replaced during preparation",
+    "rejects the input when its captured %s is replaced during preparation",
     async (readPath) => {
       const fixture = await selectedThreadConnectorFixture(
         "Catalog generation changes during pick",
@@ -328,13 +328,20 @@ describe("CHAT-02: thread connector account selection", () => {
         fixture.actor,
         fixture.threadId,
       );
-      expect(messages.events).toStrictEqual([
+      // The failed pick still ends its input terminal: rejected, never
+      // launched on a mixed catalog generation.
+      expect(messages.events).toContainEqual(
         expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
+          eventType: "input.rejected",
+          revokesEventId: clientEventId,
+          error: "internal_error",
         }),
-      ]);
-      expect(messages.events[0]?.runId).toBeUndefined();
+      );
+      expect(
+        messages.events.some((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toBeFalsy();
     },
   );
 
@@ -532,20 +539,17 @@ describe("CHAT-02: thread connector account selection", () => {
       fixture.actor,
       fixture.threadId,
     );
-    expect(messages.events).toStrictEqual([
+    // The first failure propagates and the picked input ends rejected.
+    expect(messages.events).toContainEqual(
       expect.objectContaining({
-        eventType: "input.prompt",
-        id: clientEventId,
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
       }),
-    ]);
+    );
     expect(
       messages.events.some((event) => {
-        return event.eventType === "output.error";
-      }),
-    ).toBeFalsy();
-    expect(
-      messages.events.some((event) => {
-        return event.eventType === "input.prompt" && event.runId !== undefined;
+        return event.runId !== undefined;
       }),
     ).toBeFalsy();
   });
