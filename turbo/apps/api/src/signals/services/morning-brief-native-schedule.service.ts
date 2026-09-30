@@ -6,10 +6,9 @@ import {
   type MorningBriefExecutionTarget,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
@@ -22,14 +21,9 @@ import { calculateNextRun } from "./time-automation";
  * [native scheduling](../../../../../../docs/morning-brief-native-scheduling.md).
  * Two of them are load-bearing everywhere else:
  *
- * - **Lock order.** A writer that touches both the legacy automation and this
- *   row takes the member's Morning Brief preference/admission lock first when
- *   applicable (outgoing preference writers only; current ones hold no lock
- *   across their operation), then the owner key while this row is still
- *   absent, then this row's `FOR UPDATE`, the selected legacy automation, its S7a
- *   claim/Run/callback rows, and finally any native occurrence row. Nothing
- *   else is allowed, so Settings, reconciliation, deletion and cron writers
- *   cannot deadlock against each other.
+ * - **No configuration coordination.** Preference and first-materialization
+ *   races may fail or temporarily use an earlier configuration; a later save
+ *   or scheduled task recovers. Existing owner/occurrence uniqueness remains.
  * - **Fresh predicates.** Every mutation revalidates the epoch and phase it
  *   read before it commits. External preflight (Clerk, provider, Slack) happens
  *   outside the transaction, and the transaction re-reads what it depends on.
@@ -62,7 +56,7 @@ export function morningBriefScheduleWhere(owner: MorningBriefMemberIdentity) {
 }
 
 /**
- * Take the row lock in the documented order.
+ * Read the native row without acquiring a lock.
  *
  * Returns `undefined` when the member has no native row yet, which is the
  * normal pre-materialization state rather than an error.
@@ -75,66 +69,26 @@ export async function lockMorningBriefNativeSchedule(
     .select()
     .from(morningBriefNativeSchedules)
     .where(morningBriefScheduleWhere(owner))
-    .limit(1)
-    .for("update");
+    .limit(1);
   return row;
-}
-
-/**
- * Serialize this owner's Morning Brief writers while no durable row exists.
- *
- * `SELECT ... FOR UPDATE` locks rows, so it cannot fence an owner key that has
- * no row yet: reading the absence inside a transaction is not a lock on it.
- * First materialization would otherwise publish a legacy snapshot it sampled
- * without holding anything, while a selected legacy writer that classified the
- * same absent key as `ordinary` mutated the automation and skipped the durable
- * mirror it now owes. This transaction-scoped advisory lock is that missing
- * boundary.
- *
- * It sits between the member preference/admission lock and the durable schedule
- * row in the documented order, and is taken only while the row is absent, so a
- * materialized owner keeps its existing row-lock fence and pays nothing.
- */
-export function morningBriefNativeOwnerCompatibilitySql(
-  owner: MorningBriefMemberIdentity,
-) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended('morning-brief-native-owner:' || ${owner.orgId}::text || ':' || ${owner.userId}::text, 0))`;
-}
-
-async function lockAbsentMorningBriefOwnerKey(
-  tx: Pick<Tx, "execute">,
-  owner: MorningBriefMemberIdentity,
-): Promise<void> {
-  await tx.execute(morningBriefNativeOwnerCompatibilitySql(owner));
 }
 
 /**
  * Take durable authority over this owner, including before its first row.
  *
- * Every writer that decides what the member's selected legacy automation may do
- * enters here, so first materialization and that decision share one real
- * database boundary. A writer that finds no row waits on the owner key and then
- * re-reads it: it either observes the first row that committed while it waited
- * and continues under it, or it holds the key and no first row can appear until
- * it commits.
+ * Read the current row once, including the normal absent-row state. The
+ * historical helper name no longer implies a lock or first-row fence.
  */
 export async function lockMorningBriefNativeScheduleForWrite(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefNativeScheduleRow | undefined> {
-  const existing = await lockMorningBriefNativeSchedule(tx, owner);
-  if (existing !== undefined) {
-    return existing;
-  }
-  await lockAbsentMorningBriefOwnerKey(tx, owner);
   return await lockMorningBriefNativeSchedule(tx, owner);
 }
 
 /** A native row together with the exact row version it was read at. */
 export interface MorningBriefNativeScheduleSnapshot {
   readonly row: MorningBriefNativeScheduleRow;
-  readonly rowVersion: string;
 }
 
 async function readMorningBriefNativeScheduleSnapshot(
@@ -144,9 +98,6 @@ async function readMorningBriefNativeScheduleSnapshot(
   const [snapshot] = await tx
     .select({
       row: morningBriefNativeSchedules,
-      rowVersion: sql`${morningBriefNativeSchedules}.xmin::text`.mapWith(
-        pgTextDecoder,
-      ),
     })
     .from(morningBriefNativeSchedules)
     .where(morningBriefScheduleWhere(owner))
@@ -157,27 +108,14 @@ async function readMorningBriefNativeScheduleSnapshot(
 /**
  * Read durable authority for a writer that commits with a conditional UPDATE.
  *
- * No row lock is taken. A materialized row is read with its row version, and
- * the writer's UPDATE must carry {@link morningBriefNativeRowVersionCondition}
- * so a concurrent commit turns it into zero rows instead of a lost update.
- * While the row is still absent the pre-existing owner key is taken, so first
- * materialization cannot appear under a writer that classified it as absent.
+ * No row lock, version CAS or absent-owner key is taken. Low-frequency
+ * configuration can recover through another save or the next scheduled task.
  */
 export async function readMorningBriefNativeScheduleForWrite(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefNativeScheduleSnapshot | undefined> {
-  const existing = await readMorningBriefNativeScheduleSnapshot(tx, owner);
-  if (existing !== undefined) {
-    return existing;
-  }
-  await lockAbsentMorningBriefOwnerKey(tx, owner);
   return await readMorningBriefNativeScheduleSnapshot(tx, owner);
-}
-
-/** The native row is still exactly the version a writer read. */
-export function morningBriefNativeRowVersionCondition(rowVersion: string) {
-  return sql`${morningBriefNativeSchedules}.xmin::text = ${rowVersion}`;
 }
 
 /**
@@ -850,6 +788,5 @@ export async function lockMorningBriefNativeAgentAuthorities(
     .orderBy(
       morningBriefNativeSchedules.orgId,
       morningBriefNativeSchedules.userId,
-    )
-    .for("update");
+    );
 }

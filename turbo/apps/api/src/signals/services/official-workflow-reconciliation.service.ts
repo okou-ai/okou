@@ -34,7 +34,6 @@ import {
   reconcileAutomationEventWatches$,
   reconcileAutomationEventWatchReconfiguration$,
 } from "./automation-event-watch-lifecycle.service";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   googleFormsCursorMustReset,
   googleFormsCursorPublicationStatement,
@@ -315,21 +314,6 @@ async function readOfficialAutomationAccountProjection(
     .sort();
   if (connectorSlugs.length === 0) {
     return { kind: "not-required" };
-  }
-  for (const connectorSlug of connectorSlugs) {
-    // R1 compatibility only: outgoing updateChatThreadConnectorSelection and
-    // clearChatThreadConnectorSelection (chat-thread-connector-selection on
-    // main) change the workflow thread's selection under this key without a
-    // conflicting account or automation row lock, and their reprojection
-    // skips an automation whose event type this transition is changing. Remove
-    // in R2 once no deployed selection writer relies on connector_state.
-    await db.execute(
-      builtinConnectorStateLockStatement({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug,
-      }),
-    );
   }
   // No account row is locked. The projection is read from current rows and
   // published by this transaction; an account set, default or credential

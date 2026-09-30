@@ -14,7 +14,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
@@ -112,13 +112,6 @@ const publishBootstrapCandidate$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      // DB/API rollout: outgoing writers publish the default unconditionally.
-      // Remove in Release 2 after pre-Release-1 requests drain and all serving
-      // and rollback API versions use conditional default publication.
-      await tx.execute(
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(hashtext('org_bootstrap:' || ${candidate.orgId}))`,
-      );
       const [metadata] = await tx
         .select({
           tier: orgMetadata.tier,

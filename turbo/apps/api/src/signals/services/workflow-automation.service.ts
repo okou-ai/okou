@@ -96,7 +96,6 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   insertWorkflowAutomation,
@@ -1874,22 +1873,6 @@ function eventAutomationThreadOwner(args: InsertEventAutomationArgs) {
   };
 }
 
-// R1 compatibility only: outgoing main updateChatThreadConnectorSelection
-// (and clearChatThreadConnectorSelection) change a thread's account selection
-// under connector_state, so a projection read here could miss their
-// uncommitted selection. Remove in R2 once main no longer acquires
-// connector_state. New writers do not depend on it: they publish the account
-// with statements conditioned on the current selection/default, and a
-// concurrent account change converges through its own later reprojection or
-// the projection repair paths.
-export function automationAccountProjectionCompatLockSql(owner: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly connectorSlug: string;
-}) {
-  return builtinConnectorStateLockStatement(owner);
-}
-
 /**
  * The automation's account projection still equals `connectorId` in the
  * statement's snapshot: the workflow thread's selection, else the member's
@@ -1931,13 +1914,6 @@ async function readEventAutomationAccount(
   owner: ReturnType<typeof eventAutomationThreadOwner>,
   connectorSlug: string,
 ): Promise<string | null> {
-  await tx.execute(
-    automationAccountProjectionCompatLockSql({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      connectorSlug,
-    }),
-  );
   const [selected] = parseRawRows(
     z.object({ connectorId: z.string().nullable() }),
     await tx.execute(
@@ -3389,13 +3365,6 @@ const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
     const currentTime = nowDate();
     const settled = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(
-          automationAccountProjectionCompatLockSql({
-            orgId: args.input.orgId,
-            userId: args.input.member.userId,
-            connectorSlug: "stripe",
-          }),
-        );
         // No account row lock: the binding read below is published as-is; a
         // concurrent account change converges through its own reprojection or
         // Stripe projection repair, and a deleted account rejects the insert.
@@ -4843,13 +4812,6 @@ const persistGmailEventConfiguration$ = command(
     const db = set(writeDb$);
     const settled = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(
-          automationAccountProjectionCompatLockSql({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorSlug: "gmail",
-          }),
-        );
         // One conditional statement publishes the account only while it is
         // still the workflow's selection/default; zero rows means it changed.
         const [updated] = await tx
@@ -5235,13 +5197,6 @@ const persistGoogleCalendarAutomationReconfiguration$ = command(
     // own reprojection or watch repair.
     const settled = await settle(
       db.transaction(async (tx) => {
-        await tx.execute(
-          automationAccountProjectionCompatLockSql({
-            orgId: args.orgId,
-            userId: args.member.userId,
-            connectorSlug: "google-calendar",
-          }),
-        );
         const [row] = await tx
           .update(workflowAutomations)
           .set({
@@ -6395,13 +6350,6 @@ async function readEnabledAutomationAccountProjection(
   if (provider === null) {
     return { status: "ok", required: false };
   }
-  await db.execute(
-    automationAccountProjectionCompatLockSql({
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-      connectorSlug: provider,
-    }),
-  );
   const connectorArgs = {
     orgId: automation.orgId,
     userId: automation.ownerUserId,

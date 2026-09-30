@@ -1,4 +1,3 @@
-import { awaitMorningBriefPreferenceCompatibility } from "./morning-brief-preference-sql";
 import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
@@ -660,10 +659,6 @@ export const ensureMorningBriefDefaultEnabled$ = command(
     args: EnsureMorningBriefDefaultEnabledArgs,
     signal: AbortSignal,
   ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    await awaitMorningBriefPreferenceCompatibility(
-      set(writeDb$),
-      morningBriefOwner(args),
-    );
     signal.throwIfAborted();
     return await set(ensureMorningBriefEnrollment$, args, signal);
   },
@@ -963,10 +958,6 @@ export const updateMorningBriefPreference$ = command(
     args: MorningBriefPreferenceMutationArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    await awaitMorningBriefPreferenceCompatibility(
-      set(writeDb$),
-      morningBriefOwner(args),
-    );
     signal.throwIfAborted();
     return await set(applyMorningBriefPreference$, args, signal);
   },

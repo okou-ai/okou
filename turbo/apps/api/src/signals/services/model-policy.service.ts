@@ -17,7 +17,7 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
@@ -504,7 +504,6 @@ export const ensureOrgModelPolicyFacts$ = command(
     }
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      await tx.execute(modelPolicyWriterLockSql(orgId));
       const owner = eq(orgModelPolicies.orgId, orgId);
       const before = await tx.select().from(orgModelPolicies).where(owner);
       let initializeSeed = false;
@@ -516,10 +515,8 @@ export const ensureOrgModelPolicyFacts$ = command(
           .returning({ id: orgModelPolicies.id });
         initializeSeed = inserted !== undefined;
       }
-      // Every policy-set writer holds the writer key above, so this fresh
-      // statement sees the complete current set. The repair writes no provider
-      // or surface reference; a concurrent parent deletion's FK SET NULL only
-      // waits on, or is waited on by, the ordinary row updates below.
+      // Low-frequency configuration needs no concurrent-operation fence.
+      // Existing uniqueness and foreign keys preserve usable stored routes.
       const existing = await tx.select().from(orgModelPolicies).where(owner);
       const [entitlement] = await tx
         .select(ORG_PLAN_CAPABILITY_SELECTION)
@@ -1362,13 +1359,6 @@ function policyWriteCapabilities(
   );
 }
 
-export function modelPolicyWriterLockSql(orgId: string) {
-  // Outgoing writers do not yet fence the complete current policy set. Remove
-  // the legacy key only when they no longer serve, drain, or remain rollback targets.
-  // eslint-disable-next-line api/no-new-advisory-lock -- Existing R1 acquisition; pure SQL builder only.
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`;
-}
-
 const POLICY_PROVIDER_SELECTION = {
   id: modelProviders.id,
   type: modelProviders.type,
@@ -1483,7 +1473,6 @@ const commitOrgModelPolicyReplacement$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     await db.transaction(async (tx) => {
-      await tx.execute(modelPolicyWriterLockSql(params.orgId));
       const [org] = await tx
         .select({ id: orgMetadata.orgId, mode: orgMetadata.modelMode })
         .from(orgMetadata)
@@ -1498,9 +1487,8 @@ const commitOrgModelPolicyReplacement$ = command(
           .values(policySeedValues(params.orgId, params.userId))
           .onConflictDoNothing();
       }
-      // Every policy-set writer holds the writer key above. Parents are read
-      // without row locks: a parent deleted after this read makes the FK check
-      // of the write below fail, which the caller maps to a refresh conflict.
+      // Parents are read without row locks. The FK rejects a route deleted
+      // after validation; a later user operation can apply the configuration.
       const providers = await tx
         .select(POLICY_PROVIDER_SELECTION)
         .from(modelProviders)

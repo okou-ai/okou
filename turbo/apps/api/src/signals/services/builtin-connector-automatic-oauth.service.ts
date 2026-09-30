@@ -51,7 +51,6 @@ import {
   publishBuiltinDcrRegistration$,
   readBuiltinDcrRegistrationByIssuer$,
   hasBuiltinDcrLinkedAccounts$,
-  lockBuiltinConnectorAutomaticLifecycle,
   readBuiltinDcrBoundClient$,
   retireBuiltinDcrRegistration$,
   type BuiltinConnectorAutomaticContractOwner,
@@ -1148,15 +1147,9 @@ async function handleAutomaticRefreshFailure(
     isAutomaticOAuthInvalidClient(error) &&
     binding.registrationMethod === "dcr"
   ) {
-    // Exact retirement is a short conditional local write outside provider
-    // I/O. R1 compatibility only: origin/main finishAutomaticOAuth binds
-    // accounts to a registration it read under the lifecycle key; remove the
-    // key in R2 once no serving, in-flight or rollback writer takes it.
+    // Registration retirement is local SQL outside provider I/O; existing
+    // registration uniqueness and binding FKs prevent dangling bindings.
     await context.db.transaction(async (tx) => {
-      await lockBuiltinConnectorAutomaticLifecycle(
-        tx,
-        contractOwner(context.orgId, context.contract),
-      );
       await dcrStore(tx, context.orgId, context.contract).retire(
         binding.dcrRegistration.id,
       );
@@ -1252,14 +1245,7 @@ async function refreshAutomaticOutsideTransaction(
     signal,
   );
   const published = await args.db.transaction(async (tx) => {
-    // R1 compatibility only: origin/main resolveLockedAutomatic refreshes under
-    // the lifecycle key; remove in R2 once no serving, in-flight or rollback
-    // writer takes it. The exact account/refresh-token CAS below decides this
-    // publication.
-    await lockBuiltinConnectorAutomaticLifecycle(
-      tx,
-      contractOwner(args.orgId, contract),
-    );
+    // Publish credentials locally after provider I/O.
     if (
       !(await credentialDestinationMatches(
         tx,
@@ -1357,10 +1343,6 @@ async function resolveLockedAutomatic(
   signal: AbortSignal,
 ): Promise<LockedAutomaticOutcome> {
   const { contract, accessName, initialAccessEncrypted } = context;
-  await lockBuiltinConnectorAutomaticLifecycle(
-    tx,
-    contractOwner(args.orgId, contract),
-  );
   // The exact account row lock arbitrates against replacement, deletion and
   // other credential writers, which all update or delete this row.
   const [account] = await tx

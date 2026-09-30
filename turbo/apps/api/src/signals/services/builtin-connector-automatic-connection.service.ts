@@ -12,10 +12,7 @@ import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import {
-  builtinConnectorAutomaticLifecycleLockStatement,
-  builtinDcrCatalogCondition,
-} from "./builtin-connector-automatic-dcr.service";
+import { builtinDcrCatalogCondition } from "./builtin-connector-automatic-dcr.service";
 import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
 
 interface AutomaticConnectionOwner {
@@ -183,7 +180,6 @@ export const publishAutomaticConnection$ = command(
       if (!catalog) {
         return { kind: "error", reason: "stale-contract" };
       }
-      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(input));
       if (input.binding?.registrationMethod === "dcr") {
         const [registration] = await tx
           .select({ id: builtinConnectorDcrRegistrations.id })
@@ -305,7 +301,6 @@ export const publishAutomaticAuthorizationState$ = command(
       if (!catalog) {
         return { kind: "error", reason: "stale-contract" };
       }
-      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(args));
       if (args.account.intent === "reconnect") {
         if (!args.expected) {
           return { kind: "error", reason: "invalid-account" };

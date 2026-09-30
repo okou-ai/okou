@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
@@ -22,37 +22,6 @@ export interface BuiltinConnectorAutomaticContractOwner {
   readonly connectorSlug: string;
   readonly authMethod: string;
   readonly contractHash: string;
-}
-
-/**
- * R1 compatibility only: origin/main Automatic OAuth writers (the DCR store's
- * withLock registration, finishAutomaticOAuth's code exchange and
- * resolveLockedAutomatic) hold this key across provider I/O and read-then-write
- * registrations and bindings without conditions. New writers acquire it only as
- * a short statement inside local-write transactions so such an outgoing writer
- * cannot interleave; their own outcomes come from the registration unique
- * constraints, the binding foreign key and conditional writes. Release 2 deletes
- * it once no serving, in-flight or rollback writer uses it.
- */
-export function builtinConnectorAutomaticLifecycleLockStatement(
-  owner: Pick<
-    BuiltinConnectorAutomaticContractOwner,
-    "orgId" | "connectorSlug"
-  >,
-) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["connector-mcp-oauth", owner.orgId, owner.connectorSlug])}))`;
-}
-
-/** R1 compatibility only: see builtinConnectorAutomaticLifecycleLockStatement. */
-export async function lockBuiltinConnectorAutomaticLifecycle(
-  db: Db,
-  owner: Pick<
-    BuiltinConnectorAutomaticContractOwner,
-    "orgId" | "connectorSlug"
-  >,
-): Promise<void> {
-  await db.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
 }
 
 function ownerCondition(owner: BuiltinConnectorAutomaticContractOwner) {
@@ -234,10 +203,6 @@ export const publishBuiltinDcrRegistration$ = command(
           "Builtin MCP credential catalog changed during client registration",
         );
       }
-      // R1 compatibility only: origin/main registration (DCR store withLock
-      // create) reads and inserts under this key without ON CONFLICT. Remove
-      // in R2 once no serving, in-flight or rollback writer takes it.
-      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
       const [current] = await tx
         .select()
         .from(builtinConnectorDcrRegistrations)
@@ -363,10 +328,6 @@ export const retireBuiltinDcrRegistration$ = command(
     const db = set(writeDb$);
     const { owner, id } = args;
     await db.transaction(async (tx) => {
-      // R1 compatibility only: origin/main finishAutomaticOAuth binds accounts
-      // to a registration it read under this key. Remove in R2 once no
-      // serving, in-flight or rollback writer takes it.
-      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
       await retireRegistration(tx, owner, id);
     });
     signal.throwIfAborted();

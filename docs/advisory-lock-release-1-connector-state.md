@@ -1,72 +1,45 @@
-# Release 1 builtin `connector_state` writers
+# Connector state key retirement
 
-The `connector_state:<org>:<user>:<slug>` advisory key serialized one member's
-builtin connector account, credential, watch and projection writers. Release 1
-removes every new-writer dependency on it. The replacement protocol, in order
-of preference:
+## Current September 30 decision
 
-1. Exact row locks and conditional writes on the rows a writer depends on
-   (account `connectors` row, `workflow_automations`, watch/subscription state),
-   with existing unique indexes and `ON CONFLICT`.
-2. **Superseded (2026-09-30):** the ordered account-rows lock described below
-   was removed with all explicit row locks; see
-   [row lock inventory](./advisory-lock-release-1-row-locks.md). Account-set
-   writers now use conditional statements and the default unique index.
-   Former text: for writers that change or project the member's whole builtin account set,
-   `builtinConnectorAccountRowsLockSql` (ordered `FOR UPDATE` of all of that member's
-   account rows for the slug), the same ordering custom accounts use. It is
-   `FOR UPDATE` because account writers later lock the same rows; builtin
-   sibling reads after it do not lock again, since relocking siblings committed
-   meanwhile would take them out of id order and deadlock.
-3. An absent owner has no account state to protect; the first account's
-   default is decided by `idx_connectors_org_user_slug_default` (a concurrent
-   loser inserts as a sibling, or rolls back for retry when the serialized
-   outcome would have differed).
+Ethan accepted recoverable failures for essentially all nonfinancial operations.
+Do not retain old-version compatibility acquisitions or replace advisory locks
+with row locks, empty writes, coordination retries, CAS or savepoint arbitration
+solely to serialize low-frequency settings. Existing authorization and natural
+primary/foreign-key/unique constraints remain. A later save, reconnect or task
+may recover a transient failure. Amounts/payments/credits are not covered by this
+relaxation. The two-release migration/trigger plan is unchanged.
 
-Lock order: account rows (by id) → automations → watch/subscription state →
-queue/event rows. Accepted product tradeoffs (ordinary refresh reconnect,
-Calendar/Meet/Forms gaps, Gmail natural expiry) are relied on directly.
+## Keys actually deleted
 
-## Writers and disposition
+`auth-state-lock.service.ts` is deleted. No new source references its former
+`builtinConnectorStateLockStatement` or `modelProviderStateLockStatement`.
+`automationAccountProjectionCompatLockSql` and its callers are also deleted.
+There is no R2 lock-removal gate.
 
-| Writer (file)                                                                                                                      | Disposition                                                                                                                                                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Queue admission: Meet, Forms, Notion, Gmail, Calendar (`workflow-*-queue.service.ts`)                                              | Key removed. Automation `FOR UPDATE` and watch/state `KEY SHARE`/`FOR SHARE` (Gmail/Calendar also account `FOR SHARE`) arbitrate against deletion, disable and reprojection by old and new writers. |
-| `commitOfficialFormsReconfiguration$`                                                                                              | Account rows lock.                                                                                                                                                                                  |
-| Stripe ingress/delivery projection repair                                                                                          | Automation row `FOR UPDATE` before reading selection/default.                                                                                                                                       |
-| `lockOfficialAutomationAccountProjection` (official reconciliation)                                                                | Account rows lock per slug; **compat key kept** (outgoing selection writers).                                                                                                                       |
-| Gmail `repairGmailAutomationProjections$`, Calendar and Forms projection repair, Notion and Meet projection repair, Meet inventory | Account rows lock.                                                                                                                                                                                  |
-| Gmail label publication, Forms activation, Notion pending event, Calendar watch publication                                        | Key removed; existing watch-state/automation CAS and FK checks arbitrate.                                                                                                                           |
-| Calendar legacy primary migration                                                                                                  | Credential row → consumer automations → watch states, all row locks.                                                                                                                                |
-| Meet subscription publication/removal                                                                                              | Account `KEY SHARE`, consumer automations `FOR SHARE`, unique upsert/delete.                                                                                                                        |
-| Account connect (`resolveConnectorConnectionMutation`)                                                                             | Account rows lock; first account via default unique index.                                                                                                                                          |
-| Automatic OAuth connection publication                                                                                             | Account rows lock; default from row count; unique index fallback.                                                                                                                                   |
-| Set default (generic, Forms)                                                                                                       | Ordered account rows; **compat key kept** (outgoing automation creators read defaults without row locks).                                                                                           |
-| Account deletion (`connector-data`, lifecycle deletion)                                                                            | Account rows lock before the exact row. Token-revoke preparation only reads ciphertext inside; decrypt and provider revoke run after commit.                                                        |
-| Chat-thread connector selection prepare/update/clear                                                                               | Account rows lock per builtin slug; **compat key kept** on update/clear for automation-account slugs (outgoing automation creators).                                                                |
-| Automation create/reconfigure/enable projection and workflow copy (`automationAccountProjectionLocksSql`)                          | Account rows lock; **compat key kept** (outgoing selection writers).                                                                                                                                |
-| Credential refresh publication (command and runtime), firewall refresh, automatic MCP resolve/publication                          | Key removed; exact owner-row/stored-token CAS.                                                                                                                                                      |
-| DCR retirement and replacement                                                                                                     | Key loops replaced by id-ordered linked account `FOR UPDATE`. The separate `connector-mcp-oauth` lifecycle key is unchanged and remains an R1 item.                                                 |
+| Writers                                                             | Removal / current natural boundary                                                                                                                   |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat selection update/clear                                         | No key; existing selection identity and account/thread FKs remain.                                                                                   |
+| Generic and Forms default changes                                   | No key; existing default-account unique index remains.                                                                                               |
+| Official reconciliation                                             | No connector-state acquisition before projection.                                                                                                    |
+| Automation create/change/enable and account projection              | Shared compatibility wrapper and every call removed; existing account/automation ownership remains.                                                  |
+| Workflow copy                                                       | No connector-key loop; copied automations use normal projection repair.                                                                              |
+| Credential refresh / firewall / automatic MCP                       | Already key-free publication paths are retained; no new compatibility acquisition is introduced.                                                     |
+| Model-provider save/delete                                          | Both remaining model-provider-state acquisitions are removed; existing provider identity/uniqueness remains.                                         |
+| DCR registration, OAuth exchange/refresh and connection publication | Lifecycle helper, SQL definition and all acquisitions are removed; existing registration uniqueness and binding FKs remain. HTTP/KMS is outside SQL. |
+| Gmail watch                                                         | Mailbox key is also deleted; watch HTTP precedes local publication. Rolling old-stop gaps are accepted without forced renewal.                       |
 
-## Remaining compatibility acquisitions
+Earlier account row-ordering replacements were already removed. Their former
+lock-order descriptions are not a terminal protocol. Some earlier nonfinancial
+savepoint/CAS/version machinery still needs simplification; key removal alone
+does not certify that additional instruction complete. Do not move that work
+to R2. Follow the [current per-key inventory](./advisory-lock-release-1-key-retirement.md)
+for remaining financial keys and the six application triggers.
 
-Six short local acquisitions remain (chat selection update/clear, generic and
-Forms set-default, official reconciliation, and the shared automation projection
-helper used by automation writers and workflow copy). Each exists because an
-outgoing `origin/main` writer — `updateChatThreadConnectorSelection` /
-`clearChatThreadConnectorSelection`, or automation creators such as
-`insertEventAutomation` — changes projection inputs under the key without
-locking account rows. New writers are correct among themselves through row
-locks alone. Release 2 removes the key and `builtinConnectorStateLockStatement`
-after those writers stop serving, in-flight work drains and rollback targets are
-compatible.
+## Verification boundary
 
-## Known residual behavior
-
-- A first connect racing an automation creation for a member with no accounts
-  can leave the automation's connector unset until the next reprojection.
-- A first-account create that loses the default race when the serialized result
-  would have been an update or a rejected sibling rolls back and must be retried.
-- During the deploy overlap, outgoing writers that lock rows in a different
-  order can deadlock with new writers; PostgreSQL aborts one request without
-  corrupting state.
+Tests must use public account, selection, automation, copy, OAuth and webhook
+APIs. Keep authorization and permanently valid references, not exact winners or
+call ordering. No internal waiter or lock gate is an acceptance test. Final
+verification belongs to the combined latest HEAD; earlier green commits and
+source scans are not current-head CI or deployed-version evidence.

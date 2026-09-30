@@ -13,15 +13,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { command } from "ccstate";
-import {
-  TransactionRollbackError,
-  and,
-  asc,
-  eq,
-  lt,
-  notExists,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, lt, notExists, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
@@ -285,7 +277,6 @@ async function lostCredentialDeletionFailure(
   db: Pick<ReadonlyDb, "select">,
   owner: Owner,
   credentialId: string,
-  expectedRevision: number,
 ) {
   const [current] = await db
     .select({ revision: sshCredentials.revision })
@@ -294,9 +285,7 @@ async function lostCredentialDeletionFailure(
   if (!current) {
     return sshCredentialFailure("notFound");
   }
-  return current.revision === expectedRevision
-    ? sshCredentialFailure("inUse")
-    : sshCredentialFailure("conflict");
+  return sshCredentialFailure("inUse");
 }
 
 export const updateSshCredential$ = command(
@@ -325,17 +314,14 @@ export const updateSshCredential$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    // The revision-conditional credential UPDATE below only succeeds while the
-    // row is still at `initial`, so `initial` is the state being replaced.
+    // Low-frequency edits are ordinary writes; a late edit may win. Runtime
+    // invalidation resolves the current credential on the next connection.
     const effectiveChange =
       encrypted !== undefined ||
       (args.body.username !== undefined &&
         args.body.username !== initial.username);
     const transaction = await settle(
       db.transaction(async (tx) => {
-        // Revision CAS arbitrates rotation with both current and outgoing
-        // writers. Outgoing rotation reads the revision after its own row
-        // acquisition; no shared advisory key is required by this writer.
         const hosts = await tx
           .select({
             id: sshConnections.id,
@@ -379,16 +365,10 @@ export const updateSshCredential$ = command(
             revision: sql`${sshCredentials.revision} + 1`,
             updatedAt: nowDate(),
           })
-          .where(
-            and(
-              ownedSshCredential(args.owner, args.credentialId),
-              eq(sshCredentials.revision, args.body.expectedRevision),
-            ),
-          )
+          .where(ownedSshCredential(args.owner, args.credentialId))
           .returning(sshCredentialMetadata);
         if (!updated) {
-          // A concurrent edit or deletion won; undo the host generation bump.
-          return tx.rollback();
+          return sshCredentialFailure("notFound");
         }
         return {
           ok: true as const,
@@ -403,16 +383,7 @@ export const updateSshCredential$ = command(
       }),
     );
     if (!transaction.ok) {
-      if (!(transaction.error instanceof TransactionRollbackError)) {
-        throw transaction.error;
-      }
-      const [current] = await db
-        .select({ revision: sshCredentials.revision })
-        .from(sshCredentials)
-        .where(ownedSshCredential(args.owner, args.credentialId));
-      return current
-        ? sshCredentialFailure("conflict")
-        : sshCredentialFailure("notFound");
+      throw transaction.error;
     }
     const result = transaction.value;
     if (result.ok) {
@@ -438,8 +409,7 @@ export const deleteSshCredential$ = command(
     },
   ): Promise<SshResult<undefined>> => {
     const db = set(writeDb$);
-    // One conditional statement: the revision guards stale edits, NOT EXISTS
-    // returns inUse for committed hosts, and the RESTRICT FK reports a host
+    // NOT EXISTS returns inUse for committed hosts; the RESTRICT FK reports a host
     // attached by a transaction that committed while this DELETE waited.
     const deletion = await settle(
       db
@@ -447,7 +417,6 @@ export const deleteSshCredential$ = command(
         .where(
           and(
             ownedSshCredential(args.owner, args.credentialId),
-            eq(sshCredentials.revision, args.expectedRevision),
             notExists(
               db
                 .select({ id: sshConnections.id })
@@ -469,7 +438,6 @@ export const deleteSshCredential$ = command(
         db,
         args.owner,
         args.credentialId,
-        args.expectedRevision,
       );
     }
     await publishSshClientInvalidation(args.owner);

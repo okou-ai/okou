@@ -287,28 +287,17 @@ finite SQL transaction and uses ordinary SQL predicates for the selected account
 All route, account deletion, automation enable and official watch adapters call
 these commands without forwarding a database or transaction.
 
-One **compatibility boundary**, distinct from the remaining implementation work,
-is still required. Outgoing pre-R1 `reconcileGmailPhysicalScope` and connector
-cleanup call account-wide `users.stop` while holding the existing mailbox/topic
-lifecycle key. If a new writer performs `watch` outside that key while the old
-stop is in flight, the old request can arrive last and disable a newly enabled
-consumer. Gmail has no watch inventory read to promptly detect that loss. The
-accepted Gmail decision does not permit interrupting remaining consumers.
-
-`publishGmailWatch$` therefore temporarily owns the existing lifecycle key,
-`watch` HTTP, and direct local publication in the same command transaction.
-The healthy-state shortcut also runs under that key: an unlocked earlier read
-could otherwise return success just before an outgoing stop deletes the state.
-It acquires account/automation row locks only after the HTTP response and checks
-current ownership, reconnect state, physical email and enabled/staged authority
-before inserting a watch. No handle leaves the command. This is an explicit R1
-exception to the final external-I/O rule, not a permanent transaction shape.
-
-**R2 gate:** every API capable of `users.stop` has stopped serving, its in-flight
-requests have drained, and the supported rollback target also uses local stop.
-Then move `watch` HTTP before the finite publication transaction and delete the
-lifecycle key. R1/R2 coexistence is compatible because neither calls `users.stop`.
-Credential/account coordination has its own separate writer gates.
+Ethan's September 30 direct decision supersedes the former compatibility
+boundary and the short-lived default-A instruction. `publishGmailWatch$` now
+reads its healthy shortcut and calls `users.watch` outside SQL, then publishes
+with the existing watch uniqueness, account FK and live-consumer predicates.
+The mailbox key and its acquisition are deleted. New code never calls
+`users.stop`. A late outgoing stop may interrupt the new watch during rollout;
+this finite rolling gap is explicitly accepted now. No forced R2 renewal or
+compensation is introduced. There is no lock-related R2 serving/in-flight/
+rollback gate. Credential, KMS, OAuth and profile requests remain outside SQL.
+Other nonfinancial keys are also removed; unnecessary earlier replacement
+coordination still needs simplification under the current key inventory.
 
 Gmail watch and automation reads, processed-event deduplication, resolved-label
 publication and history-cursor updates now execute SQL in owning commands. The

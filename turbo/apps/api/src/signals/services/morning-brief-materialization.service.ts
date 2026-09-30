@@ -5,10 +5,9 @@ import {
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
@@ -22,7 +21,6 @@ import {
 } from "./morning-brief-materialization-plan";
 import {
   MorningBriefSnapshotChanged,
-  morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
   commitMorningBriefSnapshotOnce,
@@ -82,9 +80,6 @@ async function attemptMaterialization(
   const [read] = await tx
     .select({
       enrollment: morningBriefEnrollments,
-      rowVersion: sql`${morningBriefEnrollments}.xmin::text`.mapWith(
-        pgTextDecoder,
-      ),
     })
     .from(morningBriefEnrollments)
     .where(morningBriefEnrollmentWhere(owner))
@@ -102,30 +97,21 @@ async function attemptMaterialization(
     return;
   }
   const at = nowDate();
-  const materializes = await materializeNativeSchedule(tx, {
+  await materializeNativeSchedule(tx, {
     owner,
     membershipId: enrollment.membershipId,
     snapshot,
     at,
   });
-  if (!completes && !materializes) {
+  if (!completes) {
     return;
   }
-  // The enrollment this decision was made from must still be current. This is
-  // the attempt's final write, after the native row, per the documented order.
+  // Publish actual enrollment completion; no empty timestamp write or
+  // version gate coordinates a completed enrollment with materialization.
   const [gated] = await tx
     .update(morningBriefEnrollments)
-    .set(
-      completes
-        ? { state: "completed", workflowId, lastError: null, updatedAt: at }
-        : { updatedAt: sql`${morningBriefEnrollments.updatedAt}` },
-    )
-    .where(
-      and(
-        morningBriefEnrollmentWhere(owner),
-        sql`${morningBriefEnrollments}.xmin::text = ${read.rowVersion}`,
-      ),
-    )
+    .set({ state: "completed", workflowId, lastError: null, updatedAt: at })
+    .where(morningBriefEnrollmentWhere(owner))
     .returning({ userId: morningBriefEnrollments.userId });
   if (gated === undefined) {
     throw new MorningBriefSnapshotChanged();
@@ -182,7 +168,6 @@ async function materializeNativeSchedule(
       and(
         morningBriefScheduleWhere(owner),
         eq(morningBriefNativeSchedules.ownerEpoch, existing.ownerEpoch),
-        morningBriefNativeRowVersionCondition(snapshot.rowVersion),
       ),
     )
     .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });

@@ -50,7 +50,6 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation } from "../../lib/pg-errors";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
@@ -988,12 +987,9 @@ function clearOtherDefaultsSql(
 }
 
 /**
- * Moves the default with ordinary conditional statements. Clearing the old
- * default takes its implicit row lock; a concurrent change that already moved
- * the default is observed by the next statement. When two changes race on an
- * owner that had no default at all, the partial unique index decides: the
- * loser (inside a savepoint) clears the winner and sets its own target once
- * more, which is the serialized "last change wins" result, never a 500.
+ * Move the default once with ordinary writes. A natural partial-unique-index
+ * conflict rolls back this transaction and asks the user to save again; no
+ * savepoint or second attempt coordinates concurrent settings.
  */
 async function changeDefaultConnectorAccount(
   tx: Tx,
@@ -1017,19 +1013,7 @@ async function changeDefaultConnectorAccount(
       .returning({ updatedAt: connectors.updatedAt });
     return updated?.updatedAt ?? null;
   };
-  const first = await settle(
-    tx.transaction(async () => {
-      return await moveDefault();
-    }),
-  );
-  let updatedAt: Date | null;
-  if (first.ok) {
-    updatedAt = first.value;
-  } else if (isDefaultIndexViolation(first.error)) {
-    updatedAt = await moveDefault();
-  } else {
-    throw first.error;
-  }
+  const updatedAt = await moveDefault();
   if (updatedAt === null) {
     throw new DefaultConnectorAccountMissing();
   }
@@ -1045,13 +1029,16 @@ function isDefaultIndexViolation(error: unknown): boolean {
 
 async function settleDefaultChange(
   change: Promise<Date>,
-): Promise<Date | null> {
+): Promise<Date | "conflict" | null> {
   const settled = await settle(change);
   if (settled.ok) {
     return settled.value;
   }
   if (settled.error instanceof DefaultConnectorAccountMissing) {
     return null;
+  }
+  if (isDefaultIndexViolation(settled.error)) {
+    return "conflict";
   }
   throw settled.error;
 }
@@ -1065,22 +1052,10 @@ export const setDefaultGoogleFormsAccount$ = command(
       readonly connectionId: string;
     },
     signal: AbortSignal,
-  ): Promise<Date | null> => {
+  ): Promise<Date | "conflict" | null> => {
     const db = set(writeDb$);
     return await settleDefaultChange(
       db.transaction(async (tx) => {
-        // R1 compatibility only: outgoing main insertEventAutomation (and the
-        // other Forms automation creators) read the default under
-        // connector_state without locking account rows, so this reprojection
-        // could miss their uncommitted automation. Taken before row locks, in
-        // main's order; remove in R2 once main no longer acquires connector_state.
-        await tx.execute(
-          builtinConnectorStateLockStatement({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorSlug: "google-forms",
-          }),
-        );
         const updatedAt = await changeDefaultConnectorAccount(tx, {
           ...args,
           target: { kind: "builtin", connectorSlug: "google-forms" },
@@ -1102,23 +1077,9 @@ export async function setDefaultConnectorAccount(
     readonly connectionId: string;
   },
   signal: AbortSignal,
-): Promise<Date | null> {
+): Promise<Date | "conflict" | null> {
   return await settleDefaultChange(
     db.transaction(async (tx) => {
-      if (args.target.kind === "builtin") {
-        // R1 compatibility only: outgoing main insertEventAutomation and the
-        // other automation creators read the default under connector_state
-        // without locking account rows, so the reprojection below could miss
-        // their uncommitted automation. Taken before row locks, in main's
-        // order; remove in R2 once main no longer acquires connector_state.
-        await tx.execute(
-          builtinConnectorStateLockStatement({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorSlug: args.target.connectorSlug,
-          }),
-        );
-      }
       if (
         args.target.kind === "custom" &&
         !(await customTargetIsVisible(tx, {

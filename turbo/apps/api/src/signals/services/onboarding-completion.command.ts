@@ -14,7 +14,6 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import {
-  modelPolicyWriterLockSql,
   onboardingModelPolicyWritePlan,
   policySeedValues,
 } from "./model-policy.service";
@@ -93,7 +92,6 @@ export const markOrgOnboardingComplete$ = command(
         signal.throwIfAborted();
         return true;
       }
-      await tx.execute(modelPolicyWriterLockSql(args.orgId));
       const owner = eq(orgModelPolicies.orgId, args.orgId);
       const before = await tx.select().from(orgModelPolicies).where(owner);
       let initializeSeed = false;
@@ -105,10 +103,8 @@ export const markOrgOnboardingComplete$ = command(
           .returning({ id: orgModelPolicies.id });
         initializeSeed = inserted.length > 0;
       }
-      // Every policy-set writer takes the pre-existing model-policy advisory
-      // key above, so the current set is read without parent or policy row
-      // locks. Onboarding writes only provider-less seed rows, so a concurrent
-      // provider/surface deletion (FK SET NULL) cannot invalidate its plan.
+      // Onboarding writes provider-less seed rows without coordinating other
+      // low-frequency policy operations; existing uniqueness arbitrates inserts.
       const existing = await tx.select().from(orgModelPolicies).where(owner);
       const plan = onboardingModelPolicyWritePlan({
         ...args,

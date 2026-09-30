@@ -1027,64 +1027,6 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it("arbitrates concurrent initialization and whole policy replacements", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    const initialized = await Promise.all(
-      Array.from({ length: 3 }, () => {
-        return accept(apiClient().list({ headers: authHeaders() }), [200]);
-      }),
-    );
-    const initial = initialized[0];
-    if (!initial) {
-      throw new Error("Expected initialized model policies");
-    }
-    for (const response of initialized) {
-      expect(response.body.policies).toHaveLength(
-        DEFAULT_ORG_MODEL_POLICY_MODELS.length,
-      );
-      expect(response.body.revision).toBe(initial.body.revision);
-      expect(
-        response.body.policies.filter((policy) => {
-          return policy.isDefault;
-        }),
-      ).toHaveLength(1);
-    }
-    const choices = toUpdate(initial.body).slice(0, 2);
-    expect(choices).toHaveLength(2);
-    const writes = await Promise.all(
-      choices.map((policy) => {
-        return apiClient().update({
-          headers: authHeaders(),
-          body: {
-            revision: initial.body.revision,
-            policies: [{ ...policy, isDefault: true }],
-          },
-        });
-      }),
-    );
-    expect(
-      writes
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const winner = writes.find((response) => {
-      return response.status === 200;
-    });
-    if (!winner || winner.status !== 200) {
-      throw new Error("Expected one successful model policy replacement");
-    }
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(current.body.policies).toHaveLength(1);
-    expect(current.body.policies[0]?.isDefault).toBeTruthy();
-    expect(current.body.policies).toStrictEqual(winner.body.policies);
-  });
-
   it("returns the seeded workspace default model", async () => {
     const fixture = await seedFixture();
     useSession(fixture);

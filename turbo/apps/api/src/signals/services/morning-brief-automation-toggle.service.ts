@@ -14,7 +14,6 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   MorningBriefSnapshotChanged,
   morningBriefLogicalChoicePlan,
-  morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
   commitMorningBriefSnapshotOnce,
@@ -173,12 +172,7 @@ export const persistMorningBriefAutomationToggle$ = command(
             const [applied] = await tx
               .update(morningBriefNativeSchedules)
               .set(plan.values)
-              .where(
-                and(
-                  morningBriefScheduleWhere(owner),
-                  morningBriefNativeRowVersionCondition(snapshot.rowVersion),
-                ),
-              )
+              .where(and(morningBriefScheduleWhere(owner)))
               .returning({
                 ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
               });

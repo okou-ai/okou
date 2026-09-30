@@ -10,7 +10,6 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { calculateNextRun } from "./time-automation";
 import {
-  morningBriefNativeOwnerCompatibilitySql,
   morningBriefScheduleWhere,
   morningBriefLegacyWriterAuthorityFromRow,
   type MorningBriefLegacyWriterAuthority,
@@ -250,20 +249,11 @@ export const skipExpiredWorkflowSchedule$ = command(
         if (
           initial.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
         ) {
-          let [native] = await tx
+          const [native] = await tx
             .select()
             .from(morningBriefNativeSchedules)
             .where(morningBriefScheduleWhere(lineage))
             .limit(1);
-          if (!native) {
-            // Pre-existing owner-key advisory lock for a member without a row.
-            await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
-            [native] = await tx
-              .select()
-              .from(morningBriefNativeSchedules)
-              .where(morningBriefScheduleWhere(lineage))
-              .limit(1);
-          }
           authority = morningBriefLegacyWriterAuthorityFromRow(native, lineage);
         }
         if (authority.kind === "stale") {

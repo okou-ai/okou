@@ -7,25 +7,20 @@ import {
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import {
   MorningBriefSnapshotChanged,
   morningBriefLogicalChoicePlan,
-  morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
   readMorningBriefNativeScheduleForWrite,
   commitMorningBriefSnapshotOnce,
 } from "./morning-brief-native-schedule.service";
-import {
-  awaitMorningBriefPreferenceCompatibility,
-  morningBriefTimezoneTargetSql,
-} from "./morning-brief-preference-sql";
+import { morningBriefTimezoneTargetSql } from "./morning-brief-preference-sql";
 import { calculateNextRun } from "./time-automation";
 
 const timezoneTarget = z.object({
@@ -88,8 +83,6 @@ export const synchronizeMorningBriefTimezone$ = command(
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const db = set(writeDb$);
     signal.throwIfAborted();
-    await awaitMorningBriefPreferenceCompatibility(db, owner);
-    signal.throwIfAborted();
     const outcome = await commitMorningBriefSnapshotOnce(() => {
       return db.transaction(async (tx) => {
         const [target] = parseRawRows(
@@ -104,9 +97,6 @@ export const synchronizeMorningBriefTimezone$ = command(
         const automations = await tx
           .select({
             row: workflowAutomations,
-            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
-              pgTextDecoder,
-            ),
           })
           .from(workflowAutomations)
           .where(
@@ -151,12 +141,7 @@ export const synchronizeMorningBriefTimezone$ = command(
           const [applied] = await tx
             .update(morningBriefNativeSchedules)
             .set(plan.values)
-            .where(
-              and(
-                morningBriefScheduleWhere(owner),
-                morningBriefNativeRowVersionCondition(native.rowVersion),
-              ),
-            )
+            .where(and(morningBriefScheduleWhere(owner)))
             .returning({
               ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
             });
@@ -164,7 +149,7 @@ export const synchronizeMorningBriefTimezone$ = command(
             throw new MorningBriefSnapshotChanged();
           }
         }
-        for (const { row, rowVersion } of automations) {
+        for (const { row } of automations) {
           const values = automationTimezoneValues(row, timezone, at);
           if (values === undefined) {
             continue;
@@ -172,12 +157,7 @@ export const synchronizeMorningBriefTimezone$ = command(
           const [applied] = await tx
             .update(workflowAutomations)
             .set(values)
-            .where(
-              and(
-                eq(workflowAutomations.id, row.id),
-                sql`${workflowAutomations}.xmin::text = ${rowVersion}`,
-              ),
-            )
+            .where(and(eq(workflowAutomations.id, row.id)))
             .returning({ id: workflowAutomations.id });
           if (applied === undefined) {
             throw new MorningBriefSnapshotChanged();

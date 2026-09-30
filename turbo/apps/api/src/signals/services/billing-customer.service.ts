@@ -3,7 +3,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -27,14 +27,6 @@ const publishStripeCustomer$ = command(
     const db = set(writeDb$);
     const publication = await settle(
       db.transaction(async (tx) => {
-        // Outgoing writers read and unconditionally publish under this lock.
-        // Recheck after acquiring it: an outgoing winner owns its binding, while
-        // an outgoing waiter will observe our committed binding before creating.
-        // Release 2 removes only this compatibility acquisition after their drain.
-        await tx.execute(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          sql`SELECT pg_advisory_xact_lock(hashtext('stripe_customer_' || ${args.orgId}))`,
-        );
         signal.throwIfAborted();
 
         const [row] = await tx

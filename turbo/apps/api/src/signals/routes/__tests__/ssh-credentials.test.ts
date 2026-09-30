@@ -224,7 +224,7 @@ describe("reusable SSH credential owner routes", () => {
     ]);
   });
 
-  it("commits one concurrent rotation and rolls back the losing host invalidation", async () => {
+  it("resolves the current credential after concurrent low-frequency rotations", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -259,38 +259,25 @@ describe("reusable SSH credential owner routes", () => {
       }),
     );
     expect(
-      results
-        .map(({ status }) => {
-          return status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const winner = results.find((result) => {
-      return result.status === 200;
-    });
-    if (!winner || winner.status !== 200) {
-      throw new Error("Expected one successful credential rotation");
-    }
+      results.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    const current = await accept(credentials().list({ headers }), [200]);
+    const credential = current.body.credentials[0];
+    expect(credential).toBeDefined();
+    expect(credential?.username).toBeOneOf(["first-user", "second-user"]);
     const listed = await accept(connections().list({ headers }), [200]);
     expect(listed.body.connections).toStrictEqual([
       expect.objectContaining({
         id: host.body.id,
         credentialId: created.body.id,
-        username: winner.body.username,
-        generation: 2,
-      }),
-    ]);
-    const current = await accept(credentials().list({ headers }), [200]);
-    expect(current.body.credentials).toStrictEqual([
-      expect.objectContaining({
-        id: created.body.id,
-        revision: 2,
-        username: winner.body.username,
+        username: credential?.username,
       }),
     ]);
   });
 
-  it("preserves rotation and rejects a stale host edit without losing generations", async () => {
+  it("resolves the current credential after a host edit overlaps rotation", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -438,7 +425,7 @@ describe("reusable SSH credential owner routes", () => {
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
-  it("rechecks credential revision after encryption and leaves a concurrent winner intact", async () => {
+  it("publishes a delayed low-frequency edit and keeps the current credential usable", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -472,7 +459,7 @@ describe("reusable SSH credential owner routes", () => {
           },
         },
       }),
-      [409],
+      [200],
     );
     await entered.promise;
     const renamed = await accept(
@@ -484,27 +471,23 @@ describe("reusable SSH credential owner routes", () => {
       [200],
     );
     release.resolve();
-    expect((await delayed).body.error.code).toBe(
-      "SSH_CREDENTIAL_REVISION_CONFLICT",
-    );
+    const saved = await delayed;
+    expect(saved.body).toMatchObject({
+      id: created.body.id,
+      name: renamed.body.name,
+      revision: 3,
+      authMethod: "private_key",
+    });
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([renamed.body]);
-    expect(renamed.body).toMatchObject({ revision: 2, authMethod: "password" });
-    const staleDeletion = await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
-      [409],
-    );
-    expect(staleDeletion.body.error.code).toBe(
-      "SSH_CREDENTIAL_REVISION_CONFLICT",
-    );
+    ).toStrictEqual([saved.body]);
     await accept(
-      credentials().delete({ headers, params, body: { expectedRevision: 2 } }),
+      credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
       [204],
     );
   });
 
-  it("preserves the winning revision when an edit races credential deletion", async () => {
+  it("leaves no credential after deletion overlaps an edit", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -530,12 +513,10 @@ describe("reusable SSH credential owner routes", () => {
           params,
           body: { expectedRevision: 1 },
         }),
-        [204, 409],
+        [204],
       ),
     ]);
-    expect([updated.status, deleted.status]).toStrictEqual(
-      updated.status === 200 ? [200, 409] : [404, 204],
-    );
+    expect(deleted.status).toBe(204);
     if (updated.status === 200) {
       expect(updated.body).toMatchObject({
         name: "Concurrent edit",
@@ -544,13 +525,8 @@ describe("reusable SSH credential owner routes", () => {
     } else {
       expect(updated.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
     }
-    if (deleted.status === 409) {
-      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
-    }
     const remaining = await accept(credentials().list({ headers }), [200]);
-    expect(remaining.body.credentials).toStrictEqual(
-      updated.status === 200 ? [updated.body] : [],
-    );
+    expect(remaining.body.credentials).toStrictEqual([]);
   });
 
   it("reports a missing credential to the losing concurrent deletion", async () => {

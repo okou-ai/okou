@@ -600,8 +600,8 @@ const commitSshConnectionUpdate$ = command(
           if (args.preparedAccess !== undefined && !createdAccess) {
             throw new Error("Cloudflare Access insert returned no row");
           }
-          // Every host write bumps generation, so this guard proves `current`
-          // is still the row being replaced.
+          // Low-frequency edits are ordinary writes. The next connection
+          // resolves the stored host and credential, regardless of write order.
           const [updated] = await tx
             .update(sshConnections)
             .set(
@@ -613,15 +613,10 @@ const commitSshConnectionUpdate$ = command(
                 accessId: createdAccess?.id ?? accessId,
               }),
             )
-            .where(
-              and(
-                ownedSshConnection(args),
-                eq(sshConnections.generation, current.generation),
-              ),
-            )
+            .where(ownedSshConnection(args))
             .returning();
           if (!updated) {
-            // Undo inline credential and Access creation for the lost edit.
+            // The host disappeared; discard this request's inline resources.
             return tx.rollback();
           }
           if (

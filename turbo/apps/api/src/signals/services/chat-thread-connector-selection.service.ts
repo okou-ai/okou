@@ -27,10 +27,8 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
@@ -549,26 +547,6 @@ export async function updateChatThreadConnectorSelection(
         if (!thread) {
           return { kind: "not_found" };
         }
-        if (
-          args.selection.target.kind === "builtin" &&
-          isWorkflowAutomationAccountConnectorSlug(
-            args.selection.target.connectorSlug,
-          )
-        ) {
-          // R1 compatibility only: outgoing main insertEventAutomation and
-          // the other automation creators read this selection under
-          // connector_state, so the reprojection below could miss their
-          // uncommitted automation. New writers do not depend on it: a new
-          // creator racing this change converges on the next reprojection or
-          // repair. Remove in R2 once main no longer acquires connector_state.
-          await tx.execute(
-            builtinConnectorStateLockStatement({
-              orgId: args.orgId,
-              userId: args.userId,
-              connectorSlug: args.selection.target.connectorSlug,
-            }),
-          );
-        }
         const prepared = await prepareChatThreadConnectorSelections(tx, {
           orgId: args.orgId,
           userId: args.userId,
@@ -643,22 +621,6 @@ export async function clearChatThreadConnectorSelection(
       return { kind: "not_found" };
     }
     // Only event sources also change the owner's automation projections.
-    if (
-      args.target.kind === "builtin" &&
-      isWorkflowAutomationAccountConnectorSlug(args.target.connectorSlug)
-    ) {
-      // R1 compatibility only: outgoing main insertEventAutomation and the
-      // other automation creators read this selection under connector_state.
-      // New writers do not depend on it; remove in R2 once main no longer
-      // acquires connector_state.
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: args.target.connectorSlug,
-        }),
-      );
-    }
     // A deleted row stays locked until commit, so an Agent/thread cascade
     // waits for the generation invalidation below. Clearing an absent
     // selection leaves the generation alone (it may belong to a deleted

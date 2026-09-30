@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
@@ -639,15 +638,6 @@ const removeInactiveGmailWatchStates$ = command(
   },
 );
 
-function gmailLifecycleLockStatement(args: GmailPhysicalScopeInput) {
-  const scopeHash = createHash("sha256")
-    .update(`${normalizeGmailAddress(args.emailAddress)}\n${args.topicName}`)
-    .digest("hex");
-  const key = `workflow_watch:gmail:${scopeHash}`;
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
-}
-
 interface GmailWatchPublicationInput {
   readonly orgId: string;
   readonly userId: string;
@@ -718,49 +708,43 @@ const publishGmailWatch$ = command(
   ): Promise<"published" | "inactive" | "failed"> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
+    const [existing] = await db
+      .select({
+        watchExpirationAt: gmailWatchStates.watchExpirationAt,
+        needsRewatch: gmailWatchStates.needsRewatch,
+        hasConsumer: gmailStateHasEnabledConsumer(),
+      })
+      .from(gmailWatchStates)
+      .where(
+        and(
+          eq(gmailWatchStates.connectorId, args.connectorId),
+          eq(gmailWatchStates.topicName, args.topicName),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      existing?.hasConsumer &&
+      !args.forceRefresh &&
+      !existing.needsRewatch &&
+      existing.watchExpirationAt.getTime() >
+        currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS
+    ) {
+      return "published";
+    }
+    const watchResult = await watchGmailMailbox(
+      { accessToken: args.accessToken, topicName: args.topicName },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (watchResult.kind !== "ok") {
+      return "failed";
+    }
+    const watch = watchResult.value;
+    const expiration = watchExpirationDate(watch.expiration);
+    // Rolling-version watch interruptions are accepted. No users.stop,
+    // compatibility acquisition or compensating rollout renewal is added.
     return await db.transaction(async (tx) => {
-      // Authorized R1 exception: outgoing reconcileGmailPhysicalScope and
-      // account cleanup call mailbox-wide users.stop under this key. Keep only
-      // watch HTTP and conditional local publication in this boundary so an
-      // old stop cannot interrupt another enabled consumer's new watch.
-      // New/new publication uses the unique upsert and live-source predicates,
-      // not this key. R2 moves watch HTTP outside SQL and deletes the key only
-      // after serving/in-flight stop writers and stop-capable rollback targets
-      // are gone. Do not add credential, KMS or other provider work here.
-      await tx.execute(gmailLifecycleLockStatement(args));
-      const [existing] = await tx
-        .select({
-          watchExpirationAt: gmailWatchStates.watchExpirationAt,
-          needsRewatch: gmailWatchStates.needsRewatch,
-          hasConsumer: gmailStateHasEnabledConsumer(),
-        })
-        .from(gmailWatchStates)
-        .where(
-          and(
-            eq(gmailWatchStates.connectorId, args.connectorId),
-            eq(gmailWatchStates.topicName, args.topicName),
-          ),
-        )
-        .limit(1);
-      if (
-        existing?.hasConsumer &&
-        !args.forceRefresh &&
-        !existing.needsRewatch &&
-        existing.watchExpirationAt.getTime() >
-          currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS
-      ) {
-        return "published";
-      }
-      const watchResult = await watchGmailMailbox(
-        { accessToken: args.accessToken, topicName: args.topicName },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (watchResult.kind !== "ok") {
-        return "failed";
-      }
-      const watch = watchResult.value;
-      const expiration = watchExpirationDate(watch.expiration);
       // The unique upsert publishes only while the account is usable and a
       // consumer is enabled; no source row is locked. The connector FK check
       // protects a new row from a concurrent account delete.

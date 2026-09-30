@@ -13,7 +13,6 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  morningBriefNativeOwnerCompatibilitySql,
   morningBriefScheduleWhere,
   morningBriefLegacyWriterAuthorityFromRow,
 } from "./morning-brief-native-schedule.service";
@@ -136,19 +135,11 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
     };
     const settled = await settle(
       db.transaction(async (tx) => {
-        let [native] = await tx
+        const [native] = await tx
           .select()
           .from(morningBriefNativeSchedules)
           .where(morningBriefScheduleWhere(lineage))
           .limit(1);
-        if (!native) {
-          await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
-          [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(morningBriefScheduleWhere(lineage))
-            .limit(1);
-        }
         const authority = morningBriefLegacyWriterAuthorityFromRow(
           native,
           lineage,

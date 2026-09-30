@@ -861,7 +861,7 @@ describe("connector account lifecycle routes", () => {
             params: { connectionId },
             body: { target },
           }),
-          [200],
+          [200, 400],
         );
       }),
     );
@@ -1349,7 +1349,7 @@ describe("connector account lifecycle routes", () => {
             params: { connectionId },
             body: { target },
           }),
-          [200],
+          [200, 400],
         );
       }),
     );

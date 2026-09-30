@@ -258,7 +258,7 @@ const setDefaultInner$ = command(
           )
         : setDefaultConnectorAccount(writeDb, request, signal),
       (changed) => {
-        return changed
+        return changed instanceof Date
           ? {
               db: writeDb,
               scope: { orgId: auth.orgId, userId: auth.userId },
@@ -268,6 +268,9 @@ const setDefaultInner$ = command(
       },
     );
     signal.throwIfAborted();
+    if (updatedAt === "conflict") {
+      return badRequestMessage("Another default change won; please save again");
+    }
     if (!updatedAt) {
       return notFound("Connector account not found");
     }

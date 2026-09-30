@@ -180,17 +180,26 @@ notification traffic are accepted; precise synchronous remote teardown is not
 required. This removes the need to globally order ordinary local stop against
 every new remote watch merely to avoid a late `users.stop` stopping that watch.
 
-**R1-only rolling exception — September 30 coordination instruction.** Outgoing
-APIs still call mailbox-wide `users.stop`. Until their serving and in-flight
-requests are drained and no stop-capable rollback target remains, R1 keeps
-`users.watch` under the existing `workflow_watch:gmail` transaction-scoped key
-with only finite local conditional publication. This is the explicitly allowed
-external-I/O-in-transaction exception; OAuth/KMS/profile work remains outside.
-New writers never call stop and arbitrate publication with existing conditions
-and uniqueness, not the key. R2 moves watch HTTP outside the SQL transaction
-and deletes the key. The accepted no-interruption guarantee is not replaced by
-an unapproved rolling notification gap. See the [key-retirement inventory](./advisory-lock-release-1-key-retirement.md#gmail-rolling-compatibility-exception)
-for the unimplemented alternative and exact removal gate.
+**September 30 update — Ethan's direct decision supersedes default A.**
+“问题不大。我们流量很小别想着版本升级期间的事儿了”. Watch HTTP must be
+outside SQL in R1 and new writers no longer acquire `workflow_watch:gmail`.
+A late outgoing `users.stop` may cause a finite rolling notification gap; that
+gap is accepted now. Do not add forced R2 renewal or compensation. This does
+not reintroduce mailbox-wide stop in new code.
+
+**Nonfinancial operations need no concurrent-operation protection.** Ethan
+also accepted transient failure of concurrent SSH edits (“下次再连就能通就行”)
+and extended the principle to essentially all nonfinancial operations (“跟钱无关的
+基本都可以这么搞”). Remove advisory acquisitions directly, including old-version
+compatibility calls. Do not preserve newly introduced revision/generation CAS,
+savepoint arbitration or ordering machinery solely to serialize settings,
+connector selection, watches/queues or native/preference scheduling. Recovery
+by another save, reconnect or scheduled task is acceptable. Existing natural
+primary/foreign-key/unique constraints protect permanently invalid references.
+Keep authorization; amounts, payments, refunds and credits still require
+recoverable financial correctness. The two-release migration/trigger plan is
+unchanged; lock removal has no serving/in-flight/rollback compatibility gate.
+See the [key inventory](./advisory-lock-release-1-key-retirement.md).
 
 **Google Calendar: channel replacement and recovery may have notification gaps.**
 Create or renew remote channels outside database transactions and conditionally

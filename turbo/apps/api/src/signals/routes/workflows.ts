@@ -87,7 +87,6 @@ import {
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
-import { automationAccountProjectionCompatLockSql } from "../services/workflow-automation.service";
 import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
 import {
   workflowAutomationAccountConnectorSlug,
@@ -1318,7 +1317,6 @@ async function loadWorkflowCopyStorage(
 async function lockWorkflowCopyInputs(
   tx: WorkflowCopyTransaction,
   args: WorkflowCopyInput,
-  prepared?: WorkflowCopySource,
 ): Promise<boolean> {
   if (args.sourceWorkflow.officialDefinitionName !== null) {
     await lockAcceptedOfficialWorkflowCatalog(tx);
@@ -1349,24 +1347,6 @@ async function lockWorkflowCopyInputs(
     )
   ) {
     return false;
-  }
-  if (prepared) {
-    // No account row is locked: copied Automations are inserted unbound and
-    // the reprojection after them computes each account from current rows. An
-    // account change committing concurrently converges through its own
-    // reprojection or the projection repair paths. The compatibility key is
-    // taken before source Automations are locked, in main's order.
-    for (const connectorSlug of workflowCopyConnectorSlugs(
-      prepared.sourceAutomations,
-    )) {
-      await tx.execute(
-        automationAccountProjectionCompatLockSql({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug,
-        }),
-      );
-    }
   }
   return true;
 }
@@ -1399,7 +1379,6 @@ async function readWorkflowCopyWebhooks(
 async function readWorkflowCopySource(
   tx: WorkflowCopyTransaction,
   args: WorkflowCopyInput,
-  prepared?: WorkflowCopySource,
 ): Promise<
   | {
       readonly kind: "ok";
@@ -1410,7 +1389,7 @@ async function readWorkflowCopySource(
       readonly message: string;
     }
 > {
-  if (!(await lockWorkflowCopyInputs(tx, args, prepared))) {
+  if (!(await lockWorkflowCopyInputs(tx, args))) {
     return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
   }
   const official =
@@ -1521,7 +1500,7 @@ async function copyWorkflowDatabaseRows(
   signal: AbortSignal,
 ): Promise<CopyWorkflowDatabaseResult> {
   return await db.transaction(async (tx) => {
-    const current = await readWorkflowCopySource(tx, args, args.source);
+    const current = await readWorkflowCopySource(tx, args);
     if (current.kind === "conflict") {
       return current;
     }

@@ -36,7 +36,6 @@ import { logger } from "../../lib/log";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { encryptStoredSecretValue } from "./crypto.utils";
-import { modelProviderStateLockStatement } from "./auth-state-lock.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
 import {
@@ -205,15 +204,8 @@ export const deleteUserModelProvider$ = command(
     }
 
     const result = await writeDb.transaction(async (tx) => {
-      // R1 compatibility only: origin/main settings writers
-      // (persistMultiAuthModelProvider, deleteUserModelProvider$) read the
-      // provider unlocked and write secrets before the provider row, and
-      // origin/main refresh (refreshAccessTokenForSource) holds this key across
-      // provider I/O. They serialize only through this key. R2 removes this
-      // acquisition once no serving, in-flight or rollback origin/main writer
-      // takes model_provider_state. New writers do not rely on it: each one
-      // writes the provider row first, so the row's implicit lock orders them.
-      await tx.execute(modelProviderStateLockStatement(args));
+      // Provider configuration is low frequency; no compatibility or
+      // concurrent-operation lock is retained.
       signal.throwIfAborted();
 
       // The conditional delete is the decision: zero rows means another
@@ -815,13 +807,7 @@ const persistMultiAuthModelProvider$ = command(
   }> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      // R1 compatibility only: origin/main persistMultiAuthModelProvider and
-      // deleteUserModelProvider$ read the provider unlocked and write secrets
-      // before the provider row; origin/main refreshAccessTokenForSource holds
-      // this key across provider I/O. R2 removes this acquisition once no
-      // serving, in-flight or rollback origin/main writer takes
-      // model_provider_state. New writers do not rely on it.
-      await tx.execute(modelProviderStateLockStatement(args));
+      // Existing provider uniqueness handles first-save insertion.
       signal.throwIfAborted();
 
       // Upsert the provider row first. Its implicit row (or unique-index)

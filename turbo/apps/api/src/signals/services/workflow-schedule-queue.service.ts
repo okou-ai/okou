@@ -17,7 +17,6 @@ import {
   type WorkflowScheduleClaimPlan,
 } from "./workflow-chat-event-queue.service";
 import {
-  morningBriefNativeOwnerCompatibilitySql,
   morningBriefScheduleWhere,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
@@ -179,22 +178,12 @@ export const enqueueWorkflowScheduleInput$ = command(
             orgId: scheduleClaim.orgId,
             userId: scheduleClaim.ownerUserId,
           };
-          // A plain read classifies the owner; the consuming UPDATE below
-          // re-checks the exact native state it relies on. The pre-existing
-          // owner-key advisory lock still covers a member without a row.
-          let [native] = await tx
+          // A plain read classifies the owner; no absent-owner key is taken.
+          const [native] = await tx
             .select()
             .from(morningBriefNativeSchedules)
             .where(morningBriefScheduleWhere(owner))
             .limit(1);
-          if (!native) {
-            await tx.execute(morningBriefNativeOwnerCompatibilitySql(owner));
-            [native] = await tx
-              .select()
-              .from(morningBriefNativeSchedules)
-              .where(morningBriefScheduleWhere(owner))
-              .limit(1);
-          }
           const admittedAt = nowDate();
           const { rowCount: consumed } = await tx.execute(
             consumeWorkflowScheduleAnchorSql(scheduleClaim, native, admittedAt),

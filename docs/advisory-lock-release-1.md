@@ -26,20 +26,33 @@ requirements, not authorization to release or to remove their locks prematurely.
 
 ## Current key retirement
 
-After `4f263928`, the concurrency-subscription key, SSH owner key and operator
-compaction acquisition are deleted: **15 API definitions and zero operator
-definitions** remain (previously 17 + 1). See the [per-key retirement inventory](./advisory-lock-release-1-key-retirement.md)
-for exact compatibility-only evidence, unchanged R1 work, empty-write removal,
-atomic counters and migration 1297 preflight. Database-handle propagation is a
-non-goal; historical ownership notes below are not R1 acceptance gaps.
-Gmail watch HTTP has the explicitly authorized R1-only rolling compatibility
-exception recorded in the [terminal contract](./advisory-lock-terminal-state.md)
-and [key table](./advisory-lock-release-1-key-retirement.md#gmail-rolling-compatibility-exception).
-It preserves other enabled consumers; R2 removes the key and moves watch HTTP
-outside SQL only after every stop-capable serving/in-flight/rollback writer is
-gone. This is not permission to put other external work in a transaction.
+Current source: **6 API definitions and zero operator definitions** (before
+this continuation 16 + 0; initial steer 17 + 1). All nonfinancial keys are
+removed, including Gmail, SSH, model-policy, native/preference Morning Brief,
+bootstrap, connector/model-provider state and DCR; customer publication is also
+key-free. The [current key table](./advisory-lock-release-1-key-retirement.md)
+is authoritative for exact behavior and remaining financial work.
 
-## Source and compatibility evidence
+Ethan's latest September 30 decisions supersede compatibility-only retention
+and the short-lived Gmail default-A exception. Watch HTTP is outside SQL; the
+rolling old-stop gap is accepted, without R2 forced renewal. Nonfinancial edits
+need no concurrent-operation protection when another save, reconnect or task
+recovers. SSH commit-time CAS and losing host-bump rollback are removed.
+Earlier unnecessary nonfinancial CAS/savepoint/version machinery still needs
+simplification; removing keys alone does not finish that additional instruction.
+
+Remaining keys are financial: billing purchase, usage-pack billing/invitation,
+credit and compaction shared/exclusive. They are R1 implementation work, not
+outgoing-version/R2 gates. Six application billing triggers also remain. Empty
+org-metadata UPDATEs and application-side failure increments are already fixed;
+allowance duplicate preflight is documented for current migration 1297.
+Database-handle propagation remains a non-goal. No merge/release is authorized.
+
+## Historical source and preparation evidence
+
+The table and older combined-batch notes below preserve preparation history;
+old lock-order, compatibility/R2 and Db/Tx propagation descriptions are not
+current acceptance requirements. Use the current key table above instead.
 
 The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
