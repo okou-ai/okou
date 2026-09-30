@@ -9576,7 +9576,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return db.$with("custom_connector_runtime_connections").as(
       db
-        .select(runCustomConnectorConnectionColumns())
+        .select({
+          ...runCustomConnectorConnectionColumns(),
+          // A native column keeps this ID qualified across both joined CTEs.
+          id: connectors.id,
+        })
         .from(connectors)
         .innerJoin(
           orgCustomConnectors,
