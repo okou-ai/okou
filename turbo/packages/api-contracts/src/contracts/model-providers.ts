@@ -162,17 +162,13 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   },
 };
 
-export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
-  "claude-fable-5-1",
-  "gpt-6-astra",
-  "gpt-6-luna",
-] as const satisfies readonly SupportedRunModel[];
-
-export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "gpt-6-luna" as const satisfies SupportedRunModel;
-
-export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "gpt-6-luna" as const satisfies SupportedRunModel;
+/**
+ * Every organization's fixed default model ("Auto"). It is not configurable:
+ * each organization always keeps this built-in policy, and runs without a
+ * thread pin or member preference use it.
+ */
+export const ORG_DEFAULT_RUN_MODEL =
+  "okou-1.0" as const satisfies SupportedRunModel;
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
@@ -181,14 +177,6 @@ export const modelProviderCredentialScopeSchema = z.enum(["org", "member"]);
 export type ModelProviderCredentialScope = z.infer<
   typeof modelProviderCredentialScopeSchema
 >;
-
-export interface DefaultOrgModelPolicySeed {
-  model: SupportedRunModel;
-  isDefault: boolean;
-  defaultProviderType: "built-in";
-  credentialScope: "org";
-  modelProviderId: null;
-}
 
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "okou-1.0": "Auto",
@@ -327,20 +315,6 @@ export function getBuiltInModelPriceTier(
 
 export function getCanonicalModelDisplayName(model: string): string {
   return isSupportedRunModel(model) ? SUPPORTED_RUN_MODEL_LABELS[model] : model;
-}
-
-export function getDefaultOrgModelPolicySeed(
-  defaultModel: SupportedRunModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-): DefaultOrgModelPolicySeed[] {
-  return DEFAULT_ORG_MODEL_POLICY_MODELS.map((model) => {
-    return {
-      model,
-      isDefault: model === defaultModel,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    };
-  });
 }
 
 /**
@@ -687,7 +661,7 @@ const BUILT_IN_MODEL_PROVIDER_CONFIG = {
   framework: "claude-code" as const,
   label: "Built-in model",
   models: [...ACTIVE_RUN_MODELS],
-  defaultModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  defaultModel: ORG_DEFAULT_RUN_MODEL,
 };
 
 export const MODEL_PROVIDER_TYPES = {
@@ -1657,6 +1631,8 @@ export const orgModelPolicySchema = z.object({
   id: z.uuid(),
   model: supportedRunModelSchema,
   modelLabel: z.string(),
+  // Deprecated compatibility field for released clients that decode it as
+  // required. Always `model === ORG_DEFAULT_RUN_MODEL`; new code must not read it.
   isDefault: z.boolean(),
   defaultProviderType: modelProviderTypeSchema,
   // Concrete built-in provider; other policies use defaultProviderType.
@@ -1706,9 +1682,9 @@ export const orgModelPolicySchema = z.object({
 
 export type OrgModelPolicy = z.infer<typeof orgModelPolicySchema>;
 
+// Released clients may still send `isDefault`; z.object strips it.
 export const updateOrgModelPolicySchema = z.object({
   model: supportedRunModelSchema,
-  isDefault: z.boolean(),
   defaultProviderType: modelProviderWriteTypeSchema,
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
@@ -1727,6 +1703,9 @@ export const orgModelPoliciesResponseSchema = z.object({
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
   modelsAvailableToAdd: z.array(supportedRunModelSchema),
+  // Deprecated compatibility fields for released clients. Always
+  // ORG_DEFAULT_RUN_MODEL and its policy ID when that policy is present; new
+  // code must not read them.
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });

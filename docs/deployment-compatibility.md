@@ -1,5 +1,36 @@
 # Deployment Compatibility
 
+## Organization default model fixed to `okou-1.0` (2026-09-30)
+
+The organization default model is no longer configurable. Every organization
+uses the built-in `okou-1.0` (Auto) policy as its default; model resolution is
+thread pin, then member preference, then `okou-1.0`. The `OkouModels` feature
+switch is removed, so `okou-1.0` is available to every organization. New
+organizations bootstrapped by the new API start in Auto mode, whose only
+organization policy is `okou-1.0`. `PUT /api/model-policies` rejects a policy
+list that omits `okou-1.0` or routes it off the built-in organization route,
+and no longer declares `isDefault`.
+
+Migration `1295_okou_1_0_fixed_org_default` inserts the `okou-1.0` built-in
+policy for every organization in `org_metadata` or `org_model_policies` and
+makes it the only `is_default` row. It does not change `model_mode` or member
+preferences. The `is_default` column stays: the new API writes it as
+`model = 'okou-1.0'` and never reads it. Dropping it is a follow-up change.
+
+Old and new versions during deploy:
+
+- Previous API after the migration: its default repair keeps `okou-1.0` as the
+  default, and the removed switch only gated Add Model. Organizations it
+  creates get the previous seed in Custom mode; the new API inserts `okou-1.0`
+  for them on the next policy read.
+- Old App, iOS and CLI against the new API: responses keep the deprecated
+  `isDefault`, `workspaceDefaultModel` and `workspaceDefaultPolicyId` fields,
+  derived from `okou-1.0`, because released iOS builds decode `isDefault` as
+  required. A request `isDefault` is stripped, so an old "set default" write is
+  a no-op; an old write that removes `okou-1.0` receives `400`.
+- Rollback: the schema is unchanged, and the previous API accepts Auto
+  organizations whose only policy is `okou-1.0`.
+
 ## Integration model commands are thread-scoped (2026-09-29)
 
 The integration `/model` command now reads the effective model of an existing

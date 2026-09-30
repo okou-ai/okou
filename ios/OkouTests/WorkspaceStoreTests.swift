@@ -187,7 +187,7 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/model-policies":
         return ChatHTTPResponse(
           body: """
-            {"revision":"test","writePreconditionRequired":true,"policies":[],"workspaceDefaultModel":"gpt-5.6-sol","workspaceDefaultPolicyId":null}
+            {"revision":"test","writePreconditionRequired":true,"policies":[{"model":"okou-1.0","routeStatus":"valid"}]}
             """)
       case "/api/chat-threads":
         guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
@@ -196,7 +196,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(
           status: 201,
           body: """
-            {"id":"\(storeThreadID)","title":null,"createdAt":"\(storeDate)","selectedModel":"gpt-5.6-sol","serviceTier":null}
+            {"id":"\(storeThreadID)","title":null,"createdAt":"\(storeDate)","selectedModel":"okou-1.0","serviceTier":null}
             """)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Latest title")
       case "/api/chat-threads/events":

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   getBuiltInVendor,
+  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   testTeamsStateContract,
@@ -274,7 +274,7 @@ async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
 function builtInModelKeyRows(agentId: string) {
   return [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: getBuiltInVendor(ORG_DEFAULT_RUN_MODEL),
       apiKey: `built-in-key-default-${agentId}`,
       label: agentId,
     },

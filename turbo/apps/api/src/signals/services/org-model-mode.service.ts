@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { and, eq, ne, notInArray } from "drizzle-orm";
 import {
   modelProviderTypeSchema,
+  ORG_DEFAULT_RUN_MODEL,
   type OrgModelMode,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviders } from "@okouai/db/schema/model-provider";
@@ -113,8 +114,7 @@ const enterAutoMode$ = command(
           revision: snapshot.revision,
           policies: [
             {
-              model: "okou-1.0",
-              isDefault: true,
+              model: ORG_DEFAULT_RUN_MODEL,
               defaultProviderType: "built-in",
               credentialScope: "org",
               modelProviderId: null,
@@ -155,23 +155,14 @@ const enterCustomMode$ = command(
     signal.throwIfAborted();
     // Reconcile on every Custom request so a retry repairs a partial switch.
     const policies = await db
-      .select({
-        model: orgModelPolicies.model,
-        isDefault: orgModelPolicies.isDefault,
-      })
+      .select({ model: orgModelPolicies.model })
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, orgId));
     signal.throwIfAborted();
-    const defaultPolicy = policies.find((policy) => {
-      return policy.isDefault;
-    });
-    if (!defaultPolicy) {
-      return;
-    }
     await db
       .update(orgMembersMetadata)
       .set({
-        selectedModel: defaultPolicy.model,
+        selectedModel: ORG_DEFAULT_RUN_MODEL,
         serviceTier: null,
         updatedAt: nowDate(),
       })

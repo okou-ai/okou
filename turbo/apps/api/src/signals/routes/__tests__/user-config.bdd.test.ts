@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -11,6 +11,7 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
@@ -296,10 +297,10 @@ describe("AUTH-03 user model preference", () => {
     });
 
     const updated = await cfg.updateModelPreference(admin, {
-      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      selectedModel: ORG_DEFAULT_RUN_MODEL,
       serviceTier: null,
     });
-    expect(updated.selectedModel).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    expect(updated.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
     expect(updated.serviceTier).toBeNull();
     expect(updated.updatedAt).toStrictEqual(expect.any(String));
     const readUpdated = await cfg.readModelPreference(admin);
@@ -329,6 +330,22 @@ describe("AUTH-03 user model preference", () => {
   it("stores independent model effort preferences without deleting prior entries", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
+    // Astra is restricted on the limited-free plan this admin starts on.
+    await createRunsApi(context).grantProEntitlement(admin);
+    await createRunsApi(context).updateOrgModelPolicies(admin, [
+      {
+        model: "gpt-6-astra",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: "gpt-6-luna",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
 
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",

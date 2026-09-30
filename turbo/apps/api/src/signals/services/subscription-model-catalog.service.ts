@@ -4,6 +4,7 @@ import {
   isCodexFastModeModel,
   isModelSupportedByProvider,
   isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { subscriptionModelCatalog } from "@okouai/db/schema/subscription-model-catalog";
@@ -177,21 +178,14 @@ export async function resetStaleAutoMemberSelection(
       )
       .limit(1),
     db
-      .select({
-        model: orgModelPolicies.model,
-        isDefault: orgModelPolicies.isDefault,
-      })
+      .select({ model: orgModelPolicies.model })
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, orgId)),
   ]);
   const selectedModel = member?.selectedModel;
-  const defaultPolicy = policies.find((policy) => {
-    return policy.isDefault;
-  });
   if (
     org?.mode !== "auto" ||
     !selectedModel ||
-    !defaultPolicy ||
     policies.some((policy) => {
       return policy.model === selectedModel;
     })
@@ -212,7 +206,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: defaultPolicy.model,
+      selectedModel: ORG_DEFAULT_RUN_MODEL,
       serviceTier: null,
       updatedAt: nowDate(),
     })

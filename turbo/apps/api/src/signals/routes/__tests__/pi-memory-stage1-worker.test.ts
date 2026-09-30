@@ -1968,7 +1968,7 @@ describe("Stage 1 source credentials", () => {
       await runs.updateOrgModelPolicies(actor, [
         {
           model: "gpt-5.6-luna",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: source.modelProviderId,
@@ -1985,7 +1985,7 @@ describe("Stage 1 source credentials", () => {
       await runs.updateOrgModelPolicies(actor, [
         {
           model: "gpt-5.6-luna",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: replacement.modelProvider,
           credentialScope: "org",
           modelProviderId: replacement.modelProviderId,
@@ -1996,7 +1996,6 @@ describe("Stage 1 source credentials", () => {
       ).toContainEqual(
         expect.objectContaining({
           model: "gpt-5.6-luna",
-          isDefault: true,
           modelProviderId: replacement.modelProviderId,
         }),
       );
@@ -2753,7 +2752,7 @@ describe("Stage 1 background credential availability", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

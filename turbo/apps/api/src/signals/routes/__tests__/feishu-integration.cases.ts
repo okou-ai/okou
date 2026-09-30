@@ -5864,6 +5864,11 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        // Runs without a thread pin use the member preference, then Auto.
+        await runsApi.updateUserModelPreference(
+          secondActor,
+          "claude-fable-5-1",
+        );
         await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
           visibility: "public",
         });
@@ -6297,6 +6302,10 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        await runsApi.updateUserModelPreference(
+          secondActor,
+          "claude-fable-5-1",
+        );
         await postEvent(
           callbackUrl,
           groupMessage(appId, "handle this group task as another user", {
@@ -6412,7 +6421,7 @@ export function registerSharedFeishuConversationTests(): void {
       await runsApi.updateOrgModelPolicies(actor, [
         {
           model: "gpt-6-astra",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6480,7 +6489,6 @@ export function registerSharedFeishuConversationTests(): void {
       await runsApi.updateOrgModelPolicies(actor, [
         {
           model: "gpt-6-astra",
-          isDefault: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6520,6 +6528,7 @@ export function registerSharedFeishuConversationTests(): void {
       const { actor, appId, callbackUrl, defaultAgentId } = fixture;
       await startFeishuDmSession(fixture);
       await allowFeishuGptModel(actor);
+      const memberModel = await readFeishuMemberModel(actor);
       const thread = requireValue(
         (await readFeishuThreadEvents(actor)).find((event) => {
           return event.kind === "created" && event.agentId === defaultAgentId;
@@ -6537,7 +6546,7 @@ export function registerSharedFeishuConversationTests(): void {
           return messageContent(message).includes("Model switched");
         }),
       ).toBeTruthy();
-      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
+      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
       await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
@@ -6553,13 +6562,14 @@ export function registerSharedFeishuConversationTests(): void {
       const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
       await allowFeishuGptModel(actor);
+      const memberModel = await readFeishuMemberModel(actor);
 
       await postEvent(callbackUrl, directMessage(appId, "/model gpt-6-astra"), {
         encrypted: true,
       });
       await flushWaitUntilForTest();
 
-      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
+      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
       expect(
         fixtureState.outboundMessages.some((message) => {
           return messageContent(message).includes("existing Okou conversation");

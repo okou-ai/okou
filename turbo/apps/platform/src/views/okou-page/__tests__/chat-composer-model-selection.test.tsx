@@ -17,6 +17,7 @@ import {
   getCanonicalModelDisplayName,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
+  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type UpdateUserModelPreferenceRequest,
@@ -53,7 +54,6 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
 interface PolicyOptions {
-  readonly default?: boolean;
   readonly providerType?: ModelProviderType;
   readonly credentialScope?: "member" | "org";
 }
@@ -69,7 +69,7 @@ function modelPolicy(
     id: `e1000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: options.default ?? false,
+    isDefault: model === ORG_DEFAULT_RUN_MODEL,
     defaultProviderType: providerType,
     ...(isBuiltInModelProviderType(providerType)
       ? { runtimeProviderType: getBuiltInConcreteProviderType(model) }
@@ -87,15 +87,10 @@ function modelPolicy(
   };
 }
 
-function configurePolicies(
-  models: readonly SupportedRunModel[],
-  defaultModel: SupportedRunModel,
-): void {
+function configurePolicies(models: readonly SupportedRunModel[]): void {
   context.mocks.data.orgModelPolicies(
     models.map((model, index) => {
-      return modelPolicy(model, index + 1, {
-        default: model === defaultModel,
-      });
+      return modelPolicy(model, index + 1);
     }),
   );
 }
@@ -118,7 +113,7 @@ function installNewChat(
   selectedModel: SupportedRunModel,
 ): void {
   installRunChat({ selectedModel });
-  configurePolicies(models, models[0] ?? selectedModel);
+  configurePolicies(models);
   context.mocks.data.userModelPreference(preference(selectedModel));
 }
 
@@ -327,7 +322,7 @@ test("Explain model availability by plan and provider", async () => {
   installRunChat({ selectedModel: "deepseek-v4-flash" });
   context.mocks.data.userModelPreference(preference("deepseek-v4-flash"));
   context.mocks.data.orgModelPolicies([
-    modelPolicy("deepseek-v4-flash", 1, { default: true }),
+    modelPolicy("deepseek-v4-flash", 1),
     modelPolicy("gpt-5.6-luna", 2),
     modelPolicy("gpt-5.6-sol", 3),
     modelPolicy("claude-fable-5-1", 4),
@@ -432,7 +427,7 @@ test("Keep unavailable routes disabled and open plan comparison from the menu", 
     "deepseek-v4-flash",
   );
   context.mocks.data.orgModelPolicies([
-    modelPolicy("deepseek-v4-flash", 1, { default: true }),
+    modelPolicy("deepseek-v4-flash", 1),
     modelPolicy("claude-fable-5-1", 2),
     {
       ...modelPolicy("gpt-5.6-sol", 3),
@@ -468,7 +463,7 @@ test("Keep unavailable routes disabled and open plan comparison from the menu", 
 test("Adjust effort from the composer without opening the model picker", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
-  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -509,7 +504,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
       creates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -564,7 +559,7 @@ test("Select the default effort on an existing thread without changing Fast", as
       updates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: RUN_PATH,
@@ -672,7 +667,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
       updates.push(body);
     },
   });
-  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"]);
   await setupPage({
     context,
     path: RUN_PATH,
@@ -735,7 +730,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
 test("Follow model-scoped effort changes made in another session", async () => {
   const events: ChatThreadEvent[] = [];
   installRunChat({ selectedModel: "claude-sonnet-5", reasoningEffort: "high" });
-  configurePolicies(["claude-sonnet-5"], "claude-sonnet-5");
+  configurePolicies(["claude-sonnet-5"]);
   context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
     return respond(200, {
       events: events.filter((event) => {
@@ -810,7 +805,7 @@ test.each([
     const user = userEvent.setup({ delay: null });
     installRunChat({ selectedModel: model });
     context.mocks.data.orgModelPolicies([
-      modelPolicy(model, 1, { default: true, providerType }),
+      modelPolicy(model, 1, { providerType }),
     ]);
     await setupPage({
       context,

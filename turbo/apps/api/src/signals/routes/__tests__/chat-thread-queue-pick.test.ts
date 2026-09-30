@@ -517,14 +517,13 @@ describe("CHAT-02: queued chat thread picks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -581,14 +580,14 @@ describe("CHAT-02: queued chat thread picks", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const nativePolicy = {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
     } as const;
     await api.updateOrgModelPolicies(actor, [
       nativePolicy,
-      { ...nativePolicy, model: "claude-opus-5", isDefault: false },
+      { ...nativePolicy, model: "claude-opus-5", preferred: false },
     ]);
     const blocker = await sendChatRun(actor, {
       agentId,

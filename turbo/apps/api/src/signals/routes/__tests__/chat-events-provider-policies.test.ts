@@ -1,6 +1,6 @@
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -184,7 +184,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -262,7 +262,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openAiId,
@@ -340,7 +340,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -393,7 +393,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -452,7 +452,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("routes from the authoritative policies seeded by the same send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
     await stageUnrepairedOrgModelPolicyFixture({
       orgId: requireOrgId(actor),
       state: "unseeded",
@@ -466,12 +466,12 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({
-      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      selectedModel: ORG_DEFAULT_RUN_MODEL,
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      model: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      catalogModel: ORG_DEFAULT_RUN_MODEL,
     });
     await cancelChatRun(actor, run.runId);
   }, 90_000);
@@ -484,7 +484,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -604,7 +604,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -629,7 +629,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(restrictedPolicies.policies).toContainEqual(
       expect.objectContaining({
         model: "claude-fable-5-1",
-        isDefault: true,
         defaultProviderType: "anthropic-api-key",
         modelProviderId: providerId,
       }),
@@ -656,7 +655,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "deepseek-v4.1-flash",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openrouter-codex",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -927,14 +926,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "deepseek-v4-flash",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "deepseek",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "deepseek-v4.1-flash",
-        isDefault: false,
         defaultProviderType: "openrouter-codex",
         credentialScope: "org",
         modelProviderId: openrouterProviderId,
@@ -985,14 +983,14 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId);
   });
 
-  it("captures the workspace default without changing a thread whose model was removed", async () => {
+  it("captures the fixed default without changing a thread whose model was removed", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1013,26 +1011,27 @@ describe("CHAT-02: model-first provider policies", () => {
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
+    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
     await seedBuiltInModelKey("gpt-6-astra");
+    // The member preference does not replace an unavailable thread model.
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
+    await preparePiResourceHandoff(actor, agentId);
 
     const fallback = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "continue through the current workspace default",
+      prompt: "continue through the fixed default",
     });
     const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-    expect(claimEnvironment(fallbackClaim.claim).OPENAI_MODEL).toBe(
-      "gpt-6-astra",
-    );
+    expect(fallbackClaim.claim.modelUsageProvider).toBe(ORG_DEFAULT_RUN_MODEL);
     await expect(
       chat.readThreadMetadata(actor, first.threadId),
     ).resolves.toMatchObject({
@@ -1049,14 +1048,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1095,14 +1093,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "claude-fable-5-1",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1172,7 +1169,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1185,14 +1182,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "claude-fable-5-1",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1279,21 +1275,19 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-sol",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "gpt-5.6-luna",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1491,7 +1485,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -1536,7 +1530,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openAiProviderId,
@@ -1571,30 +1565,16 @@ describe("CHAT-02: model-first provider policies", () => {
       preset: "@preset/okou-1-0",
     },
   ] as const)(
-    "routes built-in $model only through its OpenRouter Preset",
+    "routes the fixed default built-in $model only through its OpenRouter Preset",
     async ({ model, preset }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await seedBuiltInModelCandidateKeys(context, model);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouModels]: true,
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          isDefault: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouModels]: false,
-      });
       await preparePiResourceHandoff(actor, agentId);
+      await chat.updateUserModelPreference(actor, null);
 
+      // No thread pin or member preference: the fixed org default applies.
       const run = await sendChatRun(actor, {
         agentId,
-        model,
         prompt: "capture the managed Okou Preset route",
       });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
@@ -1632,7 +1612,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -1696,7 +1676,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -1744,7 +1724,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -1892,7 +1872,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1990,7 +1970,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "deepseek-v4-flash",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -2061,7 +2041,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -2137,7 +2117,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

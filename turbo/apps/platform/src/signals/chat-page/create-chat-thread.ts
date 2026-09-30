@@ -9,7 +9,10 @@ import {
   type State,
 } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { i18n } from "../../i18n/index.ts";
 import { onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -3601,10 +3604,7 @@ function createChatThreadComposerSignals(
         return policy.model === selectedModel;
       })
         ? selectedModel
-        : policies.workspaceDefaultModel;
-      if (!isSupportedRunModel(effectiveModel)) {
-        return null;
-      }
+        : ORG_DEFAULT_RUN_MODEL;
       const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel: effectiveModel,

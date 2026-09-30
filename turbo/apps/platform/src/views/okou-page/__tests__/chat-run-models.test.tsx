@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import {
   getCanonicalModelDisplayName,
+  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderResponse,
   type OrgModelPolicy,
   type SupportedRunModel,
@@ -49,7 +50,6 @@ function configureCodexSubscriptionPolicies(
 ): void {
   configureModelPolicies(models, {
     credentialScope: "member",
-    defaultModel: models[0],
     defaultProviderType: "codex-oauth-token",
     modelProviderId: PROVIDER_ID,
   });
@@ -84,7 +84,6 @@ function configureModelPolicies(
   models: readonly SupportedRunModel[],
   options: {
     readonly credentialScope?: "member" | "org";
-    readonly defaultModel?: SupportedRunModel;
     readonly defaultProviderType?: "built-in" | "codex-oauth-token";
     readonly modelProviderId?: string | null;
   } = {},
@@ -95,7 +94,7 @@ function configureModelPolicies(
       id: `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       model,
       modelLabel: getCanonicalModelDisplayName(model),
-      isDefault: model === (options.defaultModel ?? models[0]),
+      isDefault: model === ORG_DEFAULT_RUN_MODEL,
       defaultProviderType: options.defaultProviderType ?? "built-in",
       credentialScope: options.credentialScope ?? "org",
       modelProviderId: options.modelProviderId ?? null,
@@ -327,16 +326,10 @@ test.each(STRUCTURED_FAILURE_CASES)(
   },
 );
 
-test("shows only Auto for configured Okou models when the Add Model switch is off", async () => {
-  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"], {
-    defaultModel: "gpt-5.6-luna",
-  });
+test("shows Auto once for a configured Okou model", async () => {
+  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"]);
   installRunChat({ selectedModel: "gpt-5.6-luna" });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouModels]: false },
-  });
+  await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
   const user = userEvent.setup({ delay: null });

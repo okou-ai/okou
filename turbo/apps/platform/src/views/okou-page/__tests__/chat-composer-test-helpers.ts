@@ -5,9 +5,10 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  ModelProviderResponse,
-  OrgModelPolicy,
+import {
+  ORG_DEFAULT_RUN_MODEL,
+  type ModelProviderResponse,
+  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
@@ -125,7 +126,7 @@ export function buildModelPolicy(
   };
 }
 
-export function mockOrgModelRoutes(defaultSelectedModel: string): void {
+export function mockOrgModelRoutes(): void {
   context.mocks.data.orgModelProviders([
     buildProvider({
       id: OPENROUTER_PROVIDER_ID,
@@ -148,7 +149,6 @@ export function mockOrgModelRoutes(defaultSelectedModel: string): void {
       id: "00000000-0000-4000-a000-000000000201",
       model: "claude-fable-5-1",
       modelLabel: "Claude Fable 5.1",
-      isDefault: defaultSelectedModel === "claude-fable-5-1",
       defaultProviderType: "openrouter-api-key",
       credentialScope: "org",
       modelProviderId: OPENROUTER_PROVIDER_ID,
@@ -157,7 +157,6 @@ export function mockOrgModelRoutes(defaultSelectedModel: string): void {
       id: "00000000-0000-4000-a000-000000000202",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: defaultSelectedModel === "claude-sonnet-5",
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: ANTHROPIC_PROVIDER_ID,
@@ -174,10 +173,17 @@ export function mockOrgModelRoutes(defaultSelectedModel: string): void {
       id: "00000000-0000-4000-a000-000000000204",
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      isDefault: defaultSelectedModel === "claude-opus-5",
       defaultProviderType: "vercel-ai-gateway",
       credentialScope: "org",
       modelProviderId: VERCEL_PROVIDER_ID,
+    }),
+    buildModelPolicy({
+      id: "00000000-0000-4000-a000-000000000205",
+      model: ORG_DEFAULT_RUN_MODEL,
+      modelLabel: "Auto",
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
     }),
   ]);
 }

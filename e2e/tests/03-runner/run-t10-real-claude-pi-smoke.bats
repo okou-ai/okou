@@ -19,23 +19,28 @@ setup_file() {
 
     local policies policy_payload feature_switches
     policies="$(runner_api_curl "/api/model-policies")"
+    # Every policy write must keep the fixed organization default (okou-1.0).
     policy_payload="$(jq -c --arg model "$REAL_PI_MODEL" '
         {
             revision,
             policies: (
                 [.policies[] |
-                    select(.model != $model) |
+                    select(.model != $model and .model != "okou-1.0") |
                     {
                         model,
-                        isDefault,
                         defaultProviderType,
                         credentialScope,
                         modelProviderId
                     }
                 ] + [
                     {
+                        model: "okou-1.0",
+                        defaultProviderType: "built-in",
+                        credentialScope: "org",
+                        modelProviderId: null
+                    },
+                    {
                         model: $model,
-                        isDefault: any(.policies[]; .model == $model and .isDefault),
                         defaultProviderType: "built-in",
                         credentialScope: "org",
                         modelProviderId: null

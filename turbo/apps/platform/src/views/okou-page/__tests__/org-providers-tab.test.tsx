@@ -4,6 +4,7 @@ import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model
 import {
   ACTIVE_RUN_MODELS,
   getCanonicalModelDisplayName,
+  ORG_DEFAULT_RUN_MODEL,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPoliciesRequest,
   type ModelProviderResponse,
@@ -155,13 +156,12 @@ function builtInPolicy(
   id: string,
   model: OrgModelPolicy["model"],
   modelLabel: string,
-  isDefault: boolean,
 ): OrgModelPolicy {
   return {
     id,
     model,
     modelLabel,
-    isDefault,
+    isDefault: model === ORG_DEFAULT_RUN_MODEL,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -170,6 +170,14 @@ function builtInPolicy(
     createdAt: "2026-03-01T00:00:00Z",
     updatedAt: "2026-03-01T00:00:00Z",
   };
+}
+
+function autoPolicy(): OrgModelPolicy {
+  return builtInPolicy(
+    "00000000-0000-4000-a000-000000000210",
+    ORG_DEFAULT_RUN_MODEL,
+    "Auto",
+  );
 }
 
 function claudeOpusApiKeyPolicy(): OrgModelPolicy {
@@ -188,13 +196,12 @@ function claudeOpusApiKeyPolicy(): OrgModelPolicy {
   };
 }
 
-function existingApiKeyPolicy(isDefault: boolean): OrgModelPolicy {
+function existingApiKeyPolicy(): OrgModelPolicy {
   return {
     ...builtInPolicy(
       "00000000-0000-4000-a000-000000000214",
       "claude-fable-5-1",
       "Claude Fable 5.1",
-      isDefault,
     ),
     defaultProviderType: "anthropic-api-key",
     modelProviderId: anthropicApiKeyProvider().id,
@@ -205,11 +212,8 @@ function mockExistingApiKeyRoute(policies: OrgModelPolicy[] = []): void {
   context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
   context.mocks.data.orgModelPolicies([
     ...policies,
-    existingApiKeyPolicy(
-      !policies.some((policy) => {
-        return policy.isDefault;
-      }),
-    ),
+    existingApiKeyPolicy(),
+    autoPolicy(),
   ]);
 }
 
@@ -257,9 +261,9 @@ function mockApiKeyModelRouteStory(): void {
       "00000000-0000-4000-a000-000000000211",
       "deepseek-v4-flash",
       "DeepSeek V4 Flash",
-      true,
     ),
     claudeOpusApiKeyPolicy(),
+    autoPolicy(),
   ]);
 }
 
@@ -404,8 +408,8 @@ async function openExistingGateway(displayName: string, routed = false) {
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
+    autoPolicy(),
     ...(routed
       ? [
           {
@@ -413,7 +417,6 @@ async function openExistingGateway(displayName: string, routed = false) {
               "00000000-0000-4000-a000-000000000212",
               "claude-sonnet-5",
               "Claude Sonnet 5",
-              false,
             ),
             defaultProviderType: "custom-anthropic-messages" as const,
             modelProviderSurfaceId: "00000000-0000-4000-a000-000000000301",
@@ -566,25 +569,25 @@ test("Keep models readable but hide configuration for an unconfigured workspace"
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
+    autoPolicy(),
   ]);
   mockGatewayConnectionLifecycle([]);
   await openProvidersTab();
 
   const row = await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
   expect(
-    screen.getByRole("combobox", { name: "Default model" }),
-  ).toBeInTheDocument();
-  expect(
     screen.getByRole("heading", { name: "Available models" }),
   ).toBeInTheDocument();
   expect(within(row).getByText("Built-in")).toBeInTheDocument();
   expect(screen.queryByText("Add model")).not.toBeInTheDocument();
   expect(within(row).queryByLabelText("Actions for GPT 5.6 Luna")).toBeNull();
+  expect(within(row).getByLabelText("Delete model GPT 5.6 Luna")).toBeEnabled();
+  const autoRow = screen.getByTestId("org-model-policy-row-okou-1.0");
   expect(
-    within(row).getByLabelText("Delete model GPT 5.6 Luna"),
+    within(autoRow).getByLabelText("Auto can't be removed"),
   ).toBeDisabled();
+  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Provider connections" }),
   ).toBeNull();
@@ -598,14 +601,13 @@ test("Delete a built-in model directly without exposing editing", async () => {
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
     builtInPolicy(
       "00000000-0000-4000-a000-000000000212",
       "deepseek-v4-flash",
       "DeepSeek V4 Flash",
-      false,
     ),
+    autoPolicy(),
   ]);
   mockGatewayConnectionLifecycle([]);
   await openProvidersTab();
@@ -623,44 +625,11 @@ test("Delete a built-in model directly without exposing editing", async () => {
     ).not.toBeInTheDocument();
   });
   expect(
-    screen.getByRole("combobox", { name: "Default model" }),
-  ).toHaveTextContent("GPT 5.6 Luna");
-  const soleRow = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
+    screen.getByTestId("org-model-policy-row-gpt-5.6-luna"),
+  ).toBeInTheDocument();
   expect(
-    within(soleRow).getByLabelText("Delete model GPT 5.6 Luna"),
-  ).toBeDisabled();
-});
-
-test("Deleting the default built-in model promotes the remaining route", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000211",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000212",
-      "deepseek-v4-flash",
-      "DeepSeek V4 Flash",
-      false,
-    ),
-  ]);
-  mockGatewayConnectionLifecycle([]);
-  await openProvidersTab();
-
-  const row = await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
-  click(within(row).getByLabelText("Delete model GPT 5.6 Luna"));
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("org-model-policy-row-gpt-5.6-luna"),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    screen.getByRole("combobox", { name: "Default model" }),
-  ).toHaveTextContent("DeepSeek V4 Flash");
+    screen.getByTestId("org-model-policy-row-okou-1.0"),
+  ).toBeInTheDocument();
 });
 
 test("Deleting one legacy model preserves other restricted routes", async () => {
@@ -675,20 +644,18 @@ test("Deleting one legacy model preserves other restricted routes", async () => 
       "00000000-0000-4000-a000-000000000211",
       "claude-fable-5-1",
       "Claude Fable 5.1",
-      false,
     ),
     builtInPolicy(
       "00000000-0000-4000-a000-000000000212",
       "gpt-6-astra",
       "GPT 6 Astra",
-      false,
     ),
     builtInPolicy(
       "00000000-0000-4000-a000-000000000213",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
+    autoPolicy(),
   ]);
   mockGatewayConnectionLifecycle([]);
   await openProvidersTab();
@@ -710,87 +677,27 @@ test("Deleting one legacy model preserves other restricted routes", async () => 
   ).toBeInTheDocument();
 });
 
-test("Deleting a default picks an allowed fallback without removing restricted routes", async () => {
-  mockAdminOrg();
-  mockBillingCapabilities({
-    supportByok: false,
-    restrictedBuiltInModels: true,
-  });
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000211",
-      "claude-fable-5-1",
-      "Claude Fable 5.1",
-      false,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000212",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000213",
-      "deepseek-v4-flash",
-      "DeepSeek V4 Flash",
-      false,
-    ),
-  ]);
-  mockGatewayConnectionLifecycle([]);
+test("Keep Auto in Custom mode without a default-model setting", async () => {
+  mockApiKeyModelRouteStory();
   await openProvidersTab();
 
-  const row = await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
-  click(within(row).getByLabelText("Delete model GPT 5.6 Luna"));
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("org-model-policy-row-gpt-5.6-luna"),
-    ).not.toBeInTheDocument();
-  });
+  const autoRow = await screen.findByTestId("org-model-policy-row-okou-1.0");
+  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
   expect(
-    screen.getByTestId("org-model-policy-row-claude-fable-5-1"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("combobox", { name: "Default model" }),
-  ).toHaveTextContent("DeepSeek V4 Flash");
-});
+    screen.queryByRole("combobox", { name: "Default model" }),
+  ).not.toBeInTheDocument();
 
-test("Prevent deleting the only plan-eligible default route", async () => {
-  mockAdminOrg();
-  mockBillingCapabilities({
-    supportByok: false,
-    restrictedBuiltInModels: true,
-  });
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000211",
-      "claude-fable-5-1",
-      "Claude Fable 5.1",
-      false,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000212",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-  ]);
-  mockGatewayConnectionLifecycle([]);
-  await openProvidersTab();
-
-  const defaultRow = await screen.findByTestId(
-    "org-model-policy-row-gpt-5.6-luna",
+  click(within(autoRow).getByLabelText("Actions for Auto"));
+  expect(menuItemByText("Edit model")).toBeInTheDocument();
+  expect(menuItemByText("Auto can't be removed")).toHaveAttribute(
+    "aria-disabled",
+    "true",
   );
   expect(
-    within(defaultRow).getByLabelText("Delete model GPT 5.6 Luna"),
-  ).toBeDisabled();
-  const restrictedRow = screen.getByTestId(
-    "org-model-policy-row-claude-fable-5-1",
-  );
-  expect(
-    within(restrictedRow).getByLabelText("Delete model Claude Fable 5.1"),
-  ).toBeEnabled();
+    queryAllByRoleFast("menuitem").some((item) => {
+      return item.textContent?.trim() === "Delete model";
+    }),
+  ).toBeFalsy();
 });
 
 test("Keep model configuration for a selected workspace API key", async () => {
@@ -827,9 +734,6 @@ test("Hide model configuration after the last API-key route moves to built-in", 
       within(row).getByLabelText("Delete model Claude Opus 5"),
     ).toBeEnabled();
   });
-  expect(
-    screen.getByRole("combobox", { name: "Default model" }),
-  ).toBeInTheDocument();
 });
 
 test("Keep existing provider connections visible without an API-key route", async () => {
@@ -841,9 +745,7 @@ test("Keep existing provider connections visible without an API-key route", asyn
   expect(screen.queryByText("Add model")).toBeNull();
   const row = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
   expect(within(row).queryByLabelText("Actions for GPT 5.6 Luna")).toBeNull();
-  expect(
-    within(row).getByLabelText("Delete model GPT 5.6 Luna"),
-  ).toBeDisabled();
+  expect(within(row).getByLabelText("Delete model GPT 5.6 Luna")).toBeEnabled();
 });
 
 test("Keep OAuth subscriptions available without showing workspace edits", async () => {
@@ -854,14 +756,12 @@ test("Keep OAuth subscriptions available without showing workspace edits", async
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
     {
       ...builtInPolicy(
         "00000000-0000-4000-a000-000000000215",
         "gpt-5.6-sol",
         "GPT 5.6 Sol",
-        false,
       ),
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
@@ -878,7 +778,7 @@ test("Keep OAuth subscriptions available without showing workspace edits", async
   await expect(screen.findByRole("alert")).resolves.toBeInTheDocument();
 });
 
-test("Show the default model and available routes before provider connections", async () => {
+test("Show available routes before provider connections", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([]);
   const gateway = gatewayConnectionResponse({
@@ -906,7 +806,6 @@ test("Show the default model and available routes before provider connections", 
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
     {
       id: "00000000-0000-4000-a000-000000000212",
@@ -926,7 +825,6 @@ test("Show the default model and available routes before provider connections", 
 
   await openProvidersTab();
 
-  const defaultModel = screen.getByTestId("default-model-row");
   const availableModels = screen.getByRole("heading", {
     name: "Available models",
   });
@@ -935,12 +833,10 @@ test("Show the default model and available routes before provider connections", 
   });
   const claudeRow = screen.getByTestId("org-model-policy-row-claude-opus-5");
 
-  expect(within(defaultModel).getByRole("combobox")).toHaveTextContent(
-    "GPT 5.6 Luna",
-  );
+  expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
   expect(within(claudeRow).getByText("Acme Gateway")).toBeInTheDocument();
   expect(
-    defaultModel.compareDocumentPosition(availableModels) &
+    availableModels.compareDocumentPosition(claudeRow) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
@@ -1031,8 +927,8 @@ async function openAddGatewayDialog() {
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
+    autoPolicy(),
   ]);
   mockGatewayConnectionLifecycle();
 
@@ -1119,7 +1015,6 @@ test("Keep existing gateway controls while a failed list refresh is pending", as
       "00000000-0000-4000-a000-000000000211",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
   ]);
   context.mocks.api(
@@ -1259,7 +1154,6 @@ test("Gate free workspaces by route instead of by model", async () => {
       "00000000-0000-4000-a000-000000000222",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
   ]);
   await openProvidersTab();
@@ -1349,14 +1243,13 @@ test("Route a workspace model through a Claude subscription", async () => {
   ).toBeInTheDocument();
 });
 
-test("Add a Codex route and make it the workspace default", async () => {
+test("Add a Codex subscription route", async () => {
   mockAdminOrg();
   mockExistingApiKeyRoute([
     builtInPolicy(
       "00000000-0000-4000-a000-000000000211",
       "deepseek-v4-flash",
       "DeepSeek V4 Flash",
-      true,
     ),
   ]);
   await openProvidersTab();
@@ -1373,21 +1266,6 @@ test("Add a Codex route and make it the workspace default", async () => {
   );
   expect(within(codexRow).getByText("GPT 5.6 Sol")).toBeInTheDocument();
   expect(within(codexRow).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  const defaultRow = screen.getByTestId("default-model-row");
-  expect(within(defaultRow).getByRole("combobox")).toHaveTextContent(
-    "DeepSeek V4 Flash",
-  );
-  click(within(defaultRow).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
-
-  await waitFor(() => {
-    expect(within(defaultRow).getByRole("combobox")).toHaveTextContent(
-      "GPT 5.6 Sol",
-    );
-  });
-  expect(
-    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
-  ).toHaveTextContent("GPT 5.6 Sol");
 });
 
 test("Add DeepSeek V4.1 Flash as a built-in model", async () => {
@@ -1428,40 +1306,17 @@ test("Offer an upgrade for restricted built-in routes", async () => {
       "00000000-0000-4000-a000-000000000221",
       "claude-fable-5-1",
       "Claude Fable 5.1",
-      false,
     ),
     builtInPolicy(
       "00000000-0000-4000-a000-000000000222",
       "gpt-5.6-luna",
       "GPT 5.6 Luna",
-      true,
     ),
     claudeOpusApiKeyPolicy(),
+    autoPolicy(),
   ]);
   await openModelSettings();
 
-  const defaultRow = screen.getByTestId("default-model-row");
-  click(within(defaultRow).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: /Claude Fable 5.*Pro/u }));
-
-  const planDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  expect(
-    within(planDialog).getByRole("heading", { name: "Choose a plan" }),
-  ).toBeInTheDocument();
-  click(within(planDialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
-    expect(buttonByText("Models")).toBeInTheDocument();
-  });
-
-  click(buttonByText("Models"));
-  await expect(
-    screen.findByRole("heading", { name: "Models" }),
-  ).resolves.toBeInTheDocument();
   click(buttonByText("Add model"));
   const addDialog = screen.getByRole("dialog", { name: "Add model" });
   click(within(addDialog).getByRole("combobox"));
@@ -1494,7 +1349,6 @@ test("Offer a plan change when bring-your-own-key is unavailable", async () => {
       "00000000-0000-4000-a000-000000000222",
       "deepseek-v4-flash",
       "DeepSeek V4 Flash",
-      true,
     ),
   ]);
   await openModelSettings();
@@ -1527,10 +1381,10 @@ test("Repair a model route whose provider is missing", async () => {
       "00000000-0000-4000-a000-000000000211",
       "deepseek-v4-flash",
       "DeepSeek V4 Flash",
-      true,
     ),
     claudeOpusApiKeyPolicy(),
     missingOpenAiPolicy(),
+    autoPolicy(),
   ]);
   await openProvidersTab();
 
@@ -1556,21 +1410,6 @@ test("Repair a model route whose provider is missing", async () => {
       within(repairedRow).queryByText("Workspace OpenAI API key was removed"),
     ).toBeNull();
   });
-
-  const defaultRow = screen.getByTestId("default-model-row");
-  click(within(defaultRow).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
-
-  await waitFor(() => {
-    expect(within(defaultRow).getByRole("combobox")).toHaveTextContent(
-      "GPT 5.6 Luna",
-    );
-    expect(
-      within(
-        screen.getByTestId("org-model-policy-row-gpt-5.6-luna"),
-      ).queryByText("Missing provider"),
-    ).toBeNull();
-  });
 });
 
 test("Reconnect a stale workspace Claude account", async () => {
@@ -1581,7 +1420,7 @@ test("Reconnect a stale workspace Claude account", async () => {
       id: "00000000-0000-4000-a000-000000000231",
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      isDefault: true,
+      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -1666,7 +1505,7 @@ test("Complete a stale workspace Codex reconnection", async () => {
       id: "00000000-0000-4000-a000-000000000232",
       model: "gpt-5.6-sol",
       modelLabel: "GPT 5.6 Sol",
-      isDefault: true,
+      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -1716,8 +1555,8 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   return {
     revision: "administrative-snapshot-one",
     writePreconditionRequired: true,
-    workspaceDefaultModel: "gpt-5.6-luna",
-    workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000211",
+    workspaceDefaultModel: ORG_DEFAULT_RUN_MODEL,
+    workspaceDefaultPolicyId: autoPolicy().id,
     modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
       return (
         model !== "gpt-5.6-luna" &&
@@ -1733,19 +1572,18 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
         "00000000-0000-4000-a000-000000000211",
         "gpt-5.6-luna",
         "GPT 5.6 Luna",
-        true,
       ),
       {
         ...builtInPolicy(
           "00000000-0000-4000-a000-000000000212",
           "gpt-6-astra",
           "GPT 6 Astra",
-          false,
         ),
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
       },
-      existingApiKeyPolicy(false),
+      existingApiKeyPolicy(),
+      autoPolicy(),
     ],
   };
 }
@@ -1770,19 +1608,18 @@ function mockPriorityPolicyWrites() {
           previous?.id ?? crypto.randomUUID(),
           policy.model,
           getCanonicalModelDisplayName(policy.model),
-          policy.isDefault,
         ),
         ...policy,
       };
     });
-    const defaultPolicy = policies.find((policy) => {
-      return policy.isDefault;
+    const autoRoute = policies.find((policy) => {
+      return policy.model === ORG_DEFAULT_RUN_MODEL;
     });
     snapshot = {
       revision: crypto.randomUUID(),
       writePreconditionRequired: true,
-      workspaceDefaultModel: defaultPolicy?.model ?? null,
-      workspaceDefaultPolicyId: defaultPolicy?.id ?? null,
+      workspaceDefaultModel: autoRoute?.model ?? null,
+      workspaceDefaultPolicyId: autoRoute?.id ?? null,
       modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
         return (
           model !== "gpt-6-sol" &&
@@ -1802,43 +1639,10 @@ function mockPriorityPolicyWrites() {
   };
 }
 
-test("Enabled priority adds a subscription while preserving the displayed defaults and revision", async () => {
+test("Enabled priority adds a subscription while preserving existing routes and revision", async () => {
   const submitted = mockPriorityPolicyWrites();
   await openProvidersTab();
   const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
-  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  const defaultModel = screen.getByRole("combobox", { name: "Default model" });
-  expect(defaultModel).toHaveTextContent("GPT 5.6 Luna");
-  await userEvent.click(screen.getByText("Default model"));
-  expect(defaultModel).toHaveFocus();
-  await userEvent.keyboard("{Enter}");
-  await screen.findByRole("option", { name: "GPT 6 Astra" });
-  await userEvent.keyboard("{Home}{ArrowDown}{Enter}");
-  await expect(
-    screen.findByText("Model provider settings updated"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(defaultModel).toHaveTextContent("GPT 6 Astra");
-    expect(defaultModel).toBeEnabled();
-  });
-  expect(defaultModel).toHaveAccessibleName("Default model");
-  expect(submitted()).toMatchObject({
-    revision: "administrative-snapshot-one",
-    policies: expect.arrayContaining([
-      expect.objectContaining({
-        model: "gpt-5.6-luna",
-        isDefault: false,
-        credentialScope: "org",
-        defaultProviderType: "built-in",
-      }),
-      expect.objectContaining({
-        model: "gpt-6-astra",
-        isDefault: true,
-        credentialScope: "member",
-        defaultProviderType: "codex-oauth-token",
-      }),
-    ]),
-  });
   expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Opus 5");
@@ -1851,18 +1655,34 @@ test("Enabled priority adds a subscription while preserving the displayed defaul
   expect(
     within(added).getByText("Claude Code (OAuth token)"),
   ).toBeInTheDocument();
-  expect(submitted()?.policies).toContainEqual(
-    expect.objectContaining({
-      model: "claude-opus-5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      isDefault: false,
-    }),
-  );
-
+  expect(submitted()).toStrictEqual({
+    revision: "administrative-snapshot-one",
+    policies: [
+      expect.objectContaining({
+        model: "gpt-5.6-luna",
+        credentialScope: "org",
+        defaultProviderType: "built-in",
+      }),
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        credentialScope: "member",
+        defaultProviderType: "codex-oauth-token",
+      }),
+      expect.objectContaining({ model: "claude-fable-5-1" }),
+      expect.objectContaining({ model: ORG_DEFAULT_RUN_MODEL }),
+      expect.objectContaining({
+        model: "claude-opus-5",
+        defaultProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+      }),
+    ],
+  });
   expect(
-    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
-  ).toHaveTextContent("GPT 6 Astra");
+    submitted()?.policies.some((policy) => {
+      return "isDefault" in policy;
+    }),
+  ).toBeFalsy();
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
 });
 
 test("Enabled priority changes a route to Subscription while an API key remains selected", async () => {
@@ -1884,7 +1704,6 @@ test("Enabled priority changes a route to Subscription while an API key remains 
       model: "gpt-5.6-luna",
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
-      isDefault: true,
     }),
   );
 
@@ -1906,7 +1725,4 @@ test("Enabled priority changes a route to Subscription while an API key remains 
     ).not.toBeInTheDocument();
     expect(within(luna).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   });
-  expect(
-    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
-  ).toHaveTextContent("GPT 5.6 Luna");
 });

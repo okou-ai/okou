@@ -30,7 +30,7 @@ import {
 import { sendChatEvent } from "./chat-event-api.ts";
 import {
   isCodexFastModeAvailableForSelection,
-  resolveModelFirstUserDefaultSelection,
+  resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
@@ -226,7 +226,7 @@ function resolveNewThreadModelSelection(
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
   }
-  return resolveModelFirstUserDefaultSelection({
+  return resolveDefaultModelSelection({
     userPreference: args.userPreference,
     policies: args.policies,
   });

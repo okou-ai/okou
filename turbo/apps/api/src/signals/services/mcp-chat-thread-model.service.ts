@@ -1,6 +1,7 @@
 import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import {
@@ -37,13 +38,15 @@ export async function mcpChatThreadModels(
     return result;
   }
 
-  const candidateModels = [...models].filter((model) => {
-    return model !== null;
-  });
+  const candidateModels = [
+    ORG_DEFAULT_RUN_MODEL,
+    ...[...models].filter((model) => {
+      return model !== null;
+    }),
+  ];
   const policies = await db
     .select({
       model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
       defaultProviderType: orgModelPolicies.defaultProviderType,
       credentialScope: orgModelPolicies.credentialScope,
       modelProviderId: orgModelPolicies.modelProviderId,
@@ -53,12 +56,7 @@ export async function mcpChatThreadModels(
     .where(
       and(
         eq(orgModelPolicies.orgId, principal.orgId),
-        or(
-          eq(orgModelPolicies.isDefault, true),
-          candidateModels.length > 0
-            ? inArray(orgModelPolicies.model, candidateModels)
-            : undefined,
-        ),
+        inArray(orgModelPolicies.model, candidateModels),
       ),
     );
   const capabilities = await loadOrgPlanCapabilities(db, principal.orgId);
@@ -87,12 +85,7 @@ export async function mcpChatThreadModels(
     });
     resolved.set(policy.model, route?.selectedModel ?? null);
   }
-  const defaultPolicy = policies.find((policy) => {
-    return policy.isDefault;
-  });
-  const orgDefault = defaultPolicy
-    ? (resolved.get(defaultPolicy.model) ?? null)
-    : null;
+  const orgDefault = resolved.get(ORG_DEFAULT_RUN_MODEL) ?? null;
 
   for (const selectedModel of models) {
     result.set(

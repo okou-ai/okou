@@ -139,7 +139,7 @@ async function setup(
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -780,7 +780,7 @@ describe("okou workflow automation scheduler", () => {
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
           model: "gpt-6-astra",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: configured.providerId,
@@ -866,6 +866,8 @@ describe("okou workflow automation scheduler", () => {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       });
       const owner = await connectOwner(member, "automation-owner");
+      // The automation thread starts from the owner's own model preference.
+      await chatFilesApi.updateUserModelPreference(member, "gpt-6-astra");
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
       const created = await createDueLoopAutomation(scenario, 3600);
       // Scheduler execution is unauthenticated infrastructure; the owner is the member above.
@@ -1273,7 +1275,7 @@ describe("okou workflow automation scheduler", () => {
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,

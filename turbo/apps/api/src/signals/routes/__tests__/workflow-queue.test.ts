@@ -1,3 +1,4 @@
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { createHash, randomUUID } from "node:crypto";
 
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -125,7 +126,7 @@ async function setup(): Promise<Scenario> {
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -492,7 +493,7 @@ describe("workflow queue", () => {
     await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1349,7 +1350,7 @@ describe("workflow queue", () => {
     await runsApi.updateOrgModelPolicies(scenario.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1387,6 +1388,13 @@ describe("workflow queue", () => {
       }),
       [204],
     );
+    // No current writer stores another route for the fixed default; stage one
+    // so neither the preferred model nor the default has a usable route.
+    await setOrgModelPolicyProviderTypeFixture({
+      orgId: scenario.orgId,
+      model: ORG_DEFAULT_RUN_MODEL,
+      defaultProviderType: "anthropic-api-key",
+    });
 
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);

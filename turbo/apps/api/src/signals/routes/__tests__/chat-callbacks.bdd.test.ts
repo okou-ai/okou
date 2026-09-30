@@ -170,14 +170,13 @@ async function configureClaudeCodeSubscriptionProvider(
   await api.updateOrgModelPolicies(fixture.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: fixture.providerId,
     },
     {
       model: "claude-opus-5",
-      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -3839,7 +3838,7 @@ describe("CHAT-02: drain-time admission failure", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -3955,14 +3954,13 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
           model: "gpt-6-astra",
-          isDefault: false,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -3995,14 +3993,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: scenario.builtIn,
+          preferred: scenario.builtIn,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
           model: "gpt-6-astra",
-          isDefault: !scenario.builtIn,
+          preferred: !scenario.builtIn,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -4072,7 +4070,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: builtIn ? "built-in" : "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: builtIn ? null : providerId,
@@ -4394,7 +4392,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -4448,14 +4446,13 @@ describe("CHAT-02: failed chat callbacks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -5983,7 +5980,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

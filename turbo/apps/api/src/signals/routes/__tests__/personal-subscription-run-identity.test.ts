@@ -12,7 +12,10 @@ import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type {
+  OrgModelPolicy,
+  SupportedRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
@@ -54,6 +57,16 @@ const runs = createRunsApi(context);
 const support = createAuthDeviceSupportApi(context);
 const firewall = createFirewallApi(context);
 
+/** The configured policy, not the fixed default every workspace keeps. */
+function configuredPolicy(
+  response: { readonly policies: readonly OrgModelPolicy[] },
+  model: SupportedRunModel,
+): OrgModelPolicy | undefined {
+  return response.policies.find((policy) => {
+    return policy.model === model;
+  });
+}
+
 async function configureOrganizationApi(
   f: Awaited<ReturnType<typeof fixture>>,
   route: "built-in" | "custom",
@@ -70,7 +83,7 @@ async function configureOrganizationApi(
   await runs.updateOrgModelPolicies(f.actor, [
     {
       model: f.model,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: route === "built-in" ? "built-in" : type,
       credentialScope: "org",
       modelProviderId: provider?.providerId ?? null,
@@ -199,7 +212,7 @@ async function fixture(type: SubscriptionType, accountsEnabled = true) {
   await runs.updateOrgModelPolicies(actor, [
     {
       model,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: type,
       credentialScope: "member",
       modelProviderId: null,
@@ -1073,7 +1086,7 @@ describe("exact subscription selection", () => {
       await runs.updateOrgModelPolicies(f.actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -1319,9 +1332,10 @@ describe("personal priority connection boundaries", () => {
         type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",
         [204],
       );
-      const policy = (
-        await createMiscRoutesApi(context).listModelPolicies(f.actor)
-      ).policies[0];
+      const policy = configuredPolicy(
+        await createMiscRoutesApi(context).listModelPolicies(f.actor),
+        f.model,
+      );
       expect(policy).toMatchObject({
         modelProviderId: null,
         routeStatus: "missing_provider",
@@ -1334,21 +1348,17 @@ describe("personal priority connection boundaries", () => {
       });
       await runs.requestCancelRun(f.actor, runId, [200]);
       await support.deletePersonalModelProvider(f.actor, type, [204]);
-      const unavailable = await createChatFilesBddApi(context).requestSendEvent(
+      // The unavailable selection falls back to the fixed default route, so
+      // the send is accepted instead of failing without a model route.
+      await createChatFilesBddApi(context).requestSendEvent(
         f.actor,
         {
           agentId: f.agentId,
           model: f.model,
           prompt: "missing organization API",
         },
-        [400],
+        [201],
       );
-      expect(unavailable.body).toMatchObject({
-        error: {
-          code: "BAD_REQUEST",
-          message: "No valid model route is configured for this workspace",
-        },
-      });
     },
   );
 });
@@ -1362,12 +1372,12 @@ describe("member-effective model policy contract", () => {
     const misc = createMiscRoutesApi(context);
     const before = await misc.listModelPolicies(f.actor);
     const other = await misc.listModelPolicies(member);
-    expect(before.policies[0]?.memberEffective).toMatchObject({
+    expect(configuredPolicy(before, f.model)?.memberEffective).toMatchObject({
       providerType: f.type,
       credentialScope: "member",
       accountSelection: "capture_required",
     });
-    expect(other.policies[0]?.memberEffective).toMatchObject({
+    expect(configuredPolicy(other, f.model)?.memberEffective).toMatchObject({
       providerType: "anthropic-api-key",
       credentialScope: "org",
       availability: "available",
@@ -1393,20 +1403,19 @@ describe("member-effective model policy contract", () => {
       [200],
       before.revision,
     );
-    expect(put.body).toMatchObject({
-      policies: [
-        {
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          memberEffective: { providerType: f.type, credentialScope: "member" },
-        },
-      ],
-    });
-    const after = await misc.listModelPolicies(member);
-    expect(after.policies[0]).toMatchObject({
+    if (put.status !== 200) {
+      throw new Error("Expected the policy replacement to succeed");
+    }
+    expect(configuredPolicy(put.body, f.model)).toMatchObject({
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
-      memberEffective: other.policies[0]?.memberEffective,
+      memberEffective: { providerType: f.type, credentialScope: "member" },
+    });
+    const after = await misc.listModelPolicies(member);
+    expect(configuredPolicy(after, f.model)).toMatchObject({
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      memberEffective: configuredPolicy(other, f.model)?.memberEffective,
     });
     expect(
       (await misc.updateModelPolicies(member, before.policies, [403])).status,
@@ -1465,7 +1474,7 @@ describe("member-effective model policy contract", () => {
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model: "gpt-5.6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: configured.providerId,
@@ -1500,7 +1509,7 @@ describe("member-effective model policy contract", () => {
       const policies = await createMiscRoutesApi(context).listModelPolicies(
         f.actor,
       );
-      expect(policies.policies[0]).toMatchObject({
+      expect(configuredPolicy(policies, f.model)).toMatchObject({
         defaultProviderType: f.type,
         credentialScope: "member",
       });
@@ -1746,10 +1755,12 @@ describe("personal priority gateway and session boundaries", () => {
     const projected = await createMiscRoutesApi(context).listModelPolicies(
       f.actor,
     );
-    expect(projected.policies[0]?.memberEffective).toMatchObject({
-      providerType: f.type,
-      credentialScope: "member",
-    });
+    expect(configuredPolicy(projected, f.model)?.memberEffective).toMatchObject(
+      {
+        providerType: f.type,
+        credentialScope: "member",
+      },
+    );
     expect(kms.decryptCalls).toBe(0);
     const denied = await firewall.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
@@ -1804,7 +1815,7 @@ describe("personal priority gateway and session boundaries", () => {
       await runs.updateOrgModelPolicies(f.actor, [
         {
           model: f.model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "custom-anthropic-messages",
           credentialScope: "org",
           modelProviderId: null,
@@ -1835,12 +1846,16 @@ describe("personal priority gateway and session boundaries", () => {
       const policies = await createMiscRoutesApi(context).listModelPolicies(
         f.actor,
       );
-      expect(policies.policies[0]?.memberEffective).toMatchObject({
+      expect(
+        configuredPolicy(policies, f.model)?.memberEffective,
+      ).toMatchObject({
         providerType: f.type,
         credentialScope: "member",
       });
       if (loss === "deleted") {
-        expect(policies.policies[0]?.modelProviderSurfaceId).toBeNull();
+        expect(
+          configuredPolicy(policies, f.model)?.modelProviderSurfaceId,
+        ).toBeNull();
       }
       const run = await f.start();
       const claim = await f.claim(run);
@@ -1851,21 +1866,17 @@ describe("personal priority gateway and session boundaries", () => {
         `Bearer ${f.connected.token}`,
       );
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      const unavailable = await createChatFilesBddApi(context).requestSendEvent(
+      // The unavailable selection falls back to the fixed default route, so
+      // the send is accepted instead of failing without a model route.
+      await createChatFilesBddApi(context).requestSendEvent(
         f.actor,
         {
           agentId: f.agentId,
           model: f.model,
           prompt: "the selected organization route must be valid",
         },
-        [400],
+        [201],
       );
-      expect(unavailable.body).toMatchObject({
-        error: {
-          code: "BAD_REQUEST",
-          message: "No valid model route is configured for this workspace",
-        },
-      });
     },
   );
 

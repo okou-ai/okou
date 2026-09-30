@@ -20,30 +20,39 @@ jq -e '.provider.type == "claude-code-oauth-token"' \
     >/dev/null
 
 policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
+# Every policy write must keep the fixed organization default (okou-1.0). Runs
+# in this account pass their model explicitly.
 policy_payload=$(jq -c '
     {
       revision,
       policies: (
         [.policies[] |
-          select(.model != "claude-sonnet-5" and .model != "gpt-6-astra") |
+          select(
+            .model != "okou-1.0" and
+            .model != "claude-sonnet-5" and
+            .model != "gpt-6-astra"
+          ) |
           {
             model,
-            isDefault,
             defaultProviderType,
             credentialScope,
             modelProviderId
           }
         ] + [
           {
+            model: "okou-1.0",
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null
+          },
+          {
             model: "claude-sonnet-5",
-            isDefault: ([.policies[] | select(.model == "claude-sonnet-5") | .isDefault] | any),
             defaultProviderType: "claude-code-oauth-token",
             credentialScope: "member",
             modelProviderId: null
           },
           {
             model: "gpt-6-astra",
-            isDefault: false,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null

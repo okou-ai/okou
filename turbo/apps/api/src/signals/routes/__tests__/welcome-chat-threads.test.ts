@@ -1,3 +1,4 @@
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -312,7 +313,7 @@ describe("POST /api/welcome-chat-threads", () => {
     );
   });
 
-  it("allows an unresolved default model and does not require generation credits", async () => {
+  it("falls back to the fixed default model and does not require generation credits", async () => {
     const { actor } = await fixture();
     await runs.ensureOrgModelProvider(actor);
     await accept(
@@ -334,7 +335,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [200],
     );
-    expect(metadata.body.selectedModel).toBeNull();
+    expect(metadata.body.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
     expect((await runs.readBillingStatus(actor)).credits).toBe(0);
     await expect(
       chat.listThreadEventRows(actor, body.id),

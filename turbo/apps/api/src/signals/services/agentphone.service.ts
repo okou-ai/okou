@@ -10,6 +10,7 @@ import {
   getCanonicalModelDisplayName,
   getBuiltInVisibleModels,
   isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   normalizeRunModelId,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -1076,7 +1077,6 @@ function findModelOption(
   options: readonly {
     readonly model: SupportedRunModel;
     readonly label: string;
-    readonly isDefault: boolean;
   }[],
   input: string,
 ) {
@@ -1106,14 +1106,13 @@ function formatAgentPhoneModelOptionsMessage(
   options: readonly {
     readonly model: SupportedRunModel;
     readonly label: string;
-    readonly isDefault: boolean;
   }[],
   currentSelectedModel: string | null,
 ): string {
   const optionLines = options.map((option) => {
     const markers = [
       option.model === currentSelectedModel ? "current" : null,
-      option.isDefault ? "workspace default" : null,
+      option.model === ORG_DEFAULT_RUN_MODEL ? "workspace default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
     });
@@ -1184,7 +1183,6 @@ const handleModelCommand$ = command(
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
       };
     });
 

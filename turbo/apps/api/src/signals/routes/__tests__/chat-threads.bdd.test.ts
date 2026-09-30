@@ -11,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
@@ -167,7 +167,7 @@ async function selectNativeClaudeModel(actor: ApiTestUser, providerId: string) {
   await api.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -760,14 +760,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "claude-opus-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -2387,7 +2386,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -2442,21 +2441,19 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "deepseek-v4-flash",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "gpt-5.6-luna",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -2797,6 +2794,9 @@ describe("CHAT-01 chat thread read state", () => {
 
     const peerProvider = await api.ensureOrgModelProvider(peer);
     await selectNativeClaudeModel(peer, peerProvider.providerId);
+    // The peer's policy replacement moved the owner's removed preference to
+    // the fixed default; keep the owner on the native Claude route.
+    await chat.updateUserModelPreference(owner, "claude-fable-5-1");
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",
@@ -2933,6 +2933,7 @@ describe("CHAT-01 chat thread read state", () => {
     });
     await api.grantProEntitlement(sameUserOtherOrg);
     await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await chat.updateUserModelPreference(peer, "claude-fable-5-1");
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
@@ -3585,7 +3586,7 @@ describe("CHAT-03 run usage events", () => {
 
   it("emits complete allowance-covered usage in one event", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
-    const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    const selectedModel = ORG_DEFAULT_RUN_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
 
     const { actor, agentId } = await entitledChatActorWithoutRunner(
@@ -3611,7 +3612,7 @@ describe("CHAT-03 run usage events", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

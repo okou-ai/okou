@@ -900,14 +900,13 @@ describe("canonical Discord ingress", () => {
     await runsApi.updateOrgModelPolicies(actor.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "claude-opus-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1101,12 +1100,21 @@ describe("canonical Discord ingress", () => {
     await runsApi.updateOrgModelPolicies(actor.actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
     ]);
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const preferenceBefore = await accept(
+      preferenceClient.get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
     await chatApi.updateThreadModelSelection(
       actor.actor,
       thread.id,
@@ -1123,14 +1131,14 @@ describe("canonical Discord ingress", () => {
       { id: thread.id, selectedModel: "gpt-6-astra", serviceTier: "priority" },
     ]);
     const preference = await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      preferenceClient.get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
       [200],
     );
     expect(preference.body).toMatchObject({
-      selectedModel: null,
-      serviceTier: null,
+      selectedModel: preferenceBefore.body.selectedModel,
+      serviceTier: preferenceBefore.body.serviceTier,
     });
 
     const next = discordMessageForTest(actor, {
@@ -1182,7 +1190,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.updateOrgModelPolicies(actor.actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

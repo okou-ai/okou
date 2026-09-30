@@ -45,8 +45,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
@@ -346,22 +345,30 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(modelPoliciesMainContract);
   }
 
+  /** The member preference, else the fixed org default, as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
   ): Promise<SupportedRunModel> {
     if (!actor?.orgId) {
-      return DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+      return ORG_DEFAULT_RUN_MODEL;
     }
-    const response = await accept(
+    const policies = await accept(
       modelPoliciesClient().list({ headers: authenticate(context, actor) }),
       [200],
     );
-    const model =
-      response.body.workspaceDefaultModel ??
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
-    return isSupportedRunModel(model)
-      ? model
-      : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    const preference = await accept(
+      userModelPreferenceClient().get({
+        headers: authenticate(context, actor),
+      }),
+      [200],
+    );
+    const preferred = preference.body.selectedModel;
+    return preferred &&
+      policies.body.policies.some((policy) => {
+        return policy.model === preferred;
+      })
+      ? preferred
+      : ORG_DEFAULT_RUN_MODEL;
   }
 
   function threadByIdClient() {

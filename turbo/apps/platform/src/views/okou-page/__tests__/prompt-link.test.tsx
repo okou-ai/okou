@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -219,10 +220,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe("gpt-6-luna");
+  expect(capture.createdThreads[0]?.model).toBe(ORG_DEFAULT_RUN_MODEL);
   expect(userMessageParts(send)).toContainEqual({
     type: "model",
-    selectedModel: "gpt-6-luna",
+    selectedModel: ORG_DEFAULT_RUN_MODEL,
   });
 });
 

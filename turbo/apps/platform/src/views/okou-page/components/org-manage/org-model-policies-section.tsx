@@ -9,7 +9,6 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Field } from "@base-ui/react/field";
 import {
   AlertTriangle,
   EllipsisVertical,
@@ -51,6 +50,7 @@ import {
   getProvidersForModel,
   getSelectableProviderTypes,
   isBuiltInModelProviderType,
+  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderResponse,
   type ModelProviderType,
   type OrgModelPolicy,
@@ -180,7 +180,6 @@ function findProviderByType(
 function toUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   return {
     model: policy.model,
-    isDefault: policy.isDefault,
     defaultProviderType: isBuiltInModelProviderType(policy.defaultProviderType)
       ? "built-in"
       : policy.defaultProviderType,
@@ -190,13 +189,9 @@ function toUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   };
 }
 
-function makeDefaultPolicy(
-  model: SupportedRunModel,
-  isDefault: boolean,
-): UpdateOrgModelPolicy {
+function makeBuiltInPolicy(model: SupportedRunModel): UpdateOrgModelPolicy {
   return {
     model,
-    isDefault,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -222,66 +217,20 @@ function upsertPolicy(
   return updates;
 }
 
+// The fixed organization default (Auto) always stays available in Custom mode.
 function canDeletePolicy(
   policies: OrgModelPolicy[],
   policy: OrgModelPolicy,
-  modelCapabilities: ModelPlanCapabilities,
 ): boolean {
-  return (
-    policies.length > 1 &&
-    (!policy.isDefault ||
-      policies.some((candidate) => {
-        return (
-          candidate.model !== policy.model &&
-          modelPolicyAllowedForPlan(candidate, modelCapabilities)
-        );
-      }))
-  );
+  return policies.length > 1 && policy.model !== ORG_DEFAULT_RUN_MODEL;
 }
 
 function removePolicy(
   policies: OrgModelPolicy[],
   model: SupportedRunModel,
-  modelCapabilities: ModelPlanCapabilities,
 ): UpdateOrgModelPolicy[] {
-  const removed = policies.find((policy) => {
-    return policy.model === model;
-  });
-  const updates = policies.flatMap((policy) => {
+  return policies.flatMap((policy) => {
     return policy.model === model ? [] : [toUpdate(policy)];
-  });
-  if (
-    removed?.isDefault &&
-    !updates.some((policy) => {
-      return policy.isDefault;
-    }) &&
-    updates[0]
-  ) {
-    const fallback = updates.find((policy) => {
-      return modelPolicyAllowedForPlan(policy, modelCapabilities);
-    });
-    return updates.map((policy) => {
-      return { ...policy, isDefault: policy.model === fallback?.model };
-    });
-  }
-  return updates;
-}
-
-function makePolicyDefault(
-  policies: OrgModelPolicy[],
-  model: SupportedRunModel,
-): UpdateOrgModelPolicy[] {
-  const selected = policies.find((policy) => {
-    return policy.model === model;
-  });
-  if (!selected) {
-    return policies.map(toUpdate);
-  }
-  return policies.map((policy) => {
-    return {
-      ...toUpdate(policy),
-      isDefault: policy.model === model,
-    };
   });
 }
 
@@ -295,134 +244,9 @@ function filterPolicyUpdatesForPlan(
   ) {
     return policies;
   }
-
-  const allowed = policies.filter((policy) => {
+  return policies.filter((policy) => {
     return modelPolicyAllowedForPlan(policy, modelCapabilities);
   });
-  if (
-    allowed.some((policy) => {
-      return policy.isDefault;
-    })
-  ) {
-    return allowed;
-  }
-  return allowed.map((policy, index) => {
-    return { ...policy, isDefault: index === 0 };
-  });
-}
-
-function DefaultModelRow({
-  policies,
-  workspaceDefaultModel,
-  disabled,
-  modelCapabilities,
-  onChange,
-  onUpgrade,
-}: {
-  policies: OrgModelPolicy[];
-  workspaceDefaultModel: SupportedRunModel | null;
-  disabled: boolean;
-  modelCapabilities: ModelPlanCapabilities;
-  onChange: (model: SupportedRunModel) => void;
-  onUpgrade: () => void;
-}) {
-  const { t } = useTranslation();
-  const selectItems = policies
-    .filter((policy) => {
-      return policy.routeStatus === "valid";
-    })
-    .map((policy) => {
-      const iconType = getModelIconType(policy.model);
-      const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
-      return {
-        ...policy,
-        value: policy.model,
-        label: (
-          <div className="flex w-full min-w-0 items-center gap-2">
-            {iconType && <ProviderIcon type={iconType} size={16} />}
-            <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
-            {restricted && <ProBadge />}
-          </div>
-        ),
-      };
-    });
-  const currentDefault = selectItems.some((policy) => {
-    return policy.model === workspaceDefaultModel;
-  })
-    ? (workspaceDefaultModel ?? "")
-    : "";
-
-  return (
-    <Field.Root
-      data-testid="default-model-row"
-      className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between border border-surface-border"
-    >
-      <div className="min-w-0">
-        <Field.Label
-          render={<p />}
-          nativeLabel={false}
-          className="text-sm font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.settings.models.policies.defaultModel;
-          })}
-        </Field.Label>
-        <p className="mt-0.5 text-[13px] text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.policies.defaultModelDescription;
-          })}
-        </p>
-      </div>
-      {selectItems.length === 0 ? (
-        <span className="shrink-0 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.policies.noAvailableModels;
-          })}
-        </span>
-      ) : (
-        <Select
-          items={selectItems}
-          value={currentDefault}
-          onValueChange={(value, details) => {
-            const policy = selectItems.find((item) => {
-              return item.model === value;
-            });
-            if (!policy) {
-              details.cancel();
-              return;
-            }
-            if (policy.model === workspaceDefaultModel) {
-              return;
-            }
-            if (!modelPolicyAllowedForPlan(policy, modelCapabilities)) {
-              details.cancel();
-              onUpgrade();
-              return;
-            }
-            onChange(policy.model);
-          }}
-          disabled={disabled}
-        >
-          <SelectTrigger className="h-9 w-full shrink-0 rounded-lg bg-card sm:w-[280px] border border-surface-border">
-            <SelectValue
-              placeholder={t(($) => {
-                return $.settings.models.policies.selectDefaultModel;
-              })}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {selectItems.map((item) => {
-              return (
-                <SelectItem key={item.id} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      )}
-    </Field.Root>
-  );
 }
 
 function getPolicyDetail(policy: OrgModelPolicy): string | null {
@@ -609,7 +433,9 @@ function PolicyActionsMenu({
         >
           <Trash size={14} />
           {t(($) => {
-            return $.settings.models.actions.deleteModel;
+            return policy.model === ORG_DEFAULT_RUN_MODEL
+              ? $.settings.models.policies.orgDefaultModelLocked
+              : $.settings.models.actions.deleteModel;
           })}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -733,9 +559,15 @@ function PolicyRow({
             type="button"
             className="shrink-0 text-muted-foreground hover:text-destructive"
             disabled={disabled || !canDelete}
-            aria-label={`${t(($) => {
-              return $.settings.models.actions.deleteModel;
-            })} ${policy.modelLabel}`}
+            aria-label={
+              policy.model === ORG_DEFAULT_RUN_MODEL
+                ? t(($) => {
+                    return $.settings.models.policies.orgDefaultModelLocked;
+                  })
+                : `${t(($) => {
+                    return $.settings.models.actions.deleteModel;
+                  })} ${policy.modelLabel}`
+            }
             onClick={() => {
               onDelete(policy);
             }}
@@ -1059,9 +891,7 @@ function buildPolicyUpdate(params: {
   const existing = params.policies.find((policy) => {
     return policy.model === params.model;
   });
-  const base = existing
-    ? toUpdate(existing)
-    : makeDefaultPolicy(params.model, params.policies.length === 0);
+  const base = existing ? toUpdate(existing) : makeBuiltInPolicy(params.model);
 
   if (params.routeKind === "built-in") {
     return {
@@ -1879,12 +1709,6 @@ export function OrgModelPoliciesSection() {
   const openComparePlans = () => {
     openSettingsBillingPlans();
   };
-  const handleDefaultModelChange = (model: SupportedRunModel) => {
-    if (saving || model === data.workspaceDefaultModel) {
-      return;
-    }
-    submit(makePolicyDefault(policies, model));
-  };
   const handleOpenAddModel = () => {
     if (saving || !canManageModelPolicies) {
       return;
@@ -1898,24 +1722,16 @@ export function OrgModelPoliciesSection() {
     openEditModelDialog(policy);
   };
   const handleDeletePolicy = (policy: OrgModelPolicy) => {
-    if (saving || !canDeletePolicy(policies, policy, modelCapabilities)) {
+    if (saving || !canDeletePolicy(policies, policy)) {
       return;
     }
     // Unchanged existing routes remain valid on a restricted plan. Do not
     // drop other models when deleting just this policy.
-    submit(removePolicy(policies, policy.model, modelCapabilities), true);
+    submit(removePolicy(policies, policy.model), true);
   };
 
   return (
     <section className="flex flex-col gap-6">
-      <DefaultModelRow
-        policies={visiblePolicies}
-        workspaceDefaultModel={data.workspaceDefaultModel}
-        disabled={saving}
-        modelCapabilities={modelCapabilities}
-        onChange={handleDefaultModelChange}
-        onUpgrade={openComparePlans}
-      />
       <div className="flex flex-col gap-3">
         <SettingsSectionHeading
           title={t(($) => {
@@ -1962,11 +1778,7 @@ export function OrgModelPoliciesSection() {
                   providers={providers}
                   connections={connections}
                   disabled={saving}
-                  canDelete={canDeletePolicy(
-                    policies,
-                    policy,
-                    modelCapabilities,
-                  )}
+                  canDelete={canDeletePolicy(policies, policy)}
                   canEdit={canManageModelPolicies}
                   onEdit={handleEditPolicy}
                   onDelete={handleDeletePolicy}

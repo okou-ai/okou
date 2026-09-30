@@ -106,6 +106,8 @@ import {
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { stageUnrepairedOrgModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -1000,7 +1002,7 @@ async function nativeRunnerChatActor(
   await f.api.updateOrgModelPolicies(actor.actor, [
     {
       model: NATIVE_RUNNER_MODEL,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: actor.providerId,
@@ -1048,7 +1050,7 @@ async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
     (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
       return {
         model,
-        isDefault: model === "claude-sonnet-5",
+        preferred: model === "claude-sonnet-5",
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1224,7 +1226,7 @@ describe("MCP chat discovery and creation", () => {
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1276,7 +1278,7 @@ describe("MCP chat discovery and creation", () => {
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model: "gpt-5.6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -1304,7 +1306,7 @@ describe("MCP chat discovery and creation", () => {
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
       model: "gpt-5.6-luna",
-      source: "org_default",
+      source: "member_default",
     });
     expect(models.models).toContainEqual(
       expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
@@ -1321,55 +1323,47 @@ describe("MCP chat discovery and creation", () => {
     ).toStrictEqual([]);
   });
 
-  it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
+  it("reports pending model setup when stored policies lack the fixed default", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     await runs.grantProEntitlement(f.actor);
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    const token = f.auth.token({ scope: defaultScopes });
-    const billing = await runs.readBillingStatus(f.actor);
     if (!f.actor.orgId) {
       throw new Error("Expected an organization");
     }
-    // "limited-free-1" is the only plan that still restricts Built-in models,
-    // and it is assigned by the org-creation bootstrap rather than any product
-    // API, so seed the tier directly while keeping the balance.
-    await seedOrgMetadata({
+    // Policies written before the fixed default existed; only a policy read
+    // (never MCP discovery) adds it.
+    await stageUnrepairedOrgModelPolicyFixture({
       orgId: f.actor.orgId,
-      tier: "limited-free-1",
-      credits: billing.credits,
+      state: "missing_default",
     });
+    const token = f.auth.token({ scope: defaultScopes });
 
     const pending = await callTool(token, "list_models");
     expect(pending.isError).toBeTruthy();
     structuredToolError(pending);
     expect(pending.content).toContainEqual({
       type: "text",
-      text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+      text: "Model policies need to be synchronized. Open model settings, then retry discovery.",
     });
-    await expect(callTool(token, "list_models")).resolves.toStrictEqual(
-      pending,
-    );
 
     createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-    const settings = await accept(
+    await accept(
       setupApp({ context, routes: modelPoliciesRoutes })(
         modelPoliciesMainContract,
       ).list({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-    expect(settings.body.workspaceDefaultModel).toBe("gpt-6-luna");
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-6-luna",
+      model: ORG_DEFAULT_RUN_MODEL,
       source: "org_default",
     });
   });
@@ -1388,14 +1382,13 @@ describe("MCP chat discovery and creation", () => {
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
       },
       {
         model: "gpt-5.6-sol",
-        isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -1404,7 +1397,7 @@ describe("MCP chat discovery and creation", () => {
     const token = f.auth.token();
     const models = await listModels(token);
     expect(models).toMatchObject({
-      defaultModel: { model: "claude-sonnet-5", source: "org_default" },
+      defaultModel: { model: "claude-sonnet-5", source: "member_default" },
       admission: "checked_on_send",
     });
     expect(models.models).toContainEqual(
@@ -1606,14 +1599,13 @@ describe("MCP chat discovery and creation", () => {
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
       },
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
@@ -1985,14 +1977,14 @@ describe("MCP chat discovery and creation", () => {
       title: "Newer combined state",
       model: {
         selectedModel: null,
-        effectiveModel: "claude-sonnet-5",
+        effectiveModel: ORG_DEFAULT_RUN_MODEL,
         source: "org_default",
       },
     });
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "Newer combined state",
-        model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
+        model: { selectedModel: null, effectiveModel: ORG_DEFAULT_RUN_MODEL },
       },
     });
   });
@@ -2086,7 +2078,15 @@ describe("MCP chat discovery and creation", () => {
 
   it("preserves Fast, reasoning and browser settings", async () => {
     const f = await threadFixture();
-    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const model = "gpt-6-luna";
+    await createRunsApi(context).updateOrgModelPolicies(f.actor, [
+      {
+        model,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const created = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
       title: "Preserve settings",
@@ -7805,7 +7805,7 @@ describe("external MCP entry", () => {
       (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
         return {
           model,
-          isDefault: model === "claude-sonnet-5",
+          preferred: model === "claude-sonnet-5",
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -7834,7 +7834,7 @@ describe("external MCP entry", () => {
     const model = (await getThread(token, created.id)).thread.model;
     expect(model).toMatchObject({
       selectedModel: null,
-      effectiveModel: "claude-sonnet-5",
+      effectiveModel: ORG_DEFAULT_RUN_MODEL,
       admission: "checked_on_send",
     });
     expect(model.source).toBe("org_default");

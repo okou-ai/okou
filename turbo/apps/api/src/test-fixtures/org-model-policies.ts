@@ -1,6 +1,7 @@
-import type {
-  ModelProviderType,
-  SupportedRunModel,
+import {
+  ORG_DEFAULT_RUN_MODEL,
+  type ModelProviderType,
+  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
@@ -27,7 +28,6 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
     .values({
       orgId: args.orgId,
       model: args.model,
-      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -180,22 +180,23 @@ export async function holdModelPolicyPreferenceFixture(
 /**
  * Historical/uninitialized storage is not constructible through policy PUT,
  * and policy GET repairs it. Own this persisted gap to prove rejected writes
- * cannot seed policies, repair defaults, or rewrite member preferences.
+ * cannot seed policies, add the fixed default, or rewrite member preferences.
+ * `missing_default` is a policy list written before the fixed default existed.
  */
 export async function stageUnrepairedOrgModelPolicyFixture(args: {
   readonly orgId: string;
   readonly state: "unseeded" | "missing_default";
 }): Promise<void> {
-  if (args.state === "unseeded") {
-    await db()
-      .delete(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, args.orgId));
-  } else {
-    await db()
-      .update(orgModelPolicies)
-      .set({ isDefault: false })
-      .where(eq(orgModelPolicies.orgId, args.orgId));
-  }
+  await db()
+    .delete(orgModelPolicies)
+    .where(
+      args.state === "unseeded"
+        ? eq(orgModelPolicies.orgId, args.orgId)
+        : and(
+            eq(orgModelPolicies.orgId, args.orgId),
+            eq(orgModelPolicies.model, ORG_DEFAULT_RUN_MODEL),
+          ),
+    );
 }
 
 /** The public GET cannot observe these states without repairing them first. */

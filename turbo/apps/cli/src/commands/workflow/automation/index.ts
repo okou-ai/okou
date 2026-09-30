@@ -10,6 +10,7 @@ import type {
   StripeInvoiceBillingReason,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   isFeatureEnabled,
@@ -30,7 +31,6 @@ import {
   updateWorkflowAutomation,
 } from "../../../lib/api/domains/workflows";
 import { getChatThread } from "../../../lib/api/domains/chat";
-import { listModelPolicies } from "../../../lib/api/domains/model-policies";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { parseDurationSeconds } from "../../shared/duration";
@@ -202,13 +202,7 @@ async function loadWorkflowAutomationThreadModel(
   const thread = await getChatThread({
     threadId: automation.chatThreadId,
   });
-  const modelId =
-    thread.selectedModel ?? (await listModelPolicies()).workspaceDefaultModel;
-  if (!modelId) {
-    throw new Error(
-      `Chat thread "${automation.chatThreadId}" has no available model`,
-    );
-  }
+  const modelId = thread.selectedModel ?? ORG_DEFAULT_RUN_MODEL;
 
   return {
     id: modelId,

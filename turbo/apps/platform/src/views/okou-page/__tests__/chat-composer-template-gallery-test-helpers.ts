@@ -47,7 +47,7 @@ export function mockTemplateChat(options?: {
   const threadCreates: string[] = [];
 
   mockAgent({ selectedModel: "claude-sonnet-5" });
-  mockOrgModelRoutes("claude-sonnet-5");
+  mockOrgModelRoutes();
   mockBillingCapabilities(
     { supportByok: true, restrictedBuiltInModels: false },
     options?.tier ?? "pro",

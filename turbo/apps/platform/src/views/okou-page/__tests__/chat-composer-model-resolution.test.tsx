@@ -4,6 +4,7 @@ import {
 } from "./chat-model-menu-test-helpers.ts";
 import {
   getCanonicalModelDisplayName,
+  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderType,
   type OrgModelPolicy,
   type SupportedRunModel,
@@ -26,7 +27,6 @@ import {
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
 interface PolicyOptions {
-  readonly default?: boolean;
   readonly providerType?: ModelProviderType;
   readonly credentialScope?: "member" | "org";
 }
@@ -42,7 +42,7 @@ function modelPolicy(
     id: `e3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
     modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: options.default ?? false,
+    isDefault: model === ORG_DEFAULT_RUN_MODEL,
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId:
@@ -57,17 +57,10 @@ function modelPolicy(
   };
 }
 
-function configurePolicies(
-  models: readonly SupportedRunModel[],
-  defaultModel: SupportedRunModel,
-  options: Readonly<Partial<Record<SupportedRunModel, PolicyOptions>>> = {},
-): void {
+function configurePolicies(models: readonly SupportedRunModel[]): void {
   context.mocks.data.orgModelPolicies(
-    models.map((model, index) => {
-      return modelPolicy(model, index + 1, {
-        ...options[model],
-        default: model === defaultModel,
-      });
+    [...models, ORG_DEFAULT_RUN_MODEL].map((model, index) => {
+      return modelPolicy(model, index + 1);
     }),
   );
 }
@@ -107,7 +100,7 @@ async function chooseModel(
 test("Edit only the model for an existing thread", async () => {
   const user = userEvent.setup({ delay: null });
   installRunChat({ selectedModel: "claude-opus-5" });
-  configurePolicies(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5");
+  configurePolicies(["claude-opus-5", "claude-sonnet-5"]);
 
   await setupPage({
     context,
@@ -130,10 +123,7 @@ test("Edit only the model for an existing thread", async () => {
 
 test("Resolve the model shown for a chat", async () => {
   installRunChat({ selectedModel: "claude-fable-5-1" });
-  configurePolicies(
-    ["claude-fable-5-1", "claude-opus-5-5"],
-    "claude-fable-5-1",
-  );
+  configurePolicies(["claude-fable-5-1", "claude-opus-5-5"]);
   preference("claude-opus-5-5");
 
   await setupPage({ context, path: NEW_CHAT_PATH });
@@ -146,7 +136,7 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
   const user = userEvent.setup({ delay: null });
   installRunChat({ selectedModel: "deepseek-v4.1-flash" });
   context.mocks.data.orgModelPolicies([
-    modelPolicy("okou-1.0", 1, { default: true }),
+    modelPolicy("okou-1.0", 1),
     {
       ...modelPolicy("gpt-6-sol", 2, {
         providerType: "codex-oauth-token",
@@ -167,14 +157,30 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
 
 test("Keep an existing thread's explicit model", async () => {
   installRunChat({ selectedModel: "claude-opus-5" });
-  configurePolicies(
-    ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5"],
-    "claude-fable-5-1",
-  );
+  configurePolicies(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5"]);
   preference("claude-opus-5-5");
 
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
   await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
+});
+
+test("Start a new chat on Auto without a saved preference", async () => {
+  configurePolicies(["claude-fable-5-1", "claude-opus-5-5"]);
+
+  await setupPage({ context, path: NEW_CHAT_PATH });
+
+  await readyComposer();
+  await expect(modelPicker("Auto")).resolves.toBeVisible();
+});
+
+test("Start a new chat on Auto when the saved preference has no route", async () => {
+  configurePolicies(["claude-fable-5-1"]);
+  preference("claude-opus-5-5");
+
+  await setupPage({ context, path: NEW_CHAT_PATH });
+
+  await readyComposer();
+  await expect(modelPicker("Auto")).resolves.toBeVisible();
 });

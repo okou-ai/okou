@@ -180,7 +180,7 @@ describe("thread-bound Pi Automation execution", () => {
         await api.updateOrgModelPolicies(actor, [
           {
             model: "gpt-6-astra",
-            isDefault: true,
+            preferred: true,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null,
@@ -190,7 +190,7 @@ describe("thread-bound Pi Automation execution", () => {
         await api.updateOrgModelPolicies(actor, [
           {
             model: "claude-fable-5-1",
-            isDefault: true,
+            preferred: true,
             defaultProviderType: "anthropic-api-key",
             credentialScope: "org",
             modelProviderId: providerId,
@@ -457,7 +457,7 @@ describe("CHAT effort: automation launches", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -574,7 +574,7 @@ describe("CHAT effort: automation launches", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: route.model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: route.providerType,
           credentialScope: "org",
           modelProviderId: providerId,

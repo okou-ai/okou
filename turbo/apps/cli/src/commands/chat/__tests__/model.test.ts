@@ -23,14 +23,14 @@ const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}
 const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-5",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000101",
+  workspaceDefaultModel: "okou-1.0",
+  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000109",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000101",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: true,
+      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -57,6 +57,19 @@ const MODEL_POLICIES_RESPONSE = {
       model: "deepseek-v4-flash",
       modelLabel: "DeepSeek V4 Flash",
       isDefault: false,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      routeStatus: "valid",
+      routeStatusReason: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000109",
+      model: "okou-1.0",
+      modelLabel: "Auto",
+      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -115,6 +128,7 @@ describe("okou chat model command", () => {
     );
     expect(output).not.toContain("No personal subscription connected");
     expect(output).not.toContain("gpt-5.6-luna");
+    expect(output).toContain("Auto (okou-1.0) (default)");
   });
 
   it("prints the current chat model and switchable models without an argument", async () => {
@@ -143,6 +157,27 @@ describe("okou chat model command", () => {
     expect(output).toContain("Switchable models:");
     expect(output).toContain("provider: built-in (Built-in model; built-in)");
     expect(output).toContain(`okou chat model --thread ${THREAD_ID} <model>`);
+  });
+
+  it("shows the fixed organization default for an unpinned thread", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          title: "Launch plan",
+          selectedModel: null,
+        });
+      }),
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model"]);
+
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Auto (okou-1.0)",
+    );
   });
 
   it("shows the model for --thread outside a web chat environment", async () => {

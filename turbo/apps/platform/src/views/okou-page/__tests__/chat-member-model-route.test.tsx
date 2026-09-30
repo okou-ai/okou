@@ -27,7 +27,7 @@ function policy(
     id: "34240000-0000-4000-a000-000000000001",
     model: "gpt-5.6-sol",
     modelLabel: "GPT 5.6 Sol",
-    isDefault: true,
+    isDefault: false,
     defaultProviderType: "built-in",
     runtimeProviderType: "openai-api-key",
     credentialScope: "org",
@@ -255,8 +255,8 @@ test("Refreshes the account target on explicit reconnect after a remote account 
           memberEffective: switched ? currentPolicy.memberEffective : undefined,
         },
       ],
-      workspaceDefaultModel: "gpt-5.6-sol",
-      workspaceDefaultPolicyId: currentPolicy.id,
+      workspaceDefaultModel: "okou-1.0",
+      workspaceDefaultPolicyId: null,
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {

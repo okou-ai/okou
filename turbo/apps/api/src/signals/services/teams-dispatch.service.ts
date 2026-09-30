@@ -9,6 +9,7 @@ import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
@@ -161,7 +162,6 @@ interface TeamsAgent {
 interface TeamsModelPickerOption {
   readonly model: SupportedRunModel;
   readonly label: string;
-  readonly isDefault: boolean;
 }
 
 type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage"> & {
@@ -239,7 +239,7 @@ function choiceLabel(value: string): string {
 }
 
 function modelLabel(option: TeamsModelPickerOption): string {
-  if (!option.isDefault) {
+  if (option.model !== ORG_DEFAULT_RUN_MODEL) {
     return choiceLabel(option.label);
   }
   const suffix = " (workspace default)";
@@ -823,7 +823,6 @@ const teamsModelPickerState$ = command(
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),

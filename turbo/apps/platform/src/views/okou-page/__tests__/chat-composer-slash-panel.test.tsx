@@ -30,7 +30,7 @@ const THIRD_WORKFLOW_NAME = "axiom-traces";
 
 function setupModels(): void {
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockOrgModelRoutes();
   mockBillingCapabilities({
     supportByok: true,
     restrictedBuiltInModels: false,

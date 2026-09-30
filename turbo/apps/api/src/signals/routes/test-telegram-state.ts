@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   getBuiltInVendor,
+  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   testTelegramStateContract,
@@ -420,7 +420,7 @@ async function seedTelegramPostModelKeys(
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: getBuiltInVendor(ORG_DEFAULT_RUN_MODEL),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
     {
@@ -824,8 +824,16 @@ async function seedModelPoliciesForAction(
   await db.insert(orgModelPolicies).values([
     {
       orgId: required.org_id!,
-      model: "claude-sonnet-5",
+      model: ORG_DEFAULT_RUN_MODEL,
       isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      createdByUserId: required.user_id!,
+      updatedByUserId: required.user_id!,
+    },
+    {
+      orgId: required.org_id!,
+      model: "claude-sonnet-5",
       defaultProviderType: "built-in",
       credentialScope: "org",
       createdByUserId: required.user_id!,

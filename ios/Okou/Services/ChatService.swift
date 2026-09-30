@@ -64,6 +64,9 @@ actor ChatService {
     try await loadHistory(threadID: threadID)
   }
 
+  /// The organization default run model is fixed ("Auto") and cannot be changed.
+  static let orgDefaultRunModel = "okou-1.0"
+
   func createThread(agentID: String? = nil) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
@@ -79,10 +82,10 @@ actor ChatService {
       if agentID != nil { throw ChatServiceError.agentUnavailable }
       throw ChatServiceError.noDefaultAgent
     }
-    let model =
-      preference.selectedModel
-      ?? policies.policies.first(where: { $0.isDefault && $0.routeStatus == "valid" })?.model
-      ?? policies.workspaceDefaultModel
+    let orgDefaultIsValid = policies.policies.contains {
+      $0.model == Self.orgDefaultRunModel && $0.routeStatus == "valid"
+    }
+    let model = preference.selectedModel ?? (orgDefaultIsValid ? Self.orgDefaultRunModel : nil)
     guard let model else { throw ChatServiceError.noDefaultModel }
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,

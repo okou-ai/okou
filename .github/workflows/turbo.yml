@@ -2692,18 +2692,21 @@ jobs:
           # Fresh Clerk organizations bootstrap onto limited-free-1, so the
           # deterministic runner policy must stay within that plan's catalog.
           # The model policy write precondition is mandatory, so send the
-          # revision this read observed.
+          # revision this read observed. Every policy list must keep the fixed
+          # organization default (okou-1.0); the member preference makes
+          # DeepSeek the model new chats use.
           revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
           payload="$(jq -nc --arg revision "$revision" '{
             revision: $revision,
             policies: [
-              {model: "deepseek-v4-flash", isDefault: true, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
-              {model: "gpt-5.6-luna", isDefault: false, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
+              {model: "okou-1.0", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
+              {model: "deepseek-v4-flash", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
+              {model: "gpt-5.6-luna", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
             ]
           }')"
 
           curl -fsS "${headers[@]}" -X PUT -d "$payload" "${E2E_API_URL}/api/model-policies" >/dev/null
-          curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":null,"serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":"deepseek-v4-flash","serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap runner mock model provider
@@ -2749,26 +2752,36 @@ jobs:
             <<< "$provider_response")
 
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
+          # Every policy list must keep the fixed organization default (okou-1.0).
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
               revision,
-              policies: [
-                .policies[] |
+              policies: (
+                [
+                  .policies[] |
+                    select(.model != "okou-1.0") |
+                    {
+                      model,
+                      defaultProviderType,
+                      credentialScope,
+                      modelProviderId
+                    } |
+                    if .model == "gpt-5.6-luna" then
+                      . + {
+                        defaultProviderType: "openai-api-key",
+                        credentialScope: "org",
+                        modelProviderId: $providerId
+                      }
+                    else . end
+                ] + [
                   {
-                    model,
-                    isDefault,
-                    defaultProviderType,
-                    credentialScope,
-                    modelProviderId
-                  } |
-                  if .model == "gpt-5.6-luna" then
-                    . + {
-                      defaultProviderType: "openai-api-key",
-                      credentialScope: "org",
-                      modelProviderId: $providerId
-                    }
-                  else . end
-              ]
+                    model: "okou-1.0",
+                    defaultProviderType: "built-in",
+                    credentialScope: "org",
+                    modelProviderId: null
+                  }
+                ]
+              )
             }
           ' <<< "$policies")
           curl -fsS "${headers[@]}" \
@@ -2802,13 +2815,20 @@ jobs:
           revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
           # Native Codex runner contracts use the policy-excluded Astra route;
           # retain Luna for explicit Pi billing and provider-fallback coverage.
+          # Every policy list must keep the fixed organization default
+          # (okou-1.0); the member preference makes Astra the model new chats use.
           policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
-            '[{"model":"gpt-6-astra","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","isDefault":false,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
+            '[{"model":"okou-1.0","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-6-astra","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
             '{revision: $revision, policies: $policies}')
           curl -fsS "${headers[@]}" \
             -X PUT \
             -d "$policy_payload" \
             "${api_url}/api/model-policies" \
+            >/dev/null
+          curl -fsS "${headers[@]}" \
+            -X PUT \
+            -d '{"selectedModel":"gpt-6-astra","serviceTier":null}' \
+            "${api_url}/api/user-model-preference" \
             >/dev/null
 
           # Keep this account's preview agent setting independent of the Pi account.
@@ -2835,23 +2855,28 @@ jobs:
           fi
 
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
+          # Every policy list must keep the fixed organization default (okou-1.0).
           policy_payload=$(jq -c --arg model "$claude_model" '
             {
               revision,
               policies: (
                 [.policies[] |
-                  select(.model != $model) |
+                  select(.model != $model and .model != "okou-1.0") |
                   {
                     model,
-                    isDefault,
                     defaultProviderType,
                     credentialScope,
                     modelProviderId
                   }
                 ] + [
                   {
+                    model: "okou-1.0",
+                    defaultProviderType: "built-in",
+                    credentialScope: "org",
+                    modelProviderId: null
+                  },
+                  {
                     model: $model,
-                    isDefault: false,
                     defaultProviderType: "built-in",
                     credentialScope: "org",
                     modelProviderId: null

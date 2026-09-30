@@ -541,7 +541,7 @@ describe("workflows", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: provider.body.provider.id,
@@ -653,6 +653,8 @@ describe("workflows", () => {
     if (!owner.orgId) {
       throw new Error("Expected a workflow owner organization");
     }
+    // A member's workflow thread starts from their own model preference.
+    await chat.updateUserModelPreference(member, "claude-fable-5-1");
 
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",

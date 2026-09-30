@@ -332,7 +332,7 @@ import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
-import { resolveModelFirstUserDefaultSelection } from "../../signals/okou-page/model-default-selection.ts";
+import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 
@@ -8786,7 +8786,7 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const pageSignal = useGet(pageSignal$);
-  const defaultSelection = resolveModelFirstUserDefaultSelection({
+  const defaultSelection = resolveDefaultModelSelection({
     userPreference,
     policies,
   });
@@ -8795,18 +8795,21 @@ function ComposerTemporaryModelNotice({
       ? "priority"
       : (selection?.codexServiceTier ?? null);
   const defaultServiceTier =
-    defaultSelection?.codexServiceTier === "fast"
+    defaultSelection.codexServiceTier === "fast"
       ? "priority"
-      : (defaultSelection?.codexServiceTier ?? null);
+      : (defaultSelection.codexServiceTier ?? null);
   const modelChanged =
-    selection?.selectedModel !== defaultSelection?.selectedModel;
+    selection?.selectedModel !== defaultSelection.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
   const effort = preferredChatReasoningEffort(selection);
   const defaultEffort = preferredChatReasoningEffort(defaultSelection);
   const effortChanged = effort !== defaultEffort;
+  // Compare only against a resolved default; until both sources load the
+  // fixed Auto fallback would misreport the member's saved preference.
   if (
     !selection ||
-    !defaultSelection ||
+    userPreference === undefined ||
+    policies === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);

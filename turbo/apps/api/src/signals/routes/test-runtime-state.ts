@@ -7,7 +7,7 @@ import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-fire
 import {
   getBuiltInModelRouteCandidates,
   getBuiltInVendor,
-  MODEL_PROVIDER_TYPES,
+  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command } from "ccstate";
 import {
@@ -102,11 +102,12 @@ async function seedBuiltInDefaultModelKey(
   fixtureId: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const selectedModel = MODEL_PROVIDER_TYPES["built-in"].defaultModel;
-  if (!selectedModel) {
-    throw new Error("Expected the built-in provider to define a default model");
-  }
-  return await seedBuiltInModelKey(db, fixtureId, selectedModel, signal);
+  return await seedBuiltInModelKey(
+    db,
+    fixtureId,
+    ORG_DEFAULT_RUN_MODEL,
+    signal,
+  );
 }
 
 async function seedBuiltInModelKey(

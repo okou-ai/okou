@@ -56,7 +56,7 @@ async function entitledChatActor() {
   await api.updateOrgModelPolicies(result.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: result.providerId,
@@ -677,7 +677,7 @@ describe("CHAT-02: admission without spendable credits", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

@@ -185,11 +185,9 @@ struct ModelPreference: Decodable, Sendable {
 }
 
 struct ModelPolicies: Decodable, Sendable {
-  let workspaceDefaultModel: String?
   let policies: [Policy]
   struct Policy: Decodable, Sendable {
     let model: String
-    let isDefault: Bool
     let routeStatus: String
   }
 }

@@ -1,3 +1,4 @@
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { createHash, randomUUID } from "node:crypto";
@@ -28,6 +29,7 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -782,12 +784,17 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       remaining: 1000,
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
-    const limitedFreeProviders = await runs.listOrgModelProviders(admin);
+    // A new organization starts in Auto with only the fixed default; Auto
+    // exposes no workspace provider connections.
+    await expect(runs.listOrgModelProviders(admin)).resolves.toStrictEqual([]);
+    const policies =
+      await createMiscRoutesApi(context).listModelPolicies(admin);
+    expect(policies.modelMode).toBe("auto");
     expect(
-      limitedFreeProviders.find((provider) => {
-        return provider.type === "built-in";
-      })?.selectedModel,
-    ).toBe("gpt-6-luna");
+      policies.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

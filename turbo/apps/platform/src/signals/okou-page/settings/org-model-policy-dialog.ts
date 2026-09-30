@@ -87,7 +87,6 @@ function getPolicyRouteKind(policy: OrgModelPolicy): ModelPolicyRouteKind {
 function toOrgModelPolicyUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   return {
     model: policy.model,
-    isDefault: policy.isDefault,
     defaultProviderType: isBuiltInModelProviderType(policy.defaultProviderType)
       ? "built-in"
       : policy.defaultProviderType,
@@ -126,7 +125,6 @@ function applyProviderRouteToPolicies(
   if (!found) {
     updates.push({
       model,
-      isDefault: updates.length === 0,
       defaultProviderType: providerType,
       credentialScope: "org",
       modelProviderId: provider.id,

@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  MODEL_PROVIDER_ENV_PLACEHOLDERS,
+  ORG_DEFAULT_RUN_MODEL,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
@@ -39,6 +42,7 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
+  seedBuiltInModelKey,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   piSandboxBaseSession,
@@ -118,14 +122,13 @@ describe("CHAT-02: run-level model overrides", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -218,9 +221,8 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("captures the organization default when the stored model's provider is removed", async () => {
-    const { actor, agentId, providerId, runnerGroup } =
-      await entitledChatActor();
+  it("captures the fixed organization default when the stored model's provider is removed", async () => {
+    const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const { providerId: openaiProviderId } = await api.createOrgModelProvider(
       actor,
@@ -232,14 +234,13 @@ describe("CHAT-02: run-level model overrides", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -250,20 +251,23 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-sonnet-5",
     });
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
+    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
 
+    // The member preference does not replace an unavailable thread model.
     const fallback = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
-      prompt: "use the available organization default",
+      prompt: "use the fixed organization default",
     });
-    const claimed = await claimChatRun(runnerGroup, fallback.runId);
-    expect(claimEnvironment(claimed.claim).OPENAI_MODEL).toBe("gpt-6-astra");
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
+      ORG_DEFAULT_RUN_MODEL,
+    );
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
       selectedModel: "claude-sonnet-5",
     });
-    await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, fallback.runId);
   }, 90_000);
 
   it.each(
@@ -328,7 +332,7 @@ describe("CHAT-02: run-level model overrides", () => {
         await api.updateOrgModelPolicies(actor, [
           {
             model: selectedModel,
-            isDefault: true,
+            preferred: true,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null,

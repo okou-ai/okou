@@ -33,14 +33,13 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -116,14 +115,13 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -220,7 +218,7 @@ describe("CHAT effort: thread configuration", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: providerType,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -311,7 +309,7 @@ describe("CHAT effort: thread configuration", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -320,7 +318,6 @@ describe("CHAT effort: thread configuration", () => {
           ? [
               {
                 model: "gpt-5.6-sol" as const,
-                isDefault: false,
                 defaultProviderType: "openai-api-key" as const,
                 credentialScope: "org" as const,
                 modelProviderId: targetProviderId,
@@ -463,7 +460,7 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -503,7 +500,7 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

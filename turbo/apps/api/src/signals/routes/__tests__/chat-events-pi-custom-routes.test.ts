@@ -89,7 +89,7 @@ async function configureCustomPiModel(
   await api.updateOrgModelPolicies(actor, [
     {
       model: selectedModel,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "custom-openai-responses",
       credentialScope: "org",
       modelProviderId: null,
@@ -792,7 +792,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,

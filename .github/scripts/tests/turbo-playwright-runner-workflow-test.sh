@@ -486,11 +486,15 @@ raise "missing runner model policy bootstrap" unless model_defaults_step
 model_defaults_script = model_defaults_step.fetch("run")
 unless model_defaults_script.include?("/api/model-policies") &&
     model_defaults_script.include?("/api/user-model-preference") &&
+    model_defaults_script.include?('{model: "okou-1.0", defaultProviderType: "built-in"') &&
     model_defaults_script.include?("deepseek-v4-flash") &&
     model_defaults_script.include?("gpt-5.6-luna") &&
-    model_defaults_script.scan('defaultProviderType: "built-in"').length == 2 &&
-    model_defaults_script.include?('{"selectedModel":null,"serviceTier":null}')
+    model_defaults_script.scan('defaultProviderType: "built-in"').length == 3 &&
+    model_defaults_script.include?('{"selectedModel":"deepseek-v4-flash","serviceTier":null}')
   raise "runner bootstrap must reset the limited-free model defaults"
+end
+if model_defaults_script.include?("isDefault")
+  raise "runner bootstrap must not send the removed isDefault policy field"
 end
 %w[claude-opus-4-7 claude-sonnet-4-6 gpt-5.5].each do |restricted_model|
   if model_defaults_script.include?(restricted_model)
@@ -541,6 +545,10 @@ unless mock_claude_script.include?('credentialScope: "member"') &&
     mock_claude_script.include?("modelProviderId: null")
   raise "mock Claude OAuth policy must use member credentials"
 end
+unless mock_claude_script.include?('model: "okou-1.0"') &&
+    !mock_claude_script.include?("isDefault")
+  raise "mock Claude bootstrap must keep the fixed okou-1.0 organization default"
+end
 codex_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap real Codex account"
 end
@@ -577,10 +585,11 @@ built_in_codex_script = built_in_codex_step.fetch("run")
     raise "built-in Codex bootstrap must include #{required_fragment}"
   end
 end
-unless built_in_codex_script.include?('"model":"gpt-6-astra","isDefault":true') &&
-    built_in_codex_script.include?('"model":"gpt-5.6-luna","isDefault":false') &&
-    built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
+unless built_in_codex_script.include?('"model":"okou-1.0","defaultProviderType":"built-in"') &&
+    built_in_codex_script.include?('"model":"gpt-6-astra","defaultProviderType":"built-in"') &&
+    built_in_codex_script.include?('"model":"gpt-5.6-luna","defaultProviderType":"built-in"') &&
     built_in_codex_script.include?('"modelProviderId":null') &&
+    built_in_codex_script.include?('{"selectedModel":"gpt-6-astra","serviceTier":null}') &&
     built_in_codex_script.include?('"_realAgentInPreview":true')
   raise "native Astra and Pi Luna must retain their isolated account setup"
 end
@@ -600,7 +609,7 @@ claude_script = claude_step.fetch("run")
 end
 unless claude_script.include?('claude_model="claude-sonnet-5"') &&
     claude_script.include?('--arg model "$claude_model"') &&
-    claude_script.include?('select(.model != $model)') &&
+    claude_script.include?('select(.model != $model and .model != "okou-1.0")') &&
     claude_script.include?('model: $model')
   raise "real Claude bootstrap must configure Sonnet 5 consistently"
 end
@@ -610,6 +619,14 @@ end
 unless claude_script.include?('defaultProviderType: "built-in"') &&
     claude_script.include?("modelProviderId: null")
   raise "real Claude bootstrap must use the built-in provider"
+end
+[codex_script, built_in_codex_script, claude_script].each do |script|
+  unless script.include?("okou-1.0")
+    raise "runner bootstrap policy writes must keep the fixed okou-1.0 organization default"
+  end
+  if script.include?("isDefault")
+    raise "runner bootstrap must not send the removed isDefault policy field"
+  end
 end
 
 shard_step = runner.fetch("steps").find do |step|

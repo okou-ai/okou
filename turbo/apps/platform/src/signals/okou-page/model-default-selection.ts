@@ -1,8 +1,12 @@
 import { command } from "ccstate";
-import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   isCodexFastModeModel,
   isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   type OrgModelPoliciesResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
@@ -33,19 +37,6 @@ function createModelFirstSelection(
   };
 }
 
-function resolveModelFirstWorkspaceDefaultSelection(
-  policies: OrgModelPoliciesResponse | null | undefined,
-  modelSettings: ModelSettings = {},
-): ModelProviderSelection | null {
-  const defaultPolicy = policies?.policies.find((policy) => {
-    return policy.isDefault && policy.routeStatus === "valid";
-  });
-  return createModelFirstSelection(
-    defaultPolicy?.model ?? policies?.workspaceDefaultModel,
-    modelSettings,
-  );
-}
-
 export function isCodexFastModeAvailableForSelection(params: {
   readonly policies: OrgModelPoliciesResponse | null | undefined;
   readonly selectedModel: string | null | undefined;
@@ -65,18 +56,44 @@ export function isCodexFastModeAvailableForSelection(params: {
   );
 }
 
-export function resolveModelFirstUserDefaultSelection(params: {
+function hasUsableModelRoute(
+  policies: OrgModelPoliciesResponse | null | undefined,
+  model: string,
+): boolean {
+  // Before policies load there is no route evidence to reject the preference.
+  if (!policies) {
+    return true;
+  }
+  // A plan-restricted route stays selected so the composer can offer the
+  // upgrade instead of silently switching models.
+  return policies.policies.some((policy) => {
+    return (
+      policy.model === model &&
+      (isMemberModelPolicyConfigurable(policy) ||
+        getMemberModelPolicyRoute(policy).availability === "plan_restricted")
+    );
+  });
+}
+
+/**
+ * Default for a new chat: the member's saved preference when its route is
+ * usable, otherwise the fixed organization default (Auto).
+ */
+export function resolveDefaultModelSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
   policies: OrgModelPoliciesResponse | null | undefined;
-}): ModelProviderSelection | null {
+}): ModelProviderSelection {
   const userSelection = resolveModelFirstStoredUserSelection(params);
-  return (
-    userSelection ??
-    resolveModelFirstWorkspaceDefaultSelection(
-      params.policies,
-      params.userPreference?.modelSettings,
-    )
-  );
+  if (
+    userSelection &&
+    hasUsableModelRoute(params.policies, userSelection.selectedModel)
+  ) {
+    return userSelection;
+  }
+  return {
+    selectedModel: ORG_DEFAULT_RUN_MODEL,
+    modelSettings: params.userPreference?.modelSettings ?? {},
+  };
 }
 
 export function resolveModelFirstStoredUserSelection(params: {

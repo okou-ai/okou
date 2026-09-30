@@ -228,7 +228,7 @@ async function completeNativeToolRun({
   await api.updateOrgModelPolicies(actor, [
     {
       model,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
       modelProviderId: null,
@@ -279,7 +279,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -503,7 +503,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -683,7 +683,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "aws-bedrock",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -828,7 +828,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -892,7 +892,7 @@ describe("shared native Pi route activation", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1016,7 +1016,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -1140,7 +1140,7 @@ describe("shared native Pi route activation", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,

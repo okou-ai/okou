@@ -840,7 +840,6 @@ const slackModelPickerState$ = command(
     readonly options: readonly {
       readonly model: SupportedRunModel;
       readonly label: string;
-      readonly isDefault: boolean;
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
@@ -864,7 +863,6 @@ const slackModelPickerState$ = command(
         return {
           model: policy.model,
           label: policy.modelLabel,
-          isDefault: policy.isDefault,
         };
       }),
       currentSelectedModel,

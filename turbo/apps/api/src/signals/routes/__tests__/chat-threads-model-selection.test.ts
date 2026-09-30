@@ -43,7 +43,7 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
       return {
         model,
-        isDefault: model === "claude-sonnet-5",
+        preferred: model === "claude-sonnet-5",
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

@@ -4,7 +4,7 @@ import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
   isCodexFastModeAvailableForSelection,
-  resolveModelFirstUserDefaultSelection,
+  resolveDefaultModelSelection,
 } from "./model-default-selection.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
@@ -91,7 +91,7 @@ export const chatPageModelSelection$ = computed(
     }
     const policies = await get(orgModelPolicies$);
     const userPreference = await get(userModelPreference$);
-    return resolveModelFirstUserDefaultSelection({
+    return resolveDefaultModelSelection({
       userPreference,
       policies,
     });

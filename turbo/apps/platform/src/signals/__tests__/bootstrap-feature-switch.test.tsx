@@ -26,7 +26,7 @@ async function openTemplates() {
 }
 
 test("A signed-in workspace receives its enabled features", async () => {
-  mockOrgModelRoutes("claude-sonnet-5");
+  mockOrgModelRoutes();
   mockAgent();
 
   await setupPage({
@@ -51,7 +51,7 @@ async function setupEmailRolloutPage(args: {
   readonly fullName: string;
   readonly userId: string;
 }) {
-  mockOrgModelRoutes("claude-sonnet-5");
+  mockOrgModelRoutes();
   mockAgent();
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
@@ -113,7 +113,7 @@ test("another member does not receive the custom template rollout", async () => 
 
 test("Image recognition remains available by default", async () => {
   const user = userEvent.setup({ delay: null });
-  mockOrgModelRoutes("claude-opus-5");
+  mockOrgModelRoutes();
   mockAgent();
   context.mocks.upload.success({
     id: "default-image-recognition-upload",
@@ -127,7 +127,7 @@ test("Image recognition remains available by default", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
-  await expectComposerModel("Claude Opus 5");
+  await expectComposerModel("Auto");
   const fileInput =
     document.querySelector<HTMLInputElement>('input[type="file"]');
   if (!fileInput) {

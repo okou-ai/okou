@@ -8,6 +8,7 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
@@ -100,7 +101,6 @@ export interface FeishuDispatchConnection {
 interface FeishuModelOption {
   readonly model: SupportedRunModel;
   readonly label: string;
-  readonly isDefault: boolean;
 }
 
 interface FeishuCommand {
@@ -646,7 +646,6 @@ const feishuModelPickerState$ = command(
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
@@ -797,7 +796,7 @@ const handleModelCommand$ = command(
             options: picker.options.map((option) => {
               return {
                 commandValue: option.model,
-                label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
+                label: `${option.label}${option.model === ORG_DEFAULT_RUN_MODEL ? " (workspace default)" : ""}`,
                 current: picker.currentSelectedModel === option.model,
               };
             }),

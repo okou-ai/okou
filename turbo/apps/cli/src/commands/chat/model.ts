@@ -3,9 +3,10 @@ import { getModelReasoningEfforts } from "@okouai/api-contracts/contracts/model-
 import chalk from "chalk";
 import { Command } from "commander";
 import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  OrgModelPoliciesResponse,
-  OrgModelPolicy,
+import {
+  ORG_DEFAULT_RUN_MODEL,
+  type OrgModelPoliciesResponse,
+  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import {
@@ -56,7 +57,8 @@ function printSwitchableModels(policies: readonly OrgModelPolicy[]): void {
   }
 
   for (const policy of switchable) {
-    const defaultMarker = policy.isDefault ? chalk.dim(" (default)") : "";
+    const defaultMarker =
+      policy.model === ORG_DEFAULT_RUN_MODEL ? chalk.dim(" (default)") : "";
     console.log(`  - ${formatModelName(policy)}${defaultMarker}`);
     console.log(`    provider: ${formatModelProviderRoute(policy)}`);
     console.log(
@@ -69,10 +71,7 @@ function formatThreadModel(
   thread: ChatThreadMetadata,
   policies: OrgModelPoliciesResponse,
 ): string {
-  const model = thread.selectedModel ?? policies.workspaceDefaultModel;
-  if (!model) {
-    return "(default)";
-  }
+  const model = thread.selectedModel ?? ORG_DEFAULT_RUN_MODEL;
   const policy = policies.policies.find((candidate) => {
     return candidate.model === model;
   });

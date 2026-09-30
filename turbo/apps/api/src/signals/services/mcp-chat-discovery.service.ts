@@ -10,6 +10,7 @@ import {
   ACTIVE_RUN_MODELS,
   getCanonicalModelDisplayName,
   isBuiltInModelProviderType,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
@@ -39,7 +40,6 @@ import {
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { shouldReplaceExistingDefaultForPlan } from "./model-policy.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -362,18 +362,10 @@ function describeModelAvailability(params: {
   return entry;
 }
 
-async function loadDiscoveryModelPolicies(
-  tx: Tx,
-  orgId: string,
-  capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >,
-) {
+async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
   const policies = await tx
     .select({
       model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
       defaultProviderType: orgModelPolicies.defaultProviderType,
       credentialScope: orgModelPolicies.credentialScope,
       modelProviderId: orgModelPolicies.modelProviderId,
@@ -392,18 +384,15 @@ async function loadDiscoveryModelPolicies(
       "No active model policies are configured for this organization. Open model settings before creating a conversation.",
     );
   }
-  // Selection repairs defaults after plan changes. A read must not describe
-  // the pre-repair routes as if they were the configuration selection uses.
+  // Selection adds the fixed default to policies written before it existed.
+  // A read must not describe the pre-repair list as the one selection uses.
   if (
-    shouldReplaceExistingDefaultForPlan(
-      policies.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
+    !policies.some((policy) => {
+      return policy.model === ORG_DEFAULT_RUN_MODEL;
+    })
   ) {
     throw new DiscoveryUnavailable(
-      "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+      "Model policies need to be synchronized. Open model settings, then retry discovery.",
     );
   }
   return policies;
@@ -483,11 +472,7 @@ export async function listMcpModels(
           ? capabilities
           : { restrictedBuiltInModels: false, supportByok: true };
       await budget.beforeQuery(tx);
-      const policies = await loadDiscoveryModelPolicies(
-        tx,
-        principal.orgId,
-        routeCapabilities,
-      );
+      const policies = await loadDiscoveryModelPolicies(tx, principal.orgId);
       await budget.beforeQuery(tx);
       const [preference] = await tx
         .select({ model: orgMembersMetadata.selectedModel })
@@ -573,7 +558,7 @@ export async function listMcpModels(
         return model.id === preference?.model && model.selectable;
       });
       const workspaceDefault = models.find((model) => {
-        return policiesByModel.get(model.id)?.isDefault && model.selectable;
+        return model.id === ORG_DEFAULT_RUN_MODEL && model.selectable;
       });
       return {
         models,

@@ -16,6 +16,7 @@ import {
   isSupportedRunModel,
   isModelSupportedByProvider,
   modelProviderTypeSchema,
+  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -335,6 +336,7 @@ export async function resolveDefaultModelFirstPin(
       };
 }
 
+/** The fixed org default resolves through its own policy route. */
 async function resolveWorkspaceDefaultModelFirstRoute(params: {
   readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
@@ -342,16 +344,11 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
     "restrictedBuiltInModels" | "supportByok"
   >;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
-  const policy = params.facts.policies.find((candidate) => {
-    return candidate.isDefault;
+  return await resolveValidPolicyRoute({
+    facts: params.facts,
+    capabilities: params.capabilities,
+    selectedModel: ORG_DEFAULT_RUN_MODEL,
   });
-  return policy
-    ? await resolveValidPolicyRoute({
-        facts: params.facts,
-        capabilities: params.capabilities,
-        selectedModel: policy.model,
-      })
-    : null;
 }
 
 async function loadAvailableModelProviderPin(params: {

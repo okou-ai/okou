@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -16,20 +15,16 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  LIMITED_FREE1_DEFAULT_RUN_MODEL,
   MODEL_PROVIDER_TYPES,
   ACTIVE_RUN_MODELS,
+  ORG_DEFAULT_RUN_MODEL,
   getCanonicalModelDisplayName,
-  getDefaultOrgModelPolicySeed,
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
-  isOkouRunModel,
   isModelSupportedByProvider,
-  isLimitedFree1RestrictedRunModel,
   getRunModelAccess,
   getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -70,8 +65,12 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
+// `is_default` is written only for old API instances and is never read.
 export type OrgModelPolicyRow = Readonly<
-  Omit<typeof orgModelPolicies.$inferSelect, "modelProviderSurfaceId"> & {
+  Omit<
+    typeof orgModelPolicies.$inferSelect,
+    "modelProviderSurfaceId" | "isDefault"
+  > & {
     readonly modelProviderSurfaceId: string | null;
   }
 >;
@@ -105,22 +104,32 @@ const ORG_SENTINEL_USER_ID = "__org__";
 const ONBOARDING_MODEL_POLICY_SEEDS = {
   codex: {
     models: ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"],
-    defaultModel: "gpt-6-sol",
     providerType: "codex-oauth-token",
   },
   claudeCode: {
     models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"],
-    defaultModel: "claude-opus-5-5",
     providerType: "claude-code-oauth-token",
   },
 } as const satisfies Record<
   OnboardingSubscriptionProvider,
   {
     readonly models: readonly SupportedRunModel[];
-    readonly defaultModel: SupportedRunModel;
     readonly providerType: ModelProviderType;
   }
 >;
+
+// Built-in seeds written by APIs that predate the fixed Auto default. An org
+// created during that rollout can still hold one untouched when it finishes
+// onboarding; see #36167 for the `gpt-5.6-luna` variant.
+const PREVIOUS_STANDARD_SEED_MODELS: readonly (readonly string[])[] = [
+  ["claude-fable-5-1", "gpt-6-astra", "gpt-6-luna"],
+  ["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"],
+];
+
+/** The write is_default value old API instances still read during rollout. */
+function isOrgDefaultRunModel(model: string): boolean {
+  return model === ORG_DEFAULT_RUN_MODEL;
+}
 
 function ok<T>(data: T): ServiceResult<T> {
   return { ok: true, data };
@@ -195,7 +204,6 @@ function loadRows(
       id: orgModelPolicies.id,
       orgId: orgModelPolicies.orgId,
       model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
       defaultProviderType: orgModelPolicies.defaultProviderType,
       credentialScope: orgModelPolicies.credentialScope,
       modelProviderId: orgModelPolicies.modelProviderId,
@@ -216,8 +224,8 @@ function loadRows(
     );
 }
 
-// Seeds/repaired defaults and replacement writes share one organization-local
-// fence. Normal selection reads take no lock when no repair is needed.
+// Seeds and replacement writes share one organization-local fence. Normal
+// selection reads take no lock when the fixed default policy exists.
 async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
   await db.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
@@ -425,217 +433,58 @@ function sortRowsByCatalog(rows: OrgModelPolicyRow[]): OrgModelPolicyRow[] {
   });
 }
 
-function getSeedDefaultModelForPlan(
-  capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">,
-): SupportedRunModel {
-  return capabilities.restrictedBuiltInModels
-    ? LIMITED_FREE1_DEFAULT_RUN_MODEL
-    : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+function hasOrgDefaultPolicy(rows: readonly OrgModelPolicyRow[]): boolean {
+  return rows.some((row) => {
+    return isOrgDefaultRunModel(row.model);
+  });
 }
 
-export function shouldReplaceExistingDefaultForPlan(
-  existingDefault:
-    | Pick<
-        OrgModelPolicyRow,
-        | "model"
-        | "defaultProviderType"
-        | "credentialScope"
-        | "modelProviderId"
-        | "modelProviderSurfaceId"
-      >
-    | undefined,
-  capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >,
-): boolean {
-  if (
-    existingDefault === undefined ||
-    getRunModelAccess(existingDefault.model) === "retired"
-  ) {
-    return true;
-  }
-  if (capabilities.supportByok && !capabilities.restrictedBuiltInModels) {
-    return false;
-  }
-  const shouldReplaceModel =
-    capabilities.restrictedBuiltInModels &&
-    isBuiltInModelProviderType(existingDefault.defaultProviderType) &&
-    existingDefault.model !== LIMITED_FREE1_DEFAULT_RUN_MODEL &&
-    (existingDefault.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL ||
-      isLimitedFree1RestrictedRunModel(existingDefault.model));
-  return (
-    shouldReplaceModel ||
-    (!capabilities.supportByok &&
-      (!isBuiltInModelProviderType(existingDefault.defaultProviderType) ||
-        existingDefault.credentialScope !== "org" ||
-        existingDefault.modelProviderId !== null ||
-        existingDefault.modelProviderSurfaceId !== null))
-  );
-}
-
-async function ensureModelPolicy(
-  db: Db,
-  orgId: string,
-  userId: string,
-  model: SupportedRunModel,
-): Promise<void> {
-  const now = nowDate();
-  await db
-    .insert(orgModelPolicies)
-    .values({
-      model,
-      isDefault: false,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-      orgId,
-      createdByUserId: userId,
-      updatedByUserId: userId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
-}
-
-async function setDefaultModelPolicy(
-  db: Db,
-  orgId: string,
-  userId: string,
-  model: SupportedRunModel,
-  options: {
-    readonly resetRouteToBuiltIn?: boolean;
-  },
-): Promise<void> {
-  await ensureModelPolicy(db, orgId, userId, model);
-  const now = nowDate();
-  await db
-    .update(orgModelPolicies)
-    .set({
-      isDefault: false,
-      updatedByUserId: userId,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        eq(orgModelPolicies.isDefault, true),
-      ),
-    );
-  await db
-    .update(orgModelPolicies)
-    .set({
-      isDefault: true,
-      ...(options?.resetRouteToBuiltIn === true
-        ? {
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-            modelProviderSurfaceId: null,
-          }
-        : {}),
-      updatedByUserId: userId,
-      updatedAt: now,
-    })
-    .where(
-      and(eq(orgModelPolicies.orgId, orgId), eq(orgModelPolicies.model, model)),
-    );
-}
-
+/**
+ * Every organization keeps the fixed built-in default policy. It seeds a new
+ * organization and repairs one whose policies were written by an API that
+ * predates the fixed default. The previous default flag moves to it so old
+ * API instances agree during the rollout; the flag is never read here.
+ */
 async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<EnsuredOrgModelPolicyFacts> {
   const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
-  const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
-  const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
-  if (existing.length > 0) {
-    const existingDefault = existing.find((policy) => {
-      return policy.isDefault;
-    });
-    if (!shouldReplaceExistingDefaultForPlan(existingDefault, capabilities)) {
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(existing),
-      };
-    }
-
-    if (!capabilities.supportByok || capabilities.restrictedBuiltInModels) {
-      await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
-        resetRouteToBuiltIn: !capabilities.supportByok,
-      });
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(await loadRows(db, orgId)),
-      };
-    }
-
-    const activePolicies = existing.filter((policy) => {
-      return getRunModelAccess(policy.model) === "allowed";
-    });
-    const fallbackDefault =
-      activePolicies.find((policy) => {
-        return policy.model === seedDefaultModel;
-      }) ?? sortRowsByCatalog(activePolicies)[0];
-    if (fallbackDefault) {
-      await setDefaultModelPolicy(
-        db,
-        orgId,
-        userId,
-        parseSupportedModel(fallbackDefault.model) ?? seedDefaultModel,
-        {},
-      );
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(await loadRows(db, orgId)),
-      };
-    }
+  if (hasOrgDefaultPolicy(existing)) {
     return {
       orgPlanCapabilities,
       policies: sortRowsByCatalog(existing),
     };
   }
 
-  // A retired default can be the only persisted policy while the new API is
-  // deployed ahead of the Stage 2 migration. Transfer the org-wide default
-  // slot before inserting the rest of the active seed so the hidden row does
-  // not collide with the partial unique default index.
-  await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
-    resetRouteToBuiltIn: true,
-  });
-  const initialized = await loadRows(db, orgId);
-  const existingModels = new Set(
-    initialized.map((policy) => {
-      return policy.model;
-    }),
-  );
-  const missing = getDefaultOrgModelPolicySeed(seedDefaultModel)
-    .filter((seed) => {
-      return !existingModels.has(seed.model);
-    })
-    .map((seed) => {
-      return {
-        ...seed,
-        orgId,
-        createdByUserId: userId,
-        updatedByUserId: userId,
-      };
-    });
-
-  if (missing.length === 0) {
-    return {
-      orgPlanCapabilities,
-      policies: sortRowsByCatalog(initialized),
-    };
-  }
-
+  const now = nowDate();
+  await db
+    .update(orgModelPolicies)
+    .set({ isDefault: false, updatedByUserId: userId, updatedAt: now })
+    .where(
+      and(
+        eq(orgModelPolicies.orgId, orgId),
+        eq(orgModelPolicies.isDefault, true),
+        ne(orgModelPolicies.model, ORG_DEFAULT_RUN_MODEL),
+      ),
+    );
   await db
     .insert(orgModelPolicies)
-    .values(missing)
+    .values({
+      orgId,
+      model: ORG_DEFAULT_RUN_MODEL,
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+      createdByUserId: userId,
+      updatedByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    })
     .onConflictDoNothing({
       target: [orgModelPolicies.orgId, orgModelPolicies.model],
     });
@@ -678,16 +527,7 @@ export async function ensureOrgModelPolicyFacts(
     orgId,
     suppliedPlanCapabilities,
   );
-  const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
-  if (
-    initial.policies.length > 0 &&
-    !shouldReplaceExistingDefaultForPlan(
-      initial.policies.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
-  ) {
+  if (hasOrgDefaultPolicy(initial.policies)) {
     return initial;
   }
   return db.transaction(async (tx) => {
@@ -867,12 +707,10 @@ async function validateOrgProviderRoute(
 
 /**
  * Plan restrictions gate what a workspace may newly configure, not what it
- * already stores. Every workspace is seeded with the same built-in models, so a
- * restricted plan owns rows its plan could not add today, and the client always
- * re-sends the full list. Re-validating those untouched rows would freeze the
- * list and block writes the plan does allow, such as adding a BYOK route. Only
- * an added or re-routed policy has to satisfy the plan, and a restricted route
- * may never be promoted into the workspace default it was not already holding.
+ * already stores. A workspace can own rows its plan could not add today, and
+ * the client always re-sends the full list. Re-validating those untouched rows
+ * would freeze the list and block writes the plan does allow, such as adding a
+ * BYOK route. Only an added or re-routed policy has to satisfy the plan.
  */
 function planRestrictedWrite(params: {
   readonly policy: UpdateOrgModelPolicy;
@@ -892,10 +730,7 @@ function planRestrictedWrite(params: {
   ) {
     return false;
   }
-  if (!storedRouteUnchanged(params.policy, params.existing)) {
-    return true;
-  }
-  return params.policy.isDefault && params.existing?.isDefault !== true;
+  return !storedRouteUnchanged(params.policy, params.existing);
 }
 
 interface UpdatePolicyValidationContext {
@@ -918,9 +753,27 @@ async function validateUpdatePolicies(
     return bad("Request must include at least one model");
   }
 
+  const orgDefault = policies.find((policy) => {
+    return isOrgDefaultRunModel(policy.model);
+  });
+  if (!orgDefault) {
+    return bad(
+      `Model "${ORG_DEFAULT_RUN_MODEL}" is the workspace default and cannot be removed`,
+    );
+  }
+  if (
+    orgDefault.defaultProviderType !== "built-in" ||
+    orgDefault.credentialScope !== "org" ||
+    orgDefault.modelProviderId !== null ||
+    (orgDefault.modelProviderSurfaceId ?? null) !== null
+  ) {
+    return bad(
+      `Model "${ORG_DEFAULT_RUN_MODEL}" must use the built-in workspace route`,
+    );
+  }
+
   const existingByModel = policiesByModel(existingRows);
   const seenModels = new Set<string>();
-  let defaultCount = 0;
 
   for (const policy of policies) {
     if (getRunModelAccess(policy.model) === "retired") {
@@ -959,18 +812,10 @@ async function validateUpdatePolicies(
     }
     seenModels.add(policy.model);
 
-    if (policy.isDefault) {
-      defaultCount += 1;
-    }
-
     const routeError = await validateOrgProviderRoute(db, orgId, policy);
     if (routeError) {
       return bad(routeError);
     }
-  }
-
-  if (defaultCount !== 1) {
-    return bad("Request must include exactly one default model");
   }
 
   return ok([...policies]);
@@ -1086,7 +931,7 @@ function serializePolicy(
     id: policy.id,
     model,
     modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: policy.isDefault,
+    isDefault: isOrgDefaultRunModel(model),
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId: policy.modelProviderId ?? null,
@@ -1103,7 +948,7 @@ function selectWorkspaceDefaultPolicy(
 ): OrgModelPolicy | null {
   return (
     policies.find((policy) => {
-      return policy.isDefault;
+      return isOrgDefaultRunModel(policy.model);
     }) ?? null
   );
 }
@@ -1320,16 +1165,7 @@ async function listOrgModelPolicies(
     modelsAvailableToAdd:
       modelMode === "auto"
         ? []
-        : modelsAvailableToAdd(persistedRows, modelsAllowedForNewPolicy).filter(
-            (model) => {
-              return (
-                isFeatureEnabled(
-                  FeatureSwitchKey.OkouModels,
-                  featureSwitchContext,
-                ) || !isOkouRunModel(model)
-              );
-            },
-          ),
+        : modelsAvailableToAdd(persistedRows, modelsAllowedForNewPolicy),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -1385,14 +1221,11 @@ async function persistOrgModelPolicyUpdates(params: {
   const removedModels = removedRows.map((row) => {
     return row.model;
   });
-  const defaultPolicy = params.policies.find((policy) => {
-    return policy.isDefault;
-  });
-  if (removedModels.length > 0 && defaultPolicy) {
+  if (removedModels.length > 0) {
     await tx
       .update(orgMembersMetadata)
       .set({
-        selectedModel: defaultPolicy.model,
+        selectedModel: ORG_DEFAULT_RUN_MODEL,
         serviceTier: null,
         updatedAt: params.now,
       })
@@ -1413,7 +1246,7 @@ async function persistOrgModelPolicyUpdates(params: {
     await tx
       .update(orgModelPolicies)
       .set({
-        isDefault: policy.isDefault,
+        isDefault: isOrgDefaultRunModel(policy.model),
         defaultProviderType: policy.defaultProviderType,
         credentialScope: policy.credentialScope,
         modelProviderId: policy.modelProviderId,
@@ -1430,7 +1263,46 @@ async function persistOrgModelPolicyUpdates(params: {
   }
 }
 
-/** Apply the onboarding choice only before an organization customizes its model policies. */
+function isUntouchedStandardSeed(rows: readonly OrgModelPolicyRow[]): boolean {
+  if (
+    !rows.every((row) => {
+      return (
+        row.defaultProviderType === "built-in" &&
+        row.credentialScope === "org" &&
+        row.modelProviderId === null &&
+        row.modelProviderSurfaceId === null
+      );
+    })
+  ) {
+    return false;
+  }
+  const models = new Set(
+    rows
+      .map((row) => {
+        return row.model;
+      })
+      .filter((model) => {
+        return !isOrgDefaultRunModel(model);
+      }),
+  );
+  return (
+    models.size === 0 ||
+    PREVIOUS_STANDARD_SEED_MODELS.some((seed) => {
+      return (
+        seed.length === models.size &&
+        seed.every((model) => {
+          return models.has(model);
+        })
+      );
+    })
+  );
+}
+
+/**
+ * Apply the onboarding choice to a Custom organization only before it
+ * customizes its model policies. Auto organizations keep only the fixed
+ * default; members' subscriptions already appear through their catalog.
+ */
 export async function initializeOnboardingOrgModelPolicies(
   db: Db,
   orgId: string,
@@ -1438,34 +1310,11 @@ export async function initializeOnboardingOrgModelPolicies(
   provider: OnboardingSubscriptionProvider,
 ): Promise<void> {
   await lockPolicyWrites(db, orgId);
+  if ((await loadOrgModelMode(db, orgId)) === "auto") {
+    return;
+  }
   const existing = await loadRows(db, orgId, true);
-  const standardSeed = getDefaultOrgModelPolicySeed();
-  // An older API may have written this untouched seed before onboarding finishes.
-  // Remove after old API writers drain and no incomplete org retains that seed;
-  // track the removal in #36167.
-  const previousSeed = standardSeed.map((seed) => {
-    return seed.model === "gpt-6-luna"
-      ? { ...seed, model: "gpt-5.6-luna" as const }
-      : seed;
-  });
-  const hasOnlyStandardSeed = [standardSeed, previousSeed].some((seedRows) => {
-    return (
-      existing.length === seedRows.length &&
-      seedRows.every((seed) => {
-        const row = existing.find((candidate) => {
-          return candidate.model === seed.model;
-        });
-        return (
-          row?.isDefault === seed.isDefault &&
-          row.defaultProviderType === seed.defaultProviderType &&
-          row.credentialScope === seed.credentialScope &&
-          row.modelProviderId === null &&
-          row.modelProviderSurfaceId === null
-        );
-      })
-    );
-  });
-  if (existing.length > 0 && !hasOnlyStandardSeed) {
+  if (!isUntouchedStandardSeed(existing)) {
     return;
   }
 
@@ -1475,16 +1324,24 @@ export async function initializeOnboardingOrgModelPolicies(
     orgId,
     userId,
     now: nowDate(),
-    policies: seed.models.map((model) => {
-      return {
-        model,
-        isDefault: model === seed.defaultModel,
-        defaultProviderType: seed.providerType,
-        credentialScope: "member",
+    policies: [
+      {
+        model: ORG_DEFAULT_RUN_MODEL,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
         modelProviderId: null,
         modelProviderSurfaceId: null,
-      };
-    }),
+      },
+      ...seed.models.map((model) => {
+        return {
+          model,
+          defaultProviderType: seed.providerType,
+          credentialScope: "member" as const,
+          modelProviderId: null,
+          modelProviderSurfaceId: null,
+        };
+      }),
+    ],
   });
 }
 

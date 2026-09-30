@@ -1520,6 +1520,13 @@
       "when": 1790746852141,
       "tag": "1294_retire_v7_chat_event_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 1295,
+      "version": "7",
+      "when": 1790753923630,
+      "tag": "1295_okou_1_0_fixed_org_default",
+      "breakpoints": true
     }
   ]
 }

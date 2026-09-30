@@ -54,7 +54,11 @@ describe("CHAT-02: run image model snapshot", () => {
     );
     await cancelChatRun(actor, globalDefault.runId);
 
-    await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
 
     // The member setting is not pinned at thread creation, so an existing
     // thread follows the change on its next run.
@@ -67,7 +71,11 @@ describe("CHAT-02: run image model snapshot", () => {
       readRunImageModelSnapshotFixture(afterDefaultChanged.runId),
     ).resolves.toBe("fal-ai/flux-pro/v1.1");
 
-    await chat.updateUserModelPreference(actor, null, "fal-ai/nano-banana-2");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/nano-banana-2",
+    );
     await expect(
       readRunImageModelSnapshotFixture(afterDefaultChanged.runId),
     ).resolves.toBe("fal-ai/flux-pro/v1.1");
@@ -128,7 +136,11 @@ describe("CHAT-02: run image model snapshot", () => {
 
   it("persists the image snapshot when dispatch fails before runner start", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();
-    await chat.updateUserModelPreference(actor, null, "gpt-image-2");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "gpt-image-2",
+    );
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
 
     // The pick creates the run and fails it when dispatch cannot start.
@@ -144,7 +156,11 @@ describe("CHAT-02: run image model snapshot", () => {
 
   it("persists the resolved image model on a run picked from the org queue", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();
-    await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 
     const blocker = await sendChatRun(actor, {
@@ -178,7 +194,11 @@ describe("CHAT-02: run image model snapshot", () => {
       DEFAULT_IMAGE_MODEL,
     );
 
-    await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
     const resumed = await api.createRun(actor, {
       agentId,
       sessionId: first.sessionId,

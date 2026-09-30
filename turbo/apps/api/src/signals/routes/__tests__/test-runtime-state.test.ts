@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
@@ -84,7 +84,7 @@ interface ClaimedBuiltInRun {
 async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   const keyFixture = await seedBuiltInModelCandidateKeys(
     context,
-    DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    ORG_DEFAULT_RUN_MODEL,
   );
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -225,7 +225,7 @@ describe("POST /api/test/runtime-state/action", () => {
       await runs.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -383,7 +383,7 @@ describe("POST /api/test/runtime-state/action", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-sol",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

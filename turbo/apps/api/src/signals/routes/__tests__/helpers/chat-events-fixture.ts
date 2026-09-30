@@ -656,7 +656,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -676,7 +676,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: route.selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: route.type,
         credentialScope: "org",
         modelProviderId: providerId,
@@ -716,7 +716,7 @@ export function createChatEventsFixture(context: TestContext) {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -758,7 +758,7 @@ export function createChatEventsFixture(context: TestContext) {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -805,7 +805,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1733,7 +1733,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(args.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

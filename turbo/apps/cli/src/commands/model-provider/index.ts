@@ -1,4 +1,5 @@
 import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { Command } from "commander";
 import chalk from "chalk";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
@@ -40,7 +41,8 @@ const listCommand = new Command()
       console.log();
 
       for (const policy of result.policies) {
-        const defaultMarker = policy.isDefault ? chalk.dim(" (default)") : "";
+        const defaultMarker =
+          policy.model === ORG_DEFAULT_RUN_MODEL ? chalk.dim(" (default)") : "";
         console.log(
           `  - ${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
         );

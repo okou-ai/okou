@@ -3,7 +3,7 @@ import {
   getCanonicalModelDisplayName,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
-  getDefaultOrgModelPolicySeed,
+  ORG_DEFAULT_RUN_MODEL,
   type OrgModelPolicy,
   type OrgModelMode,
   type OrgModelPoliciesResponse,
@@ -17,18 +17,25 @@ function policyId(index: number): string {
   return `00000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`;
 }
 
+const SEEDED_MODELS = [
+  "claude-fable-5-1",
+  "gpt-6-astra",
+  "gpt-6-luna",
+  ORG_DEFAULT_RUN_MODEL,
+] as const;
+
 function makeDefaultPolicies(): OrgModelPolicy[] {
   const now = "2026-05-08T00:00:00.000Z";
-  return getDefaultOrgModelPolicySeed().map((seed, index) => {
+  return SEEDED_MODELS.map((model, index) => {
     return {
       id: policyId(index),
-      model: seed.model,
-      modelLabel: getCanonicalModelDisplayName(seed.model),
-      isDefault: seed.isDefault,
-      defaultProviderType: seed.defaultProviderType,
-      runtimeProviderType: getBuiltInConcreteProviderType(seed.model),
-      credentialScope: seed.credentialScope,
-      modelProviderId: seed.modelProviderId,
+      model,
+      modelLabel: getCanonicalModelDisplayName(model),
+      isDefault: model === ORG_DEFAULT_RUN_MODEL,
+      defaultProviderType: "built-in",
+      runtimeProviderType: getBuiltInConcreteProviderType(model),
+      credentialScope: "org",
+      modelProviderId: null,
       modelProviderSurfaceId: null,
       routeStatus: "valid",
       routeStatusReason: null,
@@ -43,9 +50,10 @@ let mockOrgModelMode: OrgModelMode = "custom";
 
 function response(): OrgModelPoliciesResponse {
   const policies = [...mockOrgModelPolicies];
+  // Deprecated compat fields for released iOS clients mirror the fixed default.
   const workspaceDefault =
     policies.find((policy) => {
-      return policy.isDefault;
+      return policy.model === ORG_DEFAULT_RUN_MODEL;
     }) ?? null;
   const configuredModels = new Set(
     policies.map((policy) => {
@@ -96,7 +104,7 @@ function applyUpdate(policy: UpdateOrgModelPolicy): OrgModelPolicy {
     id: existing?.id ?? crypto.randomUUID(),
     model: policy.model,
     modelLabel: getCanonicalModelDisplayName(policy.model),
-    isDefault: policy.isDefault,
+    isDefault: policy.model === ORG_DEFAULT_RUN_MODEL,
     defaultProviderType: policy.defaultProviderType,
     ...(isBuiltInModelProviderType(policy.defaultProviderType)
       ? { runtimeProviderType: getBuiltInConcreteProviderType(policy.model) }
@@ -121,8 +129,7 @@ export const apiOrgModelPoliciesHandlers = [
     if (body.mode === "auto") {
       mockOrgModelPolicies = [
         applyUpdate({
-          model: "okou-1.0",
-          isDefault: true,
+          model: ORG_DEFAULT_RUN_MODEL,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -134,6 +141,18 @@ export const apiOrgModelPoliciesHandlers = [
   }),
 
   mockApi(modelPoliciesMainContract.update, ({ body, respond }) => {
+    if (
+      !body.policies.some((policy) => {
+        return policy.model === ORG_DEFAULT_RUN_MODEL;
+      })
+    ) {
+      return respond(400, {
+        error: {
+          message: `${ORG_DEFAULT_RUN_MODEL} cannot be removed`,
+          code: "BAD_REQUEST",
+        },
+      });
+    }
     mockOrgModelPolicies = body.policies.map(applyUpdate);
     return respond(200, response());
   }),

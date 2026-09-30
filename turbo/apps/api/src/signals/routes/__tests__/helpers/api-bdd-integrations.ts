@@ -34,7 +34,10 @@ import {
   type GithubOauthConnectQuery,
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  ORG_DEFAULT_RUN_MODEL,
+  type SupportedRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,
@@ -88,6 +91,7 @@ import { slackEventsRoutes } from "../../slack-events";
 import { slackInteractiveRoutes } from "../../slack-interactive";
 import { slackOauthRoutes } from "../../slack-oauth";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
+import { ensureCustomModelModeForTest } from "./org-model-policy-write";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
@@ -1258,6 +1262,9 @@ export function createBddIntegrationApi(context: TestContext) {
     // Slack run fixtures claim native Runner jobs, so both org models are
     // policy-excluded from Pi.
     async configureSlackRunModelPolicies(actor: ApiTestUser): Promise<void> {
+      await ensureCustomModelModeForTest(context, actor, () => {
+        return authenticate(context, routeMocks, actor);
+      });
       const providers = setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersMainContract,
       );
@@ -1290,21 +1297,35 @@ export function createBddIntegrationApi(context: TestContext) {
             revision: snapshot.body.revision,
             policies: [
               {
+                model: ORG_DEFAULT_RUN_MODEL,
+                defaultProviderType: "built-in",
+                credentialScope: "org",
+                modelProviderId: null,
+              },
+              {
                 model: "claude-fable-5-1",
-                isDefault: true,
                 defaultProviderType: "anthropic-api-key",
                 credentialScope: "org",
                 modelProviderId: anthropic.body.provider.id,
               },
               {
                 model: "gpt-6-astra",
-                isDefault: false,
                 defaultProviderType: "openai-api-key",
                 credentialScope: "org",
                 modelProviderId: openai.body.provider.id,
               },
             ],
           },
+        }),
+        [200],
+      );
+      // Runs without an explicit model use the member preference.
+      await accept(
+        setupApp({ context, routes: userModelPreferenceRoutes })(
+          userModelPreferenceContract,
+        ).update({
+          headers: authenticate(context, routeMocks, actor),
+          body: { selectedModel: "claude-fable-5-1", serviceTier: null },
         }),
         [200],
       );

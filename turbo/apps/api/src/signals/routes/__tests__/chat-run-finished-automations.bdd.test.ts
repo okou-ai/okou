@@ -84,14 +84,13 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   await api.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
     },
     {
       model: "claude-sonnet-5",
-      isDefault: false,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,

@@ -13,7 +13,6 @@ import {
   modelSupportsImageInput,
   getSelectableProviderTypes,
   getCanonicalModelDisplayName,
-  getDefaultOrgModelPolicySeed,
   getProviderRuntimeModel,
   getProvidersForModel,
   getBuiltInApiModel,
@@ -44,15 +43,13 @@ import {
   upsertModelProviderRequestSchema,
   updateOrgModelPolicySchema,
   updateOrgModelPoliciesRequestSchema,
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  ORG_DEFAULT_RUN_MODEL,
   BUILT_IN_MODEL_TO_PROVIDER,
-  LIMITED_FREE1_DEFAULT_RUN_MODEL,
   CODEX_FAST_MODE_MODELS,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
   ACTIVE_RUN_MODELS,
   BUILT_IN_MODEL_PRICE_TIER,
-  DEFAULT_ORG_MODEL_POLICY_MODELS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -197,6 +194,8 @@ describe("model-first canonical catalog", () => {
     });
     expect(parsed.policies).toHaveLength(1);
     expect(parsed.policies[0]).not.toHaveProperty("modelProviderSurfaceId");
+    // Released clients still send the retired default flag.
+    expect(parsed.policies[0]).not.toHaveProperty("isDefault");
   });
 
   it("identifies models blocked on limited-free-1", () => {
@@ -389,8 +388,6 @@ describe("model-first canonical catalog", () => {
       ),
     ).toBe("pro_required");
     expect(getBuiltInModelPriceTier("claude-sonnet-5-5")).toBe("$$");
-    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
-    expect(DEFAULT_ORG_MODEL_POLICY_MODELS).not.toContain("claude-sonnet-5-5");
   });
 
   it("offers opt-in 6.1 Sol only through approved routes and requires a paid org", () => {
@@ -416,7 +413,6 @@ describe("model-first canonical catalog", () => {
         vendor: "openai",
       },
     ]);
-    expect(DEFAULT_ORG_MODEL_POLICY_MODELS).not.toContain("gpt-6.1-sol");
   });
 
   it("returns compatible provider types for canonical models", () => {
@@ -987,35 +983,11 @@ describe("model-first canonical catalog", () => {
     },
   );
 
-  it("builds the default org policy seed from the workspace defaults", () => {
-    expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
-      "claude-fable-5-1",
-      "gpt-6-astra",
-      "gpt-6-luna",
-    ]);
-    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
-    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-6-luna");
-    expect(getDefaultModel("built-in")).toBe(
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-    );
-    expect(getDefaultOrgModelPolicySeed()).toEqual(
-      DEFAULT_ORG_MODEL_POLICY_MODELS.map((model) => {
-        return {
-          model,
-          isDefault: model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        };
-      }),
-    );
-    expect(
-      getDefaultOrgModelPolicySeed(LIMITED_FREE1_DEFAULT_RUN_MODEL).find(
-        (seed) => {
-          return seed.isDefault;
-        },
-      )?.model,
-    ).toBe(LIMITED_FREE1_DEFAULT_RUN_MODEL);
+  it("uses the fixed Auto model as the built-in default", () => {
+    expect(ORG_DEFAULT_RUN_MODEL).toBe("okou-1.0");
+    expect(getDefaultModel("built-in")).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(getProvidersForModel(ORG_DEFAULT_RUN_MODEL)).toEqual(["built-in"]);
+    expect(isLimitedFree1RestrictedRunModel(ORG_DEFAULT_RUN_MODEL)).toBe(false);
   });
 
   it("exposes price tiers for built-in reasoning models", () => {
@@ -2042,7 +2014,6 @@ describe("built-in provider discriminator contract", () => {
 
     const policy = {
       model: "gpt-5.6-sol",
-      isDefault: true,
       credentialScope: "org",
       modelProviderId: null,
     } as const;
@@ -2077,13 +2048,7 @@ describe("built-in provider discriminator contract", () => {
     expect(getProvidersForModel("gpt-5.6-sol")).toContain("built-in");
   });
 
-  it("emits the canonical writer value from default policy seeds", () => {
-    expect(
-      getDefaultOrgModelPolicySeed().every((policy) => {
-        return policy.defaultProviderType === "built-in";
-      }),
-    ).toBe(true);
-
+  it("emits the canonical built-in writer value", () => {
     const writeType: ModelProviderWriteType = "built-in";
     expect(writeType).toBe("built-in");
   });

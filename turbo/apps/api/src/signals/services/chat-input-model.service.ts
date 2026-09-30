@@ -21,7 +21,7 @@ import {
 } from "./model-selection.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-/** Capture an input's model once, using the workspace default when unavailable. */
+/** Capture an input's model once, using the fixed org default when unavailable. */
 export async function resolveChatInputModelSelection(
   db: Db,
   args: {
