@@ -1,3 +1,5 @@
+import { storages } from "@okouai/db/schema/storage";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
 import {
   colorThemeSchema,
@@ -106,27 +108,41 @@ export function userPreferences({
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
   return computed(async (get): Promise<UserPreferencesResponse> => {
     const db = get(db$);
-    const [row] = await db
-      .select({
-        timezone: orgMembersMetadata.timezone,
-        locale: orgMembersMetadata.locale,
-        pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
-        sendMode: orgMembersMetadata.sendMode,
-        cloudBrowserEnabledByDefault:
-          orgMembersMetadata.cloudBrowserEnabledByDefault,
-        theme: orgMembersMetadata.theme,
-        colorTheme: orgMembersMetadata.colorTheme,
-        captureNetworkBodiesRemaining:
-          orgMembersMetadata.captureNetworkBodiesRemaining,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
+    const [[row], [memory]] = await Promise.all([
+      db
+        .select({
+          timezone: orgMembersMetadata.timezone,
+          locale: orgMembersMetadata.locale,
+          pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
+          sendMode: orgMembersMetadata.sendMode,
+          cloudBrowserEnabledByDefault:
+            orgMembersMetadata.cloudBrowserEnabledByDefault,
+          theme: orgMembersMetadata.theme,
+          colorTheme: orgMembersMetadata.colorTheme,
+          captureNetworkBodiesRemaining:
+            orgMembersMetadata.captureNetworkBodiesRemaining,
+        })
+        .from(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.orgId, orgId),
+            eq(orgMembersMetadata.userId, userId),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ headVersionId: storages.headVersionId })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, orgId),
+            eq(storages.userId, userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ),
+        )
+        .limit(1),
+    ]);
+    const memoryInitialized = (memory?.headVersionId ?? null) !== null;
 
     if (!row) {
       return {
@@ -139,6 +155,7 @@ export function userPreferences({
         theme: null,
         colorTheme: null,
         captureNetworkBodiesRemaining: 0,
+        memoryInitialized,
       };
     }
 
@@ -154,6 +171,7 @@ export function userPreferences({
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
+      memoryInitialized,
     };
   });
 }
@@ -247,6 +265,7 @@ function mergeUserPreferences(
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
+    memoryInitialized: existing.memoryInitialized,
   };
 }
 

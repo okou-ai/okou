@@ -48,7 +48,9 @@ export const userPreferences$ = computed(
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
-    if (result.status === 200) {
+    // Initialization is idempotent: it fills missing timezone and locale and
+    // creates the member's memory, which run creation requires.
+    if (result.status === 200 && result.body.memoryInitialized) {
       if (
         result.body.timezone === null ||
         !isValidTimeZone(result.body.timezone) ||

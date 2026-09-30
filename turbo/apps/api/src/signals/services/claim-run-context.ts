@@ -12447,7 +12447,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       const projection = await get(piMemoryRecallProjection$);
       if (projection?.unavailableReason) {
-        L.error("Pi memory summary projection is not ready", {
+        L.warn("Pi memory summary projection is not ready", {
           ...selection.identity,
           reason: projection.unavailableReason,
         });

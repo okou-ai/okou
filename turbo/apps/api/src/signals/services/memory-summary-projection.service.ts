@@ -999,7 +999,7 @@ function createReadMemorySummaryProjectionCommand() {
       const observation = await get(projection$);
       signal.throwIfAborted();
       if (observation?.unavailableReason) {
-        log.error("Memory summary projection is not ready", {
+        log.warn("Memory summary projection is not ready", {
           ...args,
           reason: observation.unavailableReason,
         });

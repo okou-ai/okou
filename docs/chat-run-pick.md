@@ -199,12 +199,16 @@ Run creation does not initialize artifact storage, empty versions, heads or file
 indexes. A missing memory root is a prerequisite error and fails directly.
 Prerequisite [PR #37381](https://github.com/okou-ai/okou/pull/37381) provides idempotent memory initialization per
 `(orgId, userId)` through `onboarding-complete` and Clerk
-`organizationMembership.created`. Its rollout and the existing-membership
-backfill must precede deployment of this behavior. That production backfill has
-not been performed by this PR.
+`organizationMembership.created`. Existing members are not backfilled, in data
+or in a migration. `GET /api/user-preferences` stays read-only and reports
+`memoryInitialized`; when it is false the Web App calls the idempotent
+`POST /api/user-preferences/initialize`, which reuses the #37381 initializer to
+create only missing memory or an empty HEAD and never rewrites existing
+content. CLI, Slack and other non-Web entries reaching an uninitialized member
+fail at run creation; that gap is accepted.
 
 Pi memory summary projection selection is read-only. Missing or corrupt summary
-records log an error and use the existing not-ready state; creation does not
+records log a warning and use the existing not-ready state; creation does not
 enqueue or repair a projection. Version writes enqueue summary work, and the existing background worker backfills
 missing projections. A pre-existing `ready` row whose content fails validation is
 not automatically selected by that worker: it remains not ready for run recall
@@ -292,9 +296,9 @@ old detached sessions remain historical records. See
 [deployment compatibility](deployment-compatibility.md#canonical-chat-application-sessions)
 for the migration preflight and mixed-version boundary.
 
-Removing memory initialization from run creation depends on the separate account
-initialization PR and a completed production backfill. This PR does not authorize
-that backfill, deploy either change or claim the prerequisite is complete.
+Removing memory initialization from run creation relies on the account
+initialization entries of #37381 and the Web App's on-demand initialization
+above; there is no backfill.
 
 ## Measurement and verification
 

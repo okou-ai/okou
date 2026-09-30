@@ -1,3 +1,6 @@
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesRoutes } from "../user-preferences";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
@@ -88,6 +91,74 @@ describe("CHAT-02: thread run admission invariant", () => {
     await expect(
       createUnassociatedThreadBoundAgentRunFixture(""),
     ).rejects.toThrow("Thread-bound run requires a queue-first association");
+  });
+});
+
+describe("CHAT-02: on-demand member memory initialization", () => {
+  it("initializes an existing member's memory from preferences before the member's first run", async () => {
+    const { actor: owner } = await entitledChatActor();
+    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const preferences = setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    );
+    const storages = createStoragesBddApi(context);
+    // An existing member with preferences but no memory, as before on-demand
+    // initialization: the read reports it without writing anything.
+    await accept(
+      preferences.update({
+        headers: sessionHeaders(member),
+        body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
+      }),
+      [200],
+    );
+    const before = await accept(
+      preferences.get({ headers: sessionHeaders(member) }),
+      [200],
+    );
+    expect(before.body.memoryInitialized).toBeFalsy();
+    await expect(
+      accept(preferences.get({ headers: sessionHeaders(member) }), [200]),
+    ).resolves.toMatchObject({ body: { memoryInitialized: false } });
+
+    const initialized = await accept(
+      preferences.initialize({
+        headers: sessionHeaders(member),
+        body: { timezone: "America/Los_Angeles", locale: "en-US" },
+      }),
+      [200],
+    );
+    expect(initialized.body).toMatchObject({
+      timezone: "Asia/Tokyo",
+      locale: "ja-JP",
+      memoryInitialized: true,
+    });
+    const memory = await storages.downloadStorage(member, {
+      name: "memory",
+      owner: "user",
+    });
+
+    const agent = await bdd.createAgent(member, {
+      displayName: "Member memory agent",
+      visibility: "private",
+    });
+    const launched = await sendChatRun(member, {
+      agentId: agent.agentId,
+      prompt: "run after on-demand memory initialization",
+    });
+    expect(launched.runId).toStrictEqual(expect.any(String));
+    await cancelChatRun(member, launched.runId);
+
+    // Repeating initialization keeps the existing memory unchanged.
+    await accept(
+      preferences.initialize({
+        headers: sessionHeaders(member),
+        body: { timezone: "America/Los_Angeles", locale: "en-US" },
+      }),
+      [200],
+    );
+    await expect(
+      storages.downloadStorage(member, { name: "memory", owner: "user" }),
+    ).resolves.toStrictEqual(memory);
   });
 });
 

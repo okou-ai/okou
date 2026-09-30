@@ -9663,7 +9663,7 @@ function createPiMemoryRecallObjects(
       const projection = await get(projection$);
       signal.throwIfAborted();
       if (projection?.unavailableReason) {
-        L.error("Pi memory summary projection is not ready", {
+        L.warn("Pi memory summary projection is not ready", {
           ...selection.identity,
           reason: projection.unavailableReason,
         });
