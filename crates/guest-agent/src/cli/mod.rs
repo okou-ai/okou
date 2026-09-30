@@ -77,7 +77,7 @@ use guest_contracts::diagnostics::{
     CliObservedExitDiagnostic, CliTerminationDiagnostic, EventDeliveryDiagnostic,
     FailureDetailSource, FailureReason, HeartbeatFailureDiagnostic,
 };
-use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
+use guest_contracts::okou_cli::InstalledOkouCli;
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
 use guest_telemetry::telemetry::{
     SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
@@ -618,7 +618,7 @@ fn build_pi_command_for_runtime(
         )));
     }
     Ok(vec![
-        OKOU_CLI_LAUNCHER_PATH.to_string(),
+        okou_cli_launch::installed_cli_launcher_path().to_string(),
         "__agent-loop".to_string(),
     ])
 }
@@ -2446,7 +2446,7 @@ mod tests {
     use crate::{constants, env};
     use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
     use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
-    use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
+    use guest_contracts::okou_cli::InstalledOkouCli;
     use std::borrow::Cow;
     use std::collections::HashMap;
     #[cfg(unix)]
@@ -2635,7 +2635,7 @@ mod tests {
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
             vec![
-                OKOU_CLI_LAUNCHER_PATH.to_string(),
+                super::okou_cli_launch::installed_cli_launcher_path().to_string(),
                 "__agent-loop".to_string()
             ]
         );
@@ -2662,7 +2662,7 @@ mod tests {
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
             vec![
-                OKOU_CLI_LAUNCHER_PATH.to_string(),
+                super::okou_cli_launch::installed_cli_launcher_path().to_string(),
                 "__agent-loop".to_string()
             ]
         );

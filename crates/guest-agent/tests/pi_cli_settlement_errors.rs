@@ -1,6 +1,8 @@
 //! Pi CLI terminal results preserve error-message and aborted fallback
 //! semantics through the guest's public event projection.
 
+#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
+
 mod common;
 
 use guest_agent::masker::SecretMasker;
@@ -49,9 +51,9 @@ async fn run_settlement_case(
             .collect::<String>(),
     )?;
 
-    let npx = bin_dir.join("npx");
+    let mock_cli = bin_dir.join("mock_cli");
     std::fs::write(
-        &npx,
+        &mock_cli,
         r#"#!/bin/sh
 set -eu
 IFS= read -r state_command
@@ -73,9 +75,10 @@ if IFS= read -r unexpected; then
 fi
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&mock_cli)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&mock_cli, permissions)?;
+    common::use_mock_installed_cli(&mock_cli);
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
     unsafe {
@@ -104,6 +107,7 @@ fi
             &guest_contracts::env::RunPayload {
                 prompt: "verify Pi terminal result".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
+                pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 ..guest_contracts::env::RunPayload::default()

@@ -6,6 +6,8 @@
 //! envelopes, because their only production writer is the CLI child's stderr
 //! and only this path proves the guest converts them into sandbox operations.
 
+#![cfg(all(feature = "cli-test-fixtures", debug_assertions))]
+
 mod common;
 
 use serde_json::Value;
@@ -41,9 +43,10 @@ async fn pi_records_startup_success_at_first_projected_record() -> TestResult {
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), &serving_pi_host_script())?;
+    let mock_cli = install_mock_cli(tmp.path(), &serving_pi_host_script())?;
 
-    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-startup-success").await?;
+    let output =
+        run_pi_guest_agent(&runtime_dir, tmp.path(), &mock_cli, "pi-startup-success").await?;
 
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
@@ -64,9 +67,10 @@ async fn pi_records_startup_failure_when_the_host_never_serves() -> TestResult {
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), "#!/bin/sh\nexit 3\n")?;
+    let mock_cli = install_mock_cli(tmp.path(), "#!/bin/sh\nexit 3\n")?;
 
-    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-startup-failure").await?;
+    let output =
+        run_pi_guest_agent(&runtime_dir, tmp.path(), &mock_cli, "pi-startup-failure").await?;
 
     assert!(
         !output.status.success(),
@@ -84,10 +88,10 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), &serving_pi_host_script())?;
+    let mock_cli = install_mock_cli(tmp.path(), &serving_pi_host_script())?;
 
     let output =
-        run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-preparation-phases").await?;
+        run_pi_guest_agent(&runtime_dir, tmp.path(), &mock_cli, "pi-preparation-phases").await?;
 
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
@@ -189,21 +193,21 @@ fn guest_run_id() -> &'static str {
     "00000000-0000-4000-8000-000000000123"
 }
 
-fn install_mock_npx(home: &Path, script: &str) -> Result<PathBuf, TestError> {
+fn install_mock_cli(home: &Path, script: &str) -> Result<PathBuf, TestError> {
     let bin_dir = home.join("bin");
     std::fs::create_dir_all(&bin_dir)?;
-    let npx = bin_dir.join("npx");
-    std::fs::write(&npx, script)?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mock_cli = bin_dir.join("mock_cli");
+    std::fs::write(&mock_cli, script)?;
+    let mut permissions = std::fs::metadata(&mock_cli)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
-    Ok(npx)
+    std::fs::set_permissions(&mock_cli, permissions)?;
+    Ok(mock_cli)
 }
 
 async fn run_pi_guest_agent(
     runtime_dir: &Path,
     home: &Path,
-    npx: &Path,
+    mock_cli: &Path,
     scenario: &str,
 ) -> Result<Output, TestError> {
     let run_payload_path = common::write_run_payload_file_for_test(
@@ -211,13 +215,16 @@ async fn run_pi_guest_agent(
         &guest_contracts::env::RunPayload {
             prompt: "measure Pi sandbox startup".to_string(),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
+            pi_installed_cli_requirement: common::PI_TEST_INSTALLED_CLI_REQUIREMENT.to_string(),
             pi_model_config: "{}".to_string(),
             pi_session_id: PI_SESSION_ID.to_string(),
             ..guest_contracts::env::RunPayload::default()
         },
     )?;
     let user_env_path = write_user_env_file(runtime_dir)?;
-    let bin_dir = npx.parent().ok_or("mock npx must live in a directory")?;
+    let bin_dir = mock_cli
+        .parent()
+        .ok_or("mock CLI must live in a directory")?;
     let path_value = std::env::join_paths([bin_dir, Path::new("/usr/bin"), Path::new("/bin")])?;
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
@@ -251,7 +258,8 @@ async fn run_pi_guest_agent(
             runtime_dir,
         )
         .env("PATH", path_value)
-        .env("HOME", home);
+        .env("HOME", home)
+        .env("OKOU_TEST_CLI_SCRIPT_PATH", mock_cli);
 
     let timeout_context =
         format!("pi_startup_telemetry guest-agent scenario '{scenario}' exceeded its budget");

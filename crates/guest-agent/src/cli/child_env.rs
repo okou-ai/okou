@@ -68,6 +68,10 @@ pub(super) fn values_with_inputs(
             WORKSPACE_NPM_CACHE_RELATIVE_PATH
         ),
     ));
+    #[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
+    if let Ok(path) = std::env::var("OKOU_TEST_CLI_SCRIPT_PATH") {
+        values.push(("OKOU_TEST_CLI_SCRIPT_PATH".to_string(), path));
+    }
     normalize_values(values)
 }
 

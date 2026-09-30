@@ -12,9 +12,7 @@
 
 use std::path::Path;
 
-use guest_contracts::okou_cli::{
-    InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_PATH, parse_release_version,
-};
+use guest_contracts::okou_cli::{InstalledOkouCli, parse_release_version};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PiCliLaunchSource {
@@ -83,16 +81,44 @@ impl<'a> PiRuntimeRequirement<'a> {
 /// A missing or invalid manifest is reported; the caller refuses to launch
 /// without a verified installed bundle.
 pub(super) fn load_installed_okou_cli() -> Option<InstalledOkouCli> {
-    match load_installed_okou_cli_from(Path::new(OKOU_CLI_INSTALLED_MANIFEST_PATH)) {
+    let path = installed_cli_manifest_path();
+    match load_installed_okou_cli_from(Path::new(path)) {
         Ok(installed) => installed,
         Err(error) => {
             guest_telemetry::log_warn!(
                 super::LOG_TAG,
-                "Ignoring installed Okou CLI manifest at {OKOU_CLI_INSTALLED_MANIFEST_PATH}: {error}"
+                "Ignoring installed Okou CLI manifest at {path}: {error}"
             );
             None
         }
     }
+}
+
+// A compiled test fixture stands in for rootfs absolute paths in integration
+// tests. The release profile has debug assertions disabled, so this override
+// cannot be used in the deployed Guest, even with all Cargo features enabled.
+fn installed_cli_manifest_path() -> &'static str {
+    #[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
+    {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/installed-okou-cli.json"
+        )
+    }
+    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
+    guest_contracts::okou_cli::OKOU_CLI_INSTALLED_MANIFEST_PATH
+}
+
+pub(super) fn installed_cli_launcher_path() -> &'static str {
+    #[cfg(all(feature = "cli-test-fixtures", debug_assertions))]
+    {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/mock-pi-cli-launcher.sh"
+        )
+    }
+    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
+    guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
 }
 
 pub(super) fn load_installed_okou_cli_from(
@@ -157,6 +183,19 @@ mod tests {
     use guest_contracts::okou_cli::{
         OkouCliInstalledPackage, OkouCliSessionConstruction, OkouCliVersions,
     };
+
+    #[cfg(not(all(feature = "cli-test-fixtures", debug_assertions)))]
+    #[test]
+    fn production_cli_paths_are_canonical() {
+        assert_eq!(
+            installed_cli_manifest_path(),
+            guest_contracts::okou_cli::OKOU_CLI_INSTALLED_MANIFEST_PATH
+        );
+        assert_eq!(
+            installed_cli_launcher_path(),
+            guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
+        );
+    }
 
     fn installed(cli: &str, runtime: &str) -> InstalledOkouCli {
         InstalledOkouCli {
