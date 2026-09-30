@@ -101,7 +101,7 @@ fallback. Transient failures (KMS, a brief database outage) are handled the
 same way and the user sends again. The no-capacity exit never does this. If the
 marking write itself fails, the lease simply expires; there is no other
 catch/finally cleanup, so the thread waits at most about 10 seconds.
-Every lease comparison (claim, organization candidates, wait-notice reads) uses
+Every lease comparison (claim and organization candidates) uses
 the application clock `nowDate()`, never database `now()`, so tests move the
 clock instead of waiting. There is no claim heartbeat, session preparation
 retry, or active-run conflict retry.
@@ -112,7 +112,7 @@ Only the holder or expiry ends a lease: enqueue never touches it and only
 advances `queuedAt` (strictly, by at least 1 ms). The claim captures the
 `queuedAt` it observed.
 
-- The pending transaction fences the lease as its first write: it clears the
+- The pending transaction fences the lease before its run writes: it clears the
   lease only while `claimId` is still this pick's token and throws, rolling back,
   when no row matches (the lease expired and was taken). It runs after the
   admission locks that enqueue also takes before its queue upsert. Before the

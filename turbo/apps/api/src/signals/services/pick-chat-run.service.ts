@@ -1065,9 +1065,10 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                 admissionTiming.callbackFinished();
                 return admission;
               }
-              // Fence the lease before the first write. Admission above
-              // already took the automation/plan locks that enqueue takes
-              // before its queue upsert, so both orders end on this row.
+              // Fence the lease before the run writes. Admission above already
+              // appended the input claim (locking the thread's event sequence
+              // row, which every enqueue takes first) and took the
+              // automation/plan locks that enqueue takes before its upsert.
               const [fenced] = await tx
                 .update(queuedChatThreads)
                 .set({ claimId: null, claimExpiresAt: null })
