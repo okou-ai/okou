@@ -414,6 +414,25 @@ The discovery/slug readers, runner firewall catalog and legacy complete runtime
 snapshot callers retain their existing `loadAcceptedConnectorCatalogSnapshot`
 compatibility behavior. Catalog publication locks remain unchanged.
 
+## Selected model source migration (in progress)
+
+Gateway Thread execution now consumes `createModelSourceSnapshot` for the exact
+selected surface. Configuration, mappings and encrypted credentials share one
+read snapshot. Its prepared runtime Promise is started by a private effect-owned
+command alongside launch/resource preparation, not by a read computed. That
+command decrypts once and calls synchronous `compileModelRuntime`; downstream
+model reads await that actual preparation fact. Official reconciliation and
+independent reads are not serialized behind an early full-command await.
+
+The pure converter has no query, KMS or provider call. Thread privately assembles
+supplementary firewall and Codex protocol from the same configuration snapshot;
+no hidden configuration query is added. Existing framework/model availability
+checks remain caller-owned. Registered-provider/member and builtin runtime paths
+are not yet migrated to this converter and retain their existing behavior. The
+source reader's encrypted contract does not disguise builtin plaintext keys as
+encrypted credentials. This is a real gateway slice, not complete model-source
+or fifteen-interface parity.
+
 ## Pending atomic boundary
 
 The Thread child's private `createRun$` receives its privately prepared context.

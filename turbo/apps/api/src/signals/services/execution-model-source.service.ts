@@ -1,0 +1,230 @@
+import { computed, type Computed } from "ccstate";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  modelProviderConnections,
+  modelProviderSurfaces,
+} from "@okouai/db/schema/model-provider-gateway";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
+import { modelProviders } from "@okouai/db/schema/model-provider";
+import { secrets } from "@okouai/db/schema/secret";
+import {
+  hasAuthMethods,
+  modelProviderTypeSchema,
+} from "@okouai/api-contracts/contracts/model-providers";
+import { db$, type ReadonlyDb } from "../external/db";
+import {
+  modelProviderSurfaceProtocolSchema,
+  getModelProviderTypeForSurfaceProtocol,
+} from "@okouai/api-contracts/contracts/model-provider-gateways";
+import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
+import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
+
+export type ModelSourceIdentity =
+  | { readonly kind: "built-in"; readonly modelKeyId: string }
+  | { readonly kind: "organization"; readonly modelProviderId: string }
+  | { readonly kind: "member"; readonly accountId: string }
+  | { readonly kind: "gateway"; readonly surfaceId: string };
+
+export interface ModelSourceRequest {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly source: ModelSourceIdentity;
+}
+export interface EncryptedModelCredential {
+  readonly name: string;
+  readonly encryptedValue: string;
+}
+export interface RegisteredProviderConfiguration {
+  readonly kind: "registered-provider";
+  readonly providerType: string;
+  readonly authMethod: string | null;
+}
+export interface GatewayProviderConfiguration {
+  readonly kind: "gateway";
+  readonly providerType: string;
+  readonly protocol: "anthropic-messages" | "openai-responses";
+  readonly displayName: string;
+  readonly apiBaseUrl: string;
+  readonly authHeaderName: string;
+  readonly authHeaderTemplate: string;
+  readonly modelMappings: Readonly<Record<string, string>>;
+}
+export type ModelSourceConfiguration =
+  | RegisteredProviderConfiguration
+  | GatewayProviderConfiguration;
+export interface ModelSourceSnapshot {
+  readonly identity: ModelSourceIdentity;
+  readonly credentialOwner: "builtin" | "organization" | "member";
+  readonly configuration: ModelSourceConfiguration;
+  readonly credentials: readonly EncryptedModelCredential[];
+  readonly accountIdentity: string | null;
+}
+
+async function loadGatewaySource(
+  db: Pick<ReadonlyDb, "select">,
+  request: ModelSourceRequest,
+  source: Extract<ModelSourceIdentity, { kind: "gateway" }>,
+): Promise<ModelSourceSnapshot | null> {
+  const [row] = await db
+    .select({
+      protocol: modelProviderSurfaces.protocol,
+      apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
+      authHeaderName: modelProviderSurfaces.authHeaderName,
+      authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
+      modelMappings: modelProviderSurfaces.modelMappings,
+      displayName: modelProviderConnections.displayName,
+      encryptedValue: secrets.encryptedValue,
+      secretOrgId: secrets.orgId,
+    })
+    .from(modelProviderSurfaces)
+    .innerJoin(
+      modelProviderConnections,
+      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+    )
+    .innerJoin(secrets, eq(modelProviderConnections.secretId, secrets.id))
+    .where(
+      and(
+        eq(modelProviderSurfaces.id, source.surfaceId),
+        eq(modelProviderConnections.orgId, request.orgId),
+      ),
+    )
+    .limit(1);
+  if (!row) {
+    return null;
+  }
+  if (row.secretOrgId !== request.orgId) {
+    throw new Error("Gateway credential owner mismatch");
+  }
+  const protocol = modelProviderSurfaceProtocolSchema.parse(row.protocol);
+  return {
+    identity: source,
+    credentialOwner: "organization",
+    configuration: {
+      kind: "gateway",
+      providerType: getModelProviderTypeForSurfaceProtocol(protocol),
+      protocol,
+      apiBaseUrl: row.apiBaseUrl,
+      authHeaderName: row.authHeaderName,
+      authHeaderTemplate: row.authHeaderTemplate,
+      modelMappings: row.modelMappings,
+      displayName: row.displayName,
+    },
+    credentials: [
+      {
+        name: GATEWAY_RUNTIME_SECRET_NAME,
+        encryptedValue: row.encryptedValue,
+      },
+    ],
+    accountIdentity: null,
+  };
+}
+
+/** Read only an already-selected source; never select defaults or decrypt. */
+export function createModelSourceSnapshot(
+  request: ModelSourceRequest,
+): Computed<Promise<ModelSourceSnapshot | null>> {
+  return computed(async (get): Promise<ModelSourceSnapshot | null> => {
+    const db = get(db$);
+    const source = request.source;
+    if (source.kind === "gateway") {
+      return await loadGatewaySource(db, request, source);
+    }
+    if (source.kind === "member") {
+      const rows = await db
+        .select({
+          account: modelProviderAccounts,
+          secret: {
+            name: modelProviderAccountSecrets.name,
+            encryptedValue: modelProviderAccountSecrets.encryptedValue,
+          },
+        })
+        .from(modelProviderAccounts)
+        .leftJoin(
+          modelProviderAccountSecrets,
+          eq(
+            modelProviderAccountSecrets.modelProviderAccountId,
+            modelProviderAccounts.id,
+          ),
+        )
+        .where(
+          and(
+            eq(modelProviderAccounts.id, source.accountId),
+            eq(modelProviderAccounts.orgId, request.orgId),
+            eq(modelProviderAccounts.userId, request.userId),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        );
+      const first = rows[0];
+      if (!first) {
+        return null;
+      }
+      return {
+        identity: source,
+        credentialOwner: "member",
+        configuration: {
+          kind: "registered-provider",
+          providerType: first.account.type,
+          authMethod: first.account.authMethod,
+        },
+        credentials: rows.flatMap((row) => {
+          return row.secret ? [row.secret] : [];
+        }),
+        accountIdentity: first.account.externalAccountId,
+      };
+    }
+    if (source.kind === "organization") {
+      const [provider] = await db
+        .select({
+          type: modelProviders.type,
+          authMethod: modelProviders.authMethod,
+          secretId: modelProviders.secretId,
+        })
+        .from(modelProviders)
+        .where(
+          and(
+            eq(modelProviders.id, source.modelProviderId),
+            eq(modelProviders.orgId, request.orgId),
+            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+          ),
+        )
+        .limit(1);
+      if (!provider) {
+        return null;
+      }
+      const providerType = modelProviderTypeSchema.parse(provider.type);
+      const credentials = await db
+        .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
+        .from(secrets)
+        .where(
+          and(
+            eq(secrets.orgId, request.orgId),
+            eq(secrets.userId, ORG_SENTINEL_USER_ID),
+            hasAuthMethods(providerType)
+              ? eq(secrets.type, "model-provider")
+              : provider.secretId === null
+                ? isNull(secrets.id)
+                : eq(secrets.id, provider.secretId),
+          ),
+        );
+      return {
+        identity: source,
+        credentialOwner: "organization",
+        configuration: {
+          kind: "registered-provider",
+          providerType: provider.type,
+          authMethod: provider.authMethod,
+        },
+        credentials,
+        accountIdentity: null,
+      };
+    }
+    // Builtin's current persisted key is not an encrypted credential. Its
+    // canonical Thread path remains separate until the lossless contract is resolved.
+    throw new Error(
+      "Builtin key representation is not supported by the encrypted source contract",
+    );
+  });
+}

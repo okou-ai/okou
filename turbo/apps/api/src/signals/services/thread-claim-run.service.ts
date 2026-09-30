@@ -1,3 +1,7 @@
+import { createModelSourceSnapshot } from "./execution-model-source.service";
+import { compileModelRuntime } from "./execution-model-runtime";
+import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
+import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   createExecutionStorageObjects,
   type ExecutionStorageRequest,
@@ -142,7 +146,6 @@ import {
   type CreateRunErrorResult,
   customConnectorCandidateRuntimeRows,
   customConnectorNewRunRowIsAdmissible,
-  customGatewayProviderEnvironmentFromSnapshot,
   decryptStoredConnectorSecretRows,
   eagerStoredConnectorSecretInputs,
   eagerStoredConnectorSecretNames,
@@ -8602,7 +8605,7 @@ export function createThreadClaimRunObjects(
     }
     return context;
   });
-  const pinnedGatewayProviderSnapshot$ = computed(async (get) => {
+  const selectedGatewaySource$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     const args = context?.environmentArgs;
     if (
@@ -8615,46 +8618,105 @@ export function createThreadClaimRunObjects(
     ) {
       return null;
     }
-    const [row] = await context.input.db
-      .select({
-        id: modelProviderSurfaces.id,
-        protocol: modelProviderSurfaces.protocol,
-        apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-        authHeaderName: modelProviderSurfaces.authHeaderName,
-        authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-        modelMappings: modelProviderSurfaces.modelMappings,
-        displayName: modelProviderConnections.displayName,
-        encryptedValue: secretsTable.encryptedValue,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .innerJoin(
-        secretsTable,
-        eq(modelProviderConnections.secretId, secretsTable.id),
-      )
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, args.modelProviderId),
-          eq(modelProviderConnections.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
+    return await get(
+      createModelSourceSnapshot({
+        orgId: args.orgId,
+        userId: args.userId,
+        source: { kind: "gateway", surfaceId: args.modelProviderId },
+      }),
+    );
   });
+  // A prepared model runtime is an effect-produced business fact, not a
+  // temporary argument slot. Source identity/read graphs remain immutable.
+  const internalPreparedGatewayEnvironment$ =
+    state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
+  const resolveGatewayModelRuntime$ = command(
+    async (
+      { get },
+      signal: AbortSignal,
+    ): Promise<ResolvedModelProviderEnvironment | null> => {
+      const [context, source] = await Promise.all([
+        get(pinnedContext$),
+        get(selectedGatewaySource$),
+      ]);
+      signal.throwIfAborted();
+      if (!context || !source) {
+        return null;
+      }
+      const config = source.configuration;
+      if (config.kind !== "gateway" || source.identity.kind !== "gateway") {
+        throw new Error("Selected gateway has an invalid source kind");
+      }
+      const selectedModel = context.environmentArgs.selectedModelOverride;
+      const type = providerTypeForSurfaceProtocol(config.protocol);
+      if (!type) {
+        throw new Error("Gateway protocol has no provider type");
+      }
+      if (
+        !selectedModel ||
+        !config.modelMappings[selectedModel] ||
+        getFrameworkForType(type) !== context.environmentArgs.framework ||
+        (context.environmentArgs.modelProviderType !== undefined &&
+          context.environmentArgs.modelProviderType !== type)
+      ) {
+        return null;
+      }
+      const credentials = Object.fromEntries(
+        await Promise.all(
+          source.credentials.map(async (credential) => {
+            const value = await decryptStoredSecretValue(
+              credential.encryptedValue,
+            );
+            signal.throwIfAborted();
+            return [credential.name, value] as const;
+          }),
+        ),
+      );
+      const compiled = compileModelRuntime({
+        source,
+        selection: { kind: "configured", selectedModel },
+        credentials,
+      });
+      // Supplementary Runner firewall/Codex protocol stays private to Thread.
+      // This is pure assembly from the same complete snapshot, not another query.
+      const protocol = compileModelProviderGatewayRuntime({
+        surfaceId: source.identity.surfaceId,
+        protocol: config.protocol,
+        apiBaseUrl: config.apiBaseUrl,
+        displayName: config.displayName,
+        authHeaderName: config.authHeaderName,
+        authHeaderTemplate: config.authHeaderTemplate,
+        logicalModel: compiled.selectedModel,
+        upstreamModel: compiled.upstreamModel,
+      });
+      return {
+        id: source.identity.surfaceId,
+        type,
+        credentialOwner: compiled.credentialOwner,
+        environment: { ...compiled.environment },
+        secrets: { ...compiled.secrets },
+        selectedModel: compiled.selectedModel,
+        firewall: protocol.firewall,
+        inlineFirewall: true,
+        credentialHeader: {
+          name: config.authHeaderName,
+          valueTemplate: config.authHeaderTemplate,
+        },
+        ...(protocol.codexRuntimeConfig
+          ? { codexRuntimeConfig: protocol.codexRuntimeConfig }
+          : {}),
+      };
+    },
+  );
+  const prepareGatewayModelRuntime$ = command(
+    ({ set }, signal: AbortSignal) => {
+      const preparation = set(resolveGatewayModelRuntime$, signal);
+      set(internalPreparedGatewayEnvironment$, preparation);
+      return preparation;
+    },
+  );
   const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
-    const [context, gateway] = await Promise.all([
-      get(pinnedContext$),
-      get(pinnedGatewayProviderSnapshot$),
-    ]);
-    return context && gateway
-      ? await customGatewayProviderEnvironmentFromSnapshot(
-          context.environmentArgs,
-          gateway,
-        )
-      : null;
+    return await get(internalPreparedGatewayEnvironment$);
   });
   const pinnedBuiltInProviderSnapshot$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
@@ -12212,6 +12274,7 @@ export function createThreadClaimRunObjects(
         await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
+      const gatewayPreparation = set(prepareGatewayModelRuntime$, signal);
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
       const [encrypted, admission, launch] = await Promise.all([
@@ -12219,6 +12282,7 @@ export function createThreadClaimRunObjects(
         set(checkClaimAdmission$, signal),
         set(prepareLaunchResources$, head, signal),
         get(storageMounts$),
+        gatewayPreparation,
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
