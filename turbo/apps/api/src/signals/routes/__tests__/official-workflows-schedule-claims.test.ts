@@ -37,7 +37,6 @@ import {
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import { readMorningBriefScheduleClaimsFixture } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
-import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import {
   readWorkflowScheduleSkipsFixture,
   skewLegacyMorningBriefAnchorFixture,
@@ -147,17 +146,14 @@ function syncClient(candidate: unknown) {
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await withOwnedPiStableContextGlobalInvalidationFixture(
-    [],
-    async () => {
-      return await accept(
-        syncClient(candidate).sync({
-          headers: { authorization: `Bearer ${CRON_SECRET}` },
-        }),
-        [200],
-      );
-    },
-  );
+  return await (async () => {
+    return await accept(
+      syncClient(candidate).sync({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+  })();
 }
 
 function connectorDoctorDefinition(): ActiveDefinition {
@@ -179,17 +175,14 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await withOwnedPiStableContextGlobalInvalidationFixture(
-    [],
-    async () => {
-      return await accept(
-        setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-          cronOfficialWorkflowCatalogContract,
-        ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-        [200],
-      );
-    },
-  );
+  return await (async () => {
+    return await accept(
+      setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+        cronOfficialWorkflowCatalogContract,
+      ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+      [200],
+    );
+  })();
 }
 
 function stateClient() {

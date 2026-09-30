@@ -1,28 +1,12 @@
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
-import { and, count, eq, sql } from "drizzle-orm";
-import { z } from "zod";
-
-import { db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
 import {
   withBuiltInModelRuntimeRouteCandidateUnavailableForTest as withRuntimeRouteCandidateUnavailable,
   withBuiltInModelRuntimeRouteUnavailableForTest as withRuntimeRouteUnavailable,
 } from "../signals/services/built-in-model-runtime-route.service";
 
-const databasePidRowSchema = z.object({ pid: z.int() });
-const waiterCountRowSchema = z.object({ waiterCount: z.int() });
-
 interface BuiltInModelRuntimeRouteFixtureIdentity {
   readonly selectedModel: string;
   readonly providerType: string;
   readonly upstreamModel: string;
-}
-
-interface HeldBuiltInModelRouteBoundary {
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly cancelBlockedQueries: () => Promise<number>;
 }
 
 /**

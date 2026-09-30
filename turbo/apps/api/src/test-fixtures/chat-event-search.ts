@@ -12,7 +12,6 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { chatSearchIndexText } from "../lib/chat-search-bigram";
-import { nowDate } from "../lib/time";
 import {
   insertChatEvent,
   replaceChatEvent,

@@ -1,6 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { z } from "zod";
 
 import { db } from "../lib/db";
 
@@ -13,11 +12,4 @@ export async function readWorkflowRunTriggerSourceFixture(
     .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
     .limit(1);
   return run?.triggerSource ?? null;
-}
-
-interface HeldWorkflowAutomationRow {
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly cancelBlockedWaiters: () => Promise<number>;
 }

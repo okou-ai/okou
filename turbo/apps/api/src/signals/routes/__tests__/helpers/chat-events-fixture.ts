@@ -1045,17 +1045,10 @@ export function createChatEventsFixture(context: TestContext) {
       | "queued"
       | "running"
       | "timeout",
-    timeout = 1000,
   ): Promise<void> {
-    await expect
-      .poll(
-        async () => {
-          const run = await api.readRun(actor, runId);
-          return run.status;
-        },
-        { timeout },
-      )
-      .toBe(status);
+    await flushWaitUntilForTest();
+    const run = await api.readRun(actor, runId);
+    expect(run.status).toBe(status);
   }
 
   async function completeChatRunOk(
@@ -1370,7 +1363,7 @@ export function createChatEventsFixture(context: TestContext) {
     threadId: string,
     runId: string,
   ) {
-    await waitForRunStatus(actor, runId, "completed", 10_000);
+    await waitForRunStatus(actor, runId, "completed");
     await flushWaitUntilForTest();
     await expect(
       readRunLaunchSnapshotFixture(context, runId),
@@ -1693,7 +1686,7 @@ export function createChatEventsFixture(context: TestContext) {
       undefined,
       args.usagePricingResolution,
     );
-    await waitForRunStatus(args.actor, args.run.runId, "completed", 5000);
+    await waitForRunStatus(args.actor, args.run.runId, "completed");
     await flushWaitUntilForTest();
   }
 

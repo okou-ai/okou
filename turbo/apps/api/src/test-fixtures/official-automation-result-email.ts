@@ -2,13 +2,10 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { workflows } from "@okouai/db/schema/workflow";
-import { count, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
 import { nowDate } from "../lib/time";
-const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 
 export async function clearResultEmailUserStateFixture(
   userId: string,
@@ -65,11 +62,4 @@ export async function markWorkflowAsMorningBriefResultEmailFixture(
       "Expected one result-email Workflow to become Morning Brief",
     );
   }
-}
-
-interface HeldResultEmailClaimBoundary {
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly blockedChainCount: () => Promise<number>;
 }

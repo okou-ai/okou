@@ -62,7 +62,6 @@ import {
   readOfficialWorkflowQueueInputFixture,
 } from "../../../test-fixtures/official-workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
-import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -1019,17 +1018,14 @@ function syncClient(candidate: unknown) {
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await withOwnedPiStableContextGlobalInvalidationFixture(
-    [],
-    async () => {
-      return await accept(
-        syncClient(candidate).sync({
-          headers: { authorization: `Bearer ${CRON_SECRET}` },
-        }),
-        [200],
-      );
-    },
-  );
+  return await (async () => {
+    return await accept(
+      syncClient(candidate).sync({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+  })();
 }
 
 function connectorDoctorDefinition(): ActiveDefinition {
@@ -1051,17 +1047,14 @@ function connectorDoctorDefinition(): ActiveDefinition {
 
 async function syncDeployedCatalog() {
   await syncCatalog(catalog([connectorDoctorDefinition()]));
-  return await withOwnedPiStableContextGlobalInvalidationFixture(
-    [],
-    async () => {
-      return await accept(
-        setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-          cronOfficialWorkflowCatalogContract,
-        ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-        [200],
-      );
-    },
-  );
+  return await (async () => {
+    return await accept(
+      setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+        cronOfficialWorkflowCatalogContract,
+      ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+      [200],
+    );
+  })();
 }
 
 function stateClient() {

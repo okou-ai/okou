@@ -9,7 +9,6 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
 
 import { db } from "../lib/db";
 

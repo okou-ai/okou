@@ -16,19 +16,9 @@ import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../signals/external/db";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
-import {
-  invalidatePiStableContext,
-  withPiStableContextGlobalInvalidationOwnersForTest,
-} from "../signals/services/pi-stable-context-generation.service";
+import { invalidatePiStableContext } from "../signals/services/pi-stable-context-generation.service";
 
 const store = createStore();
-
-export async function withOwnedPiStableContextGlobalInvalidationFixture<T>(
-  owners: readonly { readonly orgId: string; readonly agentId: string }[],
-  work: () => Promise<T>,
-): Promise<T> {
-  return await withPiStableContextGlobalInvalidationOwnersForTest(owners, work);
-}
 
 export async function seedAgentStableContextPublicationFixture(args: {
   readonly orgId: string;
