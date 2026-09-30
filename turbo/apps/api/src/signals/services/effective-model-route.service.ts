@@ -1,5 +1,4 @@
 import {
-  getRunModelRouteAccess,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
@@ -22,6 +21,7 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
+import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -371,7 +371,8 @@ function policyRouteAllowedForPlan(args: {
   >;
 }): boolean {
   return (
-    getRunModelRouteAccess(
+    catalogRunModelRouteAccess(
+      args.catalog,
       args.policy.model,
       args.providerType,
       args.capabilities.restrictedBuiltInModels,

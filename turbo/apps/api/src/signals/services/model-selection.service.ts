@@ -7,9 +7,7 @@ import {
 } from "./effective-model-route.service";
 import {
   getFrameworkForType,
-  isCodexFastModeModel,
   isBuiltInModelProviderType,
-  getRunModelRouteAccess,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
@@ -43,6 +41,11 @@ import {
   catalogHasProviderRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
+import {
+  catalogRunModelRouteAccess,
+  isCatalogFastServiceTierSupported,
+  isCatalogUltrafastServiceTierSupported,
+} from "./model-route-capabilities.service";
 import {
   checkOrgCreditsForRunAdmission,
   checkOrgPlanRunAdmission,
@@ -139,6 +142,7 @@ function modelRouteCapabilities(
 }
 
 function modelRouteAllowedForOrgPlan(args: {
+  readonly catalog: ModelCatalog;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
@@ -147,7 +151,8 @@ function modelRouteAllowedForOrgPlan(args: {
   readonly modelProviderType: string | null | undefined;
 }): boolean {
   return (
-    getRunModelRouteAccess(
+    catalogRunModelRouteAccess(
+      args.catalog,
       args.selectedModel,
       args.modelProviderType,
       args.capabilities.restrictedBuiltInModels,
@@ -351,14 +356,19 @@ export async function resolveDefaultModelFirstPin(
             : undefined;
         const serviceTier =
           preference.serviceTier === "ultrafast" &&
-          preferredRoute.selectedModel === "gpt-6-astra" &&
-          preferredRoute.modelProviderType === "openai-api-key"
+          isCatalogUltrafastServiceTierSupported(
+            facts.catalog,
+            preferredRoute.selectedModel,
+            preferredRoute.modelProviderType,
+          )
             ? "ultrafast"
             : preference.serviceTier === "priority" &&
                 (facts.modelMode !== "auto" || catalogTier === "priority") &&
-                isCodexFastServiceTierSupported({
-                  selectedModel: preferredRoute.selectedModel,
-                })
+                isCatalogFastServiceTierSupported(
+                  facts.catalog,
+                  preferredRoute.selectedModel,
+                  preferredRoute.modelProviderType,
+                )
               ? "priority"
               : null;
         return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
@@ -435,8 +445,9 @@ export async function resolveModelSelectionPin(params: {
   // Legacy clients can still send a replaced model ID: resolve it to the final
   // active model. Only the model is replaced; the route below is chosen again
   // for that model, and an incompatible explicit provider is rejected.
+  const catalog = await loadModelCatalog(db);
   const resolvedModel = resolveCatalogRunModel(
-    await loadModelCatalog(db),
+    catalog,
     params.modelSelection.selectedModel,
   );
   if (!resolvedModel) {
@@ -473,6 +484,7 @@ export async function resolveModelSelectionPin(params: {
     }
     if (
       !modelRouteAllowedForOrgPlan({
+        catalog,
         capabilities,
         selectedModel: modelSelection.selectedModel,
         modelProviderType: provider.type,
@@ -515,6 +527,7 @@ export async function resolveModelSelectionPin(params: {
     (facts.modelMode === "auto" &&
       route.modelProviderCredentialScope === "member") ||
     modelRouteAllowedForOrgPlan({
+      catalog: facts.catalog,
       capabilities: planCapabilities,
       selectedModel: route.selectedModel,
       modelProviderType: route.modelProviderType,
@@ -685,12 +698,14 @@ export async function resolveModelFirstProviderAdmission(params: {
   const error = isBuiltInModelProviderType(effectiveModelProvider)
     ? await checkOrgCreditsForRunAdmission({
         db: params.db,
+        catalog,
         orgId: params.orgId,
         userId: params.userId,
         modelProviderType: effectiveModelProvider,
         selectedModel,
       })
     : checkOrgPlanRunAdmission({
+        catalog,
         capabilities:
           params.externalPlanCapabilities.kind === "resolved"
             ? params.externalPlanCapabilities.capabilities
@@ -702,19 +717,21 @@ export async function resolveModelFirstProviderAdmission(params: {
   return { effectiveModelProvider, cliAgentType, error };
 }
 
-export function isCodexFastServiceTierSupported(params: {
-  readonly selectedModel: string | null | undefined;
-}): boolean {
-  return isCodexFastModeModel(params.selectedModel);
-}
-
+/**
+ * Service tiers follow the pin's catalog route: Fast (`priority`) and
+ * Ultrafast are accepted only when that route lists them.
+ */
 export function validateCodexServiceTier(params: {
+  readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
   readonly codexServiceTier: "fast" | "ultrafast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (params.codexServiceTier === "ultrafast") {
-    return params.pin.selectedModel === "gpt-6-astra" &&
-      params.pin.modelProviderType === "openai-api-key"
+    return isCatalogUltrafastServiceTierSupported(
+      params.catalog,
+      params.pin.selectedModel,
+      params.pin.modelProviderType,
+    )
       ? undefined
       : badRequestMessage(
           "Astra Ultrafast requires a direct OpenAI API-key route",
@@ -724,7 +741,11 @@ export function validateCodexServiceTier(params: {
     return undefined;
   }
   if (
-    isCodexFastServiceTierSupported({ selectedModel: params.pin.selectedModel })
+    isCatalogFastServiceTierSupported(
+      params.catalog,
+      params.pin.selectedModel,
+      params.pin.modelProviderType,
+    )
   ) {
     return undefined;
   }

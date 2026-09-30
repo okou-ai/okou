@@ -6,11 +6,7 @@ import type {
   McpListAgentsOutput,
   McpListModelsOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import {
-  isBuiltInModelProviderType,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -44,7 +40,9 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import {
   catalogDisplayName,
+  isCatalogModelRunnable,
   resolveCatalogRunModel,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import { loadOrgModelPolicyFacts } from "./model-policy.service";
 
@@ -321,7 +319,8 @@ function personalConnectionState(
 }
 
 function describeModelAvailability(params: {
-  readonly model: SupportedRunModel;
+  readonly catalog: ModelCatalog;
+  readonly model: string;
   readonly name: string;
   readonly defaultProviderType: string;
   readonly route: ResolvedModelFirstPolicyRoute | null;
@@ -341,6 +340,7 @@ function describeModelAvailability(params: {
     : undefined;
   if (
     checkOrgPlanRunAdmission({
+      catalog: params.catalog,
       capabilities: params.capabilities,
       selectedModel: model,
       modelProviderType: route?.modelProviderType ?? params.defaultProviderType,
@@ -376,11 +376,13 @@ async function appendAutoMemberMcpModels({
   budget,
   principal,
   member,
+  catalog,
   capabilities,
   policiesByModel,
   models,
 }: {
   tx: Tx;
+  catalog: ModelCatalog;
   budget: ReadBudget;
   principal: Principal;
   member: MemberModelRouteContext;
@@ -405,6 +407,7 @@ async function appendAutoMemberMcpModels({
       continue;
     }
     const denied = checkOrgPlanRunAdmission({
+      catalog,
       capabilities,
       selectedModel: personal.model,
       modelProviderType: personal.providerType,
@@ -482,7 +485,7 @@ export async function listMcpModels(
       );
       for (const policy of policies) {
         const model = policy.model;
-        if (!isSupportedRunModel(model)) {
+        if (!isCatalogModelRunnable(catalog, model)) {
           continue;
         }
         await budget.beforeQuery(tx);
@@ -496,6 +499,7 @@ export async function listMcpModels(
         });
         budget.check();
         const entry = describeModelAvailability({
+          catalog,
           model,
           name: catalogDisplayName(catalog, model),
           defaultProviderType: policy.defaultProviderType,
@@ -528,6 +532,7 @@ export async function listMcpModels(
         budget,
         principal,
         member,
+        catalog,
         capabilities,
         policiesByModel,
         models,

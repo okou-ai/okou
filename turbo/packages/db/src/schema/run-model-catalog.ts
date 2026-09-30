@@ -56,6 +56,21 @@ export const runModelCatalog = pgTable(
     /** The target's lineage_rank, maintained by the self foreign key. */
     replacedByLineageRank: integer("replaced_by_lineage_rank"),
     allowNewOrgPolicy: boolean("allow_new_org_policy").notNull().default(false),
+    /**
+     * Plan policy for organizations whose plan restricts Built-in models
+     * (`org_plan_entitlements.restricted_built_in_models`): whether they may
+     * run this model on a Built-in route.
+     */
+    builtInOnRestrictedPlans: boolean("built_in_on_restricted_plans")
+      .notNull()
+      .default(false),
+    /**
+     * The same plan policy for routes the organization or member provides
+     * (BYOK, personal subscriptions and custom gateways).
+     */
+    ownRoutesOnRestrictedPlans: boolean("own_routes_on_restricted_plans")
+      .notNull()
+      .default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

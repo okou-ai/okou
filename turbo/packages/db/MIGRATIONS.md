@@ -257,13 +257,33 @@ Built-in route first, in the same transaction.
 
 Unrecognized catalog rows: 1296 no longer deletes rows outside the seed.
 Production may hold `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`
-(unverified here). They keep their row with `display_name = model`,
+(seeded by 1191 and 1194; MaskDB does not expose `run_model_catalog`, so their
+presence is unverified; MaskDB shows zero references to them in
+`chat_threads`, `org_model_policies`, `org_members_metadata`, `agents` and
+`model_providers`). They keep their row with `display_name = model`,
 `sort_order` from 1001 in model order, `lineage_rank = 100`,
 `replaced_by = NULL` and `allow_new_org_policy = false`, and they have no
-`model_routes`, so they are not addable today and not executable. Because
-`replaced_by = NULL` reads as active in the end state, the owner must decide
-per row whether to add routes or retire it into an approved replacement
-before `allow_new_org_policy` is dropped.
+`model_routes`, so they are not addable today and not executable.
+
+Open conflict: the target rule is that `replaced_by` is the only retirement
+description. Under that rule `replaced_by = NULL` means active, so these rows
+read as active: `GET /api/model-catalog` lists them with `replacedBy: null`.
+They stay unusable only through two other facts, `allow_new_org_policy =
+false` (a column the end state removes) and the absence of routes. Once
+`allow_new_org_policy` is dropped, "active but routeless" is the only thing
+separating them from real models. Options for the owner (Ethan), per row:
+
+1. Delete the row. Safe today: nothing references them, and no `replaced_by`
+   points at them (the self foreign key would reject the delete otherwise).
+   The catalog then no longer names them in history; no stored history row
+   uses them either.
+2. Retire into an approved replacement X: set `replaced_by = X` and
+   `replaced_by_lineage_rank` (raise X's rank first if it is not above 100).
+   Any leftover or legacy selection then resolves to X.
+3. Keep as active models: add enabled `model_routes` rows (and a runtime
+   adapter in code), then they are addable and executable like any model.
+
+No option is applied here; their data is unchanged until the owner decides.
 
 1297 rewrites chat thread selections (`chat_threads.selected_model` and
 `model_settings`) and appends one `model_selection_updated` event per
@@ -284,7 +304,64 @@ thread, organization policy, member preference, agent or model provider
 references any retired or unrecognized catalog model (`claude-fable-5`,
 `claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`, `gpt-5.5`,
 `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1297 rewrites zero
-production rows and needs no batching.
+production rows. See the performance evidence below for why it needs no
+batching.
+
+### Migration 1297 performance evidence
+
+Production row counts (MaskDB `vm0-prod-ro`, read-only, 2026-09-30; exact
+counts by `limit 1` + `offset` bisection, which is equivalent to full
+pagination): `chat_threads` 162,621; `org_model_policies` 32,810;
+`model_providers` 7,374; `agents` 8,009; `org_members_metadata` 6,988;
+`chat_thread_events` 143,338; `chat_thread_event_sequences` 4,476. Rows
+selecting a retired model (`claude-fable-5`, `claude-opus-4-8`,
+`claude-sonnet-4-6`, `gpt-5.5`, `deepseek-v4-pro`) are zero in all five
+rewritten tables (the same filter returns rows for active models, so the zero
+is not a filter artifact).
+
+Index shape: none of the rewritten tables has an index on `selected_model` or
+`model` (except `idx_org_model_policies_org_model (org_id, model)`, which a
+`model`-only predicate cannot use), so every rewrite statement scans its table
+once; the joins after the filter use primary keys. The scans are bounded by
+the table sizes above; none of them touches history tables. Statement 14
+(`model_selection_rewrite_threads`) is the only one that reads
+`chat_threads`.
+
+Experiment: throwaway PostgreSQL 18 (`timezone=UTC`, default `work_mem`,
+`fsync=off`), all migrations applied, synthetic rows at production scale
+(1x) and 5x, then the 1297 body re-run statement by statement under
+`EXPLAIN (ANALYZE, BUFFERS)` with `statement_timeout = 10s` inside a rolled
+back transaction. Retired-model share: 0% (production), 1% and 10%.
+Statement numbers count the 1297 statements before the `ANALYZE` below was
+added: 14 builds `model_selection_rewrite_threads`, 15 updates `chat_threads`
+and 16 appends the `model_selection_updated` events.
+
+| Scenario                                               | Total  | Slowest statement                                  | Other statements |
+| ------------------------------------------------------ | ------ | -------------------------------------------------- | ---------------- |
+| 1x, 0 matches (production)                             | 0.21 s | 14 (thread scan) 164 ms                            | each <= 11 ms    |
+| 1x, 1% matches (1,597 threads, 317 policies)           | 0.27 s | 14: 103 ms; 15/16 (thread update, events) 59/54 ms | each <= 22 ms    |
+| 1x, 10% matches (16,258 threads, 3,162 policies)       | 1.01 s | 15: 364 ms; 16: 331 ms; 14: 216 ms                 | each <= 25 ms    |
+| 5x, 0 matches                                          | 2.28 s | 14: 1,964 ms                                       | each <= 113 ms   |
+| 5x, 1% matches (8,028 threads)                         | 4.10 s | 14: 2,029 ms; 15: 869 ms; 16: 700 ms               | each <= 108 ms   |
+| 5x, 1% matches, with `ANALYZE model_selection_rewrite` | 1.29 s | 15: 401 ms; 16: 390 ms; 14: 310 ms                 | each <= 58 ms    |
+
+No statement came near the 10 s timeout. The one plan defect: temp tables
+have no statistics, so without an `ANALYZE` the planner sorted every chat
+thread (external merge sort) before joining the few-row rewrite map, which
+grows faster than linearly with `chat_threads`. 1297 therefore analyzes
+`model_selection_rewrite` right after creating its primary key; statement 14
+then filters during the scan (5x: 2,029 ms to 310 ms). Batching is not needed:
+production has zero matching rows, and even 5x production volume with 1%
+matches finishes in about 1.3 s. Write locks are taken only on rows that
+match, so the scans block no writers.
+
+Verified: statement plans and timings on synthetic data at the stated scales,
+production row counts and zero retired references at the time of the MaskDB
+read. Not verified: production hardware, cache state, `work_mem`, bloat and
+concurrent load; the exact production distribution of thread effort settings
+and provider pins; rows that start selecting a retired model between the
+MaskDB read and the deploy (1297 re-checks at run time, and the numbers above
+cover up to 10% of rows).
 
 `org_plan_entitlements.restricted_built_in_models` is a boolean flag that turns
 on the code's limited-free restricted-model rule; it stores no model IDs, so

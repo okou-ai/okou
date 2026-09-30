@@ -1,4 +1,5 @@
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import { resolveIntegrationChatThreadAgent } from "./integration-chat-thread-agent.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
@@ -3122,8 +3123,12 @@ const buildCreateQueuedChatRunInput$ = command(
       modelRoute,
     });
 
+    const catalog = await loadModelCatalog(args.db);
+    signal.throwIfAborted();
     const reasoningEffort = resolveReasoningEffortForDispatch({
+      catalog,
       selectedModel: routedModel.modelPin.selectedModel,
+      modelProviderType: routedModel.effectiveModelProvider,
       effort: routedModel.reasoningEffort ?? undefined,
       runtimeProviderType:
         routedModel.builtInModelRuntimeRoute?.providerType ??

@@ -164,6 +164,7 @@ export interface BuiltInRouteFixture {
   readonly priority: number;
   readonly efforts: readonly string[];
   readonly defaultEffort: string | null;
+  readonly serviceTiers?: readonly ("priority" | "ultrafast")[];
 }
 
 /**
@@ -192,7 +193,7 @@ export async function insertCatalogModelFixture(args: {
           concreteProviderType: route.concreteProviderType,
           upstreamModel: route.upstreamModel,
           priority: route.priority,
-          serviceTiers: [],
+          serviceTiers: [...(route.serviceTiers ?? [])],
           efforts: [...route.efforts],
           defaultEffort: route.defaultEffort,
           priceTier: "$",

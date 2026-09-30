@@ -21,7 +21,7 @@ import {
   isModelSupportedByProvider,
   isCodexFastModeModel,
   isSupportedRunModel,
-  getRunModelRouteAccess,
+  getCatalogRunModelRouteAccess,
   normalizeRunModelId,
   getAuthMethodsForType,
   getSecretNameForType,
@@ -29,7 +29,6 @@ import {
   getModelProviderCodexCatalogForModel,
   isOkouRunModel,
   getSecretsForAuthMethod,
-  isLimitedFree1RestrictedRunModel,
   isBuiltInModelProviderType,
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
@@ -188,62 +187,6 @@ describe("model-first canonical catalog", () => {
     expect(parsed.policies[0]).not.toHaveProperty("modelProviderSurfaceId");
   });
 
-  it("identifies models blocked on limited-free-1", () => {
-    expect(isLimitedFree1RestrictedRunModel("gpt-6-astra")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-astra")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("gpt-6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("gpt-6-luna")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-luna")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("gpt-5.6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("gpt-5.6-luna")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-luna")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("deepseek-v4.1-flash")).toBe(false);
-    expect(
-      isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4.1-flash"),
-    ).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("deepseek-v4-flash")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4-flash")).toBe(
-      false,
-    );
-    expect(isLimitedFree1RestrictedRunModel("gpt-5.5")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.5")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("claude-fable-5-1")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-fable-5.1")).toBe(
-      true,
-    );
-    expect(isLimitedFree1RestrictedRunModel("claude-opus-5-5")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-opus-5.5")).toBe(
-      true,
-    );
-    expect(isLimitedFree1RestrictedRunModel("claude-opus-5")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-opus-5")).toBe(
-      true,
-    );
-    expect(isLimitedFree1RestrictedRunModel("claude-opus-4-8")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-opus-4.8")).toBe(
-      true,
-    );
-    expect(isLimitedFree1RestrictedRunModel("claude-sonnet-5")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-sonnet-5")).toBe(
-      true,
-    );
-    expect(isLimitedFree1RestrictedRunModel("claude-sonnet-4-6")).toBe(true);
-    expect(
-      isLimitedFree1RestrictedRunModel("anthropic/claude-sonnet-4.6"),
-    ).toBe(true);
-    expect(
-      isLimitedFree1RestrictedRunModel("anthropic/claude-sonnet-4.5"),
-    ).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("glm-5.2")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("z-ai/glm-5.2")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("MiniMax-M3")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("custom/model")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("   ")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel(null)).toBe(false);
-  });
-
   it("normalizes provider aliases without accepting unsupported models", () => {
     expect(normalizeRunModelId("anthropic/claude-sonnet-5")).toBe(
       "claude-sonnet-5",
@@ -278,67 +221,54 @@ describe("model-first canonical catalog", () => {
     expect(isSupportedRunModel("deepseek-v4-pro")).toBe(true);
   });
 
-  it("restricts existing paid models only on the built-in route", () => {
-    expect(getRunModelRouteAccess("gpt-6-astra", "built-in", true)).toBe(
-      "pro_required",
-    );
-    expect(getRunModelRouteAccess("gpt-6-astra", "openai-api-key", true)).toBe(
+  it("decides restricted-plan access from the catalog model's policy", () => {
+    const builtInOnly = {
+      builtInOnRestrictedPlans: true,
+      ownRoutesOnRestrictedPlans: false,
+    };
+    const ownRoutesOnly = {
+      builtInOnRestrictedPlans: false,
+      ownRoutesOnRestrictedPlans: true,
+    };
+    expect(getCatalogRunModelRouteAccess(builtInOnly, "built-in", true)).toBe(
       "allowed",
     );
-    expect(getRunModelRouteAccess("gpt-6-astra", null, true)).toBe(
+    expect(
+      getCatalogRunModelRouteAccess(builtInOnly, "openai-api-key", true),
+    ).toBe("pro_required");
+    expect(getCatalogRunModelRouteAccess(ownRoutesOnly, "built-in", true)).toBe(
       "pro_required",
     );
-    expect(getRunModelRouteAccess("gpt-6-astra", "unknown", true)).toBe(
+    expect(
+      getCatalogRunModelRouteAccess(ownRoutesOnly, "codex-oauth-token", true),
+    ).toBe("allowed");
+    expect(getCatalogRunModelRouteAccess(ownRoutesOnly, null, true)).toBe(
       "pro_required",
     );
+    expect(
+      getCatalogRunModelRouteAccess(ownRoutesOnly, "built-in", false),
+    ).toBe("allowed");
   });
 
-  it("offers Sonnet 5.5 through its subscription route and restricts ordinary free org routes", () => {
+  it("offers Sonnet 5.5 through its subscription route", () => {
     expect(getProvidersForModel("claude-sonnet-5-5")).toEqual([
       "built-in",
       "anthropic-api-key",
       "claude-code-oauth-token",
     ]);
-    for (const route of [
-      "built-in",
-      "anthropic-api-key",
-      "claude-code-oauth-token",
-    ]) {
-      expect(getRunModelRouteAccess("claude-sonnet-5-5", route, true)).toBe(
-        "pro_required",
-      );
-      expect(getRunModelRouteAccess("claude-sonnet-5-5", route, false)).toBe(
-        "allowed",
-      );
-    }
     expect(getProvidersForModel("anthropic/claude-sonnet-5-5")).toEqual([
       "built-in",
       "anthropic-api-key",
       "claude-code-oauth-token",
     ]);
-    expect(
-      getRunModelRouteAccess(
-        "anthropic/claude-sonnet-5-5",
-        "anthropic-api-key",
-        true,
-      ),
-    ).toBe("pro_required");
   });
 
-  it("offers opt-in 6.1 Sol only through approved routes and requires a paid org", () => {
+  it("offers opt-in 6.1 Sol only through approved routes", () => {
     expect(getProvidersForModel("gpt-6.1-sol")).toEqual([
       "built-in",
       "openai-api-key",
       "codex-oauth-token",
     ]);
-    for (const route of getProvidersForModel("gpt-6.1-sol")) {
-      expect(getRunModelRouteAccess("gpt-6.1-sol", route, true)).toBe(
-        "pro_required",
-      );
-      expect(getRunModelRouteAccess("gpt-6.1-sol", route, false)).toBe(
-        "allowed",
-      );
-    }
     expect(getProvidersForModel("openai/gpt-6.1-sol")).toEqual([]);
     expect(getBuiltInModelRouteCandidates("gpt-6.1-sol")).toEqual([
       {
@@ -825,10 +755,6 @@ describe("model-first canonical catalog", () => {
       ]);
     },
   );
-
-  it("keeps only the base Okou model available to restricted cohorts", () => {
-    expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
-  });
 
   it("recognizes only own Okou model IDs", () => {
     expect(isOkouRunModel("okou-1.0")).toBeTruthy();

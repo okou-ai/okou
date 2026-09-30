@@ -5943,6 +5943,8 @@ async function checkFinalRunAdmission(
   },
   signal: AbortSignal,
 ): Promise<CreateRunErrorResult | null> {
+  const catalog = await loadModelCatalog(db);
+  signal.throwIfAborted();
   if (args.enforceBuiltInCredits) {
     return await args.timing.measure(
       "api_dispatch_check_built_in_credits",
@@ -5957,6 +5959,7 @@ async function checkFinalRunAdmission(
         return (
           (await checkResolvedOrgCreditsForRunAdmission({
             db,
+            catalog,
             orgId: args.orgId,
             userId: args.userId,
             modelProviderType: args.modelProviderType,
@@ -5979,6 +5982,7 @@ async function checkFinalRunAdmission(
   signal.throwIfAborted();
   return (
     checkOrgPlanRunAdmission({
+      catalog,
       capabilities,
       modelProviderType: args.modelProviderType,
       selectedModel: args.selectedModel,
@@ -9361,9 +9365,12 @@ async function resolveRunModelProvider(
     hasProviderOverride ||
     !hasFrameworkKey ||
     isBuiltInModelProviderType(args.modelProviderType);
+  // One catalog snapshot serves provider resolution and admission.
+  const catalog = await loadModelCatalog(db);
+  signal.throwIfAborted();
   const modelProvider = shouldResolveModelProvider
     ? await resolveModelProviderEnvironment(db, {
-        catalog: await loadModelCatalog(db),
+        catalog,
         orgId: args.orgId,
         userId: args.userId,
         framework: options.framework,
@@ -9392,6 +9399,7 @@ async function resolveRunModelProvider(
     const creditGate =
       (await checkOrgCreditsForRunAdmission({
         db,
+        catalog,
         orgId: args.orgId,
         userId: args.userId,
         modelProviderType: "built-in",

@@ -101,8 +101,22 @@ anything, so `GET /api/model-catalog` lists them with `replacedBy` null, but
 the API never offers or accepts them for a policy or run because they have no
 runtime adapter and no route. As of MaskDB on 2026-09-30 no row in
 `chat_threads`, `org_model_policies`, `org_members_metadata`, `agents` or
-`model_providers` references them. Whether to retire (with a replacement) or
-delete them is pending an owner decision (Ethan).
+`model_providers` references them (MaskDB does not expose `run_model_catalog`
+itself, so the rows' presence is unverified).
+
+This conflicts with the rule that `replaced_by` is the only retirement
+description: with `replaced_by` null they read as active, and only
+`allow_new_org_policy = false` (a column the end state drops) and the absence
+of routes keep them unusable. The owner (Ethan) decides per row:
+
+1. Delete the row: safe while nothing references it and no `replaced_by`
+   points at it.
+2. Retire it into an approved replacement X (`replaced_by = X`, raising X's
+   `lineage_rank` above 100 first if needed).
+3. Keep it as an active model by adding enabled `model_routes` and a runtime
+   adapter.
+
+Until then their data is unchanged.
 
 ## System default
 
@@ -138,13 +152,17 @@ What runtime routing reads from `model_routes` today:
   provider type.
 - Personal subscription models are listed from subscription routes.
 
-Not yet read from `model_routes` (still static code):
+Upstream model IDs on BYOK and subscription routes come from the route's
+`upstream_model` in the API (`catalogProviderUpstreamModel`); the API no
+longer calls `getProviderRuntimeModel`.
 
-- The upstream model ID sent on BYOK and subscription routes
-  (`getProviderRuntimeModel` in `@okouai/api-contracts`).
-- The Pi sandbox configuration's expected Built-in upstream check
-  (`pi-sandbox-config.ts`, `getBuiltInModelRouteCandidates`) and test runtime
-  state helpers.
+Not yet read from `model_routes` (still static code, not implemented):
+
+- `@okouai/core` `pi-execution.ts` still builds Pi Built-in candidates and
+  upstream IDs from `getBuiltInModelRouteCandidates` and
+  `getProviderRuntimeModel` in `@okouai/api-contracts`.
+- `packages/db/scripts/test-model-catalog-seed.ts` checks the seeded routes
+  against those same static tables.
 
 No silent cross-provider billing: credentials, BYOK, subscription or
 custom-gateway bindings and upstream IDs of a retired model are never copied
@@ -165,6 +183,21 @@ stored-configuration migration copies a retired model's member effort to its
 replacement when the replacement's Built-in route accepts it, otherwise uses
 that route's default (no default, no entry). The runtime still narrows efforts
 per execution (Pi or not, and the concrete provider for DeepSeek).
+
+## Run-scoped snapshot and admission
+
+Run creation loads the catalog once (`loadModelCatalog` in
+`agent-run-create.service.ts`) and passes that snapshot to provider
+resolution and run admission, so one run's route decision does not mix two
+catalog reads. Admission
+(`checkCatalogRunRoute` in `run-admission.service.ts`) requires the selected
+model to be an active catalog model with an enabled route of the selected
+provider type, and a Built-in run to have an enabled Built-in route.
+Reasoning efforts come from the route (`catalogRouteEfforts`,
+`catalogRouteDefaultEffort`). Service tiers for member preferences are being
+moved to route `service_tiers` (`isCatalogFastServiceTierSupported`,
+`isCatalogUltrafastServiceTierSupported`); as of this writing that change is
+uncommitted work in progress.
 
 ## Queued inputs and history
 
@@ -220,22 +253,36 @@ Production impact: as of MaskDB on 2026-09-30, no chat thread, organization
 policy, member preference, agent or model provider references any of
 `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`,
 `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or `okou-1.0-max`. The migration
-therefore rewrites zero production rows, and the single-transaction thread
-scan needs no batching.
+therefore rewrites zero production rows. The single-transaction thread scan
+needs no batching: measured on synthetic data at production and 5x scale it
+finishes in 0.2 s and 1.3 s (see `turbo/packages/db/MIGRATIONS.md`,
+"Migration 1297 performance evidence").
 
 ## Plan restriction
 
-`org_plan_entitlements.restricted_built_in_models` is a boolean. When it is
-true, `isLimitedFree1RestrictedRunModel` in `@okouai/api-contracts` decides
-which Built-in models need a Pro plan. That rule is still static plan policy
-in code, not catalog data: an allowlist of `okou-1.0`, `gpt-6-luna`,
-`gpt-5.6-luna`, `deepseek-v4.1-flash` and `deepseek-v4-flash` (after
-normalizing provider-prefixed aliases); every other model is restricted.
-`getRunModelRouteAccess` exempts known non-Built-in provider routes (BYOK and
-subscriptions), except `claude-sonnet-5-5` and `gpt-6.1-sol`, which are
-hard-coded as restricted on every route. A newly added catalog model is
-therefore restricted on Built-in routes of limited-free plans until the code
-allowlist changes.
+`org_plan_entitlements.restricted_built_in_models` is a boolean that marks a
+restricted (limited-free) plan. Which models such a plan may run is catalog
+data (migration `1298_model_catalog_restricted_plans`, returned by
+`GET /api/model-catalog`):
+
+- `built_in_on_restricted_plans` (default false): the model may run on
+  Built-in routes. Seeded true for `okou-1.0`, `gpt-6-luna`, `gpt-5.6-luna`,
+  `deepseek-v4.1-flash` and `deepseek-v4-flash`, the former code allowlist.
+- `own_routes_on_restricted_plans` (default true): the model may run on the
+  organization's or member's own routes (BYOK, subscriptions). Seeded false
+  for `claude-sonnet-5-5` and `gpt-6.1-sol`.
+
+A model outside the catalog is never allowed on a restricted Built-in route.
+`getCatalogRunModelRouteAccess` applies these flags; the API
+(`model-route-capabilities.service.ts`, used by model policy writes) and the
+Platform read them.
+
+Not finished: run admission (`run-admission.service.ts`) still calls the
+static `getRunModelRouteAccess` / `LIMITED_FREE1_ALLOWED_RUN_MODELS` rule in
+`@okouai/api-contracts` and hard-codes `claude-sonnet-5-5` and `gpt-6.1-sol`
+for the paid-plan message; `model-policy.service.ts` still hard-codes those
+two models as unmappable on custom gateways. Migration 1298 is uncommitted
+work in progress.
 
 ## Constraint design
 

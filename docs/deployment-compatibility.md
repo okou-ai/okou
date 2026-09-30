@@ -7,8 +7,11 @@ The server model catalog (`run_model_catalog` plus `model_routes`, served by
 the system default, retirement and replacement, price tiers and route
 capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
 product authority, and the system default is the DB row with
-`is_system_default = true`. Code still owns runtime adapters and the static
-limited-free plan allowlist (`isLimitedFree1RestrictedRunModel`). The organization default is not configurable: the
+`is_system_default = true`. Code still owns runtime adapters. Limited-free
+plan access moves to catalog flags (`built_in_on_restricted_plans`,
+`own_routes_on_restricted_plans`, migration 1298, uncommitted at the time of
+writing); model policy writes read them, but run admission still uses the
+static `isLimitedFree1RestrictedRunModel` allowlist (not finished). The organization default is not configurable: the
 catalog system default (`okou-1.0`, Auto) is projected into every
 organization's `GET /api/model-policies` as a non-deletable system policy and
 is not stored per organization. Resolution is thread selection, then member
@@ -21,8 +24,10 @@ has no route on the replacement fails explicitly. Chains may have several hops,
 constrained by `lineage_rank` (each hop strictly increases it). App credit
 usage and history show a run's own model name from the catalog, including
 retired models, never the replacement's name. Built-in runtime candidates
-come from enabled `model_routes` rows; BYOK and subscription upstream IDs are
-still static code (see the design note). The `OkouModels` feature
+come from enabled `model_routes` rows, and the API takes BYOK and
+subscription upstream IDs from the route's `upstream_model`; the Pi execution
+config in `@okouai/core` still uses the static route tables (not finished, see
+the design note). The `OkouModels` feature
 switch is removed. See [the design note](model-catalog.md).
 
 Migrations:
@@ -70,8 +75,24 @@ Migrations:
   organization policy, member preference, agent or model provider references
   any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
   `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
-  `okou-1.0-max`. The migration rewrites zero production rows, so batching the
-  thread rewrite is unnecessary.
+  `okou-1.0-max`. The migration rewrites zero production rows. Every rewrite
+  statement scans its table once (no `selected_model`/`model` index exists);
+  on synthetic data at production scale (162,621 chat threads, 32,810
+  policies) the whole migration took 0.21 s with zero matches and 1.01 s with
+  10% matches, and 1.29 s at 5x scale with 1% matches, far below a 10 s
+  statement timeout, so batching is unnecessary. 1297 analyzes its rewrite
+  map before the chat thread scan; without it the planner sorted every thread
+  first (2.0 s at 5x). Evidence and the verified/unverified boundary:
+  `turbo/packages/db/MIGRATIONS.md`, "Migration 1297 performance evidence".
+- `1298_model_catalog_restricted_plans` (in progress, uncommitted) adds the
+  two restricted-plan flags to `run_model_catalog` with defaults and seeds
+  them from the former code allowlist. Additive; the previous API ignores the
+  columns.
+- Unrecognized rows `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`: with
+  `replaced_by` null they read as active under the end-state rule, and only
+  `allow_new_org_policy = false` plus missing routes keep them unusable. The
+  owner must delete, retire (into an approved replacement) or route each one
+  before `allow_new_org_policy` is dropped; see the design note.
 
 Old and new versions during deploy:
 

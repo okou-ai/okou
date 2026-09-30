@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { getBuiltInVendor } from "@okouai/api-contracts/contracts/model-providers";
 import {
   testTelegramStateContract,
   type TestTelegramStateActionBody,
@@ -42,7 +41,7 @@ import {
 } from "./test-endpoint-helpers";
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
-import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
+import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 
 const actionBody$ = bodyResultOf(testTelegramStateContract.action);
 
@@ -418,7 +417,7 @@ async function seedTelegramPostModelKeys(
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: getBuiltInVendor(await loadSystemDefaultRunModel(db)),
+      vendor: await loadSystemDefaultBuiltInVendor(db),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
     {

@@ -20,7 +20,6 @@ import {
   MODEL_PROVIDER_TYPES,
   getFrameworkForType,
   isBuiltInModelProviderType,
-  getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
   type OrgModelPoliciesResponse,
@@ -58,6 +57,7 @@ import {
   resolveCatalogModel,
   type ModelCatalog,
 } from "./model-catalog.service";
+import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
 import {
   conflict,
   insufficientCredits,
@@ -199,14 +199,20 @@ function bad<T>(message: string): ServiceResult<T> {
   return { ok: false, message };
 }
 
-function planRestricted<T>(model?: string): ServiceResult<T> {
+/**
+ * A model the catalog keeps off restricted plans on every route asks for a
+ * paid plan by name; other restrictions report insufficient credits.
+ */
+function planRestricted<T>(
+  catalog: ModelCatalog,
+  model?: string,
+): ServiceResult<T> {
+  const row = model === undefined ? undefined : catalog.byModel.get(model);
   return {
     ok: false,
     response:
-      model === "claude-sonnet-5-5" || model === "gpt-6.1-sol"
-        ? paidPlanRequired(
-            model === "gpt-6.1-sol" ? "GPT 6.1 Sol" : "Claude Sonnet 5.5",
-          )
+      row && !row.ownRoutesOnRestrictedPlans
+        ? paidPlanRequired(row.displayName)
         : insufficientCredits(),
   };
 }
@@ -447,6 +453,7 @@ export interface EnsuredOrgModelPolicyFacts {
 }
 
 function modelRouteAllowedForOrgPlan(
+  catalog: ModelCatalog,
   model: string,
   providerType: ModelProviderType,
   capabilities: Pick<
@@ -455,7 +462,8 @@ function modelRouteAllowedForOrgPlan(
   >,
 ): boolean {
   return (
-    getRunModelRouteAccess(
+    catalogRunModelRouteAccess(
+      catalog,
       model,
       providerType,
       capabilities.restrictedBuiltInModels,
@@ -674,6 +682,7 @@ async function validateOrgProviderRoute(
  * BYOK route. Only an added or re-routed policy has to satisfy the plan.
  */
 function planRestrictedWrite(params: {
+  readonly catalog: ModelCatalog;
   readonly policy: UpdateOrgModelPolicy;
   readonly providerType: ModelProviderType;
   readonly existing: OrgModelPolicyRow | undefined;
@@ -684,6 +693,7 @@ function planRestrictedWrite(params: {
 }): boolean {
   if (
     modelRouteAllowedForOrgPlan(
+      params.catalog,
       params.policy.model,
       params.providerType,
       params.capabilities,
@@ -729,6 +739,7 @@ async function validateUpdatePolicies(
     }
     if (
       planRestrictedWrite({
+        catalog,
         policy,
         providerType,
         existing,
@@ -736,6 +747,7 @@ async function validateUpdatePolicies(
       })
     ) {
       return planRestricted(
+        catalog,
         capabilities.restrictedBuiltInModels ? model : undefined,
       );
     }
@@ -922,10 +934,12 @@ function memberRouteAvailability(params: {
 }
 
 function memberSubscriptionPolicy(
+  catalog: ModelCatalog,
   entry: MemberSubscriptionModel,
   capabilities: OrgPlanCapabilities | null,
 ): OrgModelPolicy {
   const restricted = checkOrgPlanRunAdmission({
+    catalog,
     capabilities,
     modelProviderType: entry.providerType,
     selectedModel: entry.model,
@@ -964,6 +978,7 @@ function memberSubscriptionPolicy(
 
 async function loadAutoMemberPolicies(
   db: Db,
+  catalog: ModelCatalog,
   member: MemberModelRouteContext,
   capabilities: OrgPlanCapabilities | null,
   policies: readonly OrgModelPolicy[],
@@ -980,7 +995,7 @@ async function loadAutoMemberPolicies(
       });
     })
     .map((entry) => {
-      return memberSubscriptionPolicy(entry, capabilities);
+      return memberSubscriptionPolicy(catalog, entry, capabilities);
     });
 }
 
@@ -1064,6 +1079,7 @@ async function listOrgModelPolicies(
       const credentialScope =
         effective?.modelProviderCredentialScope ?? policy.credentialScope;
       const planDenied = checkOrgPlanRunAdmission({
+        catalog,
         capabilities,
         modelProviderType: providerType,
         selectedModel: policy.model,
@@ -1095,6 +1111,7 @@ async function listOrgModelPolicies(
   const modelMode = await loadOrgModelMode(db, orgId);
   const memberPolicies = await loadAutoMemberPolicies(
     db,
+    catalog,
     member,
     capabilities,
     policies,

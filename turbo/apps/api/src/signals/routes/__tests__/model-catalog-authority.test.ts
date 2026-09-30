@@ -15,10 +15,16 @@ import {
   updateBuiltInRouteFixture,
 } from "../../../test-fixtures/model-catalog";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  readRunModelLaunchOptionsFixture,
+  readRunModelRuntimeRouteFixture,
+} from "../../../test-fixtures/agent-runs";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
+const chatEvents = createChatEventsFixture(context);
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -199,6 +205,74 @@ describe("model catalog authority", () => {
     });
     expect(launched(await listPolicies())).toMatchObject({
       runtimeProviderType: "openai-api-key",
+    });
+  });
+
+  it("runs a new catalog model on an existing protocol from rows alone", async () => {
+    const { actor, agentId, runnerGroup } =
+      await chatEvents.entitledChatActor();
+    // Only run_model_catalog and model_routes rows are inserted: the model is
+    // in no static list and reuses the OpenAI API-key (Codex) protocol of the
+    // existing GPT models. The upstream ID is a fixture value, so this
+    // verifies protocol-level routing, not live provider acceptance.
+    const model = `catalog-run-${randomUUID()}`;
+    const upstreamModel = `catalog-run-upstream-${randomUUID()}`;
+    const restore = await insertCatalogModelFixture({
+      model,
+      displayName: "Catalog Run",
+      sortOrder: 100_000,
+      builtInRoutes: [
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel,
+          priority: 0,
+          efforts: ["low", "medium", "high"],
+          defaultEffort: "medium",
+          serviceTiers: ["priority"],
+        },
+      ],
+    });
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
+    await chatEvents.api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+
+    const run = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "run the new catalog model",
+      model,
+      runOptions: { reasoningEffort: "low", codexServiceTier: "fast" },
+    });
+
+    await expect(
+      readRunModelRuntimeRouteFixture(run.runId),
+    ).resolves.toMatchObject({
+      modelProvider: "built-in",
+      selectedModel: model,
+      modelRuntimeProvider: "openai-api-key",
+      modelRuntimeModel: upstreamModel,
+    });
+    await expect(
+      readRunModelLaunchOptionsFixture(run.runId),
+    ).resolves.toStrictEqual({
+      reasoningEffort: "low",
+      codexServiceTier: "fast",
+    });
+    const { claim } = await chatEvents.claimChatRun(runnerGroup, run.runId);
+    expect(claim).toMatchObject({
+      cliAgentType: "codex",
+      environment: { OPENAI_MODEL: upstreamModel },
+      billableFirewalls: ["model-provider:openai-api-key"],
+      // Built-in usage is billed under the route's pricing link
+      // (`usage_pricing` provider = the model ID).
+      modelUsageProvider: model,
     });
   });
 });

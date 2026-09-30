@@ -1368,6 +1368,45 @@ test("Offer an upgrade for restricted built-in routes", async () => {
   });
 });
 
+test("Offer Built-in routes the catalog allows on restricted plans", async () => {
+  mockAdminOrg();
+  mockBillingCapabilities({
+    supportByok: true,
+    restrictedBuiltInModels: true,
+  });
+  context.mocks.data.modelCatalogRestrictedPlanAccess("gpt-5.6-sol", {
+    builtInOnRestrictedPlans: true,
+    ownRoutesOnRestrictedPlans: true,
+  });
+  context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000221",
+      "claude-fable-5-1",
+      "Claude Fable 5.1",
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000222",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+    ),
+    claudeOpusApiKeyPolicy(),
+    autoPolicy(),
+  ]);
+  await openModelSettings();
+
+  click(buttonByText("Add model"));
+  const addDialog = screen.getByRole("dialog", { name: "Add model" });
+  click(within(addDialog).getByRole("combobox"));
+  click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
+  click(buttonByText("Add model", addDialog));
+
+  const modelRow = await screen.findByTestId(
+    "org-model-policy-row-gpt-5.6-sol",
+  );
+  expect(within(modelRow).getByText("Built-in")).toBeInTheDocument();
+});
+
 test("Offer a plan change when bring-your-own-key is unavailable", async () => {
   mockAdminOrg();
   mockBillingCapabilities({

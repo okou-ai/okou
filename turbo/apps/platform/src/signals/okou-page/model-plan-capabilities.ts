@@ -1,44 +1,68 @@
 import { computed } from "ccstate";
 import {
-  getRunModelRouteAccess,
-  isLimitedFree1RestrictedRunModel,
+  getCatalogRunModelRouteAccess,
   isBuiltInModelProviderType,
   type ModelProviderType,
   type OrgModelPolicy,
+  type RestrictedPlanModelAccess,
 } from "@okouai/api-contracts/contracts/model-providers";
 
 import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 
 export interface ModelPlanCapabilities {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
+  /** The catalog's plan policy of a model; undefined outside the catalog. */
+  readonly restrictedPlanAccess: (
+    model: string,
+  ) => RestrictedPlanModelAccess | undefined;
 }
 
 export const DEFAULT_MODEL_PLAN_CAPABILITIES =
   Object.freeze<ModelPlanCapabilities>({
     supportByok: true,
     restrictedBuiltInModels: false,
+    restrictedPlanAccess: () => {
+      return undefined;
+    },
   });
 
 export const modelPlanCapabilities$ = computed(
   async (get): Promise<ModelPlanCapabilities> => {
-    const capabilities = await get(orgPlanCapabilities$);
+    const [capabilities, catalog] = await Promise.all([
+      get(orgPlanCapabilities$),
+      get(modelCatalog$),
+    ]);
     return {
       supportByok: capabilities.supportByok,
       restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+      restrictedPlanAccess: (model) => {
+        return catalog.models.find((entry) => {
+          return entry.model === model;
+        });
+      },
     };
   },
 );
 
+/** Whether the plan may run the model on a Built-in route. */
 export function modelAllowedForPlan(
   model: string | null | undefined,
-  capabilities: Pick<ModelPlanCapabilities, "restrictedBuiltInModels">,
+  capabilities: Pick<
+    ModelPlanCapabilities,
+    "restrictedBuiltInModels" | "restrictedPlanAccess"
+  >,
 ): boolean {
   return (
-    !capabilities.restrictedBuiltInModels ||
-    !isLimitedFree1RestrictedRunModel(model)
+    !model ||
+    getCatalogRunModelRouteAccess(
+      capabilities.restrictedPlanAccess(model),
+      "built-in",
+      capabilities.restrictedBuiltInModels,
+    ) === "allowed"
   );
 }
 
@@ -55,11 +79,13 @@ export function modelRouteAllowedForPlan(
   capabilities: ModelPlanCapabilities,
 ): boolean {
   return (
-    getRunModelRouteAccess(
-      model,
-      providerType,
-      capabilities.restrictedBuiltInModels,
-    ) === "allowed" && modelProviderAllowedForPlan(providerType, capabilities)
+    (!model ||
+      getCatalogRunModelRouteAccess(
+        capabilities.restrictedPlanAccess(model),
+        providerType,
+        capabilities.restrictedBuiltInModels,
+      ) === "allowed") &&
+    modelProviderAllowedForPlan(providerType, capabilities)
   );
 }
 

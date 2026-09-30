@@ -4,10 +4,7 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isModelReasoningEffortSupported,
-  type ModelSettingsPatch,
-} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import {
   type UpdateUserModelPreferenceRequest,
@@ -27,7 +24,11 @@ import {
   resolveCatalogRunModel,
 } from "../services/model-catalog.service";
 import { db$ } from "../external/db";
-import { isCodexFastServiceTierSupported } from "../services/model-selection.service";
+import {
+  isCatalogFastServiceTierSupported,
+  isCatalogRouteEffortSupported,
+  isCatalogUltrafastServiceTierSupported,
+} from "../services/model-route-capabilities.service";
 import {
   updateUserModelPreference$,
   userModelPreference,
@@ -35,9 +36,19 @@ import {
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
+function configuredPolicyProviderType(
+  policy: OrgModelPolicy | undefined,
+): string | null {
+  return policy && isMemberModelPolicyConfigurable(policy)
+    ? getMemberModelPolicyRoute(policy).providerType
+    : null;
+}
+
 function validateModelSettingsPatch(args: {
+  readonly catalog: ModelCatalog;
   readonly patch: ModelSettingsPatch | undefined;
   readonly selectedModel: string | null;
+  readonly configuredPolicy: OrgModelPolicy | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (args.patch === undefined) {
     return undefined;
@@ -45,7 +56,14 @@ function validateModelSettingsPatch(args: {
   if (args.patch.model !== args.selectedModel) {
     return badRequestMessage("Reasoning effort must target the selected model");
   }
-  if (!isModelReasoningEffortSupported(args.patch.model, args.patch.effort)) {
+  if (
+    !isCatalogRouteEffortSupported(
+      args.catalog,
+      args.patch.model,
+      args.patch.effort,
+      configuredPolicyProviderType(args.configuredPolicy),
+    )
+  ) {
     return badRequestMessage(
       "Reasoning effort is not supported by the selected model",
     );
@@ -54,6 +72,7 @@ function validateModelSettingsPatch(args: {
 }
 
 function validateUltrafastServiceTier(args: {
+  readonly catalog: ModelCatalog;
   readonly requested: boolean;
   readonly configuredPolicy: OrgModelPolicy | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
@@ -62,10 +81,11 @@ function validateUltrafastServiceTier(args: {
   }
   if (
     !args.configuredPolicy ||
-    !isMemberModelPolicyConfigurable(args.configuredPolicy) ||
-    args.configuredPolicy.model !== "gpt-6-astra" ||
-    getMemberModelPolicyRoute(args.configuredPolicy).providerType !==
-      "openai-api-key"
+    !isCatalogUltrafastServiceTierSupported(
+      args.catalog,
+      args.configuredPolicy.model,
+      configuredPolicyProviderType(args.configuredPolicy),
+    )
   ) {
     return badRequestMessage(
       "Astra Ultrafast requires a direct OpenAI API-key route",
@@ -75,6 +95,7 @@ function validateUltrafastServiceTier(args: {
 }
 
 function validatePriorityServiceTier(args: {
+  readonly catalog: ModelCatalog;
   readonly requested: boolean;
   readonly configuredPolicy: OrgModelPolicy | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
@@ -90,9 +111,11 @@ function validatePriorityServiceTier(args: {
   if (
     (args.configuredPolicy.subscriptionOptions &&
       args.configuredPolicy.subscriptionOptions.serviceTier !== "priority") ||
-    !isCodexFastServiceTierSupported({
-      selectedModel: args.configuredPolicy.model,
-    })
+    !isCatalogFastServiceTierSupported(
+      args.catalog,
+      args.configuredPolicy.model,
+      configuredPolicyProviderType(args.configuredPolicy),
+    )
   ) {
     return badRequestMessage(
       "Codex fast mode is only available for GPT 5.6 runs",
@@ -189,11 +212,9 @@ const updateUserModelPreferenceInner$ = command(
       return await set(persistUserModelPreference$, body.data, signal);
     }
 
-    const data = resolveRequestedPreferenceModels(
-      await loadModelCatalog(get(db$)),
-      body.data,
-    );
+    const catalog = await loadModelCatalog(get(db$));
     signal.throwIfAborted();
+    const data = resolveRequestedPreferenceModels(catalog, body.data);
     if ("status" in data) {
       return data;
     }
@@ -228,8 +249,10 @@ const updateUserModelPreferenceInner$ = command(
     }
 
     const modelSettingsError = validateModelSettingsPatch({
+      catalog,
       patch: modelSettingsPatch,
       selectedModel: data.selectedModel,
+      configuredPolicy,
     });
     if (modelSettingsError) {
       return modelSettingsError;
@@ -237,10 +260,12 @@ const updateUserModelPreferenceInner$ = command(
 
     const serviceTierError =
       validateUltrafastServiceTier({
+        catalog,
         requested: data.serviceTier === "ultrafast",
         configuredPolicy,
       }) ??
       validatePriorityServiceTier({
+        catalog,
         requested: data.serviceTier === "priority",
         configuredPolicy,
       });

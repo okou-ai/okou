@@ -15,12 +15,12 @@ import { badRequestMessage } from "../../lib/error";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  isCodexFastServiceTierSupported,
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
   isReplacedModelSelection,
 } from "./model-selection.service";
 import { loadModelCatalog } from "./model-catalog.service";
+import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 /**
@@ -42,6 +42,7 @@ export async function resolveChatInputModelSelection(
   },
 ) {
   let selectedModel = args.selectedModel;
+  let modelProviderType: string | null = null;
   let codexServiceTier = args.codexServiceTier;
   const selected = selectedModel
     ? await resolveModelSelectionPin({
@@ -55,11 +56,12 @@ export async function resolveChatInputModelSelection(
         orgPlanCapabilities: args.orgPlanCapabilities,
       })
     : null;
+  const catalog = await loadModelCatalog(db);
   if (
     selected &&
     "status" in selected &&
     selectedModel &&
-    isReplacedModelSelection(await loadModelCatalog(db), selectedModel)
+    isReplacedModelSelection(catalog, selectedModel)
   ) {
     // A replaced model with no compatible route is an explicit error; it never
     // falls back to the system default or to Built-in billing.
@@ -76,10 +78,12 @@ export async function resolveChatInputModelSelection(
       args.orgPlanCapabilities,
     );
     selectedModel = workspaceDefault.selectedModel;
+    modelProviderType = workspaceDefault.modelProviderType;
     codexServiceTier = null;
   } else {
     // New writes store the final resolved model.
     selectedModel = selected.selectedModel;
+    modelProviderType = selected.modelProviderType;
   }
   if (!selectedModel) {
     return badRequestMessage(
@@ -93,7 +97,9 @@ export async function resolveChatInputModelSelection(
     !("status" in selected) &&
     selectedModel !== args.selectedModel;
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel,
+    modelProviderType,
     modelSettings: args.modelSettings,
     requested:
       selectedModel === args.selectedModel || selectedIsReplacement
@@ -105,7 +111,11 @@ export async function resolveChatInputModelSelection(
   }
   return chatInputModelSelectionSchema.parse({
     selectedModel,
-    codexServiceTier: isCodexFastServiceTierSupported({ selectedModel })
+    codexServiceTier: isCatalogFastServiceTierSupported(
+      catalog,
+      selectedModel,
+      modelProviderType,
+    )
       ? codexServiceTier
       : null,
     reasoningEffort: effort.reasoningEffort ?? null,

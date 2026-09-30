@@ -13,6 +13,10 @@ type CatalogModel = Readonly<{
   sortOrder: number;
   isSystemDefault: boolean;
   replacedBy: string | null;
+  /** Restricted plans may run the model on Built-in routes. */
+  builtInOnRestrictedPlans: boolean;
+  /** Restricted plans may run the model on their own provider routes. */
+  ownRoutesOnRestrictedPlans: boolean;
 }>;
 
 export type CatalogRoute = Readonly<{
@@ -315,6 +319,8 @@ export async function loadModelCatalog(
         sortOrder: runModelCatalog.sortOrder,
         isSystemDefault: runModelCatalog.isSystemDefault,
         replacedBy: runModelCatalog.replacedBy,
+        builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
+        ownRoutesOnRestrictedPlans: runModelCatalog.ownRoutesOnRestrictedPlans,
       })
       .from(runModelCatalog)
       .orderBy(asc(runModelCatalog.sortOrder), asc(runModelCatalog.model)),

@@ -557,7 +557,6 @@ export {
   getBuiltInVendor,
   getBuiltInApiModel,
   normalizeBuiltInModelId,
-  isLimitedFree1RestrictedRunModel,
 } from "./model-providers";
 export {
   artifactCatalogContract,

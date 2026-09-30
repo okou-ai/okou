@@ -1,7 +1,5 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
-  isCodexFastModeModel,
-  isModelSupportedByProvider,
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -13,7 +11,6 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { nowDate } from "../../lib/time";
 import {
-  getModelReasoningEfforts,
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -90,19 +87,14 @@ export async function loadMemberSubscriptionModels(
     const serviceTier = row.serviceTiers.includes("priority")
       ? "priority"
       : null;
+    // The route row is the product authority for efforts and tiers; only
+    // protocol facts are checked: the effort vocabulary, and Fast
+    // (`priority`) exists only on the Codex protocol.
     if (
-      !isModelSupportedByProvider(row.model, subscription.type) ||
       row.efforts.some((effort) => {
-        return (
-          !reasoningEffortSchema.safeParse(effort).success ||
-          !getModelReasoningEfforts(row.model).includes(
-            effort as ReasoningEffort,
-          )
-        );
+        return !reasoningEffortSchema.safeParse(effort).success;
       }) ||
-      (serviceTier === "priority" &&
-        (subscription.type !== "codex-oauth-token" ||
-          !isCodexFastModeModel(row.model)))
+      (serviceTier === "priority" && subscription.type !== "codex-oauth-token")
     ) {
       throw new Error(
         `Invalid subscription model catalog row ${row.subscriptionType}/${row.model}`,

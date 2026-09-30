@@ -34,6 +34,7 @@ import {
   resolveRequiredDefaultChatThreadModelPin,
 } from "./chat-thread-model.service";
 import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 import { submitMcpChatInput$ } from "./mcp-chat-send.service";
@@ -315,12 +316,16 @@ async function initializeThread(
   }
   const defaults = await loadNewChatThreadDefaults(tx, principal);
   signal.throwIfAborted();
+  const catalog = await loadModelCatalog(tx);
+  signal.throwIfAborted();
   const modelSettings =
     input.model === undefined
       ? defaults.modelSettings
       : (() => {
           const effort = resolveChatReasoningEffort({
+            catalog,
             selectedModel: pin.selectedModel,
+            modelProviderType: pin.modelProviderType,
             modelSettings: defaults.modelSettings,
             requested: undefined,
           });

@@ -37,6 +37,11 @@ JOIN run_model_catalog AS final
 --> statement-breakpoint
 ALTER TABLE model_selection_rewrite ADD PRIMARY KEY (source);
 --> statement-breakpoint
+-- Temp tables have no statistics until analyzed. Without them the planner
+-- sorts every chat thread before joining this map of a few rows (measured in
+-- MIGRATIONS.md, "Migration 1297 performance evidence").
+ANALYZE model_selection_rewrite;
+--> statement-breakpoint
 -- Effort domain of each replacement: its first enabled Built-in route.
 CREATE TEMP TABLE model_selection_rewrite_effort ON COMMIT DROP AS
 SELECT DISTINCT ON (route.model)

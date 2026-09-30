@@ -611,6 +611,26 @@ unless claude_script.include?('defaultProviderType: "built-in"') &&
     claude_script.include?("modelProviderId: null")
   raise "real Claude bootstrap must use the built-in provider"
 end
+# New organizations start in Auto mode, which rejects policy writes; every
+# account that writes policies must enter Custom mode before reading them.
+{
+  "runner defaults" => model_defaults_script,
+  "mock Claude" => mock_claude_script,
+  "real Codex" => codex_script,
+  "built-in Codex" => built_in_codex_script,
+  "real Claude" => claude_script,
+}.each do |account, script|
+  enable_debug = script.index('{"switches":{"_debug":true}}')
+  enter_custom = script.index('{"mode":"custom"}')
+  disable_debug = script.index('{"switches":{"_debug":false}}')
+  first_policy_read = script.index("/api/model-policies\"")
+  unless enable_debug && enter_custom && disable_debug && first_policy_read &&
+      script.include?("/api/model-policies/mode") &&
+      enable_debug < enter_custom && enter_custom < disable_debug &&
+      disable_debug < first_policy_read
+    raise "#{account} bootstrap must enter Custom model mode before writing policies"
+  end
+end
 
 shard_step = runner.fetch("steps").find do |step|
   step["name"] == "Initialize runner E2E shard"

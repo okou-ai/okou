@@ -8805,8 +8805,8 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection);
-  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
+  const effort = preferredChatReasoningEffort(selection, catalog);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection, catalog);
   const effortChanged = effort !== defaultEffort;
   // Compare only against a resolved default; until both sources load the
   // fixed Auto fallback would misreport the member's saved preference.

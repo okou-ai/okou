@@ -11,6 +11,7 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -918,6 +919,7 @@ async function processPreparedWork(
         beforeRequest: async (requestSignal) => {
           const admission = await checkOrgCreditsForRunAdmission({
             db: args.db,
+            catalog: await loadModelCatalog(args.db),
             ...args.prepared.credential.billing,
             modelProviderType: args.prepared.credential.modelProviderType,
             selectedModel: args.prepared.credential.selectedModel,

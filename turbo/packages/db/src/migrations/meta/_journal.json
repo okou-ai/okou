@@ -1541,6 +1541,13 @@
       "when": 1790757387215,
       "tag": "1297_model_catalog_stored_selections",
       "breakpoints": true
+    },
+    {
+      "idx": 1298,
+      "version": "7",
+      "when": 1790765203488,
+      "tag": "1298_model_catalog_restricted_plans",
+      "breakpoints": true
     }
   ]
 }

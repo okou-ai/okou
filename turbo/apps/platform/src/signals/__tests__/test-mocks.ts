@@ -63,7 +63,10 @@ import { setMockTelegramIntegration } from "../../mocks/handlers/api-integration
 import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
 import { setMockOrg } from "../../mocks/handlers/api-org.ts";
 import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
-import { setMockModelCatalogSystemDefault } from "../../mocks/handlers/api-model-catalog.ts";
+import {
+  setMockModelCatalogRestrictedPlanAccess,
+  setMockModelCatalogSystemDefault,
+} from "../../mocks/handlers/api-model-catalog.ts";
 import {
   setMockOrgModelMode,
   setMockOrgModelPolicies,
@@ -396,6 +399,11 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         ...args: Parameters<typeof setMockModelCatalogSystemDefault>
       ) => {
         setMockModelCatalogSystemDefault(...args);
+      },
+      modelCatalogRestrictedPlanAccess: (
+        ...args: Parameters<typeof setMockModelCatalogRestrictedPlanAccess>
+      ) => {
+        setMockModelCatalogRestrictedPlanAccess(...args);
       },
       orgModelMode: (...args: Parameters<typeof setMockOrgModelMode>) => {
         setMockOrgModelMode(...args);

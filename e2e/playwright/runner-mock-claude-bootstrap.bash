@@ -19,6 +19,13 @@ jq -e '.provider.type == "claude-code-oauth-token"' \
     <<<"$provider_response" \
     >/dev/null
 
+# New organizations start in Auto mode, where policy writes are rejected.
+# Runner accounts pin explicit models, so switch them to Custom. The mode
+# switch is Debug-gated: enable Debug for the switch, then drop it again.
+curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
+
 policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
 # The server projects the catalog system default into every policy list and
 # ignores it on writes, so listed policies are re-sent as-is. Runs in this

@@ -41,6 +41,7 @@ import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import {
   loadModelCatalog,
   resolveCatalogRunModel,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import type { Tx } from "../../lib/db-types";
 import type { AuthContext } from "../../types/auth";
@@ -61,7 +62,10 @@ import {
   shouldDispatchCancelSideEffects,
   type CancelRunResult,
 } from "./run-cancel.service";
-import { isCodexFastServiceTierSupported } from "./model-selection.service";
+import {
+  catalogModelOffersUltrafast,
+  isCatalogFastServiceTierSupported,
+} from "./model-route-capabilities.service";
 import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
 import {
   appendChatThreadCreatedEvent,
@@ -666,6 +670,7 @@ interface ThreadComputerAccess {
 }
 
 function requestedThreadRunSettings(
+  catalog: ModelCatalog,
   body: NormalSendBody,
   current: {
     readonly selectedModel: string | null;
@@ -675,6 +680,7 @@ function requestedThreadRunSettings(
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   const selectedModel = body.model ?? current.selectedModel;
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel,
     modelSettings: current.modelSettings,
     requested: body.runOptions?.reasoningEffort,
@@ -685,13 +691,16 @@ function requestedThreadRunSettings(
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
     requestedTier === "fast" &&
-    !isCodexFastServiceTierSupported({ selectedModel })
+    !isCatalogFastServiceTierSupported(catalog, selectedModel)
   ) {
     return badRequestMessage(
       "Codex fast mode is only available for GPT 5.6 runs",
     );
   }
-  if (requestedTier === "ultrafast" && selectedModel !== "gpt-6-astra") {
+  if (
+    requestedTier === "ultrafast" &&
+    !catalogModelOffersUltrafast(catalog, selectedModel)
+  ) {
     return badRequestMessage("Astra Ultrafast is unavailable for this model");
   }
   // A model or run-option selection carries its tier; an effort-only change
@@ -802,7 +811,11 @@ async function resolveExistingSendThread(
     computerUseHostId: thread.computerUseHostId,
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
   };
-  const runSettings = requestedThreadRunSettings(args.body, current);
+  const runSettings = requestedThreadRunSettings(
+    await loadModelCatalog(db),
+    args.body,
+    current,
+  );
   if ("status" in runSettings) {
     return runSettings;
   }
@@ -844,16 +857,20 @@ async function resolveNewSendThread(
         )
       : null;
   const defaults = await loadNewChatThreadDefaults(db, member);
-  const runSettings = requestedThreadRunSettings(args.body, {
-    selectedModel: initialModel?.selectedModel ?? null,
-    modelSettings: defaults.modelSettings,
-    codexServiceTier:
-      initialModel?.serviceTier === "priority"
-        ? "fast"
-        : initialModel?.serviceTier === "ultrafast"
-          ? "ultrafast"
-          : null,
-  });
+  const runSettings = requestedThreadRunSettings(
+    await loadModelCatalog(db),
+    args.body,
+    {
+      selectedModel: initialModel?.selectedModel ?? null,
+      modelSettings: defaults.modelSettings,
+      codexServiceTier:
+        initialModel?.serviceTier === "priority"
+          ? "fast"
+          : initialModel?.serviceTier === "ultrafast"
+            ? "ultrafast"
+            : null,
+    },
+  );
   if ("status" in runSettings) {
     return runSettings;
   }

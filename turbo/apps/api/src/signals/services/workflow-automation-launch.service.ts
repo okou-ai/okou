@@ -36,6 +36,7 @@ import { workflowAutomationCanFire } from "./workflow-automation-access.service"
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { ChatAgentRunSourceAnnotation } from "./chat-user-message.service";
 import {
@@ -364,6 +365,8 @@ async function resolveModelContext(
     };
   }
 
+  const catalog = await loadModelCatalog(args.db);
+  signal.throwIfAborted();
   const piExecution = shouldUsePiExecution({
     chatThreadId: args.chatThreadId,
     modelProviderType: effectiveModelProvider,
@@ -380,7 +383,9 @@ async function resolveModelContext(
     codexServiceTier: runCodexServiceTier,
     reasoningEffort:
       resolveReasoningEffortForDispatch({
+        catalog,
         selectedModel,
+        modelProviderType: effectiveModelProvider,
         effort: threadModelContext.reasoningEffort,
         runtimeProviderType:
           builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,

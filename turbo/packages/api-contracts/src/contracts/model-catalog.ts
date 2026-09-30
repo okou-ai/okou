@@ -18,6 +18,16 @@ const modelCatalogModelSchema = z.object({
   resolvedModel: z.string(),
   /** Display price tier of the model's Built-in route; null without one. */
   priceTier: z.string().nullable(),
+  /**
+   * Plan policy for organizations whose plan restricts Built-in models:
+   * whether they may run this model on a Built-in route.
+   */
+  builtInOnRestrictedPlans: z.boolean(),
+  /**
+   * The same plan policy for routes the organization or member provides
+   * (BYOK, personal subscriptions and custom gateways).
+   */
+  ownRoutesOnRestrictedPlans: z.boolean(),
 });
 
 const modelCatalogRouteSchema = z.object({

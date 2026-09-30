@@ -144,6 +144,8 @@ export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
         replacedBy,
         resolvedModel,
         priceTier,
+        builtInOnRestrictedPlans: model === "okou-1.0",
+        ownRoutesOnRestrictedPlans: true,
       };
     },
   ),

@@ -30,6 +30,8 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
               ? row.model
               : resolution.resolvedModel,
           priceTier: catalogBuiltInPriceTier(catalog, row.model),
+          builtInOnRestrictedPlans: row.builtInOnRestrictedPlans,
+          ownRoutesOnRestrictedPlans: row.ownRoutesOnRestrictedPlans,
         };
       }),
       routes: catalog.routes.map((route) => {

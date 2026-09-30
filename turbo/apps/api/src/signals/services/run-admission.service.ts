@@ -1,7 +1,5 @@
 import {
   isBuiltInModelProviderType,
-  hasNoRuntimeExecutionRoute,
-  getRunModelRouteAccess,
   normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -28,6 +26,12 @@ import {
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
+import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
+import {
+  catalogHasProviderRoute,
+  isCatalogModelRunnable,
+  type ModelCatalog,
+} from "./model-catalog.service";
 
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
@@ -170,6 +174,7 @@ export async function resolveOrgCreditAvailability(params: {
 
 export async function checkOrgCreditsForRunAdmission(params: {
   readonly db: Db;
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
@@ -184,6 +189,7 @@ export async function checkOrgCreditsForRunAdmission(params: {
 
 export async function checkResolvedOrgCreditsForRunAdmission(params: {
   readonly db: Db;
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
@@ -207,6 +213,7 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
 }
 
 async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel?: string | null;
@@ -217,13 +224,13 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
   } | null>;
 }): Promise<RunAdmissionFailure | undefined> {
   const { availability } = params;
-  if (hasNoRuntimeExecutionRoute(params.selectedModel)) {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-  }
   if (!availability) {
-    return insufficientCredits();
+    return (
+      checkCatalogRunRoute(params.catalog, params) ?? insufficientCredits()
+    );
   }
   const planAdmission = checkOrgPlanRunAdmission({
+    catalog: params.catalog,
     capabilities: availability,
     modelProviderType: params.modelProviderType,
     selectedModel: params.selectedModel,
@@ -247,35 +254,62 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
     : insufficientCredits();
 }
 
+/**
+ * Runtime guard from the run's catalog snapshot: the selected model must be
+ * an active catalog model with an enabled route, and a Built-in run needs an
+ * enabled Built-in route. Retired or unknown IDs are resolved (or rejected)
+ * before admission; this only stops an unresolved ID from reaching a runner.
+ */
+function checkCatalogRunRoute(
+  catalog: ModelCatalog,
+  params: {
+    readonly modelProviderType: string | null | undefined;
+    readonly selectedModel?: string | null;
+  },
+): RunAdmissionFailure | undefined {
+  if (!params.selectedModel) {
+    return undefined;
+  }
+  const model = normalizeBuiltInModelId(params.selectedModel);
+  if (!isCatalogModelRunnable(catalog, model)) {
+    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  }
+  return isBuiltInModelProviderType(params.modelProviderType) &&
+    !catalogHasProviderRoute(catalog, model, "built-in")
+    ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
+    : undefined;
+}
+
 export function checkOrgPlanRunAdmission(params: {
+  /** The run's catalog snapshot, loaded once by the caller. */
+  readonly catalog: ModelCatalog;
   readonly capabilities: OrgPlanRunAdmissionCapabilities | null;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
   readonly autoPersonalSubscription?: boolean;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
-  const modelAccess = getRunModelRouteAccess(
+  const modelAccess = catalogRunModelRouteAccess(
+    params.catalog,
     params.selectedModel,
     params.modelProviderType,
     capabilities?.restrictedBuiltInModels && !params.autoPersonalSubscription,
   );
-  if (hasNoRuntimeExecutionRoute(params.selectedModel)) {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  const routeFailure = checkCatalogRunRoute(params.catalog, params);
+  if (routeFailure) {
+    return routeFailure;
   }
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
   }
-  if (
-    modelAccess === "pro_required" &&
-    ["claude-sonnet-5-5", "gpt-6.1-sol"].includes(
-      normalizeBuiltInModelId(params.selectedModel ?? ""),
-    )
-  ) {
-    return paidPlanRequired(
-      normalizeBuiltInModelId(params.selectedModel ?? "") === "gpt-6.1-sol"
-        ? "GPT 6.1 Sol"
-        : "Claude Sonnet 5.5",
-    );
+  // A model the catalog keeps off restricted plans on every route asks for a
+  // paid plan by name.
+  const restrictedModel =
+    modelAccess === "pro_required" && params.selectedModel
+      ? params.catalog.byModel.get(params.selectedModel)
+      : undefined;
+  if (restrictedModel && !restrictedModel.ownRoutesOnRestrictedPlans) {
+    return paidPlanRequired(restrictedModel.displayName);
   }
   return (!capabilities.supportByok &&
     !params.autoPersonalSubscription &&

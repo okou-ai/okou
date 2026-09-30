@@ -212,33 +212,36 @@ export type ActiveRunModel = Exclude<SupportedRunModel, RetiredRunModel>;
 export const RETIRED_RUN_MODEL_MESSAGE =
   "This model has been retired. Select another available model.";
 
-export function getRunModelAccess(
-  model: string | null | undefined,
-  restrictedBuiltInModels = false,
-): "allowed" | "pro_required" {
-  return restrictedBuiltInModels && isLimitedFree1RestrictedRunModel(model)
-    ? "pro_required"
-    : "allowed";
+/**
+ * Plan policy of one catalog model (`run_model_catalog`) for organizations
+ * whose plan restricts Built-in models.
+ */
+export interface RestrictedPlanModelAccess {
+  readonly builtInOnRestrictedPlans: boolean;
+  readonly ownRoutesOnRestrictedPlans: boolean;
 }
 
-/** Plan model restrictions apply unless the route is known to be BYOK. */
-export function getRunModelRouteAccess(
-  model: string | null | undefined,
+/**
+ * Plan access of a catalog model on a route. A known non-Built-in provider
+ * type is the organization's or member's own route; anything else (Built-in,
+ * missing or unknown) is treated as Built-in. A model outside the catalog
+ * (`access` undefined) is never allowed on a restricted Built-in route.
+ */
+export function getCatalogRunModelRouteAccess(
+  access: RestrictedPlanModelAccess | undefined,
   providerType: string | null | undefined,
   restrictedBuiltInModels = false,
 ): "allowed" | "pro_required" {
-  const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
+  if (!restrictedBuiltInModels) {
+    return "allowed";
+  }
+  const ownRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
-  // Newly launched paid models are restricted on managed and BYOK routes.
-  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  return getRunModelAccess(
-    model,
-    restrictedBuiltInModels &&
-      (canonical === "claude-sonnet-5-5" ||
-        canonical === "gpt-6.1-sol" ||
-        !knownByokRoute),
-  );
+  const allowed = ownRoute
+    ? (access?.ownRoutesOnRestrictedPlans ?? true)
+    : (access?.builtInOnRestrictedPlans ?? false);
+  return allowed ? "allowed" : "pro_required";
 }
 
 /**
@@ -305,6 +308,19 @@ export const BUILT_IN_MODEL_ROUTE_PROVIDERS = {
 
 export type BuiltInModelRouteProviderType =
   keyof typeof BUILT_IN_MODEL_ROUTE_PROVIDERS;
+
+/** The key-pool vendor of a concrete Built-in provider; undefined for others. */
+export function getBuiltInRouteProviderVendor(
+  concreteProviderType: string,
+): string | undefined {
+  return BUILT_IN_ROUTE_PROVIDER_VENDORS.get(concreteProviderType);
+}
+
+const BUILT_IN_ROUTE_PROVIDER_VENDORS: ReadonlyMap<string, string> = new Map(
+  Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).map(([type, provider]) => {
+    return [type, provider.vendor];
+  }),
+);
 
 export interface BuiltInModelRouteCandidate {
   readonly concreteType: BuiltInModelRouteProviderType;
@@ -476,13 +492,12 @@ export function getBuiltInModelRouteCandidates(
   });
 }
 
+/** Vendors of every concrete provider a Built-in route can use (key pools). */
 export function getBuiltInModelRouteVendors(): readonly string[] {
   return [
     ...new Set(
-      Object.values(BUILT_IN_MODEL_TO_PROVIDER).flatMap((config) => {
-        return config.candidates.map((candidate) => {
-          return BUILT_IN_MODEL_ROUTE_PROVIDERS[candidate.concreteType].vendor;
-        });
+      Object.values(BUILT_IN_MODEL_ROUTE_PROVIDERS).map((provider) => {
+        return provider.vendor;
       }),
     ),
   ];
@@ -504,34 +519,8 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
 const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
 
-const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
-  "okou-1.0",
-  "gpt-6-luna",
-  "gpt-5.6-luna",
-  "deepseek-v4.1-flash",
-  "deepseek-v4-flash",
-]);
-
 export function normalizeBuiltInModelId(model: string): string {
   return BUILT_IN_MODEL_ALIAS_LOOKUP[model] ?? model;
-}
-
-export function isLimitedFree1RestrictedRunModel(
-  model: string | null | undefined,
-): boolean {
-  if (!model) {
-    return false;
-  }
-  const normalized = model.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  const canonicalModel = normalizeBuiltInModelId(normalized);
-  const unprefixedModel = canonicalModel.replace(
-    /^(anthropic|deepseek|openai)\//,
-    "",
-  );
-  return !LIMITED_FREE1_ALLOWED_RUN_MODELS.has(unprefixedModel);
 }
 
 export const ACTIVE_RUN_MODELS: readonly SupportedRunModel[] =

@@ -168,6 +168,19 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
+// Plan policy seeded by migration 1298.
+const RESTRICTED_PLAN_BUILT_IN_MODELS: readonly string[] = [
+  "okou-1.0",
+  "gpt-6-luna",
+  "gpt-5.6-luna",
+  "deepseek-v4.1-flash",
+  "deepseek-v4-flash",
+];
+const RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS: readonly string[] = [
+  "claude-sonnet-5-5",
+  "gpt-6.1-sol",
+];
+
 /** The seeded catalog's system default. */
 export const MOCK_SYSTEM_DEFAULT_MODEL = "okou-1.0";
 
@@ -184,6 +197,10 @@ export function createMockModelCatalog(
         replacedBy,
         resolvedModel: resolveReplacement(model),
         priceTier: profileFor(model).priceTier,
+        builtInOnRestrictedPlans:
+          RESTRICTED_PLAN_BUILT_IN_MODELS.includes(model),
+        ownRoutesOnRestrictedPlans:
+          !RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS.includes(model),
       };
     },
   );
@@ -237,6 +254,22 @@ export function mockCatalogBuiltInProvider(
 
 export function setMockModelCatalogSystemDefault(model: string): void {
   mockModelCatalog = createMockModelCatalog(model);
+}
+
+/** Operators change a model's plan policy for restricted plans. */
+export function setMockModelCatalogRestrictedPlanAccess(
+  model: string,
+  access: Pick<
+    MockCatalogModel,
+    "builtInOnRestrictedPlans" | "ownRoutesOnRestrictedPlans"
+  >,
+): void {
+  mockModelCatalog = {
+    ...mockModelCatalog,
+    models: mockModelCatalog.models.map((entry) => {
+      return entry.model === model ? { ...entry, ...access } : entry;
+    }),
+  };
 }
 
 export function resetMockModelCatalog(): void {

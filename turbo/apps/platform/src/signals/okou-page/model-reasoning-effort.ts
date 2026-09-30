@@ -1,8 +1,8 @@
 import { isPiExecutionRoute } from "@okouai/core/pi-execution";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  getRouteReasoningEfforts,
-  modelReasoningEffort,
+  narrowRouteReasoningEfforts,
+  reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -20,20 +20,29 @@ function catalogRouteQuery(policy: OrgModelPolicy) {
   };
 }
 
-/** Saved preferences remain independent of the route's current capability. */
+/**
+ * The saved preference of the selected model, independent of the route's
+ * current capability; without one the route's catalog default applies.
+ */
 export function preferredChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
+  catalog?: ModelCatalog | null,
 ): ReasoningEffort | undefined {
-  return modelReasoningEffort(
-    selection?.selectedModel,
-    selection?.modelSettings,
-  );
+  const model = selection?.selectedModel;
+  if (!model) {
+    return undefined;
+  }
+  const saved = selection.modelSettings?.[model]?.effort;
+  if (saved !== undefined) {
+    return saved;
+  }
+  const parsed = reasoningEffortSchema.safeParse(catalog?.defaultEffort(model));
+  return parsed.success ? parsed.data : undefined;
 }
 
 /**
- * The catalog route's efforts are the product authority. The execution-time
- * narrowing (Pi and provider-specific rules) stays in code until the server
- * applies it (docs/model-catalog.md, PR-B).
+ * The catalog route's efforts are the product authority; execution-time
+ * protocol narrowing (Pi and provider-specific rules) is applied on top.
  */
 export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
@@ -59,16 +68,17 @@ export function availableChatReasoningEfforts(
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
   });
-  const catalogEfforts = catalog.efforts(
-    selection.selectedModel,
-    catalogRouteQuery(policy),
-  );
-  const routeEfforts = getRouteReasoningEfforts({
+  const catalogEfforts = catalog
+    .efforts(selection.selectedModel, catalogRouteQuery(policy))
+    .flatMap((effort) => {
+      const parsed = reasoningEffortSchema.safeParse(effort);
+      return parsed.success ? [parsed.data] : [];
+    });
+  const routeEfforts = narrowRouteReasoningEfforts({
     model: selection.selectedModel,
+    efforts: catalogEfforts,
     piExecution,
     runtimeProviderType,
-  }).filter((effort) => {
-    return catalogEfforts.includes(effort);
   });
   return policy.subscriptionOptions
     ? routeEfforts.filter((effort) => {

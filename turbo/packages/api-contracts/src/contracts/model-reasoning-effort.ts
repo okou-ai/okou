@@ -4,7 +4,6 @@ import { runModelIdSchema } from "./model-providers";
 import {
   CLAUDE_CODE_EFFORTS,
   CODEX_REASONING_EFFORTS,
-  getModelRunOptions,
 } from "./model-run-options";
 
 export const reasoningEffortSchema = z.union([
@@ -20,22 +19,12 @@ const modelSettingSchema = z
   })
   .strict();
 
-// Keys are catalog model IDs. Efforts are still validated against the
-// runtime's static effort vocabulary (model-run-options).
-export const modelSettingsSchema = z
-  .record(runModelIdSchema, modelSettingSchema)
-  .superRefine((settings, context) => {
-    for (const [model, setting] of Object.entries(settings)) {
-      const effort = setting.effort;
-      if (effort && !isModelReasoningEffortSupported(model, effort)) {
-        context.addIssue({
-          code: "custom",
-          path: [model, "effort"],
-          message: "Reasoning effort is not supported by this model",
-        });
-      }
-    }
-  });
+// Keys are catalog model IDs. Only the effort vocabulary is checked here; the
+// server accepts an effort when the model's catalog route lists it.
+export const modelSettingsSchema = z.record(
+  runModelIdSchema,
+  modelSettingSchema,
+);
 
 export type ModelSettings = z.infer<typeof modelSettingsSchema>;
 
@@ -48,38 +37,23 @@ export const modelSettingsPatchSchema = z
 
 export type ModelSettingsPatch = z.infer<typeof modelSettingsPatchSchema>;
 
-/** Model preferences span runtimes; each execution route narrows these choices. */
-export function getModelReasoningEfforts(
-  model: string | null | undefined,
-): readonly ReasoningEffort[] {
-  return getModelRunOptions(model).efforts;
-}
-
-export function isModelReasoningEffortSupported(
-  model: string | null | undefined,
-  effort: ReasoningEffort,
-): boolean {
-  return getModelReasoningEfforts(model).includes(effort);
-}
-
-/** Match Okou's model launch defaults when a model has no saved override. */
-export function defaultModelReasoningEffort(
-  model: string | null | undefined,
-): ReasoningEffort | undefined {
-  return getModelRunOptions(model).defaultEffort;
-}
-
-/** Product choices supported by the captured runtime and provider catalog. */
-export function getRouteReasoningEfforts(args: {
+/**
+ * Protocol narrowing of a route's catalog efforts for one execution: Pi and
+ * non-Pi runtimes and DeepSeek's concrete providers accept different subsets.
+ */
+export function narrowRouteReasoningEfforts(args: {
   readonly model: string | null | undefined;
+  readonly efforts: readonly ReasoningEffort[];
   readonly piExecution: boolean;
   readonly runtimeProviderType: string | null | undefined;
 }): readonly ReasoningEffort[] {
-  const choices = getModelReasoningEfforts(args.model);
+  const choices = args.efforts;
   if (args.model === "deepseek-v4-flash" || args.model === "deepseek-v4-pro") {
     if (!args.piExecution) return [];
     if (args.runtimeProviderType === "openrouter-codex") {
-      return ["high", "xhigh"];
+      return choices.filter((effort) => {
+        return effort === "high" || effort === "xhigh";
+      });
     }
     if (
       args.runtimeProviderType === "deepseek" ||
@@ -100,14 +74,17 @@ export function getRouteReasoningEfforts(args: {
 export function resolveRouteReasoningEffort(args: {
   readonly model: string | null | undefined;
   readonly effort: ReasoningEffort | undefined;
+  readonly efforts: readonly ReasoningEffort[];
+  readonly defaultEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
   readonly runtimeProviderType: string | null | undefined;
 }): ReasoningEffort | undefined {
   if (args.effort === undefined) return undefined;
-  const choices = getRouteReasoningEfforts(args);
+  const choices = narrowRouteReasoningEfforts(args);
   if (choices.includes(args.effort)) return args.effort;
-  const fallback = defaultModelReasoningEffort(args.model);
-  return fallback && choices.includes(fallback) ? fallback : undefined;
+  return args.defaultEffort && choices.includes(args.defaultEffort)
+    ? args.defaultEffort
+    : undefined;
 }
 
 /** Claude's product label differs from Pi's SDK vocabulary. */
@@ -121,24 +98,6 @@ export function piThinkingLevelForEffort(effort: ReasoningEffort) {
     default:
       return effort;
   }
-}
-
-/** Resolve one model's preferred effort without borrowing another model's value. */
-export function modelReasoningEffort(
-  model: string | null | undefined,
-  settings: ModelSettings | null | undefined,
-): ReasoningEffort | undefined {
-  if (!model) {
-    return undefined;
-  }
-  const saved = settings?.[model]?.effort;
-  if (saved === undefined) {
-    return defaultModelReasoningEffort(model);
-  }
-  if (!isModelReasoningEffortSupported(model, saved)) {
-    throw new Error(`Reasoning effort ${saved} is not supported by ${model}`);
-  }
-  return saved;
 }
 
 /** Apply one concrete override. Deleting overrides is intentionally unsupported. */
