@@ -1,6 +1,6 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import type { Tx } from "../../lib/db-types";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
@@ -59,6 +59,7 @@ import {
   notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -1497,13 +1498,21 @@ const persistAgentPhoneChatMessage$ = command(
     if (eventId === null) {
       return { inserted: false };
     }
-    await touchNativeChatThread(args.db, {
-      chatThreadId: route.chatThreadId,
-      createdAt: currentTime,
-      eventId: chatEventId,
-    });
-    signal.throwIfAborted();
     return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
+  },
+);
+
+const replyAgentPhoneChatQueueWait$ = command(
+  async (
+    _,
+    event: AgentPhoneMessageEvent,
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (notice) {
+      await sendAgentPhoneText(event, notice, signal);
+    }
   },
 );
 
@@ -1546,6 +1555,15 @@ const runAgentForAgentPhone$ = command(
             signal,
           ),
         );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
         await publishThreadListChangedSafely({
           userId: args.userLink.userId,
           orgId: args.userLink.orgId,
@@ -1566,10 +1584,12 @@ const runAgentForAgentPhone$ = command(
               },
               signal,
             );
-            const notice = chatQueueWaitNotice(pick.reason);
-            if (notice) {
-              await sendAgentPhoneText(args.event, notice, signal);
-            }
+            await set(
+              replyAgentPhoneChatQueueWait$,
+              args.event,
+              pick.reason,
+              signal,
+            );
           })(),
         );
         if (!picked.ok && !noticed.ok) {

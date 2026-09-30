@@ -1,5 +1,5 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
@@ -462,12 +462,6 @@ const persistCanonicalFeishuIngress$ = command(
       },
     });
     signal.throwIfAborted();
-    await touchNativeChatThread(args.db, {
-      chatThreadId: route.chatThreadId,
-      createdAt: args.ingress.createdAt,
-      eventId: args.ingress.ingressId,
-    });
-    signal.throwIfAborted();
     return {
       orgId: args.installation.orgId,
       userId: args.connection.userId,
@@ -479,36 +473,38 @@ const persistCanonicalFeishuIngress$ = command(
 );
 
 /** Tell the sender when their message waits for an org run slot. */
-async function notifyFeishuChatQueueWait(
-  args: {
-    readonly db: Db;
-    readonly ingressId: string;
-    readonly message: CanonicalFeishuInboundMessage;
-    readonly reason: ChatQueueWaitReason;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const notice = chatQueueWaitNotice(args.reason);
-  if (!notice) {
-    return;
-  }
-  const message = buildFeishuNoticeMessage({
-    title: "Waiting for a run slot",
-    text: notice,
-    kind: "warning",
-  });
-  await replyWithFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.message.installationId,
-      messageId: args.message.messageId,
-      message,
-      replyInThread: true,
-      idempotencyKey: `queued-${args.ingressId}`,
+const notifyFeishuChatQueueWait$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly message: CanonicalFeishuInboundMessage;
+      readonly reason: ChatQueueWaitReason;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(args.reason);
+    if (!notice) {
+      return;
+    }
+    const message = buildFeishuNoticeMessage({
+      title: "Waiting for a run slot",
+      text: notice,
+      kind: "warning",
+    });
+    await replyWithFeishuMessage(
+      {
+        db: set(writeDb$),
+        installationId: args.message.installationId,
+        messageId: args.message.messageId,
+        message,
+        replyInThread: true,
+        idempotencyKey: `queued-${args.ingressId}`,
+      },
+      signal,
+    );
+  },
+);
 
 async function finishUnconnectedFeishuIngress(
   args: {
@@ -753,6 +749,15 @@ export const processCanonicalFeishuIngress$ = command(
             signal,
           ),
         );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: persisted.receivedAt,
+            eventId: args.ingressId,
+          },
+          signal,
+        );
         await publishThreadListChangedSafely({
           userId: persisted.userId,
           orgId: persisted.orgId,
@@ -773,9 +778,9 @@ export const processCanonicalFeishuIngress$ = command(
               },
               signal,
             );
-            await notifyFeishuChatQueueWait(
+            await set(
+              notifyFeishuChatQueueWait$,
               {
-                db,
                 ingressId: args.ingressId,
                 message: persisted.message,
                 reason: pick.reason,

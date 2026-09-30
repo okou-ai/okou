@@ -1,5 +1,5 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
@@ -368,6 +368,7 @@ interface PersistedCanonicalSlackIngress {
   readonly channelId: string;
   readonly threadTs: string;
   readonly routeThreadTs?: string;
+  readonly createdAt: Date;
 }
 
 function persistedCanonicalSlackIngress(
@@ -384,6 +385,7 @@ function persistedCanonicalSlackIngress(
     chatThreadId,
     channelId: ingress.channelId,
     threadTs,
+    createdAt: ingress.createdAt,
     ...(threadTs === ingress.threadTs
       ? {}
       : { routeThreadTs: ingress.threadTs }),
@@ -451,41 +453,45 @@ async function postCanonicalSlackWaitNotice(
  * "is thinking..." status; otherwise the status is cleared unless a run owns
  * the thread.
  */
-async function settleCanonicalSlackStatusAfterPick(
-  db: Db,
-  args: {
-    readonly ingress: PersistedCanonicalSlackIngress;
-    readonly ingressId: string;
-    readonly reason: ChatQueueWaitReason;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const notice = chatQueueWaitNotice(args.reason);
-  if (notice) {
-    await postCanonicalSlackWaitNotice(args.ingress, args.ingressId, notice);
-    return;
-  }
-  await tapError(
-    clearCanonicalSlackThreadStatusIfIdle(
-      db,
-      {
-        chatThreadId: args.ingress.chatThreadId,
-        channelId: args.ingress.channelId,
-        threadTs: args.ingress.threadTs,
-        ...(args.ingress.routeThreadTs
-          ? { routeThreadTs: args.ingress.routeThreadTs }
-          : {}),
-      },
-      signal,
-    ),
-    (error) => {
-      L.warn("Failed to reconcile canonical Slack thread status", {
-        ingressId: args.ingressId,
-        error,
-      });
+const settleCanonicalSlackStatusAfterPick$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingress: PersistedCanonicalSlackIngress;
+      readonly ingressId: string;
+      readonly reason: ChatQueueWaitReason;
     },
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const notice = chatQueueWaitNotice(args.reason);
+    if (notice) {
+      await postCanonicalSlackWaitNotice(args.ingress, args.ingressId, notice);
+      signal.throwIfAborted();
+      return;
+    }
+    await tapError(
+      clearCanonicalSlackThreadStatusIfIdle(
+        db,
+        {
+          chatThreadId: args.ingress.chatThreadId,
+          channelId: args.ingress.channelId,
+          threadTs: args.ingress.threadTs,
+          ...(args.ingress.routeThreadTs
+            ? { routeThreadTs: args.ingress.routeThreadTs }
+            : {}),
+        },
+        signal,
+      ),
+      (error) => {
+        L.warn("Failed to reconcile canonical Slack thread status", {
+          ingressId: args.ingressId,
+          error,
+        });
+      },
+    );
+  },
+);
 
 type ClaimedCanonicalSlackIngress = NonNullable<
   Awaited<ReturnType<typeof loadClaimedIngress>>
@@ -608,12 +614,6 @@ async function enqueueCanonicalSlackMessage(
         );
       return inserted?.id ?? null;
     },
-  });
-  signal.throwIfAborted();
-  await touchNativeChatThread(db, {
-    chatThreadId: args.chatThreadId,
-    createdAt: args.ingress.createdAt,
-    eventId: args.ingress.ingressId,
   });
   signal.throwIfAborted();
 }
@@ -816,6 +816,78 @@ const persistClaimedCanonicalSlackIngress$ = command(
   },
 );
 
+const finishCanonicalSlackEnqueue$ = command(
+  async (
+    { set },
+    ingress: PersistedCanonicalSlackIngress,
+    ingressId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const picked = await settle(
+      set(
+        pickEnqueuedChatThread$,
+        {
+          orgId: ingress.orgId,
+          chatThreadId: ingress.chatThreadId,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    await set(
+      touchNativeChatThread$,
+      {
+        chatThreadId: ingress.chatThreadId,
+        createdAt: ingress.createdAt,
+        eventId: ingressId,
+      },
+      signal,
+    );
+    await publishChatThreadMessageCreatedSafely({
+      userId: ingress.userId,
+      orgId: ingress.orgId,
+      threadId: ingress.chatThreadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: ingress.userId,
+      orgId: ingress.orgId,
+    });
+    signal.throwIfAborted();
+    const noticed = await settle(
+      (async () => {
+        const pick = await set(
+          enqueuedChatQueueWaitReason$,
+          {
+            orgId: ingress.orgId,
+            chatThreadId: ingress.chatThreadId,
+            eventId: ingressId,
+          },
+          signal,
+        );
+        await set(
+          settleCanonicalSlackStatusAfterPick$,
+          { ingress, ingressId, reason: pick.reason },
+          signal,
+        );
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!picked.ok && !noticed.ok) {
+      throw new AggregateError(
+        [picked.error, noticed.error],
+        "Enqueued chat thread pick and wait notice failed",
+      );
+    }
+    if (!picked.ok) {
+      throw picked.error;
+    }
+    if (!noticed.ok) {
+      throw noticed.error;
+    }
+  },
+);
+
 export const processCanonicalSlackIngress$ = command(
   async (
     { set },
@@ -837,63 +909,8 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
-        // Enqueue, then the background pick, then the UI realtime events.
         waitUntil(
-          (async () => {
-            const picked = await settle(
-              set(
-                pickEnqueuedChatThread$,
-                {
-                  orgId: ingress.orgId,
-                  chatThreadId: ingress.chatThreadId,
-                },
-                signal,
-              ),
-            );
-            await publishChatThreadMessageCreatedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-              threadId: ingress.chatThreadId,
-            });
-            await publishThreadListChangedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-            });
-            const noticed = await settle(
-              (async () => {
-                const pick = await set(
-                  enqueuedChatQueueWaitReason$,
-                  {
-                    orgId: ingress.orgId,
-                    chatThreadId: ingress.chatThreadId,
-                    eventId: args.ingressId,
-                  },
-                  signal,
-                );
-                await settleCanonicalSlackStatusAfterPick(
-                  db,
-                  {
-                    ingress,
-                    ingressId: args.ingressId,
-                    reason: pick.reason,
-                  },
-                  signal,
-                );
-              })(),
-            );
-            if (!picked.ok && !noticed.ok) {
-              throw new AggregateError(
-                [picked.error, noticed.error],
-                "Enqueued chat thread pick and wait notice failed",
-              );
-            }
-            if (!picked.ok) {
-              throw picked.error;
-            }
-            if (!noticed.ok) {
-              throw noticed.error;
-            }
-          })(),
+          set(finishCanonicalSlackEnqueue$, ingress, args.ingressId, signal),
         );
         waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
         return true;

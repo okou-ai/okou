@@ -47,11 +47,8 @@ import {
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  touchChatThreadLastMessageAt,
-  touchChatThreadLastMessageAtIndependently,
-} from "./chat-event-shared.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import {
   insertChatEvent,
   insertChatEventContext,
@@ -461,22 +458,6 @@ async function enqueueMessage(
   if (eventId === null) {
     return false;
   }
-  await attemptChatEventSideEffect(
-    "thread_touch",
-    args.ingress.chatThreadId,
-    () => {
-      return touchChatThreadLastMessageAtIndependently(
-        db,
-        args.ingress.chatThreadId,
-        {
-          touchedAt: args.ingress.createdAt,
-          eventId: args.ingress.id,
-          authorizedScope: { userId: args.ingress.userId, orgId: args.orgId },
-        },
-      );
-    },
-  );
-  signal.throwIfAborted();
   return true;
 }
 
@@ -871,6 +852,7 @@ const persistClaimedIngress$ = command(
           chatThreadId: ingress.chatThreadId,
           connectionId: ingress.connectionId,
           destinationChannelId: ingress.destinationChannelId,
+          createdAt: ingress.createdAt,
         }
       : null;
   },
@@ -1226,6 +1208,16 @@ export const processCanonicalDiscordIngress$ = command(
             },
             signal,
           ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: ingress.chatThreadId,
+            createdAt: ingress.createdAt,
+            eventId: args.ingressId,
+            authorizedScope: { userId: ingress.userId, orgId: ingress.orgId },
+          },
+          signal,
         );
         await publishThreadListChanged({
           userId: ingress.userId,

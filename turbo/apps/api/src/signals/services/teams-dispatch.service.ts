@@ -1,5 +1,5 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
@@ -1658,46 +1658,43 @@ const persistTeamsChatMessage$ = command(
     if (eventId === null) {
       return { inserted: false };
     }
-    await touchNativeChatThread(args.db, {
-      chatThreadId: route.chatThreadId,
-      createdAt: currentTime,
-      eventId: chatEventId,
-    });
-    signal.throwIfAborted();
     return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
 
 /** Reply with the wait notice when the input waits for an org run slot. */
-async function replyTeamsChatQueueWait(
-  activity: TeamsMessageActivity,
-  reason: ChatQueueWaitReason,
-  signal: AbortSignal,
-): Promise<void> {
-  const notice = chatQueueWaitNotice(reason);
-  if (!notice) {
-    return;
-  }
-  const reply = await sendTeamsMessageReply(
-    {
-      serviceUrl: activity.serviceUrl,
-      conversationId: activity.conversationId,
-      activityId: activity.activityId ?? undefined,
-      tenantId: activity.tenantId,
-      text: notice,
-    },
-    signal,
-  );
-  if (reply.kind === "teams-error") {
-    L.warn("Teams wait notice failed", {
-      tenantId: activity.tenantId,
-      conversationId: activity.conversationId,
-      activityId: activity.activityId,
-      status: reply.status,
-      error: reply.error,
-    });
-  }
-}
+const replyTeamsChatQueueWait$ = command(
+  async (
+    _,
+    activity: TeamsMessageActivity,
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (!notice) {
+      return;
+    }
+    const reply = await sendTeamsMessageReply(
+      {
+        serviceUrl: activity.serviceUrl,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId ?? undefined,
+        tenantId: activity.tenantId,
+        text: notice,
+      },
+      signal,
+    );
+    if (reply.kind === "teams-error") {
+      L.warn("Teams wait notice failed", {
+        tenantId: activity.tenantId,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId,
+        status: reply.status,
+        error: reply.error,
+      });
+    }
+  },
+);
 
 const runAgentForTeams$ = command(
   async (
@@ -1751,6 +1748,15 @@ const runAgentForTeams$ = command(
             signal,
           ),
         );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
         await publishThreadListChangedSafely({
           userId: args.connection.userId,
           orgId: args.installation.orgId,
@@ -1771,7 +1777,12 @@ const runAgentForTeams$ = command(
               },
               signal,
             );
-            await replyTeamsChatQueueWait(args.activity, pick.reason, signal);
+            await set(
+              replyTeamsChatQueueWait$,
+              args.activity,
+              pick.reason,
+              signal,
+            );
           })(),
         );
         if (!picked.ok && !noticed.ok) {
