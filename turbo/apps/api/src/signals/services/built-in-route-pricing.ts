@@ -1,4 +1,3 @@
-import { modelLongContextMinTotalInputTokens } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, inArray } from "drizzle-orm";
 
@@ -71,23 +70,19 @@ export function usagePricingByKey<
 /**
  * Every usage category a Built-in run on this route can report (the Runner
  * addon's category scheme): the four token categories, their `.long_context`
- * variants when the route has a long-context threshold (the pricing
- * provider's entry, else the model's or upstream model's, exactly as the API
- * sends it to the Runner), and
- * the requested service tier's `.fast` / `.ultrafast` suffix variants.
- * Standard-tier categories stay included for a tiered run because the
- * provider may serve a request at the standard tier.
+ * variants when the route has a long-context threshold (the route's own
+ * `long_context_min_total_input_tokens`, exactly the value the API captures
+ * for the Runner), and the requested service tier's `.fast` / `.ultrafast`
+ * suffix variants. Standard-tier categories stay included for a tiered run
+ * because the provider may serve a request at the standard tier.
  */
 function builtInRouteBillableCategories(
-  route: Pick<CatalogRoute, "model" | "upstreamModel" | "pricingProvider">,
+  route: Pick<CatalogRoute, "longContextMinTotalInputTokens">,
   serviceTier: RunServiceTier,
 ): readonly string[] {
   const base: string[] = [...MODEL_TOKEN_CATEGORIES];
-  const longContextThreshold = modelLongContextMinTotalInputTokens(
-    route.pricingProvider ?? undefined,
-    [route.model, route.upstreamModel],
-  );
-  if (longContextThreshold !== undefined) {
+  const longContextThreshold = route.longContextMinTotalInputTokens;
+  if (longContextThreshold !== null) {
     base.push(
       ...MODEL_TOKEN_CATEGORIES.map((category) => {
         return `${category}.long_context`;
@@ -182,7 +177,7 @@ export function unpricedBuiltInRouteCategories(
   pricing: BuiltInRoutePricing,
   route: Pick<
     CatalogRoute,
-    "model" | "upstreamModel" | "pricingKind" | "pricingProvider"
+    "pricingKind" | "pricingProvider" | "longContextMinTotalInputTokens"
   >,
 ): readonly string[] {
   const categories = builtInRouteBillableCategories(route, pricing.serviceTier);
@@ -207,7 +202,7 @@ export function isBuiltInRoutePriced(
   pricing: BuiltInRoutePricing,
   route: Pick<
     CatalogRoute,
-    "model" | "upstreamModel" | "pricingKind" | "pricingProvider"
+    "pricingKind" | "pricingProvider" | "longContextMinTotalInputTokens"
   >,
 ): boolean {
   return unpricedBuiltInRouteCategories(pricing, route).length === 0;

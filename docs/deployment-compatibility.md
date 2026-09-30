@@ -2,29 +2,44 @@
 
 ## Long-context threshold in the Runner payload (2026-10-01)
 
-The claim and direct-run execution context gain the optional field
-`modelUsageLongContextMinTotalInputTokens`. The API resolves it per run from
-the route's pricing provider, the catalog model and the route's upstream model
-(`modelLongContextMinTotalInputTokens` in `@okouai/api-contracts`). The Runner
-copies it into the proxy registry sandbox entry. The mitm addon prefers it over
-its generated map keyed by `modelUsageProvider`. The registry and addon are
-runner-private and change atomically with the Runner binary (see
-[Runner process drain](#runner-process-drain)).
-Only the API → Runner hop crosses versions:
+The long-context pricing threshold is catalog data:
+`model_routes.long_context_min_total_input_tokens` (migration
+`1302_model_route_long_context_threshold`, nullable, NULL = single tier,
+backfilled for every Built-in route from the former code resolution, so no
+existing route changes how it bills). The claim and direct-run execution
+context gain the optional field `modelUsageLongContextMinTotalInputTokens`,
+captured from the run's assigned route: a positive threshold, or `0` as the
+explicit single-tier marker. A new API always sends it. The Runner copies it
+unchanged into the proxy registry sandbox entry, and the mitm addon treats any
+present value as authoritative. Only an absent field falls back to the
+generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map keyed by
+`modelUsageProvider`. The registry and addon are runner-private and change
+atomically with the Runner binary (see
+[Runner process drain](#runner-process-drain)). Only the API → Runner hop
+crosses versions:
 
-| API | Runner | Behavior                                                                                                                                                                                                                              |
-| --- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| old | old    | Unchanged: the addon classifies by the generated map keyed by `modelUsageProvider`.                                                                                                                                                   |
-| old | new    | The field is absent and the addon falls back to the generated map. The old API sends the model ID or a mapped pricing provider, so classification is unchanged.                                                                       |
-| new | old    | The old Runner ignores the unknown top-level field (`ExecutionContext` is not `deny_unknown_fields`). Its addon classifies by the map. A pricing alias absent from the map then bills long-context input at the base-tier categories. |
-| new | new    | The addon classifies by the explicit threshold, so an alias bills `.long_context` categories.                                                                                                                                         |
+| API | Runner | Behavior                                                                                                                                                                                                                                             |
+| --- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| old | old    | Unchanged: the addon classifies by the generated map keyed by `modelUsageProvider`.                                                                                                                                                                  |
+| old | new    | The field is absent and the addon falls back to the generated map, so classification is unchanged.                                                                                                                                                   |
+| new | old    | The old Runner ignores the unknown top-level field (`ExecutionContext` is not `deny_unknown_fields`) and classifies by the map. The backfilled routes equal the map, so they bill as before; a route whose threshold differs from the map would not. |
+| new | new    | The addon classifies by the captured value: a positive threshold for any provider (including ones absent from the map), `0` as a single tier even for a provider in the map.                                                                         |
 
-Do not point a Built-in route whose model has a long-context threshold at a
-new pricing alias until every serving Runner includes this change. Until then,
-keep the route's `pricing_provider` a key of the generated map. Rollback of
-either side returns to map-only classification, with the same alias caveat.
-Delete the generated Python map and the addon fallback when no supported API
-version omits the field and no Runner that needs it is a rollback target.
+Until every serving Runner includes this change, do not give a route a
+threshold that differs from what the map yields for its `pricing_provider`:
+no threshold on a new model, pricing alias or other provider absent from the
+map, and no NULL on a route whose provider is in the map. Admission already
+prices such a route's `.long_context` categories, but an old Runner would bill
+them at the base tier (or bill a NULL route's long input at `.long_context`).
+Migration order: apply 1302 before promoting the API; the previous API does
+not select the column. Rollback of either side returns to map-only
+classification with the same caveat.
+
+Delete the generated Python map, `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+and the addon's absent-field fallback when the API rollback floor includes
+this change (no serving or rollback-target API omits the field) and no Runner
+that predates the field is serving. Do not add entries to the map meanwhile;
+new thresholds belong on route rows.
 
 Usage displays now name model usage rows by `agent_runs.selected_model`, joined
 by `run_id`. This is a read-time API projection: stored `usage_event`,

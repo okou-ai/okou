@@ -462,7 +462,6 @@ import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-poli
 import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { modelLongContextMinTotalInputTokens } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { isStaffOrg } from "@okouai/core/staff-org";
@@ -4597,6 +4596,7 @@ interface PermissionManifest {
 interface ModelUsageContext {
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
 }
 
 interface StoredExecutionSecrets {
@@ -9122,29 +9122,25 @@ function piLangfuseExecutionEnvironment(args: {
 
 /**
  * The Runner's model usage metering fields: billable firewalls, the provider
- * usage is reported under, and the long-context threshold resolved from the
- * run's pricing provider, actual model and concrete upstream model (the same
- * threshold Built-in route admission prices categories for).
+ * usage is reported under, and the long-context threshold captured from the
+ * run's assigned Built-in route (`0`: the route explicitly bills a single
+ * tier, so the Runner must not fall back to its generated map).
  */
 function modelUsageExecutionFields(args: {
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
 }): Pick<
   StoredExecutionContext,
   | "billableFirewalls"
   | "modelUsageProvider"
   | "modelUsageLongContextMinTotalInputTokens"
 > {
-  const selectedModel = args.modelProvider?.selectedModel;
   return {
     billableFirewalls: [...args.billableFirewalls],
     modelUsageProvider: args.modelUsageProvider,
     modelUsageLongContextMinTotalInputTokens:
-      modelLongContextMinTotalInputTokens(args.modelUsageProvider, [
-        selectedModel ? normalizeRunModelId(selectedModel) : undefined,
-        args.modelProvider?.builtInModelRuntimeRoute?.upstreamModel,
-      ]),
+      args.modelUsageLongContextMinTotalInputTokens,
   };
 }
 
@@ -9164,6 +9160,7 @@ export function buildStoredExecutionContextDraft(
     readonly permissionManifest: PermissionManifest | undefined;
     readonly billableFirewalls: readonly string[];
     readonly modelUsageProvider: string | undefined;
+    readonly modelUsageLongContextMinTotalInputTokens: number;
     readonly apiStartTime: number;
     readonly additionalVolumes:
       | readonly AgentRunCreateAdditionalVolume[]
@@ -9537,7 +9534,16 @@ export function prepareModelUsageContext(args: {
       routePricing: args.routePricing,
     });
 
-  return validation ?? { billableFirewalls, modelUsageProvider };
+  return (
+    validation ?? {
+      billableFirewalls,
+      modelUsageProvider,
+      // The assigned route's own pricing trigger; a pricing alias never
+      // changes it. Non-Built-in runs are not platform-billed.
+      modelUsageLongContextMinTotalInputTokens:
+        route?.longContextMinTotalInputTokens ?? 0,
+    }
+  );
 }
 
 /**
@@ -9702,6 +9708,7 @@ interface BuildRunnerJobPayloadInput {
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly apiStartTime: number;
   readonly additionalVolumes:
     | readonly AgentRunCreateAdditionalVolume[]
@@ -11391,6 +11398,8 @@ export function atomicLaunchPayloadInput(args: {
     permissionManifest: args.context.permissionManifest,
     billableFirewalls: args.context.billableFirewalls,
     modelUsageProvider: args.context.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      args.context.modelUsageLongContextMinTotalInputTokens,
     apiStartTime: args.createArgs.apiStartTime,
     additionalVolumes: args.context.additionalVolumes,
     additionalVolumeSources: args.context.additionalVolumeSources,
@@ -11435,6 +11444,7 @@ export interface PreparedRunContext {
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly connectorScope: EffectiveConnectorScope;
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes:
@@ -11822,6 +11832,7 @@ export interface PreparedRuntimeContext {
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
@@ -15066,6 +15077,8 @@ export function composePreparedRunContext({
     permissionManifest: runtimeContext.permissionManifest,
     billableFirewalls: runtimeContext.billableFirewalls,
     modelUsageProvider: runtimeContext.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      runtimeContext.modelUsageLongContextMinTotalInputTokens,
     connectorScope: runtimeContext.connectorScope,
     ...metadata,
     officialWorkflowRun,

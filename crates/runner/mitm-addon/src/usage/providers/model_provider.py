@@ -15,8 +15,9 @@ events.
 Run contexts set ``flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER]`` to the
 usage provider (the Built-in route's ``usage_pricing`` provider) the proxy
 should report for model token usage, and
-``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` to its long-context
-threshold when the API resolved one. Billable rows
+``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` to the long-context
+threshold the API captured from the run's route (``0``: explicit single tier).
+Billable rows
 go to ``/api/webhooks/agent/usage-event``.
 """
 
@@ -171,9 +172,10 @@ def report_model_provider_usage(
     separately from those per-call admission keys.
 
     Terminal reporting classifies each source independently. Providers with a
-    long-context threshold (the registry's API-resolved
-    ``modelUsageLongContextMinTotalInputTokens``, else
-    ``MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS``) require a valid non-negative
+    long-context threshold (the registry's API-captured
+    ``modelUsageLongContextMinTotalInputTokens``, where ``0`` means single
+    tier; ``MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` only when the field is
+    absent) require a valid non-negative
     integer ``tokens.input`` quantity to resolve the billing tier. A source
     without a resolvable tier is skipped; if it contains positive usage in
     ``MODEL_USAGE_CATEGORIES``, it emits an error-level ``usage_underbilling``
@@ -684,16 +686,20 @@ def _model_provider_usage_tiers(
 def _long_context_min_total_input_tokens(flow: http.HTTPFlow, provider: str) -> int | None:
     """Return the long-context threshold that applies to ``provider``.
 
-    The API resolves the threshold from the run's catalog data and sends it
-    with the usage provider, so a pricing alias that is not a key of the
-    generated map still bills the long-context tier. Registry entries from an
-    older API carry no threshold; the generated map keyed by provider is the
-    fallback for them.
+    The API captures the threshold from the run's Built-in route and sends it
+    with the usage provider: a positive value is the threshold and ``0``
+    explicitly means a single tier. An explicit value is authoritative, so a
+    route without long-context pricing never inherits a threshold from the
+    generated map, and a provider absent from the map still bills
+    ``.long_context``. Only a registry entry without the field (an API that
+    predates catalog thresholds) falls back to the generated map keyed by
+    provider; delete that fallback with the map (see
+    docs/deployment-compatibility.md).
     """
     if flow_metadata.model_usage_provider(flow.metadata) == provider:
         explicit = flow_metadata.model_usage_long_context_min_total_input_tokens(flow.metadata)
         if explicit is not None:
-            return explicit
+            return explicit if explicit > 0 else None
     return MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS.get(provider)
 
 

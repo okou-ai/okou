@@ -617,6 +617,114 @@ describe("model catalog authority", () => {
     });
   });
 
+  it("bills a new model's long-context usage at its route's catalog threshold", async () => {
+    // Model, upstream and pricing IDs are all fixture values unknown to any
+    // code table: the threshold exists only on the route rows. No provider
+    // traffic is involved; the usage events are what the Runner addon emits
+    // for this threshold.
+    const model = `catalog-long-context-${randomUUID()}`;
+    const basePricedProvider = `catalog-long-context-base-${randomUUID()}`;
+    const pricingProvider = `catalog-long-context-pricing-${randomUUID()}`;
+    const upstreamModel = `catalog-long-context-upstream-${randomUUID()}`;
+    const threshold = 500_001;
+    await seedModelPricingFixture(
+      basePricedProvider,
+      uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+    );
+    await seedModelPricingFixture(pricingProvider, {
+      ...uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+      ...uniformPrices(
+        BASE_TOKEN_CATEGORIES.map((category) => {
+          return `${category}.long_context`;
+        }),
+        4,
+      ),
+    });
+    const { actor, agentId, runnerGroup } = await launchCatalogModel({
+      model,
+      routes: [
+        {
+          // First priority, but its pricing lacks the .long_context rows its
+          // threshold makes billable, so admission skips it.
+          concreteProviderType: "openrouter-codex",
+          upstreamModel: `catalog-long-context-base-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: basePricedProvider,
+          longContextMinTotalInputTokens: threshold,
+        },
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel,
+          priority: 1,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider,
+          longContextMinTotalInputTokens: threshold,
+        },
+      ],
+    });
+
+    const run = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "bill long-context usage",
+      model,
+    });
+    await expect(
+      readRunModelRuntimeRouteFixture(run.runId),
+    ).resolves.toMatchObject({
+      selectedModel: model,
+      modelRuntimeProvider: "openai-api-key",
+      modelRuntimeModel: upstreamModel,
+    });
+    const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim).toMatchObject({
+      billableFirewalls: ["model-provider:openai-api-key"],
+      modelUsageProvider: pricingProvider,
+      modelUsageLongContextMinTotalInputTokens: threshold,
+    });
+
+    // One response below the threshold (base) and one at it (.long_context).
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: run.runId,
+        events: [
+          { category: "tokens.input", quantity: 100 },
+          { category: "tokens.output", quantity: 10 },
+          { category: "tokens.input.long_context", quantity: 1000 },
+          { category: "tokens.output.long_context", quantity: 20 },
+        ].map((event) => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "model" as const,
+            provider: pricingProvider,
+            ...event,
+          };
+        }),
+      },
+      sandboxHeaders,
+      [200],
+    );
+    await billing.processOrgUsageEvents(actor);
+
+    if (!actor.orgId) {
+      throw new Error("Expected an organization member");
+    }
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const record = await accept(
+      setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
+        { query: {}, headers: authHeaders() },
+      ),
+      [200],
+    );
+    // (100 + 10) base tokens at 1 plus (1000 + 20) long-context tokens at 4.
+    expect(record.body.totalCredits).toBe(4190);
+  });
+
   it("keeps a started run's pricing identity when the route is relinked", async () => {
     const model = `catalog-relink-${randomUUID()}`;
     const originalProvider = `catalog-relink-original-${randomUUID()}`;

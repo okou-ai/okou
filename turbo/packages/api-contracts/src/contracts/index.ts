@@ -495,7 +495,6 @@ export {
   runModelIdSchema,
   modelProviderCredentialScopeSchema,
   MODEL_PROVIDER_TYPES,
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   getFrameworkForType,
   getSecretNameForType,
   getModelProviderEnvBindings,

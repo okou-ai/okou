@@ -307,6 +307,17 @@ references any retired or unrecognized catalog model (`claude-fable-5`,
 production rows. See the performance evidence below for why it needs no
 batching.
 
+`1302_model_route_long_context_threshold` adds nullable
+`model_routes.long_context_min_total_input_tokens` with
+`chk_model_routes_long_context_threshold` (NULL, or a positive value on a
+Built-in route) and backfills Built-in routes whose pricing provider, model
+or upstream model was a key of the former `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+map to 272001, the value every key had. It is a small single-table update
+(the catalog has tens of routes) and changes no price. Apply it before
+promoting the API; the previous API does not select the column. Runner
+compatibility of the captured value is in
+[deployment compatibility](../../../docs/deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+
 ### Migration 1299 performance evidence
 
 Production row counts (MaskDB `vm0-prod-ro`, read-only, 2026-09-30; exact

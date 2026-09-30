@@ -1373,13 +1373,16 @@ const storedExecutionContextObjectSchema = z.object({
   // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
   // Total-input threshold (input + cache read + cache creation) at which
-  // `modelUsageProvider` usage bills the `.long_context` categories, resolved
-  // by the API from run data. Absent: the proxy falls back to its generated
-  // map keyed by `modelUsageProvider` (older API).
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
-    .positive()
+    .nonnegative()
     .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
@@ -1490,13 +1493,16 @@ const executionContextObjectSchema = z.object({
   // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
   // Total-input threshold (input + cache read + cache creation) at which
-  // `modelUsageProvider` usage bills the `.long_context` categories, resolved
-  // by the API from run data. Absent: the proxy falls back to its generated
-  // map keyed by `modelUsageProvider` (older API).
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
-    .positive()
+    .nonnegative()
     .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema

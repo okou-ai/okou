@@ -142,9 +142,11 @@ pub struct ExecutionContext {
     #[serde(default)]
     pub model_usage_provider: Option<String>,
     /// Total-input threshold at which `model_usage_provider` usage bills the
-    /// long-context tier, resolved by the API from the run's catalog data.
-    /// Absent from older APIs; the addon then falls back to its generated
-    /// map keyed by provider.
+    /// long-context tier, captured by the API from the run's Built-in route.
+    /// `Some(0)` is the API's explicit single-tier marker and must be
+    /// forwarded unchanged. Absent only from APIs that predate catalog
+    /// thresholds; only then does the addon fall back to its generated map
+    /// keyed by provider.
     #[serde(default)]
     pub model_usage_long_context_min_total_input_tokens: Option<u64>,
     #[serde(default)]

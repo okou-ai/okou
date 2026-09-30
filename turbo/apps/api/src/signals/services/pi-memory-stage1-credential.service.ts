@@ -30,8 +30,11 @@ import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
+  catalogBuiltInCandidates,
+  catalogBuiltInRoute,
   catalogProviderUpstreamModel,
   loadModelCatalog,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
@@ -85,6 +88,12 @@ export type PiMemoryStage1CredentialResult =
       readonly selectedModel: PiMemoryStage1Model;
       readonly billing: PiMemoryStage1Billing;
       readonly modelProviderType: string;
+      /**
+       * Long-context threshold of the catalog route pricing this extraction
+       * (null: single tier), captured with the credential like a foreground
+       * run's `modelUsageLongContextMinTotalInputTokens`.
+       */
+      readonly longContextMinTotalInputTokens: number | null;
       readonly quota: PiMemoryQuotaSource;
       /** Re-read the exact binding without refreshing or selecting defaults. */
       readonly validate: (signal: AbortSignal) => Promise<void>;
@@ -112,6 +121,7 @@ interface ResolutionContext {
     readonly type: string;
   };
   readonly context: Awaited<ReturnType<typeof loadUserFeatureSwitchContext>>;
+  readonly catalog: ModelCatalog;
 }
 
 function skip(
@@ -124,6 +134,38 @@ function skip(
 interface Stage1Selection {
   readonly selectedModel: PiMemoryStage1Model;
   readonly mode: PiMemoryStage1Billing["mode"];
+  readonly longContextMinTotalInputTokens: number | null;
+}
+
+/**
+ * The long-context threshold of the highest-priority Built-in route of
+ * `model` priced under the model's own ID, the `usage_pricing` provider
+ * extraction usage is recorded and valued under (null: single tier).
+ */
+export function piMemoryStage1ModelPricingThreshold(
+  catalog: ModelCatalog,
+  model: PiMemoryStage1Model,
+): number | null {
+  const route = catalogBuiltInCandidates(catalog, model).find((candidate) => {
+    return candidate.pricingProvider === model;
+  });
+  return route?.longContextMinTotalInputTokens ?? null;
+}
+
+/**
+ * BYOK extraction is not billed; its cost observation values usage with the
+ * `usage_pricing` rows of the model's own ID and so follows that rule's
+ * threshold.
+ */
+function byokStage1Selection(catalog: ModelCatalog): Stage1Selection {
+  return {
+    selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL,
+    mode: "byok",
+    longContextMinTotalInputTokens: piMemoryStage1ModelPricingThreshold(
+      catalog,
+      PI_MEMORY_STAGE1_BYOK_MODEL,
+    ),
+  };
 }
 
 function availableCredential(
@@ -142,6 +184,7 @@ function availableCredential(
     model,
     selectedModel: selection.selectedModel,
     modelProviderType: binding.type,
+    longContextMinTotalInputTokens: selection.longContextMinTotalInputTokens,
     quota,
     billing: {
       mode: selection.mode,
@@ -254,7 +297,17 @@ async function builtinCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL, mode: "builtin" },
+    {
+      selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+      mode: "builtin",
+      // The served route's own pricing trigger.
+      longContextMinTotalInputTokens:
+        catalogBuiltInRoute(
+          args.catalog,
+          PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+          route.providerType,
+        )?.longContextMinTotalInputTokens ?? null,
+    },
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -332,7 +385,7 @@ async function codexCredential(
       dialect: "openai-codex-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await personalModelProviderAccountById(accountArgs);
       validationSignal.throwIfAborted();
@@ -433,7 +486,7 @@ async function gatewayCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await readSurface();
       validationSignal.throwIfAborted();
@@ -452,7 +505,7 @@ async function apiKeyCredential(
   const { db, source, binding, context } = args;
   const type = route.productProviderType;
   const upstreamModel = catalogProviderUpstreamModel(
-    await loadModelCatalog(db),
+    args.catalog,
     PI_MEMORY_STAGE1_BYOK_MODEL,
     type,
   );
@@ -508,7 +561,7 @@ async function apiKeyCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -541,11 +594,14 @@ export async function resolvePiMemoryStage1Credential(
     source.userId,
   );
   signal.throwIfAborted();
+  const catalog = await loadModelCatalog(db);
+  signal.throwIfAborted();
   const args = {
     db,
     source,
     binding: { ...binding, type: binding.type },
     context,
+    catalog,
   };
   if (binding.type === "built-in") {
     return await builtinCredential(args, signal);

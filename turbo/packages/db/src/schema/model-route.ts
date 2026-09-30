@@ -27,6 +27,11 @@ import { runModelCatalog } from "./run-model-catalog";
  * - `pricing_kind`/`pricing_provider` link a Built-in route to its
  *   `usage_pricing` rows, which remain the billing authority. No foreign key is
  *   possible because `usage_pricing` is keyed by category as well.
+ * - `long_context_min_total_input_tokens` is the inclusive total-input
+ *   boundary (input + cache read + cache creation) at which usage on a
+ *   Built-in route bills the `.long_context` pricing categories. NULL means
+ *   the route bills a single tier; it is part of the route's pricing rule, so
+ *   BYOK and subscription routes never carry one.
  */
 export const modelRoutes = pgTable(
   "model_routes",
@@ -52,6 +57,9 @@ export const modelRoutes = pgTable(
     priceTier: varchar("price_tier", { length: 8 }),
     pricingKind: varchar("pricing_kind", { length: 30 }),
     pricingProvider: varchar("pricing_provider", { length: 100 }),
+    longContextMinTotalInputTokens: integer(
+      "long_context_min_total_input_tokens",
+    ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -101,6 +109,10 @@ export const modelRoutes = pgTable(
       check(
         "chk_model_routes_pricing_link",
         sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.pricingKind} = 'model' AND ${table.pricingProvider} IS NOT NULL ELSE ${table.pricingKind} IS NULL AND ${table.pricingProvider} IS NULL END`,
+      ),
+      check(
+        "chk_model_routes_long_context_threshold",
+        sql`${table.longContextMinTotalInputTokens} IS NULL OR (${table.providerType} = 'built-in' AND ${table.longContextMinTotalInputTokens} > 0)`,
       ),
     ];
   },

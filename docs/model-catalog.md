@@ -22,13 +22,11 @@ Remaining model-keyed code data is protocol or billing data, not product
 authority:
 
 - `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` (`@okouai/api-contracts`) is
-  keyed by `usage_pricing` provider or model ID. The API resolves a run's
-  threshold from it (`modelLongContextMinTotalInputTokens`: the route's
-  pricing provider, then the run's catalog model, then the route's upstream
-  model) and sends it to the Runner with the usage provider, so a pricing
-  alias needs no key of its own. The Runner mitm addon keeps a generated
-  Python copy only as the fallback for claims without the threshold. A run
-  with no match bills a single tier.
+  no longer read by the API. It survives only as the generated Python map the
+  Runner mitm addon falls back to for claims from an API that predates the
+  catalog threshold (see
+  [Long-context classification](#long-context-classification)); a new model
+  never needs an entry.
 - `OKOU_MODEL_METADATA` is the OpenRouter preset protocol metadata for
   `okou-1.0`: the preset upstream (`@preset/...`) is opaque, so the Pi and
   Codex runtimes need its context window, output limit and modalities from
@@ -75,6 +73,7 @@ authority:
 | `efforts`, `default_effort`             | Reasoning efforts accepted on the route and the launch default.                  |
 | `price_tier`                            | Built-in display price tier (`$` to `$$$$`).                                     |
 | `pricing_kind`, `pricing_provider`      | Link to the `usage_pricing` rows that bill a Built-in route.                     |
+| `long_context_min_total_input_tokens`   | Built-in long-context pricing trigger; NULL bills a single tier.                 |
 
 `usage_pricing` remains the billing authority. Routes link to it by
 `(kind, provider)`; a foreign key is impossible because its key includes the
@@ -93,7 +92,8 @@ through the pricing link of the route a run was assigned:
    route's `pricing_provider` from the same catalog snapshot
    (`catalogBuiltInRoute`) as `modelUsageProvider`, together with the billable
    firewalls and the long-context threshold
-   `modelUsageLongContextMinTotalInputTokens` (see
+   `modelUsageLongContextMinTotalInputTokens`, the same route's
+   `long_context_min_total_input_tokens` (see
    [Long-context classification](#long-context-classification)). Only Built-in
    runs have billable `model-provider:*` firewalls. The run's selected model,
    display name and upstream ID stay the actual model; only the usage label
@@ -138,24 +138,46 @@ model usage by the run's actual model, not the pricing provider (see
 
 ### Long-context classification
 
-The addon cannot classify long context by looking up `modelUsageProvider`
-alone: a pricing alias is not a key of the generated map. The API therefore
-resolves the threshold per run and sends it explicitly:
+The long-context threshold is part of a Built-in route's pricing rule, next to
+its pricing link: `model_routes.long_context_min_total_input_tokens` is the
+inclusive total-input boundary (input + cache read + cache creation) at which
+usage on that route bills the `.long_context` categories. NULL means the route
+bills a single tier; the schema CHECK and the catalog loader reject a value on
+BYOK and subscription routes and a non-positive value anywhere. It is per
+route, not per model or pricing provider, because it is a trigger of the
+route's `usage_pricing` rule: two routes of one model may price differently,
+and a pricing alias never changes a route's threshold. Migration
+`1302_model_route_long_context_threshold` backfilled every Built-in route from
+the former code resolution (pricing provider, then catalog model, then
+upstream model, all 272,001 at the time), so no existing route changed how it
+bills. A new model with long-context pricing sets the column on its routes;
+no code change or release is needed.
+
+The API captures the assigned route's value into the run's execution context
+together with the usage provider, and the Runner forwards it unchanged:
 
 | Hop                                  | Field                                                                                                  |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| API claim / direct-run context       | `modelUsageLongContextMinTotalInputTokens` (positive integer, omitted for a single tier)               |
+| Catalog route                        | `long_context_min_total_input_tokens` (NULL: single tier)                                              |
+| API claim / direct-run context       | `modelUsageLongContextMinTotalInputTokens` (positive threshold, `0` = explicit single tier)            |
 | Runner `ExecutionContext` → registry | `model_usage_long_context_min_total_input_tokens` → sandbox `modelUsageLongContextMinTotalInputTokens` |
 | Addon flow metadata                  | `MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`                                                      |
 
-The addon prefers the explicit threshold for the registry's usage provider
-and falls back to the generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
-by provider when it is absent or invalid. Service-tier suffixes come from the
-response's observed tier, not from a model-keyed table, so aliases need no
-tier data. A new alias of a model with a
-threshold needs no code change; a new model with long-context pricing needs
-a map entry (an API release, not a Runner release). Rollout order is in
+A new API always sends the field (`0` for a NULL route and for runs that are
+not platform-billed), and the addon then never consults its generated map, so
+an explicit single tier is not overridden by a map entry. Only when the field
+is absent (an API that predates the column) does the addon fall back to the
+generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map by provider. Like
+the pricing link, the captured value is frozen for the run: relinking or
+re-thresholding a route affects only runs created afterwards. Service-tier
+suffixes come from the response's observed tier, not from a model-keyed
+table. Rollout order is in
 [deployment compatibility](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+
+Pi memory Stage 1 extraction follows the same catalog value: the credential
+captures the served Built-in route's threshold (Built-in extraction) or the
+threshold of the model's highest-priority Built-in route priced under the
+model's own ID (BYOK cost observation), and usage classification uses it.
 
 ### Usage display
 
@@ -174,8 +196,8 @@ captured.
 A new Built-in run must not execute on a route whose billable categories lack
 `usage_pricing` (`built-in-route-pricing.ts`). The categories a route can
 produce are the four token categories, their `.long_context` variants when
-`modelLongContextMinTotalInputTokens` resolves a threshold for the route's
-pricing provider, model or upstream model (the value the Runner receives),
+the route has a `long_context_min_total_input_tokens` (the value the Runner
+receives),
 and, for the run's requested service tier, their `.fast` or `.ultrafast`
 variants; standard-tier categories are always included. Each must resolve with
 settlement's lookup (`findUsagePricing`: the exact

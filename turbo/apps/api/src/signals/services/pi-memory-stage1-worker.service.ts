@@ -882,6 +882,8 @@ async function recordObservedUsage(
     sourceHistoryHash: prepared.work.sourceHistoryHash,
     model: prepared.credential.selectedModel,
     billing: prepared.credential.billing,
+    longContextMinTotalInputTokens:
+      prepared.credential.longContextMinTotalInputTokens,
     responseSourceId: observedResult.responseId ?? `request:${requestId}`,
     usage: observedResult.usage,
   };

@@ -193,13 +193,14 @@ class TestReportModelProviderUsage:
     @pytest.mark.parametrize(
         ("service_tier", "input_tokens", "expected_suffix"),
         [
-            (None, 272_000, ""),
-            (None, 272_001, ".long_context"),
-            ("priority", 272_001, ".long_context.fast"),
-            ("ultrafast", 272_001, ".long_context.ultrafast"),
+            (None, 400_000, ""),
+            ("priority", 400_000, ".fast"),
+            (None, 400_001, ".long_context"),
+            ("priority", 400_001, ".long_context.fast"),
+            ("ultrafast", 400_001, ".long_context.ultrafast"),
         ],
     )
-    def test_pricing_alias_uses_threshold_from_registry(
+    def test_unmapped_provider_uses_captured_route_threshold(
         self,
         tmp_path,
         real_flow,
@@ -208,34 +209,40 @@ class TestReportModelProviderUsage:
         input_tokens,
         expected_suffix,
     ):
-        """A pricing alias absent from the generated map classifies from run data."""
+        """A provider absent from the generated map classifies by the captured threshold.
+
+        The provider id, model and threshold are all unknown to the generated
+        map; the threshold is the one the API captured from the run's route.
+        Total input counts uncached input plus cache reads.
+        """
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
             host="api.openai.com",
             original_url="https://api.openai.com/v1/responses",
             firewall_name="model-provider:openai-api-key",
-            model_usage_provider="gpt-6-luna-pricing-alias",
+            model_usage_provider="catalog-new-model-pricing",
             usage={
+                "model": "catalog-new-upstream",
                 **({"service_tier": service_tier} if service_tier else {}),
                 "tokens.input": input_tokens - 1_000,
                 "tokens.output": 7,
                 "tokens.cache_read": 1_000,
             },
         )
-        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 400_001
 
         with usage_webhook_api() as webhook:
-            usage.report_model_provider_usage(flow, "run-alias")
+            usage.report_model_provider_usage(flow, "run-new-model")
             usage.flush_usage_events(trigger="test")
 
         assert {
             (event["provider"], event["category"]): event["quantity"]
             for event in webhook.usage_events()
         } == {
-            ("gpt-6-luna-pricing-alias", f"tokens.input{expected_suffix}"): input_tokens - 1_000,
-            ("gpt-6-luna-pricing-alias", f"tokens.output{expected_suffix}"): 7,
-            ("gpt-6-luna-pricing-alias", f"tokens.cache_read{expected_suffix}"): 1_000,
+            ("catalog-new-model-pricing", f"tokens.input{expected_suffix}"): input_tokens - 1_000,
+            ("catalog-new-model-pricing", f"tokens.output{expected_suffix}"): 7,
+            ("catalog-new-model-pricing", f"tokens.cache_read{expected_suffix}"): 1_000,
         }
 
     def test_registry_threshold_overrides_generated_threshold(
@@ -244,7 +251,7 @@ class TestReportModelProviderUsage:
         real_flow,
         usage_webhook_api,
     ):
-        """The API-resolved threshold is authoritative for a mapped provider too."""
+        """The API-captured threshold is authoritative for a mapped provider too."""
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
@@ -263,6 +270,43 @@ class TestReportModelProviderUsage:
         assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
             "tokens.input.long_context": 200_001,
             "tokens.output.long_context": 7,
+        }
+
+    @pytest.mark.parametrize(
+        ("service_tier", "expected_suffix"),
+        [(None, ""), ("priority", ".fast")],
+    )
+    def test_explicit_single_tier_does_not_use_generated_threshold(
+        self,
+        tmp_path,
+        real_flow,
+        usage_webhook_api,
+        service_tier,
+        expected_suffix,
+    ):
+        """An explicit single tier (0) bills base categories for a mapped provider."""
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="api.openai.com",
+            original_url="https://api.openai.com/v1/responses",
+            firewall_name="model-provider:openai-api-key",
+            model_usage_provider="gpt-6-luna",
+            usage={
+                **({"service_tier": service_tier} if service_tier else {}),
+                "tokens.input": 300_000,
+                "tokens.output": 7,
+            },
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 0
+
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-explicit-single-tier")
+            usage.flush_usage_events(trigger="test")
+
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            f"tokens.input{expected_suffix}": 300_000,
+            f"tokens.output{expected_suffix}": 7,
         }
 
     def test_output_without_input_skips_unclassifiable_terminal_billing(

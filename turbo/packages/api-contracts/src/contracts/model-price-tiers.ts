@@ -2,19 +2,20 @@
 export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 
 /**
- * Inclusive total-input boundary for built-in model long-context pricing,
- * keyed by `usage_pricing` provider or catalog model ID. Total input includes
- * uncached input, cache reads, and cache creation.
+ * Runner compatibility fallback only; not a pricing authority.
  *
- * The API resolves a run's threshold with
- * `modelLongContextMinTotalInputTokens` and sends it to the Runner as
- * `modelUsageLongContextMinTotalInputTokens`, so a route whose pricing
- * provider is an alias of an actual model inherits that model's threshold
- * without a new key here. The Runner mitm addon also compiles this map through
- * the generated Python bindings (`generate:python`) as the fallback for claims
- * from an API that does not send the threshold. It is not a product list: a
- * provider absent here bills a single tier, and admission, names and
- * availability never read it.
+ * Long-context thresholds are catalog data:
+ * `model_routes.long_context_min_total_input_tokens` on each Built-in route
+ * (NULL: single tier). The API captures the assigned route's value into the
+ * run's execution context as `modelUsageLongContextMinTotalInputTokens`
+ * (`0` for an explicit single tier), and admission preflight and Pi memory
+ * Stage 1 read the catalog. This map is compiled into the Runner mitm addon
+ * (`generate:python`) solely for claims from an API that predates the catalog
+ * column and omits the field; the addon never consults it when the field is
+ * present. Do not add entries for new models: a new model is priced by its
+ * route row. Delete this map, its Python binding and the addon fallback once
+ * no API version that omits the field is serving or a rollback target (see
+ * docs/deployment-compatibility.md).
  */
 export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
   Record<string, number>
@@ -28,28 +29,3 @@ export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
   "gpt-5.6-sol": 272_001,
   "gpt-5.6-luna": 272_001,
 });
-
-/**
- * The long-context threshold that applies to usage reported under
- * `usageProvider`, looked up by the pricing provider first and then by the
- * run's other model identities in order (the actual catalog model, then the
- * Built-in route's upstream model). A pricing alias therefore follows the
- * model it prices without a key of its own. `undefined` bills a single tier.
- */
-export function modelLongContextMinTotalInputTokens(
-  usageProvider: string | undefined,
-  modelIdentities: readonly (string | undefined)[],
-): number | undefined {
-  if (!usageProvider) {
-    return undefined;
-  }
-  for (const key of [usageProvider, ...modelIdentities]) {
-    const threshold = key
-      ? MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[key]
-      : undefined;
-    if (threshold !== undefined) {
-      return threshold;
-    }
-  }
-  return undefined;
-}

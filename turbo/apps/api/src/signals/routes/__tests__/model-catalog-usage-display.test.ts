@@ -72,6 +72,7 @@ describe("model usage under a pricing alias", () => {
           efforts: ["low", "medium", "high"],
           defaultEffort: "medium",
           pricingProvider,
+          longContextMinTotalInputTokens: 272_001,
         },
       ],
     });

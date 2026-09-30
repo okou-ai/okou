@@ -43,6 +43,12 @@ export type CatalogRoute = Readonly<{
    */
   pricingKind: string | null;
   pricingProvider: string | null;
+  /**
+   * Inclusive total-input boundary at which usage on this Built-in route bills
+   * the `.long_context` categories (`long_context_min_total_input_tokens`).
+   * NULL: the route bills a single tier. Always NULL off Built-in routes.
+   */
+  longContextMinTotalInputTokens: number | null;
 }>;
 
 export type ModelCatalog = Readonly<{
@@ -174,9 +180,22 @@ function validateRoutePricingLink(route: CatalogRoute): void {
         `Built-in route ${label} has no model pricing link`,
       );
     }
+    const threshold = route.longContextMinTotalInputTokens;
+    if (
+      threshold !== null &&
+      (!Number.isSafeInteger(threshold) || threshold <= 0)
+    ) {
+      throw new ModelCatalogInvariantError(
+        `Built-in route ${label} has an invalid long-context threshold`,
+      );
+    }
     return;
   }
-  if (route.pricingKind !== null || route.pricingProvider !== null) {
+  if (
+    route.pricingKind !== null ||
+    route.pricingProvider !== null ||
+    route.longContextMinTotalInputTokens !== null
+  ) {
     throw new ModelCatalogInvariantError(
       `non-Built-in route ${label} must not carry a pricing link`,
     );
@@ -440,6 +459,8 @@ export async function loadModelCatalog(
         priceTier: modelRoutes.priceTier,
         pricingKind: modelRoutes.pricingKind,
         pricingProvider: modelRoutes.pricingProvider,
+        longContextMinTotalInputTokens:
+          modelRoutes.longContextMinTotalInputTokens,
       })
       .from(modelRoutes)
       .orderBy(

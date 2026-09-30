@@ -6,10 +6,7 @@ import {
   OKOU_RUN_MODELS,
   type OkouRunModel,
 } from "./okou-model-metadata";
-import {
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  type ModelPriceTier,
-} from "./model-price-tiers";
+import type { ModelPriceTier } from "./model-price-tiers";
 import {
   MODEL_PROVIDER_TYPE_IDS,
   isBuiltInModelProviderType,
@@ -67,7 +64,7 @@ const DEEPSEEK_MODEL_CATALOG = {
   ],
 };
 
-export { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, type ModelPriceTier };
+export type { ModelPriceTier };
 
 /**
  * Secret field configuration for multi-secret providers

@@ -1,10 +1,8 @@
 import type { PiMemoryStage1Billing } from "./pi-memory-stage1-credential.service";
-import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import {
-  PI_MEMORY_STAGE1_BYOK_MODEL,
-  type PiMemoryStage1Model,
-  type PiMemoryStage1ProviderUsage,
+import type {
+  PiMemoryStage1Model,
+  PiMemoryStage1ProviderUsage,
 } from "@okouai/pi-agent-runtime/api";
 import { inArray } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
@@ -31,6 +29,11 @@ export interface RecordPiMemoryStage1UsageArgs {
   readonly sourceHistoryHash: string;
   readonly model: PiMemoryStage1Model;
   readonly billing: PiMemoryStage1Billing;
+  /**
+   * The credential's captured catalog long-context threshold (null: single
+   * tier).
+   */
+  readonly longContextMinTotalInputTokens: number | null;
   readonly responseSourceId: string;
   readonly usage: PiMemoryStage1ProviderUsage;
 }
@@ -43,34 +46,21 @@ function quantity(value: number, field: string): number {
 }
 
 /**
- * Fail closed for a GPT model whose long-context band is not configured: the
- * band is a real price step, so defaulting to the base categories would
- * silently undercharge a newly added GPT model.
+ * Classify extraction usage with the same catalog threshold a foreground run
+ * captures from its route: total input (input + cache read + cache creation)
+ * at or above it bills the `.long_context` categories.
  */
-function gptLongContextMinimumInputTokens(
-  model: typeof PI_MEMORY_STAGE1_BYOK_MODEL,
-): number {
-  const minimum = MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[model];
-  if (minimum === undefined) {
-    throw new Error("Pi memory Stage 1 pricing threshold is missing");
-  }
-  return minimum;
-}
-
 export function piMemoryStage1UsageEntries(
-  model: PiMemoryStage1Model,
   usage: PiMemoryStage1ProviderUsage,
+  longContextMinTotalInputTokens: number | null,
 ): UsageEntry[] {
   const input = quantity(usage.input, "input");
   const output = quantity(usage.output, "output");
   const cacheRead = quantity(usage.cacheRead, "cache-read");
   const cacheCreation = quantity(usage.cacheWrite, "cache-creation");
-  // Mirror the foreground first turn: only GPT models carry a long-context
-  // price band, and DeepSeek retains the canonical base token categories.
   const longContext =
-    model === PI_MEMORY_STAGE1_BYOK_MODEL &&
-    input + cacheRead + cacheCreation >=
-      gptLongContextMinimumInputTokens(model);
+    longContextMinTotalInputTokens !== null &&
+    input + cacheRead + cacheCreation >= longContextMinTotalInputTokens;
   const category = (base: UsageCategoryBase): UsageCategory => {
     return longContext ? `${base}.long_context` : base;
   };
@@ -113,7 +103,10 @@ export async function recordPiMemoryStage1Usage(
   if (args.billing.mode !== "builtin") {
     return { disposition: "byok", accountingAt: null };
   }
-  const expected = piMemoryStage1UsageEntries(args.model, args.usage)
+  const expected = piMemoryStage1UsageEntries(
+    args.usage,
+    args.longContextMinTotalInputTokens,
+  )
     .filter((entry) => {
       return entry.quantity > 0;
     })

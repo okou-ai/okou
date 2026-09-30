@@ -175,6 +175,11 @@ export interface BuiltInRouteFixture {
    * bill; a test naming its own provider owns that provider's pricing.
    */
   readonly pricingProvider?: string;
+  /**
+   * The route's long-context pricing threshold
+   * (`long_context_min_total_input_tokens`); omitted: single tier.
+   */
+  readonly longContextMinTotalInputTokens?: number;
 }
 
 const FIXTURE_MODEL_PRICING_CATEGORIES = [
@@ -222,6 +227,8 @@ export async function insertCatalogModelFixture(args: {
           priceTier: "$",
           pricingKind: "model",
           pricingProvider: route.pricingProvider ?? args.model,
+          longContextMinTotalInputTokens:
+            route.longContextMinTotalInputTokens ?? null,
         };
       }),
     );
