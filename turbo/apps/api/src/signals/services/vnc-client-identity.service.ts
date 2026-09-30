@@ -28,10 +28,11 @@ function parsePemBlocks(
   if (value.length > max) {
     throw new Error("Invalid VNC client certificate identity");
   }
-  const expression = new RegExp(
-    `-----BEGIN ${label}-----\\s*([A-Za-z0-9+/=\\s]+?)\\s*-----END ${label}-----`,
-    "gu",
-  );
+  // The two allowed labels use fixed, linear scans rather than a dynamic regex.
+  const expression =
+    label === "CERTIFICATE"
+      ? /-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\r\n]+)-----END CERTIFICATE-----/gu
+      : /-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\r\n]+)-----END PRIVATE KEY-----/gu;
   const blocks: Buffer[] = [];
   let cursor = 0;
   for (const match of value.matchAll(expression)) {
@@ -41,7 +42,7 @@ function parsePemBlocks(
     ) {
       throw new Error("Invalid VNC client certificate identity");
     }
-    const encoded = match[1]?.replace(/\s/gu, "") ?? "";
+    const encoded = match[1]?.replace(/[\r\n]/gu, "") ?? "";
     const bytes = Buffer.from(encoded, "base64");
     if (
       bytes.length === 0 ||
