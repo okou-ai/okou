@@ -72,9 +72,11 @@ export async function validateSonnet46Opus48DeepSeekV4ProRetirement(
     }
 
     await client.query(`
-      INSERT INTO run_model_catalog (model, allow_new_org_policy)
-      VALUES ('claude-sonnet-4-6', true), ('claude-opus-4-8', false),
-             ('claude-sonnet-5', true), ('claude-opus-5-5', true);
+      INSERT INTO run_model_catalog (model, display_name, sort_order, allow_new_org_policy)
+      VALUES ('claude-sonnet-4-6', 'Claude Sonnet 4.6', 1, true),
+             ('claude-opus-4-8', 'Claude Opus 4.8', 2, false),
+             ('claude-sonnet-5', 'Claude Sonnet 5', 3, true),
+             ('claude-opus-5-5', 'Claude Opus 5.5', 4, true);
       -- Target exists: the retired default moves to the existing target.
       -- Target missing: the retired row is renamed with its member route.
       INSERT INTO org_model_policies (

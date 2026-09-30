@@ -25,6 +25,9 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Global model catalog](./model-catalog.md): the database model catalog and
+  routes, replacement and default constraints, and the phased migration from
+  code model lists.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and credential
   storage/locking.

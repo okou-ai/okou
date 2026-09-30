@@ -145,6 +145,12 @@ export {
   type ImageRecognitionResponse,
 } from "./image-recognition";
 export {
+  modelCatalogContract,
+  modelCatalogResponseSchema,
+  type ModelCatalogContract,
+  type ModelCatalogResponse,
+} from "./model-catalog";
+export {
   modelPoliciesMainContract,
   type ModelPoliciesMainContract,
 } from "./model-policies";

@@ -1,5 +1,36 @@
 # Deployment Compatibility
 
+## Global model catalog foundation (PR-A, 2026-09-30)
+
+Migration `1295_global_model_catalog` extends `run_model_catalog` with
+`display_name`, `sort_order`, `is_system_default`, `replaced_by` and two stored
+generated columns, and adds `model_routes`. It seeds every code-active model
+(labels and `SUPPORTED_RUN_MODELS` order), marks `okou-1.0` as the system
+default and seeds `claude-fable-5` with `replaced_by = claude-fable-5-1`. Routes
+are seeded from the Built-in candidates, model-first BYOK compatibility and a
+copy of `subscription_model_catalog`. The migration fails, rather than dropping
+rows, if that catalog lists a model outside the active catalog. See
+[the design note](model-catalog.md).
+
+- The change is additive. The only existing reader of `run_model_catalog`
+  selects `allow_new_org_policy` for `ACTIVE_RUN_MODELS`; existing values are
+  preserved and rows the migration inserts for missing active models default to
+  `false`, which matches today's fail-closed treatment of a missing row.
+- Rows outside the catalog are deleted: code-retired models without a confirmed
+  replacement (`claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`) and
+  IDs the code does not know (for example `gpt-5.6-terra`, `okou-1.0-pro`,
+  `okou-1.0-max`). The reader filters them out, so neither the old nor the new
+  API observes the deletion.
+- `GET /api/model-catalog` is new and read-only; no client calls it yet.
+- `display_name` and `sort_order` are `NOT NULL` without defaults. No API writes
+  the catalog; manual operator inserts must now supply them.
+- Rollback: the previous API ignores the new columns and table. Rolling back
+  needs no schema change.
+- Transitional duplication: the catalog duplicates code lists and
+  `subscription_model_catalog` until PR-E. A migration-suite validator fails on
+  any divergence. `allow_new_org_policy` keeps gating new organization policies
+  until readers switch to `replaced_by` in PR-B.
+
 ## Integration model commands are thread-scoped (2026-09-29)
 
 The integration `/model` command now reads the effective model of an existing

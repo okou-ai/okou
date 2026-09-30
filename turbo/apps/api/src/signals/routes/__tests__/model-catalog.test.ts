@@ -1,0 +1,145 @@
+import { onTestFinished } from "vitest";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { clearModelCatalogSystemDefaultFixture } from "../../../test-fixtures/model-catalog";
+import { createRouteMocks } from "./helpers/route-test";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { modelCatalogRoutes } from "../model-catalog";
+
+const context = testContext();
+const mocks = createRouteMocks(context);
+const authOrgApi = createAuthOrgAgentsBddApi(context);
+
+function apiClient() {
+  return setupApp({ context, routes: modelCatalogRoutes })(
+    modelCatalogContract,
+  );
+}
+
+function signIn(): void {
+  const actor = authOrgApi.user({ orgRole: "org:member" });
+  if (!actor.orgId) {
+    throw new Error("Expected an organization member");
+  }
+  mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+}
+
+describe("GET /api/model-catalog", () => {
+  it("returns the global catalog with replacements resolved", async () => {
+    signIn();
+    const response = await accept(
+      apiClient().get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+
+    const { models, routes } = response.body;
+    expect(
+      models.filter((row) => {
+        return row.isSystemDefault;
+      }),
+    ).toStrictEqual([
+      {
+        model: "okou-1.0",
+        displayName: "Auto",
+        sortOrder: 10,
+        isSystemDefault: true,
+        replacedBy: null,
+        resolvedModel: "okou-1.0",
+      },
+    ]);
+    expect(
+      models.find((row) => {
+        return row.model === "claude-fable-5";
+      }),
+    ).toStrictEqual({
+      model: "claude-fable-5",
+      displayName: "Claude Fable 5",
+      sortOrder: 30,
+      isSystemDefault: false,
+      replacedBy: "claude-fable-5-1",
+      resolvedModel: "claude-fable-5-1",
+    });
+    expect(
+      models.find((row) => {
+        return row.model === "claude-fable-5-1";
+      })?.resolvedModel,
+    ).toBe("claude-fable-5-1");
+    // Retired models without a confirmed replacement are not in the catalog.
+    expect(
+      models.map((row) => {
+        return row.model;
+      }),
+    ).not.toContain("claude-opus-4-8");
+    const sortOrders = models.map((row) => {
+      return row.sortOrder;
+    });
+    expect(sortOrders).toStrictEqual(
+      [...sortOrders].sort((left, right) => {
+        return left - right;
+      }),
+    );
+
+    expect(
+      routes.filter((route) => {
+        return route.model === "okou-1.0";
+      }),
+    ).toStrictEqual([
+      {
+        model: "okou-1.0",
+        providerType: "built-in",
+        concreteProviderType: "openrouter-codex",
+        subscriptionType: null,
+        upstreamModel: "@preset/okou-1-0",
+        enabled: true,
+        priority: 0,
+        serviceTiers: [],
+        defaultServiceTier: null,
+        efforts: [],
+        defaultEffort: null,
+        priceTier: "$",
+      },
+    ]);
+    expect(
+      routes.filter((route) => {
+        return (
+          route.model === "gpt-6-astra" &&
+          route.providerType === "codex-oauth-token"
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ subscriptionType: null }),
+      expect.objectContaining({
+        subscriptionType: "codex-oauth-token",
+        serviceTiers: ["priority"],
+      }),
+    ]);
+    for (const route of routes) {
+      expect(Object.keys(route)).not.toContain("pricingProvider");
+    }
+  });
+
+  it("fails loudly instead of choosing a default when none is configured", async () => {
+    signIn();
+    const restore = await clearModelCatalogSystemDefaultFixture();
+    onTestFinished(restore);
+
+    const response = await apiClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+    });
+
+    expect(response.status).toBe(500);
+  });
+
+  it("requires an authenticated organization session", async () => {
+    const unauthenticated = await apiClient().get({ headers: {} });
+    expect(unauthenticated.status).toBe(401);
+
+    const actor = authOrgApi.user();
+    mocks.clerk.session(actor.userId, null);
+    const withoutOrganization = await apiClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    expect(withoutOrganization.status).toBe(401);
+  });
+});

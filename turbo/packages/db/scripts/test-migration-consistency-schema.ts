@@ -44,6 +44,8 @@ import { validatePermanentDiscordFoundation } from "./test-discord-foundation-pe
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
+import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
+import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -3056,6 +3058,8 @@ async function main(): Promise<void> {
     await validatePermanentDiscordFoundation(dbUrl1);
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
+    await validatePermanentModelCatalogConstraints(dbUrl1);
+    await validateModelCatalogSeed(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
     await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
@@ -3086,6 +3090,7 @@ async function main(): Promise<void> {
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
+    await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);

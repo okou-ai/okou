@@ -112,6 +112,15 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-model-catalog-seed.ts` protects migration
+  `1295_global_model_catalog`: the seeded catalog and routes must match the
+  code model lists, route candidates, run options and
+  `subscription_model_catalog` they duplicate. Delete it when those code lists
+  and `subscription_model_catalog` are removed (see
+  [the model catalog design](../../../docs/model-catalog.md)). The replacement,
+  default and route constraints are permanent in
+  `scripts/test-model-catalog-permanent.ts`.
+
 - `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
   `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
   without deleting pointers, 6,001 V7 pointers are removed in committed batches
