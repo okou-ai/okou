@@ -122,6 +122,29 @@ sequence/queue lock order changes. Admission errors still reject before commit.
 The attempted issuance/settlement retirement is withdrawn for the distinct-Run
 financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
+## Known Checkout Session publication — partial retirement
+
+One further `billing_purchase` acquisition is removed from the ordinary
+already-existing usage-pack snapshot/known-Session correlation. Publication is
+conditional on the same root, organization, customer, Plan Price, tier, allowed
+unpaid status and absent provider bindings. An identical Session is accepted
+only while those owner/commercial facts still match. The claim-to-Checkout
+publisher carries the same owner/Price/tier predicates; its broader pending-count
+transaction and unfinished purchase admission are not declared key-free.
+
+No Session URL is exposed as a newly canonical link after failed publication;
+the existing uncorrelated-Session expiration path remains. Public concurrency
+coverage allows an earlier local conflict (no Session created) or a later known
+Session conflict (its noncanonical Session expired), but still requires one open
+payable Session, at least one successful response, exact requested package Prices,
+unchanged wallet/tier and a usable replacement. Original monetary and lifecycle
+assertions are not relaxed into permission for two payable paths.
+
+This touches only a positively known object and real pending root. It does not
+retire an unknown outcome, reconstruct a lost Plan quote, switch provider family,
+change trial/payment UX or certify `billing_purchase` complete. The three
+financial SQL definitions remain R1 work, never version compatibility.
+
 ## Canonical migration root mapping — partial implementation
 
 Migration materialization now resolves the existing subscription root by its

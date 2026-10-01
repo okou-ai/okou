@@ -3530,44 +3530,67 @@ describe("POST /api/billing/usage-pack-checkout", () => {
           body: body(20),
           headers: { authorization: "Bearer clerk-session" },
         }),
-        [200],
+        [200, 409],
       ),
       accept(
         client.create({
           body: body(50),
           headers: { authorization: "Bearer clerk-session" },
         }),
-        [200],
+        [200, 409],
       ),
     ]);
 
     expect(responses).toHaveLength(2);
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
-      2,
-    );
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        line_items: expect.arrayContaining([
-          { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
-        ]),
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
       }),
-      expect.any(Object),
-    );
-    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        line_items: expect.arrayContaining([
-          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
-        ]),
-      }),
-      expect.any(Object),
-    );
+    ).toBeTruthy();
+    const createdSessions =
+      context.mocks.stripe.checkout.sessions.create.mock.calls.length;
+    expect(createdSessions).toBeOneOf([1, 2]);
+    if (createdSessions === 2) {
+      // A request that already created a known Session must expire its
+      // noncanonical object. An earlier local conflict creates none.
+      for (const price of [
+        TEST_PRICE_USAGE_PACK_20,
+        TEST_PRICE_USAGE_PACK_50,
+      ]) {
+        expect(
+          context.mocks.stripe.checkout.sessions.create,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            line_items: expect.arrayContaining([{ price, quantity: 1 }]),
+          }),
+          expect.any(Object),
+        );
+      }
+    } else {
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          line_items: expect.arrayContaining([
+            {
+              price: expect.toBeOneOf([
+                TEST_PRICE_USAGE_PACK_20,
+                TEST_PRICE_USAGE_PACK_50,
+              ]),
+              quantity: 1,
+            },
+          ]),
+        }),
+        expect.any(Object),
+      );
+    }
     expect(
       [...sessionStates.values()].filter((status) => {
         return status === "open";
       }),
     ).toHaveLength(1);
     expect(context.mocks.stripe.checkout.sessions.expire).toHaveBeenCalledTimes(
-      1,
+      createdSessions - 1,
     );
 
     // Replacing the winner changes the purchase, but not the number of pending

@@ -981,10 +981,9 @@ type UsagePackCheckoutCorrelation =
   | "changed";
 
 /**
- * Correlate a created Session with its snapshot. The write is conditional on
- * the snapshot still being an uncorrelated purchase; the retained
- * billing_purchase acquisition only orders it after outgoing writers, which
- * read the snapshot and then write it under that key.
+ * Publish one known Session only to the same actual uncorrelated purchase
+ * owner and commercial snapshot. Conditional publication, not an advisory
+ * acquisition, selects the canonical Session before its URL is exposed.
  */
 async function correlateUsagePackCheckout(
   db: Pick<Db, "transaction">,
@@ -992,10 +991,12 @@ async function correlateUsagePackCheckout(
     readonly orgId: string;
     readonly usagePackSubscriptionId: string;
     readonly sessionId: string;
+    readonly customerId: string;
+    readonly planPriceId: string;
+    readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
   },
 ): Promise<UsagePackCheckoutCorrelation> {
   return await db.transaction(async (tx) => {
-    await tx.execute(billingPurchaseLockSql(args.orgId));
     const correlated = await tx
       .update(usagePackSubscriptions)
       .set({
@@ -1007,6 +1008,9 @@ async function correlateUsagePackCheckout(
         and(
           eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
           eq(usagePackSubscriptions.orgId, args.orgId),
+          eq(usagePackSubscriptions.stripeCustomerId, args.customerId),
+          eq(usagePackSubscriptions.stripePlanPriceId, args.planPriceId),
+          eq(usagePackSubscriptions.tier, args.tier),
           inArray(usagePackSubscriptions.subscriptionStatus, [
             ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
           ]),
@@ -1023,10 +1027,20 @@ async function correlateUsagePackCheckout(
         status: usagePackSubscriptions.subscriptionStatus,
         sessionId: usagePackSubscriptions.stripeCheckoutSessionId,
         subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+        orgId: usagePackSubscriptions.orgId,
+        customerId: usagePackSubscriptions.stripeCustomerId,
+        planPriceId: usagePackSubscriptions.stripePlanPriceId,
+        tier: usagePackSubscriptions.tier,
       })
       .from(usagePackSubscriptions)
       .where(eq(usagePackSubscriptions.id, args.usagePackSubscriptionId));
-    if (current?.sessionId === args.sessionId) {
+    if (
+      current?.sessionId === args.sessionId &&
+      current.orgId === args.orgId &&
+      current.customerId === args.customerId &&
+      current.planPriceId === args.planPriceId &&
+      current.tier === args.tier
+    ) {
       // A concurrent request received the same idempotent Session and won.
       return "correlated";
     }
@@ -1067,6 +1081,9 @@ async function correlateClaimedUsagePackCheckout(
     readonly orgId: string;
     readonly usagePackSubscriptionId: string;
     readonly sessionId: string;
+    readonly customerId: string;
+    readonly planPriceId: string;
+    readonly tier: CreateUsagePackCheckoutSessionArgs["tier"];
   },
 ): Promise<UsagePackCheckoutCorrelation> {
   return await writeUsagePackPendingSnapshots(
@@ -1084,6 +1101,9 @@ async function correlateClaimedUsagePackCheckout(
           and(
             eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
             eq(usagePackSubscriptions.orgId, args.orgId),
+            eq(usagePackSubscriptions.stripeCustomerId, args.customerId),
+            eq(usagePackSubscriptions.stripePlanPriceId, args.planPriceId),
+            eq(usagePackSubscriptions.tier, args.tier),
             eq(
               usagePackSubscriptions.subscriptionStatus,
               USAGE_PACK_PURCHASE_CLAIM_STATUS,
@@ -1146,6 +1166,9 @@ async function createUsagePackCheckoutForSnapshot(args: {
     orgId: args.purchase.orgId,
     usagePackSubscriptionId: args.usagePackSubscriptionId,
     sessionId: session.id,
+    customerId: args.customerId,
+    planPriceId: args.purchase.planPriceId,
+    tier: args.purchase.tier,
   };
   const correlation = args.fromClaim
     ? await correlateClaimedUsagePackCheckout(args.db, correlationArgs)
