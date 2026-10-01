@@ -1676,13 +1676,18 @@ mod tests {
         }
 
         async fn wait_for_response(&self, expected_requests: usize) {
-            loop {
-                let notified = self.response_sent.notified();
-                if self.requests.load(std::sync::atomic::Ordering::SeqCst) >= expected_requests {
-                    return;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let notified = self.response_sent.notified();
+                    if self.requests.load(std::sync::atomic::Ordering::SeqCst) >= expected_requests
+                    {
+                        return;
+                    }
+                    notified.await;
                 }
-                notified.await;
-            }
+            })
+            .await
+            .expect("session history fixture should send the expected response");
         }
 
         async fn stop_and_assert_requests(mut self, expected_requests: usize) {
