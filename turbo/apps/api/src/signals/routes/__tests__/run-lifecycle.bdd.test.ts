@@ -2749,19 +2749,20 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("skips runner-local exclusions without mutating shared queue state", async () => {
     const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const firstCreatedAt = now();
     mockNow(firstCreatedAt);
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "first temporarily rejected runner job",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(firstCreatedAt + 1);
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: "second eligible runner job",
-      modelProvider: "anthropic-api-key",
     });
     const pollBody = {
       group: runnerGroup,
@@ -11250,7 +11251,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     // The grants agent is public so a same-org member can write their own
     // grants for it without being the owner.
@@ -11273,10 +11277,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         readonly unknownPolicy?: string;
       };
     }> {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -11419,10 +11422,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       permission: "chat:write",
       action: "allow",
     });
-    const snapshotRun = await api.createRun(actor, {
+    const snapshotRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "snapshot the grant state",
-      modelProvider: "anthropic-api-key",
     });
     await api.applyUserPermissionGrant(actor, {
       agentId,
@@ -11559,17 +11561,19 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   it("distinguishes terminal connector runtime sync from missing runs", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const member = createBddApi(context).user({
       orgId: actor.orgId,
       orgRole: "org:member",
     });
     await api.heartbeatRunner(runnerGroup);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete before runner policy cleanup",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const history = `terminal refresh history ${run.runId}`;
@@ -11625,10 +11629,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(missingSync.body.error.code).toBe("NOT_FOUND");
 
-    const failedRun = await api.createRun(actor, {
+    const failedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "fail before runner policy cleanup",
-      modelProvider: "anthropic-api-key",
     });
     const failedClaim = await api.claimRunnerJob(failedRun.runId);
     await webhooks.requestAgentComplete(
@@ -12587,7 +12590,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const workflows = createWorkflowsBddApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected a workflow run actor with an organization");
     }
@@ -12617,10 +12623,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       visibility: "private",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "use the private workflow override",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12675,7 +12680,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const misc = createMiscRoutesApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const workflowName = "bdd-claude-kit";
     const agent = await bdd.createAgent(actor, {
@@ -12691,10 +12699,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [201],
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "use the workflow",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -13322,11 +13329,13 @@ describe("RUN-03: timed-out run webhook admission", () => {
   it("rejects runtime mutations while accepting reporting webhooks", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const created = await api.createRun(actor, {
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "ignore runtime webhooks after timeout",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
@@ -15889,12 +15898,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("keeps a cancelled run settled when its checkpointed completion arrives late", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "checkpoint, cancel, then complete",
-      modelProvider: "anthropic-api-key",
     });
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
