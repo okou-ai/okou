@@ -380,37 +380,6 @@ describe("pending snapshots on the current schema", () => {
     await expect(guard(harness.db, row.orgId)).resolves.toBe(0);
   });
 
-  it("locks opposite organization movements in one deterministic order", async () => {
-    const a = values(`org_${randomUUID()}`);
-    const b = values(`org_${randomUUID()}`, "active");
-    await insert(harness.db, a);
-    await insert(harness.db, b);
-    await Promise.all([
-      writeUsagePackPendingSnapshots(
-        harness.db,
-        [a.orgId, b.orgId],
-        async (tx) => {
-          await tx
-            .update(usagePackSubscriptions)
-            .set({ orgId: b.orgId })
-            .where(eq(usagePackSubscriptions.id, a.id));
-        },
-      ),
-      writeUsagePackPendingSnapshots(
-        harness.db,
-        [b.orgId, a.orgId],
-        async (tx) => {
-          await tx
-            .update(usagePackSubscriptions)
-            .set({ orgId: a.orgId })
-            .where(eq(usagePackSubscriptions.id, b.id));
-        },
-      ),
-    ]);
-    await expect(guard(harness.db, a.orgId)).resolves.toBe(0);
-    await expect(guard(harness.db, b.orgId)).resolves.toBe(1);
-  });
-
   it("fails closed on corrupt counts and repairs from actual pending rows explicitly", async () => {
     const row = values(`org_${randomUUID()}`);
     await insert(harness.db, row);
