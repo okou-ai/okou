@@ -30,8 +30,8 @@ const NOW = Date.parse("2026-09-21T10:00:00.000Z");
 const SLACK_INSTALL_URL = "https://slack.example.test/oauth/install";
 const TEAMS_CONNECT_URL = "/api/teams/oauth/connect?orgId=org_default";
 
-const SLACK_TITLE = "Keep work moving in Slack";
-const SLACK_CONNECTED_TITLE = "Slack is connected";
+const SLACK_TITLE = "Keep Okou a message away";
+const SLACK_CONNECTED_TITLE = "Your chat is connected";
 const SLACK_ADD = "Add to Slack";
 const SLACK_CONNECTED_STATUS = "Added to your workspace";
 
@@ -79,7 +79,10 @@ function openChatChannelStep(): Promise<void> {
 
 function getButtonByName(name: string): HTMLElement {
   const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
   });
   if (!button) {
     throw new Error(`Expected button named "${name}"`);
@@ -380,7 +383,9 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
     screen.findByText("Connected to Telegram!"),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
-  expect(
-    screen.getByRole("heading", { name: SLACK_TITLE }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: SLACK_CONNECTED_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(getChannelTile("Telegram")).toHaveTextContent("Added");
+  expect(getButtonByName("Continue")).toBeEnabled();
 });

@@ -21,7 +21,7 @@ const context = testContext();
 
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const SKILLS_QUESTION = "Bring your existing skills into Okou";
-const SLACK_QUESTION = "Keep work moving in Slack";
+const SLACK_QUESTION = "Keep Okou a message away";
 const CODEX_CARD = "Codex";
 const NEW_TO_THIS_CARD = "I'm new to AI agents";
 const CONNECT_CODEX = "Connect Codex";

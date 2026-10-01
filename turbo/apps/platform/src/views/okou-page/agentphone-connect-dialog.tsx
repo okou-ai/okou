@@ -41,11 +41,6 @@ import {
 
 const agentPhoneNumberPattern = /^\+1(\d{3})(\d{3})(\d{4})$/u;
 
-/** Vanity spelling of the shared Okou number, and the subscriber digits it
- *  spells on a phone keypad. */
-const agentPhoneVanity = "GET-OKOU";
-const agentPhoneVanityDigits = "4386568";
-
 /** Render a US/Canada E.164 number as `+1 (NXX) NXX-XXXX`; other formats are
  *  returned unchanged. */
 function formatAgentPhoneNumber(raw: string): string {
@@ -54,16 +49,6 @@ function formatAgentPhoneNumber(raw: string): string {
     return raw;
   }
   return `+1 (${match[1]}) ${match[2]}-${match[3]}`;
-}
-
-/** Render the number with its vanity spelling, but only while the subscriber
- *  digits still dial it; another `AGENTPHONE_PHONE_NUMBER` keeps its digits. */
-function spellAgentPhoneNumber(raw: string): string {
-  const match = agentPhoneNumberPattern.exec(raw);
-  if (!match || `${match[2]}${match[3]}` !== agentPhoneVanityDigits) {
-    return formatAgentPhoneNumber(raw);
-  }
-  return `+1 (${match[1]}) ${agentPhoneVanity}`;
 }
 
 function CopyTextButton({
@@ -131,9 +116,7 @@ export function PhoneNumberCopyButton({
   return (
     <CopyTextButton
       value={phoneNumber}
-      label={spellAgentPhoneNumber(phoneNumber)}
-      // The tooltip and accessible name keep the digits the vanity spelling
-      // hides, so the dialable number stays reachable without copying it.
+      label={formatted}
       ariaLabel={t(
         ($) => {
           return $.connectors.providerSettings.agentphone.copyAria;
@@ -180,12 +163,16 @@ function ConnectionDetail({
  * opens Messages with the same prefilled text. Nothing else needs a button:
  * the link completes on the phone, and the dialog's own close is the way out.
  */
-function AgentPhoneConnectionCodeContent({
+export function AgentPhoneConnectionCodeContent({
   phoneNumber,
   connectionCode,
+  inline = false,
+  onOpenMessages,
 }: {
   readonly phoneNumber: string;
   readonly connectionCode: AgentPhoneLinkCodeResponse;
+  readonly inline?: boolean;
+  readonly onOpenMessages?: () => void;
 }) {
   const { t } = useTranslation();
   const messageHref = agentPhoneMessageHref(phoneNumber, connectionCode.code);
@@ -211,7 +198,14 @@ function AgentPhoneConnectionCodeContent({
         <div className="hidden max-sm:block pointer-coarse:block">
           <a
             href={messageHref}
-            className={buttonVariants({ className: "w-full sm:w-auto" })}
+            onClick={onOpenMessages}
+            className={buttonVariants({
+              className: cn(
+                "w-full sm:w-auto",
+                inline &&
+                  "bg-foreground text-background hover:bg-foreground/90",
+              ),
+            })}
             data-testid="agentphone-open-messages"
           >
             {t(($) => {
@@ -275,7 +269,7 @@ function AgentPhoneConnectionCodeContent({
   );
 }
 
-function AgentPhoneConnectionCodeLoading() {
+export function AgentPhoneConnectionCodeLoading() {
   const { t } = useTranslation();
   return (
     <div
@@ -292,7 +286,7 @@ function AgentPhoneConnectionCodeLoading() {
   );
 }
 
-function AgentPhoneConnectionCodeError({
+export function AgentPhoneConnectionCodeError({
   onRetry,
 }: {
   readonly onRetry: () => void;
