@@ -230,10 +230,16 @@ test("Apply realtime billing changes after reopening Settings", async () => {
   act(() => {
     release.resolve();
   });
+  click(await findEnabledButton("Credit balance", reopened));
+  await within(reopened).findByRole("heading", { name: "Credit balance" });
+  await within(reopened).findByText("20,000");
   responses.credits = 25_000;
   act(() => {
     context.mocks.ably.trigger("billing:changed");
   });
+  await expect(
+    within(reopened).findByText("25,000"),
+  ).resolves.toBeInTheDocument();
   await closeSettings(reopened);
   await openAccountMenu("25,000 credits");
 });
