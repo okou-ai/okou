@@ -171,10 +171,11 @@ tasks; one was dropped and later restored during #37430.
 - Return business rejections explicitly as data. Do not use `try/catch` to
   continue, `?? default` for impossible states, or retry loops. See
   [Fallbacks](./fallback.md) and [Bad code smells](./bad-smell.md).
-- Do not add row locks, advisory locks, `NOWAIT`, or `lock_timeout` to coordinate
-  graph steps. See [advisory locks](./advisory-locks.md). Pick correctness on
-  this path comes from the claim conditional update, lease, and fencing
-  described in [chat run pick](./chat-run-pick.md).
+- Do not add locks to order the steps of a graph. On the pick path,
+  correctness comes from the claim conditional update, lease, and fencing
+  described in [chat run pick](./chat-run-pick.md). Where a real multi-row
+  invariant needs a lock, follow [advisory locks](./advisory-locks.md). Do not
+  hide unresolved ordering with `NOWAIT`, lock retry loops, or larger timeouts.
 
 ### 9. No test hooks in production code
 
