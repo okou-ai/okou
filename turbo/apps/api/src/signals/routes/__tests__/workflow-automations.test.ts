@@ -3949,6 +3949,9 @@ describe("okou workflow automations", () => {
   });
 
   it("keeps a replacement Calendar channel usable when obsolete cleanup fails", async () => {
+    // The accepted webhook event queues an automation input whose background
+    // pick prepares a runner job, as in the sibling Calendar scenarios.
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
     const startedAt = Date.parse("2026-08-05T08:00:00.000Z");
     mockNow(startedAt);
     const scenario = await setupFixture();
