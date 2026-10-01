@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { TestContext } from "../../../../__tests__/test-context";
+import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createBddIntegrationApi } from "./api-bdd-integrations";
 
@@ -78,5 +80,64 @@ export function createPublicSlackOrgApi(context: TestContext) {
     };
   }
 
-  return { installOrg };
+  /** Clears Slack client call history left by OAuth notifications. */
+  async function settleSlackNotifications(): Promise<void> {
+    await flushWaitUntilForTest();
+    context.mocks.slack.chat.postMessage.mockClear();
+    context.mocks.slack.views.publish.mockClear();
+    context.mocks.slack.conversations.open.mockClear();
+    context.mocks.slack.oauth.v2.access.mockClear();
+    context.mocks.slack.users.info.mockClear();
+  }
+
+  /**
+   * Installs Slack for an existing org through the production OAuth install,
+   * performed by another admin of that org so the caller stays unlinked. The
+   * install exchange returns the given bot token, scopes and team name.
+   * Callers that rely on their own Clerk membership mock must re-apply it:
+   * the install authenticates the installing admin.
+   */
+  async function installForOrg(args: {
+    readonly orgId: string;
+    readonly botToken?: string;
+    readonly botScopes?: string | null;
+    readonly teamName?: string;
+  }): Promise<{
+    readonly slackWorkspaceId: string;
+    readonly slackWorkspaceName: string;
+  }> {
+    mockEnv("SLACK_OAUTH_CLIENT_ID", "slack-bdd-client-id");
+    mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "slack-bdd-client-secret");
+    const installer = bdd.user({ orgId: args.orgId, orgRole: "org:admin" });
+    const teamName = args.teamName ?? "Test Org Workspace";
+    const { teamId } = await integrations.installSlackWorkspace(installer, {
+      ...(args.botToken === undefined ? {} : { botToken: args.botToken }),
+      // Like the former seeded installation, scopes default to unreported.
+      botScopes: args.botScopes === undefined ? null : args.botScopes,
+      teamName,
+    });
+    await settleSlackNotifications();
+    return { slackWorkspaceId: teamId, slackWorkspaceName: teamName };
+  }
+
+  /** Connects the member's Slack user through the production connect flow. */
+  async function connectMember(args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly slackWorkspaceId: string;
+  }): Promise<{ readonly slackUserId: string }> {
+    const slackUserId = uniqueSlackUserId();
+    await integrations.connectSlackUser(
+      bdd.user({
+        userId: args.userId,
+        orgId: args.orgId,
+        orgRole: "org:admin",
+      }),
+      { workspaceId: args.slackWorkspaceId, slackUserId },
+    );
+    await settleSlackNotifications();
+    return { slackUserId };
+  }
+
+  return { installOrg, installForOrg, connectMember };
 }
