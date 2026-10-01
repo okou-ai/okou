@@ -793,17 +793,15 @@ describe("okou people-search route", () => {
       webSearchPricing(),
     ]);
     configureProvider();
-    const compose = await api.createDirectAgent(actor, {
-      version: "1.0",
-      agents: {
-        [`people-search-${randomUUID().slice(0, 8)}`]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    api.configureRunnerGroup();
+    await api.ensureOrgModelProvider(actor);
+    const agent = await createBddApi(context).createAgent(actor, {
+      displayName: "Tool usage agent",
+      description: "Calls a paid tool from its run.",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "Find a public professional profile",
     });
     const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
@@ -849,11 +847,11 @@ describe("okou people-search route", () => {
       [200],
     );
     const usageRow = usage.body.rows.find((row) => {
-      return row.threadId === null;
+      return row.threadId === run.threadId;
     });
 
     expect(usageRow).toMatchObject({
-      title: "Unavailable thread",
+      title: null,
     });
     expect(usageRow?.breakdown).toContainEqual({
       kind: "other",

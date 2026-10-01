@@ -1036,18 +1036,15 @@ describe("managed SocialKit route", () => {
     await fundActor(actor);
     const pricing = await setupConfiguredPricing();
     configureProvider();
-    const name = `social-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1.0",
-      agents: {
-        [name]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    api.configureRunnerGroup();
+    await api.ensureOrgModelProvider(actor);
+    const agent = await createBddApi(context).createAgent(actor, {
+      displayName: "Tool usage agent",
+      description: "Calls a paid tool from its run.",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "Retrieve public social data",
     });
     const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
@@ -1136,8 +1133,8 @@ describe("managed SocialKit route", () => {
     expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
     expect(usage.body.rows).toStrictEqual([
       expect.objectContaining({
-        title: "Unavailable thread",
-        threadId: null,
+        title: null,
+        threadId: run.threadId,
         credits: SOCIALKIT_REQUEST_CREDITS,
       }),
     ]);
