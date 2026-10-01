@@ -21,7 +21,8 @@ import {
 } from "./helpers/integrations-slack";
 import { integrationsSlackRoutes } from "../integrations-slack";
 
-const context = testContext();
+// Connecting a Slack user resolves the built-in Slack connector OAuth method.
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 
 const bdd = createBddApi(context);
