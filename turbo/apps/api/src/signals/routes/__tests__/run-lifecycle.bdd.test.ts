@@ -11994,7 +11994,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     // run context's user-info section.
     await bdd.readMe(actor);
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
     const agent = await bdd.createAgent(actor, {
       displayName: "Research Bot",
       description: "Finds release details",
@@ -12038,10 +12038,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [201],
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "summarize release",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12165,7 +12164,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       appendSystemPrompt.indexOf("- Cross-thread chat run completion:"),
     );
     expect(appendSystemPrompt).toContain("okou upgrade pro");
-    expect(appendSystemPrompt).not.toContain(
+    // The run's chat thread owns its Cloud Browser.
+    expect(appendSystemPrompt).toContain(
       "`okou browser use` creates, reuses, or resumes a remote browser",
     );
     expect(appendSystemPrompt).not.toContain(
@@ -14377,12 +14377,14 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const api = createRunsApi(context);
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate usage",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -14410,7 +14412,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
 
     const record = await billing.readUsageRecord(actor);
     const listedUsage = record.body.rows.find((entry) => {
-      return entry.title === "Unavailable thread";
+      return entry.threadId === run.threadId;
     });
     expect(listedUsage).toBeDefined();
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
