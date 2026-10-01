@@ -7981,7 +7981,7 @@ describe("Official Workflow Run admission", () => {
       [200],
     );
 
-    const later = await runs.createRun(actor, {
+    const later = await runs.createThreadRun(actor, {
       agentId,
       prompt: "resolve the newly accepted Official Definition revision",
     });
