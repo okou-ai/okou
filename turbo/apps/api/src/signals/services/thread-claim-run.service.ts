@@ -9,7 +9,6 @@ import {
 } from "./execution-connector-sources.service";
 import {
   createModelSourceSnapshot,
-  type ModelSourceIdentity,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
 import {
@@ -692,62 +691,6 @@ function isMigratedRegisteredSource(type: string | undefined): boolean {
       "deepseek",
     ].includes(type)
   );
-}
-
-/**
- * A pin without a credential scope names one exact provider row owned by the
- * member or the workspace; the owner decides which exact source is read.
- */
-async function registeredProviderSourceIdentity(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderId: string;
-    readonly modelProviderCredentialScope?: "member" | "org";
-  },
-  type: string,
-): Promise<ModelSourceIdentity | null> {
-  const owner =
-    args.modelProviderCredentialScope ??
-    (await unscopedRegisteredProviderOwner(db, args, type));
-  if (!owner) {
-    return null;
-  }
-  return {
-    kind: owner === "member" ? "member-provider" : "organization",
-    modelProviderId: args.modelProviderId,
-  };
-}
-
-async function unscopedRegisteredProviderOwner(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderId: string;
-  },
-  type: string,
-): Promise<"member" | "org" | null> {
-  const [provider] = await db
-    .select({ userId: modelProviders.userId })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, args.modelProviderId),
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.type, type),
-        or(
-          eq(modelProviders.userId, args.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
-    return null;
-  }
-  return provider.userId === ORG_SENTINEL_USER_ID ? "org" : "member";
 }
 
 function isMigratedAccountSource(
@@ -8904,20 +8847,23 @@ export function createThreadClaimRunObjects(
     }
     const type = args.modelProviderType;
     if (type !== undefined && isMigratedRegisteredSource(type)) {
-      const source = await registeredProviderSourceIdentity(
-        context.input.db,
-        { ...args, modelProviderId: args.modelProviderId },
-        type,
+      const scope = args.modelProviderCredentialScope;
+      // The source reader resolves an unscoped pin's owner in its own read.
+      return await get(
+        createModelSourceSnapshot({
+          orgId: args.orgId,
+          userId: args.userId,
+          source: {
+            kind:
+              scope === undefined
+                ? "unscoped-provider"
+                : scope === "member"
+                  ? "member-provider"
+                  : "organization",
+            modelProviderId: args.modelProviderId,
+          },
+        }),
       );
-      return source
-        ? await get(
-            createModelSourceSnapshot({
-              orgId: args.orgId,
-              userId: args.userId,
-              source,
-            }),
-          )
-        : null;
     }
     return await get(
       createModelSourceSnapshot({

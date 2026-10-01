@@ -441,8 +441,9 @@ source IDs and real nonsecret Codex routing identity. Claude OAuth and Pi
 Codex account/org execution also consume the owned source/runtime boundary;
 member subscription accounts no longer fall back to a separate legacy
 personal-account snapshot after the exact source has been prepared. A
-registered provider pin without a stored credential scope first resolves the
-exact row owner (member or workspace) and then reads that exact source; the
+registered provider pin without a stored credential scope passes an explicit
+`unscoped-provider` identity; the source reader resolves the member/workspace
+owner and credentials in one statement (no separate owner pre-query); the
 legacy regular-provider snapshot fallback is gone from Thread now that
 DeepSeek also uses the pure runtime contract.
 Explicit cloud deployments/profiles now use stored `configuredModel` facts:

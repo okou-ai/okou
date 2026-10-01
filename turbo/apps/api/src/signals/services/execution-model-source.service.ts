@@ -1,5 +1,5 @@
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
   modelProviderConnections,
   modelProviderSurfaces,
@@ -30,6 +30,12 @@ export type ModelSourceIdentity =
   | { readonly kind: "organization"; readonly modelProviderId: string }
   | { readonly kind: "member"; readonly accountId: string }
   | { readonly kind: "member-provider"; readonly modelProviderId: string }
+  /**
+   * An exact provider row whose pin carries no credential scope. The reader
+   * resolves the member/workspace owner in the same statement; the snapshot
+   * identity is the resolved organization or member-provider identity.
+   */
+  | { readonly kind: "unscoped-provider"; readonly modelProviderId: string }
   | { readonly kind: "gateway"; readonly surfaceId: string };
 
 export interface ModelSourceRequest {
@@ -177,6 +183,87 @@ async function loadManagedSource(
   };
 }
 
+const MULTI_AUTH_PROVIDER_TYPES = modelProviderTypeSchema.options.filter(
+  (type) => {
+    return hasAuthMethods(type);
+  },
+);
+
+/**
+ * One statement reads the exact provider row, its owner and its encrypted
+ * credentials, so ownership and credentials come from the same snapshot.
+ */
+async function loadRegisteredProviderSource(
+  db: ReadonlyDb,
+  request: ModelSourceRequest,
+  source: Extract<
+    ModelSourceIdentity,
+    { kind: "organization" | "member-provider" | "unscoped-provider" }
+  >,
+): Promise<ModelSourceSnapshot | null> {
+  const owners =
+    source.kind === "organization"
+      ? [ORG_SENTINEL_USER_ID]
+      : source.kind === "member-provider"
+        ? [request.userId]
+        : [request.userId, ORG_SENTINEL_USER_ID];
+  const rows = await db
+    .select({
+      type: modelProviders.type,
+      authMethod: modelProviders.authMethod,
+      configuredModel: modelProviders.selectedModel,
+      ownerUserId: modelProviders.userId,
+      secret: { name: secrets.name, encryptedValue: secrets.encryptedValue },
+    })
+    .from(modelProviders)
+    .leftJoin(
+      secrets,
+      and(
+        eq(secrets.orgId, modelProviders.orgId),
+        eq(secrets.userId, modelProviders.userId),
+        or(
+          and(
+            inArray(modelProviders.type, MULTI_AUTH_PROVIDER_TYPES),
+            eq(secrets.type, "model-provider"),
+          ),
+          and(
+            notInArray(modelProviders.type, MULTI_AUTH_PROVIDER_TYPES),
+            eq(secrets.id, modelProviders.secretId),
+          ),
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(modelProviders.id, source.modelProviderId),
+        eq(modelProviders.orgId, request.orgId),
+        inArray(modelProviders.userId, owners),
+      ),
+    );
+  const [first] = rows;
+  if (!first) {
+    return null;
+  }
+  modelProviderTypeSchema.parse(first.type);
+  const organization = first.ownerUserId === ORG_SENTINEL_USER_ID;
+  return {
+    identity: organization
+      ? { kind: "organization", modelProviderId: source.modelProviderId }
+      : { kind: "member-provider", modelProviderId: source.modelProviderId },
+    credentialOwner: organization ? "organization" : "member",
+    configuration: {
+      kind: "registered-provider",
+      providerType: first.type,
+      authMethod: first.authMethod,
+      configuredModel: first.configuredModel,
+    },
+    credentials: rows.flatMap((row) => {
+      return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
+    }),
+    accountIdentity: null,
+  };
+}
+
 /** Read only an already-selected source; never select defaults or decrypt. */
 export function createModelSourceSnapshot(
   request: ModelSourceRequest,
@@ -238,61 +325,12 @@ export function createModelSourceSnapshot(
         accountIdentity: first.account.externalAccountId,
       };
     }
-    if (source.kind === "organization" || source.kind === "member-provider") {
-      const ownerUserId =
-        source.kind === "organization" ? ORG_SENTINEL_USER_ID : request.userId;
-      const [provider] = await db
-        .select({
-          type: modelProviders.type,
-          authMethod: modelProviders.authMethod,
-          secretId: modelProviders.secretId,
-          configuredModel: modelProviders.selectedModel,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.id, source.modelProviderId),
-            eq(modelProviders.orgId, request.orgId),
-            eq(modelProviders.userId, ownerUserId),
-          ),
-        )
-        .limit(1);
-      if (!provider) {
-        return null;
-      }
-      const providerType = modelProviderTypeSchema.parse(provider.type);
-      const credentials = await db
-        .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
-        .from(secrets)
-        .where(
-          and(
-            eq(secrets.orgId, request.orgId),
-            eq(secrets.userId, ownerUserId),
-            hasAuthMethods(providerType)
-              ? eq(secrets.type, "model-provider")
-              : provider.secretId === null
-                ? isNull(secrets.id)
-                : eq(secrets.id, provider.secretId),
-          ),
-        );
-      return {
-        identity: source,
-        credentialOwner:
-          source.kind === "organization" ? "organization" : "member",
-        configuration: {
-          kind: "registered-provider",
-          providerType: provider.type,
-          authMethod: provider.authMethod,
-          configuredModel: provider.configuredModel,
-        },
-        credentials: credentials.map((credential) => {
-          return {
-            kind: "encrypted" as const,
-            ...credential,
-          };
-        }),
-        accountIdentity: null,
-      };
+    if (
+      source.kind === "organization" ||
+      source.kind === "member-provider" ||
+      source.kind === "unscoped-provider"
+    ) {
+      return await loadRegisteredProviderSource(db, request, source);
     }
     return await loadManagedSource(db, source);
   });
