@@ -24,7 +24,7 @@ function client() {
   );
 }
 
-async function fixture(triggerSource: "test" | "web" = "test") {
+async function fixture(threadless = false) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
@@ -34,17 +34,29 @@ async function fixture(triggerSource: "test" | "web" = "test") {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
-  const agentName = `cancel-state-${randomUUID().slice(0, 8)}`;
-  const agent = await runs.createDirectAgent(actor, {
-    version: "1",
-    agents: { [agentName]: { framework: "claude-code" } },
-  });
-  const run = await runs.createDirectRun(actor, {
-    agentId: agent.agentId,
-    prompt: "exercise cancellation reconciliation",
-    modelProviderType: "anthropic-api-key",
-    triggerSource,
-  });
+  const agent = threadless
+    ? await runs.createDirectAgent(actor, {
+        version: "1",
+        agents: {
+          [`cancel-state-${randomUUID().slice(0, 8)}`]: {
+            framework: "claude-code",
+          },
+        },
+      })
+    : await bdd.createAgent(actor, {
+        displayName: "Cancellation state agent",
+        description: "Exercises cancellation reconciliation.",
+        visibility: "private",
+      });
+  const prompt = "exercise cancellation reconciliation";
+  const run = threadless
+    ? await runs.createDirectRun(actor, {
+        agentId: agent.agentId,
+        prompt,
+        modelProviderType: "anthropic-api-key",
+        triggerSource: "web",
+      })
+    : await runs.createThreadRun(actor, { agentId: agent.agentId, prompt });
   onTestFinished(async () => {
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
     await flushWaitUntilForTest();
@@ -120,7 +132,7 @@ describe("Run cancellation reconciliation", () => {
   });
 
   it("redrives threadless cleanup without escalating the user's cooperative stop", async () => {
-    const f = await fixture("web");
+    const f = await fixture(true);
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
     await withMockNowForTest(
