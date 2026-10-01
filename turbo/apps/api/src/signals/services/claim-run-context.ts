@@ -6589,8 +6589,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedAutomationRunSources;
   const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
     material;
-  const queuedAutomationAssemblerInternalEarlyAssembly$ =
-    state<ChatQueueRunAssembly | null>(null);
+
   const {
     event$: initializeQueuedAutomationEvent$,
     target$: initializeQueuedAutomationTarget$,
@@ -6605,29 +6604,68 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     reconcileOfficialWorkflow$:
       initializeQueuedAutomationReconcileOfficialWorkflow$,
   } = reconciliation;
+  const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
+      const [event, target, launch, autonomy] = await Promise.all([
+        get(initializeQueuedAutomationEvent$),
+        get(initializeQueuedAutomationTarget$),
+        get(initializeQueuedAutomationLaunchMaterial$),
+        get(initializeQueuedAutomationAutonomyBudget$),
+      ]);
+      if (!event || !target || !launch) {
+        return {
+          kind: "rejected",
+          rejection: {
+            userId: target?.automation.ownerUserId ?? head.userId,
+            error: {
+              code: "CONFLICT",
+              message: !target
+                ? "Workflow automation no longer exists"
+                : "Workflow queue event payload is unreadable",
+            },
+          },
+        };
+      }
+      return autonomy.kind === "invalid"
+        ? {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: autonomy.error,
+            },
+          }
+        : null;
+    },
+  );
   const initializeAutomationExecution$ = command(
-    async (
-      { get, set },
+    (
+      _store,
       head: ChatQueueHeadContext,
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
-    ): Promise<false> => {
-      workflowAutomationTiming(runTiming, head.apiStartTime);
-      const input = await get(automationExecutionInput$);
+    ): false => {
       signal.throwIfAborted();
-      if (!input) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: head.userId,
-            error: {
-              code: "CONFLICT",
-              message: "Workflow automation no longer exists",
-            },
-          },
-        });
-      }
+      workflowAutomationTiming(runTiming, head.apiStartTime);
       return false;
+    },
+  );
+  const rejectQueuedAutomationPreparation$ = command(
+    async (
+      { set },
+      head: ChatQueueHeadContext,
+      assembly: Extract<ChatQueueRunAssembly, { readonly kind: "rejected" }>,
+      signal: AbortSignal,
+    ): Promise<never> => {
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: assembly.rejection },
+        signal,
+      );
+      throw new ClaimInputAlreadyRejected();
     },
   );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
@@ -6635,9 +6673,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
-      const unreadable = (message: string): ChatQueueRunAssembly => {
+    ): Promise<AssembleWorkflowAutomationRunArgs> => {
+      const unreadable = (
+        message: string,
+      ): Extract<ChatQueueRunAssembly, { readonly kind: "rejected" }> => {
         return {
           kind: "rejected",
           rejection: {
@@ -6653,15 +6692,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ]);
       signal.throwIfAborted();
       if (!event || !loadedTarget) {
-        set(
-          queuedAutomationAssemblerInternalEarlyAssembly$,
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
           unreadable(
             !event
               ? "Workflow queue event payload is unreadable"
               : "Workflow automation no longer exists",
           ),
+          signal,
         );
-        return null;
       }
       if (loadedTarget.automation.officialBlueprintKey !== null) {
         const reconciled = await set(
@@ -6670,17 +6710,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           signal,
         );
         if (reconciled.kind !== "current") {
-          set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-            kind: "rejected",
-            rejection: {
-              error: {
-                code: "CONFLICT",
-                message: reconciliationConflictMessage(reconciled),
+          return await set(
+            rejectQueuedAutomationPreparation$,
+            head,
+            {
+              kind: "rejected",
+              rejection: {
+                error: {
+                  code: "CONFLICT",
+                  message: reconciliationConflictMessage(reconciled),
+                },
+                userId: loadedTarget.automation.ownerUserId,
               },
-              userId: loadedTarget.automation.ownerUserId,
             },
-          });
-          return null;
+            signal,
+          );
         }
       }
       const [target, material, autonomyBudget] = await Promise.all([
@@ -6690,40 +6734,52 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ]);
       signal.throwIfAborted();
       if (!target) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: loadedTarget.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Official Workflow automation no longer exists",
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: loadedTarget.automation.ownerUserId,
+              error: {
+                code: "CONFLICT",
+                message: "Official Workflow automation no longer exists",
+              },
             },
           },
-        });
-        return null;
+          signal,
+        );
       }
       if (!material) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: target.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Workflow queue event payload is unreadable",
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: {
+                code: "CONFLICT",
+                message: "Workflow queue event payload is unreadable",
+              },
             },
           },
-        });
-        return null;
+          signal,
+        );
       }
       if (autonomyBudget.kind === "invalid") {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: target.automation.ownerUserId,
-            error: autonomyBudget.error,
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: autonomyBudget.error,
+            },
           },
-        });
-        return null;
+          signal,
+        );
       }
       return queuedAutomationLaunchArguments({
         head,
@@ -6754,7 +6810,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
+      const early = await get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
       }
@@ -6803,7 +6859,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
-    if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
+    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
@@ -12163,7 +12219,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!identityInput) {
         const assembly =
           head.contextType === "automation"
-            ? get(queuedAutomationAssemblerInternalEarlyAssembly$)
+            ? await get(queuedAutomationAssemblerInternalEarlyAssembly$)
             : await get(assembly$);
         signal.throwIfAborted();
         await set(
@@ -12266,11 +12322,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           signal,
         );
         signal.throwIfAborted();
-        if (!launch) {
-          // The automation input was already rejected from its reads; no
-          // launch read can change that, so none is started.
-          return { kind: "rejected" as const, assembly: await get(assembly$) };
-        }
         rewardArgs = await set(
           initializeWorkflowAutomationRun$,
           launch,
@@ -12320,9 +12371,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(storageMounts$),
       ]);
       signal.throwIfAborted();
-      if (launch.kind === "rejected") {
-        return { kind: "rejected" as const, assembly: launch.assembly };
-      }
       const [input, storage, runnerInput] = launch.runner;
       const contextDraft = set(
         claimRunPrepareStoredContextDraft$,
@@ -12377,9 +12425,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const readClaimStorageSources$ = command(
     async ({ get }, head: ChatQueueHeadContext, signal: AbortSignal) => {
       const automation = head.contextType === "automation";
-      if (automation && !(await get(capturedAutomationTarget$))) {
+      if (automation) {
+        const target = await get(capturedAutomationTarget$);
         signal.throwIfAborted();
-        return;
+        if (!target || target.automation.officialBlueprintKey !== null) {
+          // Official launch arguments depend on the reconciliation write's
+          // returned authority/revision. Reading the full mount graph twice
+          // across that write would not be an independent early snapshot.
+          return;
+        }
       }
       // Catalog-projected policy facts are read-only. The catalog cutover
       // removed lazy org default seeding; it is not a storage write barrier.
@@ -12395,7 +12449,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (admission.needsAllowance || admission.error) {
         return;
       }
-      if (!(await get(selectionInput$))) {
+      if (!(await get(selectionInput$)) || !(await get(selectedCommand$))) {
         signal.throwIfAborted();
         return;
       }
@@ -12536,6 +12590,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         signal,
       );
       if (!resources.ok) {
+        if (resources.error instanceof ClaimInputAlreadyRejected) {
+          return { kind: "passed" };
+        }
         return await set(
           rejectUnresolvedOfficialArtifact$,
           head,
@@ -12544,21 +12601,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
       }
       signal.throwIfAborted();
-      if (resources.value.kind === "rejected") {
-        const early = resources.value.assembly;
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection:
-              early.kind === "rejected"
-                ? early.rejection
-                : unreadyQueueHeadRejection(head),
-          },
-          signal,
-        );
-        return { kind: "passed" };
-      }
       const [
         input,
         storage,
