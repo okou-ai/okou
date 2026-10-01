@@ -7,6 +7,7 @@ import {
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { computed, type Computed } from "ccstate";
 import {
   and,
   asc,
@@ -18,26 +19,25 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { computed, type Computed } from "ccstate";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import { db$, type Db } from "../external/db";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
-import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
-import { createWebChatIncompleteContextObjects } from "./chat-incomplete-context.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventUserMessage,
+} from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import {
   chatEventTextCondition,
   chatEventTypeIn,
 } from "./chat-event-type.service";
+import { createWebChatIncompleteContextObjects } from "./chat-incomplete-context.service";
+import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
 import {
-  type ChatAgentRunSourceAnnotation,
   projectUserMessage,
   requiredUserMessageForEvent,
+  type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import {
-  canonicalChatEventContent,
-  canonicalChatEventUserMessage,
-} from "./canonical-chat-event-read.service";
 
 const RECENT_CHAT_RUN_LIMIT = 10;
 const WEB_CHAT_PRIOR_MESSAGE_CHAR_CAP = 4000;

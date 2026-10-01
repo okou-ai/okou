@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.317.1",
+  "version": "1.317.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -19,10 +19,6 @@
     "./jsonb-contracts/*": {
       "import": "./src/jsonb-contracts/*.ts",
       "types": "./src/jsonb-contracts/*.ts"
-    },
-    "./operations/model-provider-built-in-identity": {
-      "import": "./src/operations/model-provider-built-in-identity.ts",
-      "types": "./src/operations/model-provider-built-in-identity.ts"
     },
     "./operations/org-metadata-canonical-write": {
       "import": "./src/operations/org-metadata-canonical-write.ts",

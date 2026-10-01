@@ -1,5 +1,4 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import type { Tx } from "../../lib/db-types";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -41,22 +40,19 @@ import {
   resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage,
-  touchAgentPhoneUserLink,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import {
-  ensureAgentPhoneChatThreadRoute,
-  findAgentPhoneRoutedChatThreadId,
+  findAgentPhoneRoutedChatThreadId$,
+  ensureAgentPhoneChatThreadRoute$,
 } from "./agentphone-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
-  enqueueChatInput,
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
   notifyRunningChatRunOfPendingInput,
@@ -64,7 +60,6 @@ import {
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
 import {
@@ -74,7 +69,8 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -128,14 +124,6 @@ export interface AgentPhoneMessageEvent {
   readonly receivedAt: Date | null;
   readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
 }
-
-type LinkAgentPhoneUserResult =
-  | { readonly ok: true; readonly userLink: AgentPhoneUserLink }
-  | {
-      readonly ok: false;
-      readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
-      readonly userLink?: AgentPhoneUserLink;
-    };
 
 interface WorkspaceAgent {
   readonly composeId: string;
@@ -305,112 +293,6 @@ export function buildAgentPhoneConnectUrl(params: {
     channel: params.channel,
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
-}
-
-/**
- * Link a phone to the member, in the caller's transaction.
- *
- * Creating the link is what the Get started iMessage quest rewards, so the
- * award commits or rolls back with the row. Only a new row earns it: the
- * branches that find the member's existing link merely touch it, which keeps
- * phones linked before the quest shipped from being credited retroactively.
- * The source key is fixed rather than the phone or organization, so the member
- * has a single claim however often they unlink and link again, and the quest's
- * one reward slot is what holds the limit.
- */
-export async function linkAgentPhoneUser(
-  tx: Tx,
-  params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-): Promise<LinkAgentPhoneUserResult> {
-  const phoneHandle = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  const [existingPhoneLink] = await tx
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
-    .limit(1);
-
-  if (existingPhoneLink) {
-    if (
-      existingPhoneLink.userId === params.userId &&
-      existingPhoneLink.orgId === params.orgId
-    ) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          tx,
-          existingPhoneLink,
-          phoneHandle,
-          params.channel,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "phone-handle-linked",
-      userLink: existingPhoneLink,
-    };
-  }
-
-  const [existingUserOrgLink] = await tx
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, params.userId),
-        eq(agentphoneUserLinks.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-
-  if (existingUserOrgLink) {
-    if (existingUserOrgLink.phoneHandle === phoneHandle) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          tx,
-          existingUserOrgLink,
-          phoneHandle,
-          params.channel,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "org-linked",
-      userLink: existingUserOrgLink,
-    };
-  }
-
-  const [inserted] = await tx
-    .insert(agentphoneUserLinks)
-    .values({
-      phoneHandle,
-      userId: params.userId,
-      orgId: params.orgId,
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted) {
-    await awardCompletedGetStartedQuest(tx, {
-      orgId: params.orgId,
-      userId: params.userId,
-      questKey: "imessage",
-      sourceKey: "agentphone-link",
-    });
-    return { ok: true, userLink: inserted };
-  }
-  return { ok: false, reason: "conflict" };
 }
 
 /**
@@ -1251,16 +1133,24 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const chatThreadId = await findAgentPhoneRoutedChatThreadId(args.db, {
-      agentphoneUserLinkId: args.userLinkId,
-      rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
-    });
+    const chatThreadId = await set(
+      findAgentPhoneRoutedChatThreadId$,
+      {
+        agentphoneUserLinkId: args.userLinkId,
+        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    const currentSelectedModel = await readIntegrationChatThreadModel(args.db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      chatThreadId,
-    });
+    const currentSelectedModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!currentSelectedModel) {
       await sendAgentPhoneSlashCommandText(
@@ -1536,15 +1426,26 @@ const persistAgentPhoneChatMessage$ = command(
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
-    const route = await ensureAgentPhoneChatThreadRoute(args.db, {
-      agentphoneUserLinkId: args.userLink.id,
-      rootMessageId: args.rootMessageId,
-      conversationId: args.event.conversationId,
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-      agentId: args.agent.composeId,
-      currentTime,
-    });
+    const route = await set(
+      ensureAgentPhoneChatThreadRoute$,
+      {
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.userLink.orgId,
+          args.userLink.userId,
+          undefined,
+          undefined,
+        ),
+        agentphoneUserLinkId: args.userLink.id,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.event.conversationId,
+        userId: args.userLink.userId,
+        orgId: args.userLink.orgId,
+        agentId: args.agent.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const chatEventId = agentPhoneChatMessageId({
@@ -1575,7 +1476,7 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
         threadId: route.chatThreadId,
         orgId: args.userLink.orgId,
         userId: args.userLink.userId,
@@ -1607,15 +1508,11 @@ const persistAgentPhoneChatMessage$ = command(
       },
       createdAt: currentTime,
     } as const;
-    const eventId = await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.userLink.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
-      },
-    });
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      { orgId: args.userLink.orgId, input: values },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventId === null) {
       return { inserted: false };

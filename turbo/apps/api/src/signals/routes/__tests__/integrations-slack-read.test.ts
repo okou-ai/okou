@@ -11,14 +11,13 @@ import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
-import {
-  seedSlackOrgConnection$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
-const context = testContext();
+// Connecting a Slack user resolves the built-in Slack connector OAuth method.
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
+const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_USER_CONVERSATIONS_URL =
   "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
@@ -34,31 +33,26 @@ async function fixture(
 ) {
   const orgId = `org_${randomUUID()}`;
   const userId = `user_${randomUUID()}`;
+  const botToken = `xoxb-test-${randomUUID()}`;
+  const installation =
+    options.installed === false
+      ? null
+      : await slackOrgs.installForOrg({ orgId, botToken });
+  const connection =
+    installation && options.connected !== false
+      ? await slackOrgs.connectMember({
+          orgId,
+          userId,
+          slackWorkspaceId: installation.slackWorkspaceId,
+        })
+      : null;
+  // The OAuth flows authenticate other Clerk sessions; restore the member
+  // the Okou token authenticates as.
   await store.set(
     seedOrgMembership$,
     { userId, orgId, role: "admin" },
     context.signal,
   );
-  const botToken = `xoxb-test-${randomUUID()}`;
-  const installation =
-    options.installed === false
-      ? null
-      : await store.set(
-          seedSlackOrgInstallation$,
-          { orgId, botToken },
-          context.signal,
-        );
-  const connection =
-    installation && options.connected !== false
-      ? await store.set(
-          seedSlackOrgConnection$,
-          {
-            slackWorkspaceId: installation.slackWorkspaceId,
-            userId,
-          },
-          context.signal,
-        )
-      : null;
   const seconds = Math.floor(now() / 1000);
   const token = signSandboxJwtForTests({
     scope: "okou",

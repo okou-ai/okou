@@ -1,7 +1,7 @@
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { asc, gt, sql } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 
 type ReadDb = Pick<Db, "selectDistinct">;

@@ -1305,6 +1305,69 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.draftReadCount).toBe(gmailReadsAfterUnauthorized);
   });
 
+  it("marks Gmail for reconnect when a refreshed token is rejected", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    mockGmailDraftApi();
+    const linked = await linkDraft(fixture);
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        return HttpResponse.json(
+          body.get("grant_type") === "authorization_code"
+            ? {
+                access_token: "expired-mail-token",
+                refresh_token: "current-mail-refresh",
+                expires_in: 0,
+                token_type: "Bearer",
+                scope: GMAIL_MODIFY_SCOPE,
+              }
+            : {
+                access_token: "refreshed-mail-token",
+                expires_in: 3600,
+                token_type: "Bearer",
+              },
+        );
+      }),
+    );
+    const start = await connectors.startOauth(
+      fixture.actor,
+      "gmail",
+      "oauth",
+      undefined,
+      {
+        intent: "reconnect",
+        connectionId: fixture.gmail.id,
+      },
+    );
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected reconnect state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "expiring-mail-authorization",
+      state,
+    });
+    const gmail = mockGmailDraftApi({ accessToken: "refreshed-mail-token" });
+    gmail.unauthorized = true;
+    const rejected = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: linked.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(rejected.body.mailDraft).toMatchObject({
+      accessStatus: "reconnect",
+      detailAvailable: false,
+    });
+    await expect(
+      connectors.readConnectorBySlug(fixture.actor, "gmail"),
+    ).resolves.toMatchObject({
+      id: fixture.gmail.id,
+      connectionStatus: "reconnect-required",
+    });
+  });
+
   it("restores a draft after its Gmail connector is reconnected", async () => {
     const fixture = await seedGmailMailCardFixture();
     const gmail = mockGmailDraftApi();

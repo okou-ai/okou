@@ -1,19 +1,24 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
+import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
+import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, eq, sql } from "drizzle-orm";
+
+import { pgTextDecoder } from "../../lib/db-structured-result";
+
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
 import {
-  lockMorningBriefLegacyWriterAuthority,
-  settleSelectedLegacyMorningBriefObligation,
+  morningBriefLegacyWriterAuthorityFromRow,
+  morningBriefScheduleWhere,
 } from "./morning-brief-native-schedule.service";
-import {
-  morningBriefScheduleClaimIdForQueueEvent,
-  settleMorningBriefSchedulePreRunFailure,
-} from "./morning-brief-schedule-claim.service";
+import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 
@@ -74,273 +79,307 @@ function logPreRunFailure(
   }
 }
 
-async function recordSelectedMorningBriefPreRunFailure(
-  db: Db,
-  automation: AutomationRow,
+/** A concurrent writer changed the selected automation or its durable mirror. */
+class StalePreRunFailure extends Error {}
+
+const STALE_PRE_RUN_FAILURE = {
+  disabled: false,
+  consecutiveFailures: 0,
+} as const;
+
+function preRunFailureOutcome(
+  counted: { readonly consecutiveFailures: number },
   failure: PreRunFailure,
-  signal: AbortSignal,
-  stillDueAt?: Date,
-): Promise<boolean> {
-  if (
-    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
-    automation.ownerUserId === null
-  ) {
-    return false;
-  }
-  const isCreditError = failure.isCreditError;
-  const outcome = await db.transaction(async (tx) => {
+) {
+  return {
+    disabled:
+      !failure.isCreditError &&
+      counted.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES,
+    consecutiveFailures: counted.consecutiveFailures,
+  };
+}
+
+interface PreRunFailureInput {
+  readonly automation: AutomationRow;
+  readonly failure: PreRunFailure;
+  readonly stillDueAt?: Date;
+}
+
+/**
+ * No row locks: the native row and automation are read plainly and each write
+ * is conditional on what was read — the native mirror on its epoch, phase and
+ * lineage, then the automation on its exact row version, in the documented
+ * native -> automation order. A concurrent claim, settlement, toggle or edit
+ * that wins makes a write match zero rows; the whole transaction rolls back and
+ * this failure publishes nothing (the winner's state stands, and a still-due
+ * anchor is polled again). The pre-existing owner-key advisory lock still
+ * covers a member without a durable row.
+ */
+const recordSelectedMorningBriefPreRunFailure$ = command(
+  async (
+    { set },
+    args: PreRunFailureInput,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { automation, failure, stillDueAt } = args;
+    if (
+      automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+    ) {
+      return false;
+    }
+    const db = set(writeDb$);
     const lineage = {
       orgId: automation.orgId,
       userId: automation.ownerUserId,
       workflowId: automation.workflowId,
       automationId: automation.id,
     };
-    const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
-    if (authority.kind === "ordinary") {
-      // Additional Morning Brief installations are not durable authority. Keep
-      // their exact legacy pre-run failure path below.
-      return undefined;
-    }
-    if (authority.kind === "stale") {
-      return { disabled: false, consecutiveFailures: 0 };
-    }
-    const [current] = await tx
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, automation.id))
-      .limit(1)
-      .for("update");
-    if (
-      current === undefined ||
-      authority.row.phase !== "legacy" ||
-      (stillDueAt !== undefined &&
-        current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
-      (current.scheduleType !== "once" && !current.enabled)
-    ) {
-      return { disabled: false, consecutiveFailures: 0 };
-    }
-    const failureTime = nowDate();
-    const consecutiveFailures = isCreditError
-      ? current.consecutiveFailures
-      : current.consecutiveFailures + 1;
-    const shouldDisable =
-      !isCreditError && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
-    const nextRunAt = advanceAfterPreRunFailure(
-      current,
-      failureTime,
-      shouldDisable,
+    const settled = await settle(
+      db.transaction(async (tx) => {
+        const [native] = await tx
+          .select()
+          .from(morningBriefNativeSchedules)
+          .where(morningBriefScheduleWhere(lineage))
+          .limit(1);
+        const authority = morningBriefLegacyWriterAuthorityFromRow(
+          native,
+          lineage,
+        );
+        if (authority.kind === "ordinary") {
+          return undefined;
+        }
+        const [current] = await tx
+          .select({
+            ...workflowAutomationColumns(),
+            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, automation.id))
+          .limit(1);
+        if (
+          authority.kind === "stale" ||
+          !current ||
+          authority.row.phase !== "legacy" ||
+          (stillDueAt !== undefined &&
+            current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
+          (current.scheduleType !== "once" && !current.enabled)
+        ) {
+          return STALE_PRE_RUN_FAILURE;
+        }
+        const failureTime = nowDate();
+        const shouldDisable =
+          !failure.isCreditError &&
+          current.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
+        const nextRunAt = advanceAfterPreRunFailure(
+          current,
+          failureTime,
+          shouldDisable,
+        );
+        const { rowCount } = await tx.execute(
+          settleLegacyMorningBriefSql(lineage, authority.row, {
+            enabled: !shouldDisable,
+            cronExpression: current.cronExpression,
+            timezone: current.timezone,
+            nextRunAt,
+            at: failureTime,
+          }),
+        );
+        if (rowCount !== 1) {
+          throw new StalePreRunFailure();
+        }
+        const [updated] = await tx
+          .update(workflowAutomations)
+          .set({
+            consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
+            ...(shouldDisable
+              ? { enabled: false, officialIntendedEnabled: false }
+              : {}),
+            nextRunAt,
+            updatedAt: failureTime,
+          })
+          .where(
+            and(
+              eq(workflowAutomations.id, current.id),
+              sql`${workflowAutomations}.xmin::text = ${current.rowVersion}`,
+            ),
+          )
+          .returning({
+            consecutiveFailures: workflowAutomations.consecutiveFailures,
+          });
+        if (!updated) {
+          throw new StalePreRunFailure();
+        }
+        signal.throwIfAborted();
+        return preRunFailureOutcome(updated, failure);
+      }),
+      signal,
     );
-    await tx
+    signal.throwIfAborted();
+    if (!settled.ok && !(settled.error instanceof StalePreRunFailure)) {
+      throw settled.error;
+    }
+    const outcome = settled.ok ? settled.value : STALE_PRE_RUN_FAILURE;
+    if (outcome === undefined) {
+      return false;
+    }
+    if (outcome.disabled) {
+      log.warn("Workflow automation auto-disabled after consecutive failures", {
+        automationId: automation.id,
+        workflowId: automation.workflowId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+        error: failure.message,
+        consecutiveFailures: outcome.consecutiveFailures,
+      });
+    }
+    return true;
+  },
+);
+
+/** Only a still-unconsumed anchor may publish a pre-claim failure successor. */
+export const recordPreRunFailure$ = command(
+  async (
+    { set },
+    args: PreRunFailureInput,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { automation, failure, stillDueAt } = args;
+    logPreRunFailure(automation, failure);
+    if (await set(recordSelectedMorningBriefPreRunFailure$, args, signal)) {
+      return;
+    }
+    const db = set(writeDb$);
+    const failureTime = nowDate();
+    const increment = failure.isCreditError ? 0 : 1;
+    const threshold = sql`${workflowAutomations.consecutiveFailures} + ${increment} >= ${MAX_CONSECUTIVE_FAILURES}`;
+    const nextRunAt = advanceAfterPreRunFailure(automation, failureTime, false);
+    const [updated] = await db
       .update(workflowAutomations)
       .set({
-        consecutiveFailures,
-        ...(shouldDisable ? { enabled: false } : {}),
-        ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
-        nextRunAt,
+        consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${increment}`,
+        ...(failure.isCreditError
+          ? {}
+          : {
+              enabled: sql`CASE WHEN ${threshold} THEN false ELSE ${workflowAutomations.enabled} END`,
+            }),
+        nextRunAt: failure.isCreditError
+          ? nextRunAt
+          : sql`CASE WHEN ${threshold} THEN NULL ELSE ${nextRunAt}::timestamp END`,
         updatedAt: failureTime,
       })
-      .where(eq(workflowAutomations.id, current.id));
-    await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
-      enabled: !shouldDisable,
-      cronExpression: current.cronExpression,
-      timezone: current.timezone,
-      nextRunAt,
-      at: failureTime,
-    });
-    return { disabled: shouldDisable, consecutiveFailures };
-  });
-  signal.throwIfAborted();
-  if (outcome === undefined) {
-    return false;
-  }
-  if (outcome.disabled) {
-    log.warn("Workflow automation auto-disabled after consecutive failures", {
-      automationId: automation.id,
-      workflowId: automation.workflowId,
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-      error: failure.message,
-      consecutiveFailures: outcome.consecutiveFailures,
-    });
-  }
-  return true;
-}
-
-/**
- * `stillDueAt` restricts the update to the exact unconsumed occurrence this
- * tick resolved. A journal-aware tick that failed before it acquired any claim
- * passes it, so it can never republish a schedule, raise a failure count or
- * disable an automation that another tick already claimed or that a user has
- * since rescheduled. Legacy unjournaled ticks pass nothing and keep their exact
- * previous behavior.
- */
-export async function recordPreRunFailure(
-  db: Db,
-  automation: AutomationRow,
-  failure: PreRunFailure,
-  signal: AbortSignal,
-  stillDueAt?: Date,
-): Promise<void> {
-  const isCreditError = failure.isCreditError;
-  const context = {
-    automationId: automation.id,
-    workflowId: automation.workflowId,
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    error: failure.message,
-  };
-  logPreRunFailure(automation, failure);
-
-  if (
-    await recordSelectedMorningBriefPreRunFailure(
-      db,
-      automation,
-      failure,
-      signal,
-      stillDueAt,
-    )
-  ) {
-    return;
-  }
-
-  const failureTime = nowDate();
-  const newFailureCount = isCreditError
-    ? automation.consecutiveFailures
-    : automation.consecutiveFailures + 1;
-  const shouldDisable =
-    !isCreditError && newFailureCount >= MAX_CONSECUTIVE_FAILURES;
-  const nextRunAt = advanceAfterPreRunFailure(
-    automation,
-    failureTime,
-    shouldDisable,
-  );
-  const stillOwnsOccurrence = stillDueAt
-    ? eq(workflowAutomations.nextRunAt, stillDueAt)
-    : undefined;
-  const automationIsStillEligible =
-    automation.scheduleType === "once"
-      ? and(eq(workflowAutomations.id, automation.id), stillOwnsOccurrence)
-      : and(
+      .where(
+        and(
           eq(workflowAutomations.id, automation.id),
-          eq(workflowAutomations.enabled, true),
-          stillOwnsOccurrence,
-        );
-
-  await db
-    .update(workflowAutomations)
-    .set({
-      consecutiveFailures: newFailureCount,
-      ...(shouldDisable ? { enabled: false } : {}),
-      nextRunAt,
-      updatedAt: failureTime,
-    })
-    .where(automationIsStillEligible);
-  signal.throwIfAborted();
-
-  if (shouldDisable) {
-    log.warn("Workflow automation auto-disabled after consecutive failures", {
-      ...context,
-      consecutiveFailures: newFailureCount,
-    });
-  }
-}
-
-/** Settle a journaled Morning Brief occurrence whose tick started no run. */
-export async function settleJournaledSchedulePreRunFailure(
-  db: Db,
-  args: {
-    readonly automation: AutomationRow;
-    readonly claimId: string;
-    readonly failure: PreRunFailure;
+          automation.scheduleType === "once"
+            ? undefined
+            : eq(workflowAutomations.enabled, true),
+          stillDueAt
+            ? eq(workflowAutomations.nextRunAt, stillDueAt)
+            : undefined,
+        ),
+      )
+      .returning({
+        consecutiveFailures: workflowAutomations.consecutiveFailures,
+      });
+    signal.throwIfAborted();
+    if (
+      !failure.isCreditError &&
+      updated &&
+      updated.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
+    ) {
+      log.warn("Workflow automation auto-disabled after consecutive failures", {
+        automationId: automation.id,
+        workflowId: automation.workflowId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+        error: failure.message,
+        consecutiveFailures: updated.consecutiveFailures,
+      });
+    }
   },
-): Promise<void> {
-  await settleMorningBriefSchedulePreRunFailure(db, {
-    automationId: args.automation.id,
-    claimId: args.claimId,
-    isCreditError: args.failure.isCreditError,
-  });
-  logPreRunFailure(args.automation, args.failure);
-}
+);
 
-/**
- * A scheduled tick the pick rejected started no run, so no completion
- * callback advances its schedule. Settle it as a pre-run failure: a journaled
- * Morning Brief occurrence through its claim, any other tick through the
- * automation's failure count and next run.
- */
-async function settleRejectedScheduleTick(
-  db: Db,
-  args: {
-    readonly automation: AutomationRow;
-    readonly queueEventId: string;
-    readonly error: { readonly code: string; readonly message: string };
+export const settleJournaledSchedulePreRunFailure$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly claimId: string;
+      readonly failure: PreRunFailure;
+    },
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      settleMorningBriefSchedulePreRunFailure$,
+      {
+        automationId: args.automation.id,
+        claimId: args.claimId,
+        isCreditError: args.failure.isCreditError,
+      },
+      signal,
+    );
+    logPreRunFailure(args.automation, args.failure);
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const failure: PreRunFailure = {
-    message: `${args.error.code}: ${args.error.message}`,
-    isCreditError: args.error.code === "INSUFFICIENT_CREDITS",
-  };
-  const claimId = await morningBriefScheduleClaimIdForQueueEvent(
-    db,
-    args.queueEventId,
-  );
-  signal.throwIfAborted();
-  if (claimId !== null) {
-    await settleJournaledSchedulePreRunFailure(db, {
-      automation: args.automation,
-      claimId,
-      failure,
-    });
-    return;
-  }
-  await recordPreRunFailure(db, args.automation, failure, signal);
-}
+);
 
-/**
- * Recover the producer's settlement from the durable input, even when the
- * assembler failed before it could read the automation. Only the consumer
- * that persisted the rejection calls this; a competing consumer does not
- * advance the same schedule again.
- */
-export async function settleRejectedAutomationInput(
-  db: Db,
-  args: {
-    readonly contextId: string | null;
-    readonly queueEventId: string;
-    readonly error: { readonly code: string; readonly message: string };
+/** Resolve the exact rejected input before settling its own schedule occurrence. */
+export const settleRejectedAutomationInput$ = command(
+  async (
+    { set },
+    args: {
+      readonly contextId: string | null;
+      readonly queueEventId: string;
+      readonly error: { readonly code: string; readonly message: string };
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (args.contextId === null) {
+      return;
+    }
+    const db = set(writeDb$);
+    const [context] = await db
+      .select({ automationId: chatAutomationContext.automationId })
+      .from(chatAutomationContext)
+      .where(
+        and(
+          eq(chatAutomationContext.id, args.contextId),
+          eq(chatAutomationContext.eventType, "schedule"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!context) {
+      return;
+    }
+    const [automation] = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, context.automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!automation) {
+      return;
+    }
+    const failure = {
+      message: `${args.error.code}: ${args.error.message}`,
+      isCreditError: args.error.code === "INSUFFICIENT_CREDITS",
+    };
+    const [claim] = await db
+      .select({ id: morningBriefScheduleClaims.id })
+      .from(morningBriefScheduleClaims)
+      .where(eq(morningBriefScheduleClaims.queueEventId, args.queueEventId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (claim) {
+      await set(
+        settleJournaledSchedulePreRunFailure$,
+        { automation, claimId: claim.id, failure },
+        signal,
+      );
+    } else {
+      await set(recordPreRunFailure$, { automation, failure }, signal);
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.contextId === null) {
-    return;
-  }
-  const [context] = await db
-    .select({ automationId: chatAutomationContext.automationId })
-    .from(chatAutomationContext)
-    .where(
-      and(
-        eq(chatAutomationContext.id, args.contextId),
-        eq(chatAutomationContext.eventType, "schedule"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!context) {
-    return;
-  }
-  const [automation] = await db
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, context.automationId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!automation) {
-    return;
-  }
-  await settleRejectedScheduleTick(
-    db,
-    { automation, queueEventId: args.queueEventId, error: args.error },
-    signal,
-  );
-}
+);

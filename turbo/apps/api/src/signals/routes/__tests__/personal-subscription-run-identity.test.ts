@@ -13,7 +13,6 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
-
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
@@ -47,7 +46,6 @@ import {
   cleanupTimedOutRun,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
-
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext({ connectorCatalog: true });
 const runs = createRunsApi(context);
@@ -973,6 +971,9 @@ describe("personal subscription run identity", () => {
     ).toStrictEqual([accountB]);
     await runs.requestCancelRun(f.actor, first, [200]);
     await runs.requestCancelRun(f.actor, second, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: accountB }] });
   }, 20_000);
 
   it("reuses the same Claude identity across a reconnect", async () => {
@@ -987,6 +988,9 @@ describe("personal subscription run identity", () => {
       Authorization: `Bearer ${f.connected.token}`,
     });
     await runs.requestCancelRun(f.actor, runId, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: captured }] });
   });
 
   it.each([

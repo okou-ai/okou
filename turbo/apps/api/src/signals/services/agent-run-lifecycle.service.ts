@@ -1,11 +1,11 @@
 import { command } from "ccstate";
 import { waitUntil } from "../context/wait-until";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import {
   dispatchCompleteSideEffectsCore$,
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
-import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 
 /**
  * After the slot release commits: org-pick each

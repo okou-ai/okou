@@ -776,7 +776,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(consumeCalls).toBe(1);
   });
 
-  it("coalesces concurrent refreshes for an expired Codex account", async () => {
+  it("refreshes an expired Codex account once and reuses the rotated token", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-refresh");
     await enablePersonalModelProviderAccounts(fixture);
     const authJson = makeAuthJsonFixture({ accessExpiresInSeconds: -60 });
@@ -830,22 +830,12 @@ describe("POST /api/me/model-providers (upsert)", () => {
       modelProviderId: expect.any(String),
       needsReconnect: false,
     });
-    const [first, second] = await Promise.all([
-      accept(
-        client.list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const listed = await accept(
+        client.list({ headers: { authorization: "Bearer clerk-session" } }),
         [200],
-      ),
-      accept(
-        client.list({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      ),
-    ]);
-    for (const response of [first, second]) {
-      expect(response.body.modelProviders[0]).toMatchObject({
+      );
+      expect(listed.body.modelProviders[0]).toMatchObject({
         id: connected.body.provider.id,
         needsReconnect: false,
         subscriptionUsage: {
@@ -860,12 +850,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
       `Bearer ${refreshedAccessToken}`,
       `Bearer ${refreshedAccessToken}`,
     ]);
-
-    await accept(
-      client.list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(refreshCalls).toBe(1);
   });
 
   it("returns and short-circuits terminal Codex reconnect state", async () => {

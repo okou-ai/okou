@@ -13,7 +13,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
@@ -281,8 +281,12 @@ export async function touchChatThreadLastMessageAt(
 }
 
 export function visibleChatEventCondition(
-  db: Pick<Db, "select">,
+  _db: Pick<Db, "select">,
 ): SQL | undefined {
+  return visibleChatEventPredicate();
+}
+
+export function visibleChatEventPredicate(): SQL | undefined {
   const isUserInputEvent = chatEventTypeIn([
     "input.prompt",
     "input.automation",
@@ -296,7 +300,7 @@ export function visibleChatEventCondition(
   );
   return and(
     notExists(
-      db
+      new QueryBuilder()
         .select({ id: revoker.id })
         .from(revoker)
         .where(eq(revoker.revokesEventId, chatEvents.id)),

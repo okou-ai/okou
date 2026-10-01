@@ -214,9 +214,20 @@ async function reprojectStripeAutomation(
       string,
       StripeInvoicePaidAutomationReadinessResult
     >;
+    /**
+     * Repair publishes only while the automation is still unbound, so a
+     * reprojection that bound it after the read below is never overwritten.
+     */
+    readonly onlyIfUnbound?: boolean;
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const target = and(
+    eq(workflowAutomations.id, args.automation.id),
+    args.onlyIfUnbound === true
+      ? isNull(workflowAutomations.eventConnectorId)
+      : undefined,
+  );
   const connectorId = await resolveWorkflowAutomationConnectorId(db, {
     orgId: args.orgId,
     userId: args.userId,
@@ -230,7 +241,7 @@ async function reprojectStripeAutomation(
       await db
         .update(workflowAutomations)
         .set({ eventConnectorId: null })
-        .where(eq(workflowAutomations.id, args.automation.id));
+        .where(target);
     }
     return;
   }
@@ -266,7 +277,7 @@ async function reprojectStripeAutomation(
       await db
         .update(workflowAutomations)
         .set({ eventConnectorId: connectorId })
-        .where(eq(workflowAutomations.id, args.automation.id));
+        .where(target);
     }
     return;
   }
@@ -289,7 +300,7 @@ async function reprojectStripeAutomation(
       eventConnectorId: connectorId,
       eventConfig: { ...config, ...binding },
     })
-    .where(eq(workflowAutomations.id, args.automation.id));
+    .where(target);
 }
 
 export async function reprojectStripeInvoicePaidAutomationsForOwner(
@@ -370,6 +381,7 @@ export async function repairMissingStripeInvoicePaidAutomationProjection(
       userId: args.userId,
       automation,
       readinessByConnectorId: new Map(),
+      onlyIfUnbound: true,
     },
     signal,
   );

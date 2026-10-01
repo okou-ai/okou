@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -22,6 +21,7 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -31,15 +31,17 @@ import {
 } from "../../../lib/file-url";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
+import { presentationTemplatesRoutes } from "../presentation-templates";
+import { userTemplatesRoutes } from "../user-templates";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
+  assistantEvent,
   createChatEventsFixture,
-  type PromptMessage,
+  eventBackedContents,
   userMessageWithTemplate,
   userMessages,
-  eventBackedContents,
-  assistantEvent,
+  type PromptMessage,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
@@ -48,8 +50,6 @@ import {
   tarGz,
   uploadTemplateFile,
 } from "./helpers/template-publish-fixture";
-import { presentationTemplatesRoutes } from "../presentation-templates";
-import { userTemplatesRoutes } from "../user-templates";
 
 const context = testContext();
 const {

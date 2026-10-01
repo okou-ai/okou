@@ -1,3 +1,4 @@
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 import { command } from "ccstate";
 import type {
   CodexDeviceAuthMode,
@@ -11,11 +12,10 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   detach,
   Mechanism,
-  onRejection,
   safeJsonParse,
   safeSync,
   settle,
@@ -29,7 +29,7 @@ import {
 } from "./crypto.utils";
 import { handleCodexAuthJsonPaste } from "./codex-auth-json-paste-handler";
 import {
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
@@ -318,182 +318,204 @@ function sessionWhere(args: {
   );
 }
 
-async function cancelActiveSessions(args: {
-  readonly writeDb: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly now: Date;
-}): Promise<void> {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "cancelled",
-        now: args.now,
-        message: "Codex device auth session was superseded",
-      }),
-    )
-    .where(
-      and(
-        ownerWhere(args),
-        inArray(modelProviderAuthSessions.status, [
-          ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
-        ]),
-      ),
-    );
-}
-
-async function cancelSession(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly message: string;
-}): Promise<void> {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "cancelled",
-        now: nowDate(),
-        message: args.message,
-      }),
-    )
-    .where(
-      and(
-        sessionWhere({
-          sessionId: args.sessionId,
-          orgId: args.orgId,
-          userId: args.userId,
+const cancelActiveSessions$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly now: Date;
+    },
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "cancelled",
+          now: args.now,
+          message: "Codex device auth session was superseded",
         }),
-        inArray(modelProviderAuthSessions.status, [
-          ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
-        ]),
-      ),
-    );
-}
-
-async function createSession(args: {
-  readonly writeDb: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly expiresAt: Date;
-}): Promise<ModelProviderAuthSession> {
-  const [session] = await args.writeDb
-    .insert(modelProviderAuthSessions)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorType: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
-      source: CODEX_DEVICE_AUTH_SOURCE,
-      status: "initializing",
-      expiresAt: args.expiresAt,
-    })
-    .returning();
-  if (!session) {
-    throw new Error("Failed to create Codex device auth session");
-  }
-  return session;
-}
-
-function registerStartAbortCancellation(
-  args: {
-    readonly writeDb: Db;
-    readonly session: ModelProviderAuthSession;
-    readonly orgId: string;
-    readonly userId: string;
+      )
+      .where(
+        and(
+          ownerWhere(args),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
-  signal: AbortSignal,
-): () => void {
-  const cleanupOnAbort = () => {
-    detach(
-      cancelSession({
-        writeDb: args.writeDb,
-        sessionId: args.session.id,
+);
+
+const cancelSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly message: string;
+    },
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "cancelled",
+          now: nowDate(),
+          message: args.message,
+        }),
+      )
+      .where(
+        and(
+          sessionWhere({
+            sessionId: args.sessionId,
+            orgId: args.orgId,
+            userId: args.userId,
+          }),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const createSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly expiresAt: Date;
+    },
+  ): Promise<ModelProviderAuthSession> => {
+    const writeDb = set(writeDb$);
+    const [session] = await writeDb
+      .insert(modelProviderAuthSessions)
+      .values({
         orgId: args.orgId,
         userId: args.userId,
-        message: "Codex device auth session was cancelled",
-      }),
-      Mechanism.WaitUntil,
-      "cancel aborted Codex device auth session",
+        connectorType: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
+        source: CODEX_DEVICE_AUTH_SOURCE,
+        status: "initializing",
+        expiresAt: args.expiresAt,
+      })
+      .returning();
+    if (!session) {
+      throw new Error("Failed to create Codex device auth session");
+    }
+    return session;
+  },
+);
+
+const markSessionError$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly message: string;
+    },
+  ) => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "error",
+          now: nowDate(),
+          message: args.message,
+        }),
+      )
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.sessionId),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const markSessionExpired$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+    },
+  ) => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "expired",
+          now: nowDate(),
+        }),
+      )
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const moveSessionToAwaitingApproval$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+      readonly scope: CodexDeviceAuthScope;
+      readonly mode?: CodexDeviceAuthMode;
+      readonly modelProviderId?: string;
+      readonly deviceAuthId: string;
+      readonly userCode: string;
+    },
+  ): Promise<ModelProviderAuthSession> => {
+    const encryptedProviderState = await encodeProviderState(
+      {
+        version: 1,
+        type: "codex",
+        scope: args.scope,
+        ...(args.mode ? { mode: args.mode } : {}),
+        ...(args.modelProviderId
+          ? { modelProviderId: args.modelProviderId }
+          : {}),
+        deviceAuthId: args.deviceAuthId,
+        userCode: args.userCode,
+      },
+      args.session,
     );
-  };
-  signal.addEventListener("abort", cleanupOnAbort, { once: true });
-  return () => {
-    signal.removeEventListener("abort", cleanupOnAbort);
-  };
-}
-
-async function markSessionError(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly message: string;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "error",
-        now: nowDate(),
-        message: args.message,
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.sessionId));
-}
-
-async function markSessionExpired(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "expired",
-        now: nowDate(),
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.session.id));
-}
-
-async function moveSessionToAwaitingApproval(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-  readonly scope: CodexDeviceAuthScope;
-  readonly mode?: CodexDeviceAuthMode;
-  readonly modelProviderId?: string;
-  readonly deviceAuthId: string;
-  readonly userCode: string;
-}): Promise<ModelProviderAuthSession> {
-  const [updated] = await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set({
-      status: "awaiting_user_approval",
-      approvalUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
-      verificationCode: args.userCode,
-      encryptedProviderState: await encodeProviderState(
-        {
-          version: 1,
-          type: "codex",
-          scope: args.scope,
-          ...(args.mode ? { mode: args.mode } : {}),
-          ...(args.modelProviderId
-            ? { modelProviderId: args.modelProviderId }
-            : {}),
-          deviceAuthId: args.deviceAuthId,
-          userCode: args.userCode,
-        },
-        args.session,
-      ),
-      updatedAt: nowDate(),
-    })
-    .where(eq(modelProviderAuthSessions.id, args.session.id))
-    .returning();
-  if (!updated) {
-    throw new Error("Failed to update Codex device auth session");
-  }
-  return updated;
-}
+    const writeDb = set(writeDb$);
+    const [updated] = await writeDb
+      .update(modelProviderAuthSessions)
+      .set({
+        status: "awaiting_user_approval",
+        approvalUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
+        verificationCode: args.userCode,
+        encryptedProviderState,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "initializing"),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("Failed to update Codex device auth session");
+    }
+    return updated;
+  },
+);
 
 async function readJsonResponse(response: Response): Promise<unknown> {
   const text = await response.text();
@@ -637,130 +659,155 @@ async function exchangeOpenAiAuthorizationCode(
   };
 }
 
-export async function startCodexDeviceAuth(
-  args: {
-    readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly scope: CodexDeviceAuthScope;
-    readonly mode?: CodexDeviceAuthMode;
-    readonly modelProviderId?: string;
-  },
-  signal: AbortSignal,
-): Promise<CodexDeviceAuthStartResult> {
-  const startedAt = nowDate();
-  await cancelActiveSessions({
-    writeDb: args.writeDb,
-    orgId: args.orgId,
-    userId: args.userId,
-    now: startedAt,
-  });
-
-  const session = await createSession({
-    writeDb: args.writeDb,
-    orgId: args.orgId,
-    userId: args.userId,
-    expiresAt: expiresAt(startedAt),
-  });
-  const unregisterAbortCancellation = registerStartAbortCancellation(
-    {
-      writeDb: args.writeDb,
-      session,
+export const startCodexDeviceAuth$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly scope: CodexDeviceAuthScope;
+      readonly mode?: CodexDeviceAuthMode;
+      readonly modelProviderId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<CodexDeviceAuthStartResult> => {
+    const startedAt = nowDate();
+    await set(cancelActiveSessions$, {
       orgId: args.orgId,
       userId: args.userId,
-    },
-    signal,
-  );
-  const userCodeResult = await onRejection(
-    settle(requestOpenAiDeviceUserCode(signal), signal),
-    unregisterAbortCancellation,
-  );
-  unregisterAbortCancellation();
-  signal.throwIfAborted();
-  if (!userCodeResult.ok) {
-    const message = unknownErrorMessage(
-      userCodeResult.error,
-      "Codex device code request failed",
-    );
-    await markSessionError({
-      writeDb: args.writeDb,
-      sessionId: session.id,
-      message,
+      now: startedAt,
     });
-    return {
-      ok: false,
-      code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
-      message,
+    signal.throwIfAborted();
+
+    const session = await set(createSession$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      expiresAt: expiresAt(startedAt),
+    });
+    if (signal.aborted) {
+      await set(cancelSession$, {
+        sessionId: session.id,
+        orgId: args.orgId,
+        userId: args.userId,
+        message: "Codex device auth session was cancelled",
+      });
+      signal.throwIfAborted();
+    }
+    const cancelStartedSession = () => {
+      detach(
+        set(cancelSession$, {
+          sessionId: session.id,
+          orgId: args.orgId,
+          userId: args.userId,
+          message: "Codex device auth session was cancelled",
+        }),
+        Mechanism.WaitUntil,
+        "cancel aborted Codex device auth session",
+      );
     };
-  }
+    signal.addEventListener("abort", cancelStartedSession, { once: true });
+    const unregisterAbortCancellation = () => {
+      signal.removeEventListener("abort", cancelStartedSession);
+    };
+    return await (async (): Promise<CodexDeviceAuthStartResult> => {
+      const userCodeResult = await settle(
+        requestOpenAiDeviceUserCode(signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!userCodeResult.ok) {
+        const message = unknownErrorMessage(
+          userCodeResult.error,
+          "Codex device code request failed",
+        );
+        await set(markSessionError$, {
+          sessionId: session.id,
+          message,
+        });
+        signal.throwIfAborted();
+        return {
+          ok: false,
+          code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
+          message,
+        };
+      }
 
-  const updated = await moveSessionToAwaitingApproval({
-    writeDb: args.writeDb,
-    session,
-    scope: args.scope,
-    mode: args.mode,
-    modelProviderId: args.modelProviderId,
-    deviceAuthId: userCodeResult.value.deviceAuthId,
-    userCode: userCodeResult.value.userCode,
-  });
-  signal.throwIfAborted();
+      const updated = await settle(
+        set(moveSessionToAwaitingApproval$, {
+          session,
+          scope: args.scope,
+          mode: args.mode,
+          modelProviderId: args.modelProviderId,
+          deviceAuthId: userCodeResult.value.deviceAuthId,
+          userCode: userCodeResult.value.userCode,
+        }),
+        signal,
+      );
+      signal.throwIfAborted();
 
-  return {
-    ok: true,
-    sessionToken: encodeSession({ version: 1, sessionId: session.id }),
-    scope: args.scope,
-    browserUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
-    verificationCode: userCodeResult.value.userCode,
-    expiresIn: remainingTtlSeconds(updated.expiresAt, nowDate()),
-    interval: userCodeResult.value.interval,
-  };
-}
+      if (!updated.ok) {
+        return {
+          ok: false,
+          code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
+          message: unknownErrorMessage(
+            updated.error,
+            "Codex device auth session changed",
+          ),
+        };
+      }
+      return {
+        ok: true,
+        sessionToken: encodeSession({ version: 1, sessionId: session.id }),
+        scope: args.scope,
+        browserUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
+        verificationCode: userCodeResult.value.userCode,
+        expiresIn: remainingTtlSeconds(updated.value.expiresAt, nowDate()),
+        interval: userCodeResult.value.interval,
+      };
+    })().finally(unregisterAbortCancellation);
+  },
+);
 
-async function loadSession(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<ModelProviderAuthSession | null> {
-  const [session] = await args.writeDb
-    .select()
-    .from(modelProviderAuthSessions)
-    .where(sessionWhere(args))
-    .limit(1);
-  return session ?? null;
-}
+const loadSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ): Promise<ModelProviderAuthSession | null> => {
+    const writeDb = set(writeDb$);
+    const [session] = await writeDb
+      .select()
+      .from(modelProviderAuthSessions)
+      .where(sessionWhere(args))
+      .limit(1);
+    return session ?? null;
+  },
+);
 
-async function claimCompleting(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}): Promise<boolean> {
-  const [updated] = await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set({ status: "completing", updatedAt: nowDate() })
-    .where(
-      and(
-        eq(modelProviderAuthSessions.id, args.session.id),
-        eq(modelProviderAuthSessions.status, "awaiting_user_approval"),
-      ),
-    )
-    .returning({ id: modelProviderAuthSessions.id });
-  return Boolean(updated);
-}
-
-async function markSessionImported(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "imported",
-        now: nowDate(),
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.session.id));
-}
+const claimCompleting$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+    },
+  ): Promise<boolean> => {
+    const writeDb = set(writeDb$);
+    const [updated] = await writeDb
+      .update(modelProviderAuthSessions)
+      .set({ status: "completing", updatedAt: nowDate() })
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "awaiting_user_approval"),
+        ),
+      )
+      .returning({ id: modelProviderAuthSessions.id });
+    return Boolean(updated);
+  },
+);
 
 function isSessionExpired(session: ModelProviderAuthSession): boolean {
   return session.expiresAt.getTime() <= nowDate().getTime();
@@ -780,6 +827,7 @@ function personalAccountMutation(args: {
 }
 
 interface ImportCodexAuthJsonArgs {
+  readonly authSession?: DeviceAuthSessionPublication;
   readonly scope: CodexDeviceAuthScope;
   readonly orgId: string;
   readonly userId: string;
@@ -833,6 +881,7 @@ const importCodexAuthJson$ = command(
             upsertOrgMultiAuthModelProvider$,
             {
               orgId: args.orgId,
+              authSession: args.authSession,
               type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
               authMethod: pasteArgs.authMethod,
               secretValues: pasteArgs.secretValues,
@@ -851,10 +900,11 @@ const importCodexAuthJson$ = command(
           const featureSwitchContext = await get(
             userFeatureSwitchContext(args.orgId, args.userId),
           );
-          const result = await upsertPersonalModelProviderAccount(
+          const result = await set(
+            upsertPersonalModelProviderAccount$,
             {
-              db: set(writeDb$),
               orgId: args.orgId,
+              authSession: args.authSession,
               userId: args.userId,
               type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
               authMethod: pasteArgs.authMethod,
@@ -872,6 +922,7 @@ const importCodexAuthJson$ = command(
           upsertUserMultiAuthModelProvider$,
           {
             orgId: args.orgId,
+            authSession: args.authSession,
             userId: args.userId,
             type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
             authMethod: pasteArgs.authMethod,
@@ -988,7 +1039,6 @@ const completeLoadedCodexDeviceAuth$ = command(
   async (
     { set },
     args: {
-      readonly writeDb: Db;
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
       readonly userId: string;
@@ -996,9 +1046,9 @@ const completeLoadedCodexDeviceAuth$ = command(
     },
     signal: AbortSignal,
   ): Promise<CodexDeviceAuthCompleteResult> => {
-    const { writeDb, session } = args;
+    const { session } = args;
     if (isSessionExpired(session)) {
-      await markSessionExpired({ writeDb, session });
+      await set(markSessionExpired$, { session });
       signal.throwIfAborted();
       return {
         status: "invalid_token",
@@ -1043,8 +1093,7 @@ const completeLoadedCodexDeviceAuth$ = command(
       return { status: "pending", errorMessage: null };
     }
     if (deviceToken.status === "error") {
-      await markSessionError({
-        writeDb,
+      await set(markSessionError$, {
         sessionId: session.id,
         message: deviceToken.message,
       });
@@ -1056,7 +1105,7 @@ const completeLoadedCodexDeviceAuth$ = command(
       };
     }
 
-    const claimed = await claimCompleting({ writeDb, session });
+    const claimed = await set(claimCompleting$, { session });
     signal.throwIfAborted();
     if (!claimed) {
       return { status: "pending", errorMessage: null };
@@ -1065,7 +1114,6 @@ const completeLoadedCodexDeviceAuth$ = command(
     return await set(
       importClaimedCodexDeviceAuth$,
       {
-        writeDb,
         session,
         scope: providerState.scope,
         mode: providerState.mode,
@@ -1084,7 +1132,6 @@ const importClaimedCodexDeviceAuth$ = command(
   async (
     { get, set },
     args: {
-      readonly writeDb: Db;
       readonly session: ModelProviderAuthSession;
       readonly scope: CodexDeviceAuthScope;
       readonly mode: CodexDeviceAuthMode | undefined;
@@ -1113,8 +1160,7 @@ const importClaimedCodexDeviceAuth$ = command(
         tokens.error,
         "Codex device auth token exchange failed",
       );
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message,
       });
@@ -1134,7 +1180,7 @@ const importClaimedCodexDeviceAuth$ = command(
     const accountMutation =
       featureSwitchContext &&
       (await personalAccountsEnabledForOrg(
-        args.writeDb,
+        set(writeDb$),
         args.orgId,
         isFeatureEnabled(
           FeatureSwitchKey.PersonalModelProviderAccounts,
@@ -1147,6 +1193,11 @@ const importClaimedCodexDeviceAuth$ = command(
       set(
         importCodexAuthJson$,
         {
+          authSession: {
+            id: args.session.id,
+            userId: args.userId,
+            source: "codex-device-auth",
+          },
           scope: args.scope,
           orgId: args.orgId,
           userId: args.userId,
@@ -1164,8 +1215,7 @@ const importClaimedCodexDeviceAuth$ = command(
         imported.error,
         "Codex device auth import failed",
       );
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message,
       });
@@ -1178,8 +1228,7 @@ const importClaimedCodexDeviceAuth$ = command(
     }
 
     if (imported.value.status === "auth_error") {
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message: imported.value.response.body.error.message,
       });
@@ -1187,8 +1236,6 @@ const importClaimedCodexDeviceAuth$ = command(
       return imported.value;
     }
 
-    await markSessionImported({ writeDb: args.writeDb, session: args.session });
-    signal.throwIfAborted();
     return {
       status: "complete",
       body: {
@@ -1218,9 +1265,7 @@ export const completeCodexDeviceAuth$ = command(
       };
     }
 
-    const writeDb = set(writeDb$);
-    const session = await loadSession({
-      writeDb,
+    const session = await set(loadSession$, {
       sessionId: decoded.sessionId,
       orgId: args.orgId,
       userId: args.userId,
@@ -1236,7 +1281,6 @@ export const completeCodexDeviceAuth$ = command(
     return await set(
       completeLoadedCodexDeviceAuth$,
       {
-        writeDb,
         session,
         orgId: args.orgId,
         userId: args.userId,
@@ -1265,9 +1309,7 @@ export const cancelCodexDeviceAuth$ = command(
       };
     }
 
-    const writeDb = set(writeDb$);
-    const session = await loadSession({
-      writeDb,
+    const session = await set(loadSession$, {
       sessionId: decoded.sessionId,
       orgId: args.orgId,
       userId: args.userId,
@@ -1281,8 +1323,7 @@ export const cancelCodexDeviceAuth$ = command(
       };
     }
 
-    await cancelSession({
-      writeDb,
+    await set(cancelSession$, {
       sessionId: session.id,
       orgId: args.orgId,
       userId: args.userId,

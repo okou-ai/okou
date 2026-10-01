@@ -1,9 +1,11 @@
+import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { randomUUID } from "node:crypto";
+import { testUsageStateRoutes } from "../test-usage-state";
 
-import { createStore } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { mapsContract } from "@okouai/api-contracts/contracts/maps";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { createStore } from "ccstate";
 import { http } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -12,12 +14,14 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createUsagePricingFixture,
   seedUsagePricingRows,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { mapsRoutes } from "../maps";
+import { usageRecordRoutes } from "../usage-record";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -32,12 +36,8 @@ import { createRouteMocks } from "./helpers/route-test";
 import {
   deleteBillingAttribution$,
   deleteRun$,
-  materializeHourlyUsage$,
-  readUsageStorageCounts$,
   seedRun$,
 } from "./helpers/usage-state";
-import { mapsRoutes } from "../maps";
-import { usageRecordRoutes } from "../usage-record";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -307,6 +307,59 @@ async function recordConnectorUsage(
     sandboxHeaders(actor, runId),
     [200],
   );
+}
+
+function creditPurchaseEvent(
+  actor: ApiTestUser,
+  subtotal: number,
+  expiresAt: Date,
+) {
+  return {
+    id: `evt_expiry_${randomUUID()}`,
+    type: "invoice.paid",
+    created: Math.floor(nowDate().getTime() / 1000),
+    data: {
+      object: {
+        id: `in_expiry_${randomUUID()}`,
+        customer: null,
+        subtotal,
+        metadata: {
+          type: "credit_purchase",
+          purpose: "credit_purchase",
+          orgId: actor.orgId,
+          creditsAmountMode: "amount_subtotal",
+          creditsExpiresAt: expiresAt.toISOString(),
+        },
+        parent: null,
+      },
+    },
+  };
+}
+
+/** The webhook accepts at most 100 events per request. */
+async function recordConnectorBacklog(
+  actor: ApiTestUser,
+  runId: string,
+  provider: string,
+): Promise<void> {
+  for (const count of [100, 1]) {
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId,
+        events: Array.from({ length: count }, () => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "connector" as const,
+            provider,
+            category: "api_request",
+            quantity: 1,
+          };
+        }),
+      },
+      sandboxHeaders(actor, runId),
+      [200],
+    );
+  }
 }
 
 async function recordImageUsage(
@@ -676,7 +729,8 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("returns rows, totals, tokens, and breakdowns from hourly storage", async () => {
+  it("preserves usage records across repeated compaction and late same-hour usage", async () => {
+    mockNow(new Date(nowDate().getTime() - 5 * DAY_MS));
     const fixture = await entitledRecordActor();
     if (!fixture.actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -692,24 +746,13 @@ describe("GET /api/usage/record", () => {
     await recordModelUsage(fixture.actor, run.runId, model, { input: 50 });
     await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 2);
     await billing.processOrgUsageEvents(fixture.actor);
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(2);
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "user", id: fixture.actor.userId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 0, hourly: 2 });
+    const compactor = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
 
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     const response = await accept(
@@ -754,6 +797,28 @@ describe("GET /api/usage/record", () => {
         ],
       }),
     ]);
+    // A later notification settles into the same hour, after the first batch
+    // already committed. Product reads must include both immutable fragments.
+    await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 1);
+    await billing.processOrgUsageEvents(fixture.actor);
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
+    const after = await accept(
+      apiClient().get({
+        query: { range: "today", tz: "UTC" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(after.body.totalCredits).toBe(80);
+    expect(after.body.pagination.total).toBe(1);
+    expect(after.body.rows).toMatchObject([{ credits: 80, tokens: 50 }]);
   });
 
   it("combines historical threadless usage without changing credits", async () => {
@@ -1067,11 +1132,21 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("uses Maps grounding settlement time consistently for rows, totals, and breakdowns", async () => {
+  it("returns the current Maps receipt before settling a multi-page backlog exactly once", async () => {
     const fixture = await entitledRecordActor();
     billing.configureMapsProvider();
+    const provider = uniqueProvider("maps-pending-backlog");
     const pricing = await createUsagePricingFixture({
-      configured: MAPS_GROUNDING_PRICING_ROWS,
+      configured: [
+        ...MAPS_GROUNDING_PRICING_ROWS,
+        {
+          kind: "connector",
+          provider,
+          category: "api_request",
+          unitPrice: 1,
+          unitSize: 1,
+        },
+      ],
     });
     onTestFinished(pricing.cleanup);
     server.use(
@@ -1084,6 +1159,7 @@ describe("GET /api/usage/record", () => {
       prompt: "Settlement boundary usage",
       triggerSource: "test",
     });
+    await recordConnectorBacklog(fixture.actor, run.runId, provider);
     const settledAt = new Date(nowDate().getTime() + 8 * DAY_MS);
     mockNow(settledAt);
     const mapsToken = api.okouTokenForRunWithCapabilities(
@@ -1141,7 +1217,111 @@ describe("GET /api/usage/record", () => {
         ],
       },
     ]);
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    const caughtUp = await billing.readUsageRecord(fixture.actor, "7d");
+    expect(caughtUp.body.totalCredits).toBe(133);
+    expect(caughtUp.body.rows).toHaveLength(1);
+    expect(caughtUp.body.rows[0]?.credits).toBe(133);
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    const retried = await billing.readUsageRecord(fixture.actor, "7d");
+    expect(retried.body).toStrictEqual(caughtUp.body);
   });
+
+  it.each([2, 120])(
+    "finishes %i expired purchases before a new purchase and preserves duplicate receipts",
+    async (expiredPurchaseCount) => {
+      const fixture = await entitledRecordActor();
+      webhooks.configureStripeBillingEnv();
+      const provider = uniqueProvider("expired-wallet-purchase");
+      const pricing = await createUsagePricingFixture({
+        configured: [
+          {
+            kind: "connector",
+            provider,
+            category: "api_request",
+            unitPrice: 1,
+            unitSize: 1,
+          },
+        ],
+      });
+      onTestFinished(pricing.cleanup);
+      const run = await createUnthreadedRun(fixture.actor, {
+        prompt: "Wallet expiry admission",
+        triggerSource: "test",
+      });
+      await webhooks.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category: "api_request",
+              quantity: 20_000 + expiredPurchaseCount * 50 - 5,
+            },
+          ],
+        },
+        sandboxHeaders(fixture.actor, run.runId),
+        [200],
+      );
+      await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(
+        5 - expiredPurchaseCount * 50,
+      );
+
+      // Repaying real usage debt leaves a wallet of 5 with much larger tracked
+      // expiration. Both small and accumulated histories must preserve the new money.
+      const expiresAt = new Date(nowDate().getTime() + DAY_MS);
+      for (let index = 0; index < expiredPurchaseCount; index++) {
+        await webhooks.postStripeEvent(
+          creditPurchaseEvent(fixture.actor, 5, expiresAt),
+          [200],
+        );
+      }
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(5);
+      mockNow(new Date(expiresAt.getTime() + 1000));
+      const purchase = creditPurchaseEvent(
+        fixture.actor,
+        15,
+        new Date(expiresAt.getTime() + 30 * DAY_MS),
+      );
+      await Promise.all([
+        webhooks.postStripeEvent(purchase, [200]),
+        webhooks.postStripeEvent(purchase, [200]),
+      ]);
+      const afterPurchase = await billing.readBillingStatus(fixture.actor);
+      expect(afterPurchase.credits).toBe(150);
+      expect(afterPurchase.creditGrants).toStrictEqual([
+        expect.objectContaining({
+          source: "credit_purchase",
+          amount: 150,
+          remaining: 150,
+        }),
+      ]);
+      await webhooks.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category: "api_request",
+              quantity: 1,
+            },
+          ],
+        },
+        sandboxHeaders(fixture.actor, run.runId),
+        [200],
+      );
+      await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+      await webhooks.postStripeEvent(purchase, [200]);
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(
+        149,
+      );
+    },
+  );
 
   it("returns an empty null-period response for free billing period usage", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);

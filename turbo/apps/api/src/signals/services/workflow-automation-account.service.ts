@@ -2,7 +2,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 
@@ -53,4 +53,28 @@ export async function resolveWorkflowAutomationConnectorId(
     )
     .limit(1);
   return defaultAccount?.connectorId ?? null;
+}
+
+export function workflowAutomationConnectorSelectionSql(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly connectorSlug: string;
+}) {
+  return sql`WITH selected AS (
+    SELECT ${chatThreadConnectorSelections.connectorId} AS connector_id
+    FROM ${workflowUserAutomationThreads}
+    JOIN ${chatThreadConnectorSelections}
+      ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
+      AND ${chatThreadConnectorSelections.connectorSlug} = ${args.connectorSlug}
+    WHERE ${workflowUserAutomationThreads.orgId} = ${args.orgId}
+      AND ${workflowUserAutomationThreads.userId} = ${args.userId}
+      AND ${workflowUserAutomationThreads.workflowId} = ${args.workflowId}
+    LIMIT 1
+  ) SELECT CASE WHEN EXISTS(SELECT 1 FROM selected)
+    THEN (SELECT connector_id FROM selected)
+    ELSE (SELECT ${connectors.id} FROM ${connectors}
+      WHERE ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
+        AND ${connectors.connectorSlug} = ${args.connectorSlug} AND ${connectors.isDefault}
+      LIMIT 1) END AS "connectorId"`;
 }

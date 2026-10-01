@@ -165,6 +165,7 @@ export const userPreferencesContract = c.router({
       200: userPreferencesResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Update user preferences",

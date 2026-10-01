@@ -1,18 +1,13 @@
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { command } from "ccstate";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import {
-  releaseRunSlots,
-  transitionAgentRunsToTerminal,
-  type ReleasedRunSlot,
-} from "./agent-run-terminal-transition.service";
+import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { command } from "ccstate";
 import {
   and,
   eq,
@@ -24,10 +19,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
@@ -35,23 +30,28 @@ import {
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
+import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import {
   dispatchCompleteSideEffects$,
   scheduleReleasedSlotPicks$,
 } from "./agent-run-lifecycle.service";
-import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
-import { createPickObjects } from "./pick-chat-run.service";
-import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
+import {
+  releaseRunSlots,
+  transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
+} from "./agent-run-terminal-transition.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
+import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
+import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
+import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
+import { createPickObjects } from "./pick-chat-run.service";
+import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import {
   cleanupThreadlessRuns$,
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
-import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
-import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 
 const L = logger("CronCleanupSandboxes");
 

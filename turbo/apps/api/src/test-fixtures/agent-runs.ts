@@ -26,7 +26,6 @@ import {
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
 import { loadModelCatalog } from "../signals/services/model-catalog.service";
-
 /**
  * Test fixtures for retired agent-run API capabilities.
  *

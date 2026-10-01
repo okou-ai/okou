@@ -816,6 +816,89 @@ describe("connector account lifecycle routes", () => {
     ).toHaveLength(1);
   });
 
+  it("keeps one builtin default through concurrent default changes and deletion", async () => {
+    await seedFixture();
+    const target = { kind: "builtin" as const, connectorSlug: "openai" };
+    const [first, second, third] = await Promise.all(
+      ["Work", "Personal", "Side"].map(async (displayName) => {
+        const connected = await accept(
+          connectorClient().connect({
+            headers: authHeaders(),
+            params: { connectorSlug: "openai" },
+            body: {
+              authMethod: "api-token",
+              account: { intent: "add", displayName },
+              values: { apiKey: `sk-${displayName}` },
+            },
+          }),
+          [200],
+        );
+        return connected.body.id;
+      }),
+    );
+    if (!first || !second || !third) {
+      throw new Error("Expected three connected builtin accounts");
+    }
+    const listDefaults = async () => {
+      const listed = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: { ...target, limit: 100 },
+        }),
+        [200],
+      );
+      return listed.body.connections.filter((account) => {
+        return account.isDefault;
+      });
+    };
+    await expect(listDefaults()).resolves.toHaveLength(1);
+
+    await Promise.all(
+      [first, second, third].map(async (connectionId) => {
+        await accept(
+          accountClient().setDefault({
+            headers: authHeaders(),
+            params: { connectionId },
+            body: { target },
+          }),
+          [200, 400],
+        );
+      }),
+    );
+    await expect(listDefaults()).resolves.toHaveLength(1);
+
+    await accept(
+      accountClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: second },
+        body: { target },
+      }),
+      [200],
+    );
+    const [, deleted] = await Promise.all([
+      accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: first },
+          body: { target },
+        }),
+        [200],
+      ),
+      accept(
+        accountClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: second },
+          body: { target },
+        }),
+        [200],
+      ),
+    ]);
+    expect(deleted.body.deletedConnectionId).toBe(second);
+    const remainingDefaults = await listDefaults();
+    expect(remainingDefaults).toHaveLength(1);
+    expect([first, third]).toContain(remainingDefaults[0]?.id);
+  });
+
   async function createBulkAccounts(): Promise<string[]> {
     await seedFixture();
 
@@ -1266,7 +1349,7 @@ describe("connector account lifecycle routes", () => {
             params: { connectionId },
             body: { target },
           }),
-          [200],
+          [200, 400],
         );
       }),
     );

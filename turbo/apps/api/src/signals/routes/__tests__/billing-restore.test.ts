@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  billingAutoRechargeContract,
   billingRestoreContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
@@ -15,6 +16,7 @@ import {
   type InvoicesOrgFixture,
 } from "./helpers/billing-invoices";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
 import { billingRestoreRoutes } from "../billing-restore";
 import { billingStatusRoutes } from "../billing-status";
 
@@ -213,6 +215,55 @@ describe("POST /api/billing/restore", () => {
       { cancel_at_period_end: false },
     );
 
+    const status = await readBillingStatus();
+    expect(status.body.cancelAtPeriodEnd).toBeFalsy();
+    expect(status.body.scheduledChange).toBeNull();
+  });
+
+  it("records a restore that Stripe applied while the organization row was rewritten", async () => {
+    const subId = `sub-restore-${randomUUID().slice(0, 8)}`;
+    const customerId = `cus-restore-${randomUUID().slice(0, 8)}`;
+    const fixture = await track(
+      store.set(
+        seedInvoicesOrg$,
+        {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subId,
+          subscriptionStatus: "active",
+          tier: "pro",
+          cancelAtPeriodEnd: true,
+        },
+        context.signal,
+      ),
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    mockSubscriptionWithPaymentMethod(subId, customerId);
+    // Another organization write (settlement debits and webhooks rewrite the
+    // same row) lands while Stripe is applying the restore.
+    context.mocks.stripe.subscriptions.update.mockImplementation(async () => {
+      await accept(
+        setupApp({ context, routes: billingAutoRechargeRoutes })(
+          billingAutoRechargeContract,
+        ).update({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { enabled: false, threshold: 1000, amount: 5000 },
+        }),
+        [200],
+      );
+      return { id: subId };
+    });
+
+    const response = await accept(
+      setupApp({ context, routes: billingRestoreRoutes })(
+        billingRestoreContract,
+      ).create({
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({ status: "restored" });
     const status = await readBillingStatus();
     expect(status.body.cancelAtPeriodEnd).toBeFalsy();
     expect(status.body.scheduledChange).toBeNull();

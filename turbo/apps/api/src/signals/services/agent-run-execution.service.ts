@@ -1,8 +1,3 @@
-/**
- * Execution support for non-chat callers, plus shared pure transformations and
- * transaction primitives. Chat owns its claim graph and pending transaction in
- * claim-run-context.ts and pick-chat-run.service.ts.
- */
 import { state, computed, command, type State, type Computed } from "ccstate";
 import { settle, onRejection, tapError, safeSync } from "../utils";
 import {
@@ -352,7 +347,11 @@ import {
   zodDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
-import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
+import {
+  activateUsageAllowanceWindowsForRun,
+  type PreparedUsageAllowanceRefresh,
+  prepareUsageAllowanceRefresh$,
+} from "./usage-allowance.service";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { ingestToAxiom, getDatasetName } from "../external/axiom";
@@ -514,7 +513,8 @@ import {
   customConnectorRuntimeFirewall,
   runtimeFirewall,
 } from "./connector-runtime-preparation.service";
-
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 // Storage planning and explicit resource materialization.
 
 type StorageManifestEntryKind = StorageManifestCacheEntryKind;
@@ -4521,6 +4521,7 @@ export type PendingRunArguments = Pick<
 > & { readonly threadSessionResolution?: PendingThreadSessionResolution };
 
 export interface CommitPreparedLaunchArgs {
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly db: Db;
   readonly createArgs: PendingRunArguments;
   readonly enforceBuiltInCredits: boolean;
@@ -10776,6 +10777,22 @@ export async function persistPendingAtomicLaunch(
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
   }
+  const capture = billingRunAttributionWrite({
+    id: row.runId,
+    orgId: context.rowsArgs.orgId,
+    userId: context.rowsArgs.userId,
+    startedAt: row.createdAt.toISOString(),
+    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
+    threadId: args.commit.persistence.rows.metadata.chatThreadId,
+  });
+  const [attribution] = await args.tx
+    .insert(billingRunAttribution)
+    .values(capture.values)
+    .onConflictDoUpdate(capture.conflict)
+    .returning({ id: billingRunAttribution.runId });
+  if (!attribution) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
   return {
     kind: "pending",
     run: runRecordFromLaunchIdentity(
@@ -10910,6 +10927,7 @@ async function activatePreparedLaunchUsageAllowance(args: {
             orgId: args.commit.createArgs.orgId,
             runId: args.run.id,
             runCreatedAt: args.run.createdAt,
+            refresh: args.commit.allowanceRefresh,
           });
         },
       );
@@ -12087,7 +12105,7 @@ function createRunConnectorEncryptedRowsObject(
           encryptedValue: secretsTable.encryptedValue,
         })
         .from(secretsTable)
-        .where(builtinConnectorCredentialSecretReadCondition({ db, groups }));
+        .where(builtinConnectorCredentialSecretReadCondition({ groups }));
     },
   );
 }
@@ -15273,6 +15291,7 @@ export function flushQueueFirstClaimLostTiming(args: {
 }
 
 export interface AtomicLaunchRunInput {
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly enforceBuiltInCredits: boolean;
@@ -15345,6 +15364,7 @@ async function commitAtomicLaunch(
     async () => {
       return await commitPreparedLaunch({
         db: input.db,
+        allowanceRefresh: input.allowanceRefresh,
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
@@ -15451,6 +15471,23 @@ const commitFailedDirectLaunch$ = command(
         .values(
           launchRunValues(rows, createdAt, launchRunMetadataValues(rows)),
         );
+      const metadata = launchRunMetadataValues(rows);
+      const capture = billingRunAttributionWrite({
+        id: identity.runId,
+        orgId: rows.orgId,
+        userId: rows.userId,
+        startedAt: createdAt.toISOString(),
+        triggerSource: metadata.triggerSource,
+        threadId: metadata.chatThreadId,
+      });
+      const [attribution] = await tx
+        .insert(billingRunAttribution)
+        .values(capture.values)
+        .onConflictDoUpdate(capture.conflict)
+        .returning({ id: billingRunAttribution.runId });
+      if (!attribution) {
+        throw new Error("New Run billing attribution conflicts with history");
+      }
       if (args.callbackRows.length > 0) {
         await tx.insert(agentRunCallbacks).values([...args.callbackRows]);
       }
@@ -15549,8 +15586,7 @@ function createLaunchObjects(
         signal,
       );
       const contextInput = set(prepareStorageInput$, storageInput, signal);
-      // Reading the fixed storage plan begins before callback encryption; each
-      // command waits only for its actual prerequisites.
+      // Start storage and callback preparation together.
       const storage = set(materializeStorage$, contextInput, signal);
       const callbacks = set(
         prepareCallbacks$,
@@ -15567,17 +15603,36 @@ function createLaunchObjects(
         contextInput,
         signal,
       );
-      const joinedResources = Promise.all([storage, callbacks, contextDraft]);
+      const allowanceRefresh = isBuiltInModelProviderType(
+        input.context.modelProvider?.type,
+      )
+        ? set(
+            prepareUsageAllowanceRefresh$,
+            { orgId: input.args.orgId },
+            signal,
+          )
+        : Promise.resolve(undefined);
+      const joinedResources = Promise.all([
+        storage,
+        callbacks,
+        contextDraft,
+        allowanceRefresh,
+      ]);
       const launchResult = await settle(
         input.timing.measure(
           "api_dispatch_build_runner_job_payload",
           "top_level",
           async () => {
-            const [materializedStorage, callbackRows, draft] =
-              await joinedResources;
+            const [
+              materializedStorage,
+              callbackRows,
+              draft,
+              preparedAllowanceRefresh,
+            ] = await joinedResources;
             signal.throwIfAborted();
             return {
               callbackRows,
+              allowanceRefresh: preparedAllowanceRefresh,
               launch: finalizedMaterializedLaunch(materializedStorage, draft),
             };
           },
@@ -15610,11 +15665,15 @@ function createLaunchObjects(
         );
       }
       const { callbackRows, launch } = launchResult.value;
+      const preparedInput = {
+        ...input,
+        allowanceRefresh: launchResult.value.allowanceRefresh,
+      };
       signal.throwIfAborted();
       input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
       return await set(
         createRun$,
-        { input, identity, callbackRows, launch },
+        { input: preparedInput, identity, callbackRows, launch },
         signal,
       );
     },

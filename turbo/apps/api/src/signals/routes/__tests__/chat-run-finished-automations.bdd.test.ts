@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { createHash, randomUUID } from "node:crypto";
+import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
 import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";

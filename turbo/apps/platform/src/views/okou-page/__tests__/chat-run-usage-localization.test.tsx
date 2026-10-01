@@ -212,6 +212,22 @@ test.each([
 test("Show the current usage settlement on the correct run", async () => {
   const user = userEvent.setup({ delay: null });
   installRunChat({
+    runUsage: {
+      [RUN_A]: creditUsage(8, [
+        {
+          kind: "model",
+          credits: 8,
+          providers: [{ provider: "gpt-5.6-sol", credits: 8 }],
+        },
+      ]),
+      [RUN_B]: creditUsage(3, [
+        {
+          kind: "connector",
+          credits: 3,
+          providers: [{ provider: "slack", credits: 3 }],
+        },
+      ]),
+    },
     chatEvents: [
       promptEvent({
         id: "settlement-a-user",
@@ -242,8 +258,7 @@ test("Show the current usage settlement on the correct run", async () => {
         id: "settlement-replacement",
         runId: RUN_A,
         seqId: 5,
-        revokesEventId: "settlement-old",
-        usage: creditUsage(8, [
+        usage: creditUsage(999, [
           {
             kind: "model",
             credits: 8,
@@ -284,6 +299,7 @@ test("Show the current usage settlement on the correct run", async () => {
   await expect(screen.findByText("First answer")).resolves.toBeVisible();
   await expect(screen.findByText("Second answer")).resolves.toBeVisible();
   expect(queryButton("Credit usage 5")).toBeNull();
+  expect(queryButton("Credit usage 999")).toBeNull();
   await expect(findButton("Credit usage 8")).resolves.toBeVisible();
   const secondUsage = await findButton("Credit usage 3");
   expect(secondUsage).toBeVisible();

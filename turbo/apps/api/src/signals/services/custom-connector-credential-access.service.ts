@@ -1,3 +1,12 @@
+import { connectors } from "@okouai/db/schema/connector";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import {
+  orgCustomConnectors,
+  type OrgCustomConnectorAuthMode,
+  type OrgCustomConnectorMcpTransport,
+} from "@okouai/db/schema/org-custom-connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import {
   and,
   eq,
@@ -8,15 +17,6 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import {
-  orgCustomConnectors,
-  type OrgCustomConnectorAuthMode,
-  type OrgCustomConnectorMcpTransport,
-} from "@okouai/db/schema/org-custom-connector";
-import { connectors } from "@okouai/db/schema/connector";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { z } from "zod";
 

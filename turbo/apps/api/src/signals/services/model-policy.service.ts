@@ -19,7 +19,7 @@ import {
 } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import {
   MODEL_PROVIDER_TYPES,
   getFrameworkForType,
@@ -75,7 +75,6 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-
 export type OrgModelPolicyRow = Readonly<
   Omit<typeof orgModelPolicies.$inferSelect, "modelProviderSurfaceId"> & {
     readonly modelProviderSurfaceId: string | null;
@@ -291,15 +290,6 @@ function loadRows(db: Db, orgId: string): Promise<OrgModelPolicyRow[]> {
     .where(eq(orgModelPolicies.orgId, orgId));
 }
 
-// Seeds and replacement writes share one organization-local fence. Normal
-// selection reads take no lock when the fixed default policy exists.
-async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
-  );
-}
-
 function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
   return createHash("sha256")
     .update(
@@ -310,44 +300,6 @@ function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
       ),
     )
     .digest("hex");
-}
-
-async function lockPolicyParents(db: Db, orgId: string): Promise<void> {
-  // Parent rows precede child policy rows. This also fences FK SET NULL from
-  // provider/surface deletion without acquiring A's credential lifecycle lock.
-  await db
-    .select({ id: modelProviders.id })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-      ),
-    )
-    .orderBy(asc(modelProviders.id))
-    .for("share");
-  await db
-    .select({ id: modelProviderConnections.id })
-    .from(modelProviderConnections)
-    .where(eq(modelProviderConnections.orgId, orgId))
-    .orderBy(asc(modelProviderConnections.id))
-    .for("share");
-  await db
-    .select({ id: modelProviderSurfaces.id })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(eq(modelProviderConnections.orgId, orgId))
-    .orderBy(asc(modelProviderSurfaces.id))
-    .for("share", { of: modelProviderSurfaces });
-  await db
-    .select({ id: orgModelPolicies.id })
-    .from(orgModelPolicies)
-    .where(eq(orgModelPolicies.orgId, orgId))
-    .orderBy(asc(orgModelPolicies.id))
-    .for("no key update");
 }
 
 function policiesByModel(
@@ -1339,53 +1291,6 @@ function isUntouchedStandardSeed(
   );
 }
 
-/**
- * Apply the onboarding choice to a Custom organization only before it
- * customizes its model policies. Auto organizations keep only the fixed
- * default; members' subscriptions already appear through their catalog.
- */
-export async function initializeOnboardingOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-  provider: OnboardingSubscriptionProvider,
-): Promise<void> {
-  await lockPolicyWrites(db, orgId);
-  if ((await loadOrgModelMode(db, orgId)) === "auto") {
-    return;
-  }
-  const [existing, catalog] = await Promise.all([
-    loadRows(db, orgId),
-    loadModelCatalog(db),
-  ]);
-  if (!isUntouchedStandardSeed(catalog, existing)) {
-    return;
-  }
-
-  const seed = ONBOARDING_MODEL_POLICY_SEEDS[provider];
-  await persistOrgModelPolicyUpdates({
-    db,
-    orgId,
-    userId,
-    now: nowDate(),
-    systemDefaultModel: catalog.systemDefaultModel,
-    activeModels: catalogActiveModels(catalog),
-    policies: seed.models
-      .filter((model) => {
-        return isCatalogModelAddable(catalog, model);
-      })
-      .map((model) => {
-        return {
-          model,
-          defaultProviderType: seed.providerType,
-          credentialScope: "member" as const,
-          modelProviderId: null,
-          modelProviderSurfaceId: null,
-        };
-      }),
-  });
-}
-
 export const listOrgModelPolicies$ = command(
   async (
     { get, set },
@@ -1450,7 +1355,6 @@ export const updateOrgModelPolicies$ = command(
       return refreshConflict();
     }
     const written = await db.transaction(async (tx) => {
-      await lockPolicyWrites(tx, params.orgId);
       const [org] = await tx
         .select({ mode: orgMetadata.modelMode })
         .from(orgMetadata)
@@ -1461,7 +1365,6 @@ export const updateOrgModelPolicies$ = command(
           "Model policies are managed automatically in Auto mode",
         );
       }
-      await lockPolicyParents(tx, params.orgId);
       signal.throwIfAborted();
       const [existing, catalog] = await Promise.all([
         loadRows(tx, params.orgId),
@@ -1523,3 +1426,94 @@ export const updateOrgModelPolicies$ = command(
     return ok(response);
   },
 );
+
+export function onboardingModelPolicyWritePlan(params: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly provider: OnboardingSubscriptionProvider;
+  readonly existing: readonly OrgModelPolicyRow[];
+  readonly catalog: ModelCatalog;
+  readonly now: Date;
+}) {
+  if (!isUntouchedStandardSeed(params.catalog, params.existing)) {
+    return null;
+  }
+  const seed = ONBOARDING_MODEL_POLICY_SEEDS[params.provider];
+  const policies: UpdateOrgModelPolicy[] = seed.models
+    .filter((model) => {
+      return isCatalogModelAddable(params.catalog, model);
+    })
+    .map((model) => {
+      return {
+        model,
+        defaultProviderType: seed.providerType,
+        credentialScope: "member",
+        modelProviderId: null,
+        modelProviderSurfaceId: null,
+      };
+    });
+  return {
+    insertValues: replacementPolicyValues({ ...params, policies }, params.now),
+    removalCondition: and(
+      eq(orgModelPolicies.orgId, params.orgId),
+      inArray(orgModelPolicies.model, catalogActiveModels(params.catalog)),
+      notInArray(
+        orgModelPolicies.model,
+        policies.map((policy) => {
+          return policy.model;
+        }),
+      ),
+    ),
+    defaultModel: params.catalog.systemDefaultModel,
+    updates: policies.map((policy) => {
+      return {
+        values: policyUpdateValues(policy, params.userId, params.now),
+        condition: and(
+          eq(orgModelPolicies.orgId, params.orgId),
+          eq(orgModelPolicies.model, policy.model),
+        ),
+      };
+    }),
+  };
+}
+
+function replacementPolicyValues(
+  params: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly policies: UpdateOrgModelPolicy[];
+  },
+  now: Date,
+) {
+  return params.policies.map((policy) => {
+    return {
+      orgId: params.orgId,
+      model: policy.model,
+      isDefault: false,
+      defaultProviderType: policy.defaultProviderType,
+      credentialScope: policy.credentialScope,
+      modelProviderId: policy.modelProviderId,
+      modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+      createdByUserId: params.userId,
+      updatedByUserId: params.userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+}
+
+function policyUpdateValues(
+  policy: UpdateOrgModelPolicy,
+  userId: string,
+  now: Date,
+) {
+  return {
+    isDefault: false,
+    defaultProviderType: policy.defaultProviderType,
+    credentialScope: policy.credentialScope,
+    modelProviderId: policy.modelProviderId,
+    modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+    updatedAt: now,
+    updatedByUserId: userId,
+  };
+}

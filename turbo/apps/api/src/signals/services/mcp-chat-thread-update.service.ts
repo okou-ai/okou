@@ -1,16 +1,16 @@
+import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import type {
   McpUpdateChatThreadInput,
   McpUpdateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
-import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
 import { env } from "../../lib/env";
-import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { settle } from "../utils";
-import { updateChatThreadMetadata } from "./chat-thread-metadata-update.service";
+import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 
 interface Principal {
@@ -48,8 +48,8 @@ export const updateMcpChatThread$ = command(
       AbortSignal.timeout(15_000),
     ]);
     const result = await settle(
-      updateChatThreadMetadata(
-        set(writeDb$),
+      set(
+        updateChatThreadMetadata$,
         {
           principal: args.principal,
           threadId: args.input.threadId,

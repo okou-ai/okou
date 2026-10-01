@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { command } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -39,12 +40,16 @@ import {
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
@@ -72,15 +77,20 @@ const log = logger("connector-account-lifecycle");
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
 const oauthScopesSchema = z.array(z.string());
+// The cursor carries created_at at full microsecond precision. Accounts
+// created concurrently commonly share a millisecond, so a JavaScript Date
+// boundary would skip rows between the truncated and the real timestamp.
 const cursorSchema = z
   .object({
-    createdAt: z.string().datetime(),
+    createdAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/u),
     id: z.uuid(),
   })
   .strict();
 
 interface ConnectorAccountCursor {
-  readonly createdAt: Date;
+  readonly createdAt: string;
   readonly id: string;
 }
 
@@ -103,6 +113,10 @@ function accountSelection() {
     needsReconnect: connectors.needsReconnect,
     reconnectReason: connectors.reconnectReason,
     createdAt: connectors.createdAt,
+    createdAtCursor:
+      sql`to_char(${connectors.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`.mapWith(
+        pgTextDecoder,
+      ),
     updatedAt: connectors.updatedAt,
     definitionAuthMode: orgCustomConnectors.authMode,
     definitionMcpTransport: orgCustomConnectors.mcpTransport,
@@ -141,7 +155,7 @@ function parseOauthScopes(value: string | null): string[] | null {
 
 function encodeCursor(row: ConnectorAccountRow): string {
   return Buffer.from(
-    JSON.stringify({ createdAt: row.createdAt.toISOString(), id: row.id }),
+    JSON.stringify({ createdAt: row.createdAtCursor, id: row.id }),
     "utf8",
   ).toString("base64url");
 }
@@ -151,7 +165,7 @@ function decodeCursor(raw: string): ConnectorAccountCursor | null {
     safeJsonParse(Buffer.from(raw, "base64url").toString("utf8")),
   );
   return parsed.success
-    ? { createdAt: new Date(parsed.data.createdAt), id: parsed.data.id }
+    ? { createdAt: parsed.data.createdAt, id: parsed.data.id }
     : null;
 }
 
@@ -177,9 +191,9 @@ async function loadConnectorAccountRows(
     : undefined;
   const cursorCondition = args.cursor
     ? or(
-        lt(connectors.createdAt, args.cursor.createdAt),
+        lt(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
         and(
-          eq(connectors.createdAt, args.cursor.createdAt),
+          eq(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
           lt(connectors.id, args.cursor.id),
         ),
       )
@@ -935,6 +949,112 @@ export async function renameConnectorAccount(
   });
 }
 
+function connectorAccountOwnerCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+}): SQL {
+  return and(
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    targetCondition(args.target),
+  ) as SQL;
+}
+
+/** Rolls back a default change whose target no longer exists. */
+class DefaultConnectorAccountMissing extends Error {}
+
+function clearOtherDefaultsSql(
+  owner: ReturnType<typeof connectorAccountOwnerCondition>,
+  connectionId: string,
+) {
+  return and(
+    owner,
+    eq(connectors.isDefault, true),
+    ne(connectors.id, connectionId),
+  );
+}
+
+/**
+ * Move the default with ordinary writes. A concurrent default change that
+ * trips the partial unique index rolls back and is reported as a conflict.
+ */
+async function changeDefaultConnectorAccount(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly target: ConnectorAccountTarget;
+    readonly connectionId: string;
+  },
+): Promise<Date> {
+  const owner = connectorAccountOwnerCondition(args);
+  await tx
+    .update(connectors)
+    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+    .where(clearOtherDefaultsSql(owner, args.connectionId));
+  const [updated] = await tx
+    .update(connectors)
+    .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+    .where(and(owner, eq(connectors.id, args.connectionId)))
+    .returning({ updatedAt: connectors.updatedAt });
+  if (!updated) {
+    throw new DefaultConnectorAccountMissing();
+  }
+  return updated.updatedAt;
+}
+
+function isDefaultIndexViolation(error: unknown): boolean {
+  return (
+    isUniqueViolation(error, "idx_connectors_org_user_slug_default") ||
+    isUniqueViolation(error, "idx_connectors_org_user_custom_connector_default")
+  );
+}
+
+async function settleDefaultChange(
+  change: Promise<Date>,
+): Promise<Date | "conflict" | null> {
+  const settled = await settle(change);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof DefaultConnectorAccountMissing) {
+    return null;
+  }
+  if (
+    isDefaultIndexViolation(settled.error) ||
+    safeSqlStateCode(settled.error) === "40P01"
+  ) {
+    return "conflict";
+  }
+  throw settled.error;
+}
+
+export const setDefaultGoogleFormsAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Date | "conflict" | null> => {
+    const db = set(writeDb$);
+    return await settleDefaultChange(
+      db.transaction(async (tx) => {
+        const updatedAt = await changeDefaultConnectorAccount(tx, {
+          ...args,
+          target: { kind: "builtin", connectorSlug: "google-forms" },
+        });
+        await tx.execute(googleFormsAccountProjectionStatement(args));
+        signal.throwIfAborted();
+        return updatedAt;
+      }),
+    );
+  },
+);
+
 export async function setDefaultConnectorAccount(
   db: Db,
   args: {
@@ -944,101 +1064,23 @@ export async function setDefaultConnectorAccount(
     readonly connectionId: string;
   },
   signal: AbortSignal,
-): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, args);
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    if (args.target.kind === "custom") {
-      // Default changes touch sibling rows. Acquire them in the same order as
-      // deletion, without blocking the selection FK's KEY SHARE on survivors.
-      const accounts = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            targetCondition(args.target),
-          ),
-        )
-        .orderBy(asc(connectors.id))
-        .for("no key update");
+): Promise<Date | "conflict" | null> {
+  return await settleDefaultChange(
+    db.transaction(async (tx) => {
       if (
-        !accounts.some((account) => {
-          return account.id === args.connectionId;
-        })
+        args.target.kind === "custom" &&
+        !(await customTargetIsVisible(tx, {
+          orgId: args.orgId,
+          customConnectorId: args.target.customConnectorId,
+        }))
       ) {
-        return null;
+        throw new DefaultConnectorAccountMissing();
       }
-    } else if (!(await exactOwnedAccountExists(tx, args))) {
-      return null;
-    }
-    await tx
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          args.target.kind === "custom"
-            ? and(
-                eq(connectors.isDefault, true),
-                ne(connectors.id, args.connectionId),
-              )
-            : undefined,
-        ),
-      );
-    const [updated] = await tx
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .returning({ updatedAt: connectors.updatedAt });
-    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    return updated?.updatedAt ?? null;
-  });
-}
-
-async function oldestConnectorAccountSibling(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly excludedConnectionId: string;
-  },
-): Promise<{ readonly id: string } | null> {
-  const query = db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-        ne(connectors.id, args.excludedConnectionId),
-      ),
-    )
-    .orderBy(asc(connectors.createdAt), asc(connectors.id))
-    .limit(1);
-  const [row] =
-    args.target.kind === "custom" ? await query : await query.for("update");
-  return row ?? null;
+      const updatedAt = await changeDefaultConnectorAccount(tx, args);
+      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      return updatedAt;
+    }),
+  );
 }
 
 export async function connectorAccountDeletionImpact(
@@ -1100,10 +1142,7 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-/**
- * Hold the account target's lock until commit. Custom deletion also holds its
- * definition's credential-contract row in a READ COMMITTED transaction.
- */
+/** Plain reads and writes; a concurrent change resolves as last writer wins. */
 export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
   args: {
@@ -1114,94 +1153,42 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   },
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
-  let sibling: { readonly id: string } | null = null;
-  if (args.target.kind === "custom") {
-    const [observed] = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .limit(1);
-    if (!observed) {
-      return { kind: "missing" };
-    }
-    const candidate = await oldestConnectorAccountSibling(db, {
-      ...args,
-      excludedConnectionId: args.connectionId,
-    });
-    // The definition row stabilizes membership. Lock the deletion/promotion
-    // pair in ID order before upgrading only the account being deleted.
-    const accounts = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          inArray(
-            connectors.id,
-            candidate ? [args.connectionId, candidate.id] : [args.connectionId],
-          ),
-        ),
-      )
-      .orderBy(asc(connectors.id))
-      .for("no key update");
-    sibling =
-      accounts.find((account) => {
-        return account.id === candidate?.id;
-      }) ?? null;
-  }
+  const owner = connectorAccountOwnerCondition(args);
   const [account] = await db
-    .select({ id: connectors.id, isDefault: connectors.isDefault })
+    .select({ isDefault: connectors.isDefault })
     .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
+    .where(and(owner, eq(connectors.id, args.connectionId)))
     .limit(1);
   if (!account) {
     return { kind: "missing" };
   }
-
-  if (args.target.kind === "builtin") {
-    sibling = await oldestConnectorAccountSibling(db, {
-      ...args,
-      excludedConnectionId: args.connectionId,
-    });
+  let promotedDefaultConnectionId: string | null = null;
+  if (account.isDefault) {
+    const [sibling] = await db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(and(owner, ne(connectors.id, args.connectionId)))
+      .orderBy(asc(connectors.createdAt), asc(connectors.id))
+      .limit(1);
+    if (sibling) {
+      await db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(eq(connectors.id, args.connectionId));
+      await db
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(eq(connectors.id, sibling.id));
+      promotedDefaultConnectionId = sibling.id;
+    }
   }
-  // Use a fresh statement after the parent FOR UPDATE has waited for prior
-  // FK attachments. New selections cannot attach to the account before DELETE.
+
   const resolvedSelectionCount =
     (
       await db
         .delete(chatThreadConnectorSelections)
         .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
     ).rowCount ?? 0;
-
-  let promotedDefaultConnectionId: string | null = null;
-  if (account.isDefault && sibling) {
-    await db
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId));
-    await db
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, sibling.id));
-    promotedDefaultConnectionId = sibling.id;
-  }
 
   if (
     args.target.kind === "builtin" &&

@@ -755,6 +755,63 @@ describe("Usage Allowance", () => {
     expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(after + 6);
   });
 
+  it("reuses one allowance identity across concurrent firewall admissions for a Run", async () => {
+    const { actor, agentId } = await builtInAllowanceActor({
+      credits: -10,
+      allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
+    });
+    const api = createRunsApi(context);
+    await api.ensureOrgModelProvider(actor);
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "concurrent billable allowance admission",
+      modelProvider: "anthropic-api-key",
+    });
+    const client = setupApp({
+      context,
+      routes: webhooksAgentFirewallAuthRoutes,
+    })(webhookFirewallAuthContract);
+    const headers = {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+    };
+    const body = {
+      encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+      authHeaders: { Authorization: "Bearer static-token" },
+      firewallBillable: true,
+    };
+    await Promise.all(
+      [0, 1, 2].map(() => {
+        return accept(client.resolve({ headers, body }), [200]);
+      }),
+    );
+    const before = await api.readBillingStatus(actor);
+    expect(before.usageAllowance?.windows).toHaveLength(2);
+    expect(
+      before.usageAllowance?.windows.map((window) => {
+        return window.consumedUnits;
+      }),
+    ).toStrictEqual([0, 0]);
+    const provider = usageProvider();
+    await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 2,
+    });
+    await processOrgUsageEvents(actor);
+    // Repeated admission must not refill the now exhausted window.
+    await accept(client.resolve({ headers, body }), [402]);
+    const after = await api.readBillingStatus(actor);
+    expect(after.usageAllowance?.windows).toHaveLength(2);
+    expect(
+      after.usageAllowance?.windows.map((window) => {
+        return window.consumedUnits;
+      }),
+    ).toStrictEqual([2, 2]);
+    await expect(readOrgCredits(actor)).resolves.toBe(-10);
+    await expect(readVisibleUsageCredits(actor)).resolves.toBe(2);
+  });
+
   it("does not let built-in credit admission bypass workspace suspension", async () => {
     const { actor, orgId, agentId } = await builtInAllowanceActor({
       credits: 1,

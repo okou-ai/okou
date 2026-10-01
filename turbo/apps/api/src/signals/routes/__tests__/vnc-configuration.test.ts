@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
-import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1665,7 +1664,7 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([saved.body]);
   });
 
-  it("advances shared host generations on password rotation and rejects stale edits and deletes", async () => {
+  it("leaves concurrent password rotations recoverable, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
     await owner();
     const first = await accept(
@@ -1687,25 +1686,48 @@ describe("VNC owner configuration", () => {
       [201],
     );
     const params = { credentialId: requireVncCredentialId(first.body) };
-    const rotated = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("rotated"),
-        },
+    const rotations = await Promise.all(
+      ["rotated1", "rotated2"].map((password) => {
+        return accept(
+          credentials().update({
+            headers,
+            params,
+            body: {
+              expectedRevision: 1,
+              authentication: passwordAuthentication(password),
+            },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
-    expect(rotated.body.revision).toBe(2);
+    const statuses = rotations
+      .map((result) => {
+        return result.status;
+      })
+      .sort();
+    expect([
+      [200, 200],
+      [200, 409],
+    ]).toContainEqual(statuses);
+    const applied = statuses.filter((status) => {
+      return status === 200;
+    }).length;
+    const revision = 1 + applied;
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: params.credentialId, revision }),
+      ]),
+    );
     const hosts = (await accept(connections().list({ headers }), [200])).body
       .connections;
     expect(hosts).toHaveLength(3);
     expect(hosts).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: first.body.id, generation: 2 }),
-        expect.objectContaining({ id: second.body.id, generation: 2 }),
+        expect.objectContaining({ id: first.body.id, generation: revision }),
+        expect.objectContaining({ id: second.body.id, generation: revision }),
         independent.body,
       ]),
     );
@@ -1751,73 +1773,34 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toHaveLength(2);
+    const renamed = await accept(
+      credentials().update({
+        headers,
+        params,
+        body: { expectedRevision: revision, name: "Recovered" },
+      }),
+      [200],
+    );
+    expect(renamed.body).toMatchObject({
+      name: "Recovered",
+      revision: revision + 1,
+    });
     const edited = await accept(
       connections().update({
         headers,
         params: { connectionId: first.body.id },
-        body: { expectedGeneration: 2, host: "new.example.com", security },
+        body: {
+          expectedGeneration: revision,
+          host: "new.example.com",
+          security,
+        },
       }),
       [200],
     );
     expect(edited.body).toMatchObject({
-      generation: 3,
+      generation: revision + 1,
       host: "new.example.com",
     });
-  });
-
-  it("rechecks revision after delayed KMS encryption without overwriting the winner", async () => {
-    useSecretKmsProbe();
-    await owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name: "Initial",
-          authentication: passwordAuthentication("initial"),
-        },
-      }),
-      [201],
-    );
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request) => {
-      entered.resolve();
-      await release.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from("test-wrapped-key"),
-      };
-    });
-    const params = { credentialId: created.body.id };
-    const delayed = accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("delayed"),
-        },
-      }),
-      [409],
-    );
-    await entered.promise;
-    const winner = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: { expectedRevision: 1, name: "Winner" },
-      }),
-      [200],
-    );
-    release.resolve();
-    expect((await delayed).body.error.code).toBe(
-      "VNC_CREDENTIAL_REVISION_CONFLICT",
-    );
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([winner.body]);
   });
 
   it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {

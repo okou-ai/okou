@@ -6,6 +6,9 @@ import {
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { agents } from "@okouai/db/schema/agent";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -102,21 +105,39 @@ async function createRuntime(
         enabled: false,
       });
     }
-    await tx.insert(agentRuns).values({
-      id: runId,
-      sessionId,
-      orgId: body.orgId,
-      userId: body.userId,
-      status: body.status,
-      prompt: "SSH runtime fixture",
-      triggerSource: body.triggerSource,
-      autonomyBudget: body.triggerSource === null ? null : 3,
-      chatThreadId: body.chat ? threadId : null,
-      workflowAutomationId,
-      runnerId: body.runnerId,
-      runnerGroup: body.runnerGroup,
-      runnerHeartbeatGeneration: body.heartbeatGeneration,
-    });
+    const [run] = await tx
+      .insert(agentRuns)
+      .values({
+        id: runId,
+        sessionId,
+        orgId: body.orgId,
+        userId: body.userId,
+        status: body.status,
+        prompt: "SSH runtime fixture",
+        triggerSource: body.triggerSource,
+        autonomyBudget: body.triggerSource === null ? null : 3,
+        chatThreadId: body.chat ? threadId : null,
+        workflowAutomationId,
+        runnerId: body.runnerId,
+        runnerGroup: body.runnerGroup,
+        runnerHeartbeatGeneration: body.heartbeatGeneration,
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    if (!run) {
+      throw new Error("SSH fixture Run insertion returned no identity");
+    }
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
   });
   return {
     status: 200 as const,

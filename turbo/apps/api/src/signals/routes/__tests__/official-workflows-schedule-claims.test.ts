@@ -30,7 +30,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { acknowledgeDetachedForTest, createDeferredPromise } from "../../utils";
 import {
@@ -59,7 +58,6 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
-serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,

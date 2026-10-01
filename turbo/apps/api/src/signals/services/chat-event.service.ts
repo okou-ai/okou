@@ -936,7 +936,7 @@ interface PreparedChatEvent {
 }
 
 /** Pure preparation: IDs, timestamps, payload and context do not require a lock. */
-function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
+export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   const id = values.id ?? randomUUID();
   const createdAt = values.createdAt ?? nowDate();
   const displayContext = newDisplayContext(id, values);

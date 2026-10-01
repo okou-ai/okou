@@ -8,7 +8,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { computed, command, type Computed } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
-
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -39,7 +38,6 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
-
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
   | ReturnType<typeof paidPlanRequired>

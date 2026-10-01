@@ -1,10 +1,10 @@
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, eq, sql } from "drizzle-orm";
+
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 
 import { db } from "../lib/db";
-
 /**
  * The API version before the global addition gate could persist any active
  * model. Stage that historical state to prove a later catalog disablement does
@@ -59,54 +59,7 @@ export async function setOrgModelPolicyProviderTypeFixture(args: {
   }
 }
 
-/**
- * Historical/uninitialized storage is not constructible through policy PUT,
- * and policy GET repairs it. Own this persisted gap to prove rejected writes
- * cannot seed policies, add the fixed default, or rewrite member preferences.
- * `missing_default` is a policy list written before the fixed default existed.
- */
-export async function stageUnrepairedOrgModelPolicyFixture(args: {
-  readonly orgId: string;
-  readonly state: "unseeded" | "missing_default";
-}): Promise<void> {
-  await db()
-    .delete(orgModelPolicies)
-    .where(
-      args.state === "unseeded"
-        ? eq(orgModelPolicies.orgId, args.orgId)
-        : and(
-            eq(orgModelPolicies.orgId, args.orgId),
-            eq(orgModelPolicies.model, "okou-1.0"),
-          ),
-    );
-}
-
 /** The public GET cannot observe these states without repairing them first. */
-export async function readUnrepairedOrgModelPolicyFixture(orgId: string) {
-  const policies = await db()
-    .select()
-    .from(orgModelPolicies)
-    .where(eq(orgModelPolicies.orgId, orgId))
-    .orderBy(orgModelPolicies.model);
-  const preferences = await db()
-    .select({
-      userId: orgMembersMetadata.userId,
-      selectedModel: orgMembersMetadata.selectedModel,
-      serviceTier: orgMembersMetadata.serviceTier,
-      updatedAt: orgMembersMetadata.updatedAt,
-    })
-    .from(orgMembersMetadata)
-    .where(eq(orgMembersMetadata.orgId, orgId))
-    .orderBy(orgMembersMetadata.userId);
-  return { policies, preferences };
-}
-
-/**
- * Stage a member run preference outside the organization's policy. Policy
- * writes migrate member preferences, and the preference route rejects models
- * outside the policy, so neither can construct this state; it proves that a
- * media-only preference write still succeeds while it persists.
- */
 export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;

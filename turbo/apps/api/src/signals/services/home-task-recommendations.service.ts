@@ -32,8 +32,9 @@ import {
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { ClerkClient } from "../external/clerk";
-import type { Db } from "../external/db";
+import { clerk$ } from "../external/clerk";
+import { writeDb$ } from "../external/db";
+import { command } from "ccstate";
 import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
 import {
   AUXILIARY_TEXT_MAX_TOKENS,
@@ -43,21 +44,21 @@ import {
   isLlmConfigured,
   openRouterTokenCounts,
 } from "../external/openrouter";
-import { safeJsonParse, settleIncludingAbort } from "../utils";
+import { onRejection, safeJsonParse, settleIncludingAbort } from "../utils";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
 import {
-  collectHomeTaskEvidence,
+  collectHomeTaskEvidence$,
   isHomeTaskEvidenceEmpty,
-  threadIdsWithPendingInput,
+  threadIdsWithPendingInput$,
   type HomeTaskEvidence,
 } from "./home-task-recommendation-evidence.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { homeTaskGmailCacheAuthorized } from "./home-task-recommendation-gmail.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { homeTaskGmailCacheAuthorized$ } from "./home-task-recommendation-gmail.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import {
   buildHomeTaskCandidates,
   normalizeHomeTaskRecommendations,
@@ -155,191 +156,203 @@ function cachedResponse(
   );
 }
 
-async function readCachedRow(
-  db: Db,
-  scope: HomeTaskScope,
-  at: Date,
-  signal: AbortSignal,
-): Promise<CachedRow | undefined> {
-  const [row] = await db
-    .select({
-      entries: homeTaskRecommendations.entries,
-      generatedAt: homeTaskRecommendations.generatedAt,
-      inputDigest: homeTaskRecommendations.inputDigest,
-      nextRefreshAt: homeTaskRecommendations.nextRefreshAt,
-      updatedAt: homeTaskRecommendations.updatedAt,
-    })
-    .from(homeTaskRecommendations)
-    .where(
-      and(
-        eq(homeTaskRecommendations.userId, scope.userId),
-        eq(homeTaskRecommendations.orgId, scope.orgId),
-        eq(homeTaskRecommendations.agentId, scope.agentId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (row === undefined) {
-    return undefined;
-  }
-  const parsed = cachedHomeTaskRecommendationsSchema.safeParse(row.entries);
-  if (parsed.success) {
-    return { ...row, entries: parsed.data };
-  }
+const readCachedRow$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    at: Date,
+    signal: AbortSignal,
+  ): Promise<CachedRow | undefined> => {
+    const db = set(writeDb$);
 
-  // This is a disposable derived cache, not conversation data. Reset the
-  // entire invalid set rather than inventing a purpose or showing partial cards.
-  // The content and update fence must still match, and an active claim must be
-  // left to finish; a concurrent valid refresh must never be erased here.
-  const repaired = await db
-    .update(homeTaskRecommendations)
-    .set({
+    const [row] = await db
+      .select({
+        entries: homeTaskRecommendations.entries,
+        generatedAt: homeTaskRecommendations.generatedAt,
+        inputDigest: homeTaskRecommendations.inputDigest,
+        nextRefreshAt: homeTaskRecommendations.nextRefreshAt,
+        updatedAt: homeTaskRecommendations.updatedAt,
+      })
+      .from(homeTaskRecommendations)
+      .where(
+        and(
+          eq(homeTaskRecommendations.userId, scope.userId),
+          eq(homeTaskRecommendations.orgId, scope.orgId),
+          eq(homeTaskRecommendations.agentId, scope.agentId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (row === undefined) {
+      return undefined;
+    }
+    const parsed = cachedHomeTaskRecommendationsSchema.safeParse(row.entries);
+    if (parsed.success) {
+      return { ...row, entries: parsed.data };
+    }
+
+    // This is a disposable derived cache, not conversation data. Reset the
+    // entire invalid set rather than inventing a purpose or showing partial cards.
+    // The content and update fence must still match, and an active claim must be
+    // left to finish; a concurrent valid refresh must never be erased here.
+    const repaired = await db
+      .update(homeTaskRecommendations)
+      .set({
+        entries: [],
+        generatedAt: null,
+        inputDigest: null,
+        nextRefreshAt: at,
+        claimId: null,
+        claimExpiresAt: null,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          eq(homeTaskRecommendations.userId, scope.userId),
+          eq(homeTaskRecommendations.orgId, scope.orgId),
+          eq(homeTaskRecommendations.agentId, scope.agentId),
+          eq(homeTaskRecommendations.updatedAt, row.updatedAt),
+          eq(homeTaskRecommendations.entries, row.entries),
+          or(
+            isNull(homeTaskRecommendations.claimExpiresAt),
+            lte(homeTaskRecommendations.claimExpiresAt, at),
+          ),
+        ),
+      )
+      .returning({ agentId: homeTaskRecommendations.agentId });
+    signal.throwIfAborted();
+    if (repaired.length === 0) {
+      // Another request or a live refresh changed the row; never return the
+      // unvalidated snapshot or overwrite the new writer's claim.
+      return undefined;
+    }
+    log.warn("Reset invalid home task recommendation cache", {
+      issueCodes: [
+        ...new Set(
+          parsed.error.issues.map((issue) => {
+            return issue.code;
+          }),
+        ),
+      ],
+    });
+    return {
       entries: [],
       generatedAt: null,
       inputDigest: null,
       nextRefreshAt: at,
-      claimId: null,
-      claimExpiresAt: null,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(homeTaskRecommendations.userId, scope.userId),
-        eq(homeTaskRecommendations.orgId, scope.orgId),
-        eq(homeTaskRecommendations.agentId, scope.agentId),
-        eq(homeTaskRecommendations.updatedAt, row.updatedAt),
-        eq(homeTaskRecommendations.entries, row.entries),
-        or(
-          isNull(homeTaskRecommendations.claimExpiresAt),
-          lte(homeTaskRecommendations.claimExpiresAt, at),
-        ),
-      ),
-    )
-    .returning({ agentId: homeTaskRecommendations.agentId });
-  signal.throwIfAborted();
-  if (repaired.length === 0) {
-    // Another request or a live refresh changed the row; never return the
-    // unvalidated snapshot or overwrite the new writer's claim.
-    return undefined;
-  }
-  log.warn("Reset invalid home task recommendation cache", {
-    issueCodes: [
-      ...new Set(
-        parsed.error.issues.map((issue) => {
-          return issue.code;
-        }),
-      ),
-    ],
-  });
-  return {
-    entries: [],
-    generatedAt: null,
-    inputDigest: null,
-    nextRefreshAt: at,
-  };
-}
+    };
+  },
+);
 
 /** Register bounded cron demand without generating inside the user request. */
-async function registerHomeTaskRecommendationDemand(
-  db: Db,
-  scope: HomeTaskScope,
-  at: Date,
-): Promise<void> {
-  await db
-    .insert(homeTaskRecommendations)
-    .values({
-      userId: scope.userId,
-      orgId: scope.orgId,
-      agentId: scope.agentId,
-      entries: [],
-      nextRefreshAt: at,
-      lastRequestedAt: at,
-      updatedAt: at,
-    })
-    .onConflictDoUpdate({
-      target: [
-        homeTaskRecommendations.userId,
-        homeTaskRecommendations.orgId,
-        homeTaskRecommendations.agentId,
-      ],
-      set: { lastRequestedAt: at },
-    });
-}
+const registerHomeTaskRecommendationDemand$ = command(
+  async ({ set }, scope: HomeTaskScope, at: Date): Promise<void> => {
+    const db = set(writeDb$);
 
-async function visibleCachedRow(
-  db: Db,
-  scope: HomeTaskScope,
-  row: CachedRow | undefined,
-  signal: AbortSignal,
-): Promise<CachedRow | undefined> {
-  if (!row) {
-    return row;
-  }
-  let entries = row.entries;
-  if (
-    entries.some((entry) => {
-      return entry.connectors.includes("gmail");
-    })
-  ) {
-    const gmailAllowed = await homeTaskGmailCacheAuthorized(db, scope, signal);
-    signal.throwIfAborted();
-    if (!gmailAllowed) {
+    await db
+      .insert(homeTaskRecommendations)
+      .values({
+        userId: scope.userId,
+        orgId: scope.orgId,
+        agentId: scope.agentId,
+        entries: [],
+        nextRefreshAt: at,
+        lastRequestedAt: at,
+        updatedAt: at,
+      })
+      .onConflictDoUpdate({
+        target: [
+          homeTaskRecommendations.userId,
+          homeTaskRecommendations.orgId,
+          homeTaskRecommendations.agentId,
+        ],
+        set: { lastRequestedAt: at },
+      });
+  },
+);
+
+const visibleCachedRow$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    row: CachedRow | undefined,
+    signal: AbortSignal,
+  ): Promise<CachedRow | undefined> => {
+    const db = set(writeDb$);
+
+    if (!row) {
+      return row;
+    }
+    let entries = row.entries;
+    if (
+      entries.some((entry) => {
+        return entry.connectors.includes("gmail");
+      })
+    ) {
+      const gmailAllowed = await set(
+        homeTaskGmailCacheAuthorized$,
+        scope,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!gmailAllowed) {
+        entries = entries.filter((entry) => {
+          return !entry.connectors.includes("gmail");
+        });
+      }
+    }
+    const destinationIds = entries.flatMap((entry) => {
+      return entry.target.kind === "existing-thread"
+        ? [entry.target.threadId]
+        : [];
+    });
+    if (destinationIds.length > 0) {
+      const available = await db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(
+          and(
+            inArray(chatThreads.id, destinationIds),
+            eq(chatThreads.userId, scope.userId),
+            eq(chatThreads.agentId, scope.agentId),
+            chatThreadOrganizationPredicate(scope.orgId),
+            notExists(
+              db
+                .select({ id: agentRuns.id })
+                .from(agentRuns)
+                .where(
+                  and(
+                    eq(agentRuns.chatThreadId, chatThreads.id),
+                    inArray(agentRuns.status, ["pending", "running"]),
+                  ),
+                ),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+      const availableThreadIds = available.map((thread) => {
+        return thread.id;
+      });
+      const pendingThreadIds = await set(
+        threadIdsWithPendingInput$,
+        availableThreadIds,
+      );
+      signal.throwIfAborted();
+      const availableIds = new Set(
+        availableThreadIds.filter((id) => {
+          return !pendingThreadIds.has(id);
+        }),
+      );
       entries = entries.filter((entry) => {
-        return !entry.connectors.includes("gmail");
+        return (
+          entry.target.kind === "new-thread" ||
+          availableIds.has(entry.target.threadId)
+        );
       });
     }
-  }
-  const destinationIds = entries.flatMap((entry) => {
-    return entry.target.kind === "existing-thread"
-      ? [entry.target.threadId]
-      : [];
-  });
-  if (destinationIds.length > 0) {
-    const available = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          inArray(chatThreads.id, destinationIds),
-          eq(chatThreads.userId, scope.userId),
-          eq(chatThreads.agentId, scope.agentId),
-          chatThreadOrganizationCondition(db, scope.orgId),
-          notExists(
-            db
-              .select({ id: agentRuns.id })
-              .from(agentRuns)
-              .where(
-                and(
-                  eq(agentRuns.chatThreadId, chatThreads.id),
-                  inArray(agentRuns.status, ["pending", "running"]),
-                ),
-              ),
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    const availableThreadIds = available.map((thread) => {
-      return thread.id;
-    });
-    const pendingThreadIds = await threadIdsWithPendingInput(
-      db,
-      availableThreadIds,
-    );
-    signal.throwIfAborted();
-    const availableIds = new Set(
-      availableThreadIds.filter((id) => {
-        return !pendingThreadIds.has(id);
-      }),
-    );
-    entries = entries.filter((entry) => {
-      return (
-        entry.target.kind === "new-thread" ||
-        availableIds.has(entry.target.threadId)
-      );
-    });
-  }
-  return { ...row, entries };
-}
+    return { ...row, entries };
+  },
+);
 
 /**
  * Take the single refresh claim for this member, or report that another
@@ -350,126 +363,135 @@ async function visibleCachedRow(
  * generate. `WHERE` on the conflict path is what makes the loser a no-op
  * rather than a second claim.
  */
-async function claimRefresh(
-  db: Db,
-  scope: HomeTaskScope,
-  at: Date,
-): Promise<string | null> {
-  const claimId = randomUUID();
-  const claimExpiresAt = new Date(at.getTime() + CLAIM_MS);
-  const claimed = await db
-    .insert(homeTaskRecommendations)
-    .values({
-      userId: scope.userId,
-      orgId: scope.orgId,
-      agentId: scope.agentId,
-      entries: [],
-      nextRefreshAt: at,
-      claimId,
-      claimExpiresAt,
-      updatedAt: at,
-    })
-    .onConflictDoUpdate({
-      target: [
-        homeTaskRecommendations.userId,
-        homeTaskRecommendations.orgId,
-        homeTaskRecommendations.agentId,
-      ],
-      set: { claimId, claimExpiresAt, updatedAt: at },
-      where: and(
-        lte(homeTaskRecommendations.nextRefreshAt, at),
-        or(
-          isNull(homeTaskRecommendations.claimExpiresAt),
-          lte(homeTaskRecommendations.claimExpiresAt, at),
+const claimRefresh$ = command(
+  async ({ set }, scope: HomeTaskScope, at: Date): Promise<string | null> => {
+    const db = set(writeDb$);
+
+    const claimId = randomUUID();
+    const claimExpiresAt = new Date(at.getTime() + CLAIM_MS);
+    const claimed = await db
+      .insert(homeTaskRecommendations)
+      .values({
+        userId: scope.userId,
+        orgId: scope.orgId,
+        agentId: scope.agentId,
+        entries: [],
+        nextRefreshAt: at,
+        claimId,
+        claimExpiresAt,
+        updatedAt: at,
+      })
+      .onConflictDoUpdate({
+        target: [
+          homeTaskRecommendations.userId,
+          homeTaskRecommendations.orgId,
+          homeTaskRecommendations.agentId,
+        ],
+        set: { claimId, claimExpiresAt, updatedAt: at },
+        where: and(
+          lte(homeTaskRecommendations.nextRefreshAt, at),
+          or(
+            isNull(homeTaskRecommendations.claimExpiresAt),
+            lte(homeTaskRecommendations.claimExpiresAt, at),
+          ),
         ),
-      ),
-    })
-    .returning({ claimId: homeTaskRecommendations.claimId });
-  return claimed[0]?.claimId === claimId ? claimId : null;
-}
+      })
+      .returning({ claimId: homeTaskRecommendations.claimId });
+    return claimed[0]?.claimId === claimId ? claimId : null;
+  },
+);
 
 /** Release a claim without changing the cards, moving the next attempt out. */
-async function releaseClaim(
-  db: Db,
-  scope: HomeTaskScope,
-  claimId: string,
-  nextRefreshAt: Date,
-): Promise<void> {
-  await db
-    .update(homeTaskRecommendations)
-    .set({
-      claimId: null,
-      claimExpiresAt: null,
-      nextRefreshAt,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(homeTaskRecommendations.userId, scope.userId),
-        eq(homeTaskRecommendations.orgId, scope.orgId),
-        eq(homeTaskRecommendations.agentId, scope.agentId),
-        eq(homeTaskRecommendations.claimId, claimId),
-      ),
-    );
-}
+const releaseClaim$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    claimId: string,
+    nextRefreshAt: Date,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+
+    await db
+      .update(homeTaskRecommendations)
+      .set({
+        claimId: null,
+        claimExpiresAt: null,
+        nextRefreshAt,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(homeTaskRecommendations.userId, scope.userId),
+          eq(homeTaskRecommendations.orgId, scope.orgId),
+          eq(homeTaskRecommendations.agentId, scope.agentId),
+          eq(homeTaskRecommendations.claimId, claimId),
+        ),
+      );
+  },
+);
 
 /** Commit a generated set. The claim is the fence: a late attempt writes nothing. */
-async function commitEntries(
-  db: Db,
-  scope: HomeTaskScope,
-  claimId: string,
-  args: {
-    readonly entries: readonly HomeTaskRecommendation[];
-    readonly inputDigest: string;
-    readonly generatedAt: Date;
-  },
-): Promise<boolean> {
-  const committed = await db
-    .update(homeTaskRecommendations)
-    .set({
-      entries: args.entries,
-      inputDigest: args.inputDigest,
-      generatedAt: args.generatedAt,
-      nextRefreshAt: new Date(
-        args.generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS,
-      ),
-      claimId: null,
-      claimExpiresAt: null,
-      updatedAt: args.generatedAt,
-    })
-    .where(
-      and(
-        eq(homeTaskRecommendations.userId, scope.userId),
-        eq(homeTaskRecommendations.orgId, scope.orgId),
-        eq(homeTaskRecommendations.agentId, scope.agentId),
-        eq(homeTaskRecommendations.claimId, claimId),
-      ),
-    )
-    .returning({ agentId: homeTaskRecommendations.agentId });
-  return committed.length === 1;
-}
+const commitEntries$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    claimId: string,
+    args: {
+      readonly entries: readonly HomeTaskRecommendation[];
+      readonly inputDigest: string;
+      readonly generatedAt: Date;
+    },
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
 
-async function memberLanguage(
-  db: Pick<Db, "select">,
-  scope: HomeTaskScope,
-): Promise<string> {
-  const [member] = await db
-    .select({ locale: orgMembersMetadata.locale })
-    .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, scope.orgId),
-        eq(orgMembersMetadata.userId, scope.userId),
-      ),
-    )
-    .limit(1);
-  if (member === undefined || member.locale === null) {
-    return "en-US";
-  }
-  // Locale is interpolated into a provider system prompt. The only writer uses
-  // this bounded contract; an unexpected stored value is a local invariant.
-  return userLocaleSchema.parse(member.locale);
-}
+    const committed = await db
+      .update(homeTaskRecommendations)
+      .set({
+        entries: args.entries,
+        inputDigest: args.inputDigest,
+        generatedAt: args.generatedAt,
+        nextRefreshAt: new Date(
+          args.generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS,
+        ),
+        claimId: null,
+        claimExpiresAt: null,
+        updatedAt: args.generatedAt,
+      })
+      .where(
+        and(
+          eq(homeTaskRecommendations.userId, scope.userId),
+          eq(homeTaskRecommendations.orgId, scope.orgId),
+          eq(homeTaskRecommendations.agentId, scope.agentId),
+          eq(homeTaskRecommendations.claimId, claimId),
+        ),
+      )
+      .returning({ agentId: homeTaskRecommendations.agentId });
+    return committed.length === 1;
+  },
+);
+
+const memberLanguage$ = command(
+  async ({ set }, scope: HomeTaskScope): Promise<string> => {
+    const db = set(writeDb$);
+
+    const [member] = await db
+      .select({ locale: orgMembersMetadata.locale })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, scope.orgId),
+          eq(orgMembersMetadata.userId, scope.userId),
+        ),
+      )
+      .limit(1);
+    if (member === undefined || member.locale === null) {
+      return "en-US";
+    }
+    // Locale is interpolated into a provider system prompt. The only writer uses
+    // this bounded contract; an unexpected stored value is a local invariant.
+    return userLocaleSchema.parse(member.locale);
+  },
+);
 
 function parseJsonArray(text: string): unknown {
   const trimmed = text
@@ -825,152 +847,182 @@ class HomeTaskScopeUnavailableError extends Error {
 }
 
 /** Resolve every current authority that allows this cron scope to act. */
-async function currentHomeTaskScopeMembershipId(
-  db: Db,
-  clerk: ClerkClient,
-  scope: HomeTaskScope,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const featureContext = await loadUserFeatureSwitchContext(
-    db,
-    scope.orgId,
-    scope.userId,
-  );
-  signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.HomeTaskRecommendations, featureContext)
-  ) {
-    return null;
-  }
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, scope.orgId),
-        eq(agents.id, scope.agentId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, scope.userId)),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (agent === undefined) {
-    return null;
-  }
-  return await loadCurrentMembershipId(clerk, scope, signal);
-}
+const currentHomeTaskScopeMembershipId$ = command(
+  async (
+    { get, set },
+    scope: HomeTaskScope,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const clerk = get(clerk$);
 
-async function removeHomeTaskScope(
-  db: Db,
-  scope: HomeTaskScope,
-): Promise<boolean> {
-  const deleted = await db
-    .delete(homeTaskRecommendations)
-    .where(
-      and(
-        eq(homeTaskRecommendations.userId, scope.userId),
-        eq(homeTaskRecommendations.orgId, scope.orgId),
-        eq(homeTaskRecommendations.agentId, scope.agentId),
-      ),
-    )
-    .returning({ agentId: homeTaskRecommendations.agentId });
-  return deleted.length > 0;
-}
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      scope.orgId,
+      scope.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.HomeTaskRecommendations,
+        featureContext,
+      )
+    ) {
+      return null;
+    }
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.orgId, scope.orgId),
+          eq(agents.id, scope.agentId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, scope.userId)),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (agent === undefined) {
+      return null;
+    }
+    return await loadCurrentMembershipId(clerk, scope, signal);
+  },
+);
+
+const removeHomeTaskScope$ = command(
+  async ({ set }, scope: HomeTaskScope): Promise<boolean> => {
+    const db = set(writeDb$);
+
+    const deleted = await db
+      .delete(homeTaskRecommendations)
+      .where(
+        and(
+          eq(homeTaskRecommendations.userId, scope.userId),
+          eq(homeTaskRecommendations.orgId, scope.orgId),
+          eq(homeTaskRecommendations.agentId, scope.agentId),
+        ),
+      )
+      .returning({ agentId: homeTaskRecommendations.agentId });
+    return deleted.length > 0;
+  },
+);
 
 /** Refresh one claimed cache scope. Only the cron calls this function. */
-async function refreshHomeTaskRecommendationScope(
-  db: Db,
-  clerk: ClerkClient,
-  scope: HomeTaskScope,
-  membershipId: string,
-  signal: AbortSignal,
-): Promise<HomeTaskRefreshOutcome> {
-  const at = nowDate();
-  const cached = await readCachedRow(db, scope, at, signal);
-  signal.throwIfAborted();
-  if (!cached || cached.nextRefreshAt.getTime() > at.getTime()) {
-    return "skipped";
-  }
-  const claimId = await claimRefresh(db, scope, at);
-  signal.throwIfAborted();
-  if (claimId === null) {
-    return "skipped";
-  }
-
-  const attempt = await settleIncludingAbort(
-    (async () => {
-      const evidence = await collectHomeTaskEvidence(db, scope, signal);
-      // Source reads may cross remote boundaries. Pin this refresh to the same
-      // immutable Clerk membership and current Agent/feature authority before
-      // any collected content is released to a recommendation provider.
-      if (
-        (await currentHomeTaskScopeMembershipId(db, clerk, scope, signal)) !==
-        membershipId
-      ) {
-        throw new HomeTaskScopeUnavailableError();
-      }
-      if (isHomeTaskEvidenceEmpty(evidence)) {
-        return { kind: "no-evidence" as const, evidence };
-      }
-      if (cached.inputDigest === evidence.digest) {
-        return { kind: "unchanged" as const, evidence };
-      }
-      const language = await memberLanguage(db, scope);
-      const entries = await generateEntries(evidence, language, signal);
-      if (entries === undefined) {
-        // `generateAuxiliary` deliberately converts provider/output failures to
-        // undefined. Preserve the previous cache and let the refresh enter its
-        // retry cooldown instead of committing an empty set with this digest.
-        throw new Error("Home task recommendation generation failed");
-      }
-      if (
-        (await currentHomeTaskScopeMembershipId(db, clerk, scope, signal)) !==
-        membershipId
-      ) {
-        throw new HomeTaskScopeUnavailableError();
-      }
-      return { kind: "generated" as const, evidence, entries };
-    })(),
-  );
-
-  if (!attempt.ok) {
-    if (attempt.error instanceof HomeTaskScopeUnavailableError) {
-      const removed = await removeHomeTaskScope(db, scope);
-      return removed ? "removed" : "skipped";
+const refreshHomeTaskRecommendationScope$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    membershipId: string,
+    signal: AbortSignal,
+  ): Promise<HomeTaskRefreshOutcome> => {
+    const at = nowDate();
+    const cached = await set(readCachedRow$, scope, at, signal);
+    signal.throwIfAborted();
+    if (!cached || cached.nextRefreshAt.getTime() > at.getTime()) {
+      return "skipped";
     }
-    await releaseClaim(
-      db,
-      scope,
-      claimId,
-      new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
-    );
-    if (signal.aborted && attempt.error === signal.reason) {
-      throw attempt.error;
+    const claimId = await set(claimRefresh$, scope, at);
+    signal.throwIfAborted();
+    if (claimId === null) {
+      return "skipped";
     }
-    return "failed";
-  }
 
-  const result = attempt.value;
-  const generatedAt = nowDate();
-  if (result.kind === "unchanged") {
-    await releaseClaim(
-      db,
-      scope,
-      claimId,
-      new Date(generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS),
+    return await onRejection(
+      (async (): Promise<HomeTaskRefreshOutcome> => {
+        const attempt = await settleIncludingAbort(
+          (async () => {
+            const evidence = await set(collectHomeTaskEvidence$, scope, signal);
+            // Source reads may cross remote boundaries. Pin this refresh to the same
+            // immutable Clerk membership and current Agent/feature authority before
+            // any collected content is released to a recommendation provider.
+            if (
+              (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
+              membershipId
+            ) {
+              throw new HomeTaskScopeUnavailableError();
+            }
+            if (isHomeTaskEvidenceEmpty(evidence)) {
+              return { kind: "no-evidence" as const, evidence };
+            }
+            if (cached.inputDigest === evidence.digest) {
+              return { kind: "unchanged" as const, evidence };
+            }
+            const language = await set(memberLanguage$, scope);
+            const entries = await generateEntries(evidence, language, signal);
+            if (entries === undefined) {
+              // `generateAuxiliary` deliberately converts provider/output failures to
+              // undefined. Preserve the previous cache and let the refresh enter its
+              // retry cooldown instead of committing an empty set with this digest.
+              throw new Error("Home task recommendation generation failed");
+            }
+            if (
+              (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
+              membershipId
+            ) {
+              throw new HomeTaskScopeUnavailableError();
+            }
+            return { kind: "generated" as const, evidence, entries };
+          })(),
+        );
+
+        signal.throwIfAborted();
+        if (!attempt.ok) {
+          if (attempt.error instanceof HomeTaskScopeUnavailableError) {
+            const removed = await set(removeHomeTaskScope$, scope);
+            signal.throwIfAborted();
+            return removed ? "removed" : "skipped";
+          }
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
+          );
+          signal.throwIfAborted();
+          return "failed";
+        }
+
+        const result = attempt.value;
+        const generatedAt = nowDate();
+        if (result.kind === "unchanged") {
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(
+              generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS,
+            ),
+          );
+          signal.throwIfAborted();
+          return "unchanged";
+        }
+        const nextEntries = result.kind === "generated" ? result.entries : [];
+        const changed =
+          contentRevision(nextEntries) !== contentRevision(cached.entries);
+        const committed = await set(commitEntries$, scope, claimId, {
+          entries: nextEntries,
+          inputDigest: result.evidence.digest,
+          generatedAt,
+        });
+        signal.throwIfAborted();
+        return committed ? (changed ? "refreshed" : "unchanged") : "skipped";
+      })(),
+      async () => {
+        // Await cleanup before cancellation propagates. The claim predicate makes
+        // this a no-op after a committed or already-released result.
+        if (signal.aborted) {
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
+          );
+        }
+      },
     );
-    return "unchanged";
-  }
-  const nextEntries = result.kind === "generated" ? result.entries : [];
-  const changed =
-    contentRevision(nextEntries) !== contentRevision(cached.entries);
-  const committed = await commitEntries(db, scope, claimId, {
-    entries: nextEntries,
-    inputDigest: result.evidence.digest,
-    generatedAt,
-  });
-  return committed ? (changed ? "refreshed" : "unchanged") : "skipped";
-}
+  },
+);
 
 export interface HomeTaskRecommendationCronResult {
   readonly success: true;
@@ -987,152 +1039,158 @@ export interface HomeTaskRecommendationCronResult {
  * The optional scope exists only so route-bound integration tests can isolate
  * one owner while exercising the production cron implementation.
  */
-export async function refreshDueHomeTaskRecommendations(
-  db: Db,
-  clerk: ClerkClient,
-  onlyScope: HomeTaskScope | undefined,
-  signal: AbortSignal,
-): Promise<HomeTaskRecommendationCronResult> {
-  if (!isLlmConfigured()) {
-    return {
-      success: true,
-      scanned: 0,
-      refreshed: 0,
-      unchanged: 0,
-      removed: 0,
-      skipped: 0,
-      failed: 0,
-    };
-  }
-  const at = nowDate();
-  const activeAfter = new Date(at.getTime() - ACTIVE_REQUEST_WINDOW_MS);
-  const scopes = await db
-    .select({
-      userId: homeTaskRecommendations.userId,
-      orgId: homeTaskRecommendations.orgId,
-      agentId: homeTaskRecommendations.agentId,
-    })
-    .from(homeTaskRecommendations)
-    .where(
-      and(
-        lte(homeTaskRecommendations.nextRefreshAt, at),
-        gte(homeTaskRecommendations.lastRequestedAt, activeAfter),
-        or(
-          isNull(homeTaskRecommendations.claimExpiresAt),
-          lte(homeTaskRecommendations.claimExpiresAt, at),
-        ),
-        onlyScope === undefined
-          ? undefined
-          : and(
-              eq(homeTaskRecommendations.userId, onlyScope.userId),
-              eq(homeTaskRecommendations.orgId, onlyScope.orgId),
-              eq(homeTaskRecommendations.agentId, onlyScope.agentId),
-            ),
-      ),
-    )
-    .orderBy(asc(homeTaskRecommendations.nextRefreshAt))
-    .limit(CRON_BATCH_LIMIT);
-  signal.throwIfAborted();
+export const refreshDueHomeTaskRecommendations$ = command(
+  async (
+    { set },
+    onlyScope: HomeTaskScope | undefined,
+    signal: AbortSignal,
+  ): Promise<HomeTaskRecommendationCronResult> => {
+    const db = set(writeDb$);
 
-  const outcomes = await Promise.all(
-    scopes.map(async (scope): Promise<HomeTaskRefreshOutcome> => {
-      const attempt = await settleIncludingAbort(
-        (async (): Promise<HomeTaskRefreshOutcome> => {
-          const membershipId = await currentHomeTaskScopeMembershipId(
-            db,
-            clerk,
-            scope,
-            signal,
-          );
-          let outcome: HomeTaskRefreshOutcome;
-          if (membershipId === null) {
-            outcome = (await removeHomeTaskScope(db, scope))
-              ? "removed"
-              : "skipped";
-          } else {
-            outcome = await refreshHomeTaskRecommendationScope(
-              db,
-              clerk,
+    if (!isLlmConfigured()) {
+      return {
+        success: true,
+        scanned: 0,
+        refreshed: 0,
+        unchanged: 0,
+        removed: 0,
+        skipped: 0,
+        failed: 0,
+      };
+    }
+    const at = nowDate();
+    const activeAfter = new Date(at.getTime() - ACTIVE_REQUEST_WINDOW_MS);
+    const scopes = await db
+      .select({
+        userId: homeTaskRecommendations.userId,
+        orgId: homeTaskRecommendations.orgId,
+        agentId: homeTaskRecommendations.agentId,
+      })
+      .from(homeTaskRecommendations)
+      .where(
+        and(
+          lte(homeTaskRecommendations.nextRefreshAt, at),
+          gte(homeTaskRecommendations.lastRequestedAt, activeAfter),
+          or(
+            isNull(homeTaskRecommendations.claimExpiresAt),
+            lte(homeTaskRecommendations.claimExpiresAt, at),
+          ),
+          onlyScope === undefined
+            ? undefined
+            : and(
+                eq(homeTaskRecommendations.userId, onlyScope.userId),
+                eq(homeTaskRecommendations.orgId, onlyScope.orgId),
+                eq(homeTaskRecommendations.agentId, onlyScope.agentId),
+              ),
+        ),
+      )
+      .orderBy(asc(homeTaskRecommendations.nextRefreshAt))
+      .limit(CRON_BATCH_LIMIT);
+    signal.throwIfAborted();
+
+    const outcomes = await Promise.all(
+      scopes.map(async (scope): Promise<HomeTaskRefreshOutcome> => {
+        const attempt = await settleIncludingAbort(
+          (async (): Promise<HomeTaskRefreshOutcome> => {
+            const membershipId = await set(
+              currentHomeTaskScopeMembershipId$,
               scope,
-              membershipId,
               signal,
             );
+            let outcome: HomeTaskRefreshOutcome;
+            if (membershipId === null) {
+              outcome = (await set(removeHomeTaskScope$, scope))
+                ? "removed"
+                : "skipped";
+            } else {
+              outcome = await set(
+                refreshHomeTaskRecommendationScope$,
+                scope,
+                membershipId,
+                signal,
+              );
+            }
+            if (outcome === "refreshed") {
+              const current = await set(
+                readCachedRow$,
+                scope,
+                nowDate(),
+                signal,
+              );
+              await publishHomeTaskRecommendationsChangedSafely(
+                scope,
+                current
+                  ? {
+                      agentId: scope.agentId,
+                      revision: contentRevision(current.entries),
+                    }
+                  : { agentId: scope.agentId, removed: true },
+              );
+            } else if (outcome === "removed") {
+              await publishHomeTaskRecommendationsChangedSafely(scope, {
+                agentId: scope.agentId,
+                removed: true,
+              });
+            }
+            return outcome;
+          })(),
+        );
+        if (!attempt.ok) {
+          if (signal.aborted && attempt.error === signal.reason) {
+            throw attempt.error;
           }
-          if (outcome === "refreshed") {
-            const current = await readCachedRow(db, scope, nowDate(), signal);
-            await publishHomeTaskRecommendationsChangedSafely(
-              scope,
-              current
-                ? {
-                    agentId: scope.agentId,
-                    revision: contentRevision(current.entries),
-                  }
-                : { agentId: scope.agentId, removed: true },
-            );
-          } else if (outcome === "removed") {
-            await publishHomeTaskRecommendationsChangedSafely(scope, {
-              agentId: scope.agentId,
-              removed: true,
-            });
-          }
-          return outcome;
-        })(),
-      );
-      if (!attempt.ok) {
-        if (signal.aborted && attempt.error === signal.reason) {
-          throw attempt.error;
+          return "failed";
         }
-        return "failed";
-      }
-      return attempt.value;
-    }),
-  );
-  signal.throwIfAborted();
+        return attempt.value;
+      }),
+    );
+    signal.throwIfAborted();
 
-  const count = (outcome: HomeTaskRefreshOutcome): number => {
-    return outcomes.filter((value) => {
-      return value === outcome;
-    }).length;
-  };
-  return {
-    success: true,
-    scanned: scopes.length,
-    refreshed: count("refreshed"),
-    unchanged: count("unchanged"),
-    removed: count("removed"),
-    skipped: count("skipped"),
-    failed: count("failed"),
-  };
-}
+    const count = (outcome: HomeTaskRefreshOutcome): number => {
+      return outcomes.filter((value) => {
+        return value === outcome;
+      }).length;
+    };
+    return {
+      success: true,
+      scanned: scopes.length,
+      refreshed: count("refreshed"),
+      unchanged: count("unchanged"),
+      removed: count("removed"),
+      skipped: count("skipped"),
+      failed: count("failed"),
+    };
+  },
+);
 
 /**
  * Read cached cards and register a bounded refresh lease. No model or connector
  * call is made from the user request; the authenticated cron owns generation.
  */
-export async function readHomeTaskRecommendations(
-  db: Db,
-  scope: HomeTaskScope,
-  signal: AbortSignal,
-): Promise<HomeTaskRecommendationsResponse> {
-  const at = nowDate();
-  await registerHomeTaskRecommendationDemand(db, scope, at);
-  signal.throwIfAborted();
-  const cached = await readCachedRow(db, scope, at, signal);
-  signal.throwIfAborted();
-  const visibleCached = await visibleCachedRow(db, scope, cached, signal);
-  signal.throwIfAborted();
-  return cachedResponse(visibleCached, at);
-}
+export const readHomeTaskRecommendations$ = command(
+  async (
+    { set },
+    scope: HomeTaskScope,
+    signal: AbortSignal,
+  ): Promise<HomeTaskRecommendationsResponse> => {
+    const at = nowDate();
+    await set(registerHomeTaskRecommendationDemand$, scope, at);
+    signal.throwIfAborted();
+    const cached = await set(readCachedRow$, scope, at, signal);
+    signal.throwIfAborted();
+    const visibleCached = await set(visibleCachedRow$, scope, cached, signal);
+    signal.throwIfAborted();
+    return cachedResponse(visibleCached, at);
+  },
+);
 
 /** Renew the home-page lease without reading or changing the displayed cards. */
-export async function touchHomeTaskRecommendations(
-  db: Db,
-  scope: HomeTaskScope,
-  signal: AbortSignal,
-): Promise<void> {
-  await registerHomeTaskRecommendationDemand(db, scope, nowDate());
-  signal.throwIfAborted();
-}
+export const touchHomeTaskRecommendations$ = command(
+  async ({ set }, scope: HomeTaskScope, signal: AbortSignal): Promise<void> => {
+    await set(registerHomeTaskRecommendationDemand$, scope, nowDate());
+    signal.throwIfAborted();
+  },
+);
 
 /** The answer for a caller the feature is not enabled for. */
 export function homeTaskRecommendationsUnavailable(): HomeTaskRecommendationsResponse {

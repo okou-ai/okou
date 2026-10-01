@@ -4,7 +4,6 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { waitUntil } from "../context/wait-until";
-import { settle, bestEffort, safeJsonParse } from "../utils";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import type {
@@ -47,8 +46,8 @@ import {
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
+import { bestEffort, safeJsonParse, settle } from "../utils";
 import {
-  enqueueChatInput,
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
   notifyRunningChatRunOfPendingInput,
@@ -58,12 +57,12 @@ import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
-  ensureTeamsChatThreadRoute,
-  findTeamsRoutedChatThreadId,
+  ensureTeamsChatThreadRoute$,
+  findTeamsRoutedChatThreadId$,
 } from "./teams-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
@@ -82,10 +81,10 @@ import {
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
-
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
   "`help`, `connect`, `disconnect`, `model`";
@@ -1572,15 +1571,26 @@ const persistTeamsChatMessage$ = command(
     const threadId = teamsSessionThreadId({
       activity: args.activity,
     });
-    const route = await ensureTeamsChatThreadRoute(args.db, {
-      connectionId: args.connection.id,
-      conversationId: args.activity.conversationId,
-      threadId,
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      agentId: args.composeId,
-      currentTime,
-    });
+    const route = await set(
+      ensureTeamsChatThreadRoute$,
+      {
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.installation.orgId,
+          args.connection.userId,
+          undefined,
+          undefined,
+        ),
+        connectionId: args.connection.id,
+        conversationId: args.activity.conversationId,
+        threadId,
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        agentId: args.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const assets = await set(
@@ -1614,7 +1624,7 @@ const persistTeamsChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
         threadId: route.chatThreadId,
         orgId: args.installation.orgId,
         userId: args.connection.userId,
@@ -1645,15 +1655,11 @@ const persistTeamsChatMessage$ = command(
       teamsContext: launchContext,
       createdAt: currentTime,
     } as const;
-    const eventId = await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.installation.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
-      },
-    });
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      { orgId: args.installation.orgId, input: values },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventId === null) {
       return { inserted: false };
@@ -1943,18 +1949,26 @@ const connectedCommandBeforeCompose$ = command(
       }
       case "model": {
         const routeThreadId = teamsSessionThreadId({ activity: args.activity });
-        const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
-          connectionId: args.connection.id,
-          conversationId: args.activity.conversationId,
-          threadId: routeThreadId,
-          userId: args.connection.userId,
-        });
+        const chatThreadId = await set(
+          findTeamsRoutedChatThreadId$,
+          {
+            connectionId: args.connection.id,
+            conversationId: args.activity.conversationId,
+            threadId: routeThreadId,
+            userId: args.connection.userId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
-        const currentModel = await readIntegrationChatThreadModel(args.db, {
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-          chatThreadId,
-        });
+        const currentModel = await set(
+          readIntegrationChatThreadModel$,
+          {
+            orgId: args.installation.orgId,
+            userId: args.connection.userId,
+            chatThreadId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         if (!chatThreadId || !currentModel) {
           return {
@@ -2047,12 +2061,16 @@ const connectedTeamsCardAction$ = command(
       };
     }
 
-    const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
-      connectionId: args.connection.id,
-      conversationId: routeConversationId,
-      threadId: routeThreadId,
-      userId: args.connection.userId,
-    });
+    const chatThreadId = await set(
+      findTeamsRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        conversationId: routeConversationId,
+        threadId: routeThreadId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!chatThreadId || chatThreadId !== expectedChatThreadId) {
       return {
@@ -2060,11 +2078,15 @@ const connectedTeamsCardAction$ = command(
         replyText: "This model picker is out of date. Send `/model` again.",
       };
     }
-    const currentModel = await readIntegrationChatThreadModel(args.db, {
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-      chatThreadId,
-    });
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!currentModel) {
       return {

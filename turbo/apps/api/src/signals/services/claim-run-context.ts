@@ -443,9 +443,10 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  lockOrgCredits,
+  prepareUsageAllowanceRefresh,
   remainingUnits,
-  resolveAvailabilityInLockedTransaction,
+  resolveAvailabilityInTransaction,
+  type PreparedUsageAllowanceRefresh,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
@@ -474,7 +475,7 @@ import {
   workflowsForRunFromRows,
 } from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
+import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import {
   CHAT_EVENT_TYPES,
   CHAT_EVENT_CONTENT_TEXT_TYPES,
@@ -1802,6 +1803,7 @@ export interface ClaimRunTiming {
 
 export interface RunContext {
   readonly kind: "prepared";
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly input: Omit<
     RunPlan,
     "args" | "context" | "timing" | "phaseTiming"
@@ -2573,6 +2575,11 @@ async function resolveQueuedProviderAdmission(params: {
 export function createClaimRunObjects(claim: ThreadClaim) {
   // One model catalog snapshot per claim: the queued input is re-resolved
   // against the catalog current at the pick, not at enqueue.
+  // Stripe entitlement refresh for an allowance window runs outside the
+  // admission and pending transactions, in the same parallel preparation.
+  const preparedAllowanceRefresh$ = computed(async (get) => {
+    return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
+  });
   const claimCatalog$ = computed((get) => {
     return loadModelCatalog(get(db$));
   });
@@ -3353,18 +3360,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(allowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
+        const refresh = await get(preparedAllowanceRefresh$);
+        signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
+            refresh,
           );
           signal.throwIfAborted();
           return refreshed;
@@ -3378,11 +3383,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
@@ -6251,18 +6251,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(queuedModelAllowanceAllowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
+        const refresh = await get(preparedAllowanceRefresh$);
+        signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
+            refresh,
           );
           signal.throwIfAborted();
           return refreshed;
@@ -6276,11 +6274,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
@@ -9683,7 +9676,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           encryptedValue: secretsTable.encryptedValue,
         })
         .from(secretsTable)
-        .where(builtinConnectorCredentialSecretReadCondition({ db, groups }));
+        .where(builtinConnectorCredentialSecretReadCondition({ groups }));
     },
   );
   const decryptedSecrets$ = computed(async (get) => {
@@ -11495,18 +11488,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(usageAllowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
+        const refresh = await get(preparedAllowanceRefresh$);
+        signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
+            refresh,
           );
           signal.throwIfAborted();
           return refreshed;
@@ -11520,11 +11511,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
@@ -11683,8 +11669,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         error: rejection.error.message,
       });
       if (head.contextType === "automation") {
-        await settleRejectedAutomationInput(
-          set(writeDb$),
+        await set(
+          settleRejectedAutomationInput$,
           {
             contextId: head.contextId,
             queueEventId: head.id,
@@ -12357,12 +12343,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
-      const [encrypted, admission, launch] = await Promise.all([
-        set(prepareEncryptedSecrets$, signal),
-        set(checkClaimAdmission$, signal),
-        set(prepareLaunchResources$, head, timing, signal),
-        get(storageMounts$),
-      ]);
+      const [encrypted, admission, launch, , allowanceRefresh] =
+        await Promise.all([
+          set(prepareEncryptedSecrets$, signal),
+          set(checkClaimAdmission$, signal),
+          set(prepareLaunchResources$, head, timing, signal),
+          get(storageMounts$),
+          get(preparedAllowanceRefresh$),
+        ]);
       signal.throwIfAborted();
       const [input, storage, runnerInput] = launch.runner;
       const contextDraft = set(
@@ -12381,6 +12369,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           launch.assembly,
           launch.identity,
           admission,
+          allowanceRefresh,
         ] as const,
       };
     },
@@ -12602,6 +12591,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         assembly,
         identity,
         admission,
+        allowanceRefresh,
       ] = resources.value.resources;
       if (assembly.kind !== "assembled") {
         await set(
@@ -12659,6 +12649,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             finalizeClaimRunContext(
               {
                 kind: "prepared",
+                allowanceRefresh,
                 input: claimCommitInput(input),
                 identity,
                 callbackRows,

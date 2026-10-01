@@ -296,6 +296,7 @@ interface CodexDeviceAuthProviderRecorder {
 
 export function mockCodexDeviceAuthProvider(
   options: {
+    readonly beforeTokenResponse?: () => Promise<void>;
     readonly accessTokenExpiresAt?: number;
     readonly refreshedAccessTokenExpiresAt?: number;
     readonly tokenScope?: "org" | "personal";
@@ -355,6 +356,7 @@ export function mockCodexDeviceAuthProvider(
         },
       );
       recorded.oauthTokenResponses.push(tokenResponse);
+      await options.beforeTokenResponse?.();
       return HttpResponse.json(tokenResponse);
     }),
   );
@@ -370,6 +372,7 @@ interface ClaudeCodeTokenEndpointRecorder {
 
 export function mockClaudeCodeTokenEndpoint(
   options: {
+    readonly beforeTokenResponse?: () => Promise<void>;
     readonly accountEmail?: string;
     readonly organizationName?: string;
   } = {},
@@ -388,6 +391,7 @@ export function mockClaudeCodeTokenEndpoint(
       "https://platform.claude.com/v1/oauth/token",
       async ({ request }) => {
         recorded.token.push(await request.json());
+        await options.beforeTokenResponse?.();
         return HttpResponse.json({
           access_token: "claude-code-access-token",
           expires_in: 31_536_000,

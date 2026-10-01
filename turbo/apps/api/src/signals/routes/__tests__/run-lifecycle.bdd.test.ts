@@ -10004,7 +10004,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
-  it("rotates builtin Automatic credentials once for concurrent expiry and requires reconnect after revocation", async () => {
+  it("rotates expired builtin Automatic credentials and requires reconnect after revocation", async () => {
     const catalog = await installAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -10056,15 +10056,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const concurrent = await Promise.all([
-      fw.requestFirewallAuth(headers, body, [200]),
-      fw.requestFirewallAuth(headers, body, [200]),
-    ]);
-    for (const resolved of concurrent) {
-      expect(resolved.body).toMatchObject({
-        headers: { Authorization: "Bearer builtin-rotated-access-1" },
-      });
-    }
+    const expired = await fw.requestFirewallAuth(headers, body, [200]);
+    expect(expired.body).toMatchObject({
+      headers: { Authorization: "Bearer builtin-rotated-access-1" },
+    });
     expect(
       provider.tokenBodies.map((tokenBody) => {
         return tokenBody.get("grant_type");

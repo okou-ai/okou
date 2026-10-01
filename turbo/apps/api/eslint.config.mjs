@@ -807,9 +807,6 @@ export default [
       // any product endpoint. The suite seeds only those states directly and
       // observes recovery through the real GET and scoped cron routes.
       "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
-      // An incompatible retained Personal Access binding is impossible through
-      // production APIs; an isolated real-DB schema proves its promotion guard.
-      "src/signals/services/__tests__/cloudflare-access-promotion.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -997,8 +994,6 @@ export default [
       // #36466's old/corrupt cache JSONB and active claim are not HTTP inputs;
       // only those states are seeded directly, then the real routes are asserted.
       "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
-      // The same impossible retained Personal Access state needs real DB rows.
-      "src/signals/services/__tests__/cloudflare-access-promotion.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [

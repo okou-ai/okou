@@ -1,5 +1,6 @@
+import { expireOrgCreditsAt$ } from "./org-credit-expiration.service";
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
@@ -8,7 +9,6 @@ import { command } from "ccstate";
 import {
   and,
   eq,
-  gt,
   inArray,
   isNotNull,
   isNull,
@@ -18,10 +18,10 @@ import {
   sql,
 } from "drizzle-orm";
 
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { clerk$ } from "../external/clerk";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -48,22 +48,24 @@ import {
   tierForKnownPlanPrice,
 } from "./billing-checkout.service";
 import {
-  reconcileUsagePackSubscriptions,
+  reconcileUsagePackSubscriptions$,
   stripeSubscriptionUsesMemberUsagePacks,
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
-import { reconcileUsagePackInvitationPurchases } from "./usage-pack-invitation-purchase.service";
-import { reconcileUsagePackSubscriptionMigrations } from "./usage-pack-subscription-migration.service";
+import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
+import { syncUsagePackSubscriptionConfigurations$ } from "./usage-pack-allocation-change.service";
+import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
   reconcileMissingStripeSubscription,
   reconcilePaidStripeCheckoutSession$,
   reconcilePaidStripeInvoice$,
-  reconcileStripeSubscriptionSnapshot,
+  reconcileStripeSubscriptionSnapshot$,
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
 import type { Tx } from "../../lib/db-types";
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 
 const L = logger("CronBillingEntitlements");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -130,6 +132,9 @@ interface AtomGrantCandidate {
 interface ConcurrencyCandidate {
   readonly orgId: string;
   readonly stripeSubscriptionId: string;
+  readonly cancelAtPeriodEnd: boolean;
+  readonly updatedAtText: string;
+  readonly rowVersion: string;
 }
 
 interface UsageAllowanceCandidate {
@@ -197,7 +202,6 @@ interface ReconciledCandidateRows {
 }
 
 type ReconcileTx = Tx;
-type ClerkClient = ReturnType<typeof clerk$.read>;
 
 interface StripeSubscriptionDiscovery {
   readonly subscriptions: readonly StripeSubscription[];
@@ -475,90 +479,85 @@ function collectStripeSubscriptionSnapshot(
   return result.paidInvoiceId ? 1 : 0;
 }
 
-async function reconcileStripeSubscriptionSnapshots(
-  db: Db,
-  stripe: ReturnType<typeof getStripeClient>,
-  clerk: ClerkClient,
-  scope: BillingReconciliationScope | undefined,
-  signal: AbortSignal,
-): Promise<StripeSubscriptionSweepResult> {
-  const discovery = await discoverStripeSubscriptions(
-    db,
-    stripe,
-    scope,
-    signal,
-  );
-  const changedOrgIds = new Set<string>();
-  const downgraded: DowngradedSubscription[] = [];
-  let paidInvoices = 0;
-  let reconciled = 0;
-  let failed = discovery.failedSubscriptionIds.length;
+const reconcileStripeSubscriptionSnapshots$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<StripeSubscriptionSweepResult> => {
+    const db = set(writeDb$);
+    const stripe = getStripeClient();
+    const discovery = await discoverStripeSubscriptions(
+      db,
+      stripe,
+      scope,
+      signal,
+    );
+    const changedOrgIds = new Set<string>();
+    const downgraded: DowngradedSubscription[] = [];
+    let paidInvoices = 0;
+    let reconciled = 0;
+    let failed = discovery.failedSubscriptionIds.length;
 
-  for (const subscription of discovery.subscriptions) {
-    const result = await settle(
-      reconcileStripeSubscriptionSnapshot(
-        db,
-        () => {
-          return clerk;
-        },
-        subscription,
+    for (const subscription of discovery.subscriptions) {
+      const result = await settle(
+        set(reconcileStripeSubscriptionSnapshot$, subscription, signal),
         signal,
-      ),
-      signal,
-    );
-    if (!result.ok) {
-      failed += 1;
-      L.warn("Stripe subscription snapshot reconciliation failed", {
-        subscriptionId: subscription.id,
-        status: subscription.status,
-        error: result.error,
-      });
-      continue;
+      );
+      if (!result.ok) {
+        failed += 1;
+        L.warn("Stripe subscription snapshot reconciliation failed", {
+          subscriptionId: subscription.id,
+          status: subscription.status,
+          error: result.error,
+        });
+        continue;
+      }
+      reconciled += 1;
+      paidInvoices += collectStripeSubscriptionSnapshot(
+        changedOrgIds,
+        downgraded,
+        subscription.id,
+        subscription.status,
+        result.value,
+      );
     }
-    reconciled += 1;
-    paidInvoices += collectStripeSubscriptionSnapshot(
-      changedOrgIds,
-      downgraded,
-      subscription.id,
-      subscription.status,
-      result.value,
-    );
-  }
-  for (const subscriptionId of discovery.missingSubscriptionIds) {
-    const result = await settle(
-      reconcileMissingStripeSubscription(db, subscriptionId, signal),
-      signal,
-    );
-    if (!result.ok) {
-      failed += 1;
-      L.warn("missing Stripe subscription reconciliation failed", {
+    for (const subscriptionId of discovery.missingSubscriptionIds) {
+      const result = await settle(
+        reconcileMissingStripeSubscription(db, subscriptionId, signal),
+        signal,
+      );
+      if (!result.ok) {
+        failed += 1;
+        L.warn("missing Stripe subscription reconciliation failed", {
+          subscriptionId,
+          error: result.error,
+        });
+        continue;
+      }
+      reconciled += 1;
+      collectStripeSubscriptionSnapshot(
+        changedOrgIds,
+        downgraded,
         subscriptionId,
-        error: result.error,
-      });
-      continue;
+        null,
+        result.value,
+      );
     }
-    reconciled += 1;
-    collectStripeSubscriptionSnapshot(
-      changedOrgIds,
-      downgraded,
-      subscriptionId,
-      null,
-      result.value,
-    );
-  }
 
-  return {
-    attempted:
-      discovery.subscriptions.length +
-      discovery.missingSubscriptionIds.length +
-      discovery.failedSubscriptionIds.length,
-    reconciled,
-    failed,
-    paidInvoices,
-    changedOrgIds: [...changedOrgIds],
-    downgraded,
-  };
-}
+    return {
+      attempted:
+        discovery.subscriptions.length +
+        discovery.missingSubscriptionIds.length +
+        discovery.failedSubscriptionIds.length,
+      reconciled,
+      failed,
+      paidInvoices,
+      changedOrgIds: [...changedOrgIds],
+      downgraded,
+    };
+  },
+);
 
 async function disableIneligibleWorkflowWebhooksForOrgs(
   db: Db,
@@ -1155,52 +1154,36 @@ async function reconcileBillingCandidate(
   );
 }
 
-async function expireOrgCredits(
-  db: Db,
-  orgId: string,
-  now: Date,
-): Promise<number> {
-  return await db.transaction(async (tx) => {
-    const expired = await tx
-      .select({
-        id: creditExpiresRecord.id,
-        remaining: creditExpiresRecord.remaining,
-      })
-      .from(creditExpiresRecord)
-      .where(
-        and(
-          eq(creditExpiresRecord.orgId, orgId),
-          lte(creditExpiresRecord.expiresAt, now),
-          gt(creditExpiresRecord.remaining, 0),
-        ),
-      )
-      .for("update");
-
-    const totalExpired = expired.reduce((sum, record) => {
-      return sum + record.remaining;
-    }, 0);
-    if (totalExpired <= 0) {
-      return 0;
+/** Own each expiration before the legacy plan projection runs. */
+const expireAtomGrantCandidates$ = command(
+  async (
+    { set },
+    args: {
+      readonly candidates: readonly AtomGrantCandidate[];
+      readonly at: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const ready: AtomGrantCandidate[] = [];
+    for (const candidate of args.candidates) {
+      const { orgId } = candidate;
+      const result = await settle(
+        set(expireOrgCreditsAt$, { orgId, at: args.at }, signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!result.ok) {
+        L.warn("Atom grant candidate expiration failed", {
+          orgId,
+          error: result.error,
+        });
+        continue;
+      }
+      ready.push(candidate);
     }
-
-    for (const record of expired) {
-      await tx
-        .update(creditExpiresRecord)
-        .set({ remaining: 0 })
-        .where(eq(creditExpiresRecord.id, record.id));
-    }
-
-    await tx
-      .update(orgMetadata)
-      .set({
-        credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
-        updatedAt: now,
-      })
-      .where(eq(orgMetadata.orgId, orgId));
-
-    return totalExpired;
-  });
-}
+    return ready;
+  },
+);
 
 async function reconcileAtomGrantCandidate(
   context: ReconcileBillingContext,
@@ -1208,9 +1191,6 @@ async function reconcileAtomGrantCandidate(
   signal: AbortSignal,
 ): Promise<DowngradedSubscription[]> {
   const { db, now } = context;
-  await expireOrgCredits(db, candidate.orgId, now);
-  signal.throwIfAborted();
-
   const rows = await db.transaction(async (tx) => {
     return await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -1264,9 +1244,9 @@ async function reconcileConcurrencyCandidate(
   signal: AbortSignal,
 ): Promise<ExpiredConcurrencySubscription[]> {
   const { db, stripe, now, staleBefore } = context;
-  const subscription = (await stripe.subscriptions.retrieve(
+  const subscription = await stripe.subscriptions.retrieve(
     candidate.stripeSubscriptionId,
-  )) as SubscriptionInput;
+  );
   signal.throwIfAborted();
 
   const item = concurrencySubscriptionItem(subscription);
@@ -1276,9 +1256,12 @@ async function reconcileConcurrencyCandidate(
   const syncedFields = {
     subscriptionStatus: subscription.status,
     cancelAtPeriodEnd:
-      subscription.cancel_at_period_end &&
-      knownBillingPlanPriceItem(subscription.items.data) === undefined,
-    updatedAt: now,
+      (subscription.cancel_at_period_end &&
+        knownBillingPlanPriceItem(subscription.items.data) === undefined) ||
+      (candidate.cancelAtPeriodEnd &&
+        subscription.schedule !== null &&
+        subscription.schedule !== undefined),
+    updatedAt: concurrencySubscriptionUpdatedAt(now),
     ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
     ...(item ? { stripePriceId: item.price.id } : {}),
     ...(slots ? { slots } : {}),
@@ -1288,9 +1271,11 @@ async function reconcileConcurrencyCandidate(
       orgConcurrencySubscriptions.stripeSubscriptionId,
       candidate.stripeSubscriptionId,
     ),
-    inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-      ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-    ]),
+    eq(
+      orgConcurrencySubscriptions.updatedAt,
+      sql`${candidate.updatedAtText}::timestamp`,
+    ),
+    sql`${orgConcurrencySubscriptions}.xmin::text = ${candidate.rowVersion}`,
   );
 
   if (subscription.status === "canceled") {
@@ -1300,7 +1285,7 @@ async function reconcileConcurrencyCandidate(
         subscriptionStatus: "canceled",
         cancelAtPeriodEnd: false,
         currentPeriodEnd: now,
-        updatedAt: now,
+        updatedAt: concurrencySubscriptionUpdatedAt(now),
       })
       .where(currentCandidate)
       .returning({
@@ -1541,6 +1526,14 @@ async function loadReconcileCandidateRows(
       .select({
         orgId: orgConcurrencySubscriptions.orgId,
         stripeSubscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
+        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
@@ -1548,12 +1541,29 @@ async function loadReconcileCandidateRows(
           scope
             ? inArray(orgConcurrencySubscriptions.orgId, [...scope.orgIds])
             : undefined,
-          inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-            ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-          ]),
           or(
-            isNull(orgConcurrencySubscriptions.currentPeriodEnd),
-            lte(orgConcurrencySubscriptions.currentPeriodEnd, staleBefore),
+            and(
+              inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+                ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+              ]),
+              or(
+                isNull(orgConcurrencySubscriptions.currentPeriodEnd),
+                lte(orgConcurrencySubscriptions.currentPeriodEnd, staleBefore),
+              ),
+            ),
+            and(
+              inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+                "active",
+                "trialing",
+                ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+              ]),
+              // Provider observations can arrive out of order during overlap
+              // with old webhook writers. Repair each live identity daily;
+              // this never creates an invoice, payment or credit grant.
+              scope
+                ? undefined
+                : sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
+            ),
           ),
         ),
       ),
@@ -1672,9 +1682,43 @@ async function reconcileCandidateRows(
   return { downgraded, expiredConcurrency, reconciledUsageAllowances };
 }
 
+/**
+ * Invitation recovery first commits accepted local allocations; the daily
+ * configuration sweep then converges Stripe from those records by identity.
+ */
+const reconcileUsagePackInvitationsAndConfiguration$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const invitations = await set(
+      reconcileUsagePackInvitationPurchases$,
+      scope,
+      signal,
+    );
+    signal.throwIfAborted();
+    const configuration = await settle(
+      set(syncUsagePackSubscriptionConfigurations$, scope, signal),
+      signal,
+    );
+    if (!configuration.ok) {
+      L.warn("usage pack Stripe configuration sweep failed", {
+        error: configuration.error,
+      });
+    } else if (
+      configuration.value.updated > 0 ||
+      configuration.value.failed > 0
+    ) {
+      L.warn("usage pack Stripe configuration reconciled", configuration.value);
+    }
+    return invitations;
+  },
+);
+
 const reconcileBillingEntitlementsForScope$ = command(
   async (
-    { get, set },
+    { set },
     scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<{ readonly downgraded: number }> => {
@@ -1709,21 +1753,41 @@ const reconcileBillingEntitlementsForScope$ = command(
     }
     signal.throwIfAborted();
 
-    const usagePackMigrationReconciliation =
-      await reconcileUsagePackSubscriptionMigrations(db, scope, signal);
+    const usagePackMigrationReconciliation = await set(
+      reconcileUsagePackSubscriptionMigrations$,
+      scope,
+      signal,
+    );
     signal.throwIfAborted();
-    await reconcileUsagePackSubscriptions(db, scope, signal);
+    const usagePackReconciliation = await set(
+      reconcileUsagePackSubscriptions$,
+      scope,
+      signal,
+    );
     signal.throwIfAborted();
+    for (const cancellation of usagePackReconciliation.emptyCancellations) {
+      const canceled = await settle(
+        set(cancelEmptyUsagePackSubscription$, cancellation, signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!canceled.ok) {
+        L.error("empty usage pack cancellation reconciliation failed", {
+          usagePackSubscriptionId: cancellation.usagePackSubscriptionId,
+          error: canceled.error,
+        });
+      }
+    }
     await reconcileUsagePackCreditRefunds(db, scope, signal);
     signal.throwIfAborted();
-    const clerk = get(clerk$);
-    const invitationPurchasesReconciled =
-      await reconcileUsagePackInvitationPurchases(db, clerk, scope, signal);
-    signal.throwIfAborted();
-    const stripeSubscriptionSweep = await reconcileStripeSubscriptionSnapshots(
-      db,
-      stripe,
-      clerk,
+
+    const invitationPurchasesReconciled = await set(
+      reconcileUsagePackInvitationsAndConfiguration$,
+      scope,
+      signal,
+    );
+    const stripeSubscriptionSweep = await set(
+      reconcileStripeSubscriptionSnapshots$,
       scope,
       signal,
     );
@@ -1737,9 +1801,14 @@ const reconcileBillingEntitlementsForScope$ = command(
     );
     signal.throwIfAborted();
 
+    const atomGrantCandidates = await set(
+      expireAtomGrantCandidates$,
+      { candidates: candidateRows.atomGrantCandidates, at: now },
+      signal,
+    );
     const reconciledCandidates = await reconcileCandidateRows(
       { db, stripe, now, staleBefore },
-      candidateRows,
+      { ...candidateRows, atomGrantCandidates },
       signal,
     );
     const downgraded = [

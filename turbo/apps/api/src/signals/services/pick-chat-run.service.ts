@@ -97,7 +97,7 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
+import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import type { ChatQueueHeadRejection } from "./chat-queue-run-assembly";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 
@@ -360,6 +360,7 @@ async function persistClaimedRun(
         orgId: input.args.orgId,
         runId: persisted.run.id,
         runCreatedAt: persisted.run.createdAt,
+        refresh: context.allowanceRefresh,
       });
       timing.recordElapsed(
         "api_dispatch_activate_usage_allowance_windows",
@@ -878,8 +879,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         error: error.message,
       });
       if (head.contextType === "automation") {
-        await settleRejectedAutomationInput(
-          set(writeDb$),
+        await set(
+          settleRejectedAutomationInput$,
           { contextId: head.contextId, queueEventId: head.id, error },
           signal,
         );

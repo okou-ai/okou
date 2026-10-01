@@ -26,7 +26,7 @@ import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import { processCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import {
-  admitCanonicalDiscordChatEvent,
+  admitCanonicalDiscordChatEvent$,
   findCanonicalDiscordIngressByMessage,
   hasCanonicalDiscordMessageReceipt,
 } from "./discord-chat-ingress.service";
@@ -170,14 +170,18 @@ const handleDiscordMessage$ = command(
     if (message.author.id === selection.botUserId) {
       return ignored("self-message");
     }
-    const ingress = await admitCanonicalDiscordChatEvent(set(writeDb$), {
-      applicationId: envelope.applicationId,
-      connectionId: selection.connectionId,
-      messageId: message.id,
-      eventId: envelope.eventId,
-      payload: body,
-      currentTime: nowDate(),
-    });
+    const ingress = await set(
+      admitCanonicalDiscordChatEvent$,
+      {
+        applicationId: envelope.applicationId,
+        connectionId: selection.connectionId,
+        messageId: message.id,
+        eventId: envelope.eventId,
+        payload: body,
+        currentTime: nowDate(),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!ingress) {

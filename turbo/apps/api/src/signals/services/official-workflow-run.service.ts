@@ -14,9 +14,9 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { computed, type Computed } from "ccstate";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
+import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -24,11 +24,11 @@ import type { ReadonlyDb } from "../external/db";
 import {
   acceptedCatalogFromRow,
   acceptedRevisionFromRow,
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-  type AcceptedOfficialWorkflowCatalog,
   lockAcceptedOfficialWorkflowCatalog,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevisions,
+  type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =

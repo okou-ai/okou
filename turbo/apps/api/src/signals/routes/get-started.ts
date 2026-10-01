@@ -1,4 +1,12 @@
 import {
+  completedGetStartedQuestSql,
+  memberRewardWalletQuery,
+} from "../services/get-started-member-reward";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { slackRewardWalletEntitlement } from "../services/slack-installation-reward";
+import {
   cronGetStartedContract,
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
@@ -13,7 +21,6 @@ import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  awardCompletedGetStartedQuest,
   createGetStartedClaim,
   getStartedClaimResponse,
   getStartedStatus,
@@ -21,7 +28,7 @@ import {
 } from "../services/get-started-rewards.service";
 import {
   normalizeGetStartedPostUrl,
-  processGetStartedClaims,
+  processGetStartedClaims$,
 } from "../services/get-started-review.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -38,13 +45,45 @@ const status$ = command(async ({ get }, signal: AbortSignal) => {
 
 const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const claim = await set(writeDb$).transaction((tx) => {
-    return awardCompletedGetStartedQuest(tx, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      questKey: "checkin",
-      sourceKey: getStartedUtcDay(nowDate()),
-    });
+  const claim = await set(writeDb$).transaction(async (tx) => {
+    const [insertedWallet] = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({ orgId: auth.orgId })
+      .onConflictDoNothing()
+      .returning({ orgId: orgMetadata.orgId });
+    await tx.select().from(memberRewardWalletQuery(auth.orgId));
+    if (insertedWallet) {
+      await tx
+        .insert(orgPlanEntitlements)
+        .values(slackRewardWalletEntitlement(auth.orgId))
+        .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+    }
+    const sourceKey = getStartedUtcDay(nowDate());
+    await tx.execute(
+      completedGetStartedQuestSql(
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          questKey: "checkin",
+          sourceKey,
+        },
+        nowDate(),
+      ),
+    );
+    const [current] = await tx
+      .select()
+      .from(getStartedClaims)
+      .where(
+        and(
+          eq(getStartedClaims.actorUserId, auth.userId),
+          eq(getStartedClaims.questKey, "checkin"),
+          eq(getStartedClaims.sourceKey, sourceKey),
+        ),
+      );
+    if (!current) {
+      throw new Error("Get started check-in was not persisted");
+    }
+    return current;
   });
   signal.throwIfAborted();
   return { status: 200 as const, body: getStartedClaimResponse(claim) };
@@ -120,8 +159,8 @@ const review$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(hasValidCronSecret$)) {
     return cronUnauthorized();
   }
-  const processed = await processGetStartedClaims(
-    set(writeDb$),
+  const processed = await set(
+    processGetStartedClaims$,
     {},
     AbortSignal.any([signal, AbortSignal.timeout(240_000)]),
   );

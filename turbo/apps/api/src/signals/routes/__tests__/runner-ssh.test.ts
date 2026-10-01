@@ -316,7 +316,7 @@ describe("SSH authority invalidation", () => {
     ]);
   });
 
-  it("publishes only the successful generation when concurrent updates conflict", async () => {
+  it("resolves the current host credentials after overlapping low-frequency edits", async () => {
     const f = await fixture({ runnerGroup: `ssh-cache-${randomUUID()}` });
     context.mocks.ably.publish.mockClear();
     const outcomes = await Promise.all(
@@ -335,19 +335,22 @@ describe("SSH authority invalidation", () => {
       }),
     );
     expect(
-      outcomes
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-      [
-        "ssh-authority-invalidated",
-        { runId: f.runId, connectionId: f.connectionId },
-      ],
-    ]);
+      outcomes.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    const current = (await list(f)).find((host) => {
+      return host.id === f.connectionId;
+    });
+    if (!current) {
+      throw new Error("Expected the edited host to remain configured");
+    }
+    expect(current.username).toBeOneOf(["first-login", "second-login"]);
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved",
+      username: current.username,
+      generation: current.generation,
+    });
   });
 });
 

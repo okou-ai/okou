@@ -69,7 +69,6 @@ import { http, HttpResponse } from "msw";
 import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
-
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -138,7 +137,6 @@ import {
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-
 const context = testContext();
 const resource = "https://api.mcp.example.test/mcp";
 const issuer = "https://clerk.mcp.example.test";

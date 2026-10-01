@@ -26,7 +26,7 @@ import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
   type PersonalSubscriptionProviderType,
 } from "../services/model-provider-account.service";
 
@@ -122,9 +122,9 @@ const upsertPersonalCodexAuthJson$ = command(
         selectedModel: args.selectedModel,
         upsert: async (pasteArgs) => {
           if (args.accountsEnabled) {
-            const result = await upsertPersonalModelProviderAccount(
+            const result = await set(
+              upsertPersonalModelProviderAccount$,
               {
-                db: set(writeDb$),
                 orgId: args.orgId,
                 userId: args.userId,
                 type: "codex-oauth-token",
@@ -239,9 +239,9 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       );
     }
     if (accountsEnabled) {
-      const result = await upsertPersonalModelProviderAccount(
+      const result = await set(
+        upsertPersonalModelProviderAccount$,
         {
-          db: set(writeDb$),
           orgId: auth.orgId,
           userId: auth.userId,
           type,
@@ -281,9 +281,9 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return badRequestMessage(`Provider "${type}" requires a secret`);
   }
   if (accountsEnabled) {
-    const result = await upsertPersonalModelProviderAccount(
+    const result = await set(
+      upsertPersonalModelProviderAccount$,
       {
-        db: set(writeDb$),
         orgId: auth.orgId,
         userId: auth.userId,
         type,

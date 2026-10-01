@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 
+import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-catalog";
 import { computed, type Computed } from "ccstate";
 import { and, count, eq, inArray } from "drizzle-orm";
-import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-catalog";
 
-import type {
-  ConnectorAuthMethodId,
-  ConnectorSlug,
-} from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import type {
+  ConnectorAuthMethodId,
+  ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import {
   getConnectorAuthProviderRegistrationCapabilities,
   type ConnectorAuthProviderRegistrationCapability,
@@ -25,23 +25,23 @@ import {
   type ConnectorEnvBindingValue,
   type ConnectorGrantOutputBindings,
   type ConnectorPlatformSecretName,
-  type PublicConnectorAuthClientConfig,
   type ConnectorRefreshTokenInputBindings,
   type ConnectorRefreshTokenOutputBindings,
   type ConnectorRevokeInputBindings,
   type ConnectorSecretValueRef,
   type ConnectorVariableValueRef,
+  type PublicConnectorAuthClientConfig,
 } from "@okouai/connectors/connector-config";
 
-import { singleton } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
-import { onRejection } from "../utils";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type {
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
   ConnectorCatalogSkill,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import { singleton } from "../../lib/singleton";
+import type { ReadonlyDb } from "../external/db";
+import { onRejection } from "../utils";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   createCapturedConnectorCatalogSnapshotObject,
   ExternalConnectorCatalogUnavailableError,

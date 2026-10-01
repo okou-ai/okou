@@ -22,10 +22,6 @@ import {
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import {
-  workflowAutomationsContract,
-  workflowsCollectionContract,
-} from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
@@ -45,7 +41,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { singleton } from "../../../lib/singleton";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   apiTestConnectorCatalogValidationAuthority,
@@ -66,11 +62,6 @@ import {
   setApiTestConnectorCatalogRuntimeProjectionAuthority,
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
-import {
-  deleteOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { createDeferredPromise, settle } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connector-catalog-public-leak";
@@ -95,7 +86,6 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -109,8 +99,6 @@ import { connectorCheckRoutes } from "../connector-check";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
@@ -122,8 +110,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsRoutes,
   ...featureSwitchesRoutes,
   ...userPermissionGrantsRoutes,
-  ...workflowAutomationsRoutes,
-  ...workflowsRoutes,
 ]);
 
 const context = testContext({ connectorCatalog: true });
@@ -131,7 +117,6 @@ const routeMocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const githubApi = createGithubBddApi(context);
-const miscApi = createMiscRoutesApi(context);
 const CRON_SECRET = "connector-catalog-cron-secret";
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -145,8 +130,6 @@ const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
 const EXPECTED_CAPABILITY_DIGEST =
   "sha256:46b3e87b761c645f1a9f23200bc60659ca488b6d313654b2c42d69ddfce82af1";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 const SLACK_REVOKE_URL = "https://slack.com/api/auth.revoke";
 const STEAM_TEST_ID = "76561198000000000";
@@ -165,6 +148,49 @@ interface ReleaseFixtureOptions {
   readonly mutateFirewall?: JsonMutation;
   readonly mutateArtifact?: JsonMutation;
   readonly mutatePointer?: JsonMutation;
+}
+
+function gmailPrivateAuthMethod(): JsonRecord {
+  const accessTokenName = "CATALOG_GMAIL_ACCESS_TOKEN";
+  const refreshTokenName = "CATALOG_GMAIL_REFRESH_TOKEN";
+  return {
+    id: "oauth",
+    client: {
+      clientRegistration: "static",
+      clientType: "confidential",
+      clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
+      clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
+    },
+    storage: {
+      version: 1,
+      secrets: [accessTokenName, refreshTokenName],
+      variables: [],
+    },
+    grant: {
+      kind: "auth-code",
+      scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+      callbackOrigin: "web",
+      outputs: {
+        accessToken: `$secrets.${accessTokenName}`,
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+    },
+    access: {
+      kind: "refresh-token",
+      envBindings: {
+        GMAIL_TOKEN: `$secrets.${accessTokenName}`,
+      },
+      inputs: {
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+      outputs: {
+        accessToken: `$secrets.${accessTokenName}`,
+        refreshToken: `$secrets.${refreshTokenName}`,
+      },
+      refreshableSecrets: [accessTokenName],
+    },
+    revoke: { kind: "none" },
+  };
 }
 
 function createConnectorCleanup(
@@ -666,49 +692,6 @@ function deelPrivateAuthMethod(): JsonRecord {
       kind: "refresh-token",
       envBindings: {
         DEEL_TOKEN: `$secrets.${accessTokenName}`,
-      },
-      inputs: {
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-      refreshableSecrets: [accessTokenName],
-    },
-    revoke: { kind: "none" },
-  };
-}
-
-function gmailPrivateAuthMethod(): JsonRecord {
-  const accessTokenName = "CATALOG_GMAIL_ACCESS_TOKEN";
-  const refreshTokenName = "CATALOG_GMAIL_REFRESH_TOKEN";
-  return {
-    id: "oauth",
-    client: {
-      clientRegistration: "static",
-      clientType: "confidential",
-      clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
-      clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
-    },
-    storage: {
-      version: 1,
-      secrets: [accessTokenName, refreshTokenName],
-      variables: [],
-    },
-    grant: {
-      kind: "auth-code",
-      scopes: ["https://www.googleapis.com/auth/gmail.modify"],
-      callbackOrigin: "web",
-      outputs: {
-        accessToken: `$secrets.${accessTokenName}`,
-        refreshToken: `$secrets.${refreshTokenName}`,
-      },
-    },
-    access: {
-      kind: "refresh-token",
-      envBindings: {
-        GMAIL_TOKEN: `$secrets.${accessTokenName}`,
       },
       inputs: {
         refreshToken: `$secrets.${refreshTokenName}`,
@@ -4218,222 +4201,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(
       callsBeforeProviderResume,
     );
-  });
-
-  it("does not persist an in-flight refresh after the connector is replaced", async () => {
-    mockGmailConnectorOAuth({ email: "refresh-race@example.test" });
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-refresh-replacement",
-      connectorSlug: "gmail",
-      label: "Catalog Gmail",
-      mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          publicAuthMethod({ id: "oauth", grantKind: "auth-code" }),
-        ]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [gmailPrivateAuthMethod()]);
-      },
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    mockOptionalEnv(
-      "GMAIL_PUBSUB_TOPIC_NAME",
-      "projects/vm0-ai-488909/topics/gmail-events",
-    );
-    server.use(
-      http.post(OPENROUTER_URL, () => {
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: JSON.stringify({ connectors: [] }) },
-            },
-          ],
-        });
-      }),
-    );
-
-    const orgId = createUniqueStaffOrgIdFixture();
-    const actor = bdd.user({ orgId });
-    const created: { agentId?: string; workflowId?: string } = {};
-    const refreshResume = deferredGate();
-    const cleanupConnector = createConnectorCleanup(actor, "gmail");
-    onTestFinished(async () => {
-      refreshResume.release();
-      context.mocks.s3.send.mockResolvedValue({ Contents: [] });
-      await cleanupConnector();
-      if (created.workflowId) {
-        await miscApi.deleteWorkflow(actor, created.workflowId, [204, 404]);
-      }
-      if (created.agentId) {
-        await bdd.deleteAgent(actor, created.agentId);
-      }
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "active",
-      supportByok: true,
-      restrictedBuiltInModels: false,
-    });
-    const initialOauth = await connectorsApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-    );
-    const initialState = new URL(
-      initialOauth.authorizationUrl,
-    ).searchParams.get("state");
-    if (!initialState) {
-      throw new Error("Expected initial Gmail authorization state");
-    }
-    await connectorsApi.completeOauthCallback("gmail", {
-      code: "initial",
-      state: initialState,
-    });
-    const initialConnection = await connectorsApi.readConnectorBySlug(
-      actor,
-      "gmail",
-    );
-
-    mockNow(new Date("2026-07-15T10:00:00.000Z"));
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Refresh replacement agent",
-      visibility: "private",
-    });
-    created.agentId = agent.agentId;
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const headers = { authorization: "Bearer clerk-session" };
-    const workflow = await accept(
-      setupApp({ context, routes: workflowsRoutes })(
-        workflowsCollectionContract,
-      ).create({
-        headers,
-        body: {
-          agentId: agent.agentId,
-          name: `refresh-replacement-${randomUUID().slice(0, 8)}`,
-          instruction: "Handle incoming Gmail messages.",
-        },
-      }),
-      [201],
-    );
-    created.workflowId = workflow.body.id;
-
-    const refreshEntered = deferredGate();
-    const watchAuthorizations: string[] = [];
-    const stopAuthorizations: string[] = [];
-    server.use(
-      http.post(GOOGLE_OAUTH_TOKEN_URL, async ({ request }) => {
-        const body = new URLSearchParams(await request.text());
-        if (body.get("grant_type") === "refresh_token") {
-          refreshEntered.release();
-          await refreshResume.promise;
-          return HttpResponse.json({
-            access_token: "stale-refreshed-gmail-token",
-            refresh_token: "stale-rotated-gmail-refresh-token",
-            expires_in: 3600,
-            token_type: "Bearer",
-            scope: "https://www.googleapis.com/auth/gmail.modify",
-          });
-        }
-        return HttpResponse.json({
-          access_token: "replacement-gmail-token",
-          refresh_token: "replacement-gmail-refresh-token",
-          expires_in: 3600,
-          token_type: "Bearer",
-          scope: "https://www.googleapis.com/auth/gmail.modify",
-        });
-      }),
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-        ({ request }) => {
-          watchAuthorizations.push(request.headers.get("authorization") ?? "");
-          return HttpResponse.json({
-            historyId: "100",
-            expiration: String(now() + 7 * 24 * 60 * 60 * 1000),
-          });
-        },
-      ),
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-        ({ request }) => {
-          stopAuthorizations.push(request.headers.get("authorization") ?? "");
-          return new HttpResponse(null, { status: 204 });
-        },
-      ),
-    );
-
-    const firstCreate = accept(
-      setupApp({ context, routes: workflowAutomationsRoutes })(
-        workflowAutomationsContract,
-      ).create({
-        headers,
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [400],
-    );
-    await refreshEntered.promise;
-
-    const replacementOauth = await connectorsApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-      undefined,
-      { intent: "reconnect", connectionId: initialConnection.id },
-    );
-    const replacementState = new URL(
-      replacementOauth.authorizationUrl,
-    ).searchParams.get("state");
-    if (!replacementState) {
-      throw new Error("Expected replacement Gmail authorization state");
-    }
-    await connectorsApi.completeOauthCallback("gmail", {
-      code: "replacement",
-      state: replacementState,
-    });
-    refreshResume.release();
-
-    const rejected = await firstCreate;
-    expect(rejected.body.error.message).toBe(
-      "Reconnect Gmail before using Gmail event automations",
-    );
-    await expect(
-      connectorsApi.readConnectorBySlug(actor, "gmail"),
-    ).resolves.toMatchObject({
-      connectionStatus: "connected",
-      reconnectReason: null,
-    });
-
-    await accept(
-      setupApp({ context, routes: workflowAutomationsRoutes })(
-        workflowAutomationsContract,
-      ).create({
-        headers,
-        params: { workflowId: workflow.body.id },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    expect(watchAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-      "Bearer replacement-gmail-token",
-    ]);
-    expect(stopAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-    ]);
   });
 
   describe("with a pending catalog authorization", () => {

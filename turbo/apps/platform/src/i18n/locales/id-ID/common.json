@@ -4708,7 +4708,6 @@
         },
         "model": {
           "autoDescription": "Okou memilih model untuk setiap tugas.",
-          "autoLabel": "Pemilihan otomatis",
           "description": "Pilih model AI yang digunakan oleh ruang kerja dan eksekusi Anda.",
           "title": "Model"
         },
@@ -4897,17 +4896,23 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
         "addAccount": "Tambah akun",
+        "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
+        "autoTitle": "Gunakan lebih banyak model",
         "claudeDescription": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code.",
         "claudeTitle": "Claude",
         "codexDescription": "Hubungkan akun ChatGPT Anda untuk menggunakan model GPT.",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "Hubungkan akun",
         "description": "Hanya digunakan di eksekusi Anda, dengan kredensial Anda sendiri.",
         "disconnectAccount": "Putuskan akun",
         "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
         "disconnecting": "Memutuskan…",
         "disconnectTitle": "Putuskan {{account}}?",
+        "loadError": "Akun Anda tidak dapat dimuat.",
+        "loadingAccounts": "Memuat akun…",
         "noAccounts": "Belum ada akun terhubung.",
         "reconnectAccount": "Hubungkan ulang",
+        "retry": "Coba lagi",
         "sectionTitle": "Pribadi",
         "status": {
           "connected": "Terhubung",
@@ -4917,7 +4922,6 @@
           "stale": "Perhatian",
           "week": "Minggu"
         },
-        "subscriptionsSectionTitle": "Langganan model pribadi",
         "useAccount": "Gunakan"
       },
       "picker": {

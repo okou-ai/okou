@@ -13,31 +13,29 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-
-import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { now, nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   ChatThreadEventIdConflictError,
-  appendChatThreadEvent,
-  appendChatThreadEventStrict,
   chatThreadServiceTierFromCodex,
+  chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
   validateCodexServiceTier,
+  type ModelFirstPin,
 } from "./model-selection.service";
-
+import { agents } from "@okouai/db/schema/agent";
+import { command } from "ccstate";
 const UPDATE_RETRY_MS = 24 * 60 * 60 * 1000;
 const MODEL_EVENT_NAMESPACE = "be62e24f-d82d-42bf-bdbf-7bc199e18bc8";
 
@@ -150,29 +148,40 @@ function patchFingerprint(patch: ChatThreadMetadataPatch): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-async function readMutation(
-  tx: Tx,
+const mutationSelection = Object.freeze({
+  id: chatThreadEvents.id,
+  userId: chatThreadEvents.userId,
+  orgId: chatThreadEvents.orgId,
+  threadId: chatThreadEvents.chatThreadId,
+  agentId: chatThreadEvents.agentId,
+  kind: chatThreadEvents.kind,
+  title: chatThreadEvents.title,
+  selectedModel: chatThreadEvents.selectedModel,
+  createdAt: chatThreadEvents.createdAt,
+});
+
+type MutationRow = Pick<
+  typeof chatThreadEvents.$inferSelect,
+  | "id"
+  | "userId"
+  | "orgId"
+  | "chatThreadId"
+  | "agentId"
+  | "kind"
+  | "title"
+  | "selectedModel"
+  | "createdAt"
+> & { readonly threadId: string };
+
+function readMutation(
   args: ChatThreadMetadataUpdateArgs,
-): Promise<ExistingMutation | null> {
+  rows: readonly Omit<MutationRow, "chatThreadId">[],
+): ExistingMutation | null {
   const mutationId = args.mutationId;
   if (mutationId === undefined) {
     return null;
   }
   const secondaryId = modelEventId(mutationId);
-  const rows = await tx
-    .select({
-      id: chatThreadEvents.id,
-      userId: chatThreadEvents.userId,
-      orgId: chatThreadEvents.orgId,
-      threadId: chatThreadEvents.chatThreadId,
-      agentId: chatThreadEvents.agentId,
-      kind: chatThreadEvents.kind,
-      title: chatThreadEvents.title,
-      selectedModel: chatThreadEvents.selectedModel,
-      createdAt: chatThreadEvents.createdAt,
-    })
-    .from(chatThreadEvents)
-    .where(inArray(chatThreadEvents.id, [mutationId, secondaryId]));
   const primary = rows.find((row) => {
     return row.id === mutationId;
   });
@@ -227,76 +236,79 @@ async function readMutation(
   return { acceptedAt: primary.createdAt };
 }
 
-async function currentState(
-  tx: Tx,
-  args: ChatThreadMetadataUpdateArgs,
-): Promise<ChatThreadMetadataState | null> {
-  const [thread] = await tx
-    .select({
-      threadId: chatThreads.id,
-      title: sql`left(${chatThreads.title}, 500)`.mapWith(
-        nullableDriverValueDecoder(chatThreads.title),
-      ),
-      titleTruncated:
-        sql`coalesce(length(${chatThreads.title}) > 500, false)`.mapWith(
-          pgBooleanDecoder,
-        ),
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      updatedAt: chatThreads.updatedAt,
-    })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.principal.userId),
-        chatThreadOrganizationCondition(tx, args.principal.orgId),
-        isNotNull(chatThreads.agentId),
-      ),
-    )
-    .limit(1);
-  return thread
-    ? {
-        ...thread,
-        serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
-      }
-    : null;
+const currentSelection = Object.freeze({
+  agentId: chatThreads.agentId,
+  modelSettings: chatThreads.modelSettings,
+  codexServiceTier: chatThreads.codexServiceTier,
+  threadId: chatThreads.id,
+  title: sql`left(${chatThreads.title}, 500)`.mapWith(
+    nullableDriverValueDecoder(chatThreads.title),
+  ),
+  titleTruncated:
+    sql`coalesce(length(${chatThreads.title}) > 500, false)`.mapWith(
+      pgBooleanDecoder,
+    ),
+  selectedModel: chatThreads.selectedModel,
+  updatedAt: chatThreads.updatedAt,
+});
+
+function threadCondition(args: ChatThreadMetadataUpdateArgs) {
+  return and(
+    eq(chatThreads.id, args.threadId),
+    eq(chatThreads.userId, args.principal.userId),
+    isNotNull(chatThreads.agentId),
+    sql`EXISTS (SELECT 1 FROM ${agents} WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${args.principal.orgId})`,
+  );
 }
 
-async function replayMutation(
-  tx: Tx,
-  args: ChatThreadMetadataUpdateArgs,
-  existing: ExistingMutation,
-): Promise<UpdateOperationResult> {
-  if (existing.acceptedAt.getTime() + UPDATE_RETRY_MS <= now()) {
+function mutationIds(args: ChatThreadMetadataUpdateArgs) {
+  return args.mutationId === undefined
+    ? []
+    : [args.mutationId, modelEventId(args.mutationId)];
+}
+
+type PreparedPin =
+  | ModelFirstPin
+  | { readonly status: number; readonly body: unknown }
+  | null;
+
+function metadataResult(
+  state: Omit<ChatThreadMetadataState, "serviceTier">,
+  acceptedAt: Date,
+  replayed: boolean,
+): ChatThreadMetadataUpdateResult {
+  if (replayed && acceptedAt.getTime() + UPDATE_RETRY_MS <= now()) {
     return {
       kind: "expired",
       message:
         "The 24-hour update retry window has expired. Inspect the conversation before making a new change; this request was not applied again.",
     };
   }
-  const state = await currentState(tx, args);
-  if (!state) {
-    throw new Error("Updated chat thread state is missing");
-  }
   return {
     kind: "ok",
-    state,
-    acceptedAt: existing.acceptedAt,
-    retryUntil: new Date(existing.acceptedAt.getTime() + UPDATE_RETRY_MS),
-    replayed: true,
+    state: {
+      threadId: state.threadId,
+      title: state.title,
+      titleTruncated: state.titleTruncated,
+      selectedModel: state.selectedModel,
+      codexServiceTier: state.codexServiceTier,
+      updatedAt: state.updatedAt,
+      serviceTier: chatThreadServiceTierFromCodex(state.codexServiceTier),
+    },
+    acceptedAt,
+    retryUntil: new Date(acceptedAt.getTime() + UPDATE_RETRY_MS),
+    replayed,
   };
 }
 
-async function resolveModelColumns(
-  tx: Tx,
+function resolveModelColumns(
+  catalog: ModelCatalog,
   args: ChatThreadMetadataUpdateArgs,
   current: CurrentModelState,
-  signal: AbortSignal,
-): Promise<
+  preparedPin: PreparedPin,
+):
   | { readonly kind: "ok"; readonly columns: ModelColumns | undefined }
-  | Extract<UpdateOperationResult, { readonly kind: "response" }>
-> {
+  | Extract<UpdateOperationResult, { readonly kind: "response" }> {
   if (!hasModel(args.patch)) {
     return { kind: "ok", columns: undefined };
   }
@@ -308,20 +320,13 @@ async function resolveModelColumns(
           modelProviderCredentialScope: null,
           selectedModel: null,
         }
-      : await resolveModelSelectionPin({
-          db: tx,
-          ...args.principal,
-          modelSelection: {
-            modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-            selectedModel: args.patch.model,
-          },
-        });
-  signal.throwIfAborted();
+      : preparedPin;
+  if (pin === null) {
+    throw new Error("Prepared model selection is missing");
+  }
   if ("status" in pin) {
     return { kind: "response", response: pin };
   }
-  const catalog = await loadModelCatalog(tx);
-  signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
     catalog,
     selectedModel: pin.selectedModel,
@@ -355,177 +360,208 @@ async function resolveModelColumns(
   };
 }
 
-async function appendTitleEvent(
-  tx: Tx,
+function metadataEvents(
   args: ChatThreadMetadataUpdateArgs,
   agentId: string,
-  updatedAt: Date,
-): Promise<void> {
-  if (!hasTitle(args.patch)) {
-    return;
-  }
-  const event = {
-    kind: "renamed" as const,
+  columns: ModelColumns | undefined,
+  createdAt: Date,
+) {
+  const base = {
     userId: args.principal.userId,
     orgId: args.principal.orgId,
     chatThreadId: args.threadId,
     agentId,
-    title: args.patch.title,
-    createdAt: updatedAt,
+    createdAt,
   };
-  if (args.mutationId !== undefined) {
-    await appendChatThreadEventStrict(tx, {
-      ...event,
-      eventId: args.mutationId,
-    });
-    return;
-  }
-  await appendChatThreadEvent(tx, {
-    ...event,
-    ...(args.eventIds?.title ? { eventId: args.eventIds.title } : {}),
-  });
+  return [
+    ...(hasTitle(args.patch)
+      ? [
+          {
+            ...base,
+            kind: "renamed" as const,
+            title: args.patch.title,
+            eventId: args.mutationId ?? args.eventIds?.title,
+            strict: args.mutationId !== undefined,
+          },
+        ]
+      : []),
+    ...(hasModel(args.patch)
+      ? [
+          {
+            ...base,
+            kind: "model_selection_updated" as const,
+            selectedModel: args.patch.model,
+            modelSettingsPatch: columns?.modelSettingsPatch,
+            eventId:
+              args.mutationId === undefined
+                ? args.eventIds?.model
+                : hasTitle(args.patch)
+                  ? modelEventId(args.mutationId)
+                  : args.mutationId,
+            strict: args.mutationId !== undefined,
+          },
+        ]
+      : []),
+    ...(hasModel(args.patch) && args.emitServiceTierEvent
+      ? [
+          {
+            ...base,
+            kind: "service_tier_updated" as const,
+            serviceTier: chatThreadServiceTierFromCodex(
+              columns?.codexServiceTier ?? null,
+            ),
+            eventId: args.eventIds?.serviceTier,
+            strict: false,
+          },
+        ]
+      : []),
+  ];
 }
 
-async function appendModelEvents(
-  tx: Tx,
-  args: ChatThreadMetadataUpdateArgs,
-  agentId: string,
-  modelColumns: ModelColumns | undefined,
-  updatedAt: Date,
-): Promise<void> {
-  if (!hasModel(args.patch)) {
-    return;
-  }
-  const event = {
-    kind: "model_selection_updated" as const,
-    userId: args.principal.userId,
-    orgId: args.principal.orgId,
-    chatThreadId: args.threadId,
-    agentId,
-    selectedModel: args.patch.model,
-    modelSettingsPatch: modelColumns?.modelSettingsPatch,
-    createdAt: updatedAt,
-  };
-  if (args.mutationId !== undefined) {
-    await appendChatThreadEventStrict(tx, {
-      ...event,
-      eventId: hasTitle(args.patch)
-        ? modelEventId(args.mutationId)
-        : args.mutationId,
-    });
-  } else {
-    await appendChatThreadEvent(tx, {
-      ...event,
-      ...(args.eventIds?.model ? { eventId: args.eventIds.model } : {}),
-    });
-  }
-  if (args.emitServiceTierEvent) {
-    await appendChatThreadEvent(tx, {
-      kind: "service_tier_updated",
-      userId: args.principal.userId,
-      orgId: args.principal.orgId,
-      chatThreadId: args.threadId,
-      agentId,
-      ...(args.eventIds?.serviceTier
-        ? { eventId: args.eventIds.serviceTier }
-        : {}),
-      serviceTier: chatThreadServiceTierFromCodex(
-        modelColumns?.codexServiceTier ?? null,
-      ),
-      createdAt: updatedAt,
-    });
-  }
-}
-
-async function writeMetadata(
-  tx: Tx,
-  args: ChatThreadMetadataUpdateArgs,
-  signal: AbortSignal,
-): Promise<ChatThreadMetadataUpdateResult> {
-  const [current] = await tx
-    .select({
-      agentId: chatThreads.agentId,
-      modelSettings: chatThreads.modelSettings,
-      codexServiceTier: chatThreads.codexServiceTier,
-    })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.principal.userId),
-        chatThreadOrganizationCondition(tx, args.principal.orgId),
-        isNotNull(chatThreads.agentId),
-      ),
-    )
-    .for("update");
-  if (!current?.agentId) {
-    return { kind: "not_found" };
-  }
-  const agentId = current.agentId;
-
-  const existing = await readMutation(tx, args);
-  signal.throwIfAborted();
-  if (existing) {
-    return await replayMutation(tx, args, existing);
-  }
-
-  const model = await resolveModelColumns(tx, args, current, signal);
-  if (model.kind === "response") {
-    return model;
-  }
-  const modelColumns = model.columns;
-
-  const updatedAt = nowDate();
-  await tx
-    .update(chatThreads)
-    .set({
-      updatedAt,
-      ...(hasTitle(args.patch)
-        ? { title: args.patch.title, renamedAt: updatedAt }
-        : {}),
-      ...modelColumns,
-    })
-    .where(eq(chatThreads.id, args.threadId));
-
-  await appendTitleEvent(tx, args, agentId, updatedAt);
-  await appendModelEvents(tx, args, agentId, modelColumns, updatedAt);
-  const state = await currentState(tx, args);
-  if (!state) {
-    throw new Error("Updated chat thread state is missing");
-  }
-  return {
-    kind: "ok",
-    state,
-    acceptedAt: updatedAt,
-    retryUntil: new Date(updatedAt.getTime() + UPDATE_RETRY_MS),
-    replayed: false,
-  };
-}
-
-export async function updateChatThreadMetadata(
-  db: Db,
-  args: ChatThreadMetadataUpdateArgs,
-  signal: AbortSignal,
-): Promise<ChatThreadMetadataUpdateResult> {
-  signal.throwIfAborted();
-  const outcome = await settle(
-    db.transaction(async (tx) => {
-      return await writeMetadata(tx, args, signal);
-    }),
-    signal,
-  );
-  if (!outcome.ok) {
-    if (
-      outcome.error instanceof MetadataMutationConflictError ||
-      outcome.error instanceof ChatThreadEventIdConflictError
-    ) {
-      return {
-        kind: "conflict",
-        message:
-          "requestId is already in use for a different thread update. Retry only with the original thread and exact patch.",
-      };
+const prepareMetadataModel$ = command(
+  async (
+    { set },
+    args: ChatThreadMetadataUpdateArgs,
+    signal: AbortSignal,
+  ): Promise<PreparedPin> => {
+    if (!hasModel(args.patch) || args.patch.model === null) {
+      return null;
     }
-    throw outcome.error;
-  }
-  return outcome.value;
-}
+    const db = set(writeDb$);
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(threadCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!thread) {
+      return null;
+    }
+    const ids = mutationIds(args);
+    const existing = ids.length
+      ? await db
+          .select(mutationSelection)
+          .from(chatThreadEvents)
+          .where(inArray(chatThreadEvents.id, ids))
+      : [];
+    signal.throwIfAborted();
+    if (readMutation(args, existing)) {
+      return null;
+    }
+    return await resolveModelSelectionPin({
+      db: set(writeDb$),
+      ...args.principal,
+      modelSelection: {
+        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+        selectedModel: args.patch.model,
+      },
+    });
+  },
+);
+
+const commitMetadata$ = command(
+  async (
+    { set },
+    args: ChatThreadMetadataUpdateArgs,
+    pin: PreparedPin,
+    signal: AbortSignal,
+  ): Promise<ChatThreadMetadataUpdateResult> => {
+    const db = set(writeDb$);
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
+    return await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select(currentSelection)
+        .from(chatThreads)
+        .where(threadCondition(args))
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!current?.agentId) {
+        return { kind: "not_found" };
+      }
+      const ids = mutationIds(args);
+      const rows = ids.length
+        ? await tx
+            .select(mutationSelection)
+            .from(chatThreadEvents)
+            .where(inArray(chatThreadEvents.id, ids))
+        : [];
+      signal.throwIfAborted();
+      const existing = readMutation(args, rows);
+      if (existing) {
+        return metadataResult(current, existing.acceptedAt, true);
+      }
+      const model = resolveModelColumns(catalog, args, current, pin);
+      if (model.kind === "response") {
+        return model;
+      }
+      const updatedAt = nowDate();
+      await tx
+        .update(chatThreads)
+        .set({
+          updatedAt,
+          ...(hasTitle(args.patch)
+            ? { title: args.patch.title, renamedAt: updatedAt }
+            : {}),
+          ...model.columns,
+        })
+        .where(eq(chatThreads.id, args.threadId));
+      signal.throwIfAborted();
+      for (const event of metadataEvents(
+        args,
+        current.agentId,
+        model.columns,
+        updatedAt,
+      )) {
+        const { rowCount } = await tx.execute(chatThreadEventInsertSql(event));
+        signal.throwIfAborted();
+        if (event.strict && rowCount === 0) {
+          throw new ChatThreadEventIdConflictError();
+        }
+      }
+      const [state] = await tx
+        .select(currentSelection)
+        .from(chatThreads)
+        .where(threadCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!state) {
+        throw new Error("Updated chat thread state is missing");
+      }
+      return metadataResult(state, updatedAt, false);
+    });
+  },
+);
+
+export const updateChatThreadMetadata$ = command(
+  async (
+    { set },
+    args: ChatThreadMetadataUpdateArgs,
+    signal: AbortSignal,
+  ): Promise<ChatThreadMetadataUpdateResult> => {
+    signal.throwIfAborted();
+    const outcome = await settle(
+      (async () => {
+        const pin = await set(prepareMetadataModel$, args, signal);
+        signal.throwIfAborted();
+        return await set(commitMetadata$, args, pin, signal);
+      })(),
+      signal,
+    );
+    if (!outcome.ok) {
+      if (
+        outcome.error instanceof MetadataMutationConflictError ||
+        outcome.error instanceof ChatThreadEventIdConflictError
+      ) {
+        return {
+          kind: "conflict",
+          message:
+            "requestId is already in use for a different thread update. Retry only with the original thread and exact patch.",
+        };
+      }
+      throw outcome.error;
+    }
+    return outcome.value;
+  },
+);

@@ -40,7 +40,7 @@ import {
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
   retirePiStableContextPublication,
 } from "../pi-stable-context-generation.service";
-import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
+import { deleteClerkAgentLifecycleData$ } from "../clerk-agent-lifecycle.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
 import {
   executePiStableContextWork,
@@ -1611,10 +1611,11 @@ describe("Pi stable context generation fences", () => {
       },
     );
     await buildEntered.promise;
-    await deleteClerkAgentLifecycleData(db, {
-      kind: "user",
-      userId: fixture.userId,
-    });
+    await createStore().set(
+      deleteClerkAgentLifecycleData$,
+      { kind: "user", userId: fixture.userId },
+      AbortSignal.timeout(5000),
+    );
     buildReleased.resolve();
     await expect(work).resolves.toMatchObject({ claimed: 1, stale: 1 });
     await expect(
@@ -1818,10 +1819,11 @@ describe("Pi stable context generation fences", () => {
       ),
     );
 
-    await deleteClerkAgentLifecycleData(db, {
-      kind: "user",
-      userId: fixture.userId,
-    });
+    await createStore().set(
+      deleteClerkAgentLifecycleData$,
+      { kind: "user", userId: fixture.userId },
+      AbortSignal.timeout(5000),
+    );
 
     await expect(
       db

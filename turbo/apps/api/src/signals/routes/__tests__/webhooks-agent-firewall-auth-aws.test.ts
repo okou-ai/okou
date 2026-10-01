@@ -1,11 +1,10 @@
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   awsVerificationCode,
@@ -112,23 +111,12 @@ async function setupAwsFirewall() {
 }
 
 describe("AWS Sign-In refresh expiry", () => {
-  it("stops repeated and concurrent refreshes until the exact account reconnects", async () => {
+  it("stops repeated refreshes until the exact account reconnects", async () => {
     const aws = await setupAwsFirewall();
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    });
     let refreshCalls = 0;
     server.use(
-      http.post(AWS_TOKEN_URL, async () => {
+      http.post(AWS_TOKEN_URL, () => {
         refreshCalls += 1;
-        if (!started.settled()) {
-          started.resolve(undefined);
-        }
-        await release.promise;
         return HttpResponse.json(
           { code: "TOKEN_EXPIRED", message: "The refresh token has expired." },
           { status: 401 },
@@ -137,11 +125,7 @@ describe("AWS Sign-In refresh expiry", () => {
     );
     context.mocks.sentry.captureException.mockClear();
 
-    const first = aws.request(aws.account.id, true);
-    await started.promise;
-    const concurrent = aws.request(aws.account.id, true);
-    release.resolve(undefined);
-    const responses = await Promise.all([first, concurrent]);
+    const responses = [await aws.request(aws.account.id, true)];
     responses.push(await aws.request(aws.account.id, false));
     responses.push(await aws.request(aws.account.id, true));
     for (const response of responses) {

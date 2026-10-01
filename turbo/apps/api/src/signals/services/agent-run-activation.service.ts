@@ -1,10 +1,10 @@
 import { command } from "ccstate";
 import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import type { PendingRunActivation } from "./agent-run-activation.types";
+import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { notifyRunnerJob } from "./runner-dispatch.service";
 import { recordSameThreadRunnerJobPersisted } from "./runner-job-queue-lifecycle.service";
-import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
-import type { PendingRunActivation } from "./agent-run-activation.types";
 
 interface PendingRunActivationRequest {
   readonly activation: PendingRunActivation;

@@ -1,43 +1,42 @@
+import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
+  runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
   runnersSteerContract,
+  runnerVersionSchema,
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
   STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
-  runnerVersionSchema,
   storedConnectorPermissionBaselineSchema,
   type ClaimCompatibleStoredExecutionContext,
   type ExecutionContext,
   type HeldSandboxState,
   type HeldWorkspaceState,
   type PiModelConfig,
-  type RunnerPreference,
-  type RunnerPreferenceClaimState,
   type RunnerClaimCapabilities,
   type RunnerInstalledVersions,
+  type RunnerPreference,
+  type RunnerPreferenceClaimState,
   type SessionHistoryDownloadSource,
   type StoredConnectorPermissionBaseline,
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { command } from "ccstate";
-import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
+import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
@@ -45,6 +44,7 @@ import {
   type RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
   type RunnerHeldWorkspaceState as PersistedRunnerHeldWorkspaceState,
 } from "@okouai/db/schema/runner-state";
+import { command } from "ccstate";
 import {
   and,
   desc,
@@ -61,84 +61,84 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
-import { authContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
-import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
-import { authorization$, request$ } from "../context/hono";
-import type { JsonResponseObserver } from "../context/route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
-import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
-import {
-  generatePresignedGetUrl,
-  publicS3DownloadSource,
-  S3ObjectSizeLimitError,
-  s3ObjectContentLength,
-} from "../external/s3";
-import {
-  createRunnerGroupRealtimeToken,
-  publishChatThreadMessageCreatedSafely,
-} from "../external/realtime";
-import {
-  recordClaimResponseJsonSerialization,
-  recordSandboxOperations,
-} from "../external/sandbox-op-log";
-import { now, nowDate } from "../../lib/time";
-import { env } from "../../lib/env";
-import { badRequestMessage, notFound } from "../../lib/error";
-import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
+import { env } from "../../lib/env";
+import { badRequestMessage, notFound } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { now, nowDate } from "../../lib/time";
+import { authContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { generateSandboxToken } from "../auth/tokens";
-import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import { authorization$, request$ } from "../context/hono";
+import { bodyResultOf, pathParamsOf } from "../context/request";
+import type { JsonResponseObserver } from "../context/route";
+import { waitUntil } from "../context/wait-until";
+import { db$, writeDb$, type Db } from "../external/db";
+import {
+  createRunnerGroupRealtimeToken,
+  publishChatThreadMessageCreatedSafely,
+} from "../external/realtime";
+import {
+  generatePresignedGetUrl,
+  publicS3DownloadSource,
+  s3ObjectContentLength,
+  S3ObjectSizeLimitError,
+} from "../external/s3";
+import {
+  recordClaimResponseJsonSerialization,
+  recordSandboxOperations,
+} from "../external/sandbox-op-log";
+import type { RouteEntry } from "../route-entry";
+import {
+  declareSteeredInput,
+  loadNextSteerableInput$,
+} from "../services/active-input-delivery.service";
+import {
+  dispatchCompleteSideEffects$,
+  scheduleReleasedSlotPicks$,
+} from "../services/agent-run-lifecycle.service";
 import {
   releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
-import {
-  dispatchCompleteSideEffects$,
-  scheduleReleasedSlotPicks$,
-} from "../services/agent-run-lifecycle.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
-import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
-import {
-  declareSteeredInput,
-  loadNextSteerableInput$,
-} from "../services/active-input-delivery.service";
 import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
+import { decryptPersistentSecretsMap } from "../services/crypto.utils";
+import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
+import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
-  networkPolicyRefreshesRecord,
-  mergeNetworkPolicyRefreshes,
-  networkPolicyRefreshConnectorSlugs,
-  resolveActiveNetworkPolicyRefreshes,
-  resolveActiveNetworkPolicyRefreshesFromBaseline,
-} from "../services/user-permission-grants.service";
+  resolveRunnerReusePreference,
+  runnerPreferenceTelemetryDimensions,
+  runnerPreferenceTelemetryResolution,
+  runnerReuseKeyTelemetryKind,
+  runnerReusePreferenceLookupError,
+  runnerReusePreferencePollPriority,
+  type RunnerPreferenceTelemetryResolution,
+} from "../services/runner-reuse-preference";
 import {
-  type CompressedSessionHistoryBlobEncoding,
   resumeSessionHistoryBlobKey,
   resumeSessionHistoryRawBlobKey,
   SESSION_HISTORY_ENCODING_IDENTITY,
   tryNormalizeSessionHistoryBlobEncoding,
+  type CompressedSessionHistoryBlobEncoding,
 } from "../services/session-history-blobs";
 import {
-  runnerPreferenceTelemetryResolution,
-  runnerPreferenceTelemetryDimensions,
-  runnerReuseKeyTelemetryKind,
-  runnerReusePreferenceLookupError,
-  runnerReusePreferencePollPriority,
-  resolveRunnerReusePreference,
-  type RunnerPreferenceTelemetryResolution,
-} from "../services/runner-reuse-preference";
-import type { RouteEntry } from "../route-entry";
+  mergeNetworkPolicyRefreshes,
+  networkPolicyRefreshConnectorSlugs,
+  networkPolicyRefreshesRecord,
+  resolveActiveNetworkPolicyRefreshes,
+  resolveActiveNetworkPolicyRefreshesFromBaseline,
+} from "../services/user-permission-grants.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("Runners");

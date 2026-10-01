@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import type {
@@ -9,6 +8,7 @@ import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { and, desc, eq, or } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReadonlyDb } from "../external/db";
 import type { PresentationTemplateVolume } from "./presentation-template-data.service";

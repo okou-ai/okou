@@ -1,3 +1,5 @@
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -24,10 +26,7 @@ import {
 } from "./connector-client-invalidation.service";
 import { deleteCustomConnectorMemberConnectionById } from "./custom-connector-credential-storage.service";
 import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
-import {
-  commitPreparedCustomConnectorSkillStorage,
-  prepareCustomConnectorSkillVolume$,
-} from "./custom-connector-skill-volume.service";
+import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import {
   FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA,
   getFeishuCustomConnectorSlug,
@@ -436,10 +435,15 @@ async function reconcileFeishuCustomConnector(
     };
   }
 
-  await commitPreparedCustomConnectorSkillStorage(
-    { db: tx, volume: prepared.volume },
-    signal,
+  const { rowCount: published } = await tx.execute(
+    preparedVolumePublicationSql(prepared.volume, nowDate()),
   );
+  if (published !== 1) {
+    throw new StorageVersionIdentityConflictError(
+      prepared.volume.version.versionId,
+    );
+  }
+  signal.throwIfAborted();
   const skillStorageVersionId = prepared.volume.version.versionId;
 
   let connector: ReconciledFeishuCustomConnector;

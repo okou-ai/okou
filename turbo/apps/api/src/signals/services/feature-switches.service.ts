@@ -66,6 +66,35 @@ export async function loadUserFeatureSwitchContext(
   };
 }
 
+export const loadUserFeatureSwitchContext$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    abortSignal?: AbortSignal,
+  ): Promise<FeatureSwitchContext> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        and(
+          eq(userFeatureSwitches.orgId, orgId),
+          inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
+        ),
+      );
+    abortSignal?.throwIfAborted();
+    return {
+      orgId,
+      userId,
+      overrides: userFeatureSwitchOverridesFromRows(rows, userId),
+    };
+  },
+);
+
 export function userFeatureSwitchContext(
   orgId: string,
   userId: string,

@@ -21,10 +21,10 @@ import {
   type StripeRef,
 } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
-import { settle, tapError } from "../utils";
+import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 const L = logger("CreditRecharge");
 
@@ -132,41 +132,20 @@ async function payAutoRechargeInvoice(
   }
 }
 
-/**
- * Trigger a Stripe auto-recharge invoice if the org's balance has
- * crossed the recharge threshold. Mirrors web's `triggerAutoRecharge`.
- *
- * Atomically claims the recharge slot via UPDATE … RETURNING with a
- * WHERE clause that filters on:
- *  - autoRechargeEnabled = true
- *  - plan entitlement allows auto-recharge
- *  - stripeCustomerId / threshold / amount NOT NULL
- *  - credits <= threshold
- *  - pendingAt IS NULL OR pendingAt < now() - 10 minutes
- *
- * The conditional UPDATE uses the database clock so concurrent workers
- * cannot double-claim. The 10-minute stale threshold lets a hung Stripe
- * call release the slot eventually.
- *
- * On Stripe error: clearPendingFlag so retry can fire on the next
- * legitimate processOrgUsageEvents call.
- *
- * Note: credits are GRANTED via the Stripe webhook
- * `handleAutoRechargeInvoicePaid` (separate route surface, out of
- * scope here). This Command only triggers the invoice; never grant
- * credits here.
- */
-export const triggerAutoRecharge$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const writeDb = set(writeDb$);
-    const capabilities = await loadOrgPlanCapabilities(writeDb, orgId);
-    signal.throwIfAborted();
+/** The existing pending timestamp admits one recharge; SQL owns no provider work. */
+const claimAutoRecharge$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<ClaimedRechargeState | null> => {
+    const capabilities = await set(loadOrgPlanCapabilities$, orgId, signal);
     if (capabilities?.autoRechargeAllowed !== true) {
-      return;
+      return null;
     }
-
+    const db = set(writeDb$);
     const planEligibility = exists(
-      writeDb
+      db
         .select({ orgId: orgPlanEntitlements.orgId })
         .from(orgPlanEntitlements)
         .where(
@@ -176,15 +155,7 @@ export const triggerAutoRecharge$ = command(
           ),
         ),
     );
-
-    const clearPendingFlag = async (): Promise<void> => {
-      await writeDb
-        .update(orgMetadata)
-        .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
-        .where(eq(orgMetadata.orgId, orgId));
-    };
-
-    const claimed = await writeDb
+    const [claimed] = await db
       .update(orgMetadata)
       .set({ autoRechargePendingAt: nowDate(), updatedAt: nowDate() })
       .where(
@@ -216,66 +187,108 @@ export const triggerAutoRecharge$ = command(
         autoRechargePendingAt: orgMetadata.autoRechargePendingAt,
       });
     signal.throwIfAborted();
+    if (!claimed) {
+      return null;
+    }
+    if (
+      !claimed.stripeCustomerId ||
+      claimed.autoRechargeThreshold === null ||
+      claimed.autoRechargeAmount === null
+    ) {
+      throw new Error(
+        "Claimed auto-recharge is missing its billing configuration",
+      );
+    }
+    return {
+      ...claimed,
+      stripeCustomerId: claimed.stripeCustomerId,
+      autoRechargeThreshold: claimed.autoRechargeThreshold,
+      autoRechargeAmount: claimed.autoRechargeAmount,
+    };
+  },
+);
 
-    const org = claimed[0] as ClaimedRechargeState | undefined;
+/**
+ * A failed or skipped recharge always clears its pending flag: settlement
+ * debits rewrite the organization row in between, and a lingering flag would
+ * block recharge for the whole stale window while the balance keeps falling.
+ */
+const clearClaimedAutoRecharge$ = command(
+  async ({ set }, orgId: string): Promise<void> => {
+    await set(writeDb$)
+      .update(orgMetadata)
+      .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
+      .where(eq(orgMetadata.orgId, orgId));
+  },
+);
+
+async function createAutoRechargeInvoice(
+  orgId: string,
+  org: ClaimedRechargeState,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const creditsAmount = org.autoRechargeAmount;
+  const amountCents = Math.ceil(creditsAmount / CREDITS_PER_DOLLAR) * 100;
+  const stripe = getStripeClient();
+  const paymentMethodId = await resolvePaymentMethod(stripe, org);
+  signal.throwIfAborted();
+  if (!paymentMethodId) {
+    return false;
+  }
+  const invoice = await stripe.invoices.create({
+    customer: org.stripeCustomerId,
+    auto_advance: false,
+    default_payment_method: paymentMethodId,
+    metadata: {
+      type: "auto_recharge",
+      orgId,
+      creditsAmount: String(creditsAmount),
+      ...stripePreviewMetadata(),
+    },
+  });
+  signal.throwIfAborted();
+  await stripe.invoiceItems.create({
+    invoice: invoice.id,
+    customer: org.stripeCustomerId,
+    amount: amountCents,
+    currency: "usd",
+    description: `Credit top-up: ${creditsAmount.toLocaleString()} credits`,
+  });
+  signal.throwIfAborted();
+  await payAutoRechargeInvoice(stripe, invoice.id, signal);
+  L.debug("Auto-recharge invoice created and paid", {
+    orgId,
+    creditsAmount,
+    amountCents,
+    invoiceId: invoice.id,
+  });
+  return true;
+}
+
+/** Credits remain granted only by the idempotent paid-invoice webhook. */
+export const triggerAutoRecharge$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const org = await set(claimAutoRecharge$, orgId, signal);
     if (!org) {
       L.debug("Auto-recharge already pending or conditions unmet", { orgId });
       return;
     }
-
-    const creditsAmount = org.autoRechargeAmount;
-    const amountCents = Math.ceil(creditsAmount / CREDITS_PER_DOLLAR) * 100;
-
-    const stripe = getStripeClient();
-
-    await tapError(
-      (async (): Promise<void> => {
-        const paymentMethodId = await resolvePaymentMethod(stripe, org);
-        signal.throwIfAborted();
-        if (!paymentMethodId) {
-          await clearPendingFlag();
-          return;
-        }
-
-        const invoice = await stripe.invoices.create({
-          customer: org.stripeCustomerId,
-          auto_advance: false,
-          default_payment_method: paymentMethodId,
-          metadata: {
-            type: "auto_recharge",
-            orgId,
-            creditsAmount: String(creditsAmount),
-            ...stripePreviewMetadata(),
-          },
-        });
-        signal.throwIfAborted();
-
-        await stripe.invoiceItems.create({
-          invoice: invoice.id,
-          customer: org.stripeCustomerId,
-          amount: amountCents,
-          currency: "usd",
-          description: `Credit top-up: ${creditsAmount.toLocaleString()} credits`,
-        });
-        signal.throwIfAborted();
-
-        await payAutoRechargeInvoice(stripe, invoice.id, signal);
-
-        L.debug("Auto-recharge invoice created and paid", {
-          orgId,
-          creditsAmount,
-          amountCents,
-          invoiceId: invoice.id,
-        });
-      })(),
-      async (error) => {
-        L.warn("Auto-recharge Stripe call failed, clearing pending flag", {
-          orgId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await clearPendingFlag();
-      },
+    const result = await settle(
+      createAutoRechargeInvoice(orgId, org, signal),
+      signal,
     );
+    if (!result.ok) {
+      L.warn("Auto-recharge Stripe call failed, clearing its pending claim", {
+        orgId,
+        error:
+          result.error instanceof Error
+            ? result.error.message
+            : String(result.error),
+      });
+    }
+    if (!result.ok || !result.value) {
+      await set(clearClaimedAutoRecharge$, orgId);
+    }
     signal.throwIfAborted();
   },
 );

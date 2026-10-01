@@ -7625,6 +7625,63 @@ replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.
 
+## Browser advisory retirement (2026-09-29)
+
+The Browser thread key is retired after the preparation in #37097
+(`405c21452010c37e4ce2facd51c3f1b231646e7d`). Fresh creation and resume use the
+existing owned-thread partial unique index and exact state predicates. Instance
+publication inserts the provider instance and screen, then conditionally changes
+the observed logical Browser in the same command-local transaction. A lost
+logical claim rolls those inserts back. Stop, retention and profile retirement
+keep their existing exact resource identities and conditional writes.
+
+All eight Browser transaction scopes now belong to local commands. They execute
+SQL directly; neither a transaction parameter nor a transaction-capturing helper
+callback leaves the scope. Provider HTTP, CDP, encryption, object storage and
+realtime stay outside those transactions. Post-commit provider cleanup finishes
+its ownership handoff before the caller observes cancellation. No persisted
+field, public API shape, App floor or Runner contract changes.
+
+At the 2026-09-29 inspection, both public API build-info endpoints returned
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555` (API 1.695.0). Vercel's four production
+aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) all
+resolved to READY deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, promoted at
+01:12:01 UTC. That commit descends from #37097, and more than one hour had elapsed
+since promotion when checked; the API's configured invocation bound is 300
+seconds. The normal rollback resolver also requires
+`45b537a596a153a91b76c3bc7223187840f52775`, a descendant of #37097, so supported
+rollback targets contain the Browser preparation. This is read-only rollout
+verification, not a new production deployment.
+
+Recheck serving and supported rollback versions before deployment if either
+changes. Do not restore a pre-#37097 Browser writer alongside the keyless API.
+The preceding prepared API and this version use the same existing constraints,
+state comparisons and statement order during rolling overlap.
+
+## Custom account advisory retirement (2026-09-29)
+
+The custom account target acquisition is removed after the preparation from
+#37097 (`405c21452010c37e4ce2facd51c3f1b231646e7d`). Exact custom-account deletion
+no longer calls the advisory interface; shared account selection and lifecycle
+paths now take it only for builtin targets. Existing definition protection,
+ordered account row writes, account uniqueness, selection foreign keys and
+whole-transaction rollback recovery continue to arbitrate custom writes.
+
+Read-only deployment checks on 2026-09-29 found all production API aliases
+(`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) at READY
+Vercel deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, commit
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555`. Both public build-info endpoints
+returned that commit and version 1.695.0. This version contains #37097; the
+01:12:01 UTC promotion preceded inspection by more than the configured
+300-second API invocation bound. The existing mandatory rollback floor
+`45b537a596a153a91b76c3bc7223187840f52775` also contains #37097.
+
+Recheck supported serving and rollback writers before deployment if that state
+changes. A pre-#37097 custom-account writer cannot coexist with this retirement.
+No App/Runner contract, persisted field or additional deployment floor changes.
+The remaining builtin target lock and transaction-passing account helpers are
+separate Release 1 work, not exceptions to the confirmed final architecture.
+
 ## Canonical Chat application sessions
 
 Migration `1295_chat_thread_canonical_session` adds a unique index on

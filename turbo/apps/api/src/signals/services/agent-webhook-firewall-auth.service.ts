@@ -1,30 +1,51 @@
-import {
-  personalSubscriptionAccountAccessCondition,
-  isPersonalSubscriptionProviderType,
-  readPersonalSubscriptionCredentialBundle,
-} from "./model-provider-account.service";
+import { Buffer } from "node:buffer";
+import { performance } from "node:perf_hooks";
+import { isDeepStrictEqual } from "node:util";
 import {
   publishModelPoliciesChangedForOrgSafely,
   publishPersonalModelProvidersChangedSafely,
 } from "../external/realtime";
-import { Buffer } from "node:buffer";
-import { performance } from "node:perf_hooks";
-import { isDeepStrictEqual } from "node:util";
+import {
+  isPersonalSubscriptionProviderType,
+  personalSubscriptionAccountAccessCondition,
+  readPersonalSubscriptionCredentialBundle,
+} from "./model-provider-account.service";
+import {
+  isFetchNetworkError,
+  isTransientOAuthRefreshFailure,
+} from "./oauth-refresh-failure.service";
 
 import { delay } from "signal-timers";
 
-import {
-  getSecretNameForType,
-  getModelProviderEnvBindings,
-  modelProviderTypeSchema,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import {
+  getModelProviderEnvBindings,
+  getSecretNameForType,
+  modelProviderTypeSchema,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import {
+  refreshConnectorAuthProviderAccessTokenWithMethod,
+  type ProviderEnv,
+} from "@okouai/connectors/auth-providers";
+import {
+  getModelProviderRefreshMetadata,
+  isModelProviderRefreshConfigured,
+  isModelProviderRefreshProviderKey,
+  refreshPreparedModelProviderAccess,
+  type ModelProviderRefreshProviderKey,
+} from "@okouai/connectors/auth-providers/model-provider-auth";
+import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
+import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
+import {
+  isProviderHttpError,
+  isProviderResponseError,
+} from "@okouai/connectors/auth-providers/provider-error";
 import {
   connectorAuthMethodAccessMetadata,
   connectorAuthMethodRuntimeMetadata,
@@ -32,98 +53,45 @@ import {
   getConnectorRuntimeBindingPlatformSecretName,
   getConnectorRuntimeBindingSecretName,
   resolveConnectorAuthClient,
-  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthClient,
-  type ConnectorRefreshTokenInputMetadata,
+  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthMethodRuntimeMetadata,
   type ConnectorOutputTarget,
+  type ConnectorRefreshTokenInputMetadata,
 } from "@okouai/connectors/connector-auth-method";
+import {
+  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   parseBasicAuthTemplates,
   replaceBasicAuthTemplates,
   type BasicAuthTemplateArg,
   type BasicAuthTemplateMatch,
 } from "@okouai/connectors/firewall-types";
-import {
-  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  refreshConnectorAuthProviderAccessTokenWithMethod,
-  type ProviderEnv,
-} from "@okouai/connectors/auth-providers";
-import {
-  isProviderHttpError,
-  isProviderResponseError,
-} from "@okouai/connectors/auth-providers/provider-error";
-import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
-import {
-  getModelProviderRefreshMetadata,
-  isModelProviderRefreshConfigured,
-  refreshPreparedModelProviderAccess,
-  isModelProviderRefreshProviderKey,
-  type ModelProviderRefreshProviderKey,
-} from "@okouai/connectors/auth-providers/model-provider-auth";
-import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
 
-import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
-import {
-  pgInt8ToBigIntDecoder,
-  pgNullDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
+import { command } from "ccstate";
+import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
-import {
-  decryptPersistentSecretsMap,
-  decryptStoredSecretValue,
-  encryptStoredSecretValue,
-} from "./crypto.utils";
-import {
-  lockBuiltinConnectorState,
-  lockModelProviderState,
-} from "./auth-state-lock.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
-import {
-  loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability,
-  runHasActiveCreditAdmission,
-  type RunCreditAdmissionState,
-} from "./run-admission.service";
-import { resolveUsageAllowanceAvailabilityForRun } from "./usage-allowance.service";
-import {
-  connectorRuntimeCredentialStatusForAccess,
-  type ConnectorCredentialStatus,
-} from "./connector-credential-status.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import {
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
-} from "./connector-credential-storage-write.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
   builtinConnectorCredentialVariableReadCondition,
@@ -136,6 +104,25 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import {
+  getConnectorRuntimeConnector,
+  loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeMethod,
+  type ConnectorRuntimeSnapshot,
+} from "./connector-catalog-runtime.service";
+import {
+  connectorRuntimeCredentialStatusForAccess,
+  type ConnectorCredentialStatus,
+} from "./connector-credential-status.service";
+import {
+  upsertConnectorOwnedSecret,
+  upsertConnectorOwnedVariable,
+} from "./connector-credential-storage-write.service";
+import {
+  decryptPersistentSecretsMap,
+  decryptStoredSecretValue,
+  encryptStoredSecretValue,
+} from "./crypto.utils";
+import {
   CustomConnectorOAuth2TokenRefreshError,
   resolveCurrentCustomConnectorOAuth2AccessToken,
 } from "./custom-connector-oauth2.service";
@@ -144,6 +131,14 @@ import {
   customConnectorSecretKey,
   loadCustomConnectorRuntimeData,
 } from "./custom-connector.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  loadRunCreditAdmissionState,
+  resolveOrgCreditAvailability,
+  runHasActiveCreditAdmission,
+  type RunCreditAdmissionState,
+} from "./run-admission.service";
+import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
 type StorageSecretSource = Exclude<AccessSecretSource, "platform-secret">;
@@ -156,9 +151,6 @@ const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
-const databaseTimestampMicrosRowSchema = z.object({
-  now: pgInt8ToBigIntSchema,
-});
 
 function firewallAuthRefreshTimeoutMs(): number {
   const configured = optionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS");
@@ -271,7 +263,6 @@ interface PreparedNonCustomFirewallAuth {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
   readonly context: FirewallAuthResolutionContext;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface PreparedBuiltinConnectorAutomaticFirewallAuth {
@@ -466,60 +457,84 @@ function mergeExpiresAt(
   return Math.min(expiresAt, additionalExpiresAt);
 }
 
-async function resolveBillableFirewallCacheExpiry(params: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly run: FirewallAuthRun;
-  readonly firewallBillable: boolean | undefined;
-}): Promise<
-  { readonly expiresAt?: number } | ReturnType<typeof insufficientCredits>
-> {
-  if (params.firewallBillable !== true) {
-    return {};
-  }
+type BillableFirewallCacheExpiry =
+  | { readonly expiresAt?: number }
+  | ReturnType<typeof insufficientCredits>
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof forbiddenTerminalRun>;
 
-  const availability = await resolveOrgCreditAvailability({
-    db: params.db,
-    orgId: params.auth.orgId,
-    userId: params.auth.userId,
-  });
-  if (!availability) {
-    return insufficientCredits();
-  }
-  if (availability.status !== "active") {
-    return insufficientCredits();
-  }
-  if (runHasActiveCreditAdmission(params.run)) {
-    return {
-      expiresAt:
-        Math.floor(nowDate().getTime() / 1000) +
-        NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
-    };
-  }
-  const allowance =
-    availability.spendableCredits > 0
-      ? null
-      : await resolveUsageAllowanceAvailabilityForRun(params.db, {
-          orgId: params.auth.orgId,
-          runId: params.auth.runId,
-        });
-  const spendableUnits =
-    availability.usagePackCredits +
-    Math.max(availability.spendableCredits, 0) +
-    (allowance?.remainingUnits ?? 0);
-  if (spendableUnits <= 0) {
-    return insufficientCredits();
-  }
-
-  const leaseSeconds =
-    spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
-      ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
-      : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
-
-  return {
-    expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds,
-  };
-}
+export const resolveBillableFirewallCacheExpiry$ = command(
+  async (
+    { set },
+    params: {
+      readonly auth: SandboxAuth;
+      readonly firewallBillable: boolean | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<BillableFirewallCacheExpiry> => {
+    if (params.firewallBillable !== true) {
+      return {};
+    }
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({
+        status: agentRuns.status,
+        creditAdmitted: agentRuns.creditAdmitted,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, params.auth.runId),
+          eq(agentRuns.orgId, params.auth.orgId),
+          eq(agentRuns.userId, params.auth.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return badRequestMessage("Run not found");
+    }
+    if (!firewallAuthRunIsActive(run.status)) {
+      return forbiddenTerminalRun();
+    }
+    const availability = await resolveOrgCreditAvailability({
+      db: set(writeDb$),
+      orgId: params.auth.orgId,
+      userId: params.auth.userId,
+    });
+    signal.throwIfAborted();
+    if (!availability || availability.status !== "active") {
+      return insufficientCredits();
+    }
+    if (runHasActiveCreditAdmission(run)) {
+      return {
+        expiresAt:
+          Math.floor(nowDate().getTime() / 1000) +
+          NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
+      };
+    }
+    const allowance =
+      availability.spendableCredits > 0
+        ? null
+        : await set(
+            resolveUsageAllowanceAvailabilityForRun$,
+            { orgId: params.auth.orgId, runId: params.auth.runId },
+            signal,
+          );
+    const spendableUnits =
+      availability.usagePackCredits +
+      Math.max(availability.spendableCredits, 0) +
+      (allowance?.remainingUnits ?? 0);
+    if (spendableUnits <= 0) {
+      return insufficientCredits();
+    }
+    const leaseSeconds =
+      spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
+        ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
+        : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
+    return { expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds };
+  },
+);
 
 interface SecretTokenLookupArgs {
   readonly runId?: string;
@@ -543,7 +558,6 @@ interface RefreshAccessTokenArgs extends SecretTokenLookupArgs {
   readonly connectorSecrets: Record<string, string>;
   readonly accessEnvVars: readonly string[];
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 function requiredModelProviderMetadataKey(args: {
@@ -585,7 +599,6 @@ interface RefreshState {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
 }
 
 interface RefreshStateRow {
@@ -596,7 +609,6 @@ interface RefreshStateRow {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
 }
 
 interface ValidatedRefreshOutput {
@@ -709,7 +721,6 @@ interface RefreshExpiredTokensArgs {
     BuiltinConnectorAccessState
   >;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface RefreshBatchContext {
@@ -721,7 +732,6 @@ interface RefreshBatchContext {
   readonly userId: string;
   readonly secrets: Record<string, string>;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
   readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -880,29 +890,10 @@ function refreshFailureReasonFromError(
       ? "reconnect_required"
       : undefined;
   }
-  if (isOAuthProviderHttpError(error)) {
-    if (error.oauthError === "invalid_grant") {
-      return "reconnect_required";
-    }
-    if (
-      error.oauthError === "server_error" ||
-      error.oauthError === "temporarily_unavailable" ||
-      error.status >= 500 ||
-      error.status === 429
-    ) {
-      return "upstream_provider";
-    }
+  if (isOAuthProviderHttpError(error) && error.oauthError === "invalid_grant") {
+    return "reconnect_required";
   }
-  if (
-    isProviderHttpError(error) &&
-    (error.status >= 500 || error.status === 429)
-  ) {
-    return "upstream_provider";
-  }
-  if (isProviderResponseError(error)) {
-    return "upstream_provider";
-  }
-  if (isFetchNetworkError(error)) {
+  if (isTransientOAuthRefreshFailure(error)) {
     return "upstream_provider";
   }
   return undefined;
@@ -1007,12 +998,6 @@ function connectorReconnectReasonFromRefreshFailure(
   return null;
 }
 
-function isFetchNetworkError(error: unknown): boolean {
-  return (
-    error instanceof TypeError && error.message.toLowerCase().includes("fetch")
-  );
-}
-
 function isRefreshTimeoutError(error: unknown, signal: AbortSignal): boolean {
   if (!signal.aborted || !(error instanceof Error)) {
     return false;
@@ -1066,7 +1051,7 @@ function isExpiredAwsSigninRefreshState(
   prepared: PreparedRefreshTokenContext,
   state: RefreshState,
 ): boolean {
-  // Reconnect clears this reason with the credentials under the same lock.
+  // Reconnect clears this reason when it replaces the credentials.
   // Other needsReconnect states retain their existing refresh/recovery policy.
   return (
     prepared.sourceType === "connector" &&
@@ -1096,7 +1081,6 @@ async function getBuiltinConnectorSecretValues(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [{ access: args.access, names: args.names }],
       }),
     );
@@ -1151,7 +1135,7 @@ async function getSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccountSecrets.name, args.name),
@@ -1200,7 +1184,6 @@ async function getVariableValue(args: {
     .from(variablesTable)
     .where(
       builtinConnectorCredentialVariableReadCondition({
-        db: args.db,
         groups: [
           {
             access: args.connectorAccess,
@@ -1236,7 +1219,7 @@ async function upsertModelProviderSecretValue(
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
         ),
@@ -2026,30 +2009,6 @@ function nonNullRuntimeOutputValues(args: {
   return nonNullValues;
 }
 
-function sameStringRecord(
-  left: Readonly<Record<string, string | null>>,
-  right: Readonly<Record<string, string | null>>,
-): boolean {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  for (const key of keys) {
-    if (stringRecordValue(left, key) !== stringRecordValue(right, key)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function stringRecordValue(
-  record: Readonly<Record<string, string | null>>,
-  key: string,
-): string | null {
-  if (!Object.hasOwn(record, key)) {
-    return null;
-  }
-  const value = record[key];
-  return value === undefined ? null : value;
-}
-
 function refreshSourceStateFromRow(args: {
   readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
@@ -2062,24 +2021,9 @@ function refreshSourceStateFromRow(args: {
   };
 }
 
-async function currentDatabaseTimestampMicros(db: Db): Promise<bigint> {
-  const rows = await executeRawRows(
-    db,
-    sql`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS now`,
-    databaseTimestampMicrosRowSchema,
-  );
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Failed to read database timestamp");
-  }
-  return row.now;
-}
-
-function shouldUseLockedCurrentAccess(args: {
+function shouldUseCurrentAccess(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly context: RefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
   readonly state: RefreshState;
 }): boolean {
   if (
@@ -2097,6 +2041,8 @@ function shouldUseLockedCurrentAccess(args: {
     return true;
   }
 
+  // A forced refresh still serves the stored credential when the sandbox's
+  // snapshot is stale relative to it.
   const outputValues = runtimeOutputValues({
     context: args.context,
     state: args.state,
@@ -2107,132 +2053,15 @@ function shouldUseLockedCurrentAccess(args: {
       return true;
     }
   }
-
-  if (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  ) {
-    return true;
-  }
-
-  if (!args.initialState) {
-    return true;
-  }
-
-  if (
-    !sameStringRecord(
-      args.initialState.outputValues,
-      args.state.outputValues,
-    ) ||
-    !sameStringRecord(args.initialState.inputValues, args.state.inputValues)
-  ) {
-    return true;
-  }
-
-  const initialExpiresAt = args.initialState.tokenExpiresAt
-    ? Math.floor(args.initialState.tokenExpiresAt.getTime() / 1000)
-    : null;
-  const lockedExpiresAt = args.state.tokenExpiresAt
-    ? Math.floor(args.state.tokenExpiresAt.getTime() / 1000)
-    : null;
-  return (
-    initialExpiresAt !== lockedExpiresAt ||
-    args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-  );
-}
-
-function didLockedRefreshFailDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): boolean {
-  if (!args.state.needsReconnect) {
-    return lockedRefreshFailureReasonDuringRequest(args) !== undefined;
-  }
-  if (args.initialState) {
-    return (
-      !args.initialState.needsReconnect ||
-      args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-    );
-  }
-  return (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  );
-}
-
-function lockedRefreshFailureReasonDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): FirewallAuthFailureReason | undefined {
-  if (
-    args.requestStartedAtMicros === null ||
-    args.state.updatedAtMicros <= args.requestStartedAtMicros
-  ) {
-    return undefined;
-  }
-  if (
-    args.initialState &&
-    args.initialState.updatedAtMicros === args.state.updatedAtMicros
-  ) {
-    return undefined;
-  }
-
-  if (args.state.needsReconnect) {
-    return missingRefreshInputNames(args.state).length > 0 ||
-      isReconnectRequiredRefreshErrorCode(args.state.lastRefreshErrorCode)
-      ? "reconnect_required"
-      : undefined;
-  }
-
-  const tokenStateUnchanged = sameRefreshTokenState(
-    args.initialState,
-    args.state,
-  );
-  if (tokenExpiresAtNeedsRefresh(args.state.tokenExpiresAt)) {
-    return !args.initialState || tokenStateUnchanged
-      ? "upstream_provider"
-      : undefined;
-  }
-
-  if (tokenStateUnchanged) {
-    return "upstream_provider";
-  }
-  return undefined;
-}
-
-function sameRefreshTokenState(
-  initialState: RefreshState | null,
-  state: RefreshState,
-): boolean {
-  return (
-    initialState !== null &&
-    sameStringRecord(initialState.outputValues, state.outputValues) &&
-    sameStringRecord(initialState.inputValues, state.inputValues) &&
-    sameTokenExpiresAt(initialState.tokenExpiresAt, state.tokenExpiresAt)
-  );
-}
-
-function sameTokenExpiresAt(left: Date | null, right: Date | null): boolean {
-  return timestampMillisOrNull(left) === timestampMillisOrNull(right);
-}
-
-function timestampMillisOrNull(value: Date | null): number | null {
-  if (value === null) {
-    return null;
-  }
-  return value.getTime();
+  return false;
 }
 
 async function loadModelProviderRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   if (args.sourceId) {
-    // The refresh advisory lock serializes account refreshes; no row lock.
     const rows = await db
       .select({
         authMethod: sql`NULL`.mapWith(pgNullDecoder),
@@ -2242,16 +2071,12 @@ async function loadModelProviderRefreshStateRow(
         needsReconnect: modelProviderAccounts.needsReconnect,
         lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
         reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-        updatedAtMicros:
-          sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint`.mapWith(
-            pgInt8ToBigIntDecoder,
-          ),
       })
       .from(modelProviderAccounts)
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, context.secretUserId),
           eq(
@@ -2275,10 +2100,6 @@ async function loadModelProviderRefreshStateRow(
       needsReconnect: modelProviders.needsReconnect,
       lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
       reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
     })
     .from(modelProviders)
     .where(
@@ -2294,16 +2115,13 @@ async function loadModelProviderRefreshStateRow(
         ),
       ),
     );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   return rows[0] ?? null;
 }
 
 async function loadConnectorRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   const connectorSlug = args.accessSourceKey;
   const connectorId =
@@ -2320,10 +2138,6 @@ async function loadConnectorRefreshStateRow(
       needsReconnect: connectors.needsReconnect,
       lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
       reconnectReason: connectors.reconnectReason,
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
     })
     .from(connectors)
     .where(
@@ -2334,9 +2148,7 @@ async function loadConnectorRefreshStateRow(
         eq(connectors.connectorSlug, connectorSlug),
       ),
     );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   return rows[0] ?? null;
 }
 
@@ -2344,17 +2156,11 @@ async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  options: { readonly lockRow?: boolean } = {},
 ): Promise<RefreshState | null> {
   const row =
     args.sourceType === "model-provider"
-      ? await loadModelProviderRefreshStateRow(
-          db,
-          args,
-          context,
-          options.lockRow === true,
-        )
-      : await loadConnectorRefreshStateRow(db, args, options.lockRow === true);
+      ? await loadModelProviderRefreshStateRow(db, args, context)
+      : await loadConnectorRefreshStateRow(db, args);
 
   if (!row) {
     return null;
@@ -2414,7 +2220,6 @@ async function loadRefreshState(
     needsReconnect: row.needsReconnect,
     lastRefreshErrorCode: row.lastRefreshErrorCode,
     reconnectReason: row.reconnectReason,
-    updatedAtMicros: row.updatedAtMicros,
   };
 }
 
@@ -2569,19 +2374,23 @@ async function markRefreshSuccess(
 async function markRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  errorCode: string | null,
-  failureReason: FirewallAuthFailureReason | undefined,
-  connectorReconnectReason: ConnectorReconnectReason | null,
+  failure: {
+    readonly errorCode: string | null;
+    readonly failureReason: FirewallAuthFailureReason | undefined;
+    readonly connectorReconnectReason: ConnectorReconnectReason | null;
+  },
 ): Promise<void> {
+  const { errorCode, failureReason, connectorReconnectReason } = failure;
+  // A transient outage changed no credential or authority.
+  if (failureReason === "upstream_provider") {
+    return;
+  }
   if (args.sourceType === "model-provider") {
-    const updates =
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            lastRefreshErrorCode: errorCode,
-            updatedAt: sql`clock_timestamp()`,
-          };
+    const updates = {
+      needsReconnect: true,
+      lastRefreshErrorCode: errorCode,
+      updatedAt: sql`clock_timestamp()`,
+    };
     if (args.sourceId) {
       await args.db
         .update(modelProviderAccounts)
@@ -2622,15 +2431,11 @@ async function markRefreshFailure(
   }
   await args.db
     .update(connectors)
-    .set(
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            reconnectReason: connectorReconnectReason,
-            updatedAt: sql`clock_timestamp()`,
-          },
-    )
+    .set({
+      needsReconnect: true,
+      reconnectReason: connectorReconnectReason,
+      updatedAt: sql`clock_timestamp()`,
+    })
     .where(
       and(
         eq(connectors.orgId, args.orgId),
@@ -2645,7 +2450,11 @@ async function markRefreshTokenMissing(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
 ): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, null, "reconnect_required", null);
+  await markRefreshFailure(args, context, {
+    errorCode: null,
+    failureReason: "reconnect_required",
+    connectorReconnectReason: null,
+  });
   return refreshTokenMissingResult();
 }
 
@@ -2655,13 +2464,14 @@ async function markRefreshTokenMissing(
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  error: unknown,
-  signal: AbortSignal,
   retry: {
+    readonly error: unknown;
     readonly attempted: boolean;
     readonly firstProviderStatus: number | null;
   },
+  signal: AbortSignal,
 ): Promise<RefreshAccessTokenResult> {
+  const { error } = retry;
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
     args.sourceType === "connector" &&
@@ -2671,13 +2481,11 @@ async function markAndReturnRefreshFailure(
     error.status === 401 &&
     error.providerErrorCode === "TOKEN_EXPIRED"
   ) {
-    await markRefreshFailure(
-      args,
-      context,
-      "invalid_grant",
-      "reconnect_required",
-      "credential_expired",
-    );
+    await markRefreshFailure(args, context, {
+      errorCode: "invalid_grant",
+      failureReason: "reconnect_required",
+      connectorReconnectReason: "credential_expired",
+    });
     return refreshFailedResult("reconnect_required");
   }
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
@@ -2693,13 +2501,14 @@ async function markAndReturnRefreshFailure(
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
-  await markRefreshFailure(
-    args,
-    context,
+  await markRefreshFailure(args, context, {
     errorCode,
     failureReason,
-    connectorReconnectReasonFromRefreshFailure(error, failureReason),
-  );
+    connectorReconnectReason: connectorReconnectReasonFromRefreshFailure(
+      error,
+      failureReason,
+    ),
+  });
   return refreshFailedResult(failureReason);
 }
 
@@ -2767,27 +2576,6 @@ function refreshPreparedConnectorAccessToken(
   );
 }
 
-async function lockPreparedRefreshSource(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-  prepared: PreparedRefreshTokenContext,
-): Promise<void> {
-  if (prepared.sourceType === "connector") {
-    await lockBuiltinConnectorState(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: prepared.connectorSlug,
-    });
-    return;
-  }
-
-  await lockModelProviderState(db, {
-    orgId: args.orgId,
-    userId: prepared.context.secretUserId,
-    type: args.metadataKey ?? prepared.providerKey,
-  });
-}
-
 function preparedRefreshSourceMatchesState(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
@@ -2842,7 +2630,7 @@ function currentRefreshAccessResult(args: {
   };
 }
 
-function refreshInputsFromLockedState(args: {
+function refreshInputsFromState(args: {
   readonly accessSourceKey: string;
   readonly state: RefreshState;
 }): Record<string, string> {
@@ -2921,87 +2709,66 @@ function validateRefreshResultOutputs(args: {
   return { ok: true, outputs };
 }
 
-async function refreshLockedAccessToken(args: {
+async function refreshStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
 }): Promise<RefreshAccessTokenResult> {
-  const lockedState = currentPreparedRefreshState({
+  const state = currentPreparedRefreshState({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
     state: await loadRefreshState(
       args.refreshArgs.db,
       args.refreshArgs,
       args.prepared.context,
-      { lockRow: true },
     ),
   });
-  if (!lockedState) {
+  if (!state) {
     return sourceMissingResult();
   }
 
   if (
-    isTerminalCodexRefreshState(args.prepared, lockedState) ||
-    isExpiredAwsSigninRefreshState(args.prepared, lockedState)
+    isTerminalCodexRefreshState(args.prepared, state) ||
+    isExpiredAwsSigninRefreshState(args.prepared, state)
   ) {
     return refreshFailedResult("reconnect_required");
   }
 
   if (
-    didLockedRefreshFailDuringRequest({
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
-    })
-  ) {
-    return refreshFailedResult(
-      lockedRefreshFailureReasonDuringRequest({
-        initialState: args.initialState,
-        requestStartedAtMicros: args.requestStartedAtMicros,
-        state: lockedState,
-      }),
-    );
-  }
-
-  if (
-    shouldUseLockedCurrentAccess({
+    shouldUseCurrentAccess({
       refreshArgs: args.refreshArgs,
       context: args.prepared.context,
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
+      state,
     })
   ) {
     return currentRefreshAccessResult({
       accessSourceKey: args.refreshArgs.accessSourceKey,
       context: args.prepared.context,
-      state: lockedState,
+      state,
     });
   }
 
-  if (missingRefreshInputNames(lockedState).length > 0) {
+  if (missingRefreshInputNames(state).length > 0) {
     return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
   }
 
-  return refreshPreparedLockedAccessToken({
+  return refreshPreparedStoredAccessToken({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
-    lockedState,
+    state,
   });
 }
 
-async function refreshPreparedLockedAccessToken(args: {
+async function refreshPreparedStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly lockedState: RefreshState;
+  readonly state: RefreshState;
 }): Promise<RefreshAccessTokenResult> {
-  const { refreshArgs, prepared, lockedState } = args;
+  const { refreshArgs, prepared, state } = args;
 
   const refreshSignal = firewallAuthRefreshTimeoutSignal();
-  const inputs = refreshInputsFromLockedState({
+  const inputs = refreshInputsFromState({
     accessSourceKey: refreshArgs.accessSourceKey,
-    state: lockedState,
+    state,
   });
   let retryAttempted = false;
   let firstProviderStatus: number | null = null;
@@ -3034,9 +2801,12 @@ async function refreshPreparedLockedAccessToken(args: {
     return markAndReturnRefreshFailure(
       refreshArgs,
       prepared.context,
-      refreshResult.error,
+      {
+        error: refreshResult.error,
+        attempted: retryAttempted,
+        firstProviderStatus,
+      },
       refreshSignal,
-      { attempted: retryAttempted, firstProviderStatus },
     );
   }
 
@@ -3056,13 +2826,11 @@ async function refreshPreparedLockedAccessToken(args: {
       providerStatus: null,
       retryAttempted,
     });
-    await markRefreshFailure(
-      refreshArgs,
-      prepared.context,
-      null,
-      "upstream_provider",
-      null,
-    );
+    await markRefreshFailure(refreshArgs, prepared.context, {
+      errorCode: null,
+      failureReason: "upstream_provider",
+      connectorReconnectReason: null,
+    });
     return refreshFailedResult("upstream_provider");
   }
 
@@ -3110,21 +2878,13 @@ async function refreshAccessTokenForSource(
       : { ok: false, reason: preparation.reason };
   }
   const { prepared } = preparation;
-  const requestStartedAtMicros = args.forceRefresh
-    ? args.forceRefreshStartedAtMicros
-    : await currentDatabaseTimestampMicros(args.db);
-  const initialState = await loadRefreshState(args.db, args, prepared.context);
-  const result = await args.db.transaction(async (tx) => {
-    await lockPreparedRefreshSource(tx, args, prepared);
-    return await refreshLockedAccessToken({
-      refreshArgs: { ...args, db: tx },
-      prepared,
-      initialState,
-      requestStartedAtMicros,
-    });
+  // Ordinary refresh with plain writes: concurrent refreshes resolve by
+  // last-writer-wins, and a lost one-use refresh token requires reconnect.
+  const result = await refreshStoredAccessToken({
+    refreshArgs: args,
+    prepared,
   });
-  // The reconnect projection is local metadata. Publish after the refresh
-  // transaction, never while holding the credential lifecycle locks.
+  // The reconnect projection is local metadata published after the refresh.
   if (
     prepared.sourceType === "model-provider" &&
     ((result.ok && result.status === "refreshed") ||
@@ -3448,7 +3208,6 @@ async function syncStoredConnectorRuntimeSecrets(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [...namesByConnectorId.values()].map((group) => {
           return { access: group.access, names: [...group.names] };
         }),
@@ -3507,7 +3266,7 @@ async function getModelProviderRuntimeSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccounts.type, args.providerType),
@@ -3669,7 +3428,7 @@ async function loadModelProviderRuntimeRefreshState(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.lookup.metadata.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.lookup.userId),
           eq(modelProviderAccounts.type, args.lookup.providerType),
@@ -3795,7 +3554,6 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     connectorSecrets: {},
     accessEnvVars: [args.key],
     forceRefresh: false,
-    forceRefreshStartedAtMicros: null,
     connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
     featureSwitchContext: args.featureSwitchContext,
   });
@@ -4639,7 +4397,6 @@ async function resolveMatchedBuiltinConnectorVariables(
           .from(variablesTable)
           .where(
             builtinConnectorCredentialVariableReadCondition({
-              db,
               groups: [
                 {
                   access: connectorAccess.access,
@@ -4734,26 +4491,52 @@ async function findFirewallAuthRun(
   });
 }
 
-async function admitFirewallAuthResponse(
-  db: Db,
-  auth: SandboxAuth,
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [run] = await tx
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.userId, auth.userId),
-          eq(agentRuns.orgId, auth.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    return run !== undefined && firewallAuthRunIsActive(run.status);
-  });
-}
+/** Final admission owns its single statement. Credential/provider work has
+ * finished; no transaction handle or callback is passed in from preparation. */
+export const admitPreparedFirewallAuthResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly response: ResolveFirewallAuthResult;
+    },
+    signal: AbortSignal,
+  ): Promise<ResolveFirewallAuthResult> => {
+    if (args.response.status !== 200) {
+      return args.response;
+    }
+    const db = set(writeDb$);
+    const startedAt = performance.now();
+    let success = false;
+    return await (async () => {
+      // The final owner/status check keeps its existing row-lock ordering. A
+      // single statement needs no larger application transaction boundary.
+      const [run] = await db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.auth.runId),
+            eq(agentRuns.userId, args.auth.userId),
+            eq(agentRuns.orgId, args.auth.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      success = run !== undefined && firewallAuthRunIsActive(run.status);
+      return success ? args.response : forbiddenTerminalRun();
+    })().finally(() => {
+      recordFirewallAuthTimings(args.auth.runId, [
+        {
+          actionType: "firewall_auth_admit",
+          durationMs: Math.max(0, performance.now() - startedAt),
+          success,
+        },
+      ]);
+    });
+  },
+);
 
 async function decryptFirewallAuthSecrets(
   db: Db,
@@ -4840,7 +4623,6 @@ async function refreshSelectedTokens(
         connectorSecrets: context.secrets,
         accessEnvVars: context.envVarsByAccessSource.get(accessSourceKey) ?? [],
         forceRefresh: context.forceRefresh,
-        forceRefreshStartedAtMicros: context.forceRefreshStartedAtMicros,
         connectorAccessBySlug: context.connectorAccessBySlug,
         featureSwitchContext: context.featureSwitchContext,
       });
@@ -4860,8 +4642,8 @@ async function refreshSelectedTokens(
         };
       }
 
-      // "current" means a concurrent request rotated the credential while this
-      // one waited for the refresh lock, so a pre-lock bundle read is stale too.
+      // "current" means the stored credential differs from the request
+      // snapshot, so earlier bundle reads may be stale too.
       context.subscriptionBundles.clear();
       Object.assign(context.secrets, refreshResult.secrets);
       return { accessSourceKey, status: refreshResult.status };
@@ -5090,7 +4872,6 @@ async function refreshExpiredTokens(
     userId: args.auth.userId,
     secrets: args.secrets,
     forceRefresh: args.forceRefresh,
-    forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     metadataByAccessSource,
     connectorAccessBySlug: args.connectorAccessBySlug,
     envVarsByAccessSource,
@@ -5817,7 +5598,6 @@ async function prepareNonCustomFirewallAuth(args: {
   readonly body: FirewallAuthBody;
   readonly orgId: string;
   readonly referenced: ReferencedAuthKeys;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<
   FirewallAuthPreparation<
     | PreparedNonCustomFirewallAuth
@@ -5925,7 +5705,6 @@ async function prepareNonCustomFirewallAuth(args: {
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
       context: prepared.context,
-      forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     },
   };
 }
@@ -6008,7 +5787,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       orgId: args.auth.orgId,
       featureSwitchContext: args.prepared.featureSwitchContext,
       forceRefresh: args.body.forceRefresh ?? false,
-      forceRefreshStartedAtMicros: args.prepared.forceRefreshStartedAtMicros,
     });
     expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
     refreshedConnectors = result.refreshedConnectors;
@@ -6257,6 +6035,7 @@ async function prepareFirewallAuthRequest(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<PreparedFirewallAuthRequest> {
   const matchedFirewall = body.matchedFirewall;
   const customConnectorId = matchedFirewall?.customConnectorId;
@@ -6269,10 +6048,6 @@ async function prepareFirewallAuthRequest(
     return { ok: false, response: forbiddenTerminalRun() };
   }
   const orgId = run.orgId;
-  const forceRefreshStartedAtMicros =
-    customConnectorId === undefined && body.forceRefresh === true
-      ? await currentDatabaseTimestampMicros(db)
-      : null;
   const referenced = collectReferencedKeys(
     body.authHeaders,
     body.authBase,
@@ -6315,18 +6090,11 @@ async function prepareFirewallAuthRequest(
       body,
       orgId,
       referenced,
-      forceRefreshStartedAtMicros,
     });
   }
   if (!preparation.ok) {
     return { ok: false, response: preparation.response };
   }
-  const billableCacheExpiry = await resolveBillableFirewallCacheExpiry({
-    db,
-    auth,
-    run,
-    firewallBillable: body.firewallBillable,
-  });
   if ("status" in billableCacheExpiry) {
     return { ok: false, response: billableCacheExpiry };
   }
@@ -6342,13 +6110,19 @@ async function resolveFirewallAuthWithTimings(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
   timingRecords: FirewallAuthTimingRecord[],
 ): Promise<ResolveFirewallAuthResult> {
   const preparation = await measureFirewallAuthStage(
     timingRecords,
     "firewall_auth_prepare",
     async () => {
-      return await prepareFirewallAuthRequest(db, auth, body);
+      return await prepareFirewallAuthRequest(
+        db,
+        auth,
+        body,
+        billableCacheExpiry,
+      );
     },
     (result) => {
       return result.ok;
@@ -6381,38 +6155,29 @@ async function resolveFirewallAuthWithTimings(
       ? forbiddenTerminalRun()
       : resolution.response;
   }
-  const finalized = finalizeFirewallAuth({
+  return finalizeFirewallAuth({
     body,
     referenced: preparation.referenced,
     material: resolution.material,
     billableExpiresAt: preparation.billableExpiresAt,
   });
-  if (finalized.status !== 200) {
-    return finalized;
-  }
-  const admitted = await measureFirewallAuthStage(
-    timingRecords,
-    "firewall_auth_admit",
-    async () => {
-      return await admitFirewallAuthResponse(db, auth);
-    },
-    (result) => {
-      return result;
-    },
-  );
-  return admitted ? finalized : forbiddenTerminalRun();
 }
 
-export async function resolveFirewallAuth(
+/** Produces credential material only. The route must invoke
+ * admitPreparedFirewallAuthResponse$ before returning a successful response.
+ * Legacy credential preparation still has its separate Db-aware graph. */
+export async function prepareFirewallAuthResponse(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<ResolveFirewallAuthResult> {
   const timingRecords: FirewallAuthTimingRecord[] = [];
   return await resolveFirewallAuthWithTimings(
     db,
     auth,
     body,
+    billableCacheExpiry,
     timingRecords,
   ).finally(() => {
     recordFirewallAuthTimings(auth.runId, timingRecords);

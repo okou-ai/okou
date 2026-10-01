@@ -1,9 +1,9 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { computed, type Computed } from "ccstate";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { command, computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { db$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 
 type ReadDb = Pick<Db, "select">;
 
@@ -88,6 +88,19 @@ export async function loadOrgPlanCapabilities(
     throw new Error(`Missing org plan entitlement for ${orgId}`);
   }
 
+  return orgPlanCapabilitiesFromRow(capabilities, orgId);
+}
+
+export function orgPlanCapabilitiesFromRow(
+  capabilities: Omit<
+    OrgPlanCapabilities,
+    "status" | "restrictedBuiltInModels"
+  > & {
+    readonly status: string;
+    readonly restrictedBuiltInModels: boolean | null;
+  },
+  orgId: string,
+): OrgPlanCapabilities {
   if (capabilities.restrictedBuiltInModels === null) {
     throw new Error(
       `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
@@ -103,6 +116,35 @@ export async function loadOrgPlanCapabilities(
     status: runtimeStatusForEntitlement(capabilities.status),
   };
 }
+
+export const loadOrgPlanCapabilities$ = command(
+  async (
+    { set },
+    orgId: string,
+    abortSignal?: AbortSignal,
+  ): Promise<OrgPlanCapabilities | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select(ORG_PLAN_CAPABILITY_SELECTION)
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    abortSignal?.throwIfAborted();
+    if (row) {
+      return orgPlanCapabilitiesFromRow(row, orgId);
+    }
+    const [org] = await db
+      .select({ id: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    abortSignal?.throwIfAborted();
+    if (org) {
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+    return null;
+  },
+);
 
 /**
  * The authenticated organization's plan, request-scoped so one request reads

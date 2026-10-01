@@ -1,30 +1,34 @@
-import { command, computed, type Computed } from "ccstate";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { usageEvent } from "@okouai/db/schema/usage-event";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
-  asc,
   desc,
   eq,
-  gte,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
   lte,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
+import { safeSync } from "../utils";
 
 type UsageAllowanceStore = Pick<Db, "execute" | "insert" | "select" | "update">;
 
@@ -64,6 +68,7 @@ interface UsageAllowanceEntitlement {
   readonly effectiveAt: Date;
   readonly expiresAt: Date | null;
   readonly stripeSubscriptionId: string | null;
+  readonly snapshot: string;
 }
 
 interface UsageAllowanceWindow {
@@ -78,50 +83,7 @@ interface UsageAllowanceWindows {
   readonly weeklyWindow: UsageAllowanceWindow;
 }
 
-interface UsageAllowanceEventInput {
-  readonly usageEventId: string;
-  readonly runId: string | null;
-  /**
-   * The original run start captured with the usage row, independent of the live
-   * `agent_runs` row. The ledger's context check keeps this NULL for every
-   * context that has no run start, and equal to the event's own creation time
-   * for the runless contexts, so it is safe to prefer it unconditionally.
-   */
-  readonly billingAnchorAt: Date | null;
-  readonly grossUnits: number;
-  readonly occurredAt: Date;
-}
-
-interface UsageAllowanceCandidate {
-  readonly usageEventId: string;
-  readonly runId: string | null;
-  readonly billingAnchorAt: Date | null;
-  readonly grossUnits: number;
-  readonly occurredAt: Date;
-}
-
-interface AnchoredUsageAllowanceCandidate extends UsageAllowanceCandidate {
-  readonly allowanceAt: Date;
-}
-
-interface UsageAllowanceWindowState extends UsageAllowanceWindow {
-  readonly id: string;
-  readonly unitLimit: number;
-  consumedUnits: number;
-  readonly initialConsumedUnits: number;
-  readonly startsAt: Date;
-  readonly expiresAt: Date;
-}
-
-interface NewUsageAllowanceAllocation {
-  readonly usageEventId: string;
-  readonly runId: string | null;
-  readonly shortWindowId: string;
-  readonly weeklyWindowId: string;
-  readonly unitsApplied: number;
-}
-
-export interface UsageAllowanceAvailability {
+interface UsageAllowanceAvailability {
   readonly remainingUnits: number;
   readonly shortRemainingUnits: number;
   readonly weeklyRemainingUnits: number;
@@ -233,39 +195,187 @@ export function activeAllowanceCutoff(status: string, now: Date): Date {
     : now;
 }
 
-async function refreshUsageAllowanceEntitlementFromStripe(
+export interface PreparedUsageAllowanceRefresh {
+  readonly entitlementId: string;
+  readonly snapshot: string;
+  readonly subscription: UsageAllowanceSubscriptionInput;
+}
+function allowanceRefreshQuery(orgId: string) {
+  return new QueryBuilder()
+    .select({
+      id: orgUsageAllowanceEntitlements.id,
+      status: orgUsageAllowanceEntitlements.status,
+      expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+      stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`
+        .mapWith(pgTextDecoder)
+        .as("snapshot"),
+    })
+    .from(orgUsageAllowanceEntitlements)
+    .where(
+      and(
+        eq(orgUsageAllowanceEntitlements.orgId, orgId),
+        inArray(orgUsageAllowanceEntitlements.status, [
+          ...ACTIVE_ALLOWANCE_STATUSES,
+        ]),
+        lte(orgUsageAllowanceEntitlements.effectiveAt, nowDate()),
+      ),
+    )
+    .limit(1)
+    .as("allowance_refresh");
+}
+async function prepareAllowanceRefresh(
+  row:
+    | {
+        readonly id: string;
+        readonly status: string;
+        readonly expiresAt: Date | null;
+        readonly stripeSubscriptionId: string | null;
+        readonly snapshot: string;
+      }
+    | undefined,
+): Promise<PreparedUsageAllowanceRefresh | undefined> {
+  if (
+    !row?.stripeSubscriptionId ||
+    !row.expiresAt ||
+    row.expiresAt > activeAllowanceCutoff(row.status, nowDate())
+  ) {
+    return undefined;
+  }
+  const subscription = (await getStripeClient().subscriptions.retrieve(
+    row.stripeSubscriptionId,
+  )) as UsageAllowanceSubscriptionInput;
+  return { entitlementId: row.id, snapshot: row.snapshot, subscription };
+}
+function pendingAllowanceRefreshQuery(
+  orgId: string,
+  idempotencyKeys?: readonly string[],
+) {
+  const queryBuilder = new QueryBuilder();
+  const anchor = sql`COALESCE(${usageEvent.billingAnchorAt}, ${agentRuns.createdAt}, ${usageEvent.createdAt})`;
+  const issuedWindow = (kind: UsageAllowanceWindowKind) => {
+    return queryBuilder
+      .select({ id: orgUsageAllowanceWindows.id })
+      .from(orgUsageAllowanceWindows)
+      .where(
+        and(
+          eq(orgUsageAllowanceWindows.orgId, orgId),
+          eq(orgUsageAllowanceWindows.kind, kind),
+          lte(orgUsageAllowanceWindows.startsAt, anchor),
+          gt(orgUsageAllowanceWindows.expiresAt, anchor),
+        ),
+      );
+  };
+  return queryBuilder
+    .select({ id: usageEvent.id })
+    .from(usageEvent)
+    .leftJoin(
+      agentRuns,
+      and(eq(agentRuns.id, usageEvent.runId), eq(agentRuns.orgId, orgId)),
+    )
+    .where(
+      and(
+        eq(usageEvent.orgId, orgId),
+        eq(usageEvent.status, "pending"),
+        idempotencyKeys
+          ? inArray(usageEvent.idempotencyKey, [...idempotencyKeys])
+          : undefined,
+        notExists(
+          queryBuilder
+            .select({ id: usageAllowanceAllocations.usageEventId })
+            .from(usageAllowanceAllocations)
+            .where(eq(usageAllowanceAllocations.usageEventId, usageEvent.id)),
+        ),
+        or(notExists(issuedWindow("short")), notExists(issuedWindow("weekly"))),
+      ),
+    )
+    .limit(1)
+    .as("pending_allowance_refresh");
+}
+
+/** Stripe preparation owns no financial row, advisory lock, or SQL transaction. */
+export const prepareUsageAllowanceRefresh$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly requirePendingUsage?: boolean;
+      readonly idempotencyKeys?: readonly string[];
+    },
+    signal?: AbortSignal,
+  ) => {
+    return await prepareUsageAllowanceRefresh(set(writeDb$), args, signal);
+  },
+);
+
+export async function prepareUsageAllowanceRefresh(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly requirePendingUsage?: boolean;
+    readonly idempotencyKeys?: readonly string[];
+  },
+  signal?: AbortSignal,
+): Promise<PreparedUsageAllowanceRefresh | undefined> {
+  if (args.requirePendingUsage) {
+    const [pending] = await db
+      .select()
+      .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
+    signal?.throwIfAborted();
+    if (!pending) {
+      return undefined;
+    }
+  }
+  const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
+  signal?.throwIfAborted();
+  const prepared = await prepareAllowanceRefresh(row);
+  signal?.throwIfAborted();
+  return prepared;
+}
+
+async function applyPreparedUsageAllowanceRefresh(
   tx: UsageAllowanceStore,
   entitlement: UsageAllowanceEntitlement,
   now: Date,
+  prepared: PreparedUsageAllowanceRefresh | undefined,
 ): Promise<UsageAllowanceEntitlement | null> {
   if (!entitlement.stripeSubscriptionId) {
     return null;
   }
 
-  L.warn(
-    "usage allowance entitlement expired locally, refreshing from Stripe",
-    {
-      orgId: entitlement.orgId,
-      entitlementId: entitlement.id,
-      stripeSubscriptionId: entitlement.stripeSubscriptionId,
-      expiresAt: entitlement.expiresAt,
-    },
+  // An expired entitlement must be checked against the exact snapshot used
+  // before Stripe I/O. A changed snapshot aborts the entire financial write;
+  // it must never silently fall through to charging credits instead.
+  if (
+    prepared?.entitlementId !== entitlement.id ||
+    prepared.snapshot !== entitlement.snapshot
+  ) {
+    throw new Error(
+      "Usage allowance entitlement changed before prepared Stripe refresh",
+    );
+  }
+  const unchanged = and(
+    eq(orgUsageAllowanceEntitlements.id, entitlement.id),
+    eq(sql`${orgUsageAllowanceEntitlements}::text`, entitlement.snapshot),
   );
-
-  const subscription = (await getStripeClient().subscriptions.retrieve(
-    entitlement.stripeSubscriptionId,
-  )) as UsageAllowanceSubscriptionInput;
+  const subscription = prepared.subscription;
   const periodEnd = subscriptionScheduledEnd(subscription);
 
   if (subscriptionIsTerminalAllowance(subscription)) {
-    await tx
+    const [canceled] = await tx
       .update(orgUsageAllowanceEntitlements)
       .set({
         status: "canceled",
         expiresAt: now,
         updatedAt: now,
       })
-      .where(eq(orgUsageAllowanceEntitlements.id, entitlement.id));
+      .where(unchanged)
+      .returning({ id: orgUsageAllowanceEntitlements.id });
+    if (!canceled) {
+      throw new Error(
+        "Usage allowance entitlement changed during Stripe refresh",
+      );
+    }
     return null;
   }
 
@@ -291,35 +401,37 @@ async function refreshUsageAllowanceEntitlementFromStripe(
     return null;
   }
 
-  await tx
+  const [refreshed] = await tx
     .update(orgUsageAllowanceEntitlements)
     .set({
       status: subscription.status,
       expiresAt: periodEnd,
       updatedAt: now,
     })
-    .where(eq(orgUsageAllowanceEntitlements.id, entitlement.id));
-
+    .where(unchanged)
+    .returning({
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+        pgTextDecoder,
+      ),
+    });
+  if (!refreshed) {
+    // No charge or window allocation may use a stale Stripe result.
+    throw new Error(
+      "Usage allowance entitlement changed during Stripe refresh",
+    );
+  }
   return {
     ...entitlement,
     status: subscription.status,
     expiresAt: periodEnd,
+    snapshot: refreshed.snapshot,
   };
-}
-
-export async function lockOrgCredits(
-  tx: Pick<Db, "execute">,
-  orgId: string,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`,
-  );
 }
 
 async function loadActiveUsageAllowanceEntitlement(
   tx: UsageAllowanceStore,
   orgId: string,
+  refresh?: PreparedUsageAllowanceRefresh,
 ): Promise<UsageAllowanceEntitlement | null> {
   const currentTime = nowDate();
   const [row] = await tx
@@ -334,6 +446,9 @@ async function loadActiveUsageAllowanceEntitlement(
       effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
       expiresAt: orgUsageAllowanceEntitlements.expiresAt,
       stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+        pgTextDecoder,
+      ),
     })
     .from(orgUsageAllowanceEntitlements)
     .where(
@@ -358,25 +473,15 @@ async function loadActiveUsageAllowanceEntitlement(
   if (!row.expiresAt || row.expiresAt > cutoff) {
     return row;
   }
-  return await refreshUsageAllowanceEntitlementFromStripe(tx, row, currentTime);
+  return await applyPreparedUsageAllowanceRefresh(
+    tx,
+    row,
+    currentTime,
+    refresh,
+  );
 }
 
-async function loadRunCreatedAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly runId: string;
-  },
-): Promise<Date | null> {
-  const [row] = await tx
-    .select({ createdAt: agentRuns.createdAt })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.orgId, args.orgId), eq(agentRuns.id, args.runId)))
-    .limit(1);
-  return row?.createdAt ?? null;
-}
-
-async function lockActiveWindowAt(
+async function readActiveWindowAt(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
@@ -422,38 +527,7 @@ async function lockActiveWindowAt(
       ),
     )
     .orderBy(desc(orgUsageAllowanceWindows.startsAt))
-    .limit(1)
-    .for("update");
-  return window ?? null;
-}
-
-async function lockIssuedWindowAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly kind: UsageAllowanceWindowKind;
-    readonly at: Date;
-  },
-): Promise<UsageAllowanceWindow | null> {
-  const [window] = await tx
-    .select({
-      id: orgUsageAllowanceWindows.id,
-      kind: orgUsageAllowanceWindows.kind,
-      unitLimit: orgUsageAllowanceWindows.unitLimit,
-      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-    })
-    .from(orgUsageAllowanceWindows)
-    .where(
-      and(
-        eq(orgUsageAllowanceWindows.orgId, args.orgId),
-        eq(orgUsageAllowanceWindows.kind, args.kind),
-        lte(orgUsageAllowanceWindows.startsAt, args.at),
-        gt(orgUsageAllowanceWindows.expiresAt, args.at),
-      ),
-    )
-    .orderBy(desc(orgUsageAllowanceWindows.startsAt))
-    .limit(1)
-    .for("update");
+    .limit(1);
   return window ?? null;
 }
 
@@ -465,7 +539,7 @@ async function insertWindow(
     readonly startsAt: Date;
     readonly createdByRunId: string | null;
   },
-): Promise<UsageAllowanceWindowState> {
+): Promise<UsageAllowanceWindow> {
   const [window] = await tx
     .insert(orgUsageAllowanceWindows)
     .values({
@@ -481,6 +555,13 @@ async function insertWindow(
       consumedUnits: 0,
       createdByRunId: args.createdByRunId,
     })
+    .onConflictDoNothing({
+      target: [
+        orgUsageAllowanceWindows.entitlementId,
+        orgUsageAllowanceWindows.kind,
+        orgUsageAllowanceWindows.startsAt,
+      ],
+    })
     .returning({
       id: orgUsageAllowanceWindows.id,
       kind: orgUsageAllowanceWindows.kind,
@@ -489,10 +570,34 @@ async function insertWindow(
       startsAt: orgUsageAllowanceWindows.startsAt,
       expiresAt: orgUsageAllowanceWindows.expiresAt,
     });
-  if (!window) {
-    throw new Error("Usage allowance window insert returned no row");
+  if (window) {
+    return window;
   }
-  return { ...window, initialConsumedUnits: window.consumedUnits };
+  // Resolve the committed identity once, not another issuance attempt. Reads
+  // use its current consumption; the losing request cannot reset its balance.
+  const [current] = await tx
+    .select({
+      id: orgUsageAllowanceWindows.id,
+      kind: orgUsageAllowanceWindows.kind,
+      unitLimit: orgUsageAllowanceWindows.unitLimit,
+      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+      startsAt: orgUsageAllowanceWindows.startsAt,
+      expiresAt: orgUsageAllowanceWindows.expiresAt,
+    })
+    .from(orgUsageAllowanceWindows)
+    .where(
+      and(
+        eq(orgUsageAllowanceWindows.orgId, args.entitlement.orgId),
+        eq(orgUsageAllowanceWindows.entitlementId, args.entitlement.id),
+        eq(orgUsageAllowanceWindows.kind, args.kind),
+        eq(orgUsageAllowanceWindows.startsAt, args.startsAt),
+      ),
+    )
+    .limit(1);
+  if (!current) {
+    throw new Error("Usage allowance window disappeared during issuance");
+  }
+  return current;
 }
 
 async function ensureWindowForRun(
@@ -504,7 +609,7 @@ async function ensureWindowForRun(
     readonly runCreatedAt: Date;
   },
 ): Promise<UsageAllowanceWindow> {
-  const existing = await lockActiveWindowAt(tx, {
+  const existing = await readActiveWindowAt(tx, {
     orgId: args.entitlement.orgId,
     kind: args.kind,
     at: args.runCreatedAt,
@@ -525,11 +630,16 @@ async function ensureWindowsForRun(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
     readonly runId: string;
     readonly runCreatedAt: Date;
   },
 ): Promise<UsageAllowanceWindows | null> {
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, args.orgId);
+  const entitlement = await loadActiveUsageAllowanceEntitlement(
+    tx,
+    args.orgId,
+    args.refresh,
+  );
   if (!entitlement || !entitlementCoversAt(entitlement, args.runCreatedAt)) {
     return null;
   }
@@ -549,27 +659,6 @@ async function ensureWindowsForRun(
   return { shortWindow, weeklyWindow };
 }
 
-async function loadExistingWindowsAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-  },
-): Promise<UsageAllowanceWindows | null> {
-  const shortWindow = await lockIssuedWindowAt(tx, {
-    orgId: args.orgId,
-    kind: "short",
-    at: args.at,
-  });
-  const weeklyWindow = await lockIssuedWindowAt(tx, {
-    orgId: args.orgId,
-    kind: "weekly",
-    at: args.at,
-  });
-
-  return shortWindow && weeklyWindow ? { shortWindow, weeklyWindow } : null;
-}
-
 async function readWindowAvailability(
   tx: UsageAllowanceStore,
   args: {
@@ -578,7 +667,7 @@ async function readWindowAvailability(
     readonly at: Date;
   },
 ): Promise<number> {
-  const window = await lockActiveWindowAt(tx, {
+  const window = await readActiveWindowAt(tx, {
     orgId: args.entitlement.orgId,
     kind: args.kind,
     at: args.at,
@@ -589,11 +678,16 @@ async function readWindowAvailability(
   return remainingUnits(window);
 }
 
-export async function resolveAvailabilityInLockedTransaction(
+export async function resolveAvailabilityInTransaction(
   tx: UsageAllowanceStore,
   orgId: string,
+  refresh?: PreparedUsageAllowanceRefresh,
 ): Promise<UsageAllowanceAvailability | null> {
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, orgId);
+  const entitlement = await loadActiveUsageAllowanceEntitlement(
+    tx,
+    orgId,
+    refresh,
+  );
   if (!entitlement) {
     return null;
   }
@@ -731,18 +825,19 @@ function createResolveUsageAllowanceCommand(
       get(availabilitySnapshot$),
     ]);
     signal.throwIfAborted();
-    let lockWaitMs = 0;
     let availability = snapshot;
     if (availability === "allowance_refresh_required") {
       const db = input.db ?? set(writeDb$);
+      const refresh = await prepareUsageAllowanceRefresh(
+        db,
+        { orgId: input.orgId },
+        signal,
+      );
       availability = await db.transaction(async (tx) => {
-        const lockStartedAt = performance.now();
-        await lockOrgCredits(tx, input.orgId);
-        signal.throwIfAborted();
-        lockWaitMs = Math.round(performance.now() - lockStartedAt);
-        const refreshed = await resolveAvailabilityInLockedTransaction(
+        const refreshed = await resolveAvailabilityInTransaction(
           tx,
           input.orgId,
+          refresh,
         );
         signal.throwIfAborted();
         return refreshed;
@@ -758,11 +853,6 @@ function createResolveUsageAllowanceCommand(
           durationMs: Math.round(performance.now() - startedAt),
           success: true,
           dimensions: { available: availability !== null },
-        },
-        {
-          actionType: "api_billing_allowance_org_lock_wait",
-          durationMs: lockWaitMs,
-          success: true,
         },
       ]);
     });
@@ -891,18 +981,16 @@ async function resolveUsageAllowanceAvailabilityFromSnapshot(
   snapshot: UsageAllowanceAvailability | "allowance_refresh_required" | null,
   startedAt = performance.now(),
 ): Promise<UsageAllowanceAvailability | null> {
-  let lockWaitMs = 0;
   let availability = snapshot;
   if (availability === "allowance_refresh_required") {
+    const [row] = await db.select().from(allowanceRefreshQuery(orgId));
+    const refresh = await prepareAllowanceRefresh(row);
     availability = await db.transaction(async (tx) => {
-      const lockStartedAt = performance.now();
-      await lockOrgCredits(tx, orgId);
-      lockWaitMs = Math.round(performance.now() - lockStartedAt);
-      return await resolveAvailabilityInLockedTransaction(tx, orgId);
+      return await resolveAvailabilityInTransaction(tx, orgId, refresh);
     });
   }
-  // Availability is a snapshot, not a reservation. Include any refresh COMMIT
-  // in the timing; ordinary snapshots have no credit-lock wait.
+  // Availability is a snapshot, not a reservation. Include the conditional
+  // refresh COMMIT in timing; no advisory or window lock is acquired here.
   // Telemetry failure cannot deny admission; cancellation still propagates
   // via safeSync.
   safeSync(() => {
@@ -912,11 +1000,6 @@ async function resolveUsageAllowanceAvailabilityFromSnapshot(
         durationMs: Math.round(performance.now() - startedAt),
         success: true,
         dimensions: { available: availability !== null },
-      },
-      {
-        actionType: "api_billing_allowance_org_lock_wait",
-        durationMs: lockWaitMs,
-        success: true,
       },
     ]);
   });
@@ -929,517 +1012,11 @@ export async function activateUsageAllowanceWindowsForRun(
     readonly orgId: string;
     readonly runId: string;
     readonly runCreatedAt: Date;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
   },
 ): Promise<UsageAllowanceAvailability | null> {
-  await lockOrgCredits(tx, args.orgId);
+  // Ethan accepted (2026-10-01) that a Run created early but admitted late,
+  // or concurrent first admissions, may open one extra overlapping window.
   const windows = await ensureWindowsForRun(tx, args);
   return windows ? availabilityFromWindows(windows) : null;
-}
-
-export async function resolveUsageAllowanceAvailabilityForRun(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly runId: string;
-  },
-): Promise<UsageAllowanceAvailability | null> {
-  return await db.transaction(async (tx) => {
-    await lockOrgCredits(tx, args.orgId);
-    const runCreatedAt = await loadRunCreatedAt(tx, args);
-    if (!runCreatedAt) {
-      return null;
-    }
-    const existingWindows = await loadExistingWindowsAt(tx, {
-      orgId: args.orgId,
-      at: runCreatedAt,
-    });
-    const windows =
-      existingWindows ??
-      (await ensureWindowsForRun(tx, { ...args, runCreatedAt }));
-    return windows ? availabilityFromWindows(windows) : null;
-  });
-}
-
-async function loadExistingUsageAllowanceAllocations(
-  tx: UsageAllowanceStore,
-  usageEventIds: readonly string[],
-): Promise<Map<string, number>> {
-  if (usageEventIds.length === 0) {
-    return new Map();
-  }
-
-  const rows = await tx
-    .select({
-      usageEventId: usageAllowanceAllocations.usageEventId,
-      unitsApplied: usageAllowanceAllocations.unitsApplied,
-    })
-    .from(usageAllowanceAllocations)
-    .where(
-      sql`${usageAllowanceAllocations.usageEventId} = ANY(${sql.param([...usageEventIds])}::uuid[])`,
-    );
-  return new Map(
-    rows.map((row) => {
-      return [row.usageEventId, row.unitsApplied];
-    }),
-  );
-}
-
-async function loadRunCreatedAts(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly runIds: readonly string[];
-  },
-): Promise<Map<string, Date>> {
-  if (args.runIds.length === 0) {
-    return new Map();
-  }
-
-  const rows = await tx
-    .select({ id: agentRuns.id, createdAt: agentRuns.createdAt })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.orgId, args.orgId),
-        sql`${agentRuns.id} = ANY(${sql.param([...args.runIds])}::uuid[])`,
-      ),
-    );
-  return new Map(
-    rows.map((row) => {
-      return [row.id, row.createdAt];
-    }),
-  );
-}
-
-async function lockIssuedWindowsForTimes(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly times: readonly Date[];
-  },
-): Promise<{
-  readonly shortWindows: UsageAllowanceWindowState[];
-  readonly weeklyWindows: UsageAllowanceWindowState[];
-}> {
-  const shortWindows: UsageAllowanceWindowState[] = [];
-  const weeklyWindows: UsageAllowanceWindowState[] = [];
-  if (args.times.length === 0) {
-    return { shortWindows, weeklyWindows };
-  }
-
-  const earliestAt = new Date(
-    Math.min(
-      ...args.times.map((at) => {
-        return at.getTime();
-      }),
-    ),
-  );
-  const latestAt = new Date(
-    Math.max(
-      ...args.times.map((at) => {
-        return at.getTime();
-      }),
-    ),
-  );
-
-  const windows = await tx
-    .select({
-      id: orgUsageAllowanceWindows.id,
-      kind: orgUsageAllowanceWindows.kind,
-      unitLimit: orgUsageAllowanceWindows.unitLimit,
-      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-      startsAt: orgUsageAllowanceWindows.startsAt,
-      expiresAt: orgUsageAllowanceWindows.expiresAt,
-    })
-    .from(orgUsageAllowanceWindows)
-    .where(
-      and(
-        eq(orgUsageAllowanceWindows.orgId, args.orgId),
-        inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-        lte(orgUsageAllowanceWindows.startsAt, latestAt),
-        gt(orgUsageAllowanceWindows.expiresAt, earliestAt),
-      ),
-    )
-    // LockRows receives short rows first, then weekly, in ID order per kind.
-    .orderBy(
-      sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
-      asc(orgUsageAllowanceWindows.id),
-    )
-    .for("update");
-
-  for (const window of windows) {
-    const state = { ...window, initialConsumedUnits: window.consumedUnits };
-    if (window.kind === "short") {
-      shortWindows.push(state);
-    } else {
-      weeklyWindows.push(state);
-    }
-  }
-  return { shortWindows, weeklyWindows };
-}
-
-function latestIssuedWindowAt(
-  windows: readonly UsageAllowanceWindowState[],
-  at: Date,
-): UsageAllowanceWindowState | null {
-  let latest: UsageAllowanceWindowState | null = null;
-  const atMs = at.getTime();
-  for (const window of windows) {
-    if (
-      window.startsAt.getTime() <= atMs &&
-      window.expiresAt.getTime() > atMs &&
-      (!latest || window.startsAt.getTime() > latest.startsAt.getTime())
-    ) {
-      latest = window;
-    }
-  }
-  return latest;
-}
-
-async function persistUsageAllowanceWindowConsumption(
-  tx: UsageAllowanceStore,
-  windows: readonly UsageAllowanceWindowState[],
-): Promise<void> {
-  const changedWindows = windows.filter((window) => {
-    return window.consumedUnits > window.initialConsumedUnits;
-  });
-  if (changedWindows.length === 0) {
-    return;
-  }
-
-  const windowIds = changedWindows.map((window) => {
-    return window.id;
-  });
-  const unitDeltas = changedWindows.map((window) => {
-    return window.consumedUnits - window.initialConsumedUnits;
-  });
-  const consumptionSource = sql`
-    unnest(
-      ${sql.param(windowIds)}::uuid[],
-      ${sql.param(unitDeltas)}::bigint[]
-    ) AS consumption(window_id, units_applied)
-  `;
-  await tx
-    .update(orgUsageAllowanceWindows)
-    .set({
-      consumedUnits: sql`${orgUsageAllowanceWindows.consumedUnits} + consumption.units_applied`,
-      updatedAt: nowDate(),
-    })
-    .from(consumptionSource)
-    .where(eq(orgUsageAllowanceWindows.id, sql`consumption.window_id`));
-}
-
-async function insertUsageAllowanceAllocations(
-  tx: UsageAllowanceStore,
-  orgId: string,
-  allocations: readonly NewUsageAllowanceAllocation[],
-): Promise<void> {
-  if (allocations.length === 0) {
-    return;
-  }
-
-  const usageEventIds = allocations.map((allocation) => {
-    return allocation.usageEventId;
-  });
-  const runIds = allocations.map((allocation) => {
-    return allocation.runId;
-  });
-  const shortWindowIds = allocations.map((allocation) => {
-    return allocation.shortWindowId;
-  });
-  const weeklyWindowIds = allocations.map((allocation) => {
-    return allocation.weeklyWindowId;
-  });
-  const unitsApplied = allocations.map((allocation) => {
-    return allocation.unitsApplied;
-  });
-
-  await tx.execute(sql`
-    INSERT INTO ${usageAllowanceAllocations} (
-      "usage_event_id",
-      "org_id",
-      "run_id",
-      "short_window_id",
-      "weekly_window_id",
-      "units_applied"
-    )
-    SELECT
-      allocation.usage_event_id,
-      ${orgId},
-      allocation.run_id,
-      allocation.short_window_id,
-      allocation.weekly_window_id,
-      allocation.units_applied
-    FROM unnest(
-      ${sql.param(usageEventIds)}::uuid[],
-      ${sql.param(runIds)}::uuid[],
-      ${sql.param(shortWindowIds)}::uuid[],
-      ${sql.param(weeklyWindowIds)}::uuid[],
-      ${sql.param(unitsApplied)}::bigint[]
-    ) AS allocation(
-      usage_event_id,
-      run_id,
-      short_window_id,
-      weekly_window_id,
-      units_applied
-    )
-  `);
-}
-
-/**
- * Anchoring is total: every candidate gets an allowance time. A candidate that
- * cannot be anchored to a run start falls back to when it happened, which is
- * what the ledger already does for usage that never had a run. Dropping it
- * instead would silently charge the event its full gross price.
- *
- * ROLLOUT FALLBACK — the `loadRunCreatedAts` lookup. Surface: DB vs API, for
- * rows written before migration 1119 whose `billing_anchor_at` is still NULL
- * while their run is alive. Removal condition: `pnpm -F @okouai/db
- * billing:attribution` reports `pending_anchor_gaps: 0` on a complete
- * (non-truncated) production inventory. Follow-up: the drop pull request of
- * #35875, which deletes this lookup.
- */
-async function anchorUsageAllowanceCandidates(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly candidates: readonly UsageAllowanceCandidate[];
-  },
-): Promise<AnchoredUsageAllowanceCandidate[]> {
-  const runIds = [
-    ...new Set(
-      args.candidates.flatMap((candidate) => {
-        return candidate.runId && !candidate.billingAnchorAt
-          ? [candidate.runId]
-          : [];
-      }),
-    ),
-  ];
-  const runCreatedAtById = await loadRunCreatedAts(tx, {
-    orgId: args.orgId,
-    runIds,
-  });
-  return args.candidates.map((candidate) => {
-    const allowanceAt =
-      candidate.billingAnchorAt ??
-      (candidate.runId ? runCreatedAtById.get(candidate.runId) : undefined) ??
-      candidate.occurredAt;
-    return { ...candidate, allowanceAt };
-  });
-}
-
-async function ensureIssuedWindowsForKind(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly entitlement: UsageAllowanceEntitlement;
-    readonly kind: UsageAllowanceWindowKind;
-    readonly candidates: readonly AnchoredUsageAllowanceCandidate[];
-    readonly windows: UsageAllowanceWindowState[];
-  },
-): Promise<void> {
-  for (const candidate of args.candidates) {
-    if (
-      !latestIssuedWindowAt(args.windows, candidate.allowanceAt) &&
-      entitlementCoversAt(args.entitlement, candidate.allowanceAt)
-    ) {
-      args.windows.push(
-        await insertWindow(tx, {
-          entitlement: args.entitlement,
-          kind: args.kind,
-          startsAt: candidate.allowanceAt,
-          createdByRunId: candidate.runId,
-        }),
-      );
-    }
-  }
-}
-
-async function ensureIssuedWindowsForCandidates(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly candidates: readonly AnchoredUsageAllowanceCandidate[];
-    readonly shortWindows: UsageAllowanceWindowState[];
-    readonly weeklyWindows: UsageAllowanceWindowState[];
-  },
-): Promise<void> {
-  const missingWindows = args.candidates.some((candidate) => {
-    return (
-      !latestIssuedWindowAt(args.shortWindows, candidate.allowanceAt) ||
-      !latestIssuedWindowAt(args.weeklyWindows, candidate.allowanceAt)
-    );
-  });
-  if (!missingWindows) {
-    return;
-  }
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, args.orgId);
-  if (!entitlement) {
-    return;
-  }
-  const candidatesByAllowanceTime = [...args.candidates].sort((a, b) => {
-    return a.allowanceAt.getTime() - b.allowanceAt.getTime();
-  });
-  await ensureIssuedWindowsForKind(tx, {
-    entitlement,
-    kind: "short",
-    candidates: candidatesByAllowanceTime,
-    windows: args.shortWindows,
-  });
-  await ensureIssuedWindowsForKind(tx, {
-    entitlement,
-    kind: "weekly",
-    candidates: candidatesByAllowanceTime,
-    windows: args.weeklyWindows,
-  });
-}
-
-function allocateUsageAllowanceToCandidates(args: {
-  readonly candidates: readonly AnchoredUsageAllowanceCandidate[];
-  readonly shortWindows: UsageAllowanceWindowState[];
-  readonly weeklyWindows: UsageAllowanceWindowState[];
-  readonly allowanceByUsageEvent: Map<string, number>;
-}): NewUsageAllowanceAllocation[] {
-  const allocations: NewUsageAllowanceAllocation[] = [];
-  for (const candidate of args.candidates) {
-    const shortWindow = latestIssuedWindowAt(
-      args.shortWindows,
-      candidate.allowanceAt,
-    );
-    const weeklyWindow = latestIssuedWindowAt(
-      args.weeklyWindows,
-      candidate.allowanceAt,
-    );
-    if (!shortWindow || !weeklyWindow) {
-      continue;
-    }
-    const unitsApplied = Math.min(
-      candidate.grossUnits,
-      remainingUnits(shortWindow),
-      remainingUnits(weeklyWindow),
-    );
-    if (unitsApplied <= 0) {
-      continue;
-    }
-
-    shortWindow.consumedUnits += unitsApplied;
-    weeklyWindow.consumedUnits += unitsApplied;
-    args.allowanceByUsageEvent.set(candidate.usageEventId, unitsApplied);
-    allocations.push({
-      usageEventId: candidate.usageEventId,
-      runId: candidate.runId,
-      shortWindowId: shortWindow.id,
-      weeklyWindowId: weeklyWindow.id,
-      unitsApplied,
-    });
-  }
-  return allocations;
-}
-
-export interface UsageAllowanceSettlementTimings {
-  readonly allocationReadMs: number;
-  readonly anchorMs: number;
-  readonly windowLockMs: number;
-  readonly windowIssueMs: number;
-  readonly allocateMs: number;
-  readonly windowWriteMs: number;
-  readonly allocationWriteMs: number;
-}
-
-function elapsedAllowancePhaseMs(startedAt: number): number {
-  return Math.round((performance.now() - startedAt) * 1000) / 1000;
-}
-
-export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly events: readonly UsageAllowanceEventInput[];
-  },
-): Promise<{
-  readonly allowanceByUsageEvent: ReadonlyMap<string, number>;
-  readonly timings: UsageAllowanceSettlementTimings;
-}> {
-  const candidates: UsageAllowanceCandidate[] = [];
-  for (const event of args.events) {
-    if (event.grossUnits > 0) {
-      candidates.push({
-        usageEventId: event.usageEventId,
-        runId: event.runId,
-        billingAnchorAt: event.billingAnchorAt,
-        grossUnits: event.grossUnits,
-        occurredAt: event.occurredAt,
-      });
-    }
-  }
-
-  const allocationReadStartedAt = performance.now();
-  const allowanceByUsageEvent = await loadExistingUsageAllowanceAllocations(
-    tx,
-    candidates.map((candidate) => {
-      return candidate.usageEventId;
-    }),
-  );
-  const allocationReadMs = elapsedAllowancePhaseMs(allocationReadStartedAt);
-
-  const anchorStartedAt = performance.now();
-  const unresolvedCandidates = candidates.filter((candidate) => {
-    return !allowanceByUsageEvent.has(candidate.usageEventId);
-  });
-  const anchoredCandidates = await anchorUsageAllowanceCandidates(tx, {
-    orgId: args.orgId,
-    candidates: unresolvedCandidates,
-  });
-  const allowanceTimes = anchoredCandidates.map((candidate) => {
-    return candidate.allowanceAt;
-  });
-  const anchorMs = elapsedAllowancePhaseMs(anchorStartedAt);
-
-  const windowLockStartedAt = performance.now();
-  const { shortWindows, weeklyWindows } = await lockIssuedWindowsForTimes(tx, {
-    orgId: args.orgId,
-    times: allowanceTimes,
-  });
-  const windowLockMs = elapsedAllowancePhaseMs(windowLockStartedAt);
-
-  const windowIssueStartedAt = performance.now();
-  await ensureIssuedWindowsForCandidates(tx, {
-    orgId: args.orgId,
-    candidates: anchoredCandidates,
-    shortWindows,
-    weeklyWindows,
-  });
-  const windowIssueMs = elapsedAllowancePhaseMs(windowIssueStartedAt);
-
-  const allocateStartedAt = performance.now();
-  const newAllocations = allocateUsageAllowanceToCandidates({
-    candidates: anchoredCandidates,
-    shortWindows,
-    weeklyWindows,
-    allowanceByUsageEvent,
-  });
-  const allocateMs = elapsedAllowancePhaseMs(allocateStartedAt);
-
-  const windowWriteStartedAt = performance.now();
-  await persistUsageAllowanceWindowConsumption(tx, [
-    ...shortWindows,
-    ...weeklyWindows,
-  ]);
-  const windowWriteMs = elapsedAllowancePhaseMs(windowWriteStartedAt);
-
-  const allocationWriteStartedAt = performance.now();
-  await insertUsageAllowanceAllocations(tx, args.orgId, newAllocations);
-  const allocationWriteMs = elapsedAllowancePhaseMs(allocationWriteStartedAt);
-
-  return {
-    allowanceByUsageEvent,
-    timings: {
-      allocationReadMs,
-      anchorMs,
-      windowLockMs,
-      windowIssueMs,
-      allocateMs,
-      windowWriteMs,
-      allocationWriteMs,
-    },
-  };
 }

@@ -20,7 +20,6 @@ import {
   type MemberModelRouteContext,
   type PreparedMemberModelRouteContext,
 } from "./effective-model-route.service";
-
 export type MemberSubscriptionModel = Readonly<{
   id: string;
   model: string;

@@ -1,1 +1,0 @@
-ALTER TABLE "agentphone_messages" ADD CONSTRAINT "chk_agentphone_messages_group_received_at" CHECK ("agentphone_messages"."group_id" IS NULL OR "agentphone_messages"."received_at" IS NOT NULL);

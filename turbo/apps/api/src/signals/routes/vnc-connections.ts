@@ -13,22 +13,21 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import {
-  createVncCredential,
-  deleteVncCredential,
-  listVncCredentials,
-  updateVncCredential,
+  createVncCredential$,
+  deleteVncCredential$,
+  listVncCredentials$,
+  updateVncCredential$,
 } from "../services/vnc-credential.service";
 import {
-  createVncConnection,
-  deleteVncConnection,
-  listVncConnections,
-  summarizeVncConnections,
-  updateVncConnection,
+  createVncConnection$,
+  deleteVncConnection$,
+  listVncConnections$,
+  summarizeVncConnections$,
+  updateVncConnection$,
 } from "../services/vnc-connection.service";
 
 const unavailable = Object.freeze(
@@ -61,15 +60,11 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  const isMember = await hasCurrentVncMembership(get(clerk$), auth, signal);
-  if (!isMember) {
+  const owner = { orgId: auth.orgId, userId: auth.userId };
+  if (!(await hasCurrentVncMembership(get(clerk$), owner, signal))) {
     return null;
   }
-  return {
-    db: set(writeDb$),
-    featureContext,
-    owner: { orgId: auth.orgId, userId: auth.userId },
-  };
+  return { featureContext, owner };
 });
 
 function mapFailure(result: {
@@ -95,7 +90,7 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const credentials = await listVncCredentials(context.db, context.owner);
+  const credentials = await set(listVncCredentials$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: { credentials } };
 });
@@ -110,11 +105,15 @@ const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await createVncCredential({
-    ...context,
-    body: body.data,
-    id: body.data.id,
-  });
+  const result = await set(
+    createVncCredential$,
+    {
+      ...context,
+      body: body.data,
+      id: body.data.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!result.ok) {
     return mapFailure(result);
@@ -137,11 +136,15 @@ const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await updateVncCredential({
-    ...context,
-    credentialId: params.credentialId,
-    body: body.data,
-  });
+  const result = await set(
+    updateVncCredential$,
+    {
+      ...context,
+      credentialId: params.credentialId,
+      body: body.data,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 200 as const, body: result.value }
@@ -161,11 +164,15 @@ const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await deleteVncCredential({
-    ...context,
-    credentialId: params.credentialId,
-    expectedRevision: body.data.expectedRevision,
-  });
+  const result = await set(
+    deleteVncCredential$,
+    {
+      ...context,
+      credentialId: params.credentialId,
+      expectedRevision: body.data.expectedRevision,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 204 as const, body: undefined }
@@ -177,7 +184,7 @@ const listConnections$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const connections = await listVncConnections(context.db, context.owner);
+  const connections = await set(listVncConnections$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: { connections } };
 });
@@ -187,7 +194,7 @@ const summary$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const summary = await summarizeVncConnections(context.db, context.owner);
+  const summary = await set(summarizeVncConnections$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: summary };
 });
@@ -202,7 +209,11 @@ const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await createVncConnection({ ...context, body: body.data });
+  const result = await set(
+    createVncConnection$,
+    { ...context, body: body.data },
+    signal,
+  );
   signal.throwIfAborted();
   if (!result.ok) {
     return mapFailure(result);
@@ -225,11 +236,15 @@ const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await updateVncConnection({
-    ...context,
-    connectionId: params.connectionId,
-    body: body.data,
-  });
+  const result = await set(
+    updateVncConnection$,
+    {
+      ...context,
+      connectionId: params.connectionId,
+      body: body.data,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 200 as const, body: result.value }
@@ -249,11 +264,15 @@ const deleteConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await deleteVncConnection({
-    ...context,
-    connectionId: params.connectionId,
-    expectedGeneration: body.data.expectedGeneration,
-  });
+  const result = await set(
+    deleteVncConnection$,
+    {
+      ...context,
+      connectionId: params.connectionId,
+      expectedGeneration: body.data.expectedGeneration,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 204 as const, body: undefined }

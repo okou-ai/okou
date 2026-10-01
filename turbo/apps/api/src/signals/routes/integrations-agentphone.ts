@@ -1,3 +1,4 @@
+import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
@@ -18,13 +19,13 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
-  consumeAgentPhoneConnectionCode,
-  createAgentPhoneConnectionCode,
+  consumeAgentPhoneConnectionCode$,
+  createAgentPhoneConnectionCode$,
   isAgentPhoneConnectionCodeMessage,
   type AgentPhoneConnectionCodeConsumeResult,
 } from "../services/agentphone-connection-code.service";
@@ -34,7 +35,6 @@ import {
   handleAgentPhoneMessage$,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
-  linkAgentPhoneUser,
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
   publishAgentPhoneUserLinked,
@@ -294,11 +294,15 @@ const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
     return connectConflict("org-linked");
   }
 
-  const code = await createAgentPhoneConnectionCode(set(writeDb$), {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    secret: env("SECRETS_ENCRYPTION_KEY"),
-  });
+  const code = await set(
+    createAgentPhoneConnectionCode$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+    },
+    signal,
+  );
   signal.throwIfAborted();
 
   return {
@@ -628,18 +632,21 @@ const connectAgentPhone$ = command(
       );
     }
 
-    const result = await set(writeDb$).transaction((tx) => {
-      return linkAgentPhoneUser(tx, {
+    const result = await set(
+      linkAgentPhoneIdentity$,
+      {
         phoneHandle,
         channel,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
-    });
+        source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    if (!result.ok) {
-      return connectConflict(result.reason);
+    if (result.kind !== "linked") {
+      return connectConflict(
+        result.kind === "conflict" ? result.reason : "conflict",
+      );
     }
 
     await publishAgentPhoneUserLinked(auth.userId);
@@ -1108,61 +1115,66 @@ function agentPhoneEventForStorage(
   return { ...event, body: "[connection code redacted]" };
 }
 
-async function handleAgentPhoneConnectionCode(
-  db: Db,
-  event: AgentPhoneMessageEvent,
-  userLink: AgentPhoneUserLink | null,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
-    return false;
-  }
+const handleAgentPhoneConnectionCode$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    userLink: AgentPhoneUserLink | null,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
+      return false;
+    }
 
-  const result = await consumeAgentPhoneConnectionCode(db, {
-    message: event.body,
-    phoneHandle: event.fromNumber,
-    channel: event.channel,
-    secret: env("SECRETS_ENCRYPTION_KEY"),
-  });
-  signal.throwIfAborted();
-  if (result.kind === "not-code") {
-    return false;
-  }
-
-  if (result.kind === "linked") {
-    await publishAgentPhoneUserLinked(result.userId);
+    const result = await set(
+      consumeAgentPhoneConnectionCode$,
+      {
+        message: event.body,
+        phoneHandle: event.fromNumber,
+        channel: event.channel,
+        secret: env("SECRETS_ENCRYPTION_KEY"),
+      },
+      signal,
+    );
     signal.throwIfAborted();
-  }
+    if (result.kind === "not-code") {
+      return false;
+    }
 
-  await tapError(
-    result.kind === "linked"
-      ? sendAgentPhoneConnectedMessages(
-          {
-            agentphoneAgentId: event.agentphoneAgentId,
-            toNumber: event.fromNumber,
-            ...(event.channel === "imessage"
-              ? { replyToMessageId: event.messageId }
-              : {}),
-          },
-          signal,
-        )
-      : sendAgentPhoneText(
-          event,
-          agentPhoneConnectionCodeFailureReply(result),
-          signal,
-          db,
-        ),
-    (error) => {
-      log.warn("Handled AgentPhone connection code but reply failed", {
-        result: result.kind,
-        phoneHandle: maskPhoneHandle(event.fromNumber),
-        error,
-      });
-    },
-  );
-  signal.throwIfAborted();
-  return true;
-}
+    if (result.kind === "linked") {
+      await publishAgentPhoneUserLinked(result.userId);
+      signal.throwIfAborted();
+    }
+
+    await tapError(
+      result.kind === "linked"
+        ? sendAgentPhoneConnectedMessages(
+            {
+              agentphoneAgentId: event.agentphoneAgentId,
+              toNumber: event.fromNumber,
+              ...(event.channel === "imessage"
+                ? { replyToMessageId: event.messageId }
+                : {}),
+            },
+            signal,
+          )
+        : sendAgentPhoneText(
+            event,
+            agentPhoneConnectionCodeFailureReply(result),
+            signal,
+          ),
+      (error) => {
+        log.warn("Handled AgentPhone connection code but reply failed", {
+          result: result.kind,
+          phoneHandle: maskPhoneHandle(event.fromNumber),
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
@@ -1243,7 +1255,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return okText();
   }
 
-  if (await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)) {
+  if (await set(handleAgentPhoneConnectionCode$, event, userLink, signal)) {
     return okText();
   }
 

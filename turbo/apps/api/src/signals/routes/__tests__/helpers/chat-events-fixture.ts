@@ -87,7 +87,6 @@ import {
   seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
 } from "./runtime-state";
-
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,

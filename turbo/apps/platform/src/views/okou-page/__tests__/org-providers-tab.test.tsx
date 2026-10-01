@@ -74,7 +74,10 @@ test("switches to Auto from Debug and simplifies model settings", async () => {
   });
 
   click(routeButtonByName("Models"));
-  await screen.findByRole("heading", { name: "Personal Model Subscriptions" });
+  await screen.findByRole("heading", { name: "Use more models" });
+  await waitFor(() => {
+    expect(routeButtonByName("Connect account")).toBeEnabled();
+  });
   expect(screen.queryByText("Default model")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Available models" }),

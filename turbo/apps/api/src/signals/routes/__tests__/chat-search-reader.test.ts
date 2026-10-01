@@ -8,7 +8,6 @@ import type { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   insertChatSearchProjectionCoverageFixture,
   insertSearchableMessageBatchFixture,
@@ -18,6 +17,7 @@ import {
   renameChatSearchAgentFixture,
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";

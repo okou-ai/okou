@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  captureFixtureRunBilling,
+  captureFixtureRunBillings,
+} from "../billing-run-fixture";
 import { readFile } from "node:fs/promises";
 
 import { asc, eq, inArray, sql } from "drizzle-orm";
@@ -18,8 +22,11 @@ import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
-import { createDeferredPromise } from "../../utils";
-import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
+import { createDeferredPromise, settle } from "../../utils";
+import { deleteClerkAgentLifecycleData$ } from "../clerk-agent-lifecycle.service";
+import type { ClerkDeletionScope } from "../clerk-lifecycle-plan";
+import { createStore } from "ccstate";
+import { closeDbPool } from "../../../lib/db";
 import {
   deleteLockedRuns,
   deleteRunConversations,
@@ -28,7 +35,7 @@ import {
 import { testContext } from "../../../__tests__/test-context";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { ApiDb } from "../../../lib/db-types";
-import { env } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -135,7 +142,29 @@ async function harness(trigger: boolean, lifecycle = false) {
       AFTER INSERT OR DELETE OR UPDATE OF source_history_hash ON pi_memory_stage1_candidates
       FOR EACH ROW EXECUTE FUNCTION pi_memory_stage1_candidate_blob_ref_count()`);
   }
-  return { db, pool };
+  return { db, pool, schema };
+}
+
+async function deleteClerkFixtureLifecycle(
+  schema: string,
+  scope: ClerkDeletionScope,
+) {
+  const original = env("DATABASE_URL");
+  const url = new URL(original);
+  url.searchParams.set(
+    "options",
+    `-c search_path=${schema},public -c statement_timeout=10000`,
+  );
+  await closeDbPool();
+  mockEnv("DATABASE_URL", url.toString());
+  const result = await settle(
+    createStore().set(deleteClerkAgentLifecycleData$, scope, context.signal),
+  );
+  await closeDbPool();
+  mockEnv("DATABASE_URL", original);
+  if (!result.ok) {
+    throw result.error;
+  }
 }
 
 async function owner(db: ApiDb, orgId = randomUUID(), userId = randomUUID()) {
@@ -210,16 +239,19 @@ async function source(
   await h.db
     .insert(chatThreads)
     .values({ id: threadId, agentId, userId: parent.userId });
-  await h.db.insert(agentRuns).values({
-    id: runId,
-    sessionId,
-    orgId: parent.orgId,
-    userId: parent.userId,
-    status: "completed",
-    prompt: "fixture",
-    chatThreadId: threadId,
-    triggerSource: "web",
-    autonomyBudget: 0,
+  await h.db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: runId,
+      sessionId,
+      orgId: parent.orgId,
+      userId: parent.userId,
+      status: "completed",
+      prompt: "fixture",
+      chatThreadId: threadId,
+      triggerSource: "web",
+      autonomyBudget: 0,
+    });
+    await captureFixtureRunBilling(tx, runId);
   });
   await h.db.insert(conversations).values({
     runId,
@@ -786,7 +818,7 @@ describe("conversation history deletion accounting", () => {
         kind === "user"
           ? { kind, userId: parent.userId }
           : { kind, orgId: parent.orgId };
-      await deleteClerkAgentLifecycleData(h.db, scope);
+      await deleteClerkFixtureLifecycle(h.schema, scope);
       await expect(
         h.db.select({ id: agentRuns.id }).from(agentRuns),
       ).resolves.toStrictEqual([{ id: survivor.runId }]);
@@ -798,7 +830,7 @@ describe("conversation history deletion accounting", () => {
       await expect(refs(h.db)).resolves.toStrictEqual([
         { hash: oldHash, count: 3 },
       ]);
-      await deleteClerkAgentLifecycleData(h.db, scope);
+      await deleteClerkFixtureLifecycle(h.schema, scope);
       await expect(refs(h.db)).resolves.toStrictEqual([
         { hash: oldHash, count: 3 },
       ]);
@@ -820,18 +852,21 @@ describe("conversation history deletion accounting", () => {
     const ids = Array.from({ length: 1002 }, () => {
       return randomUUID();
     });
-    await h.db.insert(agentRuns).values(
-      ids.map((id) => {
-        return {
-          id,
-          sessionId: run.sessionId,
-          userId: parent.userId,
-          orgId: parent.orgId,
-          status: "completed",
-          prompt: "",
-        };
-      }),
-    );
+    await h.db.transaction(async (tx) => {
+      await tx.insert(agentRuns).values(
+        ids.map((id) => {
+          return {
+            id,
+            sessionId: run.sessionId,
+            userId: parent.userId,
+            orgId: parent.orgId,
+            status: "completed",
+            prompt: "",
+          };
+        }),
+      );
+      await captureFixtureRunBillings(tx, ids);
+    });
     await h.db.insert(conversations).values(
       ids.map((id, index) => {
         return {
@@ -869,7 +904,7 @@ describe("conversation history deletion accounting", () => {
       await attachCheckpoint(h, valid.runId);
       await attachCheckpoint(h, invalid.runId);
       await expect(
-        deleteClerkAgentLifecycleData(h.db, {
+        deleteClerkFixtureLifecycle(h.schema, {
           kind: "user",
           userId: parent.userId,
         }),

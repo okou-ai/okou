@@ -1,15 +1,15 @@
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import {
-  discordGatewayContract,
-  type DiscordGatewayEnvelope,
-} from "@okouai/api-contracts/contracts/discord-gateway";
 import {
   chatThreadsContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  discordGatewayContract,
+  type DiscordGatewayEnvelope,
+} from "@okouai/api-contracts/contracts/discord-gateway";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";

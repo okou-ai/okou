@@ -1,11 +1,12 @@
-import { command } from "ccstate";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
-import { writeDb$, type Db } from "../external/db";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { updateChatThreadMetadata } from "./chat-thread-metadata-update.service";
+import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
 type IntegrationChatThreadModelResult =
   | { readonly kind: "updated" }
@@ -17,38 +18,51 @@ type IntegrationChatThreadModelResult =
  * thread through the same metadata path as the web thread model picker.
  * A conversation without a routed thread has no model selection to update.
  */
-export async function readIntegrationChatThreadModel(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string | undefined;
-  },
-): Promise<string | null> {
-  if (!args.chatThreadId) {
-    return null;
-  }
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  if (!thread) {
-    return null;
-  }
-  return (
-    await resolveEnqueuedChatInputModel(db, {
-      threadId: thread.id,
+export const readIntegrationChatThreadModel$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (!args.chatThreadId) {
+      return null;
+    }
+    const db = set(writeDb$);
+    const [thread] = await db
+      .select({
+        selectedModel: chatThreads.selectedModel,
+        codexServiceTier: chatThreads.codexServiceTier,
+        modelSettings: chatThreads.modelSettings,
+      })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!thread) {
+      return null;
+    }
+    const model = await resolveChatInputModelSelection(set(writeDb$), {
+      ...thread,
       orgId: args.orgId,
       userId: args.userId,
-    })
-  ).selectedModel;
-}
+      modelSettings: modelSettingsSchema.parse(thread.modelSettings),
+    });
+    signal.throwIfAborted();
+    if ("status" in model) {
+      throw new Error(model.body.error.message);
+    }
+    return model.selectedModel;
+  },
+);
 
 export const updateIntegrationChatThreadModel$ = command(
   async (
@@ -64,8 +78,8 @@ export const updateIntegrationChatThreadModel$ = command(
     if (args.chatThreadId === undefined) {
       return { kind: "no_thread" };
     }
-    const result = await updateChatThreadMetadata(
-      set(writeDb$),
+    const result = await set(
+      updateChatThreadMetadata$,
       {
         principal: { userId: args.userId, orgId: args.orgId },
         threadId: args.chatThreadId,

@@ -1,39 +1,37 @@
-import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
-import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
-import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { composeJobs } from "@okouai/db/schema/compose-job";
+import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
-import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
-import { connectors } from "@okouai/db/schema/connector";
-import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { modelProviders } from "@okouai/db/schema/model-provider";
+import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { secrets } from "@okouai/db/schema/secret";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { sshCredentials } from "@okouai/db/schema/ssh-credential";
+import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { sharedThreads } from "@okouai/db/schema/shared-thread";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { storages } from "@okouai/db/schema/storage";
-import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
+import { userCache } from "@okouai/db/schema/user-cache";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
@@ -47,54 +45,57 @@ import {
   like,
   sql,
 } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
-  sharedThreadArtifactAuthorUserId,
   SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
+  sharedThreadArtifactAuthorUserId,
 } from "../../lib/shared-thread-artifact";
+import { nowDate } from "../../lib/time";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
+import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   enqueueStorageObjectCleanup,
   executeStorageObjectCleanupWork$,
 } from "./storage-object-cleanup.service";
-import { nowDate } from "../../lib/time";
-import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
 } from "../external/stripe-client";
 import { settle, tapError } from "../utils";
-import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
-import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
-import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
-import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
-import {
-  deleteBuiltinConnectorLocalState$,
-  loadStoredBuiltinConnectorRuntimeSnapshot,
-} from "./connector-data.service";
-import {
-  deleteClerkAgentLifecycleData,
-  deleteStableContextLifecycleAfterAuthorityRemoval,
-} from "./agent-lifecycle.service";
-import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
-import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
-import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import {
   releaseNeverStartedRunSlots,
-  type ReleasedRunSlot,
   transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
-import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
+import {
+  deleteClerkAgentLifecycleData$,
+  deleteStableContextLifecycleAfterAuthorityRemoval$,
+} from "./clerk-agent-lifecycle.service";
+import {
+  deleteBuiltinConnectorLocalState$,
+  loadStoredBuiltinConnectorRuntimeSnapshot$,
+} from "./connector-data.service";
+import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
   deleteDiscordOrgData,
   deleteDiscordUserData,
 } from "./discord-owner-cleanup.service";
+import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
+import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
+import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
+import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
+import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
+import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
+import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
+import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
+import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -402,13 +403,12 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 }
 
 const revokeOrgConnectorTokens$ = command(
-  async (
-    { set },
-    db: Db,
-    orgId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      signal,
+    );
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -441,13 +441,12 @@ const revokeOrgConnectorTokens$ = command(
 );
 
 const revokeUserConnectorTokens$ = command(
-  async (
-    { set },
-    db: Db,
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
+  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      signal,
+    );
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -482,7 +481,6 @@ const revokeUserConnectorTokens$ = command(
 const cleanupOrgExternalServices$ = command(
   async (
     { set },
-    db: Db,
     orgId: string,
     required: boolean,
     signal: AbortSignal,
@@ -494,7 +492,7 @@ const cleanupOrgExternalServices$ = command(
       {
         name: "connector tokens",
         run: () => {
-          return set(revokeOrgConnectorTokens$, db, orgId, signal);
+          return set(revokeOrgConnectorTokens$, orgId, signal);
         },
       },
     ];
@@ -513,13 +511,8 @@ const cleanupOrgExternalServices$ = command(
 );
 
 const cleanupUserExternalServices$ = command(
-  async (
-    { set },
-    db: Db,
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(revokeUserConnectorTokens$, db, userId, signal);
+  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
+    await set(revokeUserConnectorTokens$, userId, signal);
     signal.throwIfAborted();
   },
 );
@@ -633,8 +626,7 @@ async function deleteClerkStorageReferences(
           ? eq(storages.orgId, scope.orgId)
           : eq(storages.userId, scope.userId),
       )
-      .orderBy(asc(storages.id))
-      .for("update");
+      .orderBy(asc(storages.id));
     signal.throwIfAborted();
     if (rows.length === 0) {
       return [];
@@ -692,8 +684,7 @@ async function deleteClerkExportReferences(
           ? eq(exportJobs.orgId, scope.orgId)
           : eq(exportJobs.userId, scope.userId),
       )
-      .orderBy(asc(exportJobs.id))
-      .for("update");
+      .orderBy(asc(exportJobs.id));
     signal.throwIfAborted();
     if (rows.length === 0) {
       return [];
@@ -729,228 +720,304 @@ async function deleteClerkExportReferences(
   });
 }
 
-async function deleteOrgData(
+async function deleteClerkSshResources(
   db: Db,
-  orgId: string,
-  onSlotsReleased: SlotsReleased,
-  signal: AbortSignal,
-): Promise<string[]> {
-  await cancelOrgRuns(db, orgId, onSlotsReleased);
-  await deleteDiscordOrgData(db, orgId);
-  signal.throwIfAborted();
-
-  const installations = await db
-    .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
-    .from(slackOrgInstallations)
-    .where(eq(slackOrgInstallations.orgId, orgId));
-  for (const installation of installations) {
-    await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
-  }
-
-  await db.delete(sharedThreads).where(
-    inArray(
-      sharedThreads.id,
-      db
-        .select({ id: artifacts.entityId })
-        .from(artifacts)
-        .where(
-          and(
-            eq(artifacts.orgId, orgId),
-            like(
-              artifacts.logicalKey,
-              `${SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX}%`,
-            ),
-          ),
-        ),
-    ),
-  );
-  await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
-  await db
-    .delete(browserUserActionRequests)
-    .where(eq(browserUserActionRequests.orgId, orgId));
-  await db
-    .delete(chatAgentRunContext)
-    .where(eq(chatAgentRunContext.sourceOrgId, orgId));
-  await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
-  // VNC references were removed at the start of organization cleanup. Remove
-  // Access rows before SSH hosts: rotation takes config then host locks.
-  // Delete hosts before credentials and configs for the restrictive FK.
+  scope: ClerkStorageCleanupScope,
+) {
   await db.transaction(async (tx) => {
     await tx
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(eq(cloudflareAccessConfigs.orgId, orgId))
-      .orderBy(asc(cloudflareAccessConfigs.id))
-      .for("update");
-    await tx.delete(sshConnections).where(eq(sshConnections.orgId, orgId));
-    await tx.delete(sshCredentials).where(eq(sshCredentials.orgId, orgId));
+      .delete(sshConnections)
+      .where(
+        scope.kind === "organization"
+          ? eq(sshConnections.orgId, scope.orgId)
+          : eq(sshConnections.userId, scope.userId),
+      );
+    await tx
+      .delete(sshCredentials)
+      .where(
+        scope.kind === "organization"
+          ? eq(sshCredentials.orgId, scope.orgId)
+          : eq(sshCredentials.userId, scope.userId),
+      );
     await tx
       .delete(cloudflareAccessConfigs)
-      .where(eq(cloudflareAccessConfigs.orgId, orgId));
+      .where(
+        scope.kind === "organization"
+          ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
+          : eq(cloudflareAccessConfigs.userId, scope.userId),
+      );
   });
-  await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
-  const cleanupJobIds = await deleteClerkStorageReferences(
-    db,
-    { kind: "organization", orgId },
-    signal,
-  );
-  await db.delete(modelProviders).where(eq(modelProviders.orgId, orgId));
-  await db
-    .delete(modelProviderAuthSessions)
-    .where(eq(modelProviderAuthSessions.orgId, orgId));
-  await db.delete(secrets).where(eq(secrets.orgId, orgId));
-  await db.delete(variables).where(eq(variables.orgId, orgId));
-  await db
-    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
-    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, orgId));
-  await db
-    .delete(builtinConnectorExternalCodeSessions)
-    .where(eq(builtinConnectorExternalCodeSessions.orgId, orgId));
-  cleanupJobIds.push(
-    ...(await deleteClerkExportReferences(
+}
+
+const deleteOrgData$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly slots: readonly ReleasedRunSlot[];
+    readonly cleanupJobIds: string[];
+  }> => {
+    const db = set(writeDb$);
+    const released = releasedSlotCollector();
+    await cancelOrgRuns(db, orgId, released.collect);
+    signal.throwIfAborted();
+    await deleteDiscordOrgData(db, orgId);
+    signal.throwIfAborted();
+
+    const installations = await db
+      .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
+      .from(slackOrgInstallations)
+      .where(eq(slackOrgInstallations.orgId, orgId));
+    signal.throwIfAborted();
+    for (const installation of installations) {
+      await cleanupWorkspaceInstallation(db, installation.slackWorkspaceId);
+      signal.throwIfAborted();
+    }
+
+    await db.delete(sharedThreads).where(
+      inArray(
+        sharedThreads.id,
+        db
+          .select({ id: artifacts.entityId })
+          .from(artifacts)
+          .where(
+            and(
+              eq(artifacts.orgId, orgId),
+              like(
+                artifacts.logicalKey,
+                `${SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX}%`,
+              ),
+            ),
+          ),
+      ),
+    );
+    signal.throwIfAborted();
+    await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
+    signal.throwIfAborted();
+    await db
+      .delete(browserUserActionRequests)
+      .where(eq(browserUserActionRequests.orgId, orgId));
+    signal.throwIfAborted();
+    await db
+      .delete(chatAgentRunContext)
+      .where(eq(chatAgentRunContext.sourceOrgId, orgId));
+    signal.throwIfAborted();
+    await set(
+      deleteClerkAgentLifecycleData$,
+      { kind: "organization", orgId },
+      signal,
+    );
+    signal.throwIfAborted();
+    // VNC references were removed at the start of organization cleanup. Remove
+    // Access rows before SSH hosts: rotation takes config then host locks.
+    // Delete hosts before credentials and configs for the restrictive FK.
+    await deleteClerkSshResources(db, { kind: "organization", orgId });
+    signal.throwIfAborted();
+    await deleteConnectorOwnerState(
       db,
       { kind: "organization", orgId },
       signal,
-    )),
-  );
-  await db
-    .delete(orgConcurrencyEntitlements)
-    .where(eq(orgConcurrencyEntitlements.orgId, orgId));
-  await db
-    .delete(orgConcurrencySubscriptions)
-    .where(eq(orgConcurrencySubscriptions.orgId, orgId));
-  await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
-  // Membership is the durable stable-context admission parent. Re-run only
-  // stable-context cleanup after removing it so a request that raced the early
-  // pass cannot recreate state or repeat unrelated usage/billing lifecycle.
-  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
-    kind: "organization",
-    orgId,
-  });
-  await db
-    .delete(orgMembersMetadata)
-    .where(eq(orgMembersMetadata.orgId, orgId));
-  await db
-    .delete(userDisabledPaidTools)
-    .where(eq(userDisabledPaidTools.orgId, orgId));
-  await db.delete(orgCache).where(eq(orgCache.orgId, orgId));
-  await db
-    .delete(morningBriefEnrollments)
-    .where(eq(morningBriefEnrollments.orgId, orgId));
-  await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
-  await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
-  return cleanupJobIds;
-}
-
-async function deleteUserData(
-  db: Db,
-  userId: string,
-  onSlotsReleased: SlotsReleased,
-  signal: AbortSignal,
-): Promise<string[]> {
-  await cancelUserRuns(db, userId, onSlotsReleased);
-  await deleteDiscordUserData(db, userId);
-  signal.throwIfAborted();
-
-  await db
-    .delete(slackOrgConnections)
-    .where(eq(slackOrgConnections.userId, userId));
-  await db.delete(githubUserLinks).where(eq(githubUserLinks.userId, userId));
-  await db
-    .delete(artifacts)
-    .where(
-      inArray(artifacts.authorUserId, [
-        userId,
-        sharedThreadArtifactAuthorUserId(userId),
-      ]),
     );
-  await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
-  await db
-    .delete(browserUserActionRequests)
-    .where(eq(browserUserActionRequests.userId, userId));
-  await db
-    .delete(chatAgentRunContext)
-    .where(eq(chatAgentRunContext.sourceUserId, userId));
-  await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
-  // VNC references were removed before user cleanup. Delete only this user's
-  // SSH resources and personal Access configurations; organization Access
-  // configurations have no user owner and must survive creator deletion.
-  // Take config locks first to match token rotation's config-then-host order.
-  await db.transaction(async (tx) => {
-    await tx
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(eq(cloudflareAccessConfigs.userId, userId))
-      .orderBy(asc(cloudflareAccessConfigs.id))
-      .for("update");
-    await tx.delete(sshConnections).where(eq(sshConnections.userId, userId));
-    await tx.delete(sshCredentials).where(eq(sshCredentials.userId, userId));
-    await tx
-      .delete(cloudflareAccessConfigs)
-      .where(eq(cloudflareAccessConfigs.userId, userId));
-  });
-  const cleanupJobIds = await deleteClerkStorageReferences(
-    db,
-    { kind: "user", userId },
-    signal,
-  );
-  await db
-    .delete(piMemoryStage1Days)
-    .where(eq(piMemoryStage1Days.userId, userId));
-  await db.delete(modelProviders).where(eq(modelProviders.userId, userId));
-  await db
-    .delete(modelProviderAuthSessions)
-    .where(eq(modelProviderAuthSessions.userId, userId));
-  await deleteConnectorOwnerState(db, { kind: "user", userId }, signal);
-  await db.delete(secrets).where(eq(secrets.userId, userId));
-  await db.delete(variables).where(eq(variables.userId, userId));
-  cleanupJobIds.push(
-    ...(await deleteClerkExportReferences(
+    signal.throwIfAborted();
+    const cleanupJobIds = await deleteClerkStorageReferences(
+      db,
+      { kind: "organization", orgId },
+      signal,
+    );
+    signal.throwIfAborted();
+    for (const table of [
+      modelProviders,
+      modelProviderAuthSessions,
+      secrets,
+      variables,
+      builtinConnectorOauthDeviceAuthorizationSessions,
+      builtinConnectorExternalCodeSessions,
+    ]) {
+      await db.delete(table).where(eq(table.orgId, orgId));
+      signal.throwIfAborted();
+    }
+    cleanupJobIds.push(
+      ...(await deleteClerkExportReferences(
+        db,
+        { kind: "organization", orgId },
+        signal,
+      )),
+    );
+    await db
+      .delete(orgConcurrencyEntitlements)
+      .where(eq(orgConcurrencyEntitlements.orgId, orgId));
+    signal.throwIfAborted();
+    await db
+      .delete(orgConcurrencySubscriptions)
+      .where(eq(orgConcurrencySubscriptions.orgId, orgId));
+    signal.throwIfAborted();
+    await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
+    signal.throwIfAborted();
+    // Membership is the durable stable-context admission parent. Re-run only
+    // stable-context cleanup after removing it so a request that raced the early
+    // pass cannot recreate state or repeat unrelated usage/billing lifecycle.
+    await set(
+      deleteStableContextLifecycleAfterAuthorityRemoval$,
+      { kind: "organization", orgId },
+      signal,
+    );
+    signal.throwIfAborted();
+    await db
+      .delete(orgMembersMetadata)
+      .where(eq(orgMembersMetadata.orgId, orgId));
+    signal.throwIfAborted();
+    await db
+      .delete(userDisabledPaidTools)
+      .where(eq(userDisabledPaidTools.orgId, orgId));
+    signal.throwIfAborted();
+    await db.delete(orgCache).where(eq(orgCache.orgId, orgId));
+    signal.throwIfAborted();
+    await db
+      .delete(morningBriefEnrollments)
+      .where(eq(morningBriefEnrollments.orgId, orgId));
+    signal.throwIfAborted();
+    await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
+    signal.throwIfAborted();
+    await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
+    signal.throwIfAborted();
+    return { slots: released.slots, cleanupJobIds };
+  },
+);
+
+const deleteUserData$ = command(
+  async (
+    { set },
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly slots: readonly ReleasedRunSlot[];
+    readonly cleanupJobIds: string[];
+  }> => {
+    const db = set(writeDb$);
+    const released = releasedSlotCollector();
+    await cancelUserRuns(db, userId, released.collect);
+    signal.throwIfAborted();
+    await deleteDiscordUserData(db, userId);
+    signal.throwIfAborted();
+
+    await db
+      .delete(slackOrgConnections)
+      .where(eq(slackOrgConnections.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(githubUserLinks).where(eq(githubUserLinks.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(artifacts)
+      .where(
+        inArray(artifacts.authorUserId, [
+          userId,
+          sharedThreadArtifactAuthorUserId(userId),
+        ]),
+      );
+    signal.throwIfAborted();
+    await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(browserUserActionRequests)
+      .where(eq(browserUserActionRequests.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(chatAgentRunContext)
+      .where(eq(chatAgentRunContext.sourceUserId, userId));
+    signal.throwIfAborted();
+    await set(deleteClerkAgentLifecycleData$, { kind: "user", userId }, signal);
+    // VNC references were removed before user cleanup. Delete only this user's
+    // SSH resources and personal Access configurations; organization Access
+    // configurations have no user owner and must survive creator deletion.
+    // Take config locks first to match token rotation's config-then-host order.
+    await deleteClerkSshResources(db, { kind: "user", userId });
+    signal.throwIfAborted();
+    const cleanupJobIds = await deleteClerkStorageReferences(
       db,
       { kind: "user", userId },
       signal,
-    )),
-  );
-  await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
-  await db.delete(composeJobs).where(eq(composeJobs.userId, userId));
-  await db
-    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
-    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.userId, userId));
-  await db
-    .delete(builtinConnectorExternalCodeSessions)
-    .where(eq(builtinConnectorExternalCodeSessions.userId, userId));
-  await db.delete(deviceCodes).where(eq(deviceCodes.userId, userId));
-  await db
-    .delete(userPermissionGrants)
-    .where(eq(userPermissionGrants.userId, userId));
-  await db.delete(orgMembersCache).where(eq(orgMembersCache.userId, userId));
-  // Close the initialization interval between the early Agent cleanup and the
-  // authoritative membership removal. Future initialization now fails its
-  // parent lock; this narrow second pass removes any state created before it.
-  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
-    kind: "user",
-    userId,
-  });
-  await db
-    .delete(morningBriefEnrollments)
-    .where(eq(morningBriefEnrollments.userId, userId));
-  await db
-    .delete(orgMembersMetadata)
-    .where(eq(orgMembersMetadata.userId, userId));
-  await db
-    .delete(userDisabledPaidTools)
-    .where(eq(userDisabledPaidTools.userId, userId));
-  await db.delete(userCache).where(eq(userCache.userId, userId));
-  signal.throwIfAborted();
-  await db.delete(users).where(eq(users.id, userId));
-  return cleanupJobIds;
-}
+    );
+    signal.throwIfAborted();
+    await db
+      .delete(piMemoryStage1Days)
+      .where(eq(piMemoryStage1Days.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(modelProviders).where(eq(modelProviders.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(modelProviderAuthSessions)
+      .where(eq(modelProviderAuthSessions.userId, userId));
+    signal.throwIfAborted();
+    await deleteConnectorOwnerState(db, { kind: "user", userId }, signal);
+    await db.delete(secrets).where(eq(secrets.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(variables).where(eq(variables.userId, userId));
+    signal.throwIfAborted();
+    cleanupJobIds.push(
+      ...(await deleteClerkExportReferences(
+        db,
+        { kind: "user", userId },
+        signal,
+      )),
+    );
+    signal.throwIfAborted();
+    await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(composeJobs).where(eq(composeJobs.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(builtinConnectorOauthDeviceAuthorizationSessions)
+      .where(
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.userId, userId),
+      );
+    signal.throwIfAborted();
+    await db
+      .delete(builtinConnectorExternalCodeSessions)
+      .where(eq(builtinConnectorExternalCodeSessions.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(deviceCodes).where(eq(deviceCodes.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(userPermissionGrants)
+      .where(eq(userPermissionGrants.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(orgMembersCache).where(eq(orgMembersCache.userId, userId));
+    signal.throwIfAborted();
+    // Close the initialization interval between the early Agent cleanup and the
+    // authoritative membership removal. Future initialization now fails its
+    // parent lock; this narrow second pass removes any state created before it.
+    await set(
+      deleteStableContextLifecycleAfterAuthorityRemoval$,
+      { kind: "user", userId },
+      signal,
+    );
+    signal.throwIfAborted();
+    await db
+      .delete(morningBriefEnrollments)
+      .where(eq(morningBriefEnrollments.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(orgMembersMetadata)
+      .where(eq(orgMembersMetadata.userId, userId));
+    signal.throwIfAborted();
+    await db
+      .delete(userDisabledPaidTools)
+      .where(eq(userDisabledPaidTools.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(userCache).where(eq(userCache.userId, userId));
+    signal.throwIfAborted();
+    await db.delete(users).where(eq(users.id, userId));
+    signal.throwIfAborted();
+    return { slots: released.slots, cleanupJobIds };
+  },
+);
 
 export const cleanupClerkDeletedOrg$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
-    await eraseVncOwnerData(db, { kind: "organization", orgId });
+    await set(eraseVncOwnerData$, { kind: "organization", orgId }, signal);
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, released.collect, {
       cascadeOwnedAgents: true,
@@ -967,21 +1034,17 @@ export const cleanupClerkDeletedOrg$ = command(
       { kind: "organization", orgId },
       signal,
     );
-    await set(cleanupOrgExternalServices$, db, orgId, false, signal);
+    await set(cleanupOrgExternalServices$, orgId, false, signal);
     signal.throwIfAborted();
-    const cleanupJobIds = await deleteOrgData(
-      db,
-      orgId,
-      released.collect,
-      signal,
-    );
+    const removed = await set(deleteOrgData$, orgId, signal);
+    released.collect(removed.slots);
     signal.throwIfAborted();
     // Picked only once the data is gone: deleting the organization's Agents
     // cascaded its chat threads and their queued rows, so nothing launches.
     set(scheduleReleasedSlotPicks$, released.slots, signal);
     await set(
       executeStorageObjectCleanupWork$,
-      { jobIds: cleanupJobIds },
+      { jobIds: removed.cleanupJobIds },
       signal,
     );
   },
@@ -1011,7 +1074,7 @@ export const cleanupClerkDeletedUser$ = command(
     const { userId } = args;
     const db = set(writeDb$);
     const released = releasedSlotCollector();
-    await eraseVncOwnerData(db, { kind: "user", userId });
+    await set(eraseVncOwnerData$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     // Only the user's own runs: members' runs on Agents the user owns continue.
     await cancelUserRuns(db, userId, released.collect, {
@@ -1030,11 +1093,11 @@ export const cleanupClerkDeletedUser$ = command(
       signal.throwIfAborted();
     }
 
-    await set(cleanupUserExternalServices$, db, userId, signal);
+    await set(cleanupUserExternalServices$, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
       signal.throwIfAborted();
-      await eraseVncOwnerData(db, { kind: "organization", orgId });
+      await set(eraseVncOwnerData$, { kind: "organization", orgId }, signal);
       signal.throwIfAborted();
       await cancelOrgRuns(db, orgId, released.collect, {
         cascadeOwnedAgents: true,
@@ -1053,21 +1116,18 @@ export const cleanupClerkDeletedUser$ = command(
       );
       await cancelStripeSubscriptionsForDeletedOrg(db, orgId);
       signal.throwIfAborted();
-      await set(cleanupOrgExternalServices$, db, orgId, true, signal);
+      await set(cleanupOrgExternalServices$, orgId, true, signal);
       signal.throwIfAborted();
     }
 
-    const cleanupJobIds = await deleteUserData(
-      db,
-      userId,
-      released.collect,
-      signal,
-    );
+    const removed = await set(deleteUserData$, userId, signal);
+    released.collect(removed.slots);
+    const cleanupJobIds = removed.cleanupJobIds;
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      cleanupJobIds.push(
-        ...(await deleteOrgData(db, orgId, released.collect, signal)),
-      );
+      const removedOrg = await set(deleteOrgData$, orgId, signal);
+      released.collect(removedOrg.slots);
+      cleanupJobIds.push(...removedOrg.cleanupJobIds);
       signal.throwIfAborted();
     }
     // Picked only once the user's data is gone, so the slots go to other
@@ -1081,23 +1141,35 @@ export const cleanupClerkDeletedUser$ = command(
   },
 );
 
-async function commitClerkDeletedOrgMembershipCleanup(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId?: string;
+const commitClerkDeletedOrgMembershipCleanup$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly membershipId?: string;
+    },
+    onSlotsReleased: SlotsReleased,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const emptyCancellation = await removeUsagePackMemberAllocation(
+      db,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (emptyCancellation) {
+      await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
+      signal.throwIfAborted();
+    }
+    await refundUsagePackMemberCredits(db, args, signal);
+    signal.throwIfAborted();
+    await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
   },
-  onSlotsReleased: SlotsReleased,
-): Promise<void> {
-  const commitSignal = new AbortController().signal;
-  await removeUsagePackMemberAllocation(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await refundUsagePackMemberCredits(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, onSlotsReleased, commitSignal);
-  commitSignal.throwIfAborted();
-}
+);
 
 export const cleanupClerkDeletedOrgMembership$ = command(
   async (
@@ -1109,10 +1181,15 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
-    await commitClerkDeletedOrgMembershipCleanup(db, args, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots, signal);
-    });
+    await set(
+      commitClerkDeletedOrgMembershipCleanup$,
+      args,
+      (slots) => {
+        set(scheduleReleasedSlotPicks$, slots, signal);
+      },
+      new AbortController().signal,
+    );
+
     signal.throwIfAborted();
   },
 );

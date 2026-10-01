@@ -8,4 +8,5 @@ CREATE TABLE "agentphone_message_visibility" (
 ALTER TABLE "agentphone_messages" ADD COLUMN "group_id" varchar(255);--> statement-breakpoint
 ALTER TABLE "agentphone_message_visibility" ADD CONSTRAINT "agentphone_message_visibility_message_id_agentphone_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."agentphone_messages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_agentphone_message_visibility_member" ON "agentphone_message_visibility" USING btree ("org_id","user_id","message_id");--> statement-breakpoint
-CREATE INDEX "idx_agentphone_messages_group_time" ON "agentphone_messages" USING btree ("agentphone_agent_id","group_id","received_at","created_at");
+CREATE INDEX "idx_agentphone_messages_group_time" ON "agentphone_messages" USING btree ("agentphone_agent_id","group_id","received_at","created_at");--> statement-breakpoint
+ALTER TABLE "agentphone_messages" ADD CONSTRAINT "chk_agentphone_messages_group_received_at" CHECK ("agentphone_messages"."group_id" IS NULL OR "agentphone_messages"."received_at" IS NOT NULL);

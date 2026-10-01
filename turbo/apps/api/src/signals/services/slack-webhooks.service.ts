@@ -43,8 +43,8 @@ import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import {
-  readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import {
   listOrgModelPolicies$,
@@ -52,15 +52,15 @@ import {
 } from "./model-policy.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
-  admitCanonicalSlackChatEvent,
-  ensureCanonicalSlackChatThreadRoute,
-  findSlackDirectMessageChatThreadId,
-  findSlackChatThreadRoute,
   slackSessionThreadTs,
+  admitCanonicalSlackChatEvent$,
+  ensureCanonicalSlackChatThreadRoute$,
+  findSlackChatThreadRoute$,
+  findSlackDirectMessageChatThreadId$,
 } from "./slack-chat-ingress.service";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { onRejection, safeJsonParse, tapError } from "../utils";
-
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
 
@@ -701,7 +701,11 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       threadTs: sessionThreadTs,
       userId: args.connection.userId,
     };
-    const existingRoute = await findSlackChatThreadRoute(args.db, routeKey);
+    const existingRoute = await set(
+      findSlackChatThreadRoute$,
+      routeKey,
+      signal,
+    );
     signal.throwIfAborted();
     if (existingRoute) {
       return { kind: "canonical", routeId: existingRoute.id };
@@ -727,12 +731,23 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       return { kind: "ignored" };
     }
 
-    const route = await ensureCanonicalSlackChatThreadRoute(args.db, {
-      ...routeKey,
-      orgId: args.orgId,
-      agentId: effectiveCompose.composeId,
-      currentTime: nowDate(),
-    });
+    const route = await set(
+      ensureCanonicalSlackChatThreadRoute$,
+      {
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.orgId,
+          args.connection.userId,
+          undefined,
+          undefined,
+        ),
+        ...routeKey,
+        orgId: args.orgId,
+        agentId: effectiveCompose.composeId,
+        currentTime: nowDate(),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return { kind: "canonical", routeId: route.id };
   },
@@ -970,20 +985,25 @@ const commandModelResponse$ = command(
         ),
       );
     }
-    const chatThreadId = await findSlackDirectMessageChatThreadId(
-      set(writeDb$),
+    const chatThreadId = await set(
+      findSlackDirectMessageChatThreadId$,
       {
         connectionId: args.connection.id,
         channelId: args.payload.channel_id,
         userId: args.connection.userId,
       },
+      signal,
     );
     signal.throwIfAborted();
-    const currentModel = await readIntegrationChatThreadModel(set(writeDb$), {
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-      chatThreadId,
-    });
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!chatThreadId || !currentModel) {
       return ephemeral(
@@ -1484,13 +1504,17 @@ export const handleSlackEvents$ = command(
         signal.throwIfAborted();
         if (route.kind === "canonical") {
           const ingress = await onRejection(
-            admitCanonicalSlackChatEvent(db, {
-              routeId: route.routeId,
-              eventId: payload.event_id,
-              payload: verified.body,
-              isRetry: Boolean(retryNum),
-              currentTime: nowDate(),
-            }),
+            set(
+              admitCanonicalSlackChatEvent$,
+              {
+                routeId: route.routeId,
+                eventId: payload.event_id,
+                payload: verified.body,
+                isRetry: Boolean(retryNum),
+                currentTime: nowDate(),
+              },
+              signal,
+            ),
             (error) => {
               L.error("Canonical Slack ingress admission failed", {
                 type: "canonical_slack_ingress_admission",
@@ -1619,11 +1643,15 @@ const handleModelPickerSubmit$ = command(
     }
     const route = parseModelViewRoute(payload.view?.private_metadata);
     const chatThreadId = route
-      ? await findSlackDirectMessageChatThreadId(db, {
-          connectionId: ctx.connection.id,
-          channelId: route.channelId,
-          userId: ctx.connection.userId,
-        })
+      ? await set(
+          findSlackDirectMessageChatThreadId$,
+          {
+            connectionId: ctx.connection.id,
+            channelId: route.channelId,
+            userId: ctx.connection.userId,
+          },
+          signal,
+        )
       : undefined;
     signal.throwIfAborted();
     if (!chatThreadId || chatThreadId !== route?.chatThreadId) {
@@ -1635,11 +1663,15 @@ const handleModelPickerSubmit$ = command(
         },
       });
     }
-    const currentModel = await readIntegrationChatThreadModel(db, {
-      orgId: ctx.orgId,
-      userId: ctx.connection.userId,
-      chatThreadId,
-    });
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: ctx.orgId,
+        userId: ctx.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!currentModel) {
       return jsonResponse({
