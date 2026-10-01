@@ -11,11 +11,7 @@ import {
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -147,11 +143,7 @@ async function createBuiltInRun(
   prompt: string,
 ): Promise<{ readonly runId: string; readonly status: string }> {
   const api = createRunsApi(context);
-  return await api.createRun(actor, {
-    agentId,
-    prompt,
-    modelProvider: "built-in",
-  });
+  return await api.createThreadRun(actor, { agentId, prompt });
 }
 
 async function recordPendingUsageEvents(args: {
@@ -634,18 +626,12 @@ describe("Usage Allowance", () => {
     });
     await processOrgUsageEvents(actor);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId,
         prompt: "built-in model run rejected after allowance exhaustion",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
@@ -704,17 +690,12 @@ describe("Usage Allowance", () => {
     await expect(readOrgCredits(actor)).resolves.toBe(-3);
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(5);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId,
         prompt: "new run after admitted run exhausted credits",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("uses run allowance for billable firewall fallback under shared debt", async () => {

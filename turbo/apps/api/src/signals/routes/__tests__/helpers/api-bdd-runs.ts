@@ -358,6 +358,35 @@ export function createRunsApi(
     };
   }
 
+  /**
+   * A Thread send the background pick rejects: no run is created and the
+   * thread records the rejection error on the revoked input.
+   */
+  async function readThreadRunRejection(
+    actor: ApiTestUser,
+    body: { readonly agentId: string; readonly prompt: string },
+  ): Promise<string | undefined> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId: body.agentId, prompt: body.prompt, clientEventId },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the Thread send to be rejected without a run");
+    }
+    return "error" in rejection ? rejection.error : undefined;
+  }
+
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
@@ -588,6 +617,7 @@ export function createRunsApi(
 
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
     createThreadRun,
+    readThreadRunRejection,
 
     async createRun(actor: ApiTestUser, body: AgentRunRequest) {
       const response = await accept(
