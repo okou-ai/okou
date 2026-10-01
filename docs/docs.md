@@ -22,6 +22,9 @@ surface; the index does not replace their detailed rules.
   command triggers, stable card geometry, and measurement ownership.
 - [React and ccstate cache and lifecycle practices](./cache.md): render purity,
   state ownership, cache retention, refs, and resource teardown.
+- [API ccstate design](./api-ccstate.md): factory inputs, derived computeds,
+  write-result-only state, entry-owned orchestration, and no production test
+  hooks for API signal graphs.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
