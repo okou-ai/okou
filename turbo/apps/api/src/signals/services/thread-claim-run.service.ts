@@ -700,9 +700,8 @@ function isMigratedAccountSource(
   args: ResolveModelProviderEnvironmentArgs,
 ): boolean {
   return (
-    (args.modelProviderType === "codex-oauth-token" ||
-      args.modelProviderType === "claude-code-oauth-token") &&
-    !args.piExecution
+    args.modelProviderType === "codex-oauth-token" ||
+    (args.modelProviderType === "claude-code-oauth-token" && !args.piExecution)
   );
 }
 
@@ -8906,17 +8905,23 @@ export function createThreadClaimRunObjects(
         source.credentialOwner === "organization"
           ? ORG_SENTINEL_USER_ID
           : userId;
+      const environment = { ...compiled.environment };
+      // Pi owns account routing through its explicit source binding rather
+      // than the native Codex CLI-only routing environment variable.
+      if (piExecution && type === "codex-oauth-token") {
+        delete environment.CODEX_OAUTH_ACCOUNT_ID;
+      }
       const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
         type,
         logicalModel: compiled.selectedModel,
         runtimeModel: compiled.upstreamModel,
-        environment: compiled.environment,
+        environment,
       });
       return {
         id: sourceId,
         type,
         credentialOwner: compiled.credentialOwner,
-        environment: { ...compiled.environment },
+        environment,
         secrets: deferred && !capture ? {} : { ...compiled.secrets },
         selectedModel: compiled.selectedModel,
         upstreamModel: compiled.upstreamModel,
