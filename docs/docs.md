@@ -69,7 +69,7 @@ surface; the index does not replace their detailed rules.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Organization-scoped usage compaction (Draft)](./database/usage-compaction-organization-coordination.md):
-  proposed lock protocol, cross-org deletion proof obligations, and release gates.
+  oldest-org discovery, complete-grain guarantees, and coordination/release gates.
 - [X resource observations](./x-resource-observations.md): atomic daily
   deduplication, two-date cleanup, transient remainder and activation gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API

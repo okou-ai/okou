@@ -391,7 +391,7 @@ describe("usage event compaction cron", () => {
     });
   });
 
-  it("skips scoped lock work on an empty snapshot and catches a later eligible event", async () => {
+  it("returns an empty snapshot and catches a later eligible event", async () => {
     const fixture = await seedFixture();
     expect((await compactOwnedUsage(fixture)).body).toMatchObject({
       seededRawRows: 0,
@@ -781,16 +781,21 @@ describe("usage event compaction cron", () => {
     });
   });
 
-  it("denies scoped test compaction in production", async () => {
-    mockEnv("ENV", "production");
-    const response = await accept(
-      setupApp({ context, routes: testUsageStateRoutes })(
-        testUsageStateContract,
-      ).compact({ body: { orgId: randomUUID() } }),
-      [404],
-    );
-    expect(response.status).toBe(404);
-  });
+  it.each(["organization", "discovery"] as const)(
+    "denies %s test compaction in production",
+    async (scope) => {
+      mockEnv("ENV", "production");
+      const orgId = randomUUID();
+      const body = scope === "organization" ? { orgId } : { orgIds: [orgId] };
+      const response = await accept(
+        setupApp({ context, routes: testUsageStateRoutes })(
+          testUsageStateContract,
+        ).compact({ body }),
+        [404],
+      );
+      expect(response.status).toBe(404);
+    },
+  );
 
   it("preserves different billing identities after their live runs are removed", async () => {
     const fixture = await seedFixture();
@@ -902,6 +907,72 @@ describe("usage event compaction cron", () => {
       raw: 0,
       processedRaw: 0,
       hourly: 2,
+    });
+  });
+
+  it("conserves a complete grain once across concurrent discovery calls and a response retry", async () => {
+    const fixture = await seedFixture();
+    const sourceRows = RAW_SEED_LIMIT + 1;
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        status: "processed",
+        count: sourceRows,
+        quantity: 2,
+        creditsCharged: 3,
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    const client = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    const orgIds = [fixture.orgId];
+    const responses = await Promise.all([
+      accept(client.compact({ body: { orgIds } }), [200]),
+      accept(client.compact({ body: { orgIds } }), [200]),
+    ]);
+
+    expect(
+      responses.reduce((total, response) => {
+        return total + response.body.rawRowsDeleted;
+      }, 0),
+    ).toBe(sourceRows);
+    expect(
+      responses.reduce((total, response) => {
+        return total + BigInt(response.body.quantity);
+      }, 0n),
+    ).toBe(BigInt(sourceRows * 2));
+    expect(
+      responses.reduce((total, response) => {
+        return total + BigInt(response.body.creditsCharged);
+      }, 0n),
+    ).toBe(BigInt(sourceRows * 3));
+    for (const response of responses) {
+      expect(response.body).toMatchObject({
+        hasMore: false,
+        reconciled: true,
+      });
+    }
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
+    });
+
+    const retry = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(retry.body).toMatchObject({
+      rawRowsDeleted: 0,
+      hourlyRowsInserted: 0,
+      quantity: "0",
+      creditsCharged: "0",
+      hasMore: false,
+    });
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
     });
   });
 
