@@ -318,13 +318,23 @@ export function createRunsApi(
    */
   async function createThreadRun(
     actor: ApiTestUser,
-    body: { readonly agentId: string; readonly prompt: string },
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      /** A member selects the organization's model; the owner's preference is personal. */
+      readonly model?: string;
+    },
   ) {
     const chat = createChatFilesBddApi(context);
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
-      { agentId: body.agentId, prompt: body.prompt, clientEventId },
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+      },
       [201],
     );
     if (sent.status !== 201) {

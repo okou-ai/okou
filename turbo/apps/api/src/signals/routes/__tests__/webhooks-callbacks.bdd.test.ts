@@ -7084,10 +7084,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agentId: doomedPublicAgent.agentId,
         title: "BDD peer thread on the deleted user's Agent",
       });
-      const peerRun = await runs.createRun(peer, {
+      // The peer's first run needs the member's initialized memory.
+      await bdd.completeOnboarding(peer);
+      const peerRun = await runs.createThreadRun(peer, {
         agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
-        modelProvider: "anthropic-api-key",
+        model: "claude-sonnet-5",
       });
       const doomedThread = await chat.createThread(doomed, {
         agentId: doomedAgent.agentId,
@@ -7102,10 +7104,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expect(chat.listThreadDrafts(doomed)).resolves.toContain(
         doomedThread.id,
       );
-      const doomedRun = await runs.createRun(doomed, {
+      const doomedRun = await runs.createThreadRun(doomed, {
         agentId: doomedAgent.agentId,
         prompt: "doomed run on the private Agent",
-        modelProvider: "anthropic-api-key",
       });
 
       await startUserDeletion(fixture);

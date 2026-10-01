@@ -314,16 +314,20 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    const actorCompose = await createClaudeAgent(actor, "bdd-actor-usage");
-    const memberCompose = await createClaudeAgent(member, "bdd-member-usage");
+    const actorAgent = await createThreadAgent(actor, "bdd-actor-usage");
+    const memberAgent = await bdd.createAgent(member, {
+      displayName: "bdd-member-usage",
+      visibility: "private",
+    });
 
-    await api.createDirectRun(actor, {
-      agentId: actorCompose.agentId,
+    await api.createThreadRun(actor, {
+      agentId: actorAgent.agentId,
       prompt: "actor active run",
     });
-    await api.createDirectRun(member, {
-      agentId: memberCompose.agentId,
+    await api.createThreadRun(member, {
+      agentId: memberAgent.agentId,
       prompt: "member active run",
+      model: "claude-sonnet-5",
     });
     await bdd.readMe(actor);
     await bdd.readMe(member);
