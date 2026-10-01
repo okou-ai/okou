@@ -319,18 +319,16 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     // The webhook acknowledges before the cleanup it owns finishes.
     await flushWaitUntilForTest();
-    await expect
-      .poll(
-        async () => {
-          const automation = await readAsAdmin(
-            auditor,
-            departingAutomations.scheduleAutomationId,
-          );
-          return automation.enabled;
-        },
-        { timeout: 10_000, interval: 100 },
-      )
-      .toBe(false);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        const automation = await readAsAdmin(
+          auditor,
+          departingAutomations.scheduleAutomationId,
+        );
+        return automation.enabled;
+      })(),
+    ).resolves.toBeFalsy();
 
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
     await expect(

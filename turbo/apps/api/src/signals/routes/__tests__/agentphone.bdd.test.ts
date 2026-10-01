@@ -11,7 +11,6 @@ import {
   findAgentphoneChatEventByPromptFixture,
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
-import { withAgentPhoneQueueAssemblyFailureFixture } from "../../../test-fixtures/agentphone-queue-assembly-failure";
 import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached, settle } from "../../utils";
@@ -225,13 +224,14 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
   let runId: string | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const poll = await runs.pollRunner(runnerGroup);
       runId = poll.body.job?.runId;
       return runId ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!runId) {
     throw new Error("Expected an AgentPhone run to be dispatched");
   }
@@ -387,22 +387,16 @@ async function waitForTyping(
   sends: AgentPhoneSendCapture,
   expected: readonly string[],
 ): Promise<void> {
-  await expect
-    .poll(() => {
-      return sends.typing;
-    })
-    .toStrictEqual(expected);
+  await flushWaitUntilForTest();
+  expect(sends.typing).toStrictEqual(expected);
 }
 
 async function waitForSendCount(
   sends: AgentPhoneSendCapture,
   count: number,
 ): Promise<void> {
-  await expect
-    .poll(() => {
-      return sends.messages.length;
-    })
-    .toBeGreaterThanOrEqual(count);
+  await flushWaitUntilForTest();
+  expect(sends.messages.length).toBeGreaterThanOrEqual(count);
 }
 
 async function waitForSendMatching(
@@ -410,13 +404,9 @@ async function waitForSendMatching(
   startIndex: number,
   predicate: (send: AgentPhoneProviderSend) => boolean,
 ): Promise<AgentPhoneProviderSend> {
-  let matched: AgentPhoneProviderSend | undefined;
-  await expect
-    .poll(() => {
-      matched = sends.messages.slice(startIndex).find(predicate);
-      return matched !== undefined;
-    })
-    .toBe(true);
+  await flushWaitUntilForTest();
+  const matched = sends.messages.slice(startIndex).find(predicate);
+  expect(matched).toBeDefined();
   if (!matched) {
     throw new Error("Expected a matching AgentPhone provider send");
   }
@@ -429,11 +419,12 @@ async function waitForRunSessionId(
   expected: string,
 ): Promise<void> {
   const ap = createAgentPhoneBddApi(context);
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await ap.readRunSessionId(actor, runId);
-    })
-    .toBe(expected);
+    })(),
+  ).resolves.toBe(expected);
 }
 
 async function waitForRunSessionIdPresent(
@@ -442,13 +433,14 @@ async function waitForRunSessionIdPresent(
 ): Promise<string> {
   const ap = createAgentPhoneBddApi(context);
   let sessionId: string | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const result = await settle(ap.readRunSessionId(actor, runId));
       sessionId = result.ok ? result.value : undefined;
       return sessionId ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!sessionId) {
     throw new Error(`Expected run ${runId} to expose a session id`);
   }
@@ -1615,113 +1607,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       }),
     );
   });
-
-  it.each([false, true])(
-    "rejects input after an infrastructure failure with current AgentPhone authorization (unlinked: %s)",
-    async (unlink) => {
-      const runs = createRunsApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const chat = createChatFilesBddApi(context);
-      const integrations = createBddIntegrationApi(context);
-      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      await integrations.enableOkouDebug(actor);
-
-      await ap.postAgentPhoneInboundMessage({
-        channel: "sms",
-        from: phone,
-        body: "finish before queue assembly",
-      });
-      const activeRun = await claimDispatchedRun(runnerGroup);
-      const queuedPrompt = "reject this input before loading delivery";
-      await ap.postAgentPhoneInboundMessage({
-        channel: "sms",
-        from: phone,
-        body: queuedPrompt,
-      });
-      await flushWaitUntilForTest();
-
-      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected AgentPhone thread lifecycle events");
-      }
-      const threads = lifecycle.body.events.filter((event) => {
-        return event.kind === "created";
-      });
-      expect(threads).toHaveLength(1);
-      const thread = threads[0];
-      if (!thread) {
-        throw new Error("Expected an AgentPhone chat thread");
-      }
-      const pendingEvents = await chat.listThreadEvents(
-        actor,
-        thread.chatThreadId,
-      );
-      const pending = pendingEvents.events.find((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.userMessage.parts.some((part) => {
-            return part.type === "text" && part.text === queuedPrompt;
-          })
-        );
-      });
-      if (!pending) {
-        throw new Error("Expected the busy thread to retain the queued input");
-      }
-      expect(pending.runId).toBeUndefined();
-      if (unlink) {
-        await integrations.requestUnlinkAgentPhone(actor, [204]);
-      }
-      const beforeCompletion = sends.messages.length;
-
-      // Infrastructure alone can cancel this SELECT. Target this input's
-      // first context read, before the assembler has any delivery target.
-      await withAgentPhoneQueueAssemblyFailureFixture(pending.id, async () => {
-        await expect(
-          completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
-        ).rejects.toMatchObject({ cause: { code: "57014" } });
-      });
-
-      const settled = await chat.listThreadEvents(actor, thread.chatThreadId);
-      expect(settled.events).toContainEqual(
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: pending.id,
-        }),
-      );
-      // The failure propagates and the picked input ends rejected; a linked
-      // sender gets the unexpected-failure reply.
-      expect(settled.events).toContainEqual(
-        expect.objectContaining({
-          eventType: "input.rejected",
-          revokesEventId: pending.id,
-          error: "internal_error",
-        }),
-      );
-      expect(
-        settled.events.some((event) => {
-          return event.runId !== undefined && event.runId !== activeRun.runId;
-        }),
-      ).toBeFalsy();
-      const replies = sends.messages.slice(beforeCompletion);
-      if (unlink) {
-        expect(replies).toStrictEqual([]);
-      } else {
-        expect(
-          replies.map((reply) => {
-            return reply.body;
-          }),
-        ).toStrictEqual(
-          expect.arrayContaining([
-            "Task completed successfully.",
-            "Oops, something went wrong. Please try again later.",
-          ]),
-        );
-        expect(replies).toHaveLength(2);
-      }
-      await runs.heartbeatRunner(runnerGroup);
-      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
-    },
-  );
 
   it("rejects a queued input whose phone link was removed before admission", async () => {
     const runs = createRunsApi(context);

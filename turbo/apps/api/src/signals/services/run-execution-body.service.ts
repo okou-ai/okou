@@ -49,10 +49,6 @@ import {
   normalizeSessionHistoryBlobEncoding,
   isCompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
-import {
-  observeStableContextCacheIdentityBuild,
-  observeStableAgentPromptBuild,
-} from "./agent-run-preparation-hooks";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import type {
   FirewallPermissionGrantAction,
@@ -768,7 +764,6 @@ function buildStableAgentPrompt(args: {
   readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
-  observeStableAgentPromptBuild();
   return {
     agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
     executionLimit: buildExecutionTimeLimitPrompt(),
@@ -1013,7 +1008,6 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     if (cacheIdentity) {
       return cacheIdentity;
     }
-    observeStableContextCacheIdentityBuild();
     const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
     cacheIdentity = {
       owner: {

@@ -1,5 +1,5 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
@@ -35,9 +35,12 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import {
   isFeishuInstallationEnabled,
@@ -459,12 +462,6 @@ const persistCanonicalFeishuIngress$ = command(
       },
     });
     signal.throwIfAborted();
-    await touchNativeChatThread(args.db, {
-      chatThreadId: route.chatThreadId,
-      createdAt: args.ingress.createdAt,
-      eventId: args.ingress.ingressId,
-    });
-    signal.throwIfAborted();
     return {
       orgId: args.installation.orgId,
       userId: args.connection.userId,
@@ -476,36 +473,38 @@ const persistCanonicalFeishuIngress$ = command(
 );
 
 /** Tell the sender when their message waits for an org run slot. */
-async function notifyFeishuChatQueueWait(
-  args: {
-    readonly db: Db;
-    readonly ingressId: string;
-    readonly message: CanonicalFeishuInboundMessage;
-    readonly reason: ChatQueueWaitReason;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const notice = chatQueueWaitNotice(args.reason);
-  if (!notice) {
-    return;
-  }
-  const message = buildFeishuNoticeMessage({
-    title: "Waiting for a run slot",
-    text: notice,
-    kind: "warning",
-  });
-  await replyWithFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.message.installationId,
-      messageId: args.message.messageId,
-      message,
-      replyInThread: true,
-      idempotencyKey: `queued-${args.ingressId}`,
+const notifyFeishuChatQueueWait$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly message: CanonicalFeishuInboundMessage;
+      readonly reason: ChatQueueWaitReason;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(args.reason);
+    if (!notice) {
+      return;
+    }
+    const message = buildFeishuNoticeMessage({
+      title: "Waiting for a run slot",
+      text: notice,
+      kind: "warning",
+    });
+    await replyWithFeishuMessage(
+      {
+        db: set(writeDb$),
+        installationId: args.message.installationId,
+        messageId: args.message.messageId,
+        message,
+        replyInThread: true,
+        idempotencyKey: `queued-${args.ingressId}`,
+      },
+      signal,
+    );
+  },
+);
 
 async function finishUnconnectedFeishuIngress(
   args: {
@@ -737,40 +736,74 @@ export const processCanonicalFeishuIngress$ = command(
       success: true,
     });
 
-    await publishThreadListChangedSafely({
-      userId: result.value.userId,
-      orgId: result.value.orgId,
-    });
-    signal.throwIfAborted();
     const persisted = result.value;
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: persisted.orgId,
-        chatThreadId: persisted.chatThreadId,
-        // The ingress id is the enqueued input's chat event id.
-        eventId: args.ingressId,
-        afterPick: async (pick, pickSignal) => {
-          await notifyFeishuChatQueueWait(
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
             {
-              db,
-              ingressId: args.ingressId,
-              message: persisted.message,
-              reason: pick.reason,
+              orgId: persisted.orgId,
+              chatThreadId: persisted.chatThreadId,
             },
-            pickSignal,
+            signal,
+          ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: persisted.receivedAt,
+            eventId: args.ingressId,
+          },
+          signal,
+        );
+        await publishThreadListChangedSafely({
+          userId: persisted.userId,
+          orgId: persisted.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: persisted.userId,
+          orgId: persisted.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: persisted.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: args.ingressId,
+              },
+              signal,
+            );
+            await set(
+              notifyFeishuChatQueueWait$,
+              {
+                ingressId: args.ingressId,
+                message: persisted.message,
+                reason: pick.reason,
+              },
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
           );
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: persisted.userId,
-            orgId: persisted.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
+    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
     return true;
   },
 );

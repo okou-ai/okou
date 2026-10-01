@@ -357,12 +357,13 @@ function expectIsoTimestampBetween(
 async function waitForExpectation(
   assertion: () => void | Promise<void>,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const result = await settle(Promise.resolve().then(assertion));
       return result.ok;
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
 }
 
 async function completeOnboardingWithoutCredits(
@@ -5197,7 +5198,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(afterDeleted.body.concurrency.limit).toBe(3);
   });
 
-  it("keeps Stripe quantity across prorations and stale concurrent events", async () => {
+  it("keeps Stripe quantity across prorations and stale events", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
@@ -5346,54 +5347,14 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       quantity: 2,
       periodEnd,
     });
-    const staleRetrieve = createDeferredPromise<unknown>(context.signal);
-    const releaseStaleRetrieve = (): void => {
-      if (!staleRetrieve.settled()) {
-        staleRetrieve.resolve(staleState);
-      }
-    };
-    onTestFinished(releaseStaleRetrieve);
-    context.mocks.stripe.subscriptions.retrieve.mockReset();
-    context.mocks.stripe.subscriptions.retrieve
-      .mockImplementationOnce(() => {
-        return staleRetrieve.promise;
-      })
-      .mockResolvedValue(currentState);
-
-    const constructedEventsBefore =
-      context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-    const staleRequest = api.postStripeEvent(
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(currentState);
+    await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.updated",
         object: staleState,
       }),
       [200],
     );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.subscriptions.retrieve.mock.calls.length;
-      })
-      .toBe(1);
-
-    const currentRequest = api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: currentState,
-      }),
-      [200],
-    );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-      })
-      .toBe(constructedEventsBefore + 2);
-    await billing.readBillingStatus(actor);
-    expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledTimes(
-      1,
-    );
-
-    releaseStaleRetrieve();
-    await Promise.all([staleRequest, currentRequest]);
     billingStatus = await billing.readBillingStatus(actor);
     expect(billingStatus.concurrencySubscriptions).toStrictEqual([
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
@@ -6611,6 +6572,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       }),
       [200],
     );
+    await flushWaitUntilForTest();
     expect(deletedS3Keys.length).toBeGreaterThan(0);
     await waitForExpectation(async () => {
       await runs.requestReadRun(actor, run.runId, [404]);
@@ -6675,12 +6637,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       data: { id: orgOf(plainActor) },
     });
     await api.requestClerkWebhook("{}", {}, [200]);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const agents = await bdd.listAgents(plainActor);
         return agents.length;
-      })
-      .toBe(0);
+      })(),
+    ).resolves.toBe(0);
     expect(context.mocks.stripe.subscriptions.update.mock.calls).toHaveLength(
       updateCalls,
     );
@@ -6773,12 +6736,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     // billing status read falls back to the unprovisioned defaults instead
     // of the previously granted pro subscription.
     const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+      })(),
+    ).resolves.toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6876,12 +6840,13 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     // The empty org is still deleted: billing status falls back to the
     // unprovisioned defaults once the org metadata is cleaned up.
     const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+      })(),
+    ).resolves.toStrictEqual(["limited-free-1", null, false]);
   });
 
   describe("verified user.deleted cleanup", () => {

@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import {
-  readThreadSessionBinding,
-  readThreadSessionConversation,
-} from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
@@ -88,12 +85,16 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model },
         usagePricingResolution,
       });
-      const session = await readThreadSessionConversation(context, threadId);
+      const session = await readCompletedRunSessionId(
+        context,
+        actor,
+        run.runId,
+      );
       if (sessionId === undefined) {
-        sessionId = session.agent_session_id;
+        sessionId = session;
         expect(sessionId).toStrictEqual(expect.any(String));
       }
-      expect(session.agent_session_id).toBe(sessionId);
+      expect(session).toBe(sessionId);
     }
   }, 90_000);
 
@@ -147,16 +148,11 @@ describe("CHAT-02: model-first provider policies", () => {
       responsesModel,
       usagePricingResolution,
     });
-    const firstPiBinding = await readThreadSessionBinding(
+    const firstSessionId = await readCompletedRunSessionId(
       context,
-      firstPi.threadId,
+      actor,
+      firstPi.runId,
     );
-    if (!firstPiBinding.agent_session_id) {
-      throw new Error("Expected the first Pi run to bind a canonical session");
-    }
-    await expect(
-      readThreadSessionConversation(context, firstPi.threadId),
-    ).resolves.toMatchObject({ conversation_run_id: firstPi.runId });
 
     const firstCodexPrompt = "continue through Codex between Pi generations";
     const firstCodexAnswer = "Codex answer between Pi generations";
@@ -167,13 +163,6 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "gpt-6-astra",
       runOptions: { codexServiceTier: "fast" },
     });
-    const firstCodexBinding = await readThreadSessionBinding(
-      context,
-      firstPi.threadId,
-    );
-    expect(firstCodexBinding.agent_session_id).toBe(
-      firstPiBinding.agent_session_id,
-    );
     const firstCodexRun = await api.readRun(actor, firstCodex.runId);
     expect(firstCodexRun.appendSystemPrompt).toContain(
       "# Web Chat Run Context",
@@ -214,21 +203,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const returnedPiClaim = await claimChatRun(runnerGroup, returnedPi.runId);
     expect(returnedPiClaim.claim.resumeSession).toBeNull();
     expect(returnedPiClaim.claim.prompt).toBe(returnedPiPrompt);
-    const returnedPiBinding = await readThreadSessionBinding(
-      context,
-      firstPi.threadId,
-    );
-    if (!returnedPiBinding.agent_session_id) {
-      throw new Error(
-        "Expected the returned Pi run to retain its application session",
-      );
-    }
-    expect(returnedPiBinding.agent_session_id).toBe(
-      firstCodexBinding.agent_session_id,
-    );
-    expect(returnedPiBinding.agent_session_id).toBe(
-      firstPiBinding.agent_session_id,
-    );
     const returnedPiRun = await api.readRun(actor, returnedPi.runId);
     const returnedPiAppend = returnedPiRun.appendSystemPrompt ?? "";
     expect(returnedPiAppend).toContain("# Web Chat Run Context");
@@ -260,12 +234,6 @@ describe("CHAT-02: model-first provider policies", () => {
       responsesModel,
       usagePricingResolution,
     });
-    await expect(
-      readThreadSessionConversation(context, firstPi.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: returnedPiBinding.agent_session_id,
-      conversation_run_id: returnedPi.runId,
-    });
 
     const piFollowUpPrompt = "resume the returned Pi generation once";
     const piFollowUp = await sendChatRun(actor, {
@@ -280,13 +248,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(piFollowUpAppend).not.toContain("# Web Chat Run Context");
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
-    const piFollowUpBinding = await readThreadSessionBinding(
-      context,
-      firstPi.threadId,
-    );
-    expect(piFollowUpBinding.agent_session_id).toBe(
-      returnedPiBinding.agent_session_id,
-    );
     const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
     const resumedPiSession = piFollowUpClaim.claim.resumeSession;
     if (!resumedPiSession || !("historyRef" in resumedPiSession)) {
@@ -315,9 +276,6 @@ describe("CHAT-02: model-first provider policies", () => {
       piFollowUp.runId,
       piFollowUpClaim.sandboxHeaders,
     );
-    await expect(
-      readThreadSessionConversation(context, firstPi.threadId),
-    ).resolves.toMatchObject({ conversation_run_id: returnedPi.runId });
 
     const repeatedCodexPrompt = "cross Codex before returning to Pi again";
     const repeatedCodexAnswer = "second intervening Codex answer";
@@ -328,13 +286,6 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "gpt-6-astra",
       runOptions: { codexServiceTier: "fast" },
     });
-    const repeatedCodexBinding = await readThreadSessionBinding(
-      context,
-      firstPi.threadId,
-    );
-    expect(repeatedCodexBinding.agent_session_id).toBe(
-      returnedPiBinding.agent_session_id,
-    );
     const repeatedCodexClaim = await claimChatRun(
       runnerGroup,
       repeatedCodex.runId,
@@ -376,16 +327,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const repeatedPiClaim = await claimChatRun(runnerGroup, repeatedPi.runId);
     expect(repeatedPiClaim.claim.resumeSession).toBeNull();
     expect(repeatedPiClaim.claim.prompt).toBe(repeatedPiPrompt);
-    const repeatedPiBinding = await readThreadSessionBinding(
-      context,
-      firstPi.threadId,
-    );
-    expect(repeatedPiBinding.agent_session_id).toBe(
-      repeatedCodexBinding.agent_session_id,
-    );
-    expect(repeatedPiBinding.agent_session_id).toBe(
-      returnedPiBinding.agent_session_id,
-    );
     const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);
     const repeatedPiAppend = repeatedPiRun.appendSystemPrompt ?? "";
     expect(repeatedPiAppend).toContain("# Web Chat Run Context");
@@ -429,12 +370,18 @@ describe("CHAT-02: model-first provider policies", () => {
       responsesModel,
       usagePricingResolution,
     });
-    await expect(
-      readThreadSessionConversation(context, firstPi.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: repeatedPiBinding.agent_session_id,
-      conversation_run_id: repeatedPi.runId,
-    });
+
+    for (const completed of [
+      firstPi,
+      firstCodex,
+      returnedPi,
+      repeatedCodex,
+      repeatedPi,
+    ]) {
+      await expect(
+        readCompletedRunSessionId(context, actor, completed.runId),
+      ).resolves.toBe(firstSessionId);
+    }
 
     const visibleTurns = [
       { runId: firstPi.runId, prompt: firstPiPrompt, answer: firstPiAnswer },

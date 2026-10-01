@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
+
 import type {
   TestRuntimeStateActionBody,
   TestRuntimeStateActionResponse,
@@ -11,6 +11,7 @@ import { onTestFinished } from "vitest";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
+import { now } from "../../../../lib/time";
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
 
 const RUNTIME_STATE_ROUTE = "/api/test/runtime-state";
@@ -153,6 +154,11 @@ type BuiltInModelRuntimeRouteFixture = NonNullable<
   TestRuntimeStateActionResponse["built_in_model_route"]
 >;
 
+type BuiltInModelCandidateFixture = Pick<
+  BuiltInModelRuntimeRouteFixture,
+  "provider_type" | "upstream_model"
+>;
+
 export async function resolveBuiltInModelRouteFixture(
   context: TestContext,
   selectedModel: string,
@@ -167,7 +173,7 @@ export async function resolveBuiltInModelRouteFixture(
 export async function setBuiltInCandidateCooldownFixture(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
   unavailableUntil: Date,
 ): Promise<void> {
   await postAction(context, {
@@ -180,10 +186,30 @@ export async function setBuiltInCandidateCooldownFixture(
   registerBuiltInCandidateCooldownCleanup(context, selectedModel, route);
 }
 
+/**
+ * Puts the given Built-in candidates of a test-owned model into cooldown for
+ * the rest of the test, as the provider-failure path does in production.
+ */
+export async function coolDownBuiltInCandidatesFixture(
+  context: TestContext,
+  selectedModel: string,
+  candidates: readonly BuiltInModelCandidateFixture[],
+): Promise<void> {
+  const unavailableUntil = new Date(now() + 60 * 60 * 1000);
+  for (const candidate of candidates) {
+    await setBuiltInCandidateCooldownFixture(
+      context,
+      selectedModel,
+      candidate,
+      unavailableUntil,
+    );
+  }
+}
+
 export async function deleteBuiltInCandidateCooldownFixture(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
 ): Promise<void> {
   await postAction(context, {
     action: "delete-built-in-candidate-cooldown",
@@ -196,24 +222,10 @@ export async function deleteBuiltInCandidateCooldownFixture(
 export function registerBuiltInCandidateCooldownCleanup(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
 ): void {
   onTestFinished(async () => {
     await deleteBuiltInCandidateCooldownFixture(context, selectedModel, route);
-  });
-}
-
-export async function setCustomConnectorAuthTemplateFixture(
-  context: TestContext,
-  args: {
-    readonly connectorId: string;
-    readonly valueTemplate: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-custom-connector-auth-template-fixture",
-    connector_id: args.connectorId,
-    value_template: args.valueTemplate,
   });
 }
 
@@ -397,44 +409,6 @@ export async function readAgentRunFamilyCountsFixture(
   return response.agent_run_family_counts;
 }
 
-export async function readChatEventRowsAsPreviousApiFixture(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["previous_api_chat_event_rows"]>
-> {
-  const response = await postAction(context, {
-    action: "read-chat-event-rows-as-previous-api",
-    thread_id: threadId,
-  });
-  if (!("previous_api_chat_event_rows" in response)) {
-    throw new Error(
-      "readChatEventRowsAsPreviousApiFixture missing previous_api_chat_event_rows",
-    );
-  }
-  return response.previous_api_chat_event_rows ?? [];
-}
-
-export async function setOfficialWorkflowAutomationAdmissionStateFixture(
-  context: TestContext,
-  automationId: string,
-  reconciliationStatus:
-    | "current"
-    | "reconciling"
-    | "needs_reconfiguration"
-    | "failed",
-  appliedFingerprint?: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-official-workflow-automation-admission-state",
-    automation_id: automationId,
-    reconciliation_status: reconciliationStatus,
-    ...(appliedFingerprint === undefined
-      ? {}
-      : { applied_fingerprint: appliedFingerprint }),
-  });
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,
@@ -446,123 +420,6 @@ export async function stageOfficialWorkflowAutomationFixture(
     blueprint_key: blueprintKey,
     reconciliation_status: "reconciling",
   });
-}
-
-export async function setRunnerJobPiContextAsVersionedWriter(
-  context: TestContext,
-  runId: string,
-  piModelConfig: Readonly<Record<string, unknown>>,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-pi-context-as-versioned-writer",
-    run_id: runId,
-    pi_model_config: piModelConfig,
-  });
-}
-
-export async function mutateRunnerJobConnectorPermissionBaseline(
-  context: TestContext,
-  runId: string,
-  mode:
-    | "remove"
-    | "malformed"
-    | "capability-mismatch"
-    | "catalog-mismatch"
-    | "authority-mismatch"
-    | "inconsistent"
-    | "incomplete",
-): Promise<void> {
-  await postAction(context, {
-    action: "mutate-runner-job-connector-permission-baseline",
-    run_id: runId,
-    mode,
-  });
-}
-
-export async function setRunnerJobConnectorRuntimeTargets(
-  context: TestContext,
-  runId: string,
-  connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[],
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-connector-runtime-targets",
-    run_id: runId,
-    connector_runtime_targets: [...connectorRuntimeTargets],
-  });
-}
-
-export async function setRunnerJobContextProfileAsPreviousApi(
-  context: TestContext,
-  runId: string,
-  profile: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-context-profile-as-previous-api",
-    run_id: runId,
-    profile,
-  });
-}
-
-export async function removeRunCanonicalStorageState(
-  context: TestContext,
-  runId: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "remove-run-canonical-storage-state",
-    run_id: runId,
-  });
-}
-
-export async function readRunnerJobStorageState(
-  context: TestContext,
-  runId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["runner_job_storage_state"]>
-> {
-  const response = await postAction(context, {
-    action: "read-runner-job-storage-state",
-    run_id: runId,
-  });
-  if (!response.runner_job_storage_state) {
-    throw new Error(
-      "readRunnerJobStorageState missing runner_job_storage_state",
-    );
-  }
-  return response.runner_job_storage_state;
-}
-
-export async function readRunClaimOwner(
-  context: TestContext,
-  runId: string,
-): Promise<NonNullable<TestRuntimeStateActionResponse["runner_claim_owner"]>> {
-  const response = await postAction(context, {
-    action: "read-run-claim-owner",
-    run_id: runId,
-  });
-  if (!response.runner_claim_owner) {
-    throw new Error("readRunClaimOwner missing runner_claim_owner");
-  }
-  return response.runner_claim_owner;
-}
-
-export async function readStoragePersistenceState(
-  context: TestContext,
-  ids: {
-    readonly runId: string;
-    readonly sessionId: string;
-    readonly checkpointId: string;
-  },
-): Promise<NonNullable<TestRuntimeStateActionResponse["storage_persistence"]>> {
-  const response = await postAction(context, {
-    action: "read-storage-persistence-state",
-    run_id: ids.runId,
-    session_id: ids.sessionId,
-    checkpoint_id: ids.checkpointId,
-  });
-  if (!response.storage_persistence) {
-    throw new Error("readStoragePersistenceState missing storage_persistence");
-  }
-  return response.storage_persistence;
 }
 
 export async function readRunUploadedFileSources(
@@ -666,40 +523,6 @@ export async function steerRunTimeBudgetFixture(
   return response.run_time_budget;
 }
 
-export async function readThreadSessionBinding(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["thread_session_binding"]>
-> {
-  const response = await postAction(context, {
-    action: "read-thread-session-binding",
-    thread_id: threadId,
-  });
-  if (!response.thread_session_binding) {
-    throw new Error("readThreadSessionBinding missing thread_session_binding");
-  }
-  return response.thread_session_binding;
-}
-
-export async function readThreadSessionConversation(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["thread_session_conversation"]>
-> {
-  const response = await postAction(context, {
-    action: "read-thread-session-conversation",
-    thread_id: threadId,
-  });
-  if (!response.thread_session_conversation) {
-    throw new Error(
-      "readThreadSessionConversation missing thread_session_conversation",
-    );
-  }
-  return response.thread_session_conversation;
-}
-
 export async function seedPendingArtifactCatalogFile(
   context: TestContext,
   args: {
@@ -743,5 +566,29 @@ export async function clearWorkflowAutomationEventConnectorAsPreviousApi(
   await postAction(context, {
     action: "clear-workflow-automation-event-connector-as-previous-api",
     automation_id: automationId,
+  });
+}
+
+export async function setRunnerJobPiContextAsVersionedWriter(
+  context: TestContext,
+  runId: string,
+  piModelConfig: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  await postAction(context, {
+    action: "set-runner-job-pi-context-as-versioned-writer",
+    run_id: runId,
+    pi_model_config: piModelConfig,
+  });
+}
+
+export async function setRunnerJobContextProfileAsPreviousApi(
+  context: TestContext,
+  runId: string,
+  profile: string,
+): Promise<void> {
+  await postAction(context, {
+    action: "set-runner-job-context-profile-as-previous-api",
+    run_id: runId,
+    profile,
   });
 }

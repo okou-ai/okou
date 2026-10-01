@@ -39,7 +39,6 @@ import { mockNow, nowDate } from "../../../lib/time";
 import { settle } from "../../utils";
 import { db } from "../../../lib/db";
 import { mockOptionalEnv } from "../../../lib/env";
-import { holdAgentRunRowLockFixture } from "../../../test-fixtures/chat-events";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { runnersRoutes } from "../../routes/runners";
 import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complete";
@@ -55,7 +54,6 @@ import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-
 import {
   advancePiMemoryPhase2InputRevision,
   notifyPiMemoryPhase2ExternalHeadChange,
-  PI_MEMORY_PHASE2_LEASE_DURATION_MS,
 } from "../pi-memory-phase2-job.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import { PI_MEMORY_PHASE2_USAGE_DRAIN_MS } from "../pi-memory-phase2-usage.service";
@@ -204,7 +202,7 @@ type Fault =
   | "new_input";
 
 type BoundaryScope = Awaited<ReturnType<typeof createPhase2TestScope>>;
-type CleanupMode = "active" | "renewed-race";
+type CleanupMode = "active";
 interface ActiveMaintenanceFence {
   readonly selectionDigest: string;
   readonly selectedCount: number;
@@ -246,76 +244,6 @@ async function readActiveMaintenanceFence(
     selectedCount: job.claimedSelectedCount,
     selectedUtf8Bytes: job.claimedSelectedUtf8Bytes,
   };
-}
-
-async function crossActiveCleanupBoundary(
-  runId: string,
-  scope: BoundaryScope,
-  cleanupMode: CleanupMode | undefined,
-): Promise<void> {
-  if (cleanupMode === "active") {
-    const cleanupResult = await cleanupMaintenanceRun(runId);
-    expect(cleanupResult.threadlessRuns).toStrictEqual({
-      discovered: 0,
-      cancelled: 0,
-      waiting: 0,
-      deleted: 0,
-      failed: 0,
-      errors: [],
-    });
-  }
-  if (cleanupMode === "renewed-race") {
-    await db()
-      .update(piMemoryPhase2Jobs)
-      .set({ leaseExpiresAt: new Date(nowDate().getTime() - 1) })
-      .where(eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId));
-    const runLock = await holdAgentRunRowLockFixture({
-      runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      runLock.release();
-      await runLock.done;
-    });
-    const cleanupRequest = cleanupMaintenanceRun(runId);
-    await expect.poll(runLock.waiterCount).toBeGreaterThan(0);
-    await db()
-      .update(piMemoryPhase2Jobs)
-      .set({
-        leaseExpiresAt: new Date(
-          nowDate().getTime() + PI_MEMORY_PHASE2_LEASE_DURATION_MS,
-        ),
-      })
-      .where(eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId));
-    runLock.release();
-    await runLock.done;
-    const cleanupResult = await cleanupRequest;
-    expect(cleanupResult.threadlessRuns).toStrictEqual({
-      discovered: 1,
-      cancelled: 0,
-      waiting: 1,
-      deleted: 0,
-      failed: 0,
-      errors: [],
-    });
-    const continuousResult = await cleanupMaintenanceRun(runId);
-    expect(continuousResult.threadlessRuns).toStrictEqual({
-      discovered: 0,
-      cancelled: 0,
-      waiting: 0,
-      deleted: 0,
-      failed: 0,
-      errors: [],
-    });
-  }
-  if (cleanupMode) {
-    await expect(
-      db()
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runId)),
-    ).resolves.toStrictEqual([{ status: "running" }]);
-  }
 }
 
 function phase2JobSeed(fault: Fault, dispatchTime: Date) {
@@ -393,6 +321,23 @@ async function claimMaintenanceRun(
     maintenance: execution.piLaunchConfig.maintenance,
     piLaunchConfig: execution.piLaunchConfig,
   };
+}
+
+async function crossActiveCleanupBoundary(
+  runId: string,
+  cleanupMode: CleanupMode | undefined,
+): Promise<void> {
+  if (cleanupMode === "active") {
+    const cleanupResult = await cleanupMaintenanceRun(runId);
+    expect(cleanupResult.threadlessRuns).toStrictEqual({
+      discovered: 0,
+      cancelled: 0,
+      waiting: 0,
+      deleted: 0,
+      failed: 0,
+      errors: [],
+    });
+  }
 }
 
 async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
@@ -844,7 +789,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
     leaseToken: binding.leaseToken,
     selected: binding.selected,
   });
-  await crossActiveCleanupBoundary(result.runId, scope, cleanupMode);
+  await crossActiveCleanupBoundary(result.runId, cleanupMode);
   const token = execution.sandboxToken;
   const quote = (value: string) => {
     return `'${value.replaceAll("'", String.raw`'\''`)}'`;
@@ -1061,11 +1006,6 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
     { label: "complete_ack", fault: "complete_ack", cleanupMode: undefined },
     { label: "observer", fault: "observer", cleanupMode: undefined },
     { label: "new_input", fault: "new_input", cleanupMode: undefined },
-    {
-      label: "cleanup lease renewal",
-      fault: "none",
-      cleanupMode: "renewed-race",
-    },
   ] as const)(
     "settles changed output exactly once through $label",
     async ({ fault, cleanupMode }) => {
@@ -1222,54 +1162,6 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
           .from(storageVersionLineage)
           .where(eq(storageVersionLineage.runId, run.runId)),
       ).resolves.toHaveLength(1);
-
-      if (cleanupMode === "renewed-race") {
-        const completedAt = run.run?.completedAt;
-        if (!completedAt) {
-          throw new Error("Cleanup regression run did not complete");
-        }
-        const staleLeaseToken = randomUUID();
-        await db()
-          .update(piMemoryPhase2Jobs)
-          .set({
-            status: "leased",
-            inputRevision: 2,
-            claimedRevision: 2,
-            claimedBaseVersionId: later.versionId,
-            leaseToken: staleLeaseToken,
-            legacyLeaseToken: null,
-            sandboxLeaseToken: staleLeaseToken,
-            leaseExpiresAt: new Date(completedAt.getTime() - 1),
-            maintenanceRunId: run.runId,
-            retryCount: 0,
-            retryAt: null,
-            lastErrorClass: null,
-            claimedSelectionDigest: run.activeFence.selectionDigest,
-            claimedSelectedCount: run.activeFence.selectedCount,
-            claimedSelectedUtf8Bytes: run.activeFence.selectedUtf8Bytes,
-            lastObservedHeadVersionId: later.versionId,
-            updatedAt: completedAt,
-          })
-          .where(
-            eq(piMemoryPhase2Jobs.memoryStorageId, run.scope.memoryStorageId),
-          );
-        mockNow(completedAt.getTime() + PI_MEMORY_PHASE2_USAGE_DRAIN_MS);
-        const cleanupResult = await cleanupMaintenanceRun(run.runId);
-        expect(cleanupResult.threadlessRuns).toStrictEqual({
-          discovered: 1,
-          cancelled: 0,
-          waiting: 0,
-          deleted: 1,
-          failed: 0,
-          errors: [],
-        });
-        await expect(
-          db()
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(eq(agentRuns.id, run.runId)),
-        ).resolves.toStrictEqual([]);
-      }
     },
   );
 

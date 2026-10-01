@@ -308,7 +308,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runner-cli-${{ github.run_id }}
-          path: runner-cli-intermediate/package.tgz
+          path: |
+            runner-cli-intermediate/package.tgz
+            runner-cli-intermediate/manifest.json
           overwrite: true
           if-no-files-found: error
           retention-days: 1
@@ -330,6 +332,7 @@ jobs:
           RUNNER_HOST_GROUPS_MATRIX: ${{ steps.host-groups.outputs.matrix }}
           RUNNER_BINARY_GIT_REVISION: ${{ steps.identity.outputs.source-head-sha }}
           GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+          GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
         run: .github/scripts/runner-binary-cache-plan.sh
 
   compile:
@@ -358,6 +361,7 @@ jobs:
       RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -461,6 +465,7 @@ jobs:
       PROFILE: vm0/default
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -552,19 +557,6 @@ jobs:
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
 
-      # deploy-cli (turbo.yml) publishes the PR source head, not GitHub's
-      # synthetic PR merge commit used for the image manifest identity.
-      - name: Download Okou CLI artifact for this source commit
-        id: okou-cli
-        env:
-          ARTIFACT_SHA: ${{ needs.prepare.outputs.source-head-sha }}
-          OUTPUT_DIR: okou-cli-artifact
-          ARTIFACT_REQUIRED: "false"
-          WAIT_SECONDS: "600"
-          CHECK_PUBLISHER_STATUS: "true"
-          GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/download-okou-cli-artifact.sh
-
       - name: Build runner image on all metal hosts
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
@@ -574,7 +566,6 @@ jobs:
           METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
           EXPECTED_REMOTE_ARCH: ${{ matrix.unameM }}
           MANIFEST_PATH: runner-image-manifest/manifest.json
-          OKOU_CLI_ARTIFACT_DIR: ${{ steps.okou-cli.outputs.found == 'true' && steps.okou-cli.outputs.artifact-dir || '' }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -606,6 +597,9 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.artifact-name }}
           path: runner-image-manifest/manifest.json
+          # A retried image job rebuilds any collected host files and republishes
+          # this same target/head/namespace identity within the workflow run.
+          overwrite: true
           retention-days: 7
 
   asset:
@@ -631,6 +625,7 @@ jobs:
     env:
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
     steps:
       - uses: actions/checkout@v7.0.1
         with:

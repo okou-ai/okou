@@ -31,14 +31,8 @@ import {
   persistConnectorCatalogCompatibility,
 } from "../signals/services/connector-catalog-compatibility.service";
 import {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest,
-  setConnectorCatalogExternalReaderIdentityReadHookForTest,
-} from "../signals/services/connector-catalog-external-reader.service";
-import {
   CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
   persistConnectorCatalogRuntimeProjection,
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
 } from "../signals/services/connector-catalog-runtime-projection.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
 import {
@@ -256,38 +250,6 @@ async function deleteApiTestConnectorCatalogSource(
       .delete(connectorCatalogSyncState)
       .where(eq(connectorCatalogSyncState.sourceId, sourceId));
   });
-}
-
-export function setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest(hook);
-}
-
-export function clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements(): void {
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest();
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(hook);
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReplacements(
-  catalogVersions: readonly [first: string, second: string],
-): void {
-  const [firstCatalogVersion, secondCatalogVersion] = catalogVersions;
-  let nextCatalogVersion = firstCatalogVersion;
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(async () => {
-    const catalogVersion = nextCatalogVersion;
-    nextCatalogVersion = secondCatalogVersion;
-    await installApiTestConnectorCatalog({ catalogVersion });
-  });
-}
-
-export function clearApiTestConnectorCatalogExternalReaderIdentityReplacements(): void {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest();
 }
 
 interface ApiTestConnectorCatalogIdentity {
@@ -721,41 +683,6 @@ export async function corruptApiTestConnectorCatalogRuntimeProjectionDigest(
       connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
     });
   requireSingleCatalogMutation(updated, "runtime projection digest corruption");
-}
-
-export async function corruptApiTestConnectorCatalogRuntimeProjectionPayload(
-  connectorSlug: string,
-  connectorPayload: Buffer = Buffer.from("{}", "utf8"),
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const updated = await db
-    .update(connectorCatalogRuntimeProjections)
-    .set({
-      connectorDigest: sha256Digest(connectorPayload),
-      connectorPayload,
-    })
-    .where(
-      and(
-        eq(
-          connectorCatalogRuntimeProjections.projectionSetId,
-          projectionSet.id,
-        ),
-        eq(connectorCatalogRuntimeProjections.connectorSlug, connectorSlug),
-      ),
-    )
-    .returning({
-      connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-    });
-  requireSingleCatalogMutation(
-    updated,
-    "runtime projection payload corruption",
-  );
 }
 
 export async function expireApiTestConnectorCatalogRuntimeProjectionAuthority(): Promise<void> {

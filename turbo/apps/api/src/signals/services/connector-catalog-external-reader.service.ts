@@ -29,7 +29,7 @@ import { and, eq } from "drizzle-orm";
 import { computed, type Computed } from "ccstate";
 
 import { logger } from "../../lib/log";
-import { singleton, testOverride } from "../../lib/singleton";
+import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
 import {
@@ -193,31 +193,6 @@ export class ExternalConnectorCatalogUnavailableError extends Error {
     super("Accepted external connector catalog is unavailable");
     this.name = "ExternalConnectorCatalogUnavailableError";
     this.code = `CONNECTOR_CATALOG_UNAVAILABLE:${reason}`;
-  }
-}
-
-type ConnectorCatalogExternalReaderIdentityReadHook = () => Promise<void>;
-
-const externalReaderIdentityReadHook = testOverride<
-  ConnectorCatalogExternalReaderIdentityReadHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setConnectorCatalogExternalReaderIdentityReadHookForTest(
-  hook: ConnectorCatalogExternalReaderIdentityReadHook,
-): void {
-  externalReaderIdentityReadHook.set(hook);
-}
-
-export function clearConnectorCatalogExternalReaderIdentityReadHookForTest(): void {
-  externalReaderIdentityReadHook.clear();
-}
-
-async function runExternalReaderIdentityReadHook(): Promise<void> {
-  const hook = externalReaderIdentityReadHook.get();
-  if (hook) {
-    await hook();
   }
 }
 
@@ -577,7 +552,6 @@ export async function readCachedConnectorCatalogSnapshot(args: {
   readonly timing: ConnectorCatalogLoadTiming | undefined;
 }): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
   const { identity: currentIdentity, timing } = args;
-  await runExternalReaderIdentityReadHook();
   const currentKey = identityKey(currentIdentity);
   const cache = preparedCatalogCache();
   if (cache.completed?.key === currentKey) {

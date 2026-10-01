@@ -9,9 +9,7 @@ import {
   testRuntimeStateContract,
   type TestRuntimeStateActionBody,
 } from "@okouai/api-contracts/contracts/test-runtime-state";
-import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { compatibleStoredExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -20,19 +18,13 @@ import {
   browserSessionTabSnapshots,
   browserSessions,
 } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { checkpoints } from "@okouai/db/schema/checkpoint";
-import { conversations } from "@okouai/db/schema/conversation";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, count, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
-import { z } from "zod";
+import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
@@ -400,67 +392,6 @@ async function setRunTimeBudgetElapsed(
   }
 }
 
-async function readThreadSessionBinding(
-  db: Db,
-  threadId: string,
-  signal: AbortSignal,
-): Promise<{
-  readonly agent_session_id: string | null;
-  readonly agent_session_run_id: string | null;
-  readonly run_session_id: string | null;
-}> {
-  const [thread] = await db
-    .select({
-      agentSessionId: chatThreads.agentSessionId,
-      agentSessionRunId: chatThreads.agentSessionRunId,
-      runSessionId: agentRuns.sessionId,
-    })
-    .from(chatThreads)
-    .leftJoin(agentRuns, eq(chatThreads.agentSessionRunId, agentRuns.id))
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!thread) {
-    throw new Error("Expected a chat thread session binding row");
-  }
-  return {
-    agent_session_id: thread.agentSessionId,
-    agent_session_run_id: thread.agentSessionRunId,
-    run_session_id: thread.runSessionId,
-  };
-}
-
-async function readThreadSessionConversation(
-  db: Db,
-  threadId: string,
-  signal: AbortSignal,
-): Promise<{
-  readonly agent_session_id: string | null;
-  readonly conversation_id: string | null;
-  readonly conversation_run_id: string | null;
-}> {
-  const [thread] = await db
-    .select({
-      agentSessionId: chatThreads.agentSessionId,
-      conversationId: agentSessions.conversationId,
-      conversationRunId: conversations.runId,
-    })
-    .from(chatThreads)
-    .leftJoin(agentSessions, eq(chatThreads.agentSessionId, agentSessions.id))
-    .leftJoin(conversations, eq(agentSessions.conversationId, conversations.id))
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!thread) {
-    throw new Error("Expected a chat thread session binding row");
-  }
-  return {
-    agent_session_id: thread.agentSessionId,
-    conversation_id: thread.conversationId,
-    conversation_run_id: thread.conversationRunId,
-  };
-}
-
 type AutonomyBudgetFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
@@ -639,353 +570,35 @@ async function setRunnerJobPiContextAsVersionedWriter(
   }
 }
 
-type ConnectorPermissionBaselineMutationAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "mutate-runner-job-connector-permission-baseline" }
->;
-
-type ConnectorRuntimeTargetsMutationAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "set-runner-job-connector-runtime-targets" }
->;
-
-async function setRunnerJobConnectorRuntimeTargets(
-  db: Db,
-  body: ConnectorRuntimeTargetsMutationAction,
-  signal: AbortSignal,
-): Promise<void> {
-  const [updated] = await db
-    .update(runnerJobQueue)
-    .set({
-      executionContext: sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorRuntimeTargets}',
-        ${JSON.stringify(body.connector_runtime_targets)}::jsonb,
-        true
-      )`,
-    })
-    .where(eq(runnerJobQueue.runId, body.run_id))
-    .returning({ runId: runnerJobQueue.runId });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a queued runner job for runtime targets");
-  }
-}
-
-async function mutateRunnerJobConnectorPermissionBaseline(
-  db: Db,
-  body: ConnectorPermissionBaselineMutationAction,
-  signal: AbortSignal,
-): Promise<void> {
-  let executionContext: SQL;
-  switch (body.mode) {
-    case "remove": {
-      executionContext = sql`${runnerJobQueue.executionContext} - 'connectorPermissionBaseline'`;
-      break;
-    }
-    case "malformed": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline}',
-        '{"version":2}'::jsonb,
-        true
-      )`;
-      break;
-    }
-    case "capability-mismatch": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline,catalogIdentity,capabilityDigest}',
-        '"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"'::jsonb,
-        true
-      )`;
-      break;
-    }
-    case "catalog-mismatch": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline,catalogIdentity,catalogDigest}',
-        '"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"'::jsonb,
-        true
-      )`;
-      break;
-    }
-    case "authority-mismatch": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline,validationAuthority,backendVersion}',
-        '"999.0.0"'::jsonb,
-        true
-      )`;
-      break;
-    }
-    case "inconsistent": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline,connectors,constructor}',
-        '{
-          "permissionNames": [],
-          "defaultPolicy": {
-            "permissionDefault": "allow",
-            "unknownPolicy": "allow"
-          }
-        }'::jsonb,
-        true
-      )`;
-      break;
-    }
-    case "incomplete": {
-      executionContext = sql`jsonb_set(
-        ${runnerJobQueue.executionContext},
-        '{connectorPermissionBaseline,connectors}',
-        '{}'::jsonb,
-        true
-      )`;
-      break;
-    }
-  }
-  const [updated] = await db
-    .update(runnerJobQueue)
-    .set({ executionContext })
-    .where(eq(runnerJobQueue.runId, body.run_id))
-    .returning({ runId: runnerJobQueue.runId });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a runner job permission baseline");
-  }
-}
-
-async function removeRunCanonicalStorageState(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .update(agentRuns)
-    .set({ storageMounts: null })
-    .where(eq(agentRuns.id, runId));
-  signal.throwIfAborted();
-  await db
-    .update(runnerJobQueue)
-    .set({
-      executionContext: sql`${runnerJobQueue.executionContext} - 'storageMounts'`,
-    })
-    .where(eq(runnerJobQueue.runId, runId));
-  signal.throwIfAborted();
-}
-
-async function readStoragePersistenceState(
-  db: Db,
-  ids: {
-    readonly runId: string;
-    readonly sessionId: string;
-    readonly checkpointId: string;
-  },
-  signal: AbortSignal,
-) {
-  const [[run], [session], [checkpoint]] = await Promise.all([
-    db
-      .select({
-        storageMounts: agentRuns.storageMounts,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, ids.runId))
-      .limit(1),
-    db
-      .select({
-        storageMounts: agentSessions.storageMounts,
-      })
-      .from(agentSessions)
-      .where(eq(agentSessions.id, ids.sessionId))
-      .limit(1),
-    db
-      .select({
-        storageMounts: checkpoints.storageMounts,
-      })
-      .from(checkpoints)
-      .where(eq(checkpoints.id, ids.checkpointId))
-      .limit(1),
-  ]);
-  signal.throwIfAborted();
-  if (!run || !session || !checkpoint) {
-    throw new Error("Storage persistence row not found");
-  }
-  return {
-    run_canonical: run.storageMounts !== null,
-    session_canonical: session.storageMounts !== null,
-    checkpoint_canonical: checkpoint.storageMounts !== null,
-  };
-}
-
-async function readRunnerJobStorageState(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-) {
-  const [job] = await db
-    .select({ executionContext: runnerJobQueue.executionContext })
-    .from(runnerJobQueue)
-    .where(eq(runnerJobQueue.runId, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!job) {
-    throw new Error("Runner job queue row not found");
-  }
-  const rawContext = z
-    .record(z.string(), z.unknown())
-    .parse(job.executionContext);
-  const context = compatibleStoredExecutionContextSchema.parse(rawContext);
-  return {
-    has_stored_storage_manifest: Object.hasOwn(rawContext, "storageManifest"),
-    canonical_mount_count: context.storageMounts.length,
-    has_run_context_storage: Object.hasOwn(rawContext, "runContextStorage"),
-  };
-}
-
-type StorageStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "remove-run-canonical-storage-state" }
->;
-
-type ReadStorageStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-storage-persistence-state" }
->;
-type ReadRunnerJobStorageStateAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-runner-job-storage-state" }
->;
-type ReadRunClaimOwnerAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-run-claim-owner" }
->;
 type ReadRunLaunchSnapshotAction = Extract<
   TestRuntimeStateActionBody,
   { action: "read-run-launch-snapshot" }
 >;
-type PersistenceStateAction =
-  | StorageStateAction
-  | ReadStorageStateAction
-  | ReadRunnerJobStorageStateAction
-  | ReadRunClaimOwnerAction
-  | ReadRunLaunchSnapshotAction;
 
-function isPersistenceStateAction(
+function isReadRunLaunchSnapshotAction(
   body: TestRuntimeStateActionBody,
-): body is PersistenceStateAction {
-  switch (body.action) {
-    case "remove-run-canonical-storage-state":
-    case "read-storage-persistence-state": {
-      return true;
-    }
-    case "read-runner-job-storage-state":
-    case "read-run-claim-owner":
-    case "read-run-launch-snapshot": {
-      return true;
-    }
-    default: {
-      return false;
-    }
-  }
+): body is ReadRunLaunchSnapshotAction {
+  return body.action === "read-run-launch-snapshot";
 }
 
-async function mutateStorageState(
+async function readRunLaunchSnapshotActionResponse(
   db: Db,
-  body: StorageStateAction,
-  signal: AbortSignal,
-): Promise<void> {
-  await removeRunCanonicalStorageState(db, body.run_id, signal);
-  signal.throwIfAborted();
-}
-
-async function persistenceStateActionResponse(
-  db: Db,
-  body: PersistenceStateAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "read-storage-persistence-state": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          storage_persistence: await readStoragePersistenceState(
-            db,
-            {
-              runId: body.run_id,
-              sessionId: body.session_id,
-              checkpointId: body.checkpoint_id,
-            },
-            signal,
-          ),
-        },
-      };
-    }
-    case "read-runner-job-storage-state": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          runner_job_storage_state: await readRunnerJobStorageState(
-            db,
-            body.run_id,
-            signal,
-          ),
-        },
-      };
-    }
-    case "read-run-claim-owner": {
-      return await readRunClaimOwnerActionResponse(db, body, signal);
-    }
-    case "read-run-launch-snapshot": {
-      const [run] = await db
-        .select({ launchSnapshot: agentRuns.launchSnapshot })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, body.run_id))
-        .limit(1);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          run_launch_snapshot: {
-            exists: run !== undefined,
-            launch_snapshot: run?.launchSnapshot ?? null,
-          },
-        },
-      };
-    }
-    case "remove-run-canonical-storage-state": {
-      await mutateStorageState(db, body, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-  }
-}
-
-async function readRunClaimOwnerActionResponse(
-  db: Db,
-  body: ReadRunClaimOwnerAction,
+  body: ReadRunLaunchSnapshotAction,
   signal: AbortSignal,
 ) {
   const [run] = await db
-    .select({
-      runnerId: agentRuns.runnerId,
-      heartbeatGeneration: agentRuns.runnerHeartbeatGeneration,
-    })
+    .select({ launchSnapshot: agentRuns.launchSnapshot })
     .from(agentRuns)
     .where(eq(agentRuns.id, body.run_id))
     .limit(1);
   signal.throwIfAborted();
-  if (!run) {
-    throw new Error("Agent run not found");
-  }
   return {
     status: 200 as const,
     body: {
       ok: true as const,
-      runner_claim_owner: {
-        runner_id: run.runnerId,
-        heartbeat_generation: run.heartbeatGeneration,
+      run_launch_snapshot: {
+        exists: run !== undefined,
+        launch_snapshot: run?.launchSnapshot ?? null,
       },
     },
   };
@@ -1039,57 +652,6 @@ async function timingStateActionResponse(
           run_time_budget: await steerRunNearTimeBudgetForTest(
             db,
             body.run_id,
-            signal,
-          ),
-        },
-      };
-    }
-  }
-}
-
-type ThreadSessionStateAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action: "read-thread-session-binding" | "read-thread-session-conversation";
-  }
->;
-
-function isThreadSessionStateAction(
-  body: TestRuntimeStateActionBody,
-): body is ThreadSessionStateAction {
-  return (
-    body.action === "read-thread-session-binding" ||
-    body.action === "read-thread-session-conversation"
-  );
-}
-
-async function threadSessionStateActionResponse(
-  db: Db,
-  body: ThreadSessionStateAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "read-thread-session-binding": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          thread_session_binding: await readThreadSessionBinding(
-            db,
-            body.thread_id,
-            signal,
-          ),
-        },
-      };
-    }
-    case "read-thread-session-conversation": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          thread_session_conversation: await readThreadSessionConversation(
-            db,
-            body.thread_id,
             signal,
           ),
         },
@@ -1238,50 +800,13 @@ type CompatibilityFixtureAction =
   | PendingArtifactCatalogFileAction
   | PreviousApiBrowserTabSnapshotAction
   | PreviousApiRunnerJobContextProfileAction
-  | PreviousApiWorkflowAutomationEventConnectorAction
-  | ConnectorPermissionBaselineMutationAction;
-
-type CustomConnectorAuthTemplateFixtureAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "set-custom-connector-auth-template-fixture" }
->;
-
-function isCustomConnectorAuthTemplateFixtureAction(
-  body: TestRuntimeStateActionBody,
-): body is CustomConnectorAuthTemplateFixtureAction {
-  return body.action === "set-custom-connector-auth-template-fixture";
-}
-
-async function customConnectorAuthTemplateFixtureActionResponse(
-  db: Db,
-  body: CustomConnectorAuthTemplateFixtureAction,
-  signal: AbortSignal,
-) {
-  const [updated] = await db
-    .update(orgCustomConnectors)
-    .set({
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: body.value_template,
-        },
-      ],
-    })
-    .where(eq(orgCustomConnectors.id, body.connector_id))
-    .returning({ id: orgCustomConnectors.id });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a Custom Connector definition fixture");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
+  | PreviousApiWorkflowAutomationEventConnectorAction;
 
 type ChatEventFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
       | "reserve-chat-event-sequence-gap"
-      | "read-chat-event-rows-as-previous-api"
       | "read-chat-event-snapshot-head"
       | "update-chat-event-snapshot-head";
   }
@@ -1292,7 +817,6 @@ function isChatEventFixtureAction(
 ): body is ChatEventFixtureAction {
   return (
     body.action === "reserve-chat-event-sequence-gap" ||
-    body.action === "read-chat-event-rows-as-previous-api" ||
     body.action === "read-chat-event-snapshot-head" ||
     body.action === "update-chat-event-snapshot-head"
   );
@@ -1346,58 +870,6 @@ async function updateChatEventSnapshotHeadFixture(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-async function readChatEventRowsAsPreviousApiFixture(
-  db: Db,
-  body: Extract<
-    TestRuntimeStateActionBody,
-    { action: "read-chat-event-rows-as-previous-api" }
-  >,
-  signal: AbortSignal,
-) {
-  const rows = await db
-    .select({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      runId: chatEvents.runId,
-      revokesEventId: chatEvents.revokesEventId,
-      eventType: chatEvents.eventType,
-      payload: chatEvents.payload,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-      runEventId: chatEvents.runEventId,
-      seqId: chatEvents.seqId,
-      createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(eq(chatEvents.chatThreadId, body.thread_id))
-    .orderBy(chatEvents.seqId);
-  signal.throwIfAborted();
-  // This is the exact strict raw/snapshot reader shape from the API version
-  // immediately before the private Official queue column was introduced.
-  const previousApiRows = rows.map((row) => {
-    return chatEventRowSchema.parse({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-    });
-  });
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      previous_api_chat_event_rows: previousApiRows.map((row) => {
-        return {
-          id: row.id,
-          event_type: row.eventType,
-          revokes_event_id: row.revokesEventId,
-          payload_keys:
-            row.payload === null ? [] : Object.keys(row.payload).sort(),
-        };
-      }),
-    },
-  };
-}
-
 async function chatEventFixtureActionResponse(
   db: Db,
   body: ChatEventFixtureAction,
@@ -1416,9 +888,6 @@ async function chatEventFixtureActionResponse(
       });
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
-  }
-  if (body.action === "read-chat-event-rows-as-previous-api") {
-    return await readChatEventRowsAsPreviousApiFixture(db, body, signal);
   }
   if (body.action === "update-chat-event-snapshot-head") {
     return await updateChatEventSnapshotHeadFixture(db, body, signal);
@@ -1493,7 +962,6 @@ function isCompatibilityFixtureAction(
     "set-browser-tab-snapshot-as-previous-api",
     "set-runner-job-context-profile-as-previous-api",
     "clear-workflow-automation-event-connector-as-previous-api",
-    "mutate-runner-job-connector-permission-baseline",
   ].includes(body.action);
 }
 
@@ -1521,10 +989,6 @@ async function compatibilityFixtureActionResponse(
         body,
         signal,
       );
-    }
-    case "mutate-runner-job-connector-permission-baseline": {
-      await mutateRunnerJobConnectorPermissionBaseline(db, body, signal);
-      return { status: 200 as const, body: { ok: true as const } };
     }
   }
 }
@@ -1726,13 +1190,6 @@ async function officialWorkflowRunFixtureActionResponse(
 const specializedRuntimeFixtureAction$ = command(
   async ({ set }, body: TestRuntimeStateActionBody, signal: AbortSignal) => {
     const db = set(writeDb$);
-    if (isCustomConnectorAuthTemplateFixtureAction(body)) {
-      return await customConnectorAuthTemplateFixtureActionResponse(
-        db,
-        body,
-        signal,
-      );
-    }
     if (isOfficialWorkflowRunFixtureAction(body)) {
       return await officialWorkflowRunFixtureActionResponse(db, body, signal);
     }
@@ -1836,14 +1293,11 @@ const postRuntimeStateAction$ = command(
 
     const body = bodyResult.data;
     const db = set(writeDb$);
-    if (isPersistenceStateAction(body)) {
-      return await persistenceStateActionResponse(db, body, signal);
+    if (isReadRunLaunchSnapshotAction(body)) {
+      return await readRunLaunchSnapshotActionResponse(db, body, signal);
     }
     if (isTimingStateAction(body)) {
       return await timingStateActionResponse(db, body, signal);
-    }
-    if (isThreadSessionStateAction(body)) {
-      return await threadSessionStateActionResponse(db, body, signal);
     }
     if (isChatEventFixtureAction(body)) {
       return await chatEventFixtureActionResponse(db, body, signal);
@@ -1868,10 +1322,6 @@ const postRuntimeStateAction$ = command(
     switch (body.action) {
       case "set-runner-job-pi-context-as-versioned-writer": {
         await setRunnerJobPiContextAsVersionedWriter(db, body, signal);
-        return { status: 200 as const, body: { ok: true as const } };
-      }
-      case "set-runner-job-connector-runtime-targets": {
-        await setRunnerJobConnectorRuntimeTargets(db, body, signal);
         return { status: 200 as const, body: { ok: true as const } };
       }
       case "read-run-uploaded-file-sources": {

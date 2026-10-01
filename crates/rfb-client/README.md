@@ -40,8 +40,9 @@ types 30, 33 and 36 as distinct saved profiles only through an independently
 authorized SSH host and literal Mac loopback VNC destination. There is no saved
 type-2 profile. `VncAccess` remains disabled by default.
 
-RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
-X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
+RFB 3.8 / VeNCrypt 0.2 supports the caller-selected X509None (subtype 260),
+X509Vnc (261), X509Plain (262), or the separate **QEMU-specific** SCRAM profile
+(subtype 263 on pinned QEMU 8.2.2) policy. TLS 1.2 or 1.3 verifies the certificate
 chain, validity and saved DNS name or IP SAN before any reusable credential is
 sent. Other offered X509 variants and insecure alternatives are never selected.
 The X509 entry point has no verification bypass or fallback to bare None,
@@ -86,14 +87,34 @@ are erased on drop and Debug output is redacted. The exact username and password
 lengths and bytes are sent only after verified TLS, then erased before waiting for
 SecurityResult. Product configuration may impose a tighter username limit.
 
+The opt-in `X509Authentication::QemuScramSha256` engine profile has **no saved
+Owner/Runner/App method**. It requires verified TLS root and server identity
+before offering credentials, selects only SCRAM-SHA-256 and never a different
+SASL mechanism or non-TLS subtype. `QemuScramCredentials` accepts 1–255
+printable ASCII username bytes excluding comma/equals and 1–1023 printable
+ASCII password bytes (spaces retained, no normalization/truncation); this is
+not the classic eight-byte VNC password. Its owned credentials are redacted and
+erased on drop, although the SASL library's internal derived-key copies are not
+guaranteed erasable. The server-first salt/iteration cost is checked before
+running synchronous PBKDF2 on the blocking pool. The client requires a final
+SCRAM server proof, successful SecurityResult and no SASL stream layer; verified
+TLS protects the remainder of the session. **Pinned QEMU 8.2.2 swaps the
+published RFB spec's subtype labels:** QEMU assigns X509SASL **263** and
+TLSSASL **264**, whereas the spec assigns X509SASL **264**. This explicit
+QEMU-specific 263 path refuses QEMU 264; it does not claim generic standards
+X509SASL 264 support. The independent positive and negative fixture, cleanup,
+and version pins are in [`tests/QEMU_SASL.md`](tests/QEMU_SASL.md).
+
 Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
 are not consumed. The certificate-free returned object retains no client credentials; the
 certificate-required TLS connection may retain the client signing key until
 stream teardown. This crate retains no extra application-owned plaintext key
 buffer after key-provider import; Rustls/provider, compiler, kernel and TLS
-record copies are not guaranteed erasable. The engine starts no task. Its owned
-transport is fixed at authentication: verified TLS for X509 or
+record copies are not guaranteed erasable. The SCRAM profile can run a bounded PBKDF2 step in Tokio's blocking pool;
+when an authentication is cancelled, its socket closes immediately while an
+already-started bounded computation finishes and then drops its owned inputs.
+Other profiles start no task. Its owned transport is fixed at authentication: verified TLS for X509 or
 the caller-supplied raw stream for Apple DH, Apple password/type 2 or either
 Apple SRP method. No fallback changes that variant.
 

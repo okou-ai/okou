@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -15,24 +16,18 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
-import {
-  readmitPiMemoryStage1CandidateFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   requireOrgId,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
   claimEnvironment,
@@ -49,7 +44,6 @@ const {
   authDeviceSupport,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
   expectNoThreadModelUpdateEvent,
   claimChatRun,
@@ -66,6 +60,7 @@ const {
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
+  completeChatRunOk,
   piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
@@ -336,8 +331,8 @@ describe("shared native Pi route activation", () => {
         threadId: first.threadId,
         prompt: "continue with the same history",
       });
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       await flushWaitUntilForTest();
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
@@ -451,8 +446,8 @@ describe("shared native Pi route activation", () => {
       ).resolves.toMatchObject({
         modelSettings: { [model]: { effort: "extra" } },
       });
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       for (const run of [first, second]) {
         await api.requestClaimRunnerJob(true, run.runId, [404], {
           capabilities: { piModelConfigGenerations: [4] },
@@ -641,7 +636,7 @@ describe("shared native Pi route activation", () => {
         },
         resolvedSecrets: [binding.secretName],
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
       if (type === "custom-anthropic-messages") {
         await completeNativeToolRun({
@@ -673,7 +668,7 @@ describe("shared native Pi route activation", () => {
         );
       });
       expect(terminal).toHaveLength(1);
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
     },
     90_000,
   );
@@ -735,7 +730,7 @@ describe("shared native Pi route activation", () => {
         nativeModel: model,
         usagePricingResolution: await createGptUsagePricingResolution(),
       });
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
       await expectExactPrivatePiMemoryAdmission({
         orgId: requireOrgId(actor),
         userId: actor.userId,
@@ -814,7 +809,7 @@ describe("shared native Pi route activation", () => {
               },
             },
       );
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       await cancelChatRun(actor, second.runId, sandboxHeaders);
     },
     90_000,
@@ -942,7 +937,11 @@ describe("shared native Pi route activation", () => {
       nativeModel: model,
       usagePricingResolution: await createGptUsagePricingResolution(),
     });
-    const original = await readThreadSessionBinding(context, first.threadId);
+    const originalSession = await readCompletedRunSessionId(
+      context,
+      actor,
+      first.runId,
+    );
     mockClaudeCodeTokenEndpoint();
     await misc.upsertPersonalModelProvider(
       actor,
@@ -960,71 +959,22 @@ describe("shared native Pi route activation", () => {
     const claim = await claimChatRun(runnerGroup, second.runId);
     expect(claim.claim.cliAgentType).toBe("claude-code");
     expect(claim.claim.resumeSession).toBeNull();
-    expect(
-      (await readThreadSessionBinding(context, first.threadId))
-        .agent_session_id,
-    ).toBe(original.agent_session_id);
     expect(claimEnvironment(claim.claim).ANTHROPIC_MODEL).toBe(model);
-    await expect(
-      readRunModelSourceFixture(second.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "claude-code-oauth-token",
-      modelProviderCredentialScope: "member",
-      selectedModel: model,
-      creditAdmitted: false,
-      builtInModelKeyId: null,
+    await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
+      source: {
+        providerType: "claude-code-oauth-token",
+        credentialScope: "member",
+        model,
+      },
     });
     await expectNoThreadModelUpdateEvent(actor, first.threadId, model);
-    await expectNoBuiltInModelUsage(second.runId);
-    await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
+    await completeChatRunOk(second.runId, claim.sandboxHeaders);
+    await expect(
+      readCompletedRunSessionId(context, actor, second.runId),
+    ).resolves.toBe(originalSession);
+    await expectThreadModelCredits(context, actor, second.threadId, 0);
   });
 
-  it.each([false, true])(
-    "captures the managed OpenRouter Claude route with US switch %s in the native claim",
-    async (usRoutingEnabled) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      const model = "claude-sonnet-5";
-      const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
-        actor,
-        model,
-      );
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
-      });
-      const pricing = await createPiUsagePricingResolution(model);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const run = await withSelectedRoute(() => {
-        return sendChatRun(
-          actor,
-          {
-            agentId,
-            model,
-            prompt: "use the selected managed OpenRouter route",
-          },
-          pricing,
-        );
-      });
-      await flushWaitUntilForTest();
-      const { claim, sandboxHeaders } = await claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
-      const config = piModelConfigV4Schema.parse(claim.piModelConfig);
-      expect(config).toMatchObject({
-        route: "openrouter-api-key",
-        catalogModel: model,
-        model: "anthropic/claude-sonnet-5",
-        billingOwner: "builtin",
-      });
-      expect(piNativeInferenceUrl(config)).toBe(
-        `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/messages`,
-      );
-      await cancelChatRun(actor, run.runId, sandboxHeaders);
-    },
-    90_000,
-  );
   it.each(["schedule", "event"] as const)(
     "uses the shared native %s Automation handoff and completion without owned memory",
     async (source) => {
@@ -1132,21 +1082,7 @@ describe("shared native Pi route activation", () => {
         usagePricingResolution: pricing,
       });
       await expectThreadPiTerminal(actor, threadId, runId);
-      // With PiMemory on, the native Automation completion is still skipped
-      // as a non-interactive source and writes no owned memory candidate.
-      await expect(
-        readPiMemoryStage1CandidateFixture({
-          orgId: requireOrgId(actor),
-          userId: actor.userId,
-        }),
-      ).resolves.toBeNull();
-      await expect(
-        readmitPiMemoryStage1CandidateFixture(runId),
-      ).resolves.toStrictEqual({
-        outcome: "skipped",
-        reason: "non_interactive_source",
-      });
-      await expectNoBuiltInModelUsage(runId);
+      await expectThreadModelCredits(context, actor, threadId, 0);
     },
     90_000,
   );

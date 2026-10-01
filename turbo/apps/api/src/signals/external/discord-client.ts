@@ -193,12 +193,15 @@ function decodeDiscordResponse<T>(
   return { kind: "ok", data: parsed.data };
 }
 
-/** Return every retry decision to the service that owns fresh authorization. */
+/** Read snapshots are timeout-owned; writes also require their caller's signal. */
 async function requestDiscord<T>(
   args: DiscordRequest<T>,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<T>> {
-  signal.throwIfAborted();
+  if (signal === undefined && args.method !== "GET") {
+    throw new Error("Discord writes require a caller-owned signal");
+  }
+  signal?.throwIfAborted();
   const headers: Record<string, string> = { accept: "application/json" };
   if (args.botToken !== undefined) {
     if (!args.botToken || /\s/u.test(args.botToken)) {
@@ -210,7 +213,8 @@ async function requestDiscord<T>(
     headers["content-type"] = "application/json";
   }
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const requestSignal = AbortSignal.any([signal, timeout]);
+  const requestSignal =
+    signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   const responseResult = await settle(
     fetch(`${DISCORD_API_ORIGIN}${args.path}`, {
       method: args.method,
@@ -235,7 +239,7 @@ async function requestDiscord<T>(
       "Discord response could not be read",
     );
   }
-  signal.throwIfAborted();
+  signal?.throwIfAborted();
   if (response.status === 429) {
     const rateLimit = rateLimitSchema.safeParse(
       safeJsonParse(bodyResult.value),
@@ -260,7 +264,7 @@ async function requestDiscord<T>(
 
 function fetchDiscordCurrentUser(
   args: DiscordBotCredentials,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordUser>> {
   return requestDiscord(
     { ...args, path: "/users/@me", method: "GET", schema: discordUserSchema },
@@ -270,7 +274,7 @@ function fetchDiscordCurrentUser(
 
 function fetchDiscordChannel(
   args: DiscordBotCredentials & { readonly channelId: string },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordChannel>> {
   return requestDiscord(
     {
@@ -285,7 +289,7 @@ function fetchDiscordChannel(
 
 function fetchDiscordGuild(
   args: DiscordBotCredentials & { readonly guildId: string },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordGuild>> {
   return requestDiscord(
     {
@@ -303,7 +307,7 @@ function fetchDiscordGuildMember(
     readonly guildId: string;
     readonly userId: string;
   },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordMember>> {
   return requestDiscord(
     {
@@ -318,7 +322,7 @@ function fetchDiscordGuildMember(
 
 function fetchDiscordGuildRoles(
   args: DiscordBotCredentials & { readonly guildId: string },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordRole[]>> {
   return requestDiscord(
     {
@@ -336,7 +340,7 @@ function fetchDiscordThreadMember(
     readonly threadId: string;
     readonly userId: string;
   },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<DiscordApiResult<DiscordThreadMember>> {
   return requestDiscord(
     {

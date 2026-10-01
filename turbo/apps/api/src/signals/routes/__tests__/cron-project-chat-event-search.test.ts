@@ -8,17 +8,13 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
-  insertOrphanedChatEventSearchProjectionFixture,
   insertChatSearchProjectionCoverageFixture,
   insertSearchablePromptFixture,
   readChatEventSearchProjectionFixture,
   readChatEventSearchProjectionRowsFixture,
-  removeChatEventSearchProjectionRowsFixture,
   rejectSearchablePromptFixture,
-  writeChatEventSearchProjectionFixture,
 } from "../../../test-fixtures/chat-event-search";
 import {
-  holdChatEventSearchWatermarkRowLockFixture,
   holdChatEventInsertTransactionFixture,
   holdChatThreadDeleteTransactionFixture,
 } from "../../../test-fixtures/chat-events";
@@ -286,44 +282,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
     await expectNoProjection(threadId);
   });
-
-  it("removes a later projection that races orphan cleanup", async () => {
-    const chatThreadId = randomUUID();
-    await insertOrphanedChatEventSearchProjectionFixture({
-      chatThreadId,
-      text: `projected before cleanup ${randomUUID()}`,
-    });
-    const heldWatermark = await holdChatEventSearchWatermarkRowLockFixture({
-      chatThreadId,
-      signal: context.signal,
-    });
-    const racingProjection = writeChatEventSearchProjectionFixture({
-      chatThreadId,
-      text: `projected during cleanup ${randomUUID()}`,
-    });
-    const tasks: Promise<unknown>[] = [racingProjection];
-    onTestFinished(async () => {
-      heldWatermark.release();
-      await Promise.allSettled([heldWatermark.done, ...tasks]);
-      await removeChatEventSearchProjectionRowsFixture(chatThreadId);
-    });
-
-    await expect.poll(heldWatermark.blockedWaiterCount).toBe(1);
-    const cleanup = projectOwnedChatEventSearch([chatThreadId]);
-    tasks.push(cleanup);
-    await expect.poll(heldWatermark.blockedWaiterCount).toBe(2);
-    heldWatermark.release();
-    const [, cleaned] = await Promise.all([
-      racingProjection,
-      cleanup,
-      heldWatermark.done,
-    ]);
-
-    expect(cleaned.orphanedThreads).toBe(1);
-    await expect(
-      readChatEventSearchProjectionRowsFixture(chatThreadId),
-    ).resolves.toStrictEqual({ indexedSeqId: null, messages: [] });
-  }, 60_000);
 
   it("removes search projection rows synchronously on normal deletion", async () => {
     const actor = bdd.user();

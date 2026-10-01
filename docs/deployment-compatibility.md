@@ -4621,15 +4621,23 @@ immutable: the publish step fails the release when the version already exists
 with different bytes, so one CLI version identifies exactly one bundle and the
 semantic version can serve as a compatibility identity.
 
-The runner build (`runner build --okou-cli-artifact DIR`) installs the versioned
-bundle into the rootfs customize layer at `/usr/local/lib/okou-cli/<version>/`
-with a `/usr/local/bin/okou` launcher and an installed manifest at
-`/usr/local/lib/okou-cli/installed.json`; the bundle bytes and the manifest are
-part of the rootfs hash, and `verify-rootfs.sh` asserts the install. Release
-runner builds install the CLI version tagged in `.release-please-manifest.json`
-at the same release commit; preview images install the commit artifact of their
-own head commit. A build without the artifact carries no CLI and keeps only the
-commit-addressed path below.
+A Runner compiled with an embedded CLI bundle installs its verified
+`package.tgz` into the rootfs customize layer at
+`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
+identity are validated against the explicitly supplied package manifest during
+compilation; only the package bytes are embedded. `runner build` stages those
+bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
+and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
+manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
+installed manifest against the verified identity.
+
+New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
+release/preview orchestration does not stage a separate host CLI artifact. A
+local Runner compiled without embedded resources can still build a CLI-free
+rootfs with explicit Guest binary paths; Pi then uses the task's captured
+`CLI_PKG_URL` through `npx`. Already-deployed older Runner binaries retain their
+historical host-artifact option until replaced. Neither that old binary behavior
+nor the Guest's commit-addressed runtime fallback is removed retroactively.
 
 Compatibility is negotiated per run rather than by deployment order:
 
@@ -4674,16 +4682,22 @@ Compatibility is negotiated per run rather than by deployment order:
   after that API was promoted. The production rollback resolver enforces this
   reader as an additional API floor so old strict readers cannot claim queued
   runs carrying the digest. Retained Runner tags are unaffected.
-- The guest agent execs the installed CLI only on a parity match at or above
-  the CLI floor. When the launch config carries
+- Official Runner binaries embed the source-bound CLI package alongside their
+  Guest binaries. A local full rootfs build without a bundled CLI remains
+  possible; neither preview nor production image preparation downloads a
+  separate CLI artifact onto the Runner host. Production Runner compilation
+  reuses the release target's verified canonical Turbo CLI package and manifest
+  retained by the versioned publisher; it does not rebuild CLI independently.
+  The guest agent execs only the installed CLI on a parity match at or above the
+  CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
   `sessionConstruction.digest` is identical, and an installed CLI without a
   digest fails parity; otherwise parity means the installed `piAgentRuntime`
   equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
-  above `minCliVersion` in both cases. Every other case launches the
-  commit-addressed package through `npx`, which is always built from the
-  backend's commit; a launch config without the fields, or a rootfs without an
-  installed CLI, always takes the `npx` path.
+  above `minCliVersion` in both cases. Missing or incompatible installed
+  metadata selects the existing `npx` path using the task's API-captured
+  `CLI_PKG_URL`, not a moving latest package. A missing package URL on that
+  path still fails the run explicitly.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
@@ -4692,18 +4706,21 @@ Compatibility is negotiated per run rather than by deployment order:
   artifact has a digest. The backend records it as
   `runner_installed_pi_session_construction_digest`; older installed artifacts
   omit it.
-- The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
-  when the required session-construction digest, or without one the required
-  runtime version, differs from what it bundles. A settled-session continuation
-  is a complete checkpoint and is never discarded for a parity difference.
+- Parity is checked by the Guest before spawning the CLI. A parity miss selects
+  the task's captured package rather than changing the restored session or
+  executing the incompatible installed bundle. The sandbox CLI opens the
+  restored session through the official RPC host; no digest-based H0 restart
+  is performed by that CLI path.
 
-Skew in either direction is therefore safe: a new backend with an old runner
-emits the fields into a launch config the old guest ignores, because the
-generated Rust bindings do not deny unknown fields; a new runner with an old
-backend sees no required version and launches through `npx`.
-Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
-handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
-follows the drain procedure below and is tracked in #35967.
+An old backend that omits the installed-CLI requirement keeps using the
+captured `CLI_PKG_URL` through `npx`. Queued contexts requiring a newer or
+otherwise incompatible CLI also retain this path rather than executing the
+incompatible rootfs install. The installed CLI is a parity-checked fast path,
+not an admission requirement; retaining the existing fallback avoids failing
+runs solely because API and Runner releases differ. Network/package failures
+on the fallback can still fail a run, and production rollout verification is
+still required. Continue raising `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION`
+whenever a launch-payload or handoff field becomes required.
 
 ### Commit-addressed CLI artifacts
 

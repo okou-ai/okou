@@ -228,6 +228,41 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   expect(getAction("link", "Back to integrations")).toBeInTheDocument();
 });
 
+test("The shared phone card and connect dialog display digits instead of a vanity number", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    agentPhoneNumber: "+13144386568",
+    configured: true,
+  });
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code: "74290618",
+        expiresAt: "2026-09-20T15:10:00.000Z",
+      });
+    },
+  );
+  await setupIntegrationsPage(context);
+  const phoneCard = await waitFor(() => {
+    return getIntegrationCard("Phone");
+  });
+  expect(phoneCard).toHaveTextContent("+1 (314) 438-6568");
+  click(getAction("button", "Connect phone", phoneCard));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
+  await expect(
+    within(dialog).findByText("+1 (314) 438-6568"),
+  ).resolves.toBeVisible();
+  click(getAction("button", "Copy +1 (314) 438-6568", dialog));
+  await expect(
+    screen.findByText("Phone number copied"),
+  ).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual(["+13144386568"]);
+});
+
 test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const code = "74290618";

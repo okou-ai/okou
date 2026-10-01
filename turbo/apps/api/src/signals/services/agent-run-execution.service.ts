@@ -163,7 +163,6 @@ import {
   createRunAdmissionObjects,
   type RunAdmissionInput,
 } from "./run-admission.service";
-import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
@@ -196,12 +195,6 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import {
-  observeRunContextParallelStage,
-  observeRunConnectorAccountsRead,
-  observeAgentRunPreCreateParallelStage,
-  observeAgentRunPiExecutionSnapshot,
-} from "./agent-run-preparation-hooks";
 import {
   modelProviderSurfaces,
   modelProviderConnections,
@@ -3258,10 +3251,6 @@ async function persistAtomicLaunchRows(
     status: "pending",
   });
 
-  observePreparedLaunchPersistenceForTest(
-    args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
-  );
-
   const chatThreadId = args.commit.createArgs.chatThreadId;
   if (chatThreadId && !args.validatedThreadSession) {
     const threadSessionBinding = await persistThreadSessionBinding(args.tx, {
@@ -3710,13 +3699,6 @@ export async function resolvePreparedRunModelProvider(args: {
 }): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { content, requestedFramework, featureSwitchContext } =
     args.bodyContext;
-  const testHold = observeRunContextParallelStage(
-    "model-provider",
-    args.createArgs,
-  );
-  if (testHold) {
-    await testHold;
-  }
   return await args.timing.measure(
     "api_dispatch_prepare_context_resolve_model_provider",
     "nested",
@@ -4781,13 +4763,6 @@ function createRunModelProviderObjects(
     if (!context.shouldResolve) {
       return null;
     }
-    const hold = observeRunContextParallelStage(
-      "model-provider",
-      context.input.args,
-    );
-    if (hold) {
-      await hold;
-    }
     return await context.input.timing.measure(
       "api_dispatch_prepare_context_resolve_model_provider",
       "nested",
@@ -5011,7 +4986,6 @@ function createRunConnectorAccountRowsObject(
     if (isEmptyRunConnectorScope(scope)) {
       return [];
     }
-    await observeRunConnectorAccountsRead();
     return await db
       .select({
         connectorId: connectors.id,
@@ -5160,7 +5134,6 @@ function createRunConnectorPreparationObject(
       if (isRouteError(selection)) {
         return selection;
       }
-      await observeRunContextParallelStage("connector-contexts", input.args);
       const {
         connectorCatalogSelection,
         connectorScope,
@@ -6175,15 +6148,11 @@ function createRunMemberObjects(
   const memberSnapshot$ =
     shared?.member$ ?? createRunMemberSnapshotObject(readInput$);
   const userTimezone$ = computed(async (get) => {
-    const input = await get(input$);
-    await observeRunContextParallelStage("user-timezone", input.args);
     return shared
       ? get(shared.userTimezone$)
       : ((await get(memberSnapshot$)).member?.timezone ?? undefined);
   });
   const imageModel$ = computed(async (get) => {
-    const input = await get(input$);
-    await observeRunContextParallelStage("image-model", input.args);
     const stored = (await get(memberSnapshot$)).member?.selectedImageModel;
     return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
   });
@@ -6228,7 +6197,6 @@ function createRunWorkflowReadObject(
   });
   const candidates$ = computed(async (get) => {
     const { args } = await get(input$);
-    await observeRunContextParallelStage("official-workflow", args);
     const modelState = await get(modelState$);
     if (modelState === undefined || isRouteError(modelState)) {
       return [];
@@ -7786,9 +7754,6 @@ function createPreCreateSubscriptionAccount(
         return { command };
       }
       const providerType = pin.modelProvider;
-      await observeAgentRunPreCreateParallelStage("subscription-account", {
-        command,
-      });
       return await measureAgentRunPreCreate(
         timing,
         "api_dispatch_pre_create_agent_capture_subscription_account",
@@ -7986,14 +7951,7 @@ function createPreCreateConnectorCatalog(
     createConnectorRuntimeSelectionObjects(catalogInput$, requestedSlugs$);
   const connectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [{ command }, bootstrap] = await Promise.all([
-        get(input$),
-        get(bootstrapMetadata$),
-      ]);
-      await observeAgentRunPreCreateParallelStage(
-        "post-authorization-context",
-        { command },
-      );
+      const bootstrap = await get(bootstrapMetadata$);
       return isEmptyRunConnectorScope(bootstrap)
         ? { kind: "empty" }
         : { kind: "scoped", selection: await get(selectedCatalog$) };
@@ -8048,9 +8006,6 @@ function createPreCreateThreadSession(
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      await observeAgentRunPreCreateParallelStage("thread-session", {
-        command,
-      });
       const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
@@ -8934,23 +8889,6 @@ function createSelectedRunContextObjects(
   return { contextInput$, runContext$ };
 }
 
-function createObserveSelectedExecutionCommand(
-  input$: ReturnType<typeof createPreCreateInput>,
-) {
-  return command(async ({ get }, signal: AbortSignal) => {
-    const { command: selected } = await get(input$);
-    signal.throwIfAborted();
-    await observeAgentRunPiExecutionSnapshot({
-      userId: selected.auth.userId,
-      orgId: selected.auth.orgId,
-      chatThreadId: selected.chatThreadId,
-      piExecution: selectedRunPiExecution(selected),
-      threadSessionCliAgentType: selected.threadSessionRoute?.cliAgentType,
-    });
-    signal.throwIfAborted();
-  });
-}
-
 function createPrepareReadySelectedRunCommand(
   graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
   context: ReturnType<typeof createSelectedRunContextObjects>,
@@ -8961,7 +8899,6 @@ function createPrepareReadySelectedRunCommand(
     createCheckUnavailableProviderCreditsCommand();
   const { input$, runArgs$, shared } = graph;
   const { contextInput$, runContext$ } = context;
-  const observeExecution$ = createObserveSelectedExecutionCommand(input$);
   return command(
     async (
       { get, set },
@@ -8995,7 +8932,6 @@ function createPrepareReadySelectedRunCommand(
             get(shared.modelRoute$),
             get(shared.connectorContext$),
             get(shared.officialWorkflow$),
-            set(observeExecution$, signal),
           ]);
         },
       );

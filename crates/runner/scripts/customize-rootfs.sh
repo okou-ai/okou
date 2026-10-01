@@ -273,7 +273,9 @@ install_inline_file() {
 
 # Install one versioned Okou CLI bundle from its npm pack tarball.
 #
-# The tarball is the artifact published for the release commit; nothing is
+# The Runner releases its embedded tarball into a private staging directory,
+# just as it releases embedded Guest binaries, and passes that local file here.
+# Older Runners can still pass an explicitly staged host artifact. Nothing is
 # fetched from a registry and no install scripts run. Members are validated
 # before extraction so a malformed tarball cannot write outside the versioned
 # install directory.

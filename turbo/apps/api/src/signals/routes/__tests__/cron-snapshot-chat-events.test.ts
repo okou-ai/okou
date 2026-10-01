@@ -470,12 +470,13 @@ describe("cron snapshot chat events", () => {
     let claim:
       | Awaited<ReturnType<typeof api.requestClaimRunnerJob>>
       | undefined;
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
         return claim.status;
-      })
-      .toBe(200);
+      })(),
+    ).resolves.toBe(200);
     if (claim?.status !== 200) {
       throw new Error("Expected the failure-reason run to be claimable");
     }

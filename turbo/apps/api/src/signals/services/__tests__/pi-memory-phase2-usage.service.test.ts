@@ -61,7 +61,6 @@ import {
   phase2ApiKeyRoutes,
   type Phase2ProviderType,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
-import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 
 // Private maintenance has no public launch/control/ledger API. Seed only its
 // infrastructure-owned cron input and terminal faults; the real dispatcher
@@ -470,55 +469,50 @@ describe("Pi memory Phase 2 proxy billing", () => {
   ])(
     "executes exact $type/$scope HTTP and drops replayed model usage",
     async ({ type, scope, url, model }) => {
-      await withBuiltInModelRuntimeRouteUnavailableForTest(
-        "gpt-5.6-luna",
-        async () => {
-          const run = await launchMaintenance(type, scope);
-          expect(run.run).toMatchObject({
-            modelProvider: type,
-            modelProviderId: run.provider?.binding.modelProviderId,
-            modelProviderCredentialScope: scope,
-            selectedModel: "gpt-5.6-luna",
-            chatThreadId: null,
-            creditAdmitted: false,
-          });
-          const actual = await executePhase2Runtime(context, run.runId);
-          expect(
-            actual.execution.piLaunchConfig?.maintenance?.selected,
-          ).toHaveLength(2);
-          expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
-          expect(actual.execution.secretValues).not.toContain(
-            actual.execution.sandboxToken,
-          );
-          expect(actual.requests).toHaveLength(3);
-          for (const request of actual.requests) {
-            expect(request.url).toBe(url);
-            expect(request.body).toMatchObject({
-              model,
-              reasoning: { effort: "medium" },
-            });
-            expect(request.body).not.toHaveProperty("text.format");
-            expect(request.body).not.toHaveProperty("service_tier");
-            if (type === "custom-openai-responses") {
-              expect(request.headers.get("x-source-key")).toBe(
-                `Key ${run.provider?.key}`,
-              );
-            } else {
-              expect(request.headers.get("authorization")).toBe(
-                `Bearer ${run.provider?.key}`,
-              );
-            }
-            if (type === "codex-oauth-token") {
-              expect(request.headers.get("chatgpt-account-id")).toBe(
-                run.provider?.account,
-              );
-            }
-          }
-          await Promise.all([run.proxy(), run.proxy()]);
-          await run.proxy();
-          await expect(run.ledger()).resolves.toStrictEqual([]);
-        },
+      const run = await launchMaintenance(type, scope);
+      expect(run.run).toMatchObject({
+        modelProvider: type,
+        modelProviderId: run.provider?.binding.modelProviderId,
+        modelProviderCredentialScope: scope,
+        selectedModel: "gpt-5.6-luna",
+        chatThreadId: null,
+        creditAdmitted: false,
+      });
+      const actual = await executePhase2Runtime(context, run.runId);
+      expect(
+        actual.execution.piLaunchConfig?.maintenance?.selected,
+      ).toHaveLength(2);
+      expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
+      expect(actual.execution.secretValues).not.toContain(
+        actual.execution.sandboxToken,
       );
+      expect(actual.requests).toHaveLength(3);
+      for (const request of actual.requests) {
+        expect(request.url).toBe(url);
+        expect(request.body).toMatchObject({
+          model,
+          reasoning: { effort: "medium" },
+        });
+        expect(request.body).not.toHaveProperty("text.format");
+        expect(request.body).not.toHaveProperty("service_tier");
+        if (type === "custom-openai-responses") {
+          expect(request.headers.get("x-source-key")).toBe(
+            `Key ${run.provider?.key}`,
+          );
+        } else {
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${run.provider?.key}`,
+          );
+        }
+        if (type === "codex-oauth-token") {
+          expect(request.headers.get("chatgpt-account-id")).toBe(
+            run.provider?.account,
+          );
+        }
+      }
+      await Promise.all([run.proxy(), run.proxy()]);
+      await run.proxy();
+      await expect(run.ledger()).resolves.toStrictEqual([]);
     },
   );
 

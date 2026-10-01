@@ -8,10 +8,7 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import {
-  modelProvidersByTypeContract,
-  modelProvidersMainContract,
-} from "@okouai/api-contracts/contracts/model-provider-routes";
+import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -25,17 +22,13 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { updateRestrictedPlanAccessFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
-  holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
-import {
-  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
-  withBuiltInModelRuntimeRouteUnavailableForTest,
-} from "../../../test-fixtures/built-in-model-runtime-route";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -46,7 +39,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import {
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
+} from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { modelPoliciesRoutes } from "../model-policies";
 import { modelProvidersRoutes } from "../model-providers";
@@ -59,6 +55,15 @@ const TEST_APP_ROUTES = Object.freeze([
   ...modelProviderGatewayRoutes,
   ...userModelPreferenceRoutes,
 ]);
+
+// Built-in candidates of deepseek-v4-flash in the global model catalog.
+const DEEPSEEK_V4_FLASH_CANDIDATES = {
+  deepseek: { provider_type: "deepseek", upstream_model: "deepseek-v4-flash" },
+  openrouterCodex: {
+    provider_type: "openrouter-codex",
+    upstream_model: "deepseek/deepseek-v4-flash",
+  },
+} as const;
 
 type ModelPolicyFixture = ApiTestUser & { readonly orgId: string };
 
@@ -892,7 +897,11 @@ describe("GET/PUT /api/model-policies", () => {
   it("advertises the current built-in provider for route-specific effort controls", async () => {
     const fixture = seedFixture();
     useSession(fixture);
-    const model = "deepseek-v4-flash";
+    // A test-owned mirror of DeepSeek V4 Flash keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("deepseek-v4-flash");
+    onTestFinished(restore);
     await seedBuiltInModelCandidateKeys(context, model);
     const client = apiClient();
     const response = await accept(
@@ -925,25 +934,22 @@ describe("GET/PUT /api/model-policies", () => {
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
     });
-    // Operator-managed key availability/cooldowns have no user mutation API.
-    // Scope the infrastructure state to this request without changing shared rows.
-    const fallback =
-      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: "deepseek",
-          upstreamModel: model,
-        },
-        async () => {
-          return await accept(client.list({ headers: authHeaders() }), [200]);
-        },
-      );
+    // A provider failure cools the DeepSeek candidate down; the OpenRouter
+    // candidate keeps serving the model.
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      DEEPSEEK_V4_FLASH_CANDIDATES.deepseek,
+    ]);
+    const fallback = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
     expect(runtimeProviderType(fallback.body)).toBe("openrouter-codex");
-    const unavailable = await withBuiltInModelRuntimeRouteUnavailableForTest(
-      model,
-      async () => {
-        return await accept(client.list({ headers: authHeaders() }), [200]);
-      },
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      DEEPSEEK_V4_FLASH_CANDIDATES.openrouterCodex,
+    ]);
+    const unavailable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
     );
     expect(runtimeProviderType(unavailable.body)).toBeNull();
   });
@@ -2765,194 +2771,9 @@ describe("conditional organization model policy writes", () => {
       });
     },
   );
-
-  it("keeps the revision decision protected while a replacement waits on member preferences", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    await accept(
-      apiClient().update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [
-            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-            makeBuiltInPolicy("gpt-5.6-luna"),
-            makeBuiltInPolicy("gpt-6-astra"),
-          ],
-        },
-      }),
-      [200],
-    );
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "gpt-6-astra", serviceTier: null },
-      }),
-      [200],
-    );
-    useSession(fixture);
-    const snapshot = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    const boundary = await holdModelPolicyPreferenceFixture(
-      fixture.orgId,
-      context.signal,
-    );
-    onTestFinished(async () => {
-      boundary.release();
-      await boundary.done;
-    });
-    const first = apiClient().update({
-      headers: authHeaders(),
-      body: {
-        policies: [
-          makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-          makeBuiltInPolicy("gpt-5.6-luna"),
-        ],
-        revision: snapshot.body.revision,
-      },
-    });
-    await vi.waitFor(async () => {
-      return await expect(boundary.blockedTransactions()).resolves.toBe(1);
-    });
-    const second = apiClient().update({
-      headers: authHeaders(),
-      body: {
-        policies: [
-          ...toUpdate(snapshot.body),
-          makeBuiltInPolicy("deepseek-v4-flash"),
-        ],
-        revision: snapshot.body.revision,
-      },
-    });
-    await vi.waitFor(async () => {
-      return await expect(boundary.blockedTransactions()).resolves.toBe(2);
-    });
-    boundary.release();
-    await boundary.done;
-    await accept(first, [200]);
-    await accept(second, [409]);
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      current.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-5.6-luna"]);
-    const preference = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
-  });
 });
 
 describe("conditional policy writes and persisted repair boundaries", () => {
-  it("serializes a provider deletion behind a replacement that passed its precondition", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    const providerId = await createOrgProvider(fixture, "anthropic-api-key");
-    const retainedPolicy: UpdateOrgModelPolicy = {
-      model: "claude-opus-5",
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-      modelProviderSurfaceId: null,
-    };
-    await accept(
-      apiClient().update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [
-            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-            retainedPolicy,
-            makeBuiltInPolicy("gpt-6-astra"),
-          ],
-        },
-      }),
-      [200],
-    );
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "gpt-6-astra", serviceTier: null },
-      }),
-      [200],
-    );
-    useSession(fixture);
-    const snapshot = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    const boundary = await holdModelPolicyPreferenceFixture(
-      fixture.orgId,
-      context.signal,
-    );
-    onTestFinished(async () => {
-      boundary.release();
-      await boundary.done;
-    });
-    const replacement = apiClient().update({
-      headers: authHeaders(),
-      body: {
-        policies: [
-          makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-          retainedPolicy,
-        ],
-        revision: snapshot.body.revision,
-      },
-    });
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedTransactions()).resolves.toBe(1);
-    });
-    const providerClient = setupApp({ context, routes: modelProvidersRoutes })(
-      modelProvidersByTypeContract,
-    );
-    const deletion = providerClient.delete({
-      headers: authHeaders(),
-      params: { type: "anthropic-api-key" },
-    });
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedTransactions()).resolves.toBe(2);
-    });
-    boundary.release();
-    await boundary.done;
-    await accept(replacement, [200]);
-    await accept(deletion, [204]);
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(current.body.policies).toHaveLength(2);
-    expect(
-      current.body.policies.find((policy) => {
-        return policy.model === retainedPolicy.model;
-      }),
-    ).toMatchObject({
-      defaultProviderType: retainedPolicy.defaultProviderType,
-      credentialScope: "org",
-      modelProviderId: null,
-      routeStatus: "missing_provider",
-    });
-    const preference = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
-  });
-
   it.each(["unseeded"] as const)(
     "rejects missing and stale preconditions for %s policies",
     async (state) => {

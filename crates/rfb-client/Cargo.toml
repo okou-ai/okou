@@ -1,12 +1,13 @@
 [package]
 name = "rfb-client"
-version = "0.19.0"
+version = "0.20.0"
 edition.workspace = true
 publish = false
 description = "Bounded RFB authentication, captures and serialized input"
 
 [dependencies]
 aes = { workspace = true, features = ["zeroize"] }
+base64 = { workspace = true, features = ["alloc"] }
 crypto-bigint = { workspace = true, features = ["alloc", "zeroize"] }
 des = { workspace = true, features = ["zeroize"] }
 flate2 = { workspace = true, features = ["rust_backend"] }
@@ -16,6 +17,7 @@ md-5 = { workspace = true }
 png = { workspace = true }
 rand = { version = "0.10", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rsa = { workspace = true, features = ["encoding", "std"] }
+rsasl = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
 sha2 = { workspace = true, features = ["zeroize"] }
 subtle = { workspace = true }
@@ -27,7 +29,6 @@ webpki-roots = { workspace = true }
 zeroize = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
-base64 = { workspace = true, features = ["alloc"] }
 hex = { workspace = true, features = ["alloc"] }
 pbkdf2 = { version = "0.13" }
 rcgen = { workspace = true, features = ["crypto", "ring"] }

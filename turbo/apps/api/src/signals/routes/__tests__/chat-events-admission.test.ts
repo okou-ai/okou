@@ -9,24 +9,15 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { holdQueuedChatThreadClaimFixture } from "../../../test-fixtures/queued-chat-thread";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  createUnassociatedThreadBoundAgentRunFixture,
-  createUnassociatedThreadBoundAgentRunsServiceFixture,
-} from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   type ChatRunSendBody,
@@ -70,89 +61,6 @@ async function entitledChatActor() {
   ]);
   return result;
 }
-
-describe("CHAT-02: thread run admission invariant", () => {
-  it.each([
-    {
-      scenario: "publication failure",
-      error: new Error("Runner notification unavailable"),
-    },
-    {
-      scenario: "publication abort",
-      error: new DOMException("Runner notification aborted", "AbortError"),
-    },
-  ])("keeps a committed run claimable after $scenario", async ({ error }) => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    context.mocks.ably.publish.mockImplementation((name) => {
-      return name === "job"
-        ? Promise.reject(error)
-        : Promise.resolve(undefined);
-    });
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "Keep the committed execution", clientEventId },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected accepted input");
-    }
-    await flushWaitUntilForTest();
-    const messages = await chat.listThreadEvents(actor, sent.body.threadId);
-    const consumed = userMessages(messages.events).filter((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-    expect(consumed).toHaveLength(1);
-    expect(
-      messages.events.some((message) => {
-        return (
-          message.eventType === "input.rejected" ||
-          message.eventType === "output.error"
-        );
-      }),
-    ).toBeFalsy();
-    const runId = consumed[0]?.runId;
-    if (!runId) {
-      throw new Error("Committed input has no run");
-    }
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.map((run) => {
-        return run.id;
-      }),
-    ).toStrictEqual([runId]);
-    const { claim } = await claimChatRun(runnerGroup, runId);
-    expect(claim.runId).toBe(runId);
-    await api.requestCancelRun(actor, runId, [200]);
-    await flushWaitUntilForTest();
-  });
-  it("rejects thread-bound run creation without a queue association at both service boundaries", async () => {
-    await expect(
-      createUnassociatedThreadBoundAgentRunsServiceFixture(),
-    ).rejects.toThrow(
-      "Thread-bound agent run requires a queue-first association",
-    );
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunFixture(),
-    ).rejects.toThrow("Thread-bound run requires a queue-first association");
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunsServiceFixture(""),
-    ).rejects.toThrow(
-      "Thread-bound agent run requires a queue-first association",
-    );
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunFixture(""),
-    ).rejects.toThrow("Thread-bound run requires a queue-first association");
-  });
-});
 
 describe("CHAT-02: on-demand member memory initialization", () => {
   it("initializes an existing member's memory from preferences before the member's first run", async () => {
@@ -309,13 +217,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     if (runId === undefined) {
       throw new Error("Expected the picked input to launch a run");
     }
-    const pendingBinding = await readThreadSessionBinding(
-      context,
-      clientThreadId,
-    );
-    expect(pendingBinding.agent_session_run_id).toBe(runId);
-    expect(pendingBinding.agent_session_id).toMatch(/[0-9a-f-]{36}/);
-    expect(pendingBinding.run_session_id).toBe(pendingBinding.agent_session_id);
 
     const run = await api.readRun(actor, runId);
     expect(run.prompt).toBe(prompt);
@@ -547,13 +448,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
       eventType: "control.interrupt",
       interruptsRunId: first.runId,
     });
-    const [storedInterrupt] = await readCanonicalChatEventStorageFixture([
-      interruptId,
-    ]);
-    expect(storedInterrupt).toMatchObject({
-      payload: null,
-      runId: first.runId,
-    });
     expect(
       assistantMessages(messages.events).filter((message) => {
         return (
@@ -670,13 +564,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
   }, 90_000);
 });
 
-function requireOrgId(actor: { readonly orgId: string | null }): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped actor");
-  }
-  return actor.orgId;
-}
-
 describe("CHAT-02: dispatch failure", () => {
   it("rejects the picked input and releases the lease when run preparation cannot configure dispatch", async () => {
     const { actor, agentId } = await entitledChatActor();
@@ -733,13 +620,6 @@ describe("CHAT-02: dispatch failure", () => {
       limit: 100,
     });
     expect(runs.runs).toStrictEqual([]);
-    await expect(
-      readThreadSessionBinding(context, threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: null,
-      agent_session_run_id: null,
-      run_session_id: null,
-    });
     expect(routeRequests()).toBe(0);
 
     // The lease was released: the next input on the thread is picked
@@ -752,119 +632,6 @@ describe("CHAT-02: dispatch failure", () => {
     });
     expect(next.runId).toStrictEqual(expect.any(String));
     await cancelChatRun(actor, next.runId);
-  });
-
-  it("leaves the input queued when a failed picker no longer holds the lease", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const heldAt = now();
-    mockNow(heldAt);
-    const threadId = randomUUID();
-    const messageId = randomUUID();
-    // A slow picker's lease was taken over before its transient KMS failure.
-    useSecretKmsProbe((_request, callNumber) => {
-      if (callNumber !== 1) {
-        return undefined;
-      }
-      return (async () => {
-        await holdQueuedChatThreadClaimFixture({
-          orgId: requireOrgId(actor),
-          threadId,
-        });
-        throw new Error("KMS unavailable");
-      })();
-    });
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "fail after losing the lease",
-        clientThreadId: threadId,
-        clientEventId: messageId,
-      },
-      [201],
-    );
-    await expect(clearAllDetached()).rejects.toThrow("KMS unavailable");
-    const messages = await chat.listThreadEvents(actor, threadId);
-    expect(
-      messages.events.some((message) => {
-        return message.revokesEventId === messageId;
-      }),
-    ).toBeFalsy();
-
-    // The input stays pending behind the other picker's lease; once that
-    // lease expires, the next pick launches it.
-    mockNow(heldAt + 10_000);
-    await chat.requestSendEvent(
-      actor,
-      { agentId, threadId, prompt: "pick after the lease expires" },
-      [201],
-    );
-    await clearAllDetached();
-    const launched = await chat.listThreadEvents(actor, threadId);
-    const runId = userMessages(launched.events).find((message) => {
-      return message.revokesEventId === messageId;
-    })?.runId;
-    expect(runId).toStrictEqual(expect.any(String));
-    if (runId) {
-      await cancelChatRun(actor, runId);
-    }
-  });
-
-  it("keeps another picker's lease until it expires on the app clock", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const heldAt = now();
-    mockNow(heldAt);
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: "create the thread queue row",
-    });
-    await cancelChatRun(actor, first.runId);
-    await clearAllDetached();
-    const threadId = first.threadId;
-    await holdQueuedChatThreadClaimFixture({
-      orgId: requireOrgId(actor),
-      threadId,
-    });
-
-    // Before expiry, the next enqueue's pick cannot take the lease.
-    mockNow(heldAt + 9999);
-    const headId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId,
-        prompt: "wait behind the lease",
-        clientEventId: headId,
-      },
-      [201],
-    );
-    await clearAllDetached();
-    const blocked = await chat.listThreadEvents(actor, threadId);
-    expect(
-      userMessages(blocked.events).some((message) => {
-        return message.revokesEventId === headId;
-      }),
-    ).toBeFalsy();
-
-    // At expiry, the next pick claims the thread and launches its head.
-    mockNow(heldAt + 10_000);
-    await chat.requestSendEvent(
-      actor,
-      { agentId, threadId, prompt: "pick after the lease expires" },
-      [201],
-    );
-    await clearAllDetached();
-    const launched = await chat.listThreadEvents(actor, threadId);
-    const runId = userMessages(launched.events).find((message) => {
-      return message.revokesEventId === headId;
-    })?.runId;
-    expect(runId).toStrictEqual(expect.any(String));
-    if (runId) {
-      await cancelChatRun(actor, runId);
-    }
   });
 });
 

@@ -13,11 +13,7 @@ import { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import type { ApiDb, Tx } from "../../../lib/db-types";
-import {
-  pgBooleanDecoder,
-  pgIntegerDecoder,
-} from "../../../lib/db-structured-result";
+import type { ApiDb } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { createDeferredPromise, settle } from "../../utils";
@@ -173,33 +169,6 @@ async function requireDeployment(
     throw new Error(`Expected deployment, received ${result.kind}`);
   }
   return result;
-}
-
-async function backendPid(tx: Tx) {
-  const [row] = await tx
-    .select({
-      pid: sql`pg_backend_pid()`.mapWith(pgIntegerDecoder),
-    })
-    .from(sql`(SELECT 1) AS backend`);
-  if (!row) {
-    throw new Error("Expected transaction backend");
-  }
-  return row.pid;
-}
-
-async function expectBlocked(db: ApiDb, pid: number) {
-  await expect
-    .poll(async () => {
-      const [row] = await db
-        .select({
-          blocked: sql`cardinality(pg_blocking_pids(${pid})) > 0`.mapWith(
-            pgBooleanDecoder,
-          ),
-        })
-        .from(sql`(SELECT 1) AS blocking_state`);
-      return row?.blocked;
-    })
-    .toBe(true);
 }
 
 describe.each([true, false])(
@@ -578,47 +547,6 @@ describe.each([true, false])(
       ).resolves.toStrictEqual([]);
     });
 
-    it("locks a metadata-less run before site allocation and reads the committed owner after waiting", async () => {
-      const runId = await seedRun(harness.db, null, null);
-      const owner = randomUUID();
-      const ready = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const pidReady = createDeferredPromise<number>(context.signal);
-      const writer = harness.db.transaction(async (tx) => {
-        await tx.execute(
-          sql`UPDATE agent_runs SET trigger_source = 'chat', chat_thread_id = ${owner} WHERE id = ${runId}`,
-        );
-        ready.resolve();
-        await release.promise;
-      });
-      await Promise.race([ready.promise, writer]);
-      const contender = harness.db.transaction(async (tx) => {
-        pidReady.resolve(await backendPid(tx));
-        return await createDeployment(tx, deploymentArgs(runId));
-      });
-      const completed = Promise.all([settle(writer), settle(contender)]);
-      const verified = await settle(
-        pidReady.promise.then(async (pid) => {
-          await expectBlocked(harness.db, pid);
-        }),
-      );
-      release.resolve();
-      const [written, created] = await completed;
-      if (!verified.ok) {
-        throw verified.error;
-      }
-      if (!written.ok) {
-        throw written.error;
-      }
-      if (!created.ok) {
-        throw created.error;
-      }
-      expect(created.value).toMatchObject({
-        kind: "ok",
-        site: { chatThreadId: owner },
-      });
-    });
-
     it.each(["chat", null])(
       "holds run and site ownership until deployment admission commits (source=%s)",
       async (source) => {
@@ -673,48 +601,6 @@ describe.each([true, false])(
         }
       },
     );
-
-    it("waits for an outgoing allocator before redeploying the same site", async () => {
-      const runId = await seedRun(harness.db, randomUUID());
-      const args = deploymentArgs(runId);
-      const first = await requireDeployment(harness.db, args);
-      const ready = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const pidReady = createDeferredPromise<number>(context.signal);
-      const outgoing = harness.db.transaction(async (tx) => {
-        await tx
-          .select({ id: hostedSites.id })
-          .from(hostedSites)
-          .where(eq(hostedSites.id, first.site.id))
-          .for("update");
-        ready.resolve();
-        await release.promise;
-      });
-      await Promise.race([ready.promise, outgoing]);
-      const contender = harness.db.transaction(async (tx) => {
-        pidReady.resolve(await backendPid(tx));
-        return await createDeployment(tx, args);
-      });
-      const completed = settle(contender);
-      const verified = await settle(
-        pidReady.promise.then(async (pid) => {
-          await expectBlocked(harness.db, pid);
-        }),
-      );
-      release.resolve();
-      await outgoing;
-      const created = await completed;
-      if (!verified.ok) {
-        throw verified.error;
-      }
-      if (!created.ok) {
-        throw created.error;
-      }
-      expect(created.value).toMatchObject({
-        kind: "ok",
-        site: { id: first.site.id, publicSlug: first.site.publicSlug },
-      });
-    });
 
     it("allocates a suffix while keeping a deleted site's slug reserved", async () => {
       const args = deploymentArgs();

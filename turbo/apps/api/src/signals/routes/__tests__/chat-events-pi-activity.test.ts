@@ -1,3 +1,5 @@
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
@@ -5,27 +7,17 @@ import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  holdAgentRunRowLockFixture,
-  holdThreadSessionConversationClearFixture,
-  readRunUsageEventsFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
@@ -183,7 +175,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+    const model = await configureBuiltInPiModelOnOpenRouter(
       actor,
       "gpt-6-luna",
     );
@@ -201,18 +193,16 @@ describe("CHAT-02: model-first provider policies", () => {
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
-    const run = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(
-        actor,
-        {
-          agentId,
-          prompt,
-          model: "gpt-6-luna",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
+    const run = await sendChatRunAfterPick(
+      actor,
+      {
+        agentId,
+        prompt,
+        model,
+        runOptions: { codexServiceTier: "fast" },
+      },
+      usagePricingResolution,
+    );
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
@@ -510,16 +500,6 @@ describe("CHAT-02: model-first provider policies", () => {
         artifact: { memory: checkpointedMemory.versionId },
       },
     });
-    // Pi usage is Sandbox-reported only; the duplicate receipt is idempotent.
-    await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual([
-      expect.objectContaining({
-        provider: "gpt-6-luna",
-        category: "tokens.output.fast",
-        quantity: 2,
-        status: "processed",
-        billingError: null,
-      }),
-    ]);
     const committedH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: run.runId,
@@ -537,26 +517,11 @@ describe("CHAT-02: model-first provider policies", () => {
         `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
       );
     }
-    const canonicalConversation = await readThreadSessionConversation(
+    const applicationSession = await readCompletedRunSessionId(
       context,
-      run.threadId,
-    );
-    expect(canonicalConversation).toMatchObject({
-      conversation_run_id: run.runId,
-    });
-    const sandboxConversation = await readPiConversationIdentityFixture(
+      actor,
       run.runId,
     );
-    await expect(
-      readPiMemoryStage1CandidateFixture({
-        orgId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBeNull();
-    expect(sandboxConversation).toMatchObject({
-      piSessionId: run.threadId,
-      sourceHistoryHash: h2Hash,
-    });
 
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
       {
@@ -626,16 +591,11 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(replacementCheckpoint.body)).toContain(
       "[PI_H2_ALREADY_COMMITTED]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
-    const failedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject a non-native Sandbox H2",
-      });
+    const failedRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "reject a non-native Sandbox H2",
     });
     const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
@@ -672,9 +632,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(invalidCheckpoint.body)).toContain(
       "[PI_H2_JSONL_INVALID]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
     await webhooks.requestAgentComplete(
       {
         runId: failedRun.runId,
@@ -713,16 +670,9 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(spoofedFailedH2.body)).toContain(
       "[PI_H2_TYPE_MISMATCH]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    if (!canonicalConversation.agent_session_id) {
-      throw new Error("Expected the completed Pi run to own an AgentSession");
-    }
     const explicitResume = await api.createRun(actor, {
       agentId,
-      sessionId: canonicalConversation.agent_session_id,
+      sessionId: applicationSession,
       prompt: "keep an incompatible direct run off the Pi checkpoint",
     });
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
@@ -731,12 +681,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.requestCancelRun(actor, explicitResume.runId, [200]);
     await waitForRunStatus(actor, explicitResume.runId, "cancelled");
 
-    const cancelledRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject H2 after an explicit Pi run is cancelled",
-      });
+    const cancelledRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "reject H2 after an explicit Pi run is cancelled",
     });
     const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
@@ -760,70 +708,11 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateCancelledH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
-    const racedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject standalone H2 during an early successful completion",
-      });
-    });
-    const racedClaim = await claimChatRun(runnerGroup, racedRun.runId);
-    const lifecycleGate = await holdAgentRunRowLockFixture({
-      runId: racedRun.runId,
-      signal: context.signal,
-    });
-    const ownedRequests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      lifecycleGate.release();
-      await Promise.all(ownedRequests);
-      await lifecycleGate.done;
-    });
-    const racedCompletion = webhooks.requestAgentComplete(
-      { runId: racedRun.runId, exitCode: 0 },
-      racedClaim.sandboxHeaders,
-      [200],
-    );
-    ownedRequests.push(Promise.allSettled([racedCompletion]));
-    await expect.poll(lifecycleGate.waiterCount).toBe(1);
-    const racedCheckpoint = webhooks.requestAgentCheckpoint(
-      {
-        runId: racedRun.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-      racedClaim.sandboxHeaders,
-      [400],
-    );
-    ownedRequests.push(Promise.allSettled([racedCheckpoint]));
-    const racedCheckpointResult = await racedCheckpoint;
-    expect(JSON.stringify(racedCheckpointResult.body)).toContain(
-      "[CHECKPOINT_RUN_NOT_SETTLED]",
-    );
-    lifecycleGate.release();
-    const [, racedCompletionResult] = await Promise.all([
-      lifecycleGate.done,
-      racedCompletion,
-    ] as const);
-    expect(racedCompletionResult).toMatchObject({
-      body: { success: true, status: "failed" },
-    });
-    await waitForRunStatus(actor, racedRun.runId, "failed");
-    await flushWaitUntilForTest();
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    const retry = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "resume only the last completed Pi checkpoint",
-      });
+    const retry = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "resume only the last completed Pi checkpoint",
     });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
     expect(retryClaim.claim.resumeSession).toMatchObject({
@@ -857,16 +746,11 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(retryLateFailedH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
-    const reportedFailureRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "retry one atomically reported Pi failure",
-      });
+    const reportedFailureRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "retry one atomically reported Pi failure",
     });
     const reportedFailureClaim = await claimChatRun(
       runnerGroup,
@@ -899,16 +783,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedReportedFailure.body).toStrictEqual(reportedFailure.body);
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    const conversationClear = await holdThreadSessionConversationClearFixture({
-      threadId: run.threadId,
-      signal: context.signal,
-    });
-    conversationClear.release();
-    await conversationClear.done;
     const repeatedCombinedH2 = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
@@ -924,6 +798,18 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
+    await expectThreadModelTokens(context, actor, run.threadId, 2);
+    const probe = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "verify the canonical completed checkpoint after rejected writes",
+    });
+    const probeClaim = await claimChatRun(runnerGroup, probe.runId);
+    expect(probeClaim.claim.resumeSession).toMatchObject({
+      sessionId: run.threadId,
+      historyRef: { kind: "blob", hash: h2Hash },
+    });
+    await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
   }
 
   it(

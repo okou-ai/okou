@@ -21,9 +21,13 @@ export async function readOfficialWorkflowQueueInputFixture(eventId: string) {
 }
 
 /**
- * Production writers cannot produce historical-brand, canonical or corrupt
- * queue encodings. Append a test-owned persisted input and revoke the original;
- * never update an immutable event or relax its storage constraints.
+ * Historical persisted-state exception (docs/testing.md rollout coexistence;
+ * docs/testing/testing-external-behavior.md historical states): production
+ * writers can no longer produce historical-brand or canonical queue encodings,
+ * which web-chat-queue-context.service.ts still reads during the #29908
+ * compatibility window. Delete with that reader when the window closes.
+ * Append a test-owned persisted input and revoke the original; never update an
+ * immutable event or relax its storage constraints.
  */
 export async function appendOfficialWorkflowQueueInputFixture(args: {
   readonly eventId: string;

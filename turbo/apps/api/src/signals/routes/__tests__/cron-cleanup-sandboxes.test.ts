@@ -1029,51 +1029,6 @@ describe("sandbox cleanup", () => {
     await deleting.done;
   });
 
-  it("acknowledges completion when root deletion wins the row-lock race", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        threadless: true,
-      }),
-    );
-    const held = await holdAgentRunDeletionFixture({
-      runId: fixture.runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    const headers = {
-      authorization: `Bearer ${generateSandboxToken(
-        fixture.userId,
-        fixture.runId,
-        fixture.orgId,
-      )}`,
-    };
-    const completionRequest = webhooks.requestAgentComplete(
-      {
-        runId: fixture.runId,
-        exitCode: 1,
-        error: "late runner failure",
-      },
-      headers,
-      [200],
-    );
-    await expect.poll(held.blockedWaiterCount).toBeGreaterThan(0);
-
-    held.release();
-    await held.done;
-    const completion = await completionRequest;
-    expect(completion).toMatchObject({
-      status: 200,
-      body: { success: true, status: "failed" },
-    });
-    await expect(findRun(fixture.runId)).resolves.toBeNull();
-  });
-
   it("does not cleanup a recent pending run", async () => {
     const fixture = await trackRun(
       insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),

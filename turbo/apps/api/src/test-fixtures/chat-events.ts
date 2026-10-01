@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
@@ -10,20 +10,17 @@ import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-team
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { blobs } from "@okouai/db/schema/blob";
+
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { conversations } from "@okouai/db/schema/conversation";
-import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
+
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -50,11 +47,7 @@ import {
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
-import {
-  createDeferredPromise,
-  onRejection,
-  settleIncludingAbort,
-} from "../signals/utils";
+import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
 /**
  * BDD-scoped built-in model key prefixes. Fixture acquisition below only
@@ -868,63 +861,6 @@ export async function timeoutRunWithoutCallbacksFixture(args: {
   }
 }
 
-/** Holds one unique run row so route tests can order lifecycle competitors. */
-export async function holdAgentRunRowLockFixture(args: {
-  readonly statusOnRelease?: "running";
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly waiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [run] = await tx
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, args.runId))
-      .for("update")
-      .limit(1);
-    if (!run) {
-      throw new Error("Expected the agent run row to lock");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the agent run row lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-    if (args.statusOnRelease === "running") {
-      await tx
-        .update(agentRuns)
-        .set({ status: "running", startedAt: nowDate() })
-        .where(eq(agentRuns.id, args.runId));
-    }
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    waiterCount: () => {
-      return transitiveBlockedWaiterCount(holderPid);
-    },
-  };
-}
-
 /**
  * Product APIs cannot pause a completed SQL response or physically remove an
  * event at that boundary. Preserve the real selected rows, delete only the
@@ -1035,64 +971,6 @@ function isSharedThreadHotSnapshotRead(query: string): boolean {
     query.includes(' from "chat_events" ') &&
     query.endsWith('order by "chat_events"."seq_id" asc')
   );
-}
-
-/**
- * Holds the derived search watermark so route tests can deterministically
- * order a projector and orphan cleanup at their shared discoverability anchor.
- * Product APIs cannot pause while holding this projection-internal row lock.
- */
-export async function holdChatEventSearchWatermarkRowLockFixture(args: {
-  readonly chatThreadId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [watermark] = await tx
-      .select({
-        chatThreadId: chatEventSearchMessageWatermarks.chatThreadId,
-      })
-      .from(chatEventSearchMessageWatermarks)
-      .where(
-        eq(chatEventSearchMessageWatermarks.chatThreadId, args.chatThreadId),
-      )
-      .for("update")
-      .limit(1);
-    if (!watermark) {
-      throw new Error("Expected the chat search watermark row");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat search watermark lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
-    },
-  };
 }
 
 async function firstDirectBlockedStatementKind(
@@ -1259,55 +1137,6 @@ export async function holdChatThreadRowLockFixture(args: {
 }
 
 /**
- * Holds one Agent row exclusively, the lock a transfer or deletion would take.
- * Product APIs never expose this boundary, and the fixture changes no column.
- */
-export async function holdAgentRowLockFixture(args: {
-  readonly agentId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(eq(agents.id, args.agentId))
-      .for("update")
-      .limit(1);
-    if (!agent) {
-      throw new Error("Expected the Agent row");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    if (!pidRows[0]) {
-      throw new Error("Expected the Agent lock holder pid");
-    }
-    started.resolve(pidRows[0].pid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
-    },
-  };
-}
-
-/**
  * Deletes one test-owned thread and pauses before commit. Product APIs cannot
  * pause after DELETE has locked the parent but before the transaction commits,
  * so this fixture exposes that exact projection/deletion concurrency boundary.
@@ -1417,185 +1246,6 @@ export async function releaseBddBuiltInModelKey(args: {
 }
 
 /**
- * Stages the canonical conversation clear inside an open transaction so a
- * concurrent run still resolves the pre-clear snapshot, then blocks on this
- * transaction when its launch commit re-reads the session row `FOR UPDATE`.
- *
- * Waiting on this transaction is a precise barrier for "the run captured its
- * snapshot and reached commit". Counting waiters on the org admission key is
- * not: that key is taken only while a test gates admission, and waiting on it
- * does not prove the run re-read this session row.
- */
-export async function holdThreadSessionConversationClearFixture(args: {
-  readonly threadId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [thread] = await tx
-      .select({ agentSessionId: chatThreads.agentSessionId })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, args.threadId))
-      .limit(1);
-    if (!thread?.agentSessionId) {
-      throw new Error("Expected a bound chat thread session");
-    }
-    const [session] = await tx
-      .update(agentSessions)
-      .set({ conversationId: null })
-      .where(eq(agentSessions.id, thread.agentSessionId))
-      .returning({ id: agentSessions.id });
-    if (!session) {
-      throw new Error("Expected a bound agent session");
-    }
-    const rows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const holderPid = rows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the conversation clear holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      const rows = await executeRawRows(
-        db(),
-        sql`
-          SELECT ${count()}::int AS "waiterCount"
-          FROM pg_locks AS waiting
-          WHERE waiting.locktype = 'transactionid'
-            AND NOT waiting.granted
-            AND waiting.transactionid IN (
-              SELECT held.transactionid
-              FROM pg_locks AS held
-              WHERE held.locktype = 'transactionid'
-                AND held.pid = ${holderPid}
-                AND held.granted
-            )
-        `,
-        waiterCountRowSchema,
-      );
-      return rows[0]?.waiterCount ?? 0;
-    },
-  };
-}
-
-/**
- * Replaces one canonical binding with an otherwise valid session/run pair.
- * Product APIs cannot bind a thread to another owner's session, so this is the
- * narrow state boundary for ownership-corruption coverage.
- */
-export async function replaceThreadSessionBindingFixture(args: {
-  readonly threadId: string;
-  readonly detachFromThreadId: string;
-  readonly sessionId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx
-      .update(chatThreads)
-      .set({ agentSessionId: null, agentSessionRunId: null })
-      .where(eq(chatThreads.id, args.detachFromThreadId));
-    const updated = await tx
-      .update(chatThreads)
-      .set({
-        agentSessionId: args.sessionId,
-        agentSessionRunId: args.runId,
-      })
-      .where(eq(chatThreads.id, args.threadId))
-      .returning({ id: chatThreads.id });
-    if (updated.length !== 1) {
-      throw new Error(
-        "Expected one chat thread session binding to be replaced",
-      );
-    }
-  });
-}
-
-/** Reproduces an existing thread reassignment before its next run is picked. */
-export async function reassignThreadAgentFixture(args: {
-  readonly threadId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(chatThreads)
-    .set({ agentId: args.agentId })
-    .where(eq(chatThreads.id, args.threadId))
-    .returning({ id: chatThreads.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one chat thread agent to be reassigned");
-  }
-}
-
-/** Replaces a completed run's native session blob with exact test-owned bytes. */
-export async function replacePiSessionHistoryJsonlFixture(args: {
-  readonly runId: string;
-  readonly jsonl: string;
-}): Promise<string> {
-  const bytes = Buffer.from(args.jsonl, "utf8");
-  const hash = createHash("sha256").update(bytes).digest("hex");
-  await db().transaction(async (tx) => {
-    await tx
-      .insert(blobs)
-      .values({
-        hash,
-        rawSize: bytes.length,
-        encoding: "identity",
-        encodedSize: bytes.length,
-        refCount: 1,
-      })
-      .onConflictDoNothing();
-    const [updated] = await tx
-      .update(conversations)
-      .set({
-        cliAgentSessionHistory: null,
-        cliAgentSessionHistoryHash: hash,
-      })
-      .where(eq(conversations.runId, args.runId))
-      .returning({ id: conversations.id });
-    if (!updated) {
-      throw new Error("Expected one Pi session history fixture to be replaced");
-    }
-  });
-  return hash;
-}
-
-/** Restores the historical inline Pi session shape for a single completed run. */
-export async function replacePiSessionHistoryInlineFixture(args: {
-  readonly runId: string;
-  readonly jsonl: string;
-}): Promise<void> {
-  const [updated] = await db()
-    .update(conversations)
-    .set({
-      cliAgentSessionHistory: args.jsonl,
-      cliAgentSessionHistoryHash: null,
-    })
-    .where(eq(conversations.runId, args.runId))
-    .returning({ id: conversations.id });
-  if (!updated) {
-    throw new Error("Expected one Pi session history fixture to be replaced");
-  }
-}
-
-/**
  * Deletes one completed run to reproduce retention cleanup of binding
  * provenance. No product endpoint exposes historical run deletion.
  */
@@ -1673,100 +1323,6 @@ export async function holdChatEventInsertTransactionFixture(args: {
       return await pidIsDirectlyBlockedBy(waiterPid, pid);
     },
   };
-}
-
-/** Holds one existing run-output row to expose writes from later event batches. */
-export async function holdRunOutputMaterializationRowFixture(args: {
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the run-output row lock holder pid");
-    }
-    const [row] = await tx
-      .select({ runId: runOutputMaterializations.runId })
-      .from(runOutputMaterializations)
-      .where(eq(runOutputMaterializations.runId, args.runId))
-      .for("update")
-      .limit(1);
-    if (!row) {
-      throw new Error("Expected an existing run-output materialization");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
-    },
-  };
-}
-
-/** Starts one event insert with reservation and persistence in one transaction. */
-export async function startChatEventInsertTransactionFixture(args: {
-  readonly threadId: string;
-  readonly content: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly pid: number;
-  readonly done: Promise<{ readonly id: string; readonly seqId: number }>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const done = onRejection(
-    db().transaction(async (tx) => {
-      const pidRows = await executeRawRows(
-        tx,
-        sql`
-          SELECT pg_backend_pid() AS "pid"
-        `,
-        databasePidRowSchema,
-      );
-      const pid = pidRows[0]?.pid;
-      if (!pid) {
-        throw new Error("Expected the chat-message insert pid");
-      }
-      started.resolve(pid);
-      const event = await insertChatEvent(tx, {
-        chatThreadId: args.threadId,
-        eventType: "output.message",
-        content: args.content,
-        runId: null,
-      });
-      if (!event) {
-        throw new Error("Expected the chat-message insert");
-      }
-      return event;
-    }),
-    (error) => {
-      if (!started.settled()) {
-        started.reject(error);
-      }
-    },
-  );
-  return { pid: await started.promise, done };
 }
 
 /**

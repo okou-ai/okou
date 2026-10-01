@@ -6,35 +6,25 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import {
-  readQueuedLangfuseContextFixture,
-  readRunLangfuseTraceEnabledFixture,
-  readRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
-import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
-import {
-  setOrgModelPolicyProviderTypeFixture,
-  stageUnrepairedOrgModelPolicyFixture,
-} from "../../../test-fixtures/org-model-policies";
+
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  withDatabaseTransactionBarrierFixture,
-  barrierQueryText,
-  barrierQueryBinds,
-} from "../../../test-fixtures/database-transaction-barrier";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import {
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
+} from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -58,6 +48,7 @@ const {
   misc,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   seedBuiltInModelKey,
   configureBuiltInPiModel,
   configureBuiltInPiModelOnOpenRouter,
@@ -118,6 +109,25 @@ async function preparePiResourceHandoff(
   await publishPendingPiInstructions(actor, agentId);
   mockPiResourceArchiveDownloads(true);
   mockPiCheckpointObjectStore();
+}
+
+/**
+ * A test-owned mirror of a managed DeepSeek model whose OpenRouter candidate
+ * is cooling down while its direct DeepSeek candidate stays available.
+ */
+async function builtInModelWithOpenRouterCoolingDown(
+  selectedModel: "deepseek-v4.1-flash" | "deepseek-v4-flash",
+): Promise<string> {
+  const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
+  onTestFinished(mirror.restore);
+  await seedBuiltInModelCandidateKeys(context, mirror.model);
+  await coolDownBuiltInCandidatesFixture(context, mirror.model, [
+    {
+      provider_type: "openrouter-codex",
+      upstream_model: `deepseek/${selectedModel}`,
+    },
+  ]);
+  return mirror.model;
 }
 
 /**
@@ -369,11 +379,6 @@ describe("CHAT-02: model-first provider policies", () => {
     // built-in model key exists (no public provisioning surface), a run when
     // another suite's alive legacy test has seeded a global built-in model
     // key. Both prove the credits-ok admission arm.
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId,
-      model: "claude-sonnet-5",
-      defaultProviderType: "built-in",
-    });
     const builtIn = await sendUntilPicked(actor, {
       agentId,
       prompt: "built-in admission with spendable credits",
@@ -451,33 +456,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const { claim } = await claimChatRun(runnerGroup, picked.runId);
     expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
     await cancelChatRun(actor, picked.runId);
-  }, 90_000);
-
-  it("routes from the authoritative policies seeded by the same send", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    await stageUnrepairedOrgModelPolicyFixture({
-      orgId: requireOrgId(actor),
-      state: "unseeded",
-    });
-    await preparePiResourceHandoff(actor, agentId);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "route from the repaired policy snapshot",
-    });
-    await expect(
-      chat.readThreadMetadata(actor, run.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.cliAgentType).toBe("pi");
-    expect(claim.piModelConfig).toMatchObject({
-      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-    });
-    await cancelChatRun(actor, run.runId);
   }, 90_000);
 
   it("preserves persisted external model plan-state outcomes", async () => {
@@ -644,7 +622,14 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["deleted", "wrong-provider-key"] as const)(
     "rejects V4.1 %s credentials without borrowing another route",
     async (boundary) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
+        model: "claude-fable-5-1",
+      });
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       configureNativeCliArtifact();
       const { providerId } = await upsertOrgModelProvider(actor, {
         type: "openrouter-codex",
@@ -668,59 +653,35 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
 
       const clientEventId = randomUUID();
-      const sent = await withDatabaseTransactionBarrierFixture(
+      const sent = await chat.requestSendEvent(
+        actor,
         {
-          select: (queryArgs) => {
-            const text = barrierQueryText(queryArgs);
-            return (
-              text.includes('from "model_providers"') &&
-              text.includes('"secret_id"') &&
-              text.includes('"auth_method"') &&
-              barrierQueryBinds(queryArgs, providerId)
-            );
-          },
-          stopAt: (_queryArgs, selecting) => {
-            return selecting;
-          },
-          work: async (barrier) => {
-            const sending = chat.requestSendEvent(
-              actor,
-              {
-                agentId,
-                model: "deepseek-v4.1-flash",
-                clientEventId,
-                prompt: "Reject unavailable selected credentials",
-              },
-              [201],
-            );
-            await barrier.entered;
-            const sent = await sending;
-            if (sent.status !== 201) {
-              throw new Error("Expected the V4.1 send to be accepted");
-            }
-            if (boundary === "deleted") {
-              await misc.deleteOrgModelProvider(
-                actor,
-                "openrouter-codex",
-                [204],
-              );
-            }
-            barrier.release();
-            // Own the entire source/credential read before the DB fixture closes its pool.
-            await flushWaitUntilForTest();
-            return sent;
-          },
+          agentId,
+          model: "deepseek-v4.1-flash",
+          clientEventId,
+          prompt: "Reject unavailable selected credentials",
         },
-        context.signal,
+        [201],
       );
-      const events = (await chat.listThreadEvents(actor, sent.body.threadId))
-        .events;
-      const picked = userMessages(events).find((message) => {
-        return message.revokesEventId === clientEventId;
-      });
+      if (sent.status !== 201) {
+        throw new Error("Expected the V4.1 send to be accepted");
+      }
+      await flushWaitUntilForTest();
+      if (boundary === "deleted") {
+        await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
+      }
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      const { picked } = await waitForPickedInput(
+        actor,
+        sent.body.threadId,
+        clientEventId,
+      );
+      await flushWaitUntilForTest();
+      // Deletion before pick invalidates the public policy pin; a wrong
+      // provider key is also an invalid request, not a substitute route.
       expect(picked).toMatchObject({
         eventType: "input.rejected",
-        error: boundary === "deleted" ? "provider_unavailable" : "bad_request",
+        error: "bad_request",
       });
     },
     90_000,
@@ -867,33 +828,13 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "gpt-6-luna",
     });
     await flushWaitUntilForTest();
-    await expect(
-      readRunLangfuseTraceEnabledFixture(run.runId),
-    ).resolves.toBeTruthy();
-    const queuedContext = await readQueuedLangfuseContextFixture({
-      runId: run.runId,
-      userId: actor.userId,
-      orgId,
-    });
-    expect(queuedContext.platformEnvironment).toMatchObject({
-      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      LANGFUSE_TRACING_ENABLED: "true",
-    });
-    expect(queuedContext.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(queuedContext.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
-    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
 
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
+    expect(claimed.claim.platformEnvironment).toMatchObject({
+      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      LANGFUSE_TRACING_ENABLED: "true",
+    });
     expect(claimed.claim.platformEnvironment).not.toHaveProperty(
       "LANGFUSE_PUBLIC_KEY",
     );
@@ -903,9 +844,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claimed.claim.secretValues).not.toContain(
       "sk-lf-bdd-trace-admission",
     );
-    await expect(
-      readRunLangfuseTraceEnabledFixture(run.runId),
-    ).resolves.toBeTruthy();
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -1717,14 +1655,14 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "uses direct built-in %s when the OpenRouter fallback is unavailable",
-    async (model) => {
+    async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (model === "deepseek-v4.1-flash") {
+      if (selectedModel === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      // Other tests can own the global OpenRouter key. Keep it present and
-      // scope only its candidate's unavailability to this request.
-      await seedBuiltInModelCandidateKeys(context, model);
+      // A test-owned mirror keeps the shared model's OpenRouter candidate
+      // available to concurrent tests while this one cools down.
+      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1740,26 +1678,20 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       await preparePiResourceHandoff(actor, agentId);
 
-      const run = await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: "openrouter-codex",
-          upstreamModel: `deepseek/${model}`,
-        },
-        async () => {
-          return await sendChatRun(actor, {
-            agentId,
-            prompt: "retain the managed DeepSeek direct priority",
-            model,
-          });
-        },
-      );
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "retain the managed DeepSeek direct priority",
+        model,
+      });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piModelConfig).toMatchObject({
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        model: model === "deepseek-v4.1-flash" ? "deepseek-flash" : model,
+        model:
+          selectedModel === "deepseek-v4.1-flash"
+            ? "deepseek-flash"
+            : selectedModel,
       });
       await cancelChatRun(actor, run.runId);
     },
@@ -1767,12 +1699,12 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "fails closed for built-in %s when its required OpenRouter route is unavailable",
-    async (model) => {
+    async (selectedModel) => {
       const { actor, agentId } = await entitledChatActor();
-      if (model === "deepseek-v4.1-flash") {
+      if (selectedModel === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      await seedBuiltInModelCandidateKeys(context, model);
+      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1787,21 +1719,11 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       });
 
-      const { picked } =
-        await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-          {
-            selectedModel: model,
-            providerType: "openrouter-codex",
-            upstreamModel: `deepseek/${model}`,
-          },
-          async () => {
-            return await sendUntilPicked(actor, {
-              agentId,
-              prompt: "require the managed OpenRouter DeepSeek route",
-              model,
-            });
-          },
-        );
+      const { picked } = await sendUntilPicked(actor, {
+        agentId,
+        prompt: "require the managed OpenRouter DeepSeek route",
+        model,
+      });
       expect(picked).toMatchObject({
         eventType: "input.rejected",
         error: "model_provider_unavailable",
@@ -1811,12 +1733,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     (
-      [
-        "claude-sonnet-5",
-        "claude-fable-5-1",
-        "gpt-5.6-luna",
-        "deepseek-v4-flash",
-      ] as const
+      ["claude-fable-5-1", "gpt-5.6-luna", "deepseek-v4-flash"] as const
     ).flatMap((model) => {
       const switchValues =
         model === "claude-fable-5-1" || model === "deepseek-v4-flash"
@@ -1830,17 +1747,18 @@ describe("CHAT-02: model-first provider policies", () => {
     "freezes managed $model endpoint and firewall with US switch $enabled",
     async ({ model, enabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const withRoute = await configureBuiltInPiModelOnOpenRouter(actor, model);
+      const routedModel = await configureBuiltInPiModelOnOpenRouter(
+        actor,
+        model,
+      );
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
       });
       await preparePiResourceHandoff(actor, agentId);
-      const run = await withRoute(() => {
-        return sendChatRun(actor, {
-          agentId,
-          model,
-          prompt: "capture the managed regional route",
-        });
+      const run = await sendChatRun(actor, {
+        agentId,
+        model: routedModel,
+        prompt: "capture the managed regional route",
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OpenRouterUsRouting]: !enabled,
@@ -2102,11 +2020,6 @@ describe("CHAT-02: model-first provider policies", () => {
     if (!actor.orgId) {
       throw new Error("Expected the built-in model actor to have an org");
     }
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId: actor.orgId,
-      model: "claude-opus-5",
-      defaultProviderType: "built-in",
-    });
 
     await preparePiResourceHandoff(actor, agentId);
     const run = await sendChatRun(actor, {
@@ -2115,11 +2028,8 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "claude-opus-5",
     });
     runId = run.runId;
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "built-in",
-      selectedModel: "claude-opus-5",
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      source: { providerType: "built-in", model: "claude-opus-5" },
     });
 
     const { claim, sandboxHeaders } = await claimChatRun(

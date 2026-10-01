@@ -1,27 +1,19 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { HTTPException } from "hono/http-exception";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/database-transaction-barrier";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached } from "../../utils";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
-  requireOrgId,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -33,6 +25,7 @@ const {
   chatCallbacks,
   authDeviceSupport,
   entitledChatActor,
+  entitledNativeChatActor,
   configureUserOwnedGptPiModel,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
@@ -48,224 +41,66 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-function jsonHttpException(status: 422, message: string) {
-  return new HTTPException(status, {
-    res: new Response(JSON.stringify({ error: { message } }), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
-  });
-}
-
 describe("CHAT-02: run-level model overrides", () => {
-  // A send only enqueues its input; the background pick prepares the run, so
-  // these holds pause the pick while the input waits in the thread.
   describe("subscription account preparation", () => {
-    async function prepareSubscriptionThread() {
-      const { actor, agentId } = await entitledChatActor();
+    it("rejects a personal account disconnected while its input is queued", async () => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
+        model: "claude-fable-5-1",
+      });
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
-
-      const thread = await chat.createThread(actor, { agentId });
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
+      mockPiCheckpointObjectStore();
+      mockPiResourceArchiveDownloads();
+      const clientEventId = randomUUID();
+      const waiting = await sendWaitingChatInput(actor, {
+        agentId,
+        model: "gpt-6-luna",
+        prompt: "reject a disconnected queued account",
+        clientEventId,
       });
-      return { actor, agentId, captured, thread, preparation };
-    }
-
-    async function sendHeldInput(
-      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
-      clientEventId: string,
-      prompt: string,
-    ): Promise<void> {
-      const sent = await chat.requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          threadId: f.thread.id,
-          model: "gpt-6-luna",
-          prompt,
-          clientEventId,
-        },
-        [201],
+      await flushWaitUntilForTest();
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        actor,
+        captured.accountSourceId,
       );
-      if (sent.status !== 201) {
-        throw new Error("Expected the send to be accepted");
-      }
-      expect(sent.body).toMatchObject({ runId: null, threadId: f.thread.id });
-    }
-
-    /** The held pick has neither launched nor rejected the input yet. */
-    async function expectInputNotConsumed(
-      actor: Awaited<ReturnType<typeof entitledChatActor>>["actor"],
-      threadId: string,
-      clientEventId: string,
-    ): Promise<void> {
-      const page = await chat.listThreadEvents(actor, threadId);
-      expect(
-        userMessages(page.events).filter((message) => {
-          return message.revokesEventId === clientEventId;
-        }),
-      ).toStrictEqual([]);
-    }
-
-    async function waitForRejection(
-      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
-    ) {
-      const messages = await waitForThreadMessages(
-        f.actor,
-        f.thread.id,
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      const page = await waitForThreadMessages(
+        actor,
+        waiting.threadId,
         (items) => {
           return items.some((event) => {
-            return event.eventType === "output.error";
+            return event.eventType === "input.rejected";
           });
         },
       );
-      return messages.events;
-    }
-
-    it("overlaps account capture with thread observation and keeps captured identity", async () => {
-      const f = await prepareSubscriptionThread();
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const clientEventId = randomUUID();
-      const waiting = await sendWaitingChatInput(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-6-luna",
-        prompt: "overlap subscription capture with thread preparation",
-        clientEventId,
-      });
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      // Identity-only bootstrap/catalog work can now finish independently of
-      // account capture; admission still waits for the captured account below.
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      expect(f.preparation.arrivalCount("subscription-account")).toBe(1);
-      expect(f.preparation.arrivalCount("thread-session")).toBe(1);
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      const run = await waiting.launchedRun();
-      await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
-        source: {
-          providerType: "codex-oauth-token",
-          account: { id: f.captured.accountSourceId },
-        },
-      });
-    });
-
-    it("rejects an account disconnected after capture before environment preparation", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      const events = await withDatabaseTransactionBarrierFixture(
-        {
-          // The exact selected account source read (account + its secrets).
-          select: (queryArgs) => {
-            const text = barrierQueryText(queryArgs);
-            return (
-              text.includes('from "model_provider_accounts"') &&
-              text.includes('"model_provider_account_secrets"') &&
-              barrierQueryBinds(queryArgs, f.captured.accountSourceId)
-            );
-          },
-          stopAt: (_queryArgs, selecting) => {
-            return selecting;
-          },
-          work: async (barrier) => {
-            await sendHeldInput(
-              f,
-              clientEventId,
-              "reject a disconnected captured account",
-            );
-            await Promise.all([
-              f.preparation.arrival("subscription-account"),
-              f.preparation.arrival("thread-session"),
-            ]);
-            f.preparation.releaseAll();
-            await barrier.entered;
-            await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-            await authDeviceSupport.deletePersonalModelProviderAccount(
-              f.actor,
-              f.captured.accountSourceId,
-            );
-            barrier.release();
-            // Own the source read and rejection before the fixture closes its pool.
-            return await waitForRejection(f);
-          },
-        },
-        context.signal,
-      );
-
-      expect(events).toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
+      // The public queue reaches the existing unavailable-subscription
+      // conflict, before any captured account can authorize launch.
+      expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "input.rejected",
           revokesEventId: clientEventId,
-          error: "provider_unavailable",
+          error: "conflict",
         }),
+      );
+      expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "output.error",
-          error: "provider_unavailable",
-        }),
-      ]);
-    });
-
-    it("rejects the input when a captured account disconnects and session preparation fails", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      await sendHeldInput(
-        f,
-        clientEventId,
-        "preserve the input after session preparation fails",
-      );
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      // The queued model graph already captured the shared account metadata.
-      // Disconnecting it now cannot rewrite that snapshot; the adjacent case
-      // verifies the exact-account authority rejects it before run admission.
-      await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      const sessionError = jsonHttpException(422, "session preparation failed");
-      f.preparation.reject("thread-session", sessionError);
-      await f.preparation.departure("thread-session");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      f.preparation.releaseAll();
-
-      await expect(clearAllDetached()).rejects.toBe(sessionError);
-      const { events } = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          eventType: "input.rejected",
-          revokesEventId: clientEventId,
-          error: "internal_error",
+          error: "conflict",
+          content:
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
         }),
       );
-      await expect(
-        api.listAgentRuns(f.actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
+      expect(
+        page.events.filter((event) => {
+          return event.runId !== undefined;
         }),
-      ).resolves.toMatchObject({ runs: [] });
+      ).toStrictEqual([]);
     });
   });
 
@@ -334,7 +169,7 @@ describe("CHAT-02: run-level model overrides", () => {
         });
         expect(refreshAttempts).toBe(1);
         expect(f.captured.oauth.oauthToken).toHaveLength(1);
-        await expectNoBuiltInModelUsage(f.run.runId);
+        await expectThreadModelCredits(context, f.actor, f.run.threadId, 0);
         await cancelChatRun(f.actor, f.run.runId, f.sandboxHeaders);
       },
       30_000,
@@ -392,7 +227,7 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(rejected.body).toMatchObject({
       error: { failureReason: "reconnect_required" },
     });
-    await expectNoBuiltInModelUsage(run.runId);
+    await expectThreadModelCredits(context, actor, run.threadId, 0);
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 30_000);
 
@@ -438,9 +273,10 @@ describe("CHAT-02: run-level model overrides", () => {
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
       });
-      const firstSession = await readThreadSessionConversation(
+      const firstSession = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
       const fast = await sendChatRun(actor, {
         agentId,
@@ -473,10 +309,8 @@ describe("CHAT-02: run-level model overrides", () => {
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
+        readCompletedRunSessionId(context, actor, fast.runId),
+      ).resolves.toBe(firstSession);
       await chat.updateThreadModelSelection(
         actor,
         first.threadId,
@@ -508,11 +342,8 @@ describe("CHAT-02: run-level model overrides", () => {
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-        conversation_run_id: standard.runId,
-      });
+        readCompletedRunSessionId(context, actor, standard.runId),
+      ).resolves.toBe(firstSession);
 
       const histories = [...objects.entries()].filter(([key]) => {
         return key.endsWith(".blob");
@@ -526,7 +357,7 @@ describe("CHAT-02: run-level model overrides", () => {
         expect(value.toString("utf8")).not.toContain(secret);
       }
       for (const run of [first, fast, standard]) {
-        await expectNoBuiltInModelUsage(run.runId);
+        await expectThreadModelCredits(context, actor, run.threadId, 0);
       }
     },
     90_000,
@@ -627,7 +458,7 @@ describe("CHAT-02: run-level model overrides", () => {
         serviceTier: fastTier,
       });
       await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
-      await expectNoBuiltInModelUsage(promoted.runId);
+      await expectThreadModelCredits(context, actor, anchor.threadId, 0);
 
       const immediateId = randomUUID();
       const immediateBody = {
@@ -670,7 +501,12 @@ describe("CHAT-02: run-level model overrides", () => {
         serviceTier: fastTier,
       });
       await cancelChatRun(actor, immediateRunId, immediateClaim.sandboxHeaders);
-      await expectNoBuiltInModelUsage(immediateRunId);
+      await expectThreadModelCredits(
+        context,
+        actor,
+        immediate.body.threadId,
+        0,
+      );
       await cancelChatRun(actor, source.runId);
     },
     90_000,

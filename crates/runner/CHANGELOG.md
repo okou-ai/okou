@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.219.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.4...runner-rs-v0.219.0) (2026-10-01)
+
+
+### Features
+
+* **runner:** install embedded cli into rootfs ([#37422](https://github.com/okou-ai/okou/issues/37422)) ([aaae6c3](https://github.com/okou-ai/okou/commit/aaae6c3bb9c52be47911fd7244ae789a54419929))
+
 ## [0.218.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.3...runner-rs-v0.218.4) (2026-10-01)
 
 ## [0.218.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.2...runner-rs-v0.218.3) (2026-10-01)

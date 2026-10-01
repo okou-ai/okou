@@ -838,7 +838,7 @@ async function loadCompleteRuntimeSelection(args: {
 
 export function runtimeSelectionFromAcceptedSnapshot(args: {
   readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
-  readonly timing: ConnectorCatalogLoadTiming;
+  readonly timing?: ConnectorCatalogLoadTiming;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): ConnectorRuntimeSelection {
@@ -847,7 +847,7 @@ export function runtimeSelectionFromAcceptedSnapshot(args: {
     acceptedSnapshot,
     args.runtimeConnectorSlugs,
   );
-  args.timing.recordCatalogFacts({
+  args.timing?.recordCatalogFacts({
     rawSize: acceptedSnapshot.catalogRawSize,
     compressedSize: acceptedSnapshot.catalogCompressedSize,
     connectorCount: acceptedSnapshot.artifact.connectors.length,
@@ -861,21 +861,26 @@ export function runtimeSelectionFromAcceptedSnapshot(args: {
     return !state.connectors.has(connectorSlug);
   });
   const cacheMiss = created || missingConnectorSlugs.length > 0;
-  args.timing.recordRuntimeCacheOutcome(cacheMiss ? "miss" : "hit");
-  args.timing.recordMaterializedConnectorCount(missingConnectorSlugs.length);
+  args.timing?.recordRuntimeCacheOutcome(cacheMiss ? "miss" : "hit");
+  args.timing?.recordMaterializedConnectorCount(missingConnectorSlugs.length);
   if (cacheMiss) {
-    args.timing.measureSync(
-      "api_dispatch_connector_catalog_materialize_runtime_snapshot",
-      () => {
-        for (const connectorSlug of missingConnectorSlugs) {
-          materializeConnectorRuntimeEntry(
-            state.acceptedSnapshot,
-            state.connectors,
-            connectorSlug,
-          );
-        }
-      },
-    );
+    const materialize = () => {
+      for (const connectorSlug of missingConnectorSlugs) {
+        materializeConnectorRuntimeEntry(
+          state.acceptedSnapshot,
+          state.connectors,
+          connectorSlug,
+        );
+      }
+    };
+    if (args.timing === undefined) {
+      materialize();
+    } else {
+      args.timing.measureSync(
+        "api_dispatch_connector_catalog_materialize_runtime_snapshot",
+        materialize,
+      );
+    }
   }
   return {
     catalogIdentity: acceptedSnapshot.identity,
@@ -1081,19 +1086,23 @@ async function completeRuntimeSelectionBuildFallback(args: {
 }
 
 export function materializeProjectedRuntimeSelection(args: {
-  readonly timing: ConnectorCatalogLoadTiming;
+  readonly timing?: ConnectorCatalogLoadTiming;
   readonly projection: ConnectorCatalogRuntimeProjectionReadyIdentity;
   readonly connectors: readonly ConnectorCatalogArtifactConnector[];
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): ConnectorRuntimeSelection {
-  const selection = args.timing.measureSync(
-    "api_dispatch_connector_catalog_materialize_projection",
-    () => {
-      return runtimeSelectionFromProjectedConnectors(args);
-    },
-  );
-  args.timing.recordMaterializedConnectorCount(selection.connectors.size);
+  const materialize = () => {
+    return runtimeSelectionFromProjectedConnectors(args);
+  };
+  const selection =
+    args.timing === undefined
+      ? materialize()
+      : args.timing.measureSync(
+          "api_dispatch_connector_catalog_materialize_projection",
+          materialize,
+        );
+  args.timing?.recordMaterializedConnectorCount(selection.connectors.size);
   return selection;
 }
 

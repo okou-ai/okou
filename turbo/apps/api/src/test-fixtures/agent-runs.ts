@@ -2,20 +2,17 @@ import { randomUUID } from "node:crypto";
 import { createStore, state } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
-import { checkpoints } from "@okouai/db/schema/checkpoint";
+
 import { conversations } from "@okouai/db/schema/conversation";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { storages } from "@okouai/db/schema/storage";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
@@ -28,7 +25,6 @@ import {
   normalizeSessionHistoryBlobEncoding,
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
-import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
 import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 /**
@@ -41,46 +37,6 @@ import { loadModelCatalog } from "../signals/services/model-catalog.service";
  */
 
 const store = createStore();
-
-export async function readQueuedLangfuseContextFixture(args: {
-  readonly runId: string;
-  readonly userId: string;
-  readonly orgId: string;
-}): Promise<{
-  readonly platformEnvironment: Readonly<Record<string, string>>;
-  readonly encryptedSecrets: Readonly<Record<string, string>> | null;
-}> {
-  const [row] = await db()
-    .select({ executionContext: runnerJobQueue.executionContext })
-    .from(runnerJobQueue)
-    .where(eq(runnerJobQueue.runId, args.runId))
-    .limit(1);
-  if (!row) {
-    throw new Error("Expected the queued Agent Run fixture to exist");
-  }
-  const context = storedExecutionContextSchema.parse(row.executionContext);
-  return {
-    platformEnvironment: context.platformEnvironment,
-    encryptedSecrets: await decryptPersistentSecretsMap(
-      context.encryptedSecrets,
-      { userId: args.userId, orgId: args.orgId },
-    ),
-  };
-}
-
-export async function readRunLangfuseTraceEnabledFixture(
-  runId: string,
-): Promise<boolean> {
-  const [run] = await db()
-    .select({ langfuseTraceEnabled: agentRuns.langfuseTraceEnabled })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    throw new Error("Expected the Agent Run fixture to exist");
-  }
-  return run.langfuseTraceEnabled;
-}
 
 export async function readSessionHistoryBlobRefCountFixture(
   hash: string,
@@ -106,52 +62,6 @@ export async function clearRunLaunchSnapshotFixture(
     .returning({ id: agentRuns.id });
   if (rows.length !== 1) {
     throw new Error("Expected one Run launch snapshot to clear");
-  }
-}
-
-/**
- * Test-only historical-row fixture.  Completion reads this persisted value
- * after the runner has claimed the run, which lets API tests exercise the
- * compatibility decoder without changing a production writer.
- */
-export async function setRunLaunchSnapshotFixture(
-  runId: string,
-  launchSnapshot: AgentRunLaunchSnapshot | null,
-): Promise<void> {
-  const rows = await db()
-    .update(agentRuns)
-    .set({ launchSnapshot })
-    .where(eq(agentRuns.id, runId))
-    .returning({ id: agentRuns.id });
-  if (rows.length !== 1) {
-    throw new Error("Expected one Run launch snapshot to update");
-  }
-}
-
-export async function setRunPiMemoryAdmissionInputsFixture(
-  runId: string,
-  inputs: {
-    readonly triggerSource?: TriggerSource;
-    readonly chatThreadId?: string | null;
-  },
-): Promise<void> {
-  if (inputs.triggerSource === undefined && inputs.chatThreadId === undefined) {
-    return;
-  }
-  const rows = await db()
-    .update(agentRuns)
-    .set({
-      ...(inputs.triggerSource === undefined
-        ? {}
-        : { triggerSource: inputs.triggerSource }),
-      ...(inputs.chatThreadId === undefined
-        ? {}
-        : { chatThreadId: inputs.chatThreadId }),
-    })
-    .where(eq(agentRuns.id, runId))
-    .returning({ id: agentRuns.id });
-  if (rows.length !== 1) {
-    throw new Error("Expected one Run admission input to update");
   }
 }
 
@@ -555,74 +465,6 @@ export async function listAgentRunsFixture(args: {
       limit: args.limit ?? 50,
     }),
   );
-}
-
-function exactlyOneCount(
-  source: string,
-  rows: readonly { readonly count: number }[],
-): number {
-  const [row] = rows;
-  if (!row || rows.length !== 1) {
-    throw new Error(
-      `Expected exactly one ${source} COUNT row, received ${rows.length}`,
-    );
-  }
-  return row.count;
-}
-
-/**
- * Exceptional internal assertion for the Run identity mismatch contract.
- *
- * Production APIs cannot observe the absence of Session, callback,
- * conversation, or checkpoint rows. Keep this fixture narrowly scoped to the
- * contract requirement that an Agent/Session mismatch fails before every
- * launch write; ordinary route tests must continue to verify state through
- * production API surfaces.
- */
-export async function readRunIdentityMismatchWriteCountsFixture(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}) {
-  const ownedRuns = and(
-    eq(agentRuns.userId, args.userId),
-    eq(agentRuns.orgId, args.orgId),
-  );
-  const [runRows, sessionRows, callbackRows, conversationRows, checkpointRows] =
-    await Promise.all([
-      db().select({ count: count() }).from(agentRuns).where(ownedRuns),
-      db()
-        .select({ count: count() })
-        .from(agentSessions)
-        .where(
-          and(
-            eq(agentSessions.userId, args.userId),
-            eq(agentSessions.orgId, args.orgId),
-          ),
-        ),
-      db()
-        .select({ count: count() })
-        .from(agentRunCallbacks)
-        .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
-        .where(ownedRuns),
-      db()
-        .select({ count: count() })
-        .from(conversations)
-        .innerJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-        .where(ownedRuns),
-      db()
-        .select({ count: count() })
-        .from(checkpoints)
-        .innerJoin(agentRuns, eq(checkpoints.runId, agentRuns.id))
-        .where(ownedRuns),
-    ]);
-
-  return {
-    runs: exactlyOneCount("Run", runRows),
-    sessions: exactlyOneCount("Session", sessionRows),
-    callbacks: exactlyOneCount("callback", callbackRows),
-    conversations: exactlyOneCount("conversation", conversationRows),
-    checkpoints: exactlyOneCount("checkpoint", checkpointRows),
-  };
 }
 
 export async function readRunModelRuntimeRouteFixture(runId: string) {

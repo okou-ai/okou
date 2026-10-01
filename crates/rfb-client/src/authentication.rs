@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, ClientCertificateAuthentication,
     ClientIdentity, Error, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
-    trust::ClientAuthSelection,
+    qemu_sasl, trust::ClientAuthSelection,
 };
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
@@ -204,6 +204,9 @@ where
         X509Authentication::None => read_security_result(stream).await,
         X509Authentication::VncPassword(password) => authenticate_vnc(stream, password).await,
         X509Authentication::Plain(credentials) => authenticate_plain(stream, credentials).await,
+        X509Authentication::QemuScramSha256(credentials) => {
+            qemu_sasl::authenticate(stream, credentials).await
+        }
     }
 }
 

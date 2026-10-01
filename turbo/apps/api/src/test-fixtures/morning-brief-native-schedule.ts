@@ -1,13 +1,11 @@
 import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 
 /**
- * Read historical Native-named schedule and legacy automation rows for the
- * surviving Official Workflow reconciliation tests. No Native cron or
- * collection endpoint remains.
+ * Read the historical Native-named schedule for the surviving Official
+ * Workflow reconciliation tests. No Native cron or collection endpoint remains.
  */
 
 interface MorningBriefNativeOwner {
@@ -25,15 +23,6 @@ export async function readNativeSchedule(owner: MorningBriefNativeOwner) {
         eq(morningBriefNativeSchedules.userId, owner.userId),
       ),
     )
-    .limit(1);
-  return row;
-}
-
-export async function readLegacyAutomation(automationId: string) {
-  const [row] = await db()
-    .select()
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, automationId))
     .limit(1);
   return row;
 }

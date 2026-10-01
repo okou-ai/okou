@@ -43,7 +43,6 @@ import {
   type OrgCreditAvailability,
   type RunAdmissionInput,
 } from "./run-admission.service";
-import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
   acquireOfficialWorkflowRunCatalogAdmissionLock,
@@ -87,7 +86,7 @@ import {
   buildQueuedCreateAgentRunArgs,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
-  type CreateQueuedChatRunInputArgs,
+  type QueuedChatPromptData,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
@@ -314,13 +313,6 @@ import {
   type PrefetchedAgentBootstrap,
 } from "./agent-bootstrap.service";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
-
-import {
-  observeAgentRunPiExecutionSnapshot,
-  observeAgentRunPreCreateParallelStage,
-  observeRunConnectorAccountsRead,
-  observeRunContextParallelStage,
-} from "./agent-run-preparation-hooks";
 import {
   type AgentPhoneDeliveryTarget,
   agentphoneDeliveryTargetSchema,
@@ -402,7 +394,6 @@ import {
 } from "./member-subscription-models.service";
 import {
   type ConnectorCatalogRuntimeProjectionRowsRead,
-  projectionIdentityReadHook,
   validateConnectorCatalogRuntimeProjectionRows,
 } from "./connector-catalog-runtime-projection.service";
 import {
@@ -439,7 +430,7 @@ import {
   customConnectorPermissionBundleDependencySlug,
   type CustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { discordConversationAccess } from "./discord-access.service";
 import {
   type DiscordDeliveryTarget,
   discordDeliveryTargetSchema,
@@ -2206,8 +2197,18 @@ type ClaimRejectionContext =
   | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
   | { readonly kind: "automation"; readonly userId: string };
 
+/** Queued prompt data with this preparation's read handle and timing. */
+interface CreateQueuedChatRunInputArgs extends QueuedChatPromptData {
+  readonly db: ReadonlyDb;
+  readonly timing?: ChatCallbackPreCreateTimingCollector;
+}
+
 type ClaimLaunchRecord =
-  | { readonly kind: "prompt"; readonly context: QueuedPromptLaunchContext }
+  | {
+      readonly kind: "prompt";
+      readonly context: QueuedPromptLaunchContext;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
+    }
   | {
       readonly kind: "automation";
       readonly automationId: string;
@@ -2429,9 +2430,9 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   const input = record.context.runInput;
   return {
     kind: "prompt",
+    timing: record.timing,
     context: {
       userId: record.context.userId,
-      timing: record.context.timing,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -2859,9 +2860,6 @@ async function persistClaimedRun(
       );
       await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
       await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
-      observePreparedLaunchPersistenceForTest(
-        input.args.agentRunMetadata?.workflowAutomationId,
-      );
       const threadSessionBinding =
         input.args.chatThreadId && !admission.validatedThreadSession
           ? await persistThreadSessionBinding(tx, {
@@ -4764,11 +4762,6 @@ export function createThreadClaimRunObjects(
       input: args,
       modelRoute: model.route,
     });
-    await observeAgentRunPreCreateParallelStage("thread-session", {
-      command: {
-        auth: { userId: args.userId, orgId: args.agent.orgId },
-      },
-    });
     const [thread] = await args.db
       .select(chatThreadSessionSelection())
       .from(chatThreads)
@@ -5425,7 +5418,7 @@ export function createThreadClaimRunObjects(
   );
   const promptCheckPromptDiscordAccessCheckPromptDiscordAccess$ = command(
     async (
-      { get, set },
+      { get },
       input: {
         readonly channelId: string;
         readonly mode: "view" | "read" | "write";
@@ -5440,15 +5433,13 @@ export function createThreadClaimRunObjects(
       if (!target) {
         return null;
       }
-      const access = await set(
-        requireDiscordConversationAccess$,
-        {
+      const access = await get(
+        discordConversationAccess({
           orgId: args.orgId,
           userId: args.userId,
           guildId: target.guildId,
           ...input,
-        },
-        signal,
+        }),
       );
       signal.throwIfAborted();
       if (access.kind === "denied") {
@@ -5641,7 +5632,8 @@ export function createThreadClaimRunObjects(
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
-          context: { userId: head.userId, timing, runInput },
+          timing,
+          context: { userId: head.userId, runInput },
         },
       };
     },
@@ -7794,9 +7786,6 @@ export function createThreadClaimRunObjects(
         return { command };
       }
       const providerType = pin.modelProvider;
-      await observeAgentRunPreCreateParallelStage("subscription-account", {
-        command,
-      });
       return await measureAgentRunPreCreate(
         timing,
         "api_dispatch_pre_create_agent_capture_subscription_account",
@@ -7889,7 +7878,6 @@ export function createThreadClaimRunObjects(
         return await get(createAgentCatalogIdentity());
       },
     );
-    await projectionIdentityReadHook.get()?.();
     return captured;
   });
   const runtimeCatalogInputRequestedSlugs$ = computed(async (get) => {
@@ -8045,7 +8033,6 @@ export function createThreadClaimRunObjects(
         return await get(createAgentCatalogIdentity());
       },
     );
-    await projectionIdentityReadHook.get()?.();
     return captured;
   });
   const runtimeCatalogProjectionResultProjectionResult$ = computed(
@@ -8317,14 +8304,7 @@ export function createThreadClaimRunObjects(
   const selectedCatalog$ = runtimeCatalogSelectionConnectorCatalog$;
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [{ command }, bootstrap] = await Promise.all([
-        get(selectedIdentityInputIdentityInput$),
-        get(preCreateBootstrapMetadata$),
-      ]);
-      await observeAgentRunPreCreateParallelStage(
-        "post-authorization-context",
-        { command },
-      );
+      const bootstrap = await get(preCreateBootstrapMetadata$);
       return isEmptyRunConnectorScope(bootstrap)
         ? { kind: "empty" }
         : { kind: "scoped", selection: await get(selectedCatalog$) };
@@ -8927,13 +8907,6 @@ export function createThreadClaimRunObjects(
     if (!context.shouldResolve) {
       return null;
     }
-    const hold = observeRunContextParallelStage(
-      "model-provider",
-      context.input.args,
-    );
-    if (hold) {
-      await hold;
-    }
     return await context.input.timing.measure(
       "api_dispatch_prepare_context_resolve_model_provider",
       "nested",
@@ -9097,7 +9070,6 @@ export function createThreadClaimRunObjects(
     if (isEmptyRunConnectorScope(scope)) {
       return [];
     }
-    await observeRunConnectorAccountsRead();
     return await db
       .select({
         connectorId: connectors.id,
@@ -9250,7 +9222,6 @@ export function createThreadClaimRunObjects(
       if (isRouteError(selection)) {
         return selection;
       }
-      await observeRunContextParallelStage("connector-contexts", input.args);
       const {
         connectorCatalogSelection,
         connectorScope,
@@ -10054,7 +10025,6 @@ export function createThreadClaimRunObjects(
   });
   const candidates$ = computed(async (get) => {
     const { args } = await get(workflowInput$);
-    await observeRunContextParallelStage("official-workflow", args);
     const modelState = await get(modelState$);
     if (modelState === undefined || isRouteError(modelState)) {
       return [];
@@ -10259,9 +10229,6 @@ export function createThreadClaimRunObjects(
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      await observeAgentRunPreCreateParallelStage("thread-session", {
-        command,
-      });
       const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
@@ -10941,15 +10908,11 @@ export function createThreadClaimRunObjects(
   );
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
   const runMemberUserTimezone$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("user-timezone", input.args);
     return selectedRunContextShared
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
   const runMemberImageModel$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("image-model", input.args);
     const stored = (await get(runMemberSnapshot$)).member?.selectedImageModel;
     return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
   });
@@ -11679,22 +11642,6 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const observeExecution$ = command(async ({ get }, signal: AbortSignal) => {
-    if (!(await get(selectionInput$))) {
-      signal.throwIfAborted();
-      return;
-    }
-    const { command: selected } = await get(preCreateInput$);
-    signal.throwIfAborted();
-    await observeAgentRunPiExecutionSnapshot({
-      userId: selected.auth.userId,
-      orgId: selected.auth.orgId,
-      chatThreadId: selected.chatThreadId,
-      piExecution: selectedRunPiExecution(selected),
-      threadSessionCliAgentType: selected.threadSessionRoute?.cliAgentType,
-    });
-    signal.throwIfAborted();
-  });
   const runIdentity$ = computed(async (get) => {
     const ids = get(internalRunIds$);
     if (!ids) {
@@ -12149,7 +12096,6 @@ export function createThreadClaimRunObjects(
         set(prepareCallbacks$, signal),
         get(assembly$),
         get(runIdentity$),
-        set(observeExecution$, signal),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
         get(runEnvironmentSnapshot$),
@@ -12589,6 +12535,7 @@ export function createThreadClaimRunObjects(
           recordQueuedPromptRunLaunch$,
           launched.context,
           pending.runId,
+          launched.timing,
           signal,
         );
       } else {

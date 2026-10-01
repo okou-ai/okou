@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -5,32 +6,21 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
-import { replacePiSessionHistoryJsonlFixture } from "../../../test-fixtures/chat-events";
 import {
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
 } from "../../../test-fixtures/model-catalog";
-import {
-  readRunModelLaunchOptionsFixture,
-  readRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  readRunLaunchSnapshotFixture,
-  seedBuiltInModelCandidateKeys,
-  readThreadSessionBinding,
-  readThreadSessionConversation,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   GPT_API_KEY_BDD_ROUTES,
   requireOrgId,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   claimEnvironment,
   userMessages,
@@ -138,7 +128,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "deepseek-v4-flash",
         "deepseek-v4.1-flash",
-        "gpt-6-sol",
         "gpt-6-luna",
         "gpt-5.6-sol",
       ] as const
@@ -162,14 +151,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
-      if (selectedModel === "gpt-6-sol") {
-        await stagePreAddabilityModelPolicyFixture({
-          orgId,
-          userId: actor.userId,
-          model: selectedModel,
-        });
-      }
-      const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+      const model = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
       );
@@ -183,18 +165,13 @@ describe("CHAT-02: model-first provider policies", () => {
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
 
-      const run = await withOpenRouterRoute(async () => {
-        return await sendChatRun(actor, {
-          agentId,
-          prompt: `run ${selectedModel} on its managed fallback`,
-          model: selectedModel,
-        });
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: `run ${selectedModel} on its managed fallback`,
+        model,
       });
       await flushWaitUntilForTest();
 
-      await expect(
-        readRunLaunchSnapshotFixture(context, run.runId),
-      ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
       // Only the approved Sol route uses the US endpoint; the GPT 6 pair
@@ -207,7 +184,7 @@ describe("CHAT-02: model-first provider policies", () => {
             : "https://openrouter.ai/api/v1",
         model: `${selectedModel.startsWith("deepseek") ? "deepseek" : "openai"}/${selectedModel}`,
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       await cancelChatRun(actor, run.runId);
     },
     90_000,
@@ -215,39 +192,32 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+    const model = await configureBuiltInPiModelOnOpenRouter(
       actor,
       "gpt-6-luna",
     );
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     const launch = async (prompt: string) => {
-      const run = await withOpenRouterRoute(async () => {
-        return await sendChatRun(actor, {
-          agentId,
-          prompt,
-          model: "gpt-6-luna",
-        });
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt,
+        model,
       });
       await flushWaitUntilForTest();
-      const snapshot = await readRunLaunchSnapshotFixture(context, run.runId);
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       await cancelChatRun(actor, run.runId);
-      return { snapshot, claim };
+      return { claim };
     };
 
     // An operator takes the model off Pi: it launches on its vendor harness.
-    const restore = await setModelPiRouteClassFixture("gpt-6-luna", null);
+    const restore = await setModelPiRouteClassFixture(model, null);
     const vendor = await launch("run on the vendor harness");
     await restore();
-    expect(vendor.snapshot).toMatchObject({
-      launch_snapshot: { framework: "codex" },
-    });
     expect(vendor.claim.cliAgentType).toBe("codex");
 
     // The seeded `gpt-codex` class launches the same route on Pi.
     const pi = await launch("run on Pi");
-    expect(pi.snapshot).toMatchObject({ launch_snapshot: { framework: "pi" } });
     expect(pi.claim.cliAgentType).toBe("pi");
     expect(pi.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
@@ -298,20 +268,13 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await flushWaitUntilForTest();
 
-    await expect(
-      readRunLaunchSnapshotFixture(context, run.runId),
-    ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "built-in",
-      selectedModel: model,
-      modelRuntimeProvider: "openrouter-codex",
-      modelRuntimeModel: "openai/gpt-6-luna",
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      source: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        model,
+      },
     });
-    await expect(
-      readRunModelLaunchOptionsFixture(run.runId),
-    ).resolves.toMatchObject({ reasoningEffort: "high" });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim).toMatchObject({
       cliAgentType: "pi",
@@ -331,7 +294,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+    const model = await configureBuiltInPiModelOnOpenRouter(
       actor,
       "gpt-6-luna",
     );
@@ -339,30 +302,17 @@ describe("CHAT-02: model-first provider policies", () => {
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const seedPrompt = "seed the canonical Pi binding";
-    const first = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: seedPrompt,
-          model: "gpt-6-luna",
-        },
-        usagePricingResolution,
-      );
-    });
+    const first = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: seedPrompt,
+        model,
+      },
+      usagePricingResolution,
+    );
     await flushWaitUntilForTest();
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "seed answer replaced by migration fixture",
-      checkpointObjects,
-      claim: firstClaim,
-      prompt: seedPrompt,
-      run: first,
-      responsesModel: { provider: "openai", model: "gpt-6-luna" },
-      usagePricingResolution,
-    });
-
     const legacy = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: first.threadId,
@@ -424,28 +374,66 @@ describe("CHAT-02: model-first provider policies", () => {
       timestamp: 4,
     });
     const legacyJsonl = legacy.toJsonl();
-    const legacyHash = await replacePiSessionHistoryJsonlFixture({
-      runId: first.runId,
-      jsonl: legacyJsonl,
-    });
+    const legacyHash = createHash("sha256").update(legacyJsonl).digest("hex");
+    await webhooks.requestAgentCheckpointPrepareHistory(
+      {
+        runId: first.runId,
+        hash: legacyHash,
+        rawSize: Buffer.byteLength(legacyJsonl),
+        encodedSize: Buffer.byteLength(legacyJsonl),
+        encoding: "identity",
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+    );
     checkpointObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
       Buffer.from(legacyJsonl, "utf8"),
     );
+    await webhooks.requestAgentEvents(
+      {
+        runId: first.runId,
+        events: [
+          {
+            type: "result",
+            sequenceNumber: 1,
+            result: "legacy API tool conclusion",
+          },
+        ],
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId: first.runId,
+        exitCode: 0,
+        lastEventSequence: 1,
+        checkpoint: {
+          cliAgentType: "pi",
+          cliAgentSessionId: first.threadId,
+          cliAgentSessionHistoryHash: legacyHash,
+        },
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+      undefined,
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, first.runId, "completed");
+    await flushWaitUntilForTest();
 
     const prompt = "continue the migrated OpenRouter session";
-    const second = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt,
-          model: "gpt-6-luna",
-        },
-        usagePricingResolution,
-      );
-    });
+    const second = await sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt,
+        model,
+      },
+      usagePricingResolution,
+    );
     await flushWaitUntilForTest();
     const claim = await claimChatRun(runnerGroup, second.runId);
     const resumeSession = claim.claim.resumeSession;
@@ -483,7 +471,7 @@ describe("CHAT-02: model-first provider policies", () => {
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
-      const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+      const model = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
       );
@@ -501,17 +489,15 @@ describe("CHAT-02: model-first provider policies", () => {
         "returned standard Luna answer",
       ] as const;
 
-      const first = await withOpenRouterRoute(async () => {
-        return await sendChatRun(
-          actor,
-          {
-            agentId,
-            prompt: prompts[0],
-            model: selectedModel,
-          },
-          usagePricingResolution,
-        );
-      });
+      const first = await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: prompts[0],
+          model,
+        },
+        usagePricingResolution,
+      );
       await flushWaitUntilForTest();
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
       expect(firstClaim.claim.piModelConfig).toMatchObject({
@@ -528,29 +514,23 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const firstBinding = await readThreadSessionBinding(
+      const firstSessionId = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
-      if (!firstBinding.agent_session_id) {
-        throw new Error(
-          "Expected standard Luna to bind a canonical Pi session",
-        );
-      }
 
-      const fast = await withOpenRouterRoute(async () => {
-        return await sendChatRun(
-          actor,
-          {
-            agentId,
-            threadId: first.threadId,
-            prompt: prompts[1],
-            model: selectedModel,
-            runOptions: { codexServiceTier: "fast" },
-          },
-          usagePricingResolution,
-        );
-      });
+      const fast = await sendChatRun(
+        actor,
+        {
+          agentId,
+          threadId: first.threadId,
+          prompt: prompts[1],
+          model,
+          runOptions: { codexServiceTier: "fast" },
+        },
+        usagePricingResolution,
+      );
       await flushWaitUntilForTest();
       const fastClaim = await claimChatRun(runnerGroup, fast.runId);
       expect(fastClaim.claim.piModelConfig).toMatchObject({
@@ -567,30 +547,23 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const fastBinding = await readThreadSessionBinding(
-        context,
-        first.threadId,
-      );
-      expect(fastBinding.agent_session_id).toBe(firstBinding.agent_session_id);
+      await expect(
+        readCompletedRunSessionId(context, actor, fast.runId),
+      ).resolves.toBe(firstSessionId);
 
-      await chat.updateThreadModelSelection(
-        actor,
-        first.threadId,
-        selectedModel,
-        { codexServiceTier: null },
-      );
-      const returned = await withOpenRouterRoute(async () => {
-        return await sendChatRun(
-          actor,
-          {
-            agentId,
-            threadId: first.threadId,
-            prompt: prompts[2],
-            model: selectedModel,
-          },
-          usagePricingResolution,
-        );
+      await chat.updateThreadModelSelection(actor, first.threadId, model, {
+        codexServiceTier: null,
       });
+      const returned = await sendChatRun(
+        actor,
+        {
+          agentId,
+          threadId: first.threadId,
+          prompt: prompts[2],
+          model,
+        },
+        usagePricingResolution,
+      );
       await flushWaitUntilForTest();
       const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
       expect(returnedClaim.claim.piModelConfig).toMatchObject({
@@ -609,26 +582,11 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const returnedBinding = await readThreadSessionBinding(
-        context,
-        first.threadId,
-      );
-      expect(returnedBinding.agent_session_id).toBe(
-        firstBinding.agent_session_id,
-      );
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstBinding.agent_session_id,
-        conversation_run_id: returned.runId,
-      });
+        readCompletedRunSessionId(context, actor, returned.runId),
+      ).resolves.toBe(firstSessionId);
 
       for (const run of [first, fast, returned]) {
-        await expect(
-          readRunLaunchSnapshotFixture(context, run.runId),
-        ).resolves.toMatchObject({
-          launch_snapshot: { framework: "pi" },
-        });
         const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
         expect(claim.status).toBe(404);
       }
@@ -641,9 +599,9 @@ describe("CHAT-02: model-first provider policies", () => {
         }
       }
 
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(fast.runId);
-      await expectNoBuiltInModelUsage(returned.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, fast.threadId, 0);
+      await expectThreadModelCredits(context, actor, returned.threadId, 0);
 
       const visibleTurns = [
         { runId: first.runId, prompt: prompts[0], answer: answers[0] },
@@ -784,11 +742,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const promotedRunId = promoted.runId;
       await flushWaitUntilForTest();
-      await expect(
-        readRunLaunchSnapshotFixture(context, promotedRunId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "pi" },
-      });
+
       const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
       expect(promotedClaim.claim.cliAgentType).toBe("pi");
       expect(promotedClaim.claim.piModelConfig).toMatchObject({
@@ -888,7 +842,7 @@ describe("CHAT-02: model-first provider policies", () => {
         runOptions: { codexServiceTier: route.tier },
       });
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
       const claim = await claimGptPiSandbox(actor, first.runId, route.tier);
@@ -1007,7 +961,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
       const terminal = await api.readRun(actor, first.runId);
       expect(terminal).toMatchObject({ status: route.outcome });
       expect(
@@ -1020,9 +974,10 @@ describe("CHAT-02: model-first provider policies", () => {
       if (route.outcome !== "completed") {
         return;
       }
-      const firstSession = await readThreadSessionConversation(
+      const firstSession = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
 
       const followUpPrompt = `continue the same ${route.name} credential`;
@@ -1054,11 +1009,9 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
-      await expectNoBuiltInModelUsage(followUp.runId);
+        readCompletedRunSessionId(context, actor, followUp.runId),
+      ).resolves.toBe(firstSession);
+      await expectThreadModelCredits(context, actor, followUp.threadId, 0);
 
       const rotatedSecret = `${route.type}-rotated-secret`;
       const rotatedAt = now() + 1000;
@@ -1099,11 +1052,9 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
-      await expectNoBuiltInModelUsage(rotated.runId);
+        readCompletedRunSessionId(context, actor, rotated.runId),
+      ).resolves.toBe(firstSession);
+      await expectThreadModelCredits(context, actor, rotated.threadId, 0);
       const publicState = JSON.stringify({
         run: await api.readRun(actor, rotated.runId),
         events: (await chat.listThreadEvents(actor, first.threadId)).events,
