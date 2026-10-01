@@ -201,13 +201,13 @@ export function createAgentPhoneBddApi(context: TestContext) {
       message.isGroup && message.groupId !== null
         ? (message.groupId ?? bddGroupId(message.conversationId ?? messageId))
         : null;
-    const participants = message.participants ?? [
+    const providerRoster = message.participants ?? [
       { identifier: message.senderIdentifier ?? message.from },
     ];
     if (groupId && message.conversationId) {
       conversationParticipants.set(
         message.conversationId,
-        participants.map((participant) => {
+        providerRoster.map((participant) => {
           return participant.identifier;
         }),
       );
@@ -234,9 +234,13 @@ export function createAgentPhoneBddApi(context: TestContext) {
               group: {
                 isGroup: true,
                 groupId,
-                participants,
+                ...(message.participants === undefined
+                  ? {}
+                  : { participants: message.participants }),
               },
-              senderIdentifier: message.senderIdentifier ?? message.from,
+              ...(message.senderIdentifier === undefined
+                ? {}
+                : { senderIdentifier: message.senderIdentifier }),
             }
           : {}),
         ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),

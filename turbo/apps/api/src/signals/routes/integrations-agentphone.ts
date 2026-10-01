@@ -6,7 +6,7 @@ import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphon
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
-import { and, asc, eq, gt, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -971,7 +971,12 @@ function extractAgentPhoneEvent(
     stringValue(group, ["groupId", "group_id"]) ??
     stringValue(data, ["groupId", "group_id"]) ??
     null;
-  const participants = extractAgentPhoneParticipants(body, data);
+  const participantHandles = extractAgentPhoneParticipants(body, data);
+  const senderHandle = fields.senderIdentifier ?? fields.fromNumber;
+  const participants =
+    fields.isGroup && senderHandle
+      ? [...new Set([...participantHandles, senderHandle])]
+      : participantHandles;
   const mentioned = extractAgentPhoneMentioned(body, data, messageBody);
   const recentHistory = extractAgentPhoneRecentHistory(body, data);
 
@@ -1276,10 +1281,7 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
     return notFound("iMessage group history is not available");
   }
 
-  const messageAt =
-    sql`COALESCE(${agentphoneMessages.receivedAt}, ${agentphoneMessages.createdAt})`.mapWith(
-      agentphoneMessages.createdAt,
-    );
+  const messageAt = agentphoneMessages.receivedAt;
   const conditions = [
     eq(agentphoneMessages.agentphoneAgentId, config.agentphoneAgentId),
     eq(agentphoneMessages.groupId, query.groupId),
@@ -1342,13 +1344,21 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   const page = rows.slice(0, query.limit);
+  const receivedAtFor = (message: (typeof rows)[number]): Date => {
+    if (message.receivedAt === null) {
+      throw new Error(
+        `AgentPhone group message ${message.cursorId} is missing receivedAt`,
+      );
+    }
+    return message.receivedAt;
+  };
   const last = page.at(-1);
   const nextCursor =
     rows.length > query.limit && last
       ? Buffer.from(
           JSON.stringify({
             groupId: query.groupId,
-            receivedAt: last.receivedAt.toISOString(),
+            receivedAt: receivedAtFor(last).toISOString(),
             id: last.cursorId,
           }),
         ).toString("base64url")
@@ -1357,10 +1367,11 @@ const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       groupId: query.groupId,
-      messages: page.map(({ cursorId: _cursorId, ...message }) => {
+      messages: page.map((message) => {
+        const { cursorId: _cursorId, ...responseMessage } = message;
         return {
-          ...message,
-          receivedAt: message.receivedAt.toISOString(),
+          ...responseMessage,
+          receivedAt: receivedAtFor(message).toISOString(),
         };
       }),
       hasMore: rows.length > query.limit,

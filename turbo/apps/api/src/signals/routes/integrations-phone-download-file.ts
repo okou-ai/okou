@@ -1,8 +1,9 @@
 import { command } from "ccstate";
 import { integrationsPhoneDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 
 import { inferMimetype } from "../../lib/mimetype";
 import { logger } from "../../lib/log";
@@ -36,10 +37,20 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(integrationsPhoneDownloadFileContract.download));
   const db = get(db$);
+  const groupVisibility = db
+    .select({ messageId: agentphoneMessageVisibility.messageId })
+    .from(agentphoneMessageVisibility)
+    .where(
+      and(
+        eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+        eq(agentphoneMessageVisibility.orgId, auth.orgId),
+        eq(agentphoneMessageVisibility.userId, auth.userId),
+      ),
+    );
   const [message] = await db
     .select({ mediaUrl: agentphoneMessages.mediaUrl })
     .from(agentphoneMessages)
-    .innerJoin(
+    .leftJoin(
       agentphoneUserLinks,
       eq(agentphoneMessages.agentphoneUserLinkId, agentphoneUserLinks.id),
     )
@@ -47,8 +58,14 @@ const download$ = command(async ({ get }, signal: AbortSignal) => {
       and(
         eq(agentphoneMessages.agentphoneMessageId, query.file_id),
         isNotNull(agentphoneMessages.mediaUrl),
-        eq(agentphoneUserLinks.userId, auth.userId),
-        eq(agentphoneUserLinks.orgId, auth.orgId),
+        or(
+          and(
+            isNull(agentphoneMessages.groupId),
+            eq(agentphoneUserLinks.userId, auth.userId),
+            eq(agentphoneUserLinks.orgId, auth.orgId),
+          ),
+          and(isNotNull(agentphoneMessages.groupId), exists(groupVisibility)),
+        ),
       ),
     )
     .limit(1);

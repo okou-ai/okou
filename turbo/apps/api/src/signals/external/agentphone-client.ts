@@ -8,7 +8,7 @@ interface AgentPhoneSentMessage {
   readonly status: string;
   readonly channel: string | null;
   readonly fromNumber: string | null;
-  readonly toNumber: string | null;
+  readonly toNumber: string;
   readonly mediaUrls: readonly string[];
 }
 

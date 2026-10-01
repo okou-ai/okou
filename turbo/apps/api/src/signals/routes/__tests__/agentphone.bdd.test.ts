@@ -52,6 +52,7 @@ import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 const context = testContext();
 interface LinkedAgentPhoneActor {
   readonly actor: ApiTestUser;
+  readonly ap: ReturnType<typeof createAgentPhoneBddApi>;
   readonly phone: string;
   readonly runnerGroup: string;
   readonly sends: AgentPhoneSendCapture;
@@ -94,7 +95,7 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   ]);
   const phone = uniquePhoneHandle();
   await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-  return { actor, phone, runnerGroup, sends, storage };
+  return { actor, ap, phone, runnerGroup, sends, storage };
 }
 
 const modelSessionScenarios = [
@@ -380,26 +381,6 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
       .trimEnd()
       .endsWith(expectedTail),
   ).toBeTruthy();
-}
-
-/**
- * The launch's thread context renders as the last caller-supplied section,
- * immediately after the exact integration block and delivery note.
- */
-function renderedThreadContextAfterIntegration(
-  appendSystemPrompt: string,
-  expectedIntegration: string,
-): string {
-  const imageModelIndex = appendSystemPrompt.lastIndexOf(
-    "\n\n# Built-in image model",
-  );
-  expect(imageModelIndex).toBeGreaterThan(-1);
-  const callerSections = appendSystemPrompt.slice(0, imageModelIndex).trimEnd();
-  const parts = callerSections.split(
-    [expectedIntegration, AGENTPHONE_INTEGRATION_NOTE, ""].join("\n\n"),
-  );
-  expect(parts).toHaveLength(2);
-  return parts[1] ?? "";
 }
 
 async function waitForTyping(
@@ -1950,10 +1931,34 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ status: 404 });
 
     for (const actor of [first, second, linkedLater]) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.AgentPhoneGroupHistory]: true,
-      });
+      if (!actor.orgId) {
+        throw new Error("Expected group-history test users to have an org");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+        { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
+      );
     }
+
+    const senderOnlyConversationId = uniqueConversationId();
+    const senderOnlyMessageId = "ap-group-history-sender-only";
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "sender is present even when the provider omits the roster",
+      messageId: senderOnlyMessageId,
+      conversationId: senderOnlyConversationId,
+      isGroup: true,
+    });
+    const senderOnlyHistory = await integrations.requestAgentPhoneGroupHistory(
+      first,
+      { groupId: bddGroupId(senderOnlyConversationId), limit: 100 },
+      [200],
+    );
+    expect(
+      senderOnlyHistory.status === 200 ? senderOnlyHistory.body.messages : [],
+    ).toMatchObject([{ id: senderOnlyMessageId }]);
 
     const noMatchConversationId = uniqueConversationId();
     await ap.postAgentPhoneInboundMessage({
@@ -1966,6 +1971,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
 
     const firstMessageId = "ap-group-history-first";
+    const groupMediaUrl = "https://files.agentphone.test/group-photo.png";
     const participants = [
       { identifier: firstPhone },
       { identifier: secondPhone },
@@ -1979,6 +1985,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       conversationId,
       isGroup: true,
       participants,
+      mediaUrl: groupMediaUrl,
     });
 
     await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
@@ -2033,6 +2040,26 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       secondMessageId,
     ]);
 
+    server.use(
+      http.get(groupMediaUrl, () => {
+        return new HttpResponse("group-photo-bytes", {
+          headers: { "content-type": "image/png" },
+        });
+      }),
+    );
+    const visibleGroupFile = await integrations.requestPhoneDownloadFile(
+      second,
+      firstMessageId,
+      [200],
+    );
+    expect(visibleGroupFile.status).toBe(200);
+    const invisibleGroupFile = await integrations.requestPhoneDownloadFile(
+      linkedLater,
+      firstMessageId,
+      [404],
+    );
+    expect(invisibleGroupFile.status).toBe(404);
+
     const filtered = await integrations.requestAgentPhoneGroupHistory(
       first,
       { groupId: stableGroupId, query: "second", limit: 100 },
@@ -2069,8 +2096,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it("handles the iMessage group lifecycle: mentions, stored context, ambient silence, and account-command guards", async () => {
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const { actor, phone, runnerGroup, sends, ap } =
+      await entitledLinkedActor();
     const conversationId = `${uniqueConversationId()}-${"g".repeat(230)}`;
     expect(conversationId.length).toBeLessThanOrEqual(255);
     expect(`group:${conversationId}`.length).toBeGreaterThan(255);
@@ -2127,22 +2154,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     const run1 = await claimDispatchedRun(runnerGroup);
     expect(run1.prompt).toBe("@Okou summarize this thread");
-    const groupThreadContext = renderedThreadContextAfterIntegration(
-      run1.appendSystemPrompt,
-      [
-        "# Current Integration",
-        "You are currently running inside: Phone text messaging (iMessage/SMS)",
-        `Shared phone number: ${AGENTPHONE_BDD_PHONE_NUMBER}`,
-        `User phone handle: ${phone}`,
-        `Phone agent ID: ${AGENTPHONE_BDD_AGENT_ID}`,
-        "Channel: imessage",
-        "Conversation type: group",
-        `Conversation ID: ${conversationId}`,
-        `Message ID: ${groupMessageId}`,
-      ].join("\n"),
-    );
     // The provider's unfiltered group history is not trusted as local context.
-    expect(groupThreadContext).not.toContain("Earlier group context");
+    expect(run1.appendSystemPrompt).not.toContain("Earlier group context");
 
     // The provider requires the group id as to_number for a group reply.
     const beforeGroupCompletion = sends.messages.length;
@@ -2182,6 +2195,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.heartbeatRunner(runnerGroup);
     const idle = await runs.pollRunner(runnerGroup);
     expect(idle.body.job).toBeNull();
+
+    // A later direct message must not inherit content from a group chat.
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou respond privately",
+      conversationId: uniqueConversationId(),
+      isGroup: false,
+    });
+    const privateRun = await claimDispatchedRun(runnerGroup);
+    expect(privateRun.prompt).toBe("@Okou respond privately");
+    expect(privateRun.appendSystemPrompt).not.toContain(
+      "ambient chatter without a mention",
+    );
+    await completeSandboxRun(privateRun.sandboxToken, privateRun.runId, 0);
 
     // Conversation-only participants cannot run account commands.
     const intruder = uniquePhoneHandle();
@@ -2289,11 +2317,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
   it("preserves a mention-only iMessage prompt with the preceding task", async () => {
     const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const { phone, runnerGroup, sends, ap } = await entitledLinkedActor();
     const conversationId = uniqueConversationId();
+    const archivedArticleUrl = "https://example.com/article";
+    const providerOnlyArticleUrl = "https://provider-only.example/article";
 
-    // A standalone mention carries the earlier task into the agent input.
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: `Check the broken article at ${archivedArticleUrl}`,
+      conversationId,
+      isGroup: true,
+    });
+
+    // A standalone mention carries locally archived task context, not the
+    // provider's unfiltered recentHistory.
     const beforeMention = sends.messages.length;
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
@@ -2301,8 +2339,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       body: "@okou",
       recentHistory: [
         {
-          messageId: "prior-article-report",
-          content: "Check the broken article at https://example.com/article",
+          messageId: "provider-only-article-report",
+          content: `Provider-only task at ${providerOnlyArticleUrl}`,
           direction: "inbound",
           channel: "imessage",
           from: phone,
@@ -2314,9 +2352,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     const mentionRun = await claimDispatchedRun(runnerGroup);
     expect(mentionRun.prompt).toBe("@okou");
-    expect(mentionRun.appendSystemPrompt).toContain(
-      "https://example.com/article",
-    );
+    expect(mentionRun.appendSystemPrompt).toContain(archivedArticleUrl);
+    expect(mentionRun.appendSystemPrompt).not.toContain(providerOnlyArticleUrl);
     await completeSandboxRun(mentionRun.sandboxToken, mentionRun.runId, 0);
     await waitForSendCount(sends, beforeMention + 1);
 

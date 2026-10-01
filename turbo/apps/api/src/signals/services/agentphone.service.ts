@@ -12,7 +12,7 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
@@ -735,6 +735,7 @@ async function fetchAgentPhoneContext(
             and(
               eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
               eq(agentphoneMessages.phoneHandle, phoneHandle),
+              isNull(agentphoneMessages.groupId),
             ),
           )
           .orderBy(desc(agentphoneMessages.createdAt))
@@ -933,6 +934,7 @@ export async function sendAgentPhoneText(
         nowDate(),
       )
     : [];
+  signal.throwIfAborted();
   const sent = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: event.agentphoneAgentId,
@@ -958,7 +960,7 @@ export async function sendAgentPhoneText(
       agentphoneAgentId: event.agentphoneAgentId,
       phoneHandle: event.fromNumber,
       fromNumber: sent.fromNumber ?? event.toNumber,
-      toNumber: sent.toNumber ?? event.groupId!,
+      toNumber: sent.toNumber,
       body,
       channel: sent.channel ?? event.channel,
       userChannel: event.channel,

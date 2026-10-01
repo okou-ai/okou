@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   pgTable,
   text,
@@ -63,6 +64,10 @@ export const agentphoneMessages = pgTable(
         table.createdAt,
       ),
       index("idx_agentphone_messages_user_link").on(table.agentphoneUserLinkId),
+      check(
+        "chk_agentphone_messages_group_received_at",
+        sql`${table.groupId} IS NULL OR ${table.receivedAt} IS NOT NULL`,
+      ),
     ];
   },
 );
