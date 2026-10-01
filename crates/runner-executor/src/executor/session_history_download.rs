@@ -1262,7 +1262,6 @@ fn redact_url_query(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[path = "retry_tests.rs"]
     mod retry_tests;
 
     use std::io::{self, Write};
