@@ -2942,10 +2942,9 @@ describe("connector catalog valid lifecycle", () => {
     expect(grants.body).toMatchObject([
       { connectorSlug, permission: "items.read", action: "deny" },
     ]);
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the externally sourced connector credential",
-      modelProvider: "anthropic-api-key",
     });
     created.runId = run.runId;
     await runs.heartbeatRunner(runnerGroup);
@@ -3187,10 +3186,9 @@ describe("connector catalog valid lifecycle", () => {
       await connectorsApi.deleteCustomConnector(actor, custom.id);
       await bdd.deleteAgent(actor, agent.agentId);
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the custom permission bundle",
-      modelProvider: "anthropic-api-key",
     });
     created.runId = run.runId;
     await runs.heartbeatRunner(runnerGroup);
