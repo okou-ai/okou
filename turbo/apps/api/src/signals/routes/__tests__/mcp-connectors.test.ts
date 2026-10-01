@@ -84,12 +84,9 @@ function headers(token: string): { readonly authorization: string } {
 }
 
 async function createRunForAgent(actor: ApiTestUser, agentId: string) {
-  return await runs.createDirectRun(actor, {
+  return await runs.createThreadRun(actor, {
     agentId,
     prompt: "Discover MCP connectors",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: agentId },
-    secrets: { OKOU_TOKEN: "mcp-discovery-okou-token" },
   });
 }
 
