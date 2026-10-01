@@ -67,7 +67,9 @@ const compactOwnedUsage$ = command(
     }
     const result = await set(
       compactUsageEvents$,
-      bodyResult.data.orgId,
+      "orgId" in bodyResult.data
+        ? bodyResult.data.orgId
+        : bodyResult.data.orgIds,
       signal,
     );
     return {

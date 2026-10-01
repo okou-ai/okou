@@ -176,12 +176,15 @@ export const testUsageStateContract = c.router({
   compact: {
     method: "POST",
     path: "/api/test/usage-state/compact",
-    body: z.object({ orgId: z.string().min(1) }),
+    body: z.union([
+      z.object({ orgId: z.string().min(1) }),
+      z.object({ orgIds: z.array(z.string().min(1)).min(1).max(4) }),
+    ]),
     responses: {
       ...cronCompactUsageEventsContract.compact.responses,
       404: z.string(),
     },
-    summary: "Compact usage for one explicitly owned test organization",
+    summary: "Compact usage for explicitly owned test organizations",
   },
   action: {
     method: "POST",

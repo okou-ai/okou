@@ -8,6 +8,7 @@ import {
   count,
   eq,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -563,6 +564,7 @@ async function loadHoldProbe(
   cutoff: string,
   rawSeedLimit: number,
   orgId: string | undefined,
+  allowedOrgIds?: readonly string[],
 ): Promise<z.output<typeof holdProbeRowSchema>> {
   const rows = await executeRawRows(
     db,
@@ -573,6 +575,9 @@ async function loadHoldProbe(
         WHERE ${and(
           eq(event.status, sql`'processed'`),
           orgId === undefined ? undefined : eq(event.orgId, orgId),
+          allowedOrgIds === undefined
+            ? undefined
+            : inArray(event.orgId, [...allowedOrgIds]),
           isNotNull(event.processedAt),
           lt(event.processedAt, sql`${cutoff}::timestamp`),
         )}
@@ -600,13 +605,50 @@ async function hasRemainingRawUsage(
   db: Pick<Db, "select">,
   cutoff: string,
   orgId: string | undefined,
+  allowedOrgIds?: readonly string[],
 ): Promise<boolean> {
   const [remaining] = await db
     .select({ id: event.id })
     .from(event)
-    .where(eligibleRawPredicate(cutoff, orgId))
+    .where(
+      and(
+        eligibleRawPredicate(cutoff, orgId),
+        allowedOrgIds === undefined
+          ? undefined
+          : inArray(event.orgId, [...allowedOrgIds]),
+      ),
+    )
     .limit(1);
   return remaining !== undefined;
+}
+
+function emptyCompactionBatch(
+  cutoffDate: Date,
+  rawSeedLimit: number,
+  probe: z.output<typeof holdProbeRowSchema>,
+): Omit<UsageEventCompactionStats, "durationMs"> & {
+  readonly maxGrainSourceRows: number;
+} {
+  return {
+    cutoff: cutoffDate.toISOString(),
+    rawSeedLimit,
+    seededRawRows: 0,
+    selectedGrains: 0,
+    probedRawRows: probe.probedRawRows,
+    billingErrorHeldRows: probe.billingErrorHeldRows,
+    rawRowsDeleted: 0,
+    hourlyRowsDeleted: 0,
+    hourlyRowsInserted: 0,
+    maxGrainSourceRows: 0,
+    quantity: "0",
+    creditsCharged: "0",
+    allowanceUnits: "0",
+    affectedShortWindows: 0,
+    affectedWeeklyWindows: 0,
+    reconciled: true,
+    hasMore: false,
+    lockWaitMs: 0,
+  };
 }
 
 async function compactUsageEventBatch(
@@ -626,26 +668,7 @@ async function compactUsageEventBatch(
     const cutoff = timestampWithoutTimeZone(cutoffDate);
     const probe = await loadHoldProbe(db, cutoff, rawSeedLimit, orgId);
     if (probe.probedRawRows === 0) {
-      return {
-        cutoff: cutoffDate.toISOString(),
-        rawSeedLimit,
-        seededRawRows: 0,
-        selectedGrains: 0,
-        probedRawRows: 0,
-        billingErrorHeldRows: 0,
-        rawRowsDeleted: 0,
-        hourlyRowsDeleted: 0,
-        hourlyRowsInserted: 0,
-        maxGrainSourceRows: 0,
-        quantity: "0",
-        creditsCharged: "0",
-        allowanceUnits: "0",
-        affectedShortWindows: 0,
-        affectedWeeklyWindows: 0,
-        reconciled: true,
-        hasMore: false,
-        lockWaitMs: 0,
-      };
+      return emptyCompactionBatch(cutoffDate, rawSeedLimit, probe);
     }
   }
   return await db.transaction(async (tx) => {
@@ -714,14 +737,71 @@ async function compactUsageEventBatch(
 export const compactUsageEvents$ = command(
   async (
     { set },
-    orgId: string | undefined,
+    input: string | string[] | undefined,
     signal: AbortSignal,
   ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
-    const result = await compactUsageEventBatch(set(writeDb$), orgId, signal);
+    const db = set(writeDb$);
+    // The org list exists only for explicitly owned test-route fixtures. The
+    // configured Cron always discovers across all organizations.
+    const allowedOrgIds = Array.isArray(input) ? input : undefined;
+    const orgId = Array.isArray(input) ? undefined : input;
+    let selectedOrgId = orgId;
+    let emptyResult: ReturnType<typeof emptyCompactionBatch> | undefined;
+    if (orgId === undefined) {
+      // Read-only selection outside the financial transaction. The selected
+      // org is only a hint: the batch reselects complete grains under lock.
+      const cutoffDate = await loadCompactionCutoff(db);
+      signal.throwIfAborted();
+      const cutoff = timestampWithoutTimeZone(cutoffDate);
+      const [candidate] = await db
+        .select({ orgId: event.orgId })
+        .from(event)
+        .where(
+          and(
+            eligibleRawPredicate(cutoff),
+            allowedOrgIds === undefined
+              ? undefined
+              : inArray(event.orgId, allowedOrgIds),
+          ),
+        )
+        .orderBy(oldestProcessedEventOrder)
+        .limit(1);
+      signal.throwIfAborted();
+      if (candidate) {
+        selectedOrgId = candidate.orgId;
+      } else {
+        const probe = await loadHoldProbe(
+          db,
+          cutoff,
+          USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
+          undefined,
+          allowedOrgIds,
+        );
+        signal.throwIfAborted();
+        emptyResult = emptyCompactionBatch(
+          cutoffDate,
+          USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
+          probe,
+        );
+      }
+    }
+    const result =
+      emptyResult ?? (await compactUsageEventBatch(db, selectedOrgId, signal));
+    const hasMore =
+      orgId === undefined && !result.hasMore
+        ? await hasRemainingRawUsage(
+            db,
+            timestampWithoutTimeZone(new Date(result.cutoff)),
+            undefined,
+            allowedOrgIds,
+          )
+        : result.hasMore;
+    signal.throwIfAborted();
     const { maxGrainSourceRows, ...batch } = result;
     const stats = {
       ...batch,
+      hasMore,
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;

@@ -148,6 +148,63 @@ describe("usage event compaction cron", () => {
     });
   });
 
+  it("discovers the oldest eligible organization outside the lock and compacts only its grains", async () => {
+    const older = await seedFixture();
+    const newer = await seedFixture();
+    await seedZeroUsageEvents(older, {
+      processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      count: 2,
+    });
+    await seedZeroUsageEvents(newer, {
+      processedAt: new Date("2026-08-02T00:15:00.000Z"),
+      count: 1,
+    });
+    const client = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    const orgIds = [older.orgId, newer.orgId];
+
+    const first = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(first.body).toMatchObject({
+      success: true,
+      seededRawRows: 2,
+      rawRowsDeleted: 2,
+      hasMore: true,
+    });
+    await expect(readStorage(older)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
+    });
+    await expect(readStorage(newer)).resolves.toStrictEqual({
+      raw: 1,
+      processedRaw: 1,
+      hourly: 0,
+    });
+
+    const second = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(second.body).toMatchObject({
+      success: true,
+      seededRawRows: 1,
+      rawRowsDeleted: 1,
+      hasMore: false,
+    });
+    await expect(readStorage(newer)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
+    });
+
+    const empty = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(empty.body).toMatchObject({
+      success: true,
+      seededRawRows: 0,
+      rawRowsDeleted: 0,
+      hasMore: false,
+      lockWaitMs: 0,
+    });
+  });
+
   it("atomically replaces an old processed grain and deletes its idempotency key", async () => {
     const fixture = await seedFixture();
     const idempotencyKey = randomUUID();
