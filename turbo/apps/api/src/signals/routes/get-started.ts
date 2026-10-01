@@ -1,12 +1,4 @@
 import {
-  completedGetStartedQuestSql,
-  memberRewardWalletQuery,
-} from "../services/get-started-member-reward";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { slackRewardWalletEntitlement } from "../services/slack-installation-reward";
-import {
   cronGetStartedContract,
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
@@ -18,12 +10,17 @@ import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  createGetStartedClaim,
+  completedGetStartedQuestSql,
+  unresolvedClaimWhere,
+} from "../services/get-started-member-reward";
+import { ensureGetStartedRewardWallet$ } from "../services/get-started-wallet.service";
+import {
+  createGetStartedClaim$,
   getStartedClaimResponse,
-  getStartedStatus,
+  getStartedStatus$,
   getStartedUtcDay,
 } from "../services/get-started-rewards.service";
 import {
@@ -32,65 +29,58 @@ import {
 } from "../services/get-started-review.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-const status$ = command(async ({ get }, signal: AbortSignal) => {
+const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const body = await getStartedStatus(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    isAdmin: auth.orgRole === "admin",
-  });
-  signal.throwIfAborted();
+  const body = await set(
+    getStartedStatus$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      isAdmin: auth.orgRole === "admin",
+    },
+    signal,
+  );
   return { status: 200 as const, body };
 });
 
 const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const claim = await set(writeDb$).transaction(async (tx) => {
-    const [insertedWallet] = await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({ orgId: auth.orgId })
-      .onConflictDoNothing()
-      .returning({ orgId: orgMetadata.orgId });
-    await tx.select().from(memberRewardWalletQuery(auth.orgId));
-    if (insertedWallet) {
-      await tx
-        .insert(orgPlanEntitlements)
-        .values(slackRewardWalletEntitlement(auth.orgId))
-        .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-    }
-    const sourceKey = getStartedUtcDay(nowDate());
-    await tx.execute(
-      completedGetStartedQuestSql(
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          questKey: "checkin",
-          sourceKey,
-        },
-        nowDate(),
+  await set(ensureGetStartedRewardWallet$, auth.orgId, signal);
+  const db = set(writeDb$);
+  const at = nowDate();
+  const sourceKey = getStartedUtcDay(at);
+  // Claim identity and credit publication are one statement; duplicate callers
+  // observe the winner without an outer wallet transaction.
+  await db.execute(
+    completedGetStartedQuestSql(
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        questKey: "checkin",
+        sourceKey,
+      },
+      at,
+    ),
+  );
+  signal.throwIfAborted();
+  const [current] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(
+      and(
+        eq(getStartedClaims.actorUserId, auth.userId),
+        eq(getStartedClaims.questKey, "checkin"),
+        eq(getStartedClaims.sourceKey, sourceKey),
       ),
     );
-    const [current] = await tx
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.actorUserId, auth.userId),
-          eq(getStartedClaims.questKey, "checkin"),
-          eq(getStartedClaims.sourceKey, sourceKey),
-        ),
-      );
-    if (!current) {
-      throw new Error("Get started check-in was not persisted");
-    }
-    return current;
-  });
   signal.throwIfAborted();
-  return { status: 200 as const, body: getStartedClaimResponse(claim) };
+  if (!current) {
+    throw new Error("Get started check-in was not persisted");
+  }
+  return { status: 200 as const, body: getStartedClaimResponse(current) };
 });
 
 const shareBody$ = bodyResultOf(getStartedContract.submitShare);
-
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(shareBody$);
@@ -102,57 +92,74 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!post) {
     return badRequestMessage("Submit a valid public X post URL");
   }
-  const claim = await set(writeDb$).transaction(async (tx) => {
-    const [granted] = await tx
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.beneficiaryUserId, auth.userId),
-          eq(getStartedClaims.questKey, "share"),
-          eq(getStartedClaims.status, "granted"),
-        ),
-      )
-      .limit(1);
-    if (granted) {
-      return granted;
-    }
-    const pending = await createGetStartedClaim(tx, {
+  const db = set(writeDb$);
+  const [granted] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(
+      and(
+        eq(getStartedClaims.beneficiaryUserId, auth.userId),
+        eq(getStartedClaims.questKey, "share"),
+        eq(getStartedClaims.status, "granted"),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (granted) {
+    return { status: 202 as const, body: getStartedClaimResponse(granted) };
+  }
+  const pending = await set(
+    createGetStartedClaim$,
+    {
       orgId: auth.orgId,
       userId: auth.userId,
       questKey: "share",
       sourceKey: post.id,
       postUrl: post.url,
-    });
-    if (pending.status !== "pending") {
-      return pending;
-    }
-    // Grants made before author reward keys were keyed by post. Newer grants
-    // are keyed by author, which the review rejects as author_already_rewarded.
-    const [used] = await tx
-      .select({ id: getStartedClaims.id })
-      .from(getStartedClaims)
-      .where(eq(getStartedClaims.rewardKey, `share:${post.id}`))
-      .limit(1);
-    if (!used) {
-      return pending;
-    }
-    const [duplicate] = await tx
-      .update(getStartedClaims)
-      .set({
-        status: "ineligible",
-        reason: "already_redeemed",
-        updatedAt: nowDate(),
-      })
-      .where(eq(getStartedClaims.id, pending.id))
-      .returning();
-    if (!duplicate) {
-      throw new Error("Duplicate X claim disappeared");
-    }
-    return duplicate;
-  });
+    },
+    signal,
+  );
+  if (pending.status !== "pending") {
+    return { status: 202 as const, body: getStartedClaimResponse(pending) };
+  }
+  // Historical grants used post identities rather than author identities.
+  const [used] = await db
+    .select({ id: getStartedClaims.id })
+    .from(getStartedClaims)
+    .where(eq(getStartedClaims.rewardKey, `share:${post.id}`))
+    .limit(1);
   signal.throwIfAborted();
-  return { status: 202 as const, body: getStartedClaimResponse(claim) };
+  if (!used) {
+    return { status: 202 as const, body: getStartedClaimResponse(pending) };
+  }
+  const [duplicate] = await db
+    .update(getStartedClaims)
+    .set({
+      status: "ineligible",
+      reason: "already_redeemed",
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        unresolvedClaimWhere(pending),
+        eq(getStartedClaims.status, "pending"),
+      ),
+    )
+    .returning();
+  signal.throwIfAborted();
+  if (duplicate) {
+    return { status: 202 as const, body: getStartedClaimResponse(duplicate) };
+  }
+  // A reviewer acquired or resolved the claim; serialize its current result.
+  const [current] = await db
+    .select()
+    .from(getStartedClaims)
+    .where(eq(getStartedClaims.id, pending.id));
+  signal.throwIfAborted();
+  if (!current) {
+    throw new Error("Duplicate X claim disappeared");
+  }
+  return { status: 202 as const, body: getStartedClaimResponse(current) };
 });
 
 const review$ = command(async ({ get, set }, signal: AbortSignal) => {

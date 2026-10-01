@@ -94,7 +94,7 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 
 import {
   organizationPlanCapabilities$,
@@ -1282,12 +1282,17 @@ async function appendNormalSendInput(
     files: input.attachFileMetadata,
   });
   if (args.getStartedWorkflowId) {
-    await recordGetStartedWorkflow(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.getStartedWorkflowId,
-      sourceEventId: inserted.id,
-    });
+    await tx.execute(
+      recordGetStartedWorkflowSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.getStartedWorkflowId,
+          sourceEventId: inserted.id,
+        },
+        nowDate(),
+      ),
+    );
   }
   return inserted;
 }

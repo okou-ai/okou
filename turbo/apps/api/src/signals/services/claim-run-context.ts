@@ -341,7 +341,7 @@ import {
 } from "./feature-switch-scope";
 import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
@@ -6400,14 +6400,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ) => {
-      await set(writeDb$).transaction((tx) => {
-        return recordGetStartedWorkflow(tx, {
-          orgId: args.due.automation.orgId,
-          userId: args.due.automation.ownerUserId,
-          workflowId: args.due.automation.workflowId,
-          sourceEventId: args.queueEventId,
-        });
-      });
+      const db = set(writeDb$);
+      await db.execute(
+        recordGetStartedWorkflowSql(
+          {
+            orgId: args.due.automation.orgId,
+            userId: args.due.automation.ownerUserId,
+            workflowId: args.due.automation.workflowId,
+            sourceEventId: args.queueEventId,
+          },
+          nowDate(),
+        ),
+      );
       signal.throwIfAborted();
     },
   );

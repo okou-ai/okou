@@ -1,45 +1,32 @@
+import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
-import { createGetStartedClaim } from "./get-started-rewards.service";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
-/** Snapshot provenance with the queued input, before it can start or be deleted. */
-export async function recordGetStartedWorkflow(
-  tx: Tx,
+/** Pure statement builder: snapshot provenance with the queued input.
+ * The enqueue owner executes this SQL; no database capability escapes it.
+ */
+export function recordGetStartedWorkflowSql(
   args: {
     readonly orgId: string;
     readonly userId: string;
     readonly workflowId: string;
     readonly sourceEventId: string;
   },
-): Promise<void> {
-  const [workflow] = await tx
-    .select({
-      createdBy: workflows.createdBy,
-      officialDefinitionName: workflows.officialDefinitionName,
-    })
-    .from(workflows)
-    .where(
-      and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId)),
-    )
-    .limit(1);
-  if (!workflow || workflow.officialDefinitionName !== null) {
-    return;
-  }
-  const [alreadyGranted] = await tx
-    .select({ id: getStartedClaims.id })
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.rewardKey, `workflow:${workflow.createdBy}`))
-    .limit(1);
-  if (alreadyGranted) {
-    return;
-  }
-  await createGetStartedClaim(tx, {
-    ...args,
-    userId: workflow.createdBy,
-    actorUserId: args.userId,
-    questKey: "workflow",
-    sourceKey: args.sourceEventId,
-  });
+  at: Date,
+) {
+  const reward = GET_STARTED_REWARDS.workflow;
+  return sql`INSERT INTO ${getStartedClaims} (
+    org_id, actor_user_id, beneficiary_user_id, quest_key, source_key,
+    reward_amount, reward_target, workflow_id, source_event_id,
+    next_attempt_at, created_at, updated_at
+  ) SELECT ${args.orgId}, ${args.userId}, ${workflows.createdBy}, 'workflow', ${args.sourceEventId},
+    ${reward.amount}, ${reward.target}, ${args.workflowId}::uuid, ${args.sourceEventId}::uuid,
+    ${sql.param(at, getStartedClaims.nextAttemptAt)}, ${sql.param(at, getStartedClaims.createdAt)},
+    ${sql.param(at, getStartedClaims.updatedAt)}
+  FROM ${workflows}
+  WHERE ${and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId), isNull(workflows.officialDefinitionName))}
+    AND NOT EXISTS (SELECT 1 FROM ${getStartedClaims}
+      WHERE ${getStartedClaims.rewardKey} = 'workflow:' || ${workflows.createdBy})
+  ON CONFLICT (actor_user_id, quest_key, source_key) DO NOTHING`;
 }
