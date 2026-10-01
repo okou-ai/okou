@@ -666,7 +666,9 @@ async function retireUsagePackCheckout(
   if (!retired) {
     // A losing replacement must roll back, not create another pending row
     // after a competing request has consumed the same source snapshot.
-    throw new Error("Usage pack purchase changed during retirement");
+    throw new UsagePackPendingSnapshotConflict(
+      "Usage pack purchase changed during retirement",
+    );
   }
   await tx
     .update(usagePackAllocations)
@@ -928,52 +930,62 @@ async function prepareUsagePackPurchaseSnapshot(
     customerId,
     signal,
   );
-  return await writeUsagePackPendingSnapshots(
-    db,
-    [args.orgId],
-    async (tx): Promise<PreparedUsagePackPurchaseSnapshot> => {
-      signal.throwIfAborted();
-      // A claimed purchase is creating its Stripe subscription. Its snapshot
-      // and allocations stay current until it publishes, so a new purchase
-      // is a deterministic conflict rather than a replacement.
-      const [claimed] = await tx
-        .select({ id: usagePackSubscriptions.id })
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            eq(
-              usagePackSubscriptions.subscriptionStatus,
-              USAGE_PACK_PURCHASE_CLAIM_STATUS,
+  // A competing purchase that committed first is the existing conflict.
+  const written = await settle(
+    writeUsagePackPendingSnapshots(
+      db,
+      [args.orgId],
+      async (tx): Promise<PreparedUsagePackPurchaseSnapshot> => {
+        signal.throwIfAborted();
+        // A claimed purchase is creating its Stripe subscription. Its snapshot
+        // and allocations stay current until it publishes, so a new purchase
+        // is a deterministic conflict rather than a replacement.
+        const [claimed] = await tx
+          .select({ id: usagePackSubscriptions.id })
+          .from(usagePackSubscriptions)
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, args.orgId),
+              eq(
+                usagePackSubscriptions.subscriptionStatus,
+                USAGE_PACK_PURCHASE_CLAIM_STATUS,
+              ),
+              isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+              isNull(usagePackSubscriptions.stripeSubscriptionId),
             ),
-            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-          ),
-        )
-        .limit(1);
-      if (claimed) {
-        return { kind: "conflict" };
-      }
-      const resolution = await commitPendingUsagePackCheckout(
-        tx,
-        args,
-        customerId,
-        prepared,
-      );
-      if (resolution.kind === "stale") {
-        return { kind: "conflict" };
-      }
-      if (resolution.kind === "redirect") {
-        return resolution;
-      }
-      const usagePackSubscriptionId =
-        resolution.kind === "reuse"
-          ? resolution.usagePackSubscriptionId
-          : await insertUsagePackPurchaseSnapshot(tx, args, customerId);
-      signal.throwIfAborted();
-      return { kind: "snapshot", usagePackSubscriptionId };
-    },
+          )
+          .limit(1);
+        if (claimed) {
+          return { kind: "conflict" };
+        }
+        const resolution = await commitPendingUsagePackCheckout(
+          tx,
+          args,
+          customerId,
+          prepared,
+        );
+        if (resolution.kind === "stale") {
+          return { kind: "conflict" };
+        }
+        if (resolution.kind === "redirect") {
+          return resolution;
+        }
+        const usagePackSubscriptionId =
+          resolution.kind === "reuse"
+            ? resolution.usagePackSubscriptionId
+            : await insertUsagePackPurchaseSnapshot(tx, args, customerId);
+        signal.throwIfAborted();
+        return { kind: "snapshot", usagePackSubscriptionId };
+      },
+    ),
   );
+  if (written.ok) {
+    return written.value;
+  }
+  if (written.error instanceof UsagePackPendingSnapshotConflict) {
+    return { kind: "conflict" };
+  }
+  throw written.error;
 }
 
 type UsagePackCheckoutCorrelation =
