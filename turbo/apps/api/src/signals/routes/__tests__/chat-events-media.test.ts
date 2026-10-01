@@ -36,14 +36,22 @@ describe("CHAT-02: run image model through public prompts", () => {
     await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
     await cancelChatRun(actor, first.runId);
 
-    await chat.updateUserModelPreference(actor, "claude-fable-5-1", "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "existing thread follows the member image model",
     });
     await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
-    await chat.updateUserModelPreference(actor, "claude-fable-5-1", "fal-ai/nano-banana-2");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/nano-banana-2",
+    );
     await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
     const prompt = (await api.readRun(actor, second.runId)).appendSystemPrompt;
     expect(prompt).toContain(
@@ -65,7 +73,11 @@ describe("CHAT-02: run image model through public prompts", () => {
 
   it("uses the member image model when an organization slot releases", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    await chat.updateUserModelPreference(actor, "claude-fable-5-1", "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -94,7 +106,11 @@ describe("CHAT-02: run image model through public prompts", () => {
       modelProvider: "anthropic-api-key",
     });
     await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
-    await chat.updateUserModelPreference(actor, "claude-fable-5-1", "fal-ai/flux-pro/v1.1");
+    await chat.updateUserModelPreference(
+      actor,
+      "claude-fable-5-1",
+      "fal-ai/flux-pro/v1.1",
+    );
     const resumed = await api.createRun(actor, {
       agentId,
       sessionId: first.sessionId,

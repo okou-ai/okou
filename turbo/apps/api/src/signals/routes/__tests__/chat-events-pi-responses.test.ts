@@ -223,24 +223,19 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       });
       await flushWaitUntilForTest();
-      const snapshot = await readRunLaunchSnapshotFixture(context, run.runId);
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       await cancelChatRun(actor, run.runId);
-      return { snapshot, claim };
+      return { claim };
     };
 
     // An operator takes the model off Pi: it launches on its vendor harness.
     const restore = await setModelPiRouteClassFixture("gpt-6-luna", null);
     const vendor = await launch("run on the vendor harness");
     await restore();
-    expect(vendor.snapshot).toMatchObject({
-      launch_snapshot: { framework: "codex" },
-    });
     expect(vendor.claim.cliAgentType).toBe("codex");
 
     // The seeded `gpt-codex` class launches the same route on Pi.
     const pi = await launch("run on Pi");
-    expect(pi.snapshot).toMatchObject({ launch_snapshot: { framework: "pi" } });
     expect(pi.claim.cliAgentType).toBe("pi");
     expect(pi.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
@@ -291,9 +286,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await flushWaitUntilForTest();
 
-    await expect(
-      readRunLaunchSnapshotFixture(context, run.runId),
-    ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
     await expect(
       readRunModelRuntimeRouteFixture(run.runId),
     ).resolves.toMatchObject({

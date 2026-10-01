@@ -2870,7 +2870,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId),
+      );
   });
   const policyFacts$ = computed(
     async (get): Promise<EnsuredOrgModelPolicyFacts> => {
@@ -3309,6 +3311,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    const facts = await get(queuedProviderAdmissionPolicyFacts$);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
@@ -3320,8 +3323,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       personalSubscription: () => {
         return get(personalSubscription$);
       },
-      capabilities: async () => {
-        return (await get(queuedProviderAdmissionPolicyFacts$)).orgPlanCapabilities;
+      capabilities: () => {
+        return facts.orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$);
@@ -3449,7 +3452,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal.throwIfAborted();
       if (
         !selection ||
-        !resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)
+        !resolveRunSelectionModel(
+          await get(claimCatalog$),
+          selection.selectedModel,
+        )
       ) {
         return;
       }
@@ -3478,7 +3484,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!selection) {
       return badRequestMessage("Queued input is missing its model selection");
     }
-    if (!resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)) {
+    if (
+      !resolveRunSelectionModel(
+        await get(claimCatalog$),
+        selection.selectedModel,
+      )
+    ) {
       return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
     }
     const pin = await get(modelPin$);
@@ -3497,19 +3508,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(queuedModelMemberAccountSnapshot$),
     ]);
     const allowance = get(promptAllowanceWriteResult$);
-    const unpriced = builtInModelRuntimeRoute === null && pin.selectedModel
-      ? await unpricedBuiltInModelRejection(get(db$), {
-          catalog: await get(claimCatalog$), model: pin.selectedModel,
-          serviceTier: selection.codexServiceTier, resolution: get(usagePricingResolution$),
-        })
-      : undefined;
+    const unpriced =
+      builtInModelRuntimeRoute === null && pin.selectedModel
+        ? await unpricedBuiltInModelRejection(get(db$), {
+            catalog: await get(claimCatalog$),
+            model: pin.selectedModel,
+            serviceTier: selection.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          })
+        : undefined;
     return {
       pin,
       providerAdmission: {
         effectiveModelProvider: admission.effectiveModelProvider,
         cliAgentType: admission.cliAgentType,
         error:
-          admission.error ?? unpriced ??
+          admission.error ??
+          unpriced ??
           (admission.needsAllowance &&
           (!allowance || allowance.remainingUnits <= 0)
             ? pickChatRunModelInsufficientCredits()
@@ -5756,7 +5771,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId),
+      );
   });
   const queuedModelInputsPolicyFacts$ = computed(
     async (get): Promise<EnsuredOrgModelPolicyFacts> => {
@@ -6225,6 +6242,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    const facts = await get(queuedProviderAdmissionPolicyFacts$2);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
@@ -6236,8 +6254,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       personalSubscription: () => {
         return get(personalSubscription$2);
       },
-      capabilities: async () => {
-        return (await get(queuedProviderAdmissionPolicyFacts$2)).orgPlanCapabilities;
+      capabilities: () => {
+        return facts.orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$2);
@@ -6374,7 +6392,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal.throwIfAborted();
       if (
         !selection ||
-        !resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)
+        !resolveRunSelectionModel(
+          await get(claimCatalog$),
+          selection.selectedModel,
+        )
       ) {
         return;
       }
@@ -6403,7 +6424,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!selection) {
       return badRequestMessage("Queued input is missing its model selection");
     }
-    if (!resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)) {
+    if (
+      !resolveRunSelectionModel(
+        await get(claimCatalog$),
+        selection.selectedModel,
+      )
+    ) {
       return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
     }
     const pin = await get(queuedModelModelPin$);
@@ -6422,19 +6448,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(queuedModelMemberAccountSnapshot$2),
     ]);
     const allowance = get(automationAllowanceWriteResult$);
-    const unpriced = builtInModelRuntimeRoute === null && pin.selectedModel
-      ? await unpricedBuiltInModelRejection(get(db$), {
-          catalog: await get(claimCatalog$), model: pin.selectedModel,
-          serviceTier: selection.codexServiceTier, resolution: get(usagePricingResolution$),
-        })
-      : undefined;
+    const unpriced =
+      builtInModelRuntimeRoute === null && pin.selectedModel
+        ? await unpricedBuiltInModelRejection(get(db$), {
+            catalog: await get(claimCatalog$),
+            model: pin.selectedModel,
+            serviceTier: selection.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          })
+        : undefined;
     return {
       pin,
       providerAdmission: {
         effectiveModelProvider: admission.effectiveModelProvider,
         cliAgentType: admission.cliAgentType,
         error:
-          admission.error ?? unpriced ??
+          admission.error ??
+          unpriced ??
           (admission.needsAllowance &&
           (!allowance || allowance.remainingUnits <= 0)
             ? pickChatRunModelInsufficientCredits()
@@ -6473,7 +6503,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(queuedModelResolveQueuedModel$2),
       ]);
       return args
-        ? workflowModelContext(await get(claimCatalog$), args.due.chatThreadId, context)
+        ? workflowModelContext(
+            await get(claimCatalog$),
+            args.due.chatThreadId,
+            context,
+          )
         : {
             ok: false,
             failure: {
@@ -12416,21 +12450,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         signal.throwIfAborted();
         return;
       }
-      const initial = await get(
-        automation ? queuedModelCommandsInitialFacts$ : initialFacts$,
-      );
-      signal.throwIfAborted();
-      const needsPolicyWrite =
-        initial.policies.length === 0 ||
-        shouldReplaceExistingDefaultForPlan(
-          initial.policies.find((policy) => {
-            return policy.isDefault;
-          }),
-          modelPolicyCapabilities(initial.orgPlanCapabilities),
-        );
-      if (needsPolicyWrite) {
-        return;
-      }
+      // Catalog-projected policy facts are read-only. The catalog cutover
+      // removed lazy org default seeding; it is not a storage write barrier.
       const pin = await get(automation ? queuedModelModelPin$ : modelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {

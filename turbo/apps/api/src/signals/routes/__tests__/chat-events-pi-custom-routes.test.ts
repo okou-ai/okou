@@ -793,7 +793,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "custom-openai-responses",
         credentialScope: "org",
         modelProviderId: null,
@@ -801,7 +801,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
+        preferred: false,
         defaultProviderType: "custom-openai-responses",
         credentialScope: "org",
         modelProviderId: null,

@@ -1,8 +1,6 @@
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { and, count, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, eq, sql } from "drizzle-orm";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 
 import { db } from "../lib/db";
