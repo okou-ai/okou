@@ -1625,56 +1625,22 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("prepares the storage manifest without uploading empty artifact objects", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const { actor } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
     const prompt = "storage manifest dimensions should not leak prompt";
-    const storageName = `bdd-manifest-shape-${randomUUID().slice(0, 8)}`;
-    const mountPath = "/cache";
-    const storageFile = storageTextFile(
-      "cache.txt",
-      `manifest shape payload ${storageName}`,
+    // An Agent workflow is the run's read-only organization Storage mount.
+    const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      { content: "# Manifest shape\nUse for manifest tests." },
+      [201],
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
 
-    const composeName = `bdd-manifest-shape-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        cache: {
-          name: storageName,
-          version: prepared.versionId,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: [`cache:${mountPath}`],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt,
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath,
-        },
-      ],
-    });
+    const created = await api.createThreadRun(actor, { agentId, prompt });
 
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -1695,9 +1661,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(emptyArtifactPutCount).toBe(0);
 
     const claim = await api.claimRunnerJob(created.runId);
-    const memoryArtifact = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts.find((mount) => {
+    const mounts =
+      expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
+      [];
+    expect(mounts).toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(workflow.body.id),
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+      }),
+    );
+    const memoryArtifact = mounts.find((mount) => {
       return mount.name === "memory";
     });
     expect(memoryArtifact).toMatchObject({
@@ -1710,20 +1683,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the claim manifest to include memory");
     }
     expect(memoryArtifact.archiveUrl).toBeUndefined();
-
-    const initialized = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "storage manifest dimensions initialized artifact path",
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath,
-        },
-      ],
-    });
-
     await api.requestCancelRun(actor, created.runId, [200]);
+
+    const initialized = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "storage manifest dimensions initialized artifact path",
+    });
     await api.requestCancelRun(actor, initialized.runId, [200]);
   });
 
@@ -1857,68 +1822,41 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const readOnlyStorageName = `bdd-phase3-volume-${randomUUID().slice(0, 8)}`;
-    const readOnlyFile = storageTextFile(
-      "phase3.txt",
-      `canonical read-only Storage ${readOnlyStorageName}`,
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
     );
-    const preparedReadOnlyStorage = await storages.prepareStorage(actor, {
-      storageName: readOnlyStorageName,
-      storageOwner: "organization",
-      files: [readOnlyFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: readOnlyStorageName,
-      storageOwner: "organization",
-      versionId: preparedReadOnlyStorage.versionId,
-      files: [readOnlyFile],
-    });
-    const additionalStorageName = `bdd-phase3-additional-${randomUUID().slice(0, 8)}`;
-    const additionalFile = storageTextFile(
-      "additional.txt",
-      `canonical additional Storage ${additionalStorageName}`,
-    );
-    const preparedAdditionalStorage = await storages.prepareStorage(actor, {
-      storageName: additionalStorageName,
-      storageOwner: "organization",
-      files: [additionalFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: additionalStorageName,
-      storageOwner: "organization",
-      versionId: preparedAdditionalStorage.versionId,
-      files: [additionalFile],
-    });
-    const composeName = `bdd-storage-persistence-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        checkpoint: {
-          name: readOnlyStorageName,
-          version: preparedReadOnlyStorage.versionId,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["checkpoint:/phase3-compose"],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    // Two Agent workflows are the run's read-only organization Storages.
+    const misc = createMiscRoutesApi(context);
+    const workflowMounts = [];
+    for (const label of ["primary", "additional"]) {
+      const workflowName = `phase3-${label}-${randomUUID().slice(0, 8)}`;
+      const workflow = await misc.createWorkflow(
+        actor,
+        agentId,
+        workflowName,
+        { content: `# Phase 3 ${label}\nUse for Storage persistence.` },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      const name = getCustomSkillStorageName(workflow.body.id);
+      const stored = await storages.downloadStorage(actor, {
+        name,
+        owner: "organization",
+      });
+      workflowMounts.push({
+        name,
+        versionId: stored.versionId,
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+      });
+    }
     await api.heartbeatRunner(runnerGroup);
 
-    const initialRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "persist canonical storage mounts",
-      additionalVolumes: [
-        {
-          name: additionalStorageName,
-          version: preparedAdditionalStorage.versionId,
-          mountPath: "/phase3-additional",
-        },
-      ],
     });
     const initialClaim = await api.claimRunnerJob(initialRun.runId);
     const initialManifest = initialClaim.storageManifest;
@@ -1931,27 +1869,21 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!initialMemory) {
       throw new Error("Expected the canonical memory mount");
     }
-    expect(initialManifest.storageMounts).toContainEqual(
-      expect.objectContaining({
-        name: readOnlyStorageName,
-        versionId: preparedReadOnlyStorage.versionId,
-        mountPath: "/phase3-compose",
-      }),
-    );
-    expect(initialManifest.storageMounts).toContainEqual(
-      expect.objectContaining({
-        name: additionalStorageName,
-        versionId: preparedAdditionalStorage.versionId,
-        mountPath: "/phase3-additional",
-      }),
-    );
+    for (const mount of workflowMounts) {
+      expect(initialManifest.storageMounts).toContainEqual(
+        expect.objectContaining(mount),
+      );
+    }
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `canonical memory ${initialRun.runId}`,
     );
+    storages.mockStorageObjectsExist(4096);
     const preparedMemory = await storages.prepareStorage(actor, {
       storageName: "memory",
       storageOwner: "user",
+      baseVersion: initialMemory.versionId,
+      changes: { added: [memoryFile.path], modified: [], deleted: [] },
       files: [memoryFile],
     });
     await storages.commitStorage(actor, {
@@ -1989,8 +1921,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the canonical checkpoint to persist");
     }
 
-    const sessionRun = await api.createDirectRun(actor, {
-      sessionId: initialRun.sessionId,
+    const sessionRun = await api.createThreadRun(actor, {
+      agentId,
+      threadId: initialRun.threadId,
       prompt: "continue canonical storage session",
     });
     const sessionClaim = await api.claimRunnerJob(sessionRun.runId);
