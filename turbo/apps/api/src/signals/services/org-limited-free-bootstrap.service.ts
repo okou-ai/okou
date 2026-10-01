@@ -1,3 +1,4 @@
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -24,7 +25,7 @@ import {
 } from "./agent-instructions-storage.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import {
-  enqueueStorageObjectCleanup,
+  storageObjectCleanupJobValues,
   executeStorageObjectCleanupWork$,
 } from "./storage-object-cleanup.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
@@ -134,16 +135,18 @@ async function enqueueBootstrapPrefixCleanup(
   s3Prefix: string,
   signal: AbortSignal,
 ): Promise<string> {
-  return await enqueueStorageObjectCleanup(
-    tx,
-    {
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-      target: { kind: "prefix", value: s3Prefix },
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-    },
-    signal,
-  );
+  const receipt = storageObjectCleanupJobValues({
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+    target: { kind: "prefix", value: s3Prefix },
+    orgId: args.orgId,
+    userId: args.ownerUserId,
+  });
+  await tx
+    .insert(backgroundJobs)
+    .values(receipt)
+    .onConflictDoNothing({ target: backgroundJobs.id });
+  signal.throwIfAborted();
+  return receipt.id;
 }
 
 async function publishBootstrap(

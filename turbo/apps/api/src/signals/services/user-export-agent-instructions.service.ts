@@ -14,10 +14,15 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { extractBinaryFilesFromTarGz } from "../../lib/tar";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
 import { APPLICATION_OWNED_AGENT_EXECUTION_PLAN } from "./agent-execution-plan";
-import { readPiResourceVersionIndexes } from "./pi-resource-version-index.service";
+import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import {
+  PI_RESOURCE_EXTRACTOR_VERSION,
+  piResourceVersionIndexSchema,
+  piResourceIndexHash,
+} from "../../lib/pi-resource-index";
 
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 const MAX_LEGACY_ARCHIVE_BYTES = 32 * 1024 * 1024;
@@ -25,57 +30,59 @@ const MAX_LEGACY_EXPANDED_BYTES = 64 * 1024 * 1024;
 const manifestSchema = z.object({ files: storageManifestFilesSchema });
 
 interface InstructionsArgs {
-  readonly db: Db;
   readonly bucket: string;
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
 }
 
-async function instructionSource(args: InstructionsArgs, signal: AbortSignal) {
-  const [agent] = await args.db
-    .select({ name: agents.name })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, args.agentId),
-        eq(agents.orgId, args.orgId),
-        eq(agents.owner, args.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!agent) {
-    throw new Error("Agent became unavailable during export");
-  }
-  const [source] = await args.db
-    .select({
-      storageId: storages.id,
-      versionId: storageVersions.id,
-      s3Key: storageVersions.s3Key,
-    })
-    .from(storages)
-    .innerJoin(
-      storageVersions,
-      and(
-        eq(storageVersions.storageId, storages.id),
-        eq(storageVersions.id, storages.headVersionId),
-      ),
-    )
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getInstructionsStorageName(agent.name)),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!source) {
-    throw new Error("Agent instructions are unavailable");
-  }
-  return source;
-}
+const instructionSource$ = command(
+  async ({ get }, args: InstructionsArgs, signal: AbortSignal) => {
+    const db = get(db$);
+    const [agent] = await db
+      .select({ name: agents.name })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, args.agentId),
+          eq(agents.orgId, args.orgId),
+          eq(agents.owner, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!agent) {
+      throw new Error("Agent became unavailable during export");
+    }
+    const [source] = await db
+      .select({
+        storageId: storages.id,
+        versionId: storageVersions.id,
+        s3Key: storageVersions.s3Key,
+      })
+      .from(storages)
+      .innerJoin(
+        storageVersions,
+        and(
+          eq(storageVersions.storageId, storages.id),
+          eq(storageVersions.id, storages.headVersionId),
+        ),
+      )
+      .where(
+        and(
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.name, getInstructionsStorageName(agent.name)),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!source) {
+      throw new Error("Agent instructions are unavailable");
+    }
+    return source;
+  },
+);
 
 function normalizePath(path: string): string {
   return path.replace(/^\.\//, "");
@@ -92,11 +99,11 @@ function canonicalContent(bytes: Buffer): string {
 /** Exact-version instruction reads with finite legacy decoding bounds. */
 export const readUserExportAgentInstructions$ = command(
   async (
-    { get },
+    { get, set },
     args: InstructionsArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    const source = await instructionSource(args, signal);
+    const source = await set(instructionSource$, args, signal);
     const filename = getInstructionsFilename(
       APPLICATION_OWNED_AGENT_EXECUTION_PLAN.framework.fallback,
     );
@@ -118,13 +125,45 @@ export const readUserExportAgentInstructions$ = command(
     if (!instruction) {
       throw new Error("Canonical agent instruction document is missing");
     }
-    const { indexes } = await readPiResourceVersionIndexes(
-      args.db,
-      [source.versionId],
-      signal,
-    );
+    const [indexRow] = await get(db$)
+      .select({
+        storageId: storageVersions.storageId,
+        archiveSize: piResourceVersionIndexes.sourceArchiveSize,
+        projection: piResourceVersionIndexes.projection,
+        projectionHash: piResourceVersionIndexes.projectionHash,
+      })
+      .from(piResourceVersionIndexes)
+      .innerJoin(
+        storageVersions,
+        eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
+      )
+      .where(
+        and(
+          eq(piResourceVersionIndexes.storageVersionId, source.versionId),
+          eq(
+            piResourceVersionIndexes.extractorVersion,
+            PI_RESOURCE_EXTRACTOR_VERSION,
+          ),
+          eq(piResourceVersionIndexes.status, "ready"),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    const indexed = indexes.get(source.versionId);
+    const projection = indexRow
+      ? piResourceVersionIndexSchema.parse(indexRow.projection)
+      : undefined;
+    if (
+      indexRow &&
+      projection &&
+      (indexRow.archiveSize === null ||
+        piResourceIndexHash(projection) !== indexRow.projectionHash)
+    ) {
+      throw new Error("Pi resource version index failed integrity validation");
+    }
+    const indexed =
+      indexRow && projection
+        ? { storageId: indexRow.storageId, projection }
+        : undefined;
     if (indexed && indexed.storageId !== source.storageId) {
       throw new Error(
         "Agent instruction index does not match its source version",
