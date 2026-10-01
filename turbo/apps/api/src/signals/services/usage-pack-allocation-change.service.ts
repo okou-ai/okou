@@ -3140,6 +3140,8 @@ async function commitReflectedUsagePackChanges(
   });
 }
 
+class CanceledUsagePackSnapshotChanged extends Error {}
+
 async function finalizeCanceledUsagePackChanges(
   db: Db,
   context: UsagePackChangeContext,
@@ -3150,46 +3152,97 @@ async function finalizeCanceledUsagePackChanges(
   if (finalizable.length === 0) {
     return 0;
   }
-  const at = nowDate();
-  return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, context.subscription.orgId);
-    let finalized = 0;
-    for (const expected of finalizable) {
-      const [change] = await tx
-        .select()
-        .from(usagePackAllocationChanges)
-        .where(eq(usagePackAllocationChanges.id, expected.id))
-        .for("update")
-        .limit(1);
-      if (!change || change.status === "applied") {
-        continue;
-      }
-      const completed =
-        change.kind === "removal" &&
-        (change.status === "scheduled" || change.status === "applying");
-      if (completed) {
-        if (!change.sourceAllocationId) {
-          throw new Error(`Usage pack removal ${change.id} has no source`);
-        }
-        await tx
-          .update(usagePackAllocations)
-          .set({ status: "inactive", updatedAt: at })
-          .where(eq(usagePackAllocations.id, change.sourceAllocationId));
-      }
-      await tx
-        .update(usagePackAllocationChanges)
-        .set({
-          status: completed ? "completed" : "failed",
-          failureReason: completed ? null : "subscription_canceled",
-          effectiveAt: change.effectiveAt ?? at,
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackAllocationChanges.id, change.id));
-      finalized += 1;
-    }
-    return finalized;
+  const hasUnresolvedPayment = finalizable.some((change) => {
+    return (
+      (change.kind === "addition" || change.kind === "upgrade") &&
+      (change.status === "applying" || change.status === "pending_payment")
+    );
   });
+  const at = nowDate();
+  const result = await settle(
+    db.transaction(async (tx) => {
+      // Deferred downgrade/removal has no payable grant to publish here.
+      // Unresolved paid changes keep their separate unfinished financial key;
+      // do not infer an unpaid invoice from provider cancellation alone.
+      if (hasUnresolvedPayment) {
+        await lockUsagePackBillingOrg(tx, context.subscription.orgId);
+      }
+      let finalized = 0;
+      for (const change of finalizable) {
+        if (
+          change.orgId !== context.subscription.orgId ||
+          change.usagePackSubscriptionId !== context.subscription.id
+        ) {
+          throw new Error(
+            "Canceled usage pack change belongs to another billing owner",
+          );
+        }
+        const completed =
+          change.kind === "removal" &&
+          (change.status === "scheduled" || change.status === "applying");
+        if (completed) {
+          if (!change.sourceAllocationId || !change.sourceStripePriceId) {
+            throw new Error(`Usage pack removal ${change.id} has no source`);
+          }
+          // Mutate the real source before its referencing change, matching
+          // deletion's parent/child order without any SELECT lock.
+          const [retired] = await tx
+            .update(usagePackAllocations)
+            .set({ status: "inactive", updatedAt: at })
+            .where(
+              and(
+                eq(usagePackAllocations.id, change.sourceAllocationId),
+                eq(usagePackAllocations.orgId, change.orgId),
+                eq(
+                  usagePackAllocations.usagePackSubscriptionId,
+                  change.usagePackSubscriptionId,
+                ),
+                eq(usagePackAllocations.userId, change.userId),
+                eq(
+                  usagePackAllocations.stripePriceId,
+                  change.sourceStripePriceId,
+                ),
+              ),
+            )
+            .returning({ id: usagePackAllocations.id });
+          if (!retired) {
+            throw new CanceledUsagePackSnapshotChanged();
+          }
+        }
+        const [finalizedChange] = await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: completed ? "completed" : "failed",
+            failureReason: completed ? null : "subscription_canceled",
+            effectiveAt: change.effectiveAt ?? at,
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(
+            and(
+              eq(usagePackAllocationChanges.id, change.id),
+              eq(usagePackAllocationChanges.status, change.status),
+              fulfillmentChangeIdentity(change),
+            ),
+          )
+          .returning({ id: usagePackAllocationChanges.id });
+        if (!finalizedChange) {
+          // A paid/applied/completed winner must not be overwritten. Roll back
+          // every mutation in this stale batch; the normal next visit reloads.
+          throw new CanceledUsagePackSnapshotChanged();
+        }
+        finalized += 1;
+      }
+      return finalized;
+    }),
+  );
+  if (result.ok) {
+    return result.value;
+  }
+  if (result.error instanceof CanceledUsagePackSnapshotChanged) {
+    return 0;
+  }
+  throw result.error;
 }
 
 async function refreshScheduledChangesForUpgrade(

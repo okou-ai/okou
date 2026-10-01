@@ -122,6 +122,31 @@ sequence/queue lock order changes. Admission errors still reject before commit.
 The attempted issuance/settlement retirement is withdrawn for the distinct-Run
 financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
+## Canceled deferred-change finalization — partial retirement
+
+`finalizeCanceledUsagePackChanges` no longer acquires the org key for deferred
+removal/downgrade or unconfirmed preview cleanup. Only unresolved addition/
+upgrade in `applying` or `pending_payment` retains the existing acquisition;
+positive paid-invoice proof for those states remains unfinished financial work.
+No new namespace or compatibility exemption is introduced.
+
+There is no `SELECT FOR UPDATE` in this finalizer. Removal retires its actual
+owned source allocation before updating the referencing change, preserving the
+parent/child mutation order. The final update matches the exact observed status,
+owner, subscription, kind/group, recipient, source/replacement and Price/USD
+identity. A lost source/change snapshot rejects and rolls back the entire batch;
+it returns zero for deterministic deferral to the existing next reconciliation
+visit, never retries. A concurrent applied/completed payment winner is not
+rewritten into failed cancellation. Other SQL/invariant errors still propagate.
+
+Two public API cases construct a real scheduled downgrade or grouped removal,
+deliver cancellation twice concurrently, then replay once. Removal completes and
+its source is inactive; downgrade fails; purchased/bonus grants, refundable source
+records and invoice receipt identities remain exactly unchanged. First-purchase
+provider-family choices and credit issuance are untouched. This narrow terminal
+path is not proof that every org writer or the three financial definitions can
+be removed yet.
+
 ## Known Checkout Session publication — partial retirement
 
 One further `billing_purchase` acquisition is removed from the ordinary

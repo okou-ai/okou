@@ -13395,6 +13395,118 @@ describe("usage pack allocation management", () => {
     },
   );
 
+  it.each([20, 0] as const)(
+    "finalizes deferred target $%s once across concurrent subscription cancellation deliveries",
+    async (targetUsagePackUsd) => {
+      const userId = `user_${randomUUID()}`;
+      const secondUserId = `user_${randomUUID()}`;
+      const fixture = await seedManagedUsagePack([
+        { userId, usagePackUsd: 50 },
+        ...(targetUsagePackUsd === 0
+          ? [{ userId: secondUserId, usagePackUsd: 20 as const }]
+          : []),
+      ]);
+      const current = managedUsagePackSubscription(
+        fixture,
+        new Map([
+          [TEST_PRICE_USAGE_PACK_50, 1],
+          ...(targetUsagePackUsd === 0
+            ? [[TEST_PRICE_USAGE_PACK_20, 1] as const]
+            : []),
+        ]),
+      );
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(current);
+      mockUsagePackChangePreviews(0, 2000);
+      mockUsagePackSubscriptionChangePreviews(0, 1000);
+      context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+        id: "sub_sched_cancel_deferred",
+      });
+      context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+        id: "sub_sched_cancel_deferred",
+      });
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      );
+      const preview =
+        targetUsagePackUsd === 0
+          ? await accept(
+              client.previewSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: {
+                  targetTier: "pro",
+                  memberUsagePacks: [
+                    { memberId: userId, usagePackUsd: 0 },
+                    { memberId: secondUserId, usagePackUsd: 20 },
+                  ],
+                },
+              }),
+              [200],
+            )
+          : await accept(
+              client.previewChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { memberId: userId, targetUsagePackUsd },
+              }),
+              [200],
+            );
+      const confirmed =
+        targetUsagePackUsd === 0
+          ? await accept(
+              client.confirmSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { changeId: preview.body.changeId },
+              }),
+              [200],
+            )
+          : await accept(
+              client.confirmChange({
+                params: { changeId: preview.body.changeId },
+                headers: { authorization: "Bearer clerk-session" },
+                body: {},
+              }),
+              [200],
+            );
+      expect(confirmed.body.status).toBe("scheduled");
+      const before = await readUsagePackState(
+        fixture.orgId,
+        fixture.usagePackSubscriptionId,
+      );
+      const terminal = { ...current, status: "canceled" as const };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(terminal);
+      await Promise.all([
+        postManagedUsagePackEvent("customer.subscription.updated", terminal),
+        postManagedUsagePackEvent("customer.subscription.updated", terminal),
+      ]);
+      await postManagedUsagePackEvent(
+        "customer.subscription.updated",
+        terminal,
+      );
+      const after = await readUsagePackState(
+        fixture.orgId,
+        fixture.usagePackSubscriptionId,
+      );
+      expect(after.changes).toStrictEqual([
+        expect.objectContaining({
+          ...(targetUsagePackUsd === 20 ? { id: preview.body.changeId } : {}),
+          kind: targetUsagePackUsd === 0 ? "removal" : "downgrade",
+          status: targetUsagePackUsd === 0 ? "completed" : "failed",
+          sourceUsagePackUsd: 50,
+          targetUsagePackUsd: targetUsagePackUsd === 0 ? null : 20,
+        }),
+      ]);
+      if (targetUsagePackUsd === 0) {
+        expect(after.allocations).toContainEqual(
+          expect.objectContaining({ userId, status: "inactive" }),
+        );
+      }
+      expect(after.grants).toStrictEqual(before.grants);
+      expect(after.refunds).toStrictEqual(before.refunds);
+      expect(after.fulfillmentInvoiceIds).toStrictEqual(
+        before.fulfillmentInvoiceIds,
+      );
+    },
+  );
+
   it("keeps a downgrade scheduled until the boundary and renews aggregate quantities", async () => {
     mockNow(new Date("2035-03-16T00:00:00.000Z"));
     onTestFinished(() => {
