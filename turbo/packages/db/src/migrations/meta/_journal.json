@@ -1583,6 +1583,13 @@
       "when": 1790818909561,
       "tag": "1303_remove_model_catalog_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 1304,
+      "version": "7",
+      "when": 1790833645553,
+      "tag": "1304_bright_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

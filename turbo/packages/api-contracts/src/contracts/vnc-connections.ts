@@ -58,6 +58,13 @@ const vncX509PlainSecurityVariantSchema = z
     serverName: hostSchema.optional(),
   })
   .strict();
+const vncQemuX509SaslSecurityVariantSchema = z
+  .object({
+    type: z.literal("qemu_x509_sasl"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
+  .strict();
 const vncAppleVncPasswordSecurityVariantSchema = z
   .object({ type: z.literal("apple_vnc_password") })
   .strict();
@@ -82,6 +89,7 @@ const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
+  vncQemuX509SaslSecurityVariantSchema,
   vncAppleVncPasswordSecurityVariantSchema,
   vncAppleDhSecurityVariantSchema,
   vncAppleSrpSecurityVariantSchema,
@@ -91,6 +99,7 @@ export const vncSecuritySchema = z.discriminatedUnion("type", [
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
+  vncQemuX509SaslSecurityVariantSchema,
   vncAppleVncPasswordSecurityVariantSchema,
   vncAppleDhSecurityVariantSchema,
   vncAppleSrpSecurityVariantSchema,

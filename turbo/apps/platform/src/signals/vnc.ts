@@ -164,6 +164,9 @@ export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
     case "x509_plain": {
       return "username_password";
     }
+    case "qemu_x509_sasl": {
+      return "qemu_scram_sha256";
+    }
     case "apple_dh": {
       return "apple_dh_username_password";
     }
@@ -193,6 +196,9 @@ function vncProfileForAuthMethod(
     }
     case "username_password": {
       return "x509_plain";
+    }
+    case "qemu_scram_sha256": {
+      return "qemu_x509_sasl";
     }
     case "apple_dh_username_password": {
       return "apple_dh";
@@ -318,6 +324,7 @@ export const chooseVncProfile$ = command(
         profile === "client_certificate_none" ||
         profile === "client_certificate_vnc" ||
         profile === "x509_plain" ||
+        profile === "qemu_x509_sasl" ||
         profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
         profile === "apple_srp" ||
@@ -619,6 +626,16 @@ function credentialFields(form: HTMLFormElement, profile: VncProfile) {
         name,
         authentication: {
           method: "username_password" as const,
+          username: textField(form, "username"),
+          password: textField(form, "password"),
+        },
+      };
+    }
+    case "qemu_x509_sasl": {
+      return {
+        name,
+        authentication: {
+          method: "qemu_scram_sha256" as const,
           username: textField(form, "username"),
           password: textField(form, "password"),
         },

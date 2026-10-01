@@ -314,9 +314,13 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
                 ? t(($) => {
                     return $.vnc.security.x509VncHelp;
                   })
-                : t(($) => {
-                    return $.vnc.security.x509PlainHelp;
-                  })}
+                : profile === "qemu_x509_sasl"
+                  ? t(($) => {
+                      return $.vnc.security.qemuX509SaslHelp;
+                    })
+                  : t(($) => {
+                      return $.vnc.security.x509PlainHelp;
+                    })}
     </p>
   );
 }
@@ -362,6 +366,12 @@ export function VncSecurityProfileField({
       }),
     },
     {
+      value: "qemu_x509_sasl",
+      label: t(($) => {
+        return $.vnc.security.qemuX509Sasl;
+      }),
+    },
+    {
       value: "apple_vnc_password",
       label: t(($) => {
         return $.vnc.security.appleVncPassword;
@@ -403,6 +413,7 @@ export function VncSecurityProfileField({
             value !== "client_certificate_none" &&
             value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
+            value !== "qemu_x509_sasl" &&
             value !== "apple_vnc_password" &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
@@ -747,6 +758,12 @@ function VncAuthenticationMethodSelector({
       }),
     },
     {
+      value: "qemu_x509_sasl",
+      label: t(($) => {
+        return $.vnc.security.qemuX509Sasl;
+      }),
+    },
+    {
       value: "client_certificate_none",
       label: t(($) => {
         return $.vnc.security.clientCertificateNone;
@@ -793,6 +810,7 @@ function VncAuthenticationMethodSelector({
             value !== "client_certificate_none" &&
             value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
+            value !== "qemu_x509_sasl" &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
             value !== "apple_rsa_srp"
@@ -847,21 +865,25 @@ function VncAuthenticationMethod({
               ? t(($) => {
                   return $.vnc.credential.method;
                 })
-              : method === "apple_dh_username_password"
+              : method === "qemu_scram_sha256"
                 ? t(($) => {
-                    return $.vnc.credential.appleDhMethod;
+                    return $.vnc.security.qemuX509Sasl;
                   })
-                : method === "apple_srp_username_password"
+                : method === "apple_dh_username_password"
                   ? t(($) => {
-                      return $.vnc.credential.appleSrpMethod;
+                      return $.vnc.credential.appleDhMethod;
                     })
-                  : method === "apple_rsa_srp_username_password"
+                  : method === "apple_srp_username_password"
                     ? t(($) => {
-                        return $.vnc.credential.appleRsaSrpMethod;
+                        return $.vnc.credential.appleSrpMethod;
                       })
-                    : t(($) => {
-                        return $.vnc.credential.usernamePasswordMethod;
-                      })}
+                    : method === "apple_rsa_srp_username_password"
+                      ? t(($) => {
+                          return $.vnc.credential.appleRsaSrpMethod;
+                        })
+                      : t(($) => {
+                          return $.vnc.credential.usernamePasswordMethod;
+                        })}
       </span>
     </div>
   );
@@ -978,7 +1000,13 @@ function VncPasswordInput({
               ? APPLE_DH_FIELD_MAX_BYTES
               : VNC_USERNAME_PASSWORD_MAX_BYTES
         }
-        pattern={classic ? "[ -~]{1,8}" : undefined}
+        pattern={
+          classic
+            ? "[ -~]{1,8}"
+            : method === "qemu_scram_sha256"
+              ? "[ -~]{1,1023}"
+              : undefined
+        }
         placeholder={
           classic
             ? t(($) => {
@@ -998,9 +1026,13 @@ function VncPasswordInput({
             ? t(($) => {
                 return $.vnc.credential.appleDhFieldHelp;
               })
-            : t(($) => {
-                return $.vnc.credential.usernamePasswordHelp;
-              })}
+            : method === "qemu_scram_sha256"
+              ? t(($) => {
+                  return $.vnc.credential.qemuScramPasswordHelp;
+                })
+              : t(($) => {
+                  return $.vnc.credential.usernamePasswordHelp;
+                })}
       </p>
     </div>
   );
@@ -1041,6 +1073,11 @@ function VncAuthenticationInputs({
             defaultValue={
               credential && "username" in credential ? credential.username : ""
             }
+            pattern={
+              method === "qemu_scram_sha256"
+                ? "(?!.*[,=])[!-~]{1,255}"
+                : undefined
+            }
             aria-describedby="vnc-username-help"
             placeholder={t(($) => {
               return $.vnc.credential.usernameHint;
@@ -1055,9 +1092,13 @@ function VncAuthenticationInputs({
                 ? t(($) => {
                     return $.vnc.credential.appleRsaSrpUsernameHelp;
                   })
-                : t(($) => {
-                    return $.vnc.credential.usernameHelp;
-                  })}
+                : method === "qemu_scram_sha256"
+                  ? t(($) => {
+                      return $.vnc.credential.qemuScramUsernameHelp;
+                    })
+                  : t(($) => {
+                      return $.vnc.credential.usernameHelp;
+                    })}
           </p>
         </div>
       )}

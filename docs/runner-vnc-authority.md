@@ -58,7 +58,8 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
 certificate-free X509None (`none` / `x509_none`), X509Vnc and X509Plain pairs separately
-for `direct` and `ssh`, plus new exact `client_certificate` / `x509_none` and `client_certificate_vnc_password` / `x509_vnc` pairs for both routes, plus the distinct
+for `direct` and `ssh`, plus the QEMU-only `qemu_scram_sha256` /
+`qemu_x509_sasl` pair and new exact `client_certificate` / `x509_none` and `client_certificate_vnc_password` / `x509_vnc` pairs for both routes, plus the distinct
 Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
 Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. Every advertised tuple
 names its `transportType`. An empty list or a saved tuple absent from the list
@@ -127,6 +128,22 @@ enforces 1–8 printable ASCII bytes, while Plain enforces its username and
 password bounds without trimming spaces. Raw responses, decode/provider errors,
 secrets and server-controlled text must never become guest output, logs or
 observations.
+
+For QEMU X509SASL/SCRAM-SHA-256, the Runner advertises only the distinct
+`qemu_scram_sha256` / `qemu_x509_sasl` tuple for direct and SSH transports.
+The API verifies current chat/SSH authority and this exact capability
+**before KMS**, then revalidates stored username/password after decrypt and
+checks current authority again. The generated private DTO shares the bounded,
+zeroizing 1023-byte password field with X509Plain; the owner API and Runner
+impose the narrower SCRAM ASCII/username bounds. The Runner constructs
+`QemuScramCredentials::new_zeroizing` before DNS or connect, then selects the
+existing engine's verified-TLS `QemuScramSha256` path. The engine accepts
+QEMU subtype 263 and SCRAM-SHA-256 only, checks server proof and SecurityResult,
+and never falls back to PLAIN, generic subtype 264 or another credential.
+SASL does not add a stream encryption layer; TLS is required for post-auth
+confidentiality. Credential rotation, exact SSH binding, cancellation, check
+and socket teardown follow the existing VNC lifecycle. The Runner does not
+export secrets to guest output, inventory or observations.
 
 For certificate-bearing rows, the API admits only the exact advertised pair before decrypting either KMS envelope; the Runner rejects mismatched security/authentication and malformed DER/key before opening a socket. A certificate request and selection prove only what this client sent, not that QEMU enforces `verify-peer=on`. Require independent server policy and wrong-client rejection evidence, plus a separate real Agent session/capture before any production activation. The SSH host-key boundary does not attest VNC server client-auth policy. Keep `VncAccess` default-off.
 
@@ -201,6 +218,12 @@ Runner's transport capability field, so the Runner fails closed without retry.
 After the first SSH-backed row exists, do not roll the API below the typed-route
 reader/writer; disabling `VncAccess` preserves data and does not make that
 rollback safe. Product exposure requires its own later rollout evidence.
+
+Migration `1304_bright_grim_reaper` adds the exact storage checks with no
+column or existing-row rewrite. `VncAccess` remains off by default;
+production activation requires separate server ingress, trust lifecycle and
+real product acceptance. There is no pre-activation mixed-version
+compatibility gate for this profile.
 
 For the separately selected Mac classic-password profile, migration
 `1253_unique_zarek` defines the exact persisted tuple. A Runner without

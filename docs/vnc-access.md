@@ -6,8 +6,8 @@ staff. Owner configuration, chat host selection, metadata inventory and
 private Runner authority are described in
 [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509None,
-X509Vnc, X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct
-SRP and Apple RSA/SRP profiles. **Certificate-free** X509None requires an explicit owner selection:
+X509Vnc, X509Plain, QEMU-specific X509SASL/SCRAM-SHA-256, SSH-protected
+Apple classic password, Apple DH, Apple Direct SRP and Apple RSA/SRP profiles. **Certificate-free** X509None requires an explicit owner selection:
 its TLS certificate verifies the **server** and encrypts the stream, but it
 provides **no VNC client authentication**. Any other client with access to the
 VNC listener may control the desktop. An SSH route authenticates the selected
@@ -42,6 +42,32 @@ Two new owner-selected saved profiles use the same VeNCrypt wire subtypes but **
 Owner input accepts 1–8 PEM X.509 client certificates (at most 64 KiB total DER) and one matching unencrypted PKCS#8 PEM private key (at most 16 KiB DER). Encrypted private keys and passphrases are unsupported and rejected. The API checks structure, public-key match and leaf validity at save; the server ultimately decides certificate-chain acceptance and validity during a session. KMS envelope encryption holds the normalized chain/key as one private field; the inner VNC password, if present, uses its own KMS envelope. Metadata never contains either, and the UI never reloads a key. Replacing authentication rotates the whole identity and optional password, increments the credential revision and every referencing connection generation, invalidating active authority on recheck. Deleting an unused credential removes its ciphertext; backend and Runner retain in-memory plaintext only transiently for a resolve/handshake, while TLS may retain a signing key until session teardown. JavaScript runtime copies are not guaranteed to be zeroized immediately. Key backup, rotation and revocation are the owner's responsibility; the client does not claim CRL/OCSP coverage or automatic renewal.
 
 **Server-side policy is separate:** QEMU must be configured with a client CA and `verify-peer=on`, with network ingress restricted to intended peers. A TLS CertificateRequest and even a successful client-certificate handshake do not prove this setting; QEMU 8.2.2 with `verify-peer=off` still requests a client certificate and accepts a wrong-CA identity. Require independent server configuration and wrong-client rejection evidence before any production activation. Loopback engine tests and CI are not real owner→Agent→Runner→QEMU acceptance. `VncAccess` remains disabled by default; no production QEMU or OpenSSH change is implied.
+
+## QEMU X509SASL / SCRAM-SHA-256 (not production-activated; #37466)
+
+The owner may select the **new exact** `qemu_scram_sha256` credential and
+`qemu_x509_sasl` security pair. It is QEMU's observed VeNCrypt subtype **263**
+with SCRAM-SHA-256, not the generic X509SASL subtype 264, X509Plain/PLAIN,
+GSSAPI or a client-certificate login. The username is 1–255 printable ASCII
+bytes excluding space, comma and equals; the password is 1–1023 printable
+ASCII bytes including spaces (preserved verbatim). No SASL stream security
+layer is negotiated: server-verified TLS protects the entire desktop. The
+owner chooses system or a bounded custom CA and the server certificate
+DNS/IP identity independently of the SASL username, as well as a direct or
+saved authorized SSH route. The engine rejects the wrong subtype, mechanism,
+server proof and security result rather than downgrading.
+
+The existing KMS password envelope holds this distinct credential; the owner
+API validates before encryption and again after decryption on private handoff.
+Metadata includes the username and method but never the password. Rotation
+increments the revision and every referring connection generation; active
+sessions stop on the next authority recheck. The Runner must advertise the exact direct or SSH tuple before the API
+decrypts the password, and repeats credential/transport checks before opening
+a socket. Migration `1304_bright_grim_reaper` adds only the exact storage
+checks; this slice adds no production QEMU service, network ingress,
+certificate lifecycle or feature activation. The separately pinned QEMU/Cyrus engine fixture proves only the
+engine handshake, not a real owner→Agent→Runner PNG. Record that full positive
+and negative acceptance separately before claiming production readiness.
 
 Optional Mac classic VNC password adds the **separate** `vnc_password` /
 `apple_vnc_password` pair for bare RFB security type 2. It reuses the 1–8
@@ -118,7 +144,7 @@ A credential contains a display name and typed `authentication`. Classic
 `{ method: "username_password", username, password }` accepts a username of
 **1–255 UTF-8 bytes** and a password of **1–1023 UTF-8 bytes**. Embedded NUL is
 rejected and password spaces are preserved. Metadata exposes `authMethod` and
-exposes `username` only for `username_password`,
+exposes `username` only for `username_password`, `qemu_scram_sha256`,
 `apple_dh_username_password`, `apple_srp_username_password` or
 `apple_rsa_srp_username_password`; it never exposes a password or
 ciphertext. Credentials can be shared by multiple saved connections belonging
@@ -127,7 +153,8 @@ to the same user and organization.
 Hosts contain a canonical DNS name or IP address, a port (default 5900),
 explicit `security` and, for password-backed profiles, a credential selection.
 Owner configuration accepts `{ type: "x509_none", trust }`,
-`{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
+`{ type: "x509_vnc", trust }`, `{ type: "x509_plain", trust }` and
+`{ type: "qemu_x509_sasl", trust }`; trust is
 either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
 Each X509 security variant may also carry `serverName`, a separately
 canonicalized DNS name or IP identity for certificate verification. Omitting it
@@ -137,7 +164,8 @@ The exact stored pairs are `none` / `x509_none` (without a credential),
 `client_certificate` / `x509_none` (with an encrypted identity credential),
 `client_certificate_vnc_password` / `x509_vnc` (with an encrypted identity and password),
 `vnc_password` / `x509_vnc`, `vnc_password` / `apple_vnc_password`,
-`username_password` / `x509_plain`, `apple_dh_username_password` / `apple_dh`,
+`username_password` / `x509_plain`, `qemu_scram_sha256` / `qemu_x509_sasl`,
+`apple_dh_username_password` / `apple_dh`,
 `apple_srp_username_password` / `apple_srp`, and
 `apple_rsa_srp_username_password` / `apple_rsa_srp`. None of the Apple profiles
 has an X.509 trust bundle or certificate identity; their routes are restricted as
@@ -214,7 +242,8 @@ custom CA), does not allow a certificate bypass, and is never an implicit
 fallback when another authentication method fails. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication); Mac VNC has separate SSH-only Apple classic VNC password,
+authentication), or QEMU X509SASL subtype 263 (verified TLS plus bounded
+SCRAM-SHA-256); Mac VNC has separate SSH-only Apple classic VNC password,
 DH, Direct SRP and RSA/SRP choices. Standalone macOS Screen Sharing is not yet
 verified; these profiles do not establish support for that mode. Classic
 passwords must contain 1–8 printable ASCII characters.

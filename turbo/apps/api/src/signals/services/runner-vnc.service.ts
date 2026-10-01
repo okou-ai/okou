@@ -5,7 +5,10 @@ import {
   type RunnerVncResolveRequest,
   type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { vncLegacyAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  vncLegacyAuthenticationSchema,
+  vncQemuScramAuthenticationSchema,
+} from "@okouai/api-contracts/contracts/vnc-credentials";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -285,6 +288,21 @@ async function decryptRunnerAuthentication(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
+  if (row.authMethod === "qemu_scram_sha256") {
+    // Validate stored plaintext again after KMS, without reflecting secrets or
+    // schema diagnostics into the private endpoint's error observations.
+    const scram = vncQemuScramAuthenticationSchema.safeParse({
+      method: row.authMethod,
+      username: row.username,
+      password: decrypted.value,
+    });
+    if (!scram.success) {
+      throw new Error(
+        "VNC credential has an invalid stored authentication shape",
+      );
+    }
+    return scram.data;
+  }
   const authentication = vncLegacyAuthenticationSchema.safeParse(
     row.authMethod === "username_password" ||
       row.authMethod === "apple_dh_username_password" ||

@@ -913,6 +913,127 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual(before);
   });
 
+  it("stores only the exact QEMU SCRAM credential and verified-X509 pair without leaking secrets", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const auth = (username: string, password: string) => {
+      return {
+        method: "qemu_scram_sha256" as const,
+        username,
+        password,
+      };
+    };
+    for (const invalid of [
+      auth("", "secret"),
+      auth("has space", "secret"),
+      auth("has,comma", "secret"),
+      auth("has=equal", "secret"),
+      auth("é", "secret"),
+      auth("x".repeat(256), "secret"),
+      auth("operator", ""),
+      auth("operator", "bad\u0000password"),
+      auth("operator", "é"),
+      auth("operator", "x".repeat(1024)),
+      { ...auth("operator", "secret"), mechanism: "PLAIN" },
+    ]) {
+      const request = {
+        id: randomUUID(),
+        name: "QEMU SCRAM",
+        authentication: invalid,
+      };
+      expect((await rawRequest("/api/vnc/credentials", request)).status).toBe(
+        400,
+      );
+      expect(
+        (
+          await rawRequest("/api/vnc/connections", {
+            ...hostBody(),
+            security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+            credential: { create: request },
+          })
+        ).status,
+      ).toBe(400);
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+    const password = ` ${"s".repeat(1021)} `;
+    const credential = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU SCRAM",
+          authentication: auth("operator", password),
+        },
+      }),
+      [201],
+    );
+    expect(credential.body).toMatchObject({
+      authMethod: "qemu_scram_sha256",
+      username: "operator",
+      revision: 1,
+    });
+    const scramSecurity = {
+      type: "qemu_x509_sasl" as const,
+      trust: { mode: "system" as const },
+      serverName: "qemu.example.com",
+    };
+    const base = {
+      ...hostBody("qemu.example.com"),
+      credential: { id: credential.body.id },
+    };
+    for (const securityType of ["x509_plain", "x509_vnc", "x509_none"]) {
+      const response = await rawRequest("/api/vnc/connections", {
+        ...base,
+        id: randomUUID(),
+        security: { ...scramSecurity, type: securityType },
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(
+      (
+        await rawRequest("/api/vnc/connections", {
+          ...base,
+          security: { ...scramSecurity, type: "x509_sasl" },
+        })
+      ).status,
+    ).toBe(400);
+    const connection = await accept(
+      connections().create({
+        headers,
+        body: { ...base, security: scramSecurity },
+      }),
+      [201],
+    );
+    expect(connection.body).toMatchObject({
+      credentialId: credential.body.id,
+      security: scramSecurity,
+      generation: 1,
+    });
+    for (const response of [
+      credential.body,
+      connection.body,
+      (await accept(credentials().list({ headers }), [200])).body,
+      (await accept(connections().list({ headers }), [200])).body,
+    ]) {
+      expect(JSON.stringify(response)).not.toContain(password);
+      expect(JSON.stringify(response)).not.toContain("encryptedPassword");
+    }
+    const rotated = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: credential.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: auth("operator", "new-secret"),
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
+    expect(kms.generateDataKeyCalls).toBe(2);
+  });
+
   it("models username/password credentials and enforces exact profile pairs", async () => {
     const kms = useSecretKmsProbe();
     await owner();

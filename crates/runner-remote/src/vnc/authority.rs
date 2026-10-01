@@ -6,8 +6,8 @@ use api_contracts::generated::{
 use base64::Engine;
 use rfb_client::{
     AppleDhCredentials, AppleRsaSrpCredentials, AppleSrpCredentials,
-    ClientCertificateAuthentication, ClientIdentity, PlainCredentials, TrustRoots, VncPassword,
-    X509Authentication,
+    ClientCertificateAuthentication, ClientIdentity, PlainCredentials, QemuScramCredentials,
+    TrustRoots, VncPassword, X509Authentication,
 };
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Serialize, de::DeserializeOwned};
@@ -737,6 +737,11 @@ impl Authority {
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
             ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::QemuScramSha256,
+                security_type: ResolveRequestSupportedProfileSecurityType::QemuX509Sasl,
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+            },
+            ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificate,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509None,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
@@ -762,6 +767,11 @@ impl Authority {
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::QemuScramSha256,
+                    security_type: ResolveRequestSupportedProfileSecurityType::QemuX509Sasl,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
@@ -944,6 +954,21 @@ impl Authority {
                         .map_err(|_| Failure::InvalidCredential)?;
                 (
                     X509Choice::Legacy(X509Authentication::Plain(credentials)),
+                    trust,
+                )
+            }
+            (
+                ResolveResponseResolvedTransportAuthentication::QemuScramSha256 {
+                    username,
+                    password,
+                },
+                ResolveResponseResolvedTransportSecurity::QemuX509Sasl { trust },
+            ) => {
+                let credentials =
+                    QemuScramCredentials::new_zeroizing(username, password.into_zeroizing())
+                        .map_err(|_| Failure::InvalidCredential)?;
+                (
+                    X509Choice::Legacy(X509Authentication::QemuScramSha256(credentials)),
                     trust,
                 )
             }
