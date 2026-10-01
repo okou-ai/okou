@@ -48,13 +48,6 @@ async function installPublicSlack(): Promise<PublicSlackInstall> {
   await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Slack Bot",
   });
-  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-  if (!defaultAgentId) {
-    throw new Error("Expected onboarding to create the org default agent");
-  }
-  await bdd.updateAgentMetadata(actor, defaultAgentId, {
-    displayName: "Slack Bot",
-  });
   const installerSlackUserId = uniqueSlackUserId();
   const install = await integrations.installSlackWorkspace(actor, {
     installerSlackUserId,
@@ -121,7 +114,8 @@ describe("GET /api/integrations/slack", () => {
     expect(status.isConnected).toBeTruthy();
     expect(status.isInstalled).toBeTruthy();
     expect(status.workspaceName).toBe(`BDD Slack App ${install.teamId}`);
-    expect(status.defaultAgentName).toBe("Slack Bot");
+    // The workspace default agent keeps its locked production name.
+    expect(status.defaultAgentName).toBe("Okou");
     // Admin + connected: scope fields should be present
     expect(status).toHaveProperty("scopeMismatch");
     expect(status).toHaveProperty("reinstallUrl");
@@ -171,7 +165,8 @@ describe("GET /api/integrations/slack", () => {
     expect(status.isConnected).toBeTruthy();
     expect(status.isInstalled).toBeTruthy();
     expect(status.workspaceName).toBeTruthy();
-    expect(status.defaultAgentName).toBe("Slack Bot");
+    // The workspace default agent keeps its locked production name.
+    expect(status.defaultAgentName).toBe("Okou");
   });
 });
 
