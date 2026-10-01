@@ -26,7 +26,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { env, optionalEnv } from "../../lib/env";
+import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
@@ -43,6 +43,7 @@ import {
 import {
   assertNativeEnvironment,
   buildRunContextSnapshot,
+  defaultRunnerGroup,
   capturedPiExecutionRoute,
   storedExecutionContextWithPiResources,
   withoutOkouNamespaceEntries,
@@ -63,14 +64,7 @@ import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
  * default executor group and the default profile.
  */
 export function maintenanceRunnerGroup(): string {
-  const group = optionalEnv("RUNNER_DEFAULT_GROUP");
-  if (!group) {
-    throw new Error("No executor configured: set RUNNER_DEFAULT_GROUP");
-  }
-  if (group.split("/")[0] !== "vm0") {
-    throw new Error("Only vm0/* runner groups are supported");
-  }
-  return group;
+  return defaultRunnerGroup();
 }
 
 export const MAINTENANCE_RUNNER_PROFILE = DEFAULT_PROFILE;

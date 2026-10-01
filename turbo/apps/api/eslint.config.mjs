@@ -309,6 +309,7 @@ const threadRunPrivatePatterns = [
       "assertNativeEnvironment",
       "buildRunContextSnapshot",
       "capturedPiExecutionRoute",
+      "defaultRunnerGroup",
       "modelProviderExecutionPermissionManifest",
       "sessionStorageMountsForPersistence",
       "storedExecutionContextWithPiResources",

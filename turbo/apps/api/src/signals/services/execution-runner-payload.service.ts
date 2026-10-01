@@ -1415,10 +1415,7 @@ export function storedExecutionContextWithPiResources(
   };
 }
 
-function preparedRunnerGroup(
-  content: agentRunCreateAgentExecutionConfig,
-): string {
-  const group = runnerGroup(content) ?? optionalEnv("RUNNER_DEFAULT_GROUP");
+function officialRunnerGroup(group: string | undefined): string {
   if (!group) {
     throw new Error("No executor configured: set RUNNER_DEFAULT_GROUP");
   }
@@ -1426,6 +1423,19 @@ function preparedRunnerGroup(
     throw new Error("Only vm0/* runner groups are supported");
   }
   return group;
+}
+
+/** The deployment's default executor group, for runs with no Agent override. */
+export function defaultRunnerGroup(): string {
+  return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
+}
+
+function preparedRunnerGroup(
+  content: agentRunCreateAgentExecutionConfig,
+): string {
+  return officialRunnerGroup(
+    runnerGroup(content) ?? optionalEnv("RUNNER_DEFAULT_GROUP"),
+  );
 }
 
 function preparedRunnerJobBody(
