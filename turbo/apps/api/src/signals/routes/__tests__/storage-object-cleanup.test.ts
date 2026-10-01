@@ -289,7 +289,8 @@ describe("Clerk Storage cleanup after reference deletion", () => {
       // Current production export APIs cannot construct completed legacy
       // one-call outputs, including historical rows sharing one output key.
       // Only that historical setup crosses the uniquely owned fixture boundary;
-      // deletion/replay and retry still enter through the actual Clerk API.
+      // deletion/replay use the actual Clerk API; retries use the existing
+      // owner-scoped harness to advance otherwise time-based worker backoff.
       for (const key of keys) {
         await seedLegacyExportCleanupReferenceFixture(
           {

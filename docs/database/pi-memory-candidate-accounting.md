@@ -46,7 +46,7 @@ existing live PiMemory gate and explicit C accounting.
 | `agent-webhook-complete.service.ts`                                              | Persists checkpoints under the canonical storage lock; daily scheduling owns production candidate admission after #34044.                                                                                                   |
 | `pi-memory-stage1-schedule.service.ts`                                           | Daily decision selects at most two owned product Threads and calls canonical admission in the same transaction. Source Threads lock before Storage; day state locks before candidates.                                      |
 | `pi-memory-stage1-candidate.service.ts`                                          | Admission, source replacement, returned-row retain/release, standalone candidate deletion, and parent storage deletion.                                                                                                     |
-| `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup calls `deleteStoragesWithPiMemoryCandidates` inside the storage/candidate/reference transaction; external work stays outside.                                                                              |
+| `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup captures ordered Storage parent locks and calls `deleteLockedStoragesWithPiMemoryCandidates` with those exact IDs inside the storage/candidate/reference transaction; external work stays outside.         |
 | `webhooks-clerk.ts`                                                              | Cleanup remains asynchronous after HTTP 200. Failure needs investigation/provider redelivery; this is not a durable retry mechanism.                                                                                        |
 | Stage 1 worker; Phase 2 job, maintenance and usage services                      | Status, output, lease, selection and usage updates only; no new source ownership. Existing fencing/parent locks remain.                                                                                                     |
 | Candidate fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts`            | Candidate insertion and parent deletion use the same canonical service. The Phase 2 cascade test also uses canonical parent deletion and checks the surviving reference; other fixture writes change status/selection only. |
@@ -57,8 +57,13 @@ existing live PiMemory gate and explicit C accounting.
 
 Use `insertPiMemoryStage1Candidates` for controlled fixture/repair insertion,
 `deletePiMemoryStage1Candidates` for standalone retention, and
-`deleteStoragesWithPiMemoryCandidates` for parent deletion. The caller owns the
-transaction. No independent active production candidate backfill/repair writer
+`deleteStoragesWithPiMemoryCandidates` for standalone parent deletion. A caller
+that already owns `FOR UPDATE` locks on every parent in UUID order may use
+`deleteLockedStoragesWithPiMemoryCandidates` with its exact captured IDs, without
+re-reading or re-locking those parents. Clerk uses this path and commits its
+bounded cleanup inventory in the same reference-deletion transaction. Both
+paths retain the same returned-hash accounting and underflow rejection. The
+caller owns the transaction. No independent active production candidate backfill/repair writer
 was found. Raw candidate source changes, raw memory-parent cascades and pre-B
 repair tools are unsupported. For an actually deleted Clerk owner, redeliver its
 provider deletion event to the current API. Do not infer permission to repair
