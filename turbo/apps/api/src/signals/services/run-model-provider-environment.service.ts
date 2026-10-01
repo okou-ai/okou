@@ -55,7 +55,6 @@ import {
   type MemberModelAccountSnapshot,
 } from "./model-provider-account.service";
 import type {
-  PersistProducerRunBinding,
   AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
@@ -78,7 +77,6 @@ import {
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import type { AuthContext } from "../../types/auth";
 import type { WebChatSessionPromptContext } from "./web-chat-session-prompt.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
@@ -148,7 +146,7 @@ function envBindingsRequireModel(
   });
 }
 
-export function resolveModelProviderModel(args: {
+function resolveModelProviderModel(args: {
   readonly type: ModelProviderType;
   readonly selectedModel: string | null;
   readonly defaultModel: string | undefined;
@@ -169,7 +167,7 @@ export function resolveModelProviderModel(args: {
   return model === "" ? null : model;
 }
 
-export function modelProviderEnvironmentSecretValue(
+function modelProviderEnvironmentSecretValue(
   type: ModelProviderType,
   secretName: string,
   secretValue: string,
@@ -234,7 +232,7 @@ function providerEnvironmentFromSecretRefs(
  * A new run's Built-in route selection skips candidates whose billable
  * categories for the requested service tier lack usage_pricing.
  */
-export interface NewRunRoutePricingRequest {
+interface NewRunRoutePricingRequest {
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resolution: UsagePricingResolution;
 }
@@ -720,13 +718,13 @@ function optionalAgentSetting(value: string | null): string | undefined {
   return value === null ? undefined : value;
 }
 
-export interface AgentRunsCreateHttpRunCallback {
+interface AgentRunsCreateHttpRunCallback {
   readonly url: string;
   readonly secret: string;
   readonly payload: unknown;
 }
 
-export interface AgentRunsCreateInternalRunCallback {
+interface AgentRunsCreateInternalRunCallback {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
 }
@@ -735,7 +733,7 @@ type AgentRunsCreateRunCallback =
   | AgentRunsCreateHttpRunCallback
   | AgentRunsCreateInternalRunCallback;
 
-export interface AgentRunsCreateAgentRunMetadata {
+interface AgentRunsCreateAgentRunMetadata {
   readonly workflowAutomationId?: string;
   readonly triggerBrief?: string;
   readonly autonomyBudget?: number;
@@ -743,9 +741,29 @@ export interface AgentRunsCreateAgentRunMetadata {
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 
-export interface CreateAgentRunCommandArgs {
-  readonly auth: AuthContext & { readonly orgId: string };
-  readonly body: AgentRunCreateBody;
+/** The owner a claimed queue head runs as: its user in its organization. */
+export interface ThreadRunOwner {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
+/** The run-request facts Thread sets for a claimed queue head. */
+export type ThreadRunBody = Pick<
+  AgentRunCreateBody,
+  | "modelProvider"
+  | "prompt"
+  | "realAgentInPreview"
+  | "captureNetworkBodies"
+  | "sessionId"
+> & {
+  /** The queue head's Agent; a Thread run always names it. */
+  readonly agentId: string;
+};
+
+/** Thread's run command for one claimed, queue-first input. */
+export interface ThreadRunCommand {
+  readonly owner: ThreadRunOwner;
+  readonly body: ThreadRunBody;
   readonly apiStartTime: number;
   readonly triggerSource?: TriggerSource;
   readonly appendSystemPrompt?: string;
@@ -765,7 +783,7 @@ export interface CreateAgentRunCommandArgs {
     | "agentphoneHandle"
   >;
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
-  readonly chatThreadId?: string;
+  readonly chatThreadId: string;
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
@@ -780,7 +798,7 @@ export interface CreateAgentRunCommandArgs {
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunsCreateAgentRunMetadata;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
+  readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -788,19 +806,6 @@ export interface CreateAgentRunCommandArgs {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
-
-export interface QueuedRunCommandArgs extends Omit<
-  CreateAgentRunCommandArgs,
-  "chatThreadId" | "agentRunModelPin"
-> {
-  readonly chatThreadId: string;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
-  readonly agentRunModelPin: AgentRunModelPin;
-}
-
-export type AnyCreateAgentRunCommandArgs =
-  | CreateAgentRunCommandArgs
-  | QueuedRunCommandArgs;
 
 export interface UserInfo {
   readonly name: string | null;
@@ -820,22 +825,20 @@ export interface UserInfo {
   readonly agentphoneHandle?: string;
 }
 
-export type AgentRunSelectionInput = Omit<
-  AnyCreateAgentRunCommandArgs,
+/** The selection-time command: everything but the prompt-time facts. */
+export type ThreadRunSelection = Omit<
+  ThreadRunCommand,
   "body" | "appendSystemPrompt" | "callbacks"
 > & {
-  readonly body: Omit<AgentRunCreateBody, "prompt">;
-  readonly queueFirstAssociation?: QueuedRunCommandArgs["queueFirstAssociation"];
+  readonly body: Omit<ThreadRunBody, "prompt">;
 };
-export type AgentRunIdentityCommand = Omit<
-  AgentRunSelectionInput,
-  "piExecution"
-> & {
+/** The identity read before Pi eligibility is decided. */
+export type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
   readonly piExecution?: boolean;
 };
 
 export function personalSubscriptionAccountCandidates(args: {
-  readonly command: AgentRunIdentityCommand;
+  readonly command: ThreadRunIdentity;
   readonly providerType: string;
   readonly modelProviderId: string | null;
   readonly snapshot?: MemberModelAccountSnapshot | null;
@@ -843,8 +846,8 @@ export function personalSubscriptionAccountCandidates(args: {
   const snapshot = args.snapshot;
   if (
     !snapshot ||
-    snapshot.orgId !== args.command.auth.orgId ||
-    snapshot.userId !== args.command.auth.userId ||
+    snapshot.orgId !== args.command.owner.orgId ||
+    snapshot.userId !== args.command.owner.userId ||
     !isPersonalSubscriptionProviderType(args.providerType)
   ) {
     return undefined;
@@ -865,9 +868,7 @@ export function personalSubscriptionAccountCandidates(args: {
   });
 }
 
-export function selectedRunPiExecution(
-  command: AgentRunIdentityCommand,
-): boolean {
+export function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
   if (command.piExecution === undefined) {
     throw new Error("Selected model execution eligibility is unavailable");
   }
@@ -875,15 +876,15 @@ export function selectedRunPiExecution(
 }
 
 export function selectedRunModelProviderArgs(
-  command: AgentRunIdentityCommand,
+  command: ThreadRunIdentity,
   agent: AgentRunRecord,
   capturedPersonalSubscriptionAccount:
     | CapturedPersonalSubscriptionAccount
     | undefined,
 ): Omit<RunModelProviderArgs, "catalog"> {
   return {
-    orgId: command.auth.orgId,
-    userId: command.auth.userId,
+    orgId: command.owner.orgId,
+    userId: command.owner.userId,
     modelProviderId:
       command.modelProviderId ?? optionalAgentSetting(agent.modelProviderId),
     modelProviderCredentialScope: command.modelProviderCredentialScope,

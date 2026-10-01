@@ -126,7 +126,7 @@ function deferredCredentialReferences(
   return values;
 }
 
-export async function resolveModelCredentialValues(
+async function resolveModelCredentialValues(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
   signal: AbortSignal,

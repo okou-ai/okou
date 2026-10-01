@@ -65,7 +65,7 @@ import {
 
 // Storage planning and explicit resource materialization.
 
-export type StorageManifestEntryKind = StorageManifestCacheEntryKind;
+type StorageManifestEntryKind = StorageManifestCacheEntryKind;
 
 type StorageManifestCountBucket =
   (typeof STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS)[number];
@@ -78,7 +78,7 @@ interface PresignCandidateInput {
   readonly usePublicEndpoint: boolean;
 }
 
-export interface ContextArtifact {
+interface ContextArtifact {
   readonly name: string;
   readonly version?: string;
   readonly mountPath: string;
@@ -143,7 +143,7 @@ interface ResolvedVolume {
   readonly system?: boolean;
 }
 
-export interface StorageResolution {
+interface StorageResolution {
   readonly storageId: string;
   readonly versionId: string;
   readonly s3Prefix: string;
@@ -160,17 +160,17 @@ interface StorageLookup {
   readonly name: string;
 }
 
-export interface StorageRequest {
+interface StorageRequest {
   readonly lookup: StorageLookup;
   readonly version: string | undefined;
 }
 
-export interface StorageIndexRequest {
+interface StorageIndexRequest {
   readonly lookup: StorageLookup;
   readonly exactVersionId: string | null;
 }
 
-export interface StorageIndexRow {
+interface StorageIndexRow {
   readonly orgId: string;
   readonly userId: string;
   readonly name: string;
@@ -194,7 +194,7 @@ interface StorageVersionIndexEntry {
   readonly fileCount: number;
 }
 
-export interface StorageIndexEntry {
+interface StorageIndexEntry {
   readonly storageId: string;
   readonly headVersionId: string | null;
   readonly s3Prefix: string;
@@ -210,7 +210,7 @@ interface StorageManifestInputs {
 /** Internal resolved identity, before transport URLs exist. Never persisted. */
 export type StorageMountMetadata = Omit<StoredStorageMountEntry, "archiveUrl">;
 
-export interface PreparedReadOnlyStorageEntry<
+interface PreparedReadOnlyStorageEntry<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
   readonly storedMount: TMount;
@@ -218,7 +218,7 @@ export interface PreparedReadOnlyStorageEntry<
   readonly runContextVolume: RunContextResponse["volumes"][number];
 }
 
-export interface PreparedWritebackStorageEntry<
+interface PreparedWritebackStorageEntry<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
   readonly storedMount: TMount;
@@ -226,7 +226,7 @@ export interface PreparedWritebackStorageEntry<
   readonly runContextArtifact: NonNullable<RunContextResponse["artifact"]>;
 }
 
-export interface PreparedStorageEntries<
+interface PreparedStorageEntries<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
   readonly composeEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
@@ -249,7 +249,7 @@ export interface PreparedAgentRunStorage<
   readonly runContextStorage: RunContextStorageObservation;
 }
 
-export interface BuildStorageManifestEntriesArgs {
+interface BuildStorageManifestEntriesArgs {
   readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
@@ -276,13 +276,13 @@ interface PreparedRequestStorageResolution {
   readonly requests: readonly StorageRequest[];
 }
 
-export interface StorageManifestEntryPhaseTimings {
+interface StorageManifestEntryPhaseTimings {
   readonly compose: StorageManifestEntryPhaseTiming;
   readonly additional: StorageManifestEntryPhaseTiming;
   readonly artifact: StorageManifestEntryPhaseTiming;
 }
 
-export interface ResolvedStorageEntries {
+interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
   readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
@@ -308,7 +308,7 @@ export interface MaterializedAgentRunStorage {
   readonly prepared: PreparedAgentRunStorage;
 }
 
-export interface ResolvedStorageManifestEntryPlans {
+interface ResolvedStorageManifestEntryPlans {
   readonly composePlans: readonly ResolvedManifestStoragePlan[];
   readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
   readonly artifactInputs: readonly ResolvedManifestArtifactInput[];
@@ -324,13 +324,13 @@ interface ResolvedManifestStorageInput {
   readonly resolved: StorageResolution;
 }
 
-export interface ResolvedManifestArtifactInput {
+interface ResolvedManifestArtifactInput {
   readonly artifact: ContextArtifact;
   readonly resolved: StorageResolution;
   readonly source: StorageManifestSource;
 }
 
-export interface ResolvedManifestStoragePlan extends ResolvedManifestStorageInput {
+interface ResolvedManifestStoragePlan extends ResolvedManifestStorageInput {
   readonly entryKind: Extract<
     StorageManifestEntryKind,
     "compose" | "additional"
@@ -350,7 +350,7 @@ interface StorageManifestPhaseTimingWindow {
  * so the exact requested rows and full pinned versions are loaded once and
  * resolved from memory instead.
  */
-export type StorageIndex = ReadonlyMap<string, StorageIndexEntry>;
+type StorageIndex = ReadonlyMap<string, StorageIndexEntry>;
 
 const STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS = [
   "0",
@@ -381,9 +381,7 @@ type StorageManifestSourceCountsByKind = Record<
   StorageManifestSourceCounts
 >;
 
-export function storageManifestCountBucket(
-  count: number,
-): StorageManifestCountBucket {
+function storageManifestCountBucket(count: number): StorageManifestCountBucket {
   if (count <= 0) {
     return "0";
   }
@@ -1049,17 +1047,11 @@ function isFullStorageVersionId(version: string): boolean {
   return version.length === VERSION_ID_LENGTH && isValidVersionPrefix(version);
 }
 
-export const headStorageVersions = alias(
-  storageVersions,
-  "head_storage_versions",
-);
+const headStorageVersions = alias(storageVersions, "head_storage_versions");
 
-export const exactStorageVersions = alias(
-  storageVersions,
-  "exact_storage_versions",
-);
+const exactStorageVersions = alias(storageVersions, "exact_storage_versions");
 
-export function uniqueStorageIndexRequests(
+function uniqueStorageIndexRequests(
   requests: readonly StorageRequest[],
 ): readonly StorageIndexRequest[] {
   const requestsByKey = new Map<string, StorageIndexRequest>();
@@ -1081,9 +1073,7 @@ export function uniqueStorageIndexRequests(
   return [...requestsByKey.values()];
 }
 
-export function buildStorageIndex(
-  rows: readonly StorageIndexRow[],
-): StorageIndex {
+function buildStorageIndex(rows: readonly StorageIndexRow[]): StorageIndex {
   const exactVersionsByStorageId = new Map<
     string,
     Map<string, StorageVersionIndexEntry>
@@ -1148,7 +1138,7 @@ interface StoragePrefixVersionRow extends StorageVersionIndexEntry {
   readonly storageId: string;
 }
 
-export function storagePrefixVersionRequests(
+function storagePrefixVersionRequests(
   requests: readonly StorageRequest[],
   index: StorageIndex,
 ): readonly StoragePrefixVersionRequest[] {
@@ -1179,7 +1169,7 @@ export function storagePrefixVersionRequests(
   return [...unique.values()];
 }
 
-export function storageIndexWithPrefixVersions(
+function storageIndexWithPrefixVersions(
   index: StorageIndex,
   versions: readonly StoragePrefixVersionRow[],
 ): StorageIndex {
@@ -1596,7 +1586,7 @@ function knownArchiveSize(resolved: StorageResolution): number | undefined {
     : undefined;
 }
 
-export function readOnlyStorageEntryMetadata(args: {
+function readOnlyStorageEntryMetadata(args: {
   readonly plan: ResolvedManifestStoragePlan;
 }): PreparedReadOnlyStorageEntry<StorageMountMetadata> {
   const archiveSize = knownArchiveSize(args.plan.resolved);
@@ -1748,7 +1738,7 @@ async function buildAdditionalStorageEntry(args: {
     : null;
 }
 
-export function mergeStorageEntries<TEntry>(args: {
+function mergeStorageEntries<TEntry>(args: {
   readonly composeEntries: readonly TEntry[];
   readonly additionalEntries: readonly TEntry[];
   readonly mountPath: (entry: TEntry) => string;

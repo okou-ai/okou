@@ -68,10 +68,7 @@ import {
   isPersonalSubscriptionProviderType,
   validatePersonalSubscriptionAdmission,
 } from "./model-provider-account.service";
-import type {
-  PersistProducerRunBinding,
-  AgentRunModelPin,
-} from "./agent-run-contracts";
+import type { AgentRunModelPin } from "./agent-run-contracts";
 import type {
   ChatThreadSessionResolution,
   ChatThreadSessionResolutionAction,
@@ -236,7 +233,7 @@ export function runnerReuseKey(
   return chatThreadId ? `thread:${chatThreadId}` : null;
 }
 
-export interface RunnerJobPayload {
+interface RunnerJobPayload {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
@@ -289,7 +286,7 @@ export interface ThreadSessionBindingWrite {
   readonly action: ThreadSessionBindingAction;
 }
 
-export interface PersistedAtomicLaunchRows {
+interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly run: RunRecord;
   readonly runnerJobCreatedAt: Date;
@@ -303,14 +300,14 @@ export interface PreparedRunnerLaunch {
   readonly sessionStorageMounts: readonly PersistedStorageMount[];
 }
 
-export type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
+type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
 
-export type QueueFirstRunClaimed = Extract<
+type QueueFirstRunClaimed = Extract<
   QueueFirstRunClaimResult,
   { readonly kind: "claimed" }
 >;
 
-export interface QueueFirstRunClaimLost {
+interface QueueFirstRunClaimLost {
   readonly kind: "queue-first-claim-lost";
 }
 
@@ -343,7 +340,7 @@ type CommittedAtomicLaunchResult = Exclude<
   QueueFirstRunClaimLost
 >;
 
-export type CreateRunSuccessResult = {
+type CreateRunSuccessResult = {
   readonly status: 201;
   readonly body: CreateRunResponse;
   readonly queueFirstClaim?: QueueFirstRunClaimed;
@@ -366,7 +363,6 @@ export interface PendingRunArguments {
   readonly codexServiceTier?: "fast" | "ultrafast";
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly threadSessionResolution?: PendingThreadSessionResolution;
 }
 
@@ -450,7 +446,7 @@ export type ApiErrorResponse<Status extends number, Code extends string> = {
   };
 };
 
-export type CreateRunRouteResult =
+type CreateRunRouteResult =
   | CreateRunSuccessResult
   | ApiErrorResponse<400, "BAD_REQUEST">
   | ApiErrorResponse<403, "FORBIDDEN">
@@ -832,12 +828,12 @@ export function prepareAtomicLaunchPersistence(
   };
 }
 
-export interface ValidatedPreparedLaunchAdmission {
+interface ValidatedPreparedLaunchAdmission {
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
   readonly validatedAccountIdentity: string | null;
 }
 
-export interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
+interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
   readonly tx: DbTransaction;
   readonly commit: PreparedCommitPreparedLaunchArgs;
   readonly payload: RunnerJobPayload;

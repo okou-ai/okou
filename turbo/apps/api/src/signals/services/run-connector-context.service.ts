@@ -692,7 +692,7 @@ export function storedConnectorExecutionContextFromSnapshot(
   };
 }
 
-export function referencedEnvironmentSecretAliases(
+function referencedEnvironmentSecretAliases(
   environment: Record<string, string> | undefined,
 ): ReadonlySet<string> {
   if (!environment) {

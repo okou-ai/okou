@@ -167,11 +167,11 @@ import {
   priorPiMemoryRecall,
 } from "./pi-launch-resources.service";
 import {
-  type AgentRunCreateBody,
-  type AgentRunIdentityCommand,
+  type ThreadRunBody,
+  type ThreadRunIdentity,
   loadRunRoutePricing,
-  type AgentRunSelectionInput,
-  type QueuedRunCommandArgs,
+  type ThreadRunSelection,
+  type ThreadRunCommand,
   frameworkApiKeyEnv,
   frameworkForProviderSelection,
   hasExplicitFrameworkApiKey,
@@ -1665,16 +1665,11 @@ interface AssembledWorkflowAutomationRun {
   readonly launchRecord: Extract<ClaimLaunchRecord, { kind: "automation" }>;
 }
 
-function workflowAutomationAgentRunAuth(automation: {
+function workflowAutomationRunOwner(automation: {
   readonly orgId: string;
   readonly ownerUserId: string;
 }) {
-  return {
-    orgId: automation.orgId,
-    orgRole: "member" as const,
-    userId: automation.ownerUserId,
-    tokenType: "session" as const,
-  };
+  return { orgId: automation.orgId, userId: automation.ownerUserId };
 }
 
 function automationSelectionCommand(
@@ -1688,14 +1683,14 @@ function automationSelectionCommand(
   >,
   model: Extract<ModelContext, { readonly ok: true }>,
   timing: ApiDispatchTimingCollector,
-): AgentRunSelectionInput &
+): ThreadRunSelection &
   Pick<
-    QueuedRunCommandArgs,
+    ThreadRunCommand,
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
   const { automation, agentId, chatThreadId } = args.due;
   return {
-    auth: workflowAutomationAgentRunAuth(automation),
+    owner: workflowAutomationRunOwner(automation),
     body: {
       agentId,
       ...workflowModelProviderBody(model.effectiveModelProvider),
@@ -1853,7 +1848,7 @@ interface ThreadRunContext {
   readonly input: {
     readonly enforceBuiltInCredits: boolean;
     readonly context: PendingRunContext;
-    readonly args: Omit<PendingRunArguments, "persistProducerRunBinding">;
+    readonly args: PendingRunArguments;
   };
   readonly identity: CommitPreparedLaunchArgs["identity"];
   readonly callbackRows: CommitPreparedLaunchArgs["callbackRows"];
@@ -2192,10 +2187,7 @@ type PromptDiscordContext = {
   readonly userMessage: ChatEventUserMessage | null;
 };
 
-type ClaimQueueRunCommandArgs = Omit<
-  QueuedRunCommandArgs,
-  "persistProducerRunBinding"
->;
+type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
 type ClaimRejectionContext =
   | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
@@ -5644,12 +5636,7 @@ export function createThreadClaimRunObjects(
     return {
       db,
       timing,
-      auth: {
-        tokenType: "session" as const,
-        userId: args.userId,
-        orgId: args.agent.orgId,
-        orgRole: "member" as const,
-      },
+      owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
       chatThreadId: args.threadId,
@@ -5680,7 +5667,7 @@ export function createThreadClaimRunObjects(
       db: identity.db,
       timing: identity.timing,
       command: {
-        auth: identity.auth,
+        owner: identity.owner,
         apiStartTime: identity.apiStartTime,
         body: {
           agentId: identity.agentId,
@@ -7028,7 +7015,7 @@ export function createThreadClaimRunObjects(
       }
       return {
         timing: get(workflowAutomationLaunchReadGraphTiming$),
-        auth: workflowAutomationAgentRunAuth(args.due.automation),
+        owner: workflowAutomationRunOwner(args.due.automation),
         apiStartTime: args.apiStartTime,
         agentId: args.due.agentId,
         chatThreadId: args.due.chatThreadId,
@@ -7500,7 +7487,7 @@ export function createThreadClaimRunObjects(
       return {
         timing: input.timing,
         command: {
-          auth: input.auth,
+          owner: input.owner,
           apiStartTime: input.apiStartTime,
           body: { agentId: input.agentId },
           chatThreadId: input.chatThreadId,
@@ -7514,29 +7501,12 @@ export function createThreadClaimRunObjects(
     const { command: args, timing } = await get(
       selectedIdentityInputIdentityInput$,
     );
-    const db = get(db$);
+    // A Thread run always names its queue head's Agent.
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_resolve_agent_id",
-      async () => {
-        if (args.body.agentId) {
-          return args.body.agentId;
-        }
-        if (!args.body.sessionId) {
-          return null;
-        }
-        const [session] = await db
-          .select({ agentId: agentSessions.agentId })
-          .from(agentSessions)
-          .where(
-            and(
-              eq(agentSessions.id, args.body.sessionId),
-              eq(agentSessions.userId, args.auth.userId),
-              eq(agentSessions.orgId, args.auth.orgId),
-            ),
-          )
-          .limit(1);
-        return session?.agentId ?? null;
+      () => {
+        return Promise.resolve(args.body.agentId);
       },
     );
   });
@@ -7586,8 +7556,8 @@ export function createThreadClaimRunObjects(
       throw new Error("Bootstrap requires a selected execution identity");
     }
     const identity = {
-      userId: command.auth.userId,
-      orgId: command.auth.orgId,
+      userId: command.owner.userId,
+      orgId: command.owner.orgId,
       chatThreadId: head.chatThreadId,
       agentId,
     };
@@ -7742,7 +7712,7 @@ export function createThreadClaimRunObjects(
       get,
     ): Promise<
       | {
-          readonly command: AgentRunIdentityCommand;
+          readonly command: ThreadRunIdentity;
           readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
         }
       | ReturnType<typeof conflict>
@@ -7776,8 +7746,8 @@ export function createThreadClaimRunObjects(
               .from(modelProviderAccounts)
               .where(
                 and(
-                  eq(modelProviderAccounts.orgId, command.auth.orgId),
-                  eq(modelProviderAccounts.userId, command.auth.userId),
+                  eq(modelProviderAccounts.orgId, command.owner.orgId),
+                  eq(modelProviderAccounts.userId, command.owner.userId),
                   isNull(modelProviderAccounts.disconnectedAt),
                   pin.modelProviderId === null
                     ? and(
@@ -8352,8 +8322,8 @@ export function createThreadClaimRunObjects(
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
         authorizedRequestObservation: observation ?? {
-          userId: account.command.auth.userId,
-          orgId: account.command.auth.orgId,
+          userId: account.command.owner.userId,
+          orgId: account.command.owner.orgId,
           agent,
           featureSwitchContext: bootstrap.featureSwitchContext,
         },
@@ -8375,7 +8345,7 @@ export function createThreadClaimRunObjects(
     if ("status" in input) {
       return input;
     }
-    const body: AgentRunCreateBody = { ...fullCommand.body };
+    const body: ThreadRunBody = { ...fullCommand.body };
     if (resolution?.sessionId) {
       body.sessionId = resolution.sessionId;
     } else if (fullCommand.chatThreadId) {
@@ -8939,8 +8909,8 @@ export function createThreadClaimRunObjects(
         db,
         timing,
         args: {
-          orgId: command.auth.orgId,
-          userId: command.auth.userId,
+          orgId: command.owner.orgId,
+          userId: command.owner.userId,
           chatThreadId: command.chatThreadId,
           connectorSourceId: (await get(connectorSourceId$)) ?? undefined,
           includeOkouTokenSecret: true,
@@ -9961,8 +9931,8 @@ export function createThreadClaimRunObjects(
         db,
         args: {
           catalog: await get(claimCatalog$),
-          orgId: command.auth.orgId,
-          userId: command.auth.userId,
+          orgId: command.owner.orgId,
+          userId: command.owner.userId,
           injectSkillVolumes: { workflows },
           requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
           piExecution: selectedRunPiExecution(command),
@@ -10218,8 +10188,8 @@ export function createThreadClaimRunObjects(
               agentSessions,
               and(
                 eq(agentSessions.id, chatThreads.agentSessionId),
-                eq(agentSessions.userId, command.auth.userId),
-                eq(agentSessions.orgId, command.auth.orgId),
+                eq(agentSessions.userId, command.owner.userId),
+                eq(agentSessions.orgId, command.owner.orgId),
               ),
             )
             .leftJoin(agents, eq(agents.id, agent.id))
@@ -10242,7 +10212,7 @@ export function createThreadClaimRunObjects(
             .where(
               and(
                 eq(chatThreads.id, threadId),
-                eq(chatThreads.userId, command.auth.userId),
+                eq(chatThreads.userId, command.owner.userId),
                 eq(
                   chatThreads.agentId,
                   command.expectedThreadAgentId ?? agent.id,
@@ -10351,8 +10321,8 @@ export function createThreadClaimRunObjects(
             }),
           ),
           agentOrgId: resolved.orgId,
-          runtimeOrgId: input.command.auth.orgId,
-          userId: input.command.auth.userId,
+          runtimeOrgId: input.command.owner.orgId,
+          userId: input.command.owner.userId,
           artifacts: metadata.artifacts,
           volumeVersionOverrides: undefined,
           additionalVolumes: metadata.additionalVolumes,
@@ -10723,16 +10693,16 @@ export function createThreadClaimRunObjects(
         agentId: agent.id,
         ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
       },
-      command.auth.userId,
-      command.auth.orgId,
+      command.owner.userId,
+      command.owner.orgId,
       {
         productAgentExecutionPlan: {
           identity: "agent",
           content: buildAgentExecutionConfig(agent.name),
         },
         preloadedAgentExecutionObservation: {
-          requestUserId: command.auth.userId,
-          requestOrgId: command.auth.orgId,
+          requestUserId: command.owner.userId,
+          requestOrgId: command.owner.orgId,
           agentId: agent.id,
           ownerUserId: agent.owner,
           agentOrgId: agent.orgId,
@@ -11004,21 +10974,15 @@ export function createThreadClaimRunObjects(
   });
   const authorizeSelectedAgentRun$ = command(
     async ({ get }, signal: AbortSignal) => {
-      const [{ command: args }, agentId, agent] = await Promise.all([
+      const [{ command: args }, agent] = await Promise.all([
         get(selectedIdentityInputIdentityInput$),
-        get(preCreateAgentIdAgentId$),
         get(preCreateAgentAgent$),
       ]);
       signal.throwIfAborted();
-      if (!agentId) {
-        return args.body.sessionId
-          ? notFound("Session not found")
-          : badRequestMessage("Missing agentId or sessionId");
-      }
-      if (!agent || agent.orgId !== args.auth.orgId) {
+      if (!agent || agent.orgId !== args.owner.orgId) {
         return notFound("Agent not found");
       }
-      if (agent.visibility === "private" && agent.owner !== args.auth.userId) {
+      if (agent.visibility === "private" && agent.owner !== args.owner.userId) {
         return agentRunsCreateForbidden(
           "Only the private agent owner can run this agent",
         );
@@ -11852,7 +11816,7 @@ export function createThreadClaimRunObjects(
       );
       const prepared = await set(
         prepareExecutionCallbacks$,
-        { orgId: command.auth.orgId, userId: command.auth.userId },
+        { orgId: command.owner.orgId, userId: command.owner.userId },
         definitions,
         signal,
       );
@@ -11994,7 +11958,7 @@ export function createThreadClaimRunObjects(
             {
               catalog: await get(claimCatalog$),
               orgId: claim.orgId,
-              userId: input.command.auth.userId,
+              userId: input.command.owner.userId,
               modelProviderType: "built-in",
               selectedModel: input.command.selectedModelOverride,
               enforceBuiltInCredits: true,
@@ -12012,7 +11976,7 @@ export function createThreadClaimRunObjects(
         {
           catalog: await get(claimCatalog$),
           orgId: claim.orgId,
-          userId: input.command.auth.userId,
+          userId: input.command.owner.userId,
           modelProviderType: model?.type ?? input.command.body.modelProvider,
           selectedModel:
             model?.selectedModel ?? input.command.selectedModelOverride,
@@ -12094,7 +12058,7 @@ export function createThreadClaimRunObjects(
         const rejection =
           head.contextType === "automation"
             ? {
-                userId: identityInput.auth.userId,
+                userId: identityInput.owner.userId,
                 error: authorization.body.error,
               }
             : claimAssemblyRejection(

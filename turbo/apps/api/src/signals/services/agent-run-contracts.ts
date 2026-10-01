@@ -1,5 +1,4 @@
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
-import type { Tx } from "../../lib/db-types";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 
 export interface AgentRunModelPin {
@@ -21,16 +20,6 @@ export interface InternalRunCallback {
 }
 
 export type RunCallback = HttpRunCallback | InternalRunCallback;
-
-/**
- * A producer write committed with the run insert, before terminal callbacks.
- * Lost claims and rolled-back launches leave no producer binding. This callback
- * is in memory only and is never serialized into run metadata.
- */
-export type PersistProducerRunBinding = (
-  tx: Tx,
-  run: { readonly runId: string; readonly status: "pending" | "failed" },
-) => Promise<void>;
 
 export type AgentRunPreCreateSource =
   | "chat_callback_auto_send"

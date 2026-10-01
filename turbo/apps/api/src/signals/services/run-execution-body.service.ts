@@ -46,7 +46,6 @@ import type { CapturedPersonalSubscriptionAccount } from "./model-provider-accou
 import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
-  PersistProducerRunBinding,
   RunCallback,
 } from "./agent-run-contracts";
 import type {
@@ -69,7 +68,6 @@ import type {
   AgentConnectorScopeSnapshot,
   CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
 import {
   buildAgentToolsPromptInputs,
   buildAgentToolsPrompt,
@@ -101,11 +99,10 @@ import {
 } from "./run-connector-context.service";
 import {
   AgentRunCreateBody,
-  AgentRunIdentityCommand,
-  AnyCreateAgentRunCommandArgs,
+  ThreadRunIdentity,
+  ThreadRunCommand,
   AuthorizedAgentRunRequestObservation,
-  CreateAgentRunCommandArgs,
-  QueuedRunCommandArgs,
+  ThreadRunOwner,
   UserInfo,
   selectedRunModelProviderArgs,
 } from "./run-model-provider-environment.service";
@@ -126,7 +123,7 @@ interface ProductResolutionOptions {
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-export interface ResolveAgentExecutionOptions {
+interface ResolveAgentExecutionOptions {
   readonly agentObservation?: RunAgentObservation;
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
@@ -135,19 +132,19 @@ export interface ResolveAgentExecutionOptions {
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-export interface PersistedRunEnvironmentSecret {
+interface PersistedRunEnvironmentSecret {
   readonly name: string;
   readonly encryptedValue: string;
   readonly userId: string;
 }
 
-export interface PersistedRunEnvironmentVariable {
+interface PersistedRunEnvironmentVariable {
   readonly name: string;
   readonly value: string;
   readonly userId: string;
 }
 
-export interface PersistedRunEnvironmentSnapshot {
+interface PersistedRunEnvironmentSnapshot {
   readonly secrets: readonly PersistedRunEnvironmentSecret[];
   readonly variables: readonly PersistedRunEnvironmentVariable[];
 }
@@ -325,7 +322,7 @@ async function buildReferencedSecrets(args: {
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-export interface RunAgentObservation {
+interface RunAgentObservation {
   readonly agentId: string;
   readonly agentOrgId: string;
   readonly agentOwner: string;
@@ -434,7 +431,7 @@ async function resolveSessionExecution(
   };
 }
 
-export function requireResolvedAgentIdMatch(
+function requireResolvedAgentIdMatch(
   resolved: ResolvedAgentExecution | CreateRunErrorResult,
   agentId: string | undefined,
 ): ResolvedAgentExecution | CreateRunErrorResult {
@@ -621,7 +618,7 @@ export async function buildResolvedRunBody(args: {
   };
 }
 
-export type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
+type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
 
 export async function resolveRunBodyEnvironment(args: {
   readonly content: agentRunCreateAgentExecutionConfig;
@@ -842,7 +839,7 @@ function buildAgentRunPlatformEnvironment(args: {
 
 function agentRunTimingDimensions(args: {
   readonly origin: AgentRunOrigin;
-  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly command: ThreadRunCommand;
   readonly source?: AgentRunPreCreateSource;
 }): ApiDispatchTimingDimensions {
   const apiStartSource =
@@ -855,7 +852,7 @@ function agentRunTimingDimensions(args: {
 }
 
 function agentRunOrigin(args: {
-  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly command: ThreadRunCommand;
 }): AgentRunOrigin {
   if (args.command.agentRunMetadata?.workflowAutomationId) {
     return "workflow_automation";
@@ -929,7 +926,7 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
   readonly cloudBrowserEnabled: boolean | undefined;
-  readonly command: AgentRunIdentityCommand;
+  readonly command: ThreadRunIdentity;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
@@ -942,7 +939,7 @@ export interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
 interface ProductRunArgsInput {
   /** One catalog snapshot per run, loaded by the entry point. */
   readonly catalog: ModelCatalog;
-  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly command: ThreadRunCommand;
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly userInfo: UserInfo;
@@ -1022,8 +1019,8 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
     const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
     cacheIdentity = {
       owner: {
-        orgId: args.command.auth.orgId,
-        userId: args.command.auth.userId,
+        orgId: args.command.owner.orgId,
+        userId: args.command.owner.userId,
         agentId: args.agent.id,
         resourceOwner: {
           orgId: args.agent.orgId,
@@ -1082,7 +1079,7 @@ function buildStableRunPromptContext(args: ProductRunArgsInput): {
 }
 
 /** Stable, nonsecret source bindings captured by the product entry point. */
-export interface PiStableContextInput {
+interface PiStableContextInput {
   /** Built only for a miss/dynamic path; ready artifacts supply this text. */
   readonly buildPrompt: () => PiStableContextPromptProjection;
   /** Built only by the durable stable-context consumer from captured input. */
@@ -1135,7 +1132,6 @@ export interface ProductRunArgs {
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
@@ -1213,13 +1209,6 @@ export function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
     },
-    persistProducerRunBinding: async (tx, run) => {
-      await command.persistProducerRunBinding?.(tx, run);
-      // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
-      if (run.status === "pending" && command.chatThreadId) {
-        await requestPiMemoryStage1DayForAdmittedRun(tx, run.runId);
-      }
-    },
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }
       : {}),
@@ -1234,7 +1223,7 @@ export function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   };
 }
 
-export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
+interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
@@ -1244,31 +1233,31 @@ export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
 }
 export interface AgentRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;
-  readonly auth: CreateAgentRunCommandArgs["auth"];
+  readonly owner: ThreadRunOwner;
   readonly agentId: string;
   readonly apiStartTime: number;
-  readonly chatThreadId?: string;
+  readonly chatThreadId: string;
   readonly expectedThreadAgentId?: string;
-  readonly queueFirstAssociation?: QueuedRunCommandArgs["queueFirstAssociation"];
+  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 export interface AgentRunGraphInput {
-  readonly command: AgentRunIdentityCommand;
+  readonly command: ThreadRunIdentity;
   readonly timing: ApiDispatchTimingCollector;
 }
 
 export function matchingAuthorizedRequestObservation(
-  args: AgentRunIdentityCommand,
+  args: ThreadRunIdentity,
   agentId: string,
 ): AuthorizedAgentRunRequestObservation | undefined {
   const observation = args.authorizedRequestObservation;
   if (
     !observation ||
-    observation.userId !== args.auth.userId ||
-    observation.orgId !== args.auth.orgId ||
+    observation.userId !== args.owner.userId ||
+    observation.orgId !== args.owner.orgId ||
     observation.agent.id !== agentId ||
-    observation.agent.orgId !== args.auth.orgId ||
-    observation.featureSwitchContext.userId !== args.auth.userId ||
-    observation.featureSwitchContext.orgId !== args.auth.orgId
+    observation.agent.orgId !== args.owner.orgId ||
+    observation.featureSwitchContext.userId !== args.owner.userId ||
+    observation.featureSwitchContext.orgId !== args.owner.orgId
   ) {
     return undefined;
   }

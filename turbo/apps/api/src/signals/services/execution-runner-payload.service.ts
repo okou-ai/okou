@@ -178,7 +178,7 @@ interface BuiltStoredExecutionContext {
   readonly secretValues: readonly string[];
 }
 
-export type BuiltStoredExecutionContextDraft = Omit<
+type BuiltStoredExecutionContextDraft = Omit<
   BuiltStoredExecutionContext,
   "context" | "persistedStorageMounts" | "runContextStorage"
 > & {
@@ -1428,7 +1428,7 @@ export function preparedRunnerGroup(
   return group;
 }
 
-export function preparedRunnerJobBody(
+function preparedRunnerJobBody(
   args: BuildRunnerJobPayloadInput,
 ): CreateRunBody {
   if (!args.includeOkouTokenSecret) {
@@ -1586,13 +1586,13 @@ export function assembleRunnerLaunch(args: {
   };
 }
 
-export interface StorageMaterializationInput {
+interface StorageMaterializationInput {
   readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
   readonly storageManifestStats: StorageManifestBuildStats;
 }
 
-export function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
+function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
   return args.artifactMissingRootPolicy === undefined
     ? args.artifacts
     : args.artifacts.map((artifact) => {
@@ -1619,7 +1619,7 @@ export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
   };
 }
 
-export interface MaterializedRunnerStorage {
+interface MaterializedRunnerStorage {
   readonly input: ReturnType<typeof prepareRunnerStorageInput>;
   readonly preparedStorage: MaterializedAgentRunStorage;
   readonly piResources: PreparedPiLaunchResources | undefined;

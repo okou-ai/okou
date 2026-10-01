@@ -552,7 +552,6 @@ function maintenanceCommitArgs(args: {
       codexServiceTier: undefined,
       queueFirstAssociation: undefined,
       timingDimensions: {},
-      persistProducerRunBinding: undefined,
     },
     enforceBuiltInCredits: isBuiltInModelProviderType(args.modelProvider.type),
     context: {
