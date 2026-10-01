@@ -223,6 +223,121 @@ const apiTestServiceImportPatterns = [
 
 const apiTestLoggerImportPatterns = ["**/lib/log", "**/lib/log.js"];
 
+// Thread's run execution implementation is private to its owner. Outside the
+// Thread owner modules only the shared resource primitives listed here may be
+// imported; Pi maintenance uses them to assemble its own Runner payload.
+const threadRunOwnerFiles = [
+  "src/signals/services/thread-claim-run.service.ts",
+  "src/signals/services/execution-storage-manifest.service.ts",
+  "src/signals/services/execution-launch-persistence.service.ts",
+  "src/signals/services/execution-launch-admission.service.ts",
+  "src/signals/services/execution-runner-payload.service.ts",
+  "src/signals/services/run-connector-context.service.ts",
+  "src/signals/services/run-execution-body.service.ts",
+  "src/signals/services/run-execution-context.service.ts",
+  "src/signals/services/run-model-provider-environment.service.ts",
+  "src/signals/services/execution-model-preparation.service.ts",
+  "src/signals/services/pi-launch-resources.service.ts",
+];
+const threadRunPrivateMessage =
+  "Thread's run execution implementation is private; import only the listed shared primitives.";
+const threadRunPrivatePatterns = [
+  {
+    group: [
+      "**/run-connector-context.service",
+      "**/run-execution-body.service",
+      "**/execution-launch-admission.service",
+    ],
+    message: threadRunPrivateMessage,
+  },
+  {
+    group: ["**/execution-storage-manifest.service"],
+    allowImportNames: [
+      "AUTO_MEMORY_ARTIFACT_NAME",
+      "finalizePreparedStorage",
+      "storedMountFromPrepared",
+      "writebackStorageEntryMetadata",
+    ],
+    message: threadRunPrivateMessage,
+  },
+  {
+    group: ["**/execution-launch-persistence.service"],
+    allowImportNames: [
+      "PermissionManifest",
+      "ResolvedModelProviderEnvironment",
+      "runnerJobPayload",
+    ],
+    message: threadRunPrivateMessage,
+  },
+  {
+    group: ["**/run-model-provider-environment.service"],
+    allowImportNames: [
+      "frameworkForProviderSelection",
+      "loadRunRoutePricing",
+      "materializePreparedPiProvider",
+      "nativeCredentialEnvironment",
+      "prepareModelUsageContext",
+      "resolvePreparedPiModelConfig",
+    ],
+    message: threadRunPrivateMessage,
+  },
+  {
+    group: ["**/execution-runner-payload.service"],
+    allowImportNames: [
+      "assertNativeEnvironment",
+      "buildRunContextSnapshot",
+      "capturedPiExecutionRoute",
+      "modelProviderExecutionPermissionManifest",
+      "sessionStorageMountsForPersistence",
+      "storedExecutionContextWithPiResources",
+      "withoutOkouNamespaceEntries",
+    ],
+    message: threadRunPrivateMessage,
+  },
+  {
+    group: ["**/run-execution-context.service"],
+    allowImportNames: [
+      "RESTRICTED_EXPLICIT_CONTENT_PROMPT",
+      "builtInImageModelPrompt",
+    ],
+    message: threadRunPrivateMessage,
+  },
+];
+// Pi maintenance's Runner payload and rows are private to its entrypoint.
+const piMaintenanceEntryFile =
+  "src/signals/services/pi-memory-maintenance-execution.service.ts";
+const piMaintenancePrivatePatterns = [
+  {
+    group: ["**/pi-memory-maintenance-launch"],
+    message: "Pi maintenance's launch assembly is private to its entrypoint.",
+  },
+];
+const productionRouteTestPatterns = [
+  {
+    group: ["**/routes/test-*", "**/routes/test-*/**"],
+    message: productionRouteTestImportMessage,
+  },
+  {
+    group: ["**/routes/cli-auth-test"],
+    message: productionRouteTestImportMessage,
+  },
+];
+const lowerLayerRoutePatterns = [
+  {
+    group: [
+      "**/routes/*",
+      "**/routes/**/*",
+      "**/signals/route",
+      "**/signals/route.ts",
+      "**/signals/e2e-routes",
+      "**/signals/e2e-routes.ts",
+      "**/production-bootstrap",
+      "**/production-bootstrap.ts",
+    ],
+    message: lowerLayerRouteImportMessage,
+  },
+];
+
 export default [
   {
     ignores: [".typecheck/**"],
@@ -805,14 +920,9 @@ export default [
         "error",
         {
           patterns: [
-            {
-              group: ["**/routes/test-*", "**/routes/test-*/**"],
-              message: productionRouteTestImportMessage,
-            },
-            {
-              group: ["**/routes/cli-auth-test"],
-              message: productionRouteTestImportMessage,
-            },
+            ...productionRouteTestPatterns,
+            ...threadRunPrivatePatterns,
+            ...piMaintenancePrivatePatterns,
           ],
         },
       ],
@@ -859,21 +969,35 @@ export default [
         "error",
         {
           patterns: [
-            {
-              group: [
-                "**/routes/*",
-                "**/routes/**/*",
-                "**/signals/route",
-                "**/signals/route.ts",
-                "**/signals/e2e-routes",
-                "**/signals/e2e-routes.ts",
-                "**/production-bootstrap",
-                "**/production-bootstrap.ts",
-              ],
-              message: lowerLayerRouteImportMessage,
-            },
+            ...lowerLayerRoutePatterns,
+            ...threadRunPrivatePatterns,
+            ...piMaintenancePrivatePatterns,
           ],
         },
+      ],
+    },
+  },
+  {
+    // Thread's owner modules import each other's private implementation.
+    files: threadRunOwnerFiles,
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...lowerLayerRoutePatterns,
+            ...piMaintenancePrivatePatterns,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [piMaintenanceEntryFile],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [...lowerLayerRoutePatterns, ...threadRunPrivatePatterns] },
       ],
     },
   },
