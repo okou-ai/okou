@@ -327,9 +327,9 @@ Each run decision reads one catalog snapshot. The queue pick
 (`claimCatalog$`) and passes it to every step from model resolution to run
 creation: policy projection, model pin, provider admission, Built-in route
 and framework, provider environment, reasoning effort, usage context and
-final admission. A run created outside the queue (`agent-run-execution`)
-loads it once per creation (`catalog$`) and carries it on
-`CreateAgentRunArgs.catalog`; the provider environment takes the system
+final admission. Pi memory maintenance, the only run created outside the
+queue, loads it once per admission and carries it on its model inputs
+(`RunModelProviderArgs.catalog`); the provider environment takes the system
 default from that snapshot. A chat send loads it once for its validation,
 thread settings and input model capture.
 

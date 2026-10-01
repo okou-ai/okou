@@ -2194,7 +2194,7 @@ type PromptDiscordContext = {
 
 type ClaimQueueRunCommandArgs = Omit<
   QueuedRunCommandArgs,
-  "dispatchFailedCallbacks" | "persistProducerRunBinding"
+  "persistProducerRunBinding"
 >;
 
 type ClaimRejectionContext =

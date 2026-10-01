@@ -55,7 +55,6 @@ import {
   type MemberModelAccountSnapshot,
 } from "./model-provider-account.service";
 import type {
-  DispatchFailedRunCallbacks,
   PersistProducerRunBinding,
   AgentRunModelPin,
   AgentRunPreCreateSource,
@@ -781,7 +780,6 @@ export interface CreateAgentRunCommandArgs {
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunsCreateAgentRunMetadata;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */

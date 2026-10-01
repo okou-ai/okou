@@ -46,7 +46,6 @@ import type { CapturedPersonalSubscriptionAccount } from "./model-provider-accou
 import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
-  DispatchFailedRunCallbacks,
   PersistProducerRunBinding,
   RunCallback,
 } from "./agent-run-contracts";
@@ -1136,7 +1135,6 @@ export interface ProductRunArgs {
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
-  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
@@ -1215,7 +1213,6 @@ export function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
     },
-    dispatchFailedCallbacks: command.dispatchFailedCallbacks,
     persistProducerRunBinding: async (tx, run) => {
       await command.persistProducerRunBinding?.(tx, run);
       // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
