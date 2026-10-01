@@ -2794,8 +2794,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const queuedModelInputsInternalPolicyFacts$ =
-    state<EnsuredOrgModelPolicyFacts | null>(null);
   const queuedModelInputsInput$ = computed(async (get) => {
     const input = await get(queuedModelInputsInternalInput$);
     if (!input) {
@@ -2876,10 +2874,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const policyFacts$ = computed(
     async (get): Promise<EnsuredOrgModelPolicyFacts> => {
-      const written = get(queuedModelInputsInternalPolicyFacts$);
-      // Before an explicit initialization write, route from the real captured
-      // database facts. Its returned facts invalidate this read after the write.
-      return written ?? (await get(initialFacts$));
+      return await get(initialFacts$);
     },
   );
   const policy$ = computed(async (get) => {
@@ -2901,7 +2896,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelSources = {
     internalInput$: queuedModelInputsInternalInput$,
-    internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$,
     input$: queuedModelInputsInput$,
     selection$: queuedModelInputsSelection$,
     orgMetadata$: orgMetadata$,
@@ -3338,7 +3332,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     input$: queuedModelCommandsInput$,
     capabilities$: queuedModelCommandsCapabilities$,
     initialPolicies$: queuedModelCommandsInitialPolicies$,
-    internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$,
   } = queuedModelSources;
   const initialFacts$ = computed(async (get) => {
     const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
@@ -3356,14 +3349,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       stored,
     });
   });
-  const orgModelPolicyInitializationInitializeModelPolicy$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const facts = await get(initialFacts$);
-      signal.throwIfAborted();
-      return facts;
-    },
-  );
-  const ensureModelPolicy$ = orgModelPolicyInitializationInitializeModelPolicy$;
   const allowanceInput$ = computed(async (get) => {
     return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
@@ -3412,26 +3397,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
-  const queuedModelCommandsInitializeModelPolicy$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const input = await get(queuedModelCommandsInput$);
-      signal.throwIfAborted();
-      const initial = await get(initialFacts$);
-      signal.throwIfAborted();
-      const facts =
-        input.userId === "__no_preference__"
-          ? initial
-          : await set(ensureModelPolicy$, signal);
-      signal.throwIfAborted();
-      // No write means the captured facts remain authoritative. Do not
-      // invalidate their dependent reads merely by republishing that object.
-      if (facts !== initial) {
-        set(queuedModelCommandsInternalPolicyFacts$, facts);
-      }
-    },
-  );
   const commands = {
-    initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
   const { selection$, capabilities$, initialPolicies$ } = queuedModelSources;
@@ -3442,11 +3408,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     builtInRuntimeRoute$,
   } = runtime;
   const { providerAdmission$ } = admission;
-  const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
+  const { refreshUsageAllowance$ } = commands;
   const promptAllowanceWriteResult$ = state<{
     readonly remainingUnits: number;
   } | null>(null);
-  const initializePromptModelPolicy$ = command(
+  const refreshPromptUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       const selection = await get(selection$);
       signal.throwIfAborted();
@@ -3459,7 +3425,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ) {
         return;
       }
-      await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
@@ -5695,8 +5660,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const queuedModelInputsInternalPolicyFacts$2 =
-    state<EnsuredOrgModelPolicyFacts | null>(null);
   const queuedModelInputsInput$2 = computed(async (get) => {
     const input = await get(queuedModelInputsInternalInput$2);
     if (!input) {
@@ -5777,8 +5740,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsPolicyFacts$ = computed(
     async (get): Promise<EnsuredOrgModelPolicyFacts> => {
-      const written = get(queuedModelInputsInternalPolicyFacts$2);
-      return written ?? (await get(queuedModelCommandsInitialFacts$));
+      return await get(queuedModelCommandsInitialFacts$);
     },
   );
   const queuedModelInputsPolicy$ = computed(async (get) => {
@@ -5800,7 +5762,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelSources2 = {
     internalInput$: queuedModelInputsInternalInput$2,
-    internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$2,
     input$: queuedModelInputsInput$2,
     selection$: queuedModelInputsSelection$2,
     orgMetadata$: queuedModelInputsOrgMetadata$,
@@ -6269,7 +6230,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     input$: queuedModelCommandsInput$2,
     capabilities$: queuedModelCommandsCapabilities$2,
     initialPolicies$: queuedModelCommandsInitialPolicies$2,
-    internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$2,
   } = queuedModelSources2;
   const queuedModelCommandsInitialFacts$ = computed(async (get) => {
     const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
@@ -6287,15 +6247,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       stored,
     });
   });
-  const orgModelPolicyInitializationInitializeModelPolicy$2 = command(
-    async ({ get }, signal: AbortSignal) => {
-      const facts = await get(queuedModelCommandsInitialFacts$);
-      signal.throwIfAborted();
-      return facts;
-    },
-  );
-  const queuedModelCommandsEnsureModelPolicy$ =
-    orgModelPolicyInitializationInitializeModelPolicy$2;
   const queuedModelCommandsAllowanceInput$ = computed(async (get) => {
     return { orgId: (await get(queuedModelCommandsInput$2)).orgId };
   });
@@ -6345,24 +6296,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedModelCommandsRefreshUsageAllowance$2 =
     capturedResolveUsageAllowance$;
-  const queuedModelCommandsInitializeModelPolicy$2 = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const input = await get(queuedModelCommandsInput$2);
-      signal.throwIfAborted();
-      const initial = await get(queuedModelCommandsInitialFacts$);
-      signal.throwIfAborted();
-      const facts =
-        input.userId === "__no_preference__"
-          ? initial
-          : await set(queuedModelCommandsEnsureModelPolicy$, signal);
-      signal.throwIfAborted();
-      if (facts !== initial) {
-        set(queuedModelCommandsInternalPolicyFacts$2, facts);
-      }
-    },
-  );
   const queuedModelCommands = {
-    initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$2,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$2,
   };
   const {
@@ -6379,14 +6313,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelRuntime;
   const { providerAdmission$: queuedModelProviderAdmission$ } =
     queuedModelAdmission;
-  const {
-    initializeModelPolicy$: queuedModelInitializeModelPolicy$,
-    refreshUsageAllowance$: queuedModelRefreshUsageAllowance$,
-  } = queuedModelCommands;
+  const { refreshUsageAllowance$: queuedModelRefreshUsageAllowance$ } =
+    queuedModelCommands;
   const automationAllowanceWriteResult$ = state<{
     readonly remainingUnits: number;
   } | null>(null);
-  const initializeAutomationModelPolicy$ = command(
+  const refreshAutomationUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       const selection = await get(queuedModelSelection$);
       signal.throwIfAborted();
@@ -6399,7 +6331,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ) {
         return;
       }
-      await set(queuedModelInitializeModelPolicy$, signal);
       const pin = await get(queuedModelModelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
@@ -6814,7 +6745,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
         "nested",
         async () => {
-          await set(initializeAutomationModelPolicy$, signal);
+          await set(refreshAutomationUsageAllowance$, signal);
           await get(workflowAutomationLaunchModel$);
           signal.throwIfAborted();
         },
@@ -12266,7 +12197,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           await get(promptMaterialMaterial$);
           signal.throwIfAborted();
         }
-        await set(initializePromptModelPolicy$, signal);
+        await set(refreshPromptUsageAllowance$, signal);
       }
       return head;
     },
