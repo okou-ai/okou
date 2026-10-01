@@ -16,7 +16,7 @@ The isolated native-row study omitted the whole debit wrapper. Real concurrent s
 
 PR1 fixes that prerequisite: `writeOrgMetadataWithDefaultPlanEntitlement` uses **NO KEY UPDATE** for its existence check. This still excludes deletion, key changes and competing writers, preserves INSERT-only entitlement behavior and allows later KEY SHARE coordination. The same real API rollback/concurrent-retry test is retained, not weakened.
 
-Old pre-preparation APIs still use FOR UPDATE, so eagerly adding KEY SHARE during their mixed rollout would remain unsafe even after fixing new code. Instead every prepared caller acquires legacy admission **first**, then separately calls `acquire_usage_event_maintenance(org, exclusive_mode)`. Its PR1 body validates scope but deliberately acquires no native lock. No rollout flag, fabricated metadata/grant or extra lock table is introduced. Preparation adds a staged-entry round trip; it is not a measured optimization.
+Old pre-preparation APIs still use FOR UPDATE, so eagerly adding KEY SHARE during their mixed rollout would remain unsafe even after fixing new code. Instead every prepared caller acquires legacy admission **first**, then separately calls `acquire_usage_event_maintenance(org, exclusive_mode)`. Its PR1 body validates scope but deliberately acquires no native lock. No rollout flag, fabricated metadata/grant or extra lock table is introduced. Preparation adds a staged-entry round trip; it is not a measured optimization. Existing compaction/settlement admission timings now include that extra awaited entrypoint work as well as legacy acquisition, not pure PostgreSQL lock wait; qualify comparisons by deployed version instead of attributing a change to contention.
 
 ## PR2 activation contract
 
