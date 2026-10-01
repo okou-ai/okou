@@ -377,13 +377,22 @@ export function createRunsApi(
    */
   async function readThreadRunRejection(
     actor: ApiTestUser,
-    body: { readonly agentId: string; readonly prompt: string },
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      readonly model?: string;
+    },
   ): Promise<string | undefined> {
     const chat = createChatFilesBddApi(context);
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
-      { agentId: body.agentId, prompt: body.prompt, clientEventId },
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+      },
       [201],
     );
     if (sent.status !== 201 || sent.body.runId !== null) {

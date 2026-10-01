@@ -4430,7 +4430,24 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       throw new Error("Expected suspended run actor to have an org");
     }
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 20_000 });
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    // A BYOK default route and a selectable built-in route.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "deepseek-v4.1-flash",
+        preferred: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
       description: "Covers the suspended entitlement admission branch.",
@@ -4448,30 +4465,21 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       status: "suspended",
     });
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: byokPrompt,
-        modelProvider: "anthropic-api-key",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     // The suspension applies to built-in model runs as well.
-    const builtInRejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(builtInRejected.body);
-    expect(builtInRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        model: "deepseek-v4.1-flash",
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
@@ -4706,17 +4714,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       displayName: "BDD uninitialized-org agent",
       visibility: "private",
     });
-    const noBilling = await api.requestCreateRun(
-      uninitialized,
-      {
+    await expect(
+      api.readThreadRunRejection(uninitialized, {
         agentId: bareAgent.agentId,
         prompt: "built-in model run",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(noBilling.body);
-    expect(noBilling.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     // The credit expiry is the subscription period end plus one month, so a
     // period that ended two months ago grants credits that are already
@@ -4730,17 +4733,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       displayName: "BDD expired-credits agent",
       visibility: "private",
     });
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: "built-in model run",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("enforces staff entitlement status at final run admission", async () => {
@@ -4770,7 +4768,24 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    // A BYOK default route and a selectable built-in route.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "deepseek-v4.1-flash",
+        preferred: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD staff entitlement admission agent",
       visibility: "private",
@@ -4810,28 +4825,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
     const byokPrompt = `staff suspended BYOK ${randomUUID()}`;
     const builtInPrompt = `staff suspended built-in ${randomUUID()}`;
-    const byokRejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: byokPrompt,
-        modelProvider: "anthropic-api-key",
-      },
-      [402],
-    );
-    expectApiError(byokRejected.body);
-    expect(byokRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    const builtInRejected = await api.requestCreateRun(
-      actor,
-      {
+      }),
+    ).resolves.toBe("insufficient_credits");
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(builtInRejected.body);
-    expect(builtInRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        model: "deepseek-v4.1-flash",
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
