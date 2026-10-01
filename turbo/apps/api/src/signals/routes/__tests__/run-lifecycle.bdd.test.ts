@@ -14399,17 +14399,32 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     async (cliAgentType) => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
-      const { actor, agentId } = await entitledRunActor();
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
       const modelProvider =
         cliAgentType === "codex" ? "openai-api-key" : "anthropic-api-key";
-      await api.createOrgModelProvider(actor, {
+      const { providerId } = await api.createOrgModelProvider(actor, {
         type: modelProvider,
         secret: `bdd-${cliAgentType}-key`,
       });
-      const run = await api.createRun(actor, {
+      // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
+      const model =
+        cliAgentType === "codex" ? "gpt-6-astra" : NATIVE_RUNNER_ROUTE.model;
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          preferred: true,
+          defaultProviderType: modelProvider,
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `complete with ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const claim = await api.claimRunnerJob(run.runId);
       expect(claim.cliAgentType).toBe(cliAgentType);
@@ -14445,7 +14460,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       expect(settled.status).toBe("completed");
       expect(settled.result).toMatchObject({
         checkpointId: expect.any(String),
-        agentSessionId: run.sessionId,
+        agentSessionId: expect.any(String),
         conversationId: expect.any(String),
       });
       await expect(
@@ -14504,11 +14519,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       expect(stillSettled.result).toStrictEqual(settled.result);
       expect(stillSettled.error ?? null).toBeNull();
 
-      const continued = await api.createRun(actor, {
+      const continued = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume combined ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       expect(continuedClaim.resumeSession).toMatchObject({
@@ -14535,6 +14550,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         [200],
       );
 
+      // The continuation completes in the same Agent session.
+      expect(
+        (await api.readRun(actor, continued.runId)).result?.agentSessionId,
+      ).toBe(settled.result?.agentSessionId);
+
       const repeatedAfterSuccessor = await webhooks.requestAgentComplete(
         body,
         sandboxHeaders,
@@ -14542,11 +14562,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       );
       expect(repeatedAfterSuccessor.body).toStrictEqual(completed.body);
 
-      const afterRetry = await api.createRun(actor, {
+      const afterRetry = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume successor ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
       expect(afterRetryClaim.resumeSession).toMatchObject({
@@ -14562,11 +14582,13 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     async (ordering) => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
-      const { actor, agentId } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `recover a ${ordering} failure`,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       const history = `bdd ${ordering} recovery history ${run.runId}`;
@@ -14619,11 +14641,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         ordering === "runner-first" ? "provider_overloaded" : "usage_limit",
       );
 
-      const continued = await api.createRun(actor, {
+      const continued = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume ${ordering} recovery`,
-        modelProvider: "anthropic-api-key",
       });
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       expect(continuedClaim.resumeSession).toMatchObject({
@@ -14662,11 +14683,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         ordering === "runner-first" ? "provider_overloaded" : "usage_limit",
       );
 
-      const afterRetry = await api.createRun(actor, {
+      const afterRetry = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume the ${ordering} successor`,
-        modelProvider: "anthropic-api-key",
       });
       const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
       expect(afterRetryClaim.resumeSession).toMatchObject({
