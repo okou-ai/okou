@@ -213,6 +213,7 @@ export const agentInstructionsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       422: apiErrorSchema,
     },
     summary: "Update agent instructions",

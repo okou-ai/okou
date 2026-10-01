@@ -85,6 +85,33 @@ parent's late-upload/grace-period sweep; this slice does not claim a complete
 physical-immutability or orphan-GC solution. See the
 [bootstrap scope and unchanged data contract](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
 
+## Agent instruction update ordering
+
+Agent instruction PUT uses two short database transactions around transaction-free
+preparation. The first locks and authorizes the Agent, reserves the canonical
+Storage ID/prefix and the existing same-key Pi publication token, then commits.
+Only afterward does it build files/archive/index and await archive/manifest PUTs.
+Preparation uses the captured Storage generation; it never recreates a deleted
+container. Registered instruction versions still need no HEAD or PUT.
+
+The final transaction rechecks the Agent's existence, name, ownership/visibility,
+canonical Storage ID/prefix and exact publication token. It locks Storage before
+Pi lifecycle rows, then atomically commits version/HEAD/index, Agent updated
+metadata, Pi demands and token completion. A later reservation supersedes an
+older same-key preparation even if the older upload finishes last. Unrelated
+metadata updates do not supersede that token and their latest fields are retained.
+
+An update that loses its publication or Storage generation returns `409 CONFLICT`;
+callers should read the current instructions before deciding to retry. Deletion
+and permission loss retain the existing 404/403 outcomes. Failed, cancelled or
+rejected work awaits database-only settlement of its exact token, never clearing
+a replacement token or deleting uploaded R2 bytes. The previous published HEAD
+remains readable while upload is pending. Process termination can still strand a
+pending token until a replacement update or lifecycle deletion; this is not a
+crash-recoverable upload job. Ordinary updates and bootstrap now use the shared
+preparation/DB-only publication helpers. The old transaction wrapper has no
+remaining caller and is retired.
+
 ## Remove references before objects
 
 Clerk organization/user cleanup locks the owned Storage parents in UUID order.
@@ -130,14 +157,20 @@ This change does not make physical keys immutable: concurrent first uploads and
 already-issued presigned PUT URLs can still overwrite or create objects after a
 cleanup completed. It introduces no grace-period sweep for those late uploads
 or for uploads that never registered a version. Those physical-key, retention
-and GC boundaries remain in #37402. Ordinary Agent-instruction updates inside
-their existing authorization transaction remain unchanged by the bootstrap
-slice; the preparation and DB-only commit helpers are additive for that separate
-follow-up.
+and GC boundaries remain in #37402, including bytes left by rejected instruction
+preparation.
 
 ## Deployment compatibility
 
-This is additive control data, with no schema migration. The cleanup input has
+Instruction update requests and successful responses are unchanged; 409 is an
+additive failure outcome. There is no new persisted shape or migration. Old
+transaction-held instruction writers and new prepared writers use the same keyed
+Pi token and Agent/Storage serialization, so an older preparation cannot publish
+over a newer reservation. Old instances continue holding locks through their IO
+until they drain; rolling back restores that locking behavior, not physical R2
+immutability. Existing readers continue following the last committed HEAD.
+
+Cleanup is additive control data, with no schema migration. The cleanup input has
 an explicit handler version and captures bucket plus exact prefix/key. Older API
 workers ignore the new job kind; queued obligations remain pending until a
 compatible worker serves them. Older Clerk cleanup instances still use their

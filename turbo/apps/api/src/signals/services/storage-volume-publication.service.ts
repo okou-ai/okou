@@ -281,11 +281,12 @@ function assertServerSideVersionIdentity(
   }
 }
 
-async function resolveCanonicalVolumeStorage(
+/** DB-only container reservation; callers own any required publication locks. */
+export async function resolveCanonicalVolumeStorage(
   db: Db,
   args: { readonly orgId: string; readonly storageName: string },
   signal: AbortSignal,
-): Promise<{ readonly id: string; readonly s3Prefix: string }> {
+): Promise<ServerSideVolumeStorage> {
   const { storageId, s3Prefix } = newStorageS3Location(args.orgId);
   await db
     .insert(storages)
