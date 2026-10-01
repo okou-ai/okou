@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.218.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.2...runner-rs-v0.218.3) (2026-10-01)
+
+
+### Refactoring
+
+* remove model catalog rollout compatibility ([#37457](https://github.com/okou-ai/okou/issues/37457)) ([bfdefb5](https://github.com/okou-ai/okou/commit/bfdefb56cc71e50764957c7f168584df7398c7b4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.218.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.1...runner-rs-v0.218.2) (2026-10-01)
 
 ## [0.218.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.218.0...runner-rs-v0.218.1) (2026-10-01)
