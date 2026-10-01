@@ -5812,82 +5812,42 @@ describe("RUN-02: persisted run environment resolution", () => {
       value: "unreferenced-secret-value",
     });
 
-    const composeName = `bdd-persisted-environment-${suffix.toLowerCase()}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            ORG_ONLY_VARIABLE: `\${{ vars.${names.orgOnlyVariable} }}`,
-            USER_VARIABLE: `\${{ vars.${names.userVariable} }}`,
-            REQUEST_VARIABLE: `\${{ vars.${names.requestVariable} }}`,
-            ORG_ONLY_SECRET: `\${{ secrets.${names.orgOnlySecret} }}`,
-            USER_SECRET: `\${{ secrets.${names.userSecret} }}`,
-            REQUEST_SECRET: `\${{ secrets.${names.requestSecret} }}`,
-          },
-        },
-      },
+    // Product Agents reference only platform values, so stored variables
+    // reach the run through its vars and stored secrets stay unreferenced.
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD persisted environment agent",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "resolve persisted environment",
-      vars: { [names.requestVariable]: "request-variable-value" },
-      secrets: { [names.requestSecret]: "request-secret-value" },
     });
     const claim = await api.claimRunnerJob(run.runId);
 
-    expect(claim.environment).toMatchObject({
-      ORG_ONLY_VARIABLE: "org-only-variable-value",
-      USER_VARIABLE: "user-variable-value",
-      REQUEST_VARIABLE: "request-variable-value",
-      ORG_ONLY_SECRET: "org-only-secret-value",
-      USER_SECRET: "user-secret-value",
-      REQUEST_SECRET: "request-secret-value",
+    expect(claim.vars).toMatchObject({
+      [names.orgOnlyVariable]: "org-only-variable-value",
+      [names.userVariable]: "user-variable-value",
+      [names.requestVariable]: "user-request-variable-value",
     });
-    expect(claim.secretValues).not.toContain("unreferenced-secret-value");
+    for (const storedSecret of [
+      "org-only-secret-value",
+      "org-user-secret-value",
+      "user-secret-value",
+      "org-request-secret-value",
+      "user-request-secret-value",
+      "unreferenced-secret-value",
+    ]) {
+      expect(claim.secretValues).not.toContain(storedSecret);
+      expect(Object.values(claim.environment ?? {})).not.toContain(
+        storedSecret,
+      );
+    }
     expect(claim.environment).not.toHaveProperty(names.unreferencedSecret);
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
-
-    const variableOnlyComposeName = `bdd-persisted-vars-${suffix.toLowerCase()}`;
-    const variableOnlyCompose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [variableOnlyComposeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            ORG_ONLY_VARIABLE: `\${{ vars.${names.orgOnlyVariable} }}`,
-            USER_VARIABLE: `\${{ vars.${names.userVariable} }}`,
-          },
-        },
-      },
-    });
-    const variableOnlyRun = await api.createDirectRun(actor, {
-      agentId: variableOnlyCompose.agentId,
-      prompt: "resolve persisted variables without secret references",
-    });
-    const variableOnlyClaim = await api.claimRunnerJob(variableOnlyRun.runId);
-
-    expect(variableOnlyClaim.environment).toMatchObject({
-      ORG_ONLY_VARIABLE: "org-only-variable-value",
-      USER_VARIABLE: "user-variable-value",
-    });
-    expect(variableOnlyClaim.secretValues).toBeNull();
-    expect(variableOnlyClaim.environment).not.toHaveProperty(
-      names.unreferencedSecret,
-    );
-
-    await api.requestCancelRun(actor, variableOnlyRun.runId, [200]);
-    const variableOnlyCancelled = await api.readRun(
-      actor,
-      variableOnlyRun.runId,
-    );
-    expect(variableOnlyCancelled.status).toBe("cancelled");
   });
 });
 
