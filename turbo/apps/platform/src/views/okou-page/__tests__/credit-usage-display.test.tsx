@@ -1,8 +1,15 @@
-import { type ChatEventUsagePayload, chatThreadUsageContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  type ChatEventUsagePayload,
+  chatThreadUsageContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, queryAllByRoleFast, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -236,6 +243,7 @@ test("Chat stays usable while an outgoing API cannot read settled usage", async 
       return button.getAttribute("aria-label") === "Credit usage 999";
     }),
   ).toBeFalsy();
+});
 
 test("Credit usage names each model row from the server catalog, keeping retired models and mapping upstream IDs", async () => {
   const catalog = createMockModelCatalog();
@@ -256,8 +264,8 @@ test("Credit usage names each model row from the server catalog, keeping retired
     });
   });
   await setupUsageChat(
-    "b0000000-0000-4000-a000-000000000806",
-    "run-credit-catalog-names",
+    "b0000000-0000-4000-a000-000000000807",
+    "a0000000-0000-4000-a000-000000000807",
     {
       version: 1,
       totalCredits: 30,
