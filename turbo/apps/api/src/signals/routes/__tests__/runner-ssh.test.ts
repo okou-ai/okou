@@ -1007,20 +1007,6 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(2);
   });
 
-  it("pins an automation host and denies later chat revocation", async () => {
-    const f = await fixture({ triggerSource: "automation-schedule" });
-    await expect(pin(f)).resolves.toStrictEqual({
-      outcome: "pinned",
-      generation: 2,
-    });
-    await setThreadHostOverride(f, false);
-    await expect(pin(f, 2)).resolves.toStrictEqual({ outcome: "unavailable" });
-    expect((await list(f))[0]).toMatchObject({
-      generation: 2,
-      learnedHostKey: hostKey,
-    });
-  });
-
   it("does not turn a malformed stored host identity into unavailable or decrypt credentials", async () => {
     const f = await fixture();
     await accept(

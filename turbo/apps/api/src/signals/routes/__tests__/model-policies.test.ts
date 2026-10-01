@@ -26,10 +26,7 @@ import {
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
-import {
-  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
-  withBuiltInModelRuntimeRouteUnavailableForTest,
-} from "../../../test-fixtures/built-in-model-runtime-route";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -40,18 +37,31 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import {
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
+} from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { modelPoliciesRoutes } from "../model-policies";
 import { modelProvidersRoutes } from "../model-providers";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+
 const TEST_APP_ROUTES = Object.freeze([
   ...modelPoliciesRoutes,
   ...modelProviderGatewayRoutes,
   ...userModelPreferenceRoutes,
 ]);
+
+// Built-in candidates of deepseek-v4-flash in the global model catalog.
+const DEEPSEEK_V4_FLASH_CANDIDATES = {
+  deepseek: { provider_type: "deepseek", upstream_model: "deepseek-v4-flash" },
+  openrouterCodex: {
+    provider_type: "openrouter-codex",
+    upstream_model: "deepseek/deepseek-v4-flash",
+  },
+} as const;
 
 type ModelPolicyFixture = ApiTestUser & { readonly orgId: string };
 
@@ -885,7 +895,11 @@ describe("GET/PUT /api/model-policies", () => {
   it("advertises the current built-in provider for route-specific effort controls", async () => {
     const fixture = seedFixture();
     useSession(fixture);
-    const model = "deepseek-v4-flash";
+    // A test-owned mirror of DeepSeek V4 Flash keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("deepseek-v4-flash");
+    onTestFinished(restore);
     await seedBuiltInModelCandidateKeys(context, model);
     const client = apiClient();
     const response = await accept(
@@ -918,25 +932,22 @@ describe("GET/PUT /api/model-policies", () => {
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
     });
-    // Operator-managed key availability/cooldowns have no user mutation API.
-    // Scope the infrastructure state to this request without changing shared rows.
-    const fallback =
-      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: "deepseek",
-          upstreamModel: model,
-        },
-        async () => {
-          return await accept(client.list({ headers: authHeaders() }), [200]);
-        },
-      );
+    // A provider failure cools the DeepSeek candidate down; the OpenRouter
+    // candidate keeps serving the model.
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      DEEPSEEK_V4_FLASH_CANDIDATES.deepseek,
+    ]);
+    const fallback = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
     expect(runtimeProviderType(fallback.body)).toBe("openrouter-codex");
-    const unavailable = await withBuiltInModelRuntimeRouteUnavailableForTest(
-      model,
-      async () => {
-        return await accept(client.list({ headers: authHeaders() }), [200]);
-      },
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      DEEPSEEK_V4_FLASH_CANDIDATES.openrouterCodex,
+    ]);
+    const unavailable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
     );
     expect(runtimeProviderType(unavailable.body)).toBeNull();
   });

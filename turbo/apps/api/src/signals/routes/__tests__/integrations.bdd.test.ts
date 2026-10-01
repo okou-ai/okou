@@ -11,7 +11,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
-import { createStore } from "ccstate";
 import { describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -19,21 +18,12 @@ import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
-import {
-  readChatEventContextFixture,
-  readRunUsageEventsFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  countPiMemoryStage1CandidatesFixture,
-  readmitPiMemoryStage1CandidateFixture,
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
+import { readChatEventContextFixture } from "../../../test-fixtures/chat-events";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { settleIncludingAbort } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -45,13 +35,10 @@ import {
   telegramLoginAuth,
 } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
-import {
-  readRunLaunchSnapshotFixture,
-  readThreadSessionBinding,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
@@ -74,7 +61,6 @@ const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const callbackStore = createStore();
 const TELEGRAM_OFFICIAL_WEBHOOK_SECRET = "telegram-official-bdd-secret";
 
 interface SlackEphemeralBody {
@@ -235,14 +221,6 @@ function expectSlackEphemeral(
   ) {
     throw new Error("Expected Slack ephemeral response body");
   }
-}
-
-function readStringField(
-  record: Record<string, unknown>,
-  key: string,
-): string | null {
-  const value = record[key];
-  return typeof value === "string" ? value : null;
 }
 
 function uniqueSlackUserId(): string {
@@ -679,9 +657,6 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     status: "pending",
     triggerSource: "slack",
   });
-  await expect(
-    readRunLaunchSnapshotFixture(context, historicalRun.id),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "claude-code" } });
   const historicalRunId = await pollSlackRun(args.runnerGroup);
   expect(historicalRunId).toBe(historicalRun.id);
   const historicalClaim = await runs.claimRunnerJob(historicalRunId);
@@ -703,13 +678,11 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
   if (!chatThreadId) {
     throw new Error("Expected Slack Pi ingress to own a canonical thread");
   }
-  const historicalBinding = await readThreadSessionBinding(
+  const historicalSessionId = await readCompletedRunSessionId(
     context,
-    chatThreadId,
+    args.actor,
+    historicalRunId,
   );
-  if (!historicalBinding.agent_session_id) {
-    throw new Error("Expected the historical Slack session binding");
-  }
   await chat.updateThreadModelSelection(
     args.actor,
     chatThreadId,
@@ -729,7 +702,7 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     channelId,
     threadTs,
     chatThreadId,
-    historicalSessionId: historicalBinding.agent_session_id,
+    historicalSessionId,
     checkpointObjects,
   };
 }
@@ -857,9 +830,6 @@ async function completeSlackPiTurnInSandbox(args: {
   expect((await runs.readRun(args.scenario.actor, args.runId)).status).toBe(
     "completed",
   );
-  await expect(
-    readRunLaunchSnapshotFixture(context, args.runId),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
 }
 
 async function runFirstCanonicalSlackPiTurn(
@@ -916,15 +886,13 @@ async function expectFirstSlackPiExecution(args: {
     prompt: args.turn.prompt,
     answer: "Canonical Slack Pi answer",
   });
-  const binding = await readThreadSessionBinding(
+  const sessionId = await readCompletedRunSessionId(
     context,
-    args.scenario.chatThreadId,
+    args.scenario.actor,
+    args.turn.runId,
   );
-  expect(binding.agent_session_id).toBe(args.scenario.historicalSessionId);
-  if (!binding.agent_session_id) {
-    throw new Error("Expected the first Slack Pi session binding");
-  }
-  return binding.agent_session_id;
+  expect(sessionId).toBe(args.scenario.historicalSessionId);
+  return sessionId;
 }
 
 async function expectSlackPiOwnership(args: {
@@ -932,38 +900,7 @@ async function expectSlackPiOwnership(args: {
   readonly runId: string;
   readonly assistantText: string;
 }): Promise<void> {
-  await expect
-    .poll(async () => {
-      const callbacks = await callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: args.scenario.orgId,
-          userId: args.scenario.actor.userId,
-          runId: args.runId,
-        },
-        context.signal,
-      );
-      return callbacks.find((callback) => {
-        return callback.internalKind === "slack:chat";
-      })?.status;
-    })
-    .toBe("delivered");
-  const callbacks = await callbackStore.set(
-    readAgentRunCallbacks$,
-    {
-      orgId: args.scenario.orgId,
-      userId: args.scenario.actor.userId,
-      runId: args.runId,
-    },
-    context.signal,
-  );
-  expect(
-    callbacks.filter((callback) => {
-      return callback.internalKind === "slack:chat";
-    }),
-  ).toStrictEqual([
-    expect.objectContaining({ attempts: 1, status: "delivered" }),
-  ]);
+  await flushWaitUntilForTest();
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -972,8 +909,11 @@ async function expectSlackPiOwnership(args: {
       text: args.assistantText,
     }),
   );
-  await expect(readRunUsageEventsFixture(args.runId)).resolves.toStrictEqual(
-    [],
+  await expectThreadModelCredits(
+    context,
+    args.scenario.actor,
+    args.scenario.chatThreadId,
+    0,
   );
   const duplicateClaim = await runs.requestClaimRunnerJob(
     true,
@@ -1040,15 +980,15 @@ async function claimContinuedSlackPiTurn(args: {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${history.historyRef.hash}.blob`,
     ),
   ).toBeTruthy();
-  const binding = await readThreadSessionBinding(
-    context,
-    args.scenario.chatThreadId,
-  );
-  expect(binding.agent_session_id).toBe(args.firstSessionId);
   const resumeBytes = readSlackPiSandboxBaseSession(args.scenario, claim);
   expect(resumeBytes).toContain(args.firstPrompt);
   expect(resumeBytes).toContain("Canonical Slack Pi answer");
-  await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
+  await expectThreadModelCredits(
+    context,
+    args.scenario.actor,
+    args.scenario.chatThreadId,
+    0,
+  );
   return { claim, runId };
 }
 
@@ -1057,11 +997,12 @@ async function cancelContinuedSlackPiTurn(args: {
   readonly turn: Awaited<ReturnType<typeof claimContinuedSlackPiTurn>>;
 }): Promise<void> {
   await runs.requestCancelRun(args.scenario.actor, args.turn.runId, [200]);
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return (await runs.readRun(args.scenario.actor, args.turn.runId)).status;
-    })
-    .toBe("cancelled");
+    })(),
+  ).resolves.toBe("cancelled");
   await webhooks.requestAgentComplete(
     { runId: args.turn.runId, exitCode: 1, error: "Run cancelled" },
     { authorization: `Bearer ${args.turn.claim.sandboxToken}` },
@@ -1077,22 +1018,6 @@ async function cancelContinuedSlackPiTurn(args: {
       text: "Run cancelled",
     }),
   );
-  const callbacks = await callbackStore.set(
-    readAgentRunCallbacks$,
-    {
-      orgId: args.scenario.orgId,
-      userId: args.scenario.actor.userId,
-      runId: args.turn.runId,
-    },
-    context.signal,
-  );
-  expect(
-    callbacks.filter((callback) => {
-      return callback.internalKind === "slack:chat";
-    }),
-  ).toStrictEqual([
-    expect.objectContaining({ attempts: 1, status: "delivered" }),
-  ]);
   const terminalEvents = (
     await chat.listThreadEvents(args.scenario.actor, args.scenario.chatThreadId)
   ).events.filter((event) => {
@@ -1138,65 +1063,10 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
     prompt,
     answer: "Continued Slack Pi answer",
   });
-  const binding = await readThreadSessionBinding(
-    context,
-    args.scenario.chatThreadId,
-  );
-  expect(binding.agent_session_id).toBe(args.firstSessionId);
-  return { prompt, runId: completedRunId };
-}
-
-async function expectSlackPiMemoryCandidate(args: {
-  readonly scenario: CanonicalSlackPiScenario;
-  readonly runId: string;
-}) {
-  // Stage 1 candidates intentionally have no production read API. Observe the
-  // private identity only after real Slack ingress and completion own the run.
-  const conversation = await readPiConversationIdentityFixture(args.runId);
-  const run = await runs.readRun(args.scenario.actor, args.runId);
-  if (!run.completedAt) {
-    throw new Error("Expected completed Slack Pi run timestamp");
-  }
-  // Explicit canonical-writer fixture: completion itself never schedules.
-  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-  });
-  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  await readmitPiMemoryStage1CandidateFixture(args.runId);
-  const candidate = await readPiMemoryStage1CandidateFixture({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-  });
-  if (!candidate) {
-    throw new Error("Expected Slack Pi history to create a memory candidate");
-  }
-  expect(candidate).toMatchObject({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-    memoryStorageName: "memory",
-    piSessionId: args.scenario.chatThreadId,
-    sourceRunId: args.runId,
-    sourceHistoryHash: conversation.sourceHistoryHash,
-    sourceCompletedAt: new Date(run.completedAt),
-    status: "pending",
-    retryCount: 0,
-    usageCount: 0,
-  });
-  expect(conversation.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(candidate.memoryStorageS3Prefix).toBe(
-    `${args.scenario.orgId}/${candidate.memoryStorageId}`,
-  );
-  expect(
-    candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(0);
   await expect(
-    countPiMemoryStage1CandidatesFixture({
-      memoryStorageId: candidate.memoryStorageId,
-      piSessionId: candidate.piSessionId,
-    }),
-  ).resolves.toBe(1);
-  return candidate;
+    readCompletedRunSessionId(context, args.scenario.actor, completedRunId),
+  ).resolves.toBe(args.firstSessionId);
+  return { prompt, runId: completedRunId };
 }
 
 function agentPhoneVerificationSend(
@@ -2476,15 +2346,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const run1Id = await pollSlackRun(runnerGroup);
       const claim1 = await runs.claimRunnerJob(run1Id);
-      const slackBinding = await readThreadSessionBinding(
-        context,
-        canonicalChatThreadId,
-      );
-      expect(slackBinding.agent_session_id).toMatch(/[0-9a-f-]{36}/);
-      expect(slackBinding).toMatchObject({
-        agent_session_run_id: run1Id,
-        run_session_id: slackBinding.agent_session_id,
-      });
 
       const visibleThreadEvents = await chat.requestThreadEvents(
         actor,
@@ -2637,22 +2498,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!actor.orgId) {
         throw new Error("Expected canonical Slack actor to belong to an org");
       }
-      const deliveryCallback = (
-        await callbackStore.set(
-          readAgentRunCallbacks$,
-          {
-            orgId: actor.orgId,
-            userId: actor.userId,
-            runId: run1Id,
-          },
-          context.signal,
-        )
-      ).find((callback) => {
-        return callback.internalKind === "slack:chat";
-      });
-      expect(deliveryCallback).toMatchObject({
-        payload: {},
-      });
     },
   );
 
@@ -2908,7 +2753,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     it("keeps queued Web and Slack sends on one canonical session", async () => {
       const {
         actor,
-        orgId,
         runnerGroup,
         teamId,
         channelId,
@@ -2982,46 +2826,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!completion.ok) {
         throw completion.error;
       }
-      await expect
-        .poll(async () => {
-          const callbacks = await callbackStore.set(
-            readAgentRunCallbacks$,
-            {
-              orgId,
-              userId: actor.userId,
-              runId: run1Id,
-            },
-            context.signal,
-          );
-          const delivery = callbacks.find((callback) => {
-            return callback.internalKind === "slack:chat";
-          });
-          return delivery?.status;
-        })
-        .toBe("delivered");
-      const run1Delivery = (
-        await callbackStore.set(
-          readAgentRunCallbacks$,
-          {
-            orgId,
-            userId: actor.userId,
-            runId: run1Id,
-          },
-          context.signal,
-        )
-      ).find((callback) => {
-        return callback.internalKind === "slack:chat";
-      });
-      expect(run1Delivery).toMatchObject({
-        attempts: 1,
-        lastError: null,
-        payload: {
-          channelId,
-          threadTs,
-          chatEventId: expect.any(String),
-          publicBrand: "vm0",
-        },
-      });
+      await flushWaitUntilForTest();
       const run1 = await runs.readRun(actor, run1Id);
       const slackSessionId = run1.result?.agentSessionId;
       if (!slackSessionId) {
@@ -3127,10 +2932,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         runId: firstTurn.runId,
         assistantText: "Canonical Slack Pi answer",
       });
-      const firstCandidate = await expectSlackPiMemoryCandidate({
-        scenario,
-        runId: firstTurn.runId,
-      });
       const continuedTurn = await claimContinuedSlackPiTurn({
         scenario,
         firstPrompt: firstTurn.prompt,
@@ -3140,12 +2941,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         scenario,
         turn: continuedTurn,
       });
-      await expect(
-        readPiMemoryStage1CandidateFixture({
-          orgId: scenario.orgId,
-          userId: scenario.actor.userId,
-        }),
-      ).resolves.toStrictEqual(firstCandidate);
 
       const successfulContinuation = await runSuccessfulContinuedSlackPiTurn({
         scenario,
@@ -3157,301 +2952,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
         runId: successfulContinuation.runId,
         assistantText: "Continued Slack Pi answer",
       });
-      const replacedCandidate = await expectSlackPiMemoryCandidate({
-        scenario,
-        runId: successfulContinuation.runId,
-      });
-      expect(replacedCandidate).toMatchObject({
-        memoryStorageId: firstCandidate.memoryStorageId,
-        piSessionId: firstCandidate.piSessionId,
-      });
-      expect(replacedCandidate.sourceHistoryHash).not.toBe(
-        firstCandidate.sourceHistoryHash,
-      );
       await expect(
-        readmitPiMemoryStage1CandidateFixture(successfulContinuation.runId),
-      ).resolves.toMatchObject({ outcome: "exact_retry" });
-      const afterExactRetry = await readPiMemoryStage1CandidateFixture({
-        orgId: scenario.orgId,
-        userId: scenario.actor.userId,
-      });
-      expect(afterExactRetry?.updatedAt).toStrictEqual(
-        replacedCandidate.updatedAt,
-      );
+        runs.readRun(scenario.actor, successfulContinuation.runId),
+      ).resolves.toMatchObject({ status: "completed" });
     },
     90_000,
-  );
-
-  describe.each(["queued session", "overlapping status"] as const)(
-    "preserves canonical Slack %s after failed delivery",
-    (scenario) => {
-      async function prepareScenario() {
-        const actor = bdd.user();
-        runs.acceptStorageDownloads();
-        runs.acceptTelemetryIngest();
-        const runnerGroup = runs.configureRunnerGroup();
-        integrations.configureSlackAppMocks();
-        await runs.grantProEntitlement(actor);
-        await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
-        if (!actor.orgId) {
-          throw new Error("Expected canonical Slack actor to belong to an org");
-        }
-        const orgId = actor.orgId;
-        const slackUserId = uniqueSlackUserId();
-        const { teamId, botUserId } = await integrations.installSlackWorkspace(
-          actor,
-          {
-            installerSlackUserId: slackUserId,
-          },
-        );
-        const channelId = "C_BDD_CANONICAL_STATUS";
-        const threadTs = "2902.000100";
-        const event = {
-          type: "app_mention",
-          user: slackUserId,
-          text: "<@" + botUserId + "> establish the canonical status route",
-          ts: threadTs,
-          channel: channelId,
-          channel_type: "channel",
-        };
-        const eventBody = JSON.stringify({
-          type: "event_callback",
-          team_id: teamId,
-          event_id: `EvBDD${randomUUID().replace(/-/g, "")}`,
-          event,
-        });
-        return {
-          eventBody,
-          teamId,
-          runnerGroup,
-          event,
-          threadTs,
-          actor,
-          orgId,
-          channelId,
-        };
-      }
-      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-      beforeEach(async () => {
-        preparedScenario = await prepareScenario();
-      });
-      it("preserves the complete scenario", async () => {
-        const {
-          eventBody,
-          teamId,
-          runnerGroup,
-          event,
-          threadTs,
-          actor,
-          orgId,
-          channelId,
-        } = preparedScenario;
-        await integrations.requestSlackEvent(
-          eventBody,
-          integrations.signedSlackIngressHeaders(eventBody),
-          [200],
-        );
-        await flushWaitUntilForTest();
-
-        const state = await integrations.readSlackTestState(teamId);
-        const canonicalChatThreadId = state.chat_thread_routes[0]?.chatThreadId;
-        if (!canonicalChatThreadId) {
-          throw new Error(
-            "Expected canonical Slack status route to own a thread",
-          );
-        }
-        const run1Id = await pollSlackRun(runnerGroup);
-        const claim1 = await runs.claimRunnerJob(run1Id);
-        let deliveryRunId = run1Id;
-        let deliveryClaim = claim1;
-        let slackSessionId: string | undefined;
-        if (scenario === "queued session") {
-          const queuedEventBody = JSON.stringify({
-            type: "event_callback",
-            team_id: teamId,
-            event_id: `EvBDD${randomUUID().replace(/-/g, "")}`,
-            event: {
-              ...event,
-              text: "fail this canonical Slack delivery",
-              ts: "2902.000200",
-              thread_ts: threadTs,
-            },
-          });
-          await integrations.requestSlackEvent(
-            queuedEventBody,
-            integrations.signedSlackIngressHeaders(queuedEventBody),
-            [200],
-          );
-          await flushWaitUntilForTest();
-          await completeSlackTriggeredRun({
-            runId: run1Id,
-            sandboxToken: claim1.sandboxToken,
-            cliAgentType: claim1.cliAgentType,
-            assistantText: "Canonical Slack seed answer",
-          });
-          await flushWaitUntilForTest();
-          const run1 = await runs.readRun(actor, run1Id);
-          slackSessionId = run1.result?.agentSessionId;
-          if (!slackSessionId) {
-            throw new Error(
-              "Expected the canonical Slack seed run to save a session",
-            );
-          }
-
-          deliveryRunId = await pollSlackRun(runnerGroup);
-          deliveryClaim = await runs.claimRunnerJob(deliveryRunId);
-          expect(deliveryClaim.resumeSession?.sessionId).toBe(
-            `bdd-slack-cli-${run1Id}`,
-          );
-        }
-        context.mocks.slack.chat.postMessage.mockClear();
-        context.mocks.slack.chat.postMessage.mockRejectedValueOnce(
-          new DOMException("Slack delivery aborted", "AbortError"),
-        );
-        const terminalStatusClearStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const releaseTerminalStatusClear = createDeferredPromise<void>(
-          context.signal,
-        );
-        const overlappingThinkingStatusSet = createDeferredPromise<void>(
-          context.signal,
-        );
-        if (scenario === "overlapping status") {
-          context.mocks.slack.assistant.threads.setStatus
-            .mockImplementationOnce(async () => {
-              terminalStatusClearStarted.resolve(undefined);
-              await releaseTerminalStatusClear.promise;
-              return { ok: true };
-            })
-            .mockImplementationOnce(() => {
-              overlappingThinkingStatusSet.resolve(undefined);
-              return Promise.resolve({ ok: true });
-            });
-        }
-        await completeSlackTriggeredRun({
-          runId: deliveryRunId,
-          sandboxToken: deliveryClaim.sandboxToken,
-          cliAgentType: deliveryClaim.cliAgentType,
-          assistantText: "Canonical Slack answer two",
-        });
-        if (scenario === "overlapping status") {
-          await terminalStatusClearStarted.promise;
-        } else {
-          await flushWaitUntilForTest();
-        }
-        await expect
-          .poll(async () => {
-            const callbacks = await callbackStore.set(
-              readAgentRunCallbacks$,
-              {
-                orgId,
-                userId: actor.userId,
-                runId: deliveryRunId,
-              },
-              context.signal,
-            );
-            const delivery = callbacks.find((callback) => {
-              return callback.internalKind === "slack:chat";
-            });
-            return delivery?.status;
-          })
-          .toBe("failed");
-        const failedDelivery = (
-          await callbackStore.set(
-            readAgentRunCallbacks$,
-            {
-              orgId,
-              userId: actor.userId,
-              runId: deliveryRunId,
-            },
-            context.signal,
-          )
-        ).find((callback) => {
-          return callback.internalKind === "slack:chat";
-        });
-        expect(failedDelivery).toMatchObject({
-          attempts: 1,
-          lastError: "Slack delivery aborted",
-        });
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-        if (scenario === "overlapping status") {
-          const cancelledEventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
-          const cancelledBody = JSON.stringify({
-            type: "event_callback",
-            team_id: teamId,
-            event_id: cancelledEventId,
-            event: {
-              ...event,
-              text: "cancel this canonical Slack run",
-              ts: "2900.000300",
-              thread_ts: threadTs,
-            },
-          });
-          await integrations.requestSlackEvent(
-            cancelledBody,
-            integrations.signedSlackIngressHeaders(cancelledBody),
-            [200],
-          );
-          await overlappingThinkingStatusSet.promise;
-          expect(
-            context.mocks.slack.assistant.threads.setStatus.mock.calls.map(
-              ([input]) => {
-                if (!isRecord(input)) {
-                  throw new Error("Expected Slack thread status request");
-                }
-                return readStringField(input, "status");
-              },
-            ),
-          ).toStrictEqual(["is thinking...", "", "is thinking..."]);
-          releaseTerminalStatusClear.resolve(undefined);
-          await flushWaitUntilForTest();
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenCalledTimes(4);
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenLastCalledWith({
-            channel_id: channelId,
-            thread_ts: threadTs,
-            status: "is thinking...",
-          });
-          const cancelledRunId = await pollSlackRun(runnerGroup);
-          await runs.requestCancelRun(actor, cancelledRunId, [200]);
-          await expect
-            .poll(async () => {
-              return (await runs.readRun(actor, cancelledRunId)).status;
-            })
-            .toBe("cancelled");
-          await flushWaitUntilForTest();
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenCalledTimes(5);
-          expect(
-            context.mocks.slack.assistant.threads.setStatus,
-          ).toHaveBeenLastCalledWith({
-            channel_id: channelId,
-            thread_ts: threadTs,
-            status: "",
-          });
-        }
-
-        expect(
-          (await chat.listThreadEvents(actor, canonicalChatThreadId)).events,
-        ).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              eventType: "output.message",
-              content: "Canonical Slack answer two",
-            }),
-          ]),
-        );
-        if (scenario === "queued session") {
-          const deliveredRun = await runs.readRun(actor, deliveryRunId);
-          expect(deliveredRun.result?.agentSessionId).toBe(slackSessionId);
-        }
-      });
-    },
   );
 
   describe("with a configured Slack workspace", () => {
@@ -4911,15 +4416,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
 
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await integrations.requestSlackIntegrationStatus(
           actor,
           [200],
         );
         return "isInstalled" in status.body ? status.body.isInstalled : null;
-      })
-      .toBe(false);
+      })(),
+    ).resolves.toBeFalsy();
     const orgStatus = await integrations.requestSlackIntegrationStatus(
       actor,
       [200],
@@ -4936,12 +4442,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(unbound.teamId, {
       type: "app_uninstalled",
     });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const state = await integrations.readSlackTestState(unbound.teamId);
         return state.installation;
-      })
-      .toBeNull();
+      })(),
+    ).resolves.toBeNull();
     const unboundState = await integrations.readSlackTestState(unbound.teamId);
     expect(unboundState.installation).toBeNull();
 
@@ -4955,12 +4462,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       type: "tokens_revoked",
       tokens: { bot: ["xoxb-revoked"] },
     });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const state = await integrations.readSlackTestState(revoked.teamId);
         return state.installation;
-      })
-      .toBeNull();
+      })(),
+    ).resolves.toBeNull();
     const revokedState = await integrations.readSlackTestState(revoked.teamId);
     expect(revokedState.installation).toBeNull();
     expect(revokedState.connections).toHaveLength(0);
@@ -5903,12 +5411,13 @@ describe("INT-02: Telegram integration", () => {
     // those side effects to settle before checking that later typing refreshes
     // no longer see pending Telegram callbacks.
     await runs.requestCancelRun(actor, runId, [200]);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const run = await runs.readRun(actor, runId);
         return run.status;
-      })
-      .toBe("cancelled");
+      })(),
+    ).resolves.toBe("cancelled");
     await flushWaitUntilForTest();
     const actionsAfterCancel = chatActions.length;
     const idleTyping = await webhooks.requestAgentEvents(

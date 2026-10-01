@@ -15,7 +15,6 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const SETTLED = { interval: 50, timeout: 10_000 } as const;
 
 interface CursorFixture {
   readonly actor: ApiTestUser;
@@ -84,11 +83,12 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
   await runs.requestCancelRun(actor, runId, [200]);
   await flushWaitUntilForTest();
 
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await chat.listUnreadChatThreadIds(actor);
-    }, SETTLED)
-    .toContain(threadId);
+    })(),
+  ).resolves.toContain(threadId);
   return { actor, agentId: agent.agentId, threadId, orgId: actorOrgId(actor) };
 }
 

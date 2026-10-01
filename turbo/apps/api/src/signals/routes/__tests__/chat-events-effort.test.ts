@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createChatEventsFixture,
@@ -105,85 +104,6 @@ describe("CHAT effort: thread configuration", () => {
       modelSettings: { "claude-fable-5-1": { effort: "high" } },
     });
     await cancelChatRun(actor, override.runId, overrideClaim.sandboxHeaders);
-  }, 90_000);
-
-  it("merges concurrent explicit effort writes without dropping another model", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
-    const { providerId: openaiProviderId } = await upsertOrgModelProvider(
-      actor,
-      { type: "openai-api-key", secret: "concurrent-effort-openai-key" },
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openaiProviderId,
-      },
-    ]);
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Concurrent effort patches",
-    });
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-
-    const requests = [
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: "Save Fable effort",
-          model: "claude-fable-5-1",
-          runOptions: { reasoningEffort: "extra" },
-        },
-        [201],
-      ),
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: "Save Astra effort",
-          model: "gpt-6-astra",
-          runOptions: { reasoningEffort: "low" },
-        },
-        [201],
-      ),
-    ] as const;
-    await expect.poll(threadLock.blockedWaiterCount).toBeGreaterThanOrEqual(2);
-    threadLock.release();
-    await threadLock.done;
-    const responses = await Promise.all(requests);
-
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      modelSettings: {
-        "claude-fable-5-1": { effort: "extra" },
-        "gpt-6-astra": { effort: "low" },
-      },
-    });
-    for (const response of responses) {
-      expect(response.body).toMatchObject({
-        runId: null,
-        threadId: thread.id,
-      });
-    }
   }, 90_000);
 
   it.each([

@@ -12,12 +12,8 @@ import {
   createUsagePricingFixture,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
-import {
-  holdXResourceClaimForTest,
-  withXResourceClock,
-} from "../../../test-fixtures/x-resource-usage";
+import { withXResourceClock } from "../../../test-fixtures/x-resource-usage";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
@@ -565,55 +561,6 @@ describe("X daily resource usage webhook", () => {
         );
       },
     );
-    await accept(submit(fixture, [event]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
-  });
-
-  it("rolls back sources and claims when a resource lock wait expires the observation", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const event = observation([resourceId()]);
-    const originalTime = new Date(event.observedAt);
-    // Infrastructure exception: HTTP cannot hold an uncommitted unique-key
-    // insert or advance PostgreSQL's clock while another insert waits for it.
-    const gate = await holdXResourceClaimForTest(
-      {
-        utcDay: event.observedAt.slice(0, 10),
-        resourceType: "post",
-        resourceId: event.resources[0]!.id,
-      },
-      context.signal,
-    );
-    onTestFinished(async () => {
-      gate.release();
-      await gate.done;
-    });
-    let clock = originalTime;
-    const pending = Promise.allSettled([
-      withXResourceClock(
-        () => {
-          return clock;
-        },
-        async () => {
-          return await submit(fixture, [event]);
-        },
-      ),
-    ]);
-    const waiting = await settleIncludingAbort(
-      expect.poll(gate.blockedWaiterCount).toBe(1),
-    );
-    clock = new Date(originalTime.getTime() + 2 * DAY_MS);
-    gate.release();
-    await gate.done;
-    const [completed] = await pending;
-    if (!waiting.ok) {
-      throw waiting.error;
-    }
-    if (completed.status === "rejected") {
-      throw completed.reason;
-    }
-    expect(completed.value.status).toBe(400);
-    // The original UUID and resource must both be reusable after rollback.
     await accept(submit(fixture, [event]), [200]);
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });

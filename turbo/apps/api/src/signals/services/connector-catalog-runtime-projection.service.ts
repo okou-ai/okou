@@ -6,9 +6,9 @@ import {
   connectorCatalogRuntimeProjectionSets,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import { computed, type Computed } from "ccstate";
 import { and, count, eq, inArray } from "drizzle-orm";
-
+import { computed, type Computed } from "ccstate";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -25,16 +25,14 @@ import {
   type ConnectorCatalogRuntimeProjectionIdentity,
   type ConnectorCatalogRuntimeProjectionReadyIdentity,
   type ConnectorCatalogRuntimeProjectionRow,
-  type ConnectorCatalogRuntimeProjectionRowSetIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
+  type ConnectorCatalogRuntimeProjectionRowSetIdentity,
   type ConnectorCatalogRuntimeProjectionValidationTiming,
 } from "@okouai/connectors/connector-catalog/runtime-projection";
-import { testOverride } from "../../lib/singleton";
-import type { Db, ReadonlyDb } from "../external/db";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
-import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
-import type { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
+import type { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
+import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
@@ -69,24 +67,6 @@ type ConnectorCatalogRuntimeProjectionIdentityRead =
         | "invalid_compatibility"
       >;
     };
-
-type ConnectorCatalogRuntimeProjectionIdentityReadHook = () => Promise<void>;
-
-export const projectionIdentityReadHook = testOverride<
-  ConnectorCatalogRuntimeProjectionIdentityReadHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setConnectorCatalogRuntimeProjectionIdentityReadHookForTest(
-  hook: ConnectorCatalogRuntimeProjectionIdentityReadHook,
-): void {
-  projectionIdentityReadHook.set(hook);
-}
-
-export function clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest(): void {
-  projectionIdentityReadHook.clear();
-}
 
 function persistedConnectorCatalogValidationAuthority(args: {
   readonly backendVersion: string | null;
@@ -246,9 +226,6 @@ async function readProjectionIdentity(
   const capabilityDigest = connectorCatalogExecutableCapabilityState().digest;
   const validator = currentConnectorCatalogValidatorIdentity();
   const row = await queryProjectionIdentity(db, sourceId, capabilityDigest);
-  // Route integration tests use this seam to replace the active identity after
-  // the read, making a concurrent publication deterministic without timing sleeps.
-  await projectionIdentityReadHook.get()?.();
   return resolveProjectionIdentity({
     sourceId,
     capabilityDigest,
@@ -457,8 +434,6 @@ export function createConnectorCatalogIdentityObject(
           return row;
         },
       );
-      // Keep the route seam after the actual read, including conditional revalidation.
-      await projectionIdentityReadHook.get()?.();
       return {
         identity:
           row === undefined

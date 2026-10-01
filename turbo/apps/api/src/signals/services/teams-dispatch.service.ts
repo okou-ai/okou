@@ -1,8 +1,9 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
+import { waitUntil } from "../context/wait-until";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import type {
@@ -45,8 +46,12 @@ import {
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort, safeJsonParse } from "../utils";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { bestEffort, safeJsonParse, settle } from "../utils";
+import {
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -1659,46 +1664,43 @@ const persistTeamsChatMessage$ = command(
     if (eventId === null) {
       return { inserted: false };
     }
-    await touchNativeChatThread(args.db, {
-      chatThreadId: route.chatThreadId,
-      createdAt: currentTime,
-      eventId: chatEventId,
-    });
-    signal.throwIfAborted();
     return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
 
 /** Reply with the wait notice when the input waits for an org run slot. */
-async function replyTeamsChatQueueWait(
-  activity: TeamsMessageActivity,
-  reason: ChatQueueWaitReason,
-  signal: AbortSignal,
-): Promise<void> {
-  const notice = chatQueueWaitNotice(reason);
-  if (!notice) {
-    return;
-  }
-  const reply = await sendTeamsMessageReply(
-    {
-      serviceUrl: activity.serviceUrl,
-      conversationId: activity.conversationId,
-      activityId: activity.activityId ?? undefined,
-      tenantId: activity.tenantId,
-      text: notice,
-    },
-    signal,
-  );
-  if (reply.kind === "teams-error") {
-    L.warn("Teams wait notice failed", {
-      tenantId: activity.tenantId,
-      conversationId: activity.conversationId,
-      activityId: activity.activityId,
-      status: reply.status,
-      error: reply.error,
-    });
-  }
-}
+const replyTeamsChatQueueWait$ = command(
+  async (
+    _,
+    activity: TeamsMessageActivity,
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (!notice) {
+      return;
+    }
+    const reply = await sendTeamsMessageReply(
+      {
+        serviceUrl: activity.serviceUrl,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId ?? undefined,
+        tenantId: activity.tenantId,
+        text: notice,
+      },
+      signal,
+    );
+    if (reply.kind === "teams-error") {
+      L.warn("Teams wait notice failed", {
+        tenantId: activity.tenantId,
+        conversationId: activity.conversationId,
+        activityId: activity.activityId,
+        status: reply.status,
+        error: reply.error,
+      });
+    }
+  },
+);
 
 const runAgentForTeams$ = command(
   async (
@@ -1740,30 +1742,70 @@ const runAgentForTeams$ = command(
       return { kind: "ignored" };
     }
 
-    await publishThreadListChangedSafely({
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-    });
-    signal.throwIfAborted();
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: args.installation.orgId,
-        chatThreadId: persisted.chatThreadId,
-        eventId: persisted.chatEventId,
-        afterPick: async (pick, pickSignal) => {
-          await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: args.connection.userId,
-            orgId: args.installation.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.installation.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
+        await publishThreadListChangedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.installation.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            await set(
+              replyTeamsChatQueueWait$,
+              args.activity,
+              pick.reason,
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
     );
+    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
     return { kind: "accepted" };
   },
 );

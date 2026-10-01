@@ -3,11 +3,13 @@ import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
+import { waitUntil } from "../context/wait-until";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -29,6 +31,43 @@ import {
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
 import { persistWorkflowScheduleOccurrence } from "./workflow-schedule-queue.service";
+
+const publishEnqueuedWorkflowInput$ = command(
+  async (
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly enqueueCommit?: ChatInputEnqueueCommit;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const picked = await settle(
+      set(
+        pickEnqueuedChatThread$,
+        {
+          orgId: input.orgId,
+          chatThreadId: input.chatThreadId,
+          ...(input.enqueueCommit
+            ? { enqueueCommit: input.enqueueCommit }
+            : {}),
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    await publishChatThreadMessageCreatedSafely({
+      userId: input.userId,
+      orgId: input.orgId,
+      threadId: input.chatThreadId,
+    });
+    signal.throwIfAborted();
+    if (!picked.ok) {
+      throw picked.error;
+    }
+  },
+);
 
 const WORKFLOW_ENQUEUE_ACTIONS = {
   transaction: "api_dispatch_workflow_enqueue_transaction",
@@ -262,22 +301,19 @@ export const runWorkflowAutomationNow$ = command(
     signal.throwIfAborted();
 
     if (enqueued) {
-      set(
-        scheduleEnqueuedChatThreadPick$,
-        {
-          orgId: automation.orgId,
-          chatThreadId,
-          ...(enqueueCommit ? { enqueueCommit } : {}),
-          publish: async () => {
-            await publishChatThreadMessageCreatedSafely({
-              userId: automation.ownerUserId,
-              orgId: automation.orgId,
-              threadId: chatThreadId,
-            });
+      waitUntil(
+        set(
+          publishEnqueuedWorkflowInput$,
+          {
+            orgId: automation.orgId,
+            userId: automation.ownerUserId,
+            chatThreadId,
+            ...(enqueueCommit ? { enqueueCommit } : {}),
           },
-        },
-        signal,
+          signal,
+        ),
       );
+      waitUntil(notifyRunningChatRunOfPendingInput(db, chatThreadId));
     }
     return workflowEnqueueResult(scheduleClaim !== undefined, enqueued);
   },

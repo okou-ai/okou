@@ -377,11 +377,12 @@ describe("CHAT-02: queued chat thread picks", () => {
 
     await finishRun(runnerGroup, blocker.runId);
 
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return automationRunIds(actor, automation.threadId);
-      })
-      .toHaveLength(1);
+      })(),
+    ).resolves.toHaveLength(1);
     const [automationRunId] = await automationRunIds(
       actor,
       automation.threadId,

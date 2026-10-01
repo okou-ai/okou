@@ -59,22 +59,6 @@ export async function setOrgModelPolicyProviderTypeFixture(args: {
   }
 }
 
-export async function stageUnrepairedOrgModelPolicyFixture(args: {
-  readonly orgId: string;
-  readonly state: "unseeded" | "missing_default";
-}): Promise<void> {
-  await db()
-    .delete(orgModelPolicies)
-    .where(
-      args.state === "unseeded"
-        ? eq(orgModelPolicies.orgId, args.orgId)
-        : and(
-            eq(orgModelPolicies.orgId, args.orgId),
-            eq(orgModelPolicies.model, "okou-1.0"),
-          ),
-    );
-}
-
 /** The public GET cannot observe these states without repairing them first. */
 export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
   readonly orgId: string;

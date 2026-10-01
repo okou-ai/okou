@@ -7,7 +7,6 @@ import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import { eq, and } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -18,6 +17,7 @@ import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
 } from "./chat-event-append.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
 
 type IntegrationIngressReceipt =
   | {
@@ -147,13 +147,9 @@ export const enqueueIntegrationChatInput$ = command(
       if (!event) {
         return null;
       }
-      await tx
-        .insert(queuedChatThreads)
-        .values({ chatThreadId, orgId: args.orgId, queuedAt: currentTime })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
+      // The queue row is locked last and only advances queuedAt; a live
+      // claim lease stays with its holder (docs/chat-run-pick.md).
+      await markChatThreadQueued(tx, { chatThreadId, orgId: args.orgId });
       signal.throwIfAborted();
       return event.id;
     });

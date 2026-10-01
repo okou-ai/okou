@@ -2023,8 +2023,9 @@ describe("personal priority gateway and session boundaries", () => {
     );
     await finish(f.actor, sent.runId, first, "completed");
     let nextRunId: string | undefined;
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const events = await chat.listThreadEvents(f.actor, sent.threadId);
         nextRunId = events.events.find((event) => {
           return (
@@ -2034,8 +2035,8 @@ describe("personal priority gateway and session boundaries", () => {
           );
         })?.runId;
         return nextRunId;
-      })
-      .toBeTruthy();
+      })(),
+    ).resolves.toBeTruthy();
     if (!nextRunId) {
       throw new Error("Expected the queued message to be promoted");
     }

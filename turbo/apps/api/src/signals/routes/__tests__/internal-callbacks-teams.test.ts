@@ -786,21 +786,20 @@ describe("Teams chat callbacks", () => {
       exitCode: 0,
     });
 
-    await expect
-      .poll(() => {
-        return teamsApi.postedActivities.filter((activity) => {
-          return (
-            typeof activity.text === "string" &&
-            activity.text.includes("Add credits")
-          );
-        });
-      })
-      .toStrictEqual([
-        expect.objectContaining({
-          replyToId: queuedActivityId,
-          text: expect.stringContaining("Add credits"),
-        }),
-      ]);
+    await flushWaitUntilForTest();
+    expect(
+      teamsApi.postedActivities.filter((activity) => {
+        return (
+          typeof activity.text === "string" &&
+          activity.text.includes("Add credits")
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        replyToId: queuedActivityId,
+        text: expect.stringContaining("Add credits"),
+      }),
+    ]);
     expect(
       (await runsApi.listAgentRuns(teams.actor, { limit: 20 })).runs.filter(
         (run) => {

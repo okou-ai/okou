@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -10,12 +11,10 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
   type PiGptBddModel,
-  expectNoBuiltInModelUsage,
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
@@ -351,7 +350,7 @@ describe("CHAT-02: run-level model overrides", () => {
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
       if (tier === "fast") {
@@ -498,7 +497,7 @@ describe("CHAT-02: run-level model overrides", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: outcome,
       });
@@ -506,10 +505,6 @@ describe("CHAT-02: run-level model overrides", () => {
         return;
       }
 
-      const firstSession = await readThreadSessionConversation(
-        context,
-        run.threadId,
-      );
       const continued = await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
@@ -530,12 +525,7 @@ describe("CHAT-02: run-level model overrides", () => {
           ...(tier === undefined ? {} : { serviceTier: tier }),
         },
       });
-      await expect(
-        readThreadSessionConversation(context, run.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
-      await expectNoBuiltInModelUsage(continued.runId);
+      await expectThreadModelCredits(context, actor, continued.threadId, 0);
       await cancelChatRun(
         actor,
         continued.runId,

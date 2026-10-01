@@ -1,5 +1,5 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
@@ -43,10 +43,15 @@ import {
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
 import { now } from "../../lib/time";
-import { safeJsonParse, tapError } from "../utils";
+import { settle, safeJsonParse, tapError } from "../utils";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import {
+  pickEnqueuedChatThread$,
+  enqueuedChatQueueWaitReason$,
+  notifyRunningChatRunOfPendingInput,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   bindTelegramReplyMessageRoute,
   type TelegramOwnerLink,
@@ -1272,13 +1277,26 @@ const persistTelegramChatMessage$ = command(
     if (eventId === null) {
       return { inserted: false };
     }
-    await touchNativeChatThread(args.source.db, {
-      chatThreadId: binding.chatThreadId,
-      createdAt: currentTime,
-      eventId: chatEventId,
-    });
-    signal.throwIfAborted();
     return { inserted: true, chatThreadId: binding.chatThreadId, chatEventId };
+  },
+);
+
+const replyTelegramChatQueueWait$ = command(
+  async (
+    _,
+    args: {
+      readonly botToken: string;
+      readonly chatId: string;
+      readonly replyToMessageId: number;
+    },
+    reason: ChatQueueWaitReason,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const notice = chatQueueWaitNotice(reason);
+    if (notice) {
+      await postTelegramMessage({ ...args, text: notice });
+      signal.throwIfAborted();
+    }
   },
 );
 
@@ -1307,37 +1325,78 @@ const runAgentForTelegram$ = command(
       return;
     }
 
-    await publishThreadListChangedSafely({
-      userId: args.source.userLink.userId,
-      orgId: args.source.orgId,
-    });
-    signal.throwIfAborted();
-    set(
-      scheduleEnqueuedChatThreadPick$,
-      {
-        orgId: args.source.orgId,
-        chatThreadId: persisted.chatThreadId,
-        eventId: persisted.chatEventId,
-        afterPick: async (pick) => {
-          const notice = chatQueueWaitNotice(pick.reason);
-          if (notice) {
-            await postTelegramMessage({
-              botToken: args.source.botToken,
-              chatId: args.chatId,
-              text: notice,
-              replyToMessageId: args.source.message.message_id,
-            });
-          }
-        },
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: args.source.userLink.userId,
-            orgId: args.source.orgId,
-            threadId: persisted.chatThreadId,
-          });
-        },
-      },
-      signal,
+    waitUntil(
+      (async () => {
+        const picked = await settle(
+          set(
+            pickEnqueuedChatThread$,
+            {
+              orgId: args.source.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          touchNativeChatThread$,
+          {
+            chatThreadId: persisted.chatThreadId,
+            createdAt: new Date(args.source.apiStartTime),
+            eventId: persisted.chatEventId,
+          },
+          signal,
+        );
+        await publishThreadListChangedSafely({
+          userId: args.source.userLink.userId,
+          orgId: args.source.orgId,
+        });
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.source.userLink.userId,
+          orgId: args.source.orgId,
+          threadId: persisted.chatThreadId,
+        });
+        const noticed = await settle(
+          (async () => {
+            const pick = await set(
+              enqueuedChatQueueWaitReason$,
+              {
+                orgId: args.source.orgId,
+                chatThreadId: persisted.chatThreadId,
+                eventId: persisted.chatEventId,
+              },
+              signal,
+            );
+            await set(
+              replyTelegramChatQueueWait$,
+              {
+                botToken: args.source.botToken,
+                chatId: args.chatId,
+                replyToMessageId: args.source.message.message_id,
+              },
+              pick.reason,
+              signal,
+            );
+          })(),
+        );
+        if (!picked.ok && !noticed.ok) {
+          throw new AggregateError(
+            [picked.error, noticed.error],
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (!picked.ok) {
+          throw picked.error;
+        }
+        if (!noticed.ok) {
+          throw noticed.error;
+        }
+      })(),
+    );
+    waitUntil(
+      notifyRunningChatRunOfPendingInput(
+        args.source.db,
+        persisted.chatThreadId,
+      ),
     );
   },
 );

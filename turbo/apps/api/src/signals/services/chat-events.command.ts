@@ -83,7 +83,8 @@ import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.s
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  pickEnqueuedChatThread$,
+  notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
@@ -1370,31 +1371,72 @@ async function prepareNormalSend(
 }
 
 /** A direct user message moves its thread's sidebar recency after the pick. */
-function normalSendThreadTouch(
+async function normalSendThreadTouch(
   db: Db,
   args: NormalSendArgs,
   thread: SendThread,
   touchedAt: Date,
-): (() => Promise<void>) | undefined {
+): Promise<void> {
   if (
     thread.kind === "new" ||
     !shouldTouchThreadSortFromNormalSend(args.agentRunPreCreateSource, false)
   ) {
-    return undefined;
+    return;
   }
-  return async () => {
-    await attemptChatEventSideEffect("thread_touch", thread.threadId, () => {
-      return touchSentChatThreadSort(db, {
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId: thread.threadId,
-        agentId: thread.agentId,
-        touchedAt,
-        eventId: args.body.chatThreadSortEventId,
-      });
+  await attemptChatEventSideEffect("thread_touch", thread.threadId, () => {
+    return touchSentChatThreadSort(db, {
+      userId: args.userId,
+      orgId: args.orgId,
+      threadId: thread.threadId,
+      agentId: thread.agentId,
+      touchedAt,
+      eventId: args.body.chatThreadSortEventId,
     });
-  };
+  });
 }
+
+const publishEnqueuedNormalSend$ = command(
+  async (
+    { set },
+    input: {
+      readonly args: NormalSendArgs;
+      readonly thread: SendThread;
+      readonly touchedAt: Date;
+      readonly enqueueCommit?: ChatInputEnqueueCommit;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { args, thread, touchedAt, enqueueCommit } = input;
+    const picked = await settle(
+      set(
+        pickEnqueuedChatThread$,
+        {
+          orgId: args.orgId,
+          chatThreadId: thread.threadId,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    await normalSendThreadTouch(set(writeDb$), args, thread, touchedAt);
+    signal.throwIfAborted();
+    await publishChatEventCreated({
+      userId: args.userId,
+      orgId: args.orgId,
+      threadId: thread.threadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    if (!picked.ok) {
+      throw picked.error;
+    }
+  },
+);
 
 const prepareNormalSendInput$ = command(
   async (
@@ -1560,7 +1602,6 @@ export const sendNormalEvent$ = command(
       modelSelection,
       agentRunSource,
     );
-    const member = { userId: args.userId, orgId: args.orgId };
     const enqueued = await settle(
       (async () => {
         let createdAt: Date | undefined;
@@ -1585,23 +1626,19 @@ export const sendNormalEvent$ = command(
           return null;
         }
         // Schedule before observing abort; touch/realtime follow this pick's outcome.
-        set(
-          scheduleEnqueuedChatThreadPick$,
-          {
-            orgId: args.orgId,
-            chatThreadId: thread.threadId,
-            ...(enqueueCommit ? { enqueueCommit } : {}),
-            touch: normalSendThreadTouch(db, args, thread, createdAt),
-            publish: async () => {
-              await publishChatEventCreated({
-                ...member,
-                threadId: thread.threadId,
-              });
-              await publishThreadListChangedSafely(member);
+        waitUntil(
+          set(
+            publishEnqueuedNormalSend$,
+            {
+              args,
+              thread,
+              touchedAt: createdAt,
+              ...(enqueueCommit ? { enqueueCommit } : {}),
             },
-          },
-          signal,
+            signal,
+          ),
         );
+        waitUntil(notifyRunningChatRunOfPendingInput(db, thread.threadId));
         return createdAt;
       })(),
       signal,

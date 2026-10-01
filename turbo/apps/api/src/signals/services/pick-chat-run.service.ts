@@ -1,104 +1,105 @@
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { command, computed, state } from "ccstate";
+import { computed, command, state } from "ccstate";
 import {
-  and,
-  asc,
   count,
   eq,
-  gt,
+  or,
+  and,
   isNull,
   lte,
-  notExists,
+  gt,
   notInArray,
-  or,
+  notExists,
+  asc,
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { Tx } from "../../lib/db-types";
-import { env } from "../../lib/env";
-import { conflict } from "../../lib/error";
-import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
-import { waitUntil } from "../context/wait-until";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { waitUntil } from "../context/wait-until";
+import type { Tx } from "../../lib/db-types";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { isFreePlanForCreditAdmission } from "./run-admission.service";
+import { now, nowDate } from "../../lib/time";
+import { conflict } from "../../lib/error";
+import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { settle, tapError } from "../utils";
-import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
-import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
-  admissionAttemptOutcome,
-  buildAtomicLaunchCteContext,
-  committedAtomicLaunchResponse,
-  flushQueueFirstClaimLostTiming,
-  persistPendingAtomicLaunch,
-  persistThreadSessionBinding,
-  timingDimensionsForCreateArgs,
-  validateCapturedSubscriptionAccount,
-  validateThreadSessionSnapshot,
-  type AtomicLaunchCommitCompletion,
-  type AtomicLaunchCommitResult,
-  type CommitPreparedLaunchArgs,
-  type PreparedCommitPreparedLaunchArgs,
-} from "./agent-run-execution.service";
-import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
+  activeConcurrencySubscriptionPredicate,
+  totalConcurrencyLimit,
+  cappedBaseConcurrencyLimit,
+} from "./org-concurrency-entitlements.service";
 import {
   ApiDispatchPhaseCollector,
   ApiDispatchTimingCollector,
 } from "./api-dispatch-timing.service";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
-import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import type { ChatQueueHeadRejection } from "./chat-queue-run-assembly";
-import {
-  claimQueueFirstRunAssociation,
-  resolveQueueFirstRunAdmission,
-} from "./chat-queued-event.service";
-import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
 import {
   createClaimRunObjects,
   type ClaimRunTiming,
-  type RunContext,
   type ThreadClaim,
+  type RunContext,
 } from "./claim-run-context";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
-  deliverQueuedPromptRejection$,
-  deliverUnexpectedQueuedPromptRejection$,
-  queuedMessageRejection,
-  recordQueuedPromptRunLaunch$,
-  rejectedQueuedRunAdmissionFailure,
-} from "./internal-chat-run-callback.service";
+  type AtomicLaunchCommitCompletion,
+  type AtomicLaunchCommitResult,
+  type CommitPreparedLaunchArgs,
+  type PreparedCommitPreparedLaunchArgs,
+  timingDimensionsForCreateArgs,
+  admissionAttemptOutcome,
+  validateThreadSessionSnapshot,
+  validateCapturedSubscriptionAccount,
+  buildAtomicLaunchCteContext,
+  persistPendingAtomicLaunch,
+  persistThreadSessionBinding,
+  committedAtomicLaunchResponse,
+  flushQueueFirstClaimLostTiming,
+} from "./agent-run-execution.service";
+import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
+import {
+  acquireOfficialWorkflowRunCatalogAdmissionLock,
+  validateOfficialWorkflowRunForInsert,
+} from "./official-workflow-run.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import {
+  resolveQueueFirstRunAdmission,
+  claimQueueFirstRunAssociation,
+} from "./chat-queued-event.service";
+import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
 import {
   bindMorningBriefScheduleClaimRun,
   morningBriefScheduleClaimBound,
   morningBriefScheduleClaimSuperseded,
 } from "./morning-brief-schedule-claim.service";
-import {
-  acquireOfficialWorkflowRunCatalogAdmissionLock,
-  validateOfficialWorkflowRunForInsert,
-} from "./official-workflow-run.service";
-import {
-  activeConcurrencySubscriptionPredicate,
-  cappedBaseConcurrencyLimit,
-  totalConcurrencyLimit,
-} from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
-import { isFreePlanForCreditAdmission } from "./run-admission.service";
-import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
+import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
+import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
+import {
+  recordQueuedPromptRunLaunch$,
+  ChatCallbackPreCreateTimingCollector,
+  queuedMessageRejection,
+  rejectedQueuedRunAdmissionFailure,
+  deliverQueuedPromptRejection$,
+  deliverUnexpectedQueuedPromptRejection$,
+} from "./internal-chat-run-callback.service";
+import { replaceChatEvent, insertChatEvent } from "./chat-event.service";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
+} from "../external/realtime";
+import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
+import type { ChatQueueHeadRejection } from "./chat-queue-run-assembly";
+import type { PendingRunActivation } from "./agent-run-activation.types";
 
 interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -478,6 +479,7 @@ function createClaimRunTiming(pickStartedAt: number): ClaimRunTiming {
   return {
     run: new ApiDispatchTimingCollector(),
     phase: new ApiDispatchPhaseCollector(pickStartedAt),
+    prompt: new ChatCallbackPreCreateTimingCollector(),
   };
 }
 
@@ -1113,7 +1115,12 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   );
 
   const activatePendingRun$ = command(
-    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+    async (
+      { set },
+      pending: PendingClaimRun,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       await set(
         activateCommittedRun$,
         { activation: pending.activation, activationScheduledAt: now() },
@@ -1125,6 +1132,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           recordQueuedPromptRunLaunch$,
           launched.context,
           pending.runId,
+          timing.prompt,
           signal,
         );
       } else {
@@ -1270,7 +1278,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         return { kind: "none" };
       }
       waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-      await set(activatePendingRun$, pending, signal);
+      await set(activatePendingRun$, pending, timing, signal);
       return { kind: "launched", runId: pending.runId };
     },
   );

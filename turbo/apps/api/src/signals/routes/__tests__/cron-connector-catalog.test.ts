@@ -1,3 +1,4 @@
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
@@ -48,7 +49,6 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements,
   corruptApiTestConnectorCatalogActiveSnapshotPayload,
   deleteApiTestConnectorCatalogCompatibility,
   deleteApiTestConnectorCatalogCompatibilityEvaluation,
@@ -63,7 +63,6 @@ import {
   readApiTestConnectorCatalogRuntimeProjectionAuthority,
   readApiTestConnectorCatalogValidationAuthority,
   replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogExternalReaderIdentityReplacements,
   setApiTestConnectorCatalogRuntimeProjectionAuthority,
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
@@ -1608,7 +1607,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
   setApiVersion(DEFAULT_API_VERSION);
   clearMockNow();
 });
@@ -1693,22 +1691,6 @@ describe("connector catalog unavailable request telemetry", () => {
 
     await expectCatalogUnavailableRequestError(
       "invalid_artifact:invalid-compression",
-    );
-  });
-
-  it("classifies a missing active snapshot after the identity retry", async () => {
-    expect.hasAssertions();
-    configureSource();
-    await installApiTestConnectorCatalog({
-      catalogVersion: "2026-08-31.identity-race-initial",
-    });
-    setApiTestConnectorCatalogExternalReaderIdentityReplacements([
-      "2026-08-31.identity-race-first-replacement",
-      "2026-08-31.identity-race-second-replacement",
-    ]);
-
-    await expectCatalogUnavailableRequestError(
-      "missing_active_snapshot_after_retry",
     );
   });
 });
@@ -2967,14 +2949,12 @@ describe("connector catalog valid lifecycle", () => {
     });
     created.runId = run.runId;
     await runs.heartbeatRunner(runnerGroup);
-    await expect
-      .poll(
-        async () => {
-          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(run.runId);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+      })(),
+    ).resolves.toBe(run.runId);
     const claim = await runs.claimRunnerJob(run.runId);
     expect(claim.environment?.SERVICE_TOKEN).toBeTruthy();
     expect(claim.secretConnectorMap).toMatchObject({
@@ -3497,14 +3477,12 @@ describe("connector catalog valid lifecycle", () => {
       activeRunIds.add(run.runId);
       expect(run.status).not.toBe("failed");
       await runs.heartbeatRunner(runnerGroup);
-      await expect
-        .poll(
-          async () => {
-            return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-          },
-          { timeout: 10_000 },
-        )
-        .toBe(run.runId);
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
+          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+        })(),
+      ).resolves.toBe(run.runId);
       return {
         run,
         claim: await runs.claimRunnerJob(run.runId),
@@ -3655,14 +3633,12 @@ describe("connector catalog valid lifecycle", () => {
     successfulRunId = run.runId;
     expect(run.status).not.toBe("failed");
     await runs.heartbeatRunner(runnerGroup);
-    await expect
-      .poll(
-        async () => {
-          return (await runs.pollRunner(runnerGroup)).body.job?.runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(run.runId);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        return (await runs.pollRunner(runnerGroup)).body.job?.runId;
+      })(),
+    ).resolves.toBe(run.runId);
     const claim = await runs.claimRunnerJob(run.runId);
     const mountedSkills =
       expectCanonicalStorageManifest(

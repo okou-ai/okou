@@ -815,13 +815,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       sandboxToken: firstClaim.sandboxToken,
     });
     let queuedRunId: string | null = null;
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         queuedRunId =
           (await telegramPostRunState(fixture, queuedPrompt)).run?.id ?? null;
         return queuedRunId;
-      })
-      .toStrictEqual(expect.any(String));
+      })(),
+    ).resolves.toStrictEqual(expect.any(String));
     if (!queuedRunId) {
       throw new Error("Expected the queued Telegram run");
     }

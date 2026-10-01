@@ -32,7 +32,7 @@ import { logger } from "../../lib/log";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
@@ -2168,7 +2168,7 @@ export interface QueuedMessageModelRoute {
 }
 
 export function routeQueuedMessagePiExecution(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
+  readonly input: QueuedChatPromptData;
   readonly modelRoute: QueuedMessageModelRoute;
 }) {
   const piExecution = shouldUsePiExecution({
@@ -2198,14 +2198,12 @@ export type QueuedMessageModelRouteResolution =
   | { readonly route: QueuedMessageModelRoute }
   | { readonly error: QueuedMessageModelRouteError };
 
-export interface CreateQueuedChatRunInputArgs {
+export interface QueuedChatPromptData {
   readonly expectedThreadAgentId?: string;
-  readonly db: ReadonlyDb;
   readonly threadId: string;
   readonly userId: string;
   readonly agent: AgentForAutoSend;
   readonly queuedMessage: QueuedUserMessage;
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
 }
 
 type QueuedIntegrationDeliveries = Pick<
@@ -2254,7 +2252,7 @@ function requiredQueuedDelivery<Delivery>(
 }
 
 export function queuedMessageAdmissionFailure(
-  args: CreateQueuedChatRunInputArgs,
+  args: QueuedChatPromptData,
   launchMaterial: QueuedLaunchMaterial,
   error: QueuedMessageModelRouteError,
 ): QueuedMessageAdmissionFailure {
@@ -2642,7 +2640,6 @@ export type QueuedPromptLaunchInput = Pick<
 
 export interface QueuedPromptLaunchContext {
   readonly userId: string;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly runInput: QueuedPromptLaunchInput;
 }
 
@@ -2651,6 +2648,7 @@ export const recordQueuedPromptRunLaunch$ = command(
     { set },
     args: QueuedPromptLaunchContext,
     runId: string,
+    timing: ChatCallbackPreCreateTimingCollector,
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
@@ -2682,7 +2680,7 @@ export const recordQueuedPromptRunLaunch$ = command(
         target: runInput.discordDelivery,
       });
     }
-    args.timing.flush(runId, runInput.triggerSource);
+    timing.flush(runId, runInput.triggerSource);
   },
 );
 

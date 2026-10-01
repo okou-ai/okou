@@ -1,8 +1,4 @@
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import {
-  type PgPoolAcquisitionCapture,
-  withPgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -46,10 +42,10 @@ import { onRejection, safeSync, settle, tapError } from "../utils";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
-  type AgentRunAfterPreCreate,
+  type AgentRunAfterPreCreate as TimedAgentRunAfterPreCreate,
   type AgentRunCreateBody,
-  type AgentRunGraphInput,
-  type AgentRunIdentityInput,
+  type AgentRunGraphInput as TimedAgentRunGraphInput,
+  type AgentRunIdentityInput as TimedAgentRunIdentityInput,
   type AgentRunIdentityCommand,
   type AgentRunRecord,
   agentRunResolutionOptions,
@@ -61,11 +57,9 @@ import {
   allowedStoredConnectorRows,
   assemblePiLaunchResources,
   assertUniquePersistedMountPaths,
-  atomicLaunchPayloadInput,
+  atomicLaunchPayloadData,
   type AtomicLaunchRunInput,
   bindStableAppendSystemPrompt,
-  bootstrapLoadTimingDimensions,
-  bootstrapMaterializeTimingDimensions,
   type BootstrapMetadataQueryRow,
   buildCreateAgentRunArgs,
   buildMergedVariables,
@@ -86,7 +80,6 @@ import {
   composePreparedRunContext,
   connectorScopeForRuntimeSnapshot,
   connectorScopeFromCreateArgs,
-  countBucket,
   type CreateAgentRunArgs,
   type CreateQueueFirstAgentRunCommandArgs,
   type CreateRunErrorResult,
@@ -121,7 +114,6 @@ import {
   materializePreparedPiProvider,
   materializeRunBootstrapContext,
   materializeStoredConnectorSnapshotRows,
-  measureAgentRunPreCreate,
   mergeRecords,
   modelProviderFramework,
   noContentPiMemoryRecall,
@@ -147,7 +139,7 @@ import {
   loadRunRoutePricing,
   type PreparePiLaunchResourcesArgs,
   prepareRequestStorageResolution,
-  type PrepareRunContextInput,
+  type PrepareRunContextInput as TimedPrepareRunContextInput,
   prepareRunnerStorageInput,
   prepareRunOutputMetadata,
   priorPiMemoryRecall,
@@ -172,7 +164,7 @@ import {
   type RunConnectorCatalogSelection,
   type RunConnectorContextSnapshot,
   type RunConnectorPreparation,
-  type RunConnectorReadInput,
+  type RunConnectorReadInput as TimedRunConnectorReadInput,
   type RunConnectorSelection,
   runConnectorTargetFromRow,
   runConnectorTargetIsAuthorized,
@@ -181,8 +173,8 @@ import {
   runCustomConnectorRefreshTokenSecret,
   runEnvironmentSecretNames,
   type RunMemberSnapshot,
-  type RunModelProviderReadInput,
-  type RunPreparedConnectorInputs,
+  type RunModelProviderReadInput as TimedRunModelProviderReadInput,
+  type RunPreparedConnectorInputs as TimedRunPreparedConnectorInputs,
   runThreadConnectorCandidates,
   type RunWorkflowModelState,
   type RunWorkflowReadInput,
@@ -212,12 +204,6 @@ import {
 } from "./agent-run-execution.service";
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import {
-  observeAgentRunPiExecutionSnapshot,
-  observeAgentRunPreCreateParallelStage,
-  observeRunConnectorAccountsRead,
-  observeRunContextParallelStage,
-} from "./agent-run-preparation-hooks";
 import {
   type AgentPhoneDeliveryTarget,
   agentphoneDeliveryTargetSchema,
@@ -294,7 +280,6 @@ import {
   identityLogFields,
   readCachedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
-import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
   isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
@@ -302,7 +287,6 @@ import {
 import {
   type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
-  projectionIdentityReadHook,
   resolveProjectionIdentity,
   validateConnectorCatalogRuntimeProjectionRows,
 } from "./connector-catalog-runtime-projection.service";
@@ -310,7 +294,6 @@ import {
   clearRuntimeSelectionInFlight,
   getConnectorRuntimeConnector,
   materializeProjectedRuntimeSelection,
-  observeRuntimeSelection,
   projectionIdentityKey,
   rememberProjectedConnectors,
   requestedProjectionConnectorSlugs,
@@ -337,7 +320,10 @@ import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-creden
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { normaliseCustomConnectorRow } from "./custom-connector.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import {
+  discordConversationAccess,
+  type DiscordConversationAccess,
+} from "./discord-access.service";
 import {
   type DiscordDeliveryTarget,
   discordDeliveryTargetSchema,
@@ -363,7 +349,7 @@ import {
   buildQueuedCreateAgentRunArgs,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
-  type CreateQueuedChatRunInputArgs,
+  type QueuedChatPromptData,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
@@ -441,7 +427,6 @@ import {
   planStorageManifestMixedLookup,
   signStorageManifestPresignedUrls,
   type SelectedStoragePresignedUrlCacheRow,
-  storageManifestCacheCountBucket,
   storageManifestPresignedUrlCacheLookupPairs,
   type StorageManifestPresignedUrlCacheScope,
 } from "./system-storage-presigned-url-cache.service";
@@ -458,11 +443,11 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  remainingUnits,
-  type UsageAllowanceAvailabilitySnapshot,
-  type PreparedUsageAllowanceRefresh,
   prepareUsageAllowanceRefresh,
+  remainingUnits,
   resolveAvailabilityInTransaction,
+  type PreparedUsageAllowanceRefresh,
+  type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import {
@@ -642,10 +627,13 @@ import {
   or,
   sql,
   sum,
+  getTableColumns,
+  notExists,
 } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+
 export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
@@ -663,13 +651,10 @@ interface QueuedModelInput {
   readonly providerModelSupport?: ProviderModelSupport;
 }
 
-interface QueuedPromptGraphInput {
-  readonly head: ChatQueueHeadContext;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
-  readonly runTiming: ApiDispatchTimingCollector;
-}
-
 class QueuedPromptInputInvalidError extends Error {}
+
+/** The initializer already committed the ordinary business-rejection path. */
+class ClaimInputAlreadyRejected extends Error {}
 
 function resolveQueuedOfficialWorkflowContext(args: {
   readonly contextType: QueuedUserMessageContextType;
@@ -1209,7 +1194,7 @@ function buildWebChatIncompleteContext(
 }
 
 function queuedPromptRunInput(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
+  readonly input: QueuedChatPromptData;
   readonly launch: QueuedLaunchMaterial;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
@@ -1284,6 +1269,22 @@ function queuedPromptRunInput(args: {
     ...queuedIntegrationLaunchFields(launch, input.agent.id),
     autonomyBudget: input.queuedMessage.autonomyBudget.autonomyBudget,
   };
+}
+
+function checkedQueuedDiscordAccess(
+  access: DiscordConversationAccess,
+  target: DiscordDeliveryTarget,
+) {
+  if (access.kind === "denied") {
+    if (access.response.status === 403 || access.response.status === 404) {
+      return null;
+    }
+    throw new Error(`Discord access check failed: ${access.response.status}`);
+  }
+  return access.binding.connectionId === target.connectionId &&
+    access.binding.discordUserId === target.discordUserId
+    ? access
+    : null;
 }
 
 function renderPromptDiscordMaterial({
@@ -1643,7 +1644,6 @@ function automationSelectionCommand(
     | "connectorSourceId"
   >,
   model: Extract<ModelContext, { readonly ok: true }>,
-  timing: ApiDispatchTimingCollector,
 ): AgentRunSelectionInput &
   Pick<
     CreateQueueFirstAgentRunCommandArgs,
@@ -1682,7 +1682,6 @@ function automationSelectionCommand(
       selectedModel: model.modelPin.selectedModel,
     },
     piExecution: model.piExecution,
-    timing,
   };
 }
 
@@ -1752,7 +1751,15 @@ function isDirectSendContext(contextType: string | null): boolean {
   return contextType === "web" || contextType === "agent_run";
 }
 
-type RunPlan = Omit<AtomicLaunchRunInput, "db" | "phaseTiming">;
+type UntimedRead<T> = Omit<T, "timing"> & { readonly timing?: undefined };
+type AgentRunAfterPreCreate = UntimedRead<TimedAgentRunAfterPreCreate>;
+type AgentRunGraphInput = UntimedRead<TimedAgentRunGraphInput>;
+type AgentRunIdentityInput = UntimedRead<TimedAgentRunIdentityInput>;
+type PrepareRunContextInput = UntimedRead<TimedPrepareRunContextInput>;
+type RunConnectorReadInput = UntimedRead<TimedRunConnectorReadInput>;
+type RunModelProviderReadInput = UntimedRead<TimedRunModelProviderReadInput>;
+type RunPreparedConnectorInputs = UntimedRead<TimedRunPreparedConnectorInputs>;
+type RunPlan = UntimedRead<Omit<AtomicLaunchRunInput, "db" | "phaseTiming">>;
 
 function unreadyQueueHeadRejection(
   head: ChatQueueHeadContext,
@@ -1791,6 +1798,7 @@ function claimAssemblyRejection(
 export interface ClaimRunTiming {
   readonly run: ApiDispatchTimingCollector;
   readonly phase: ApiDispatchPhaseCollector;
+  readonly prompt: ChatCallbackPreCreateTimingCollector;
 }
 
 export interface RunContext {
@@ -2110,6 +2118,7 @@ interface AgentPhoneQueuedLaunchMaterial {
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
 
+const pickedRevoker = alias(chatEvents, "picked_input_revoker");
 const earlierRunEvent = alias(chatEvents, "earlier_run_event");
 
 const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
@@ -2393,7 +2402,6 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     kind: "prompt",
     context: {
       userId: record.context.userId,
-      timing: record.context.timing,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -2565,17 +2573,19 @@ async function resolveQueuedProviderAdmission(params: {
 }
 
 export function createClaimRunObjects(claim: ThreadClaim) {
+  // One model catalog snapshot per claim: the queued input is re-resolved
+  // against the catalog current at the pick, not at enqueue.
+  // Stripe entitlement refresh for an allowance window runs outside the
+  // admission and pending transactions, in the same parallel preparation.
   const preparedAllowanceRefresh$ = computed(async (get) => {
     return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
   });
-  // One model catalog snapshot per claim: the queued input is re-resolved
-  // against the catalog current at the pick, not at enqueue.
   const claimCatalog$ = computed((get) => {
     return loadModelCatalog(get(db$));
   });
   const appendChatQueueHeadRejection$ = command(
     async (
-      { set },
+      { get, set },
       args: {
         readonly chatThreadId: string;
         readonly eventId: string;
@@ -2584,31 +2594,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       },
       signal: AbortSignal,
     ): Promise<{ readonly assistantEventId: string } | null> => {
+      const head = await get(pickedEvent$);
       signal.throwIfAborted();
+      if (
+        !head?.userMessage ||
+        head.id !== args.eventId ||
+        head.chatThreadId !== args.chatThreadId
+      ) {
+        throw new Error("Queued input event is missing userMessage");
+      }
+      const userMessage = head.userMessage;
       const result = await set(writeDb$).transaction(async (tx) => {
-        const [head] = await tx
-          .select({
-            userMessage: canonicalChatEventUserMessage(),
-            createdAt: chatEvents.createdAt,
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, args.eventId),
-              eq(chatEvents.chatThreadId, args.chatThreadId),
-            ),
-          )
-          .limit(1);
-        if (!head?.userMessage) {
-          throw new Error("Queued input event is missing userMessage");
-        }
         const rejectedAt = new Date(
           Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
         );
         const rejected = await replaceChatEvent(tx, args.eventId, {
           chatThreadId: args.chatThreadId,
           eventType: "input.rejected",
-          userMessage: head.userMessage,
+          userMessage,
           runId: null,
           error: args.errorMarker,
           createdAt: rejectedAt,
@@ -2700,63 +2703,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
 
   const pickedEvent$ = computed(async (get) => {
     const database = get(db$);
-    const candidates = await database
-      .select({
-        id: chatEvents.id,
-        createdAt: chatEvents.createdAt,
-        seqId: chatEvents.seqId,
-        eventType: chatEvents.eventType,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-        ),
-      );
-    if (candidates.length === 0) {
-      return null;
-    }
-    const revocations = await database
-      .select({ eventId: chatEvents.revokesEventId })
-      .from(chatEvents)
-      .where(
-        inArray(
-          chatEvents.revokesEventId,
-          candidates.map(({ id }) => {
-            return id;
-          }),
-        ),
-      );
-    const revoked = new Set(
-      revocations.map(({ eventId }) => {
-        return eventId;
-      }),
-    );
-    const picked =
-      candidates
-        .filter(({ id }) => {
-          return !revoked.has(id);
-        })
-        .sort((left, right) => {
-          return left.seqId - right.seqId;
-        })[0] ?? null;
-    if (!picked) {
-      return null;
-    }
-    // The one read of the head row: the queue context, prompt branch and
-    // model selection all derive from it.
     const [row] = await database
       .select({
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
+        ...getTableColumns(chatEvents),
         userMessage: canonicalChatEventUserMessage(),
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        modelSelection: chatEvents.modelSelection,
         canonicalModelSelection: canonicalChatInputModelSelection(),
         sourceAutonomyBudget: agentRuns.autonomyBudget,
         userId: chatThreads.userId,
@@ -2773,17 +2723,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, picked.id),
           eq(chatEvents.chatThreadId, claim.chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
+          notExists(
+            database
+              .select({ id: pickedRevoker.id })
+              .from(pickedRevoker)
+              .where(eq(pickedRevoker.revokesEventId, chatEvents.id)),
+          ),
         ),
       )
+      .orderBy(asc(chatEvents.seqId))
       .limit(1);
-    return row ? { ...picked, ...row } : null;
+    return row ?? null;
   });
-  const internalRunIds$ = state<{
-    readonly runId: string;
-    readonly newSessionId: string;
-  } | null>(null);
+  const runIds$ = computed(() => {
+    return {
+      runId: randomUUID(),
+      newSessionId: randomUUID(),
+    };
+  });
   const input$ = computed(async (get) => {
     const head = await get(pickedEvent$);
     if (!head) {
@@ -2816,18 +2779,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         }
       : null;
   });
-  const queuedModelInputsInternalInput$ = state<QueuedModelInput | null>(null);
-  const queuedModelInputsInternalPolicyFacts$ =
-    state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$ = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$);
+  const queuedModelInputsInternalInput$ = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const head = await get(head$);
+      if (!head) {
+        throw new Error("Claim has no picked queue head");
+      }
+      return {
+        orgId: claim.orgId,
+        userId: head.userId,
+        threadId: claim.chatThreadId,
+        eventId: head.id,
+        providerModelSupport: "trust-enqueued",
+      };
+    },
+  );
+  const queuedModelInputsInput$ = computed(async (get) => {
+    const input = await get(queuedModelInputsInternalInput$);
     if (!input) {
       throw new Error("Queued model preparation requires a selected input");
     }
     return input;
   });
   const queuedModelInputsSelection$ = computed(async (get) => {
-    const input = get(queuedModelInputsInput$);
+    const input = await get(queuedModelInputsInput$);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -2835,7 +2810,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return head.canonicalModelSelection;
   });
   const orgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$);
+    const { orgId } = await get(queuedModelInputsInput$);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -2848,7 +2823,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$);
+      const { orgId } = await get(queuedModelInputsInput$);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -2893,15 +2868,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId),
+      );
   });
-  const policyFacts$ = computed((get) => {
-    const facts = get(queuedModelInputsInternalPolicyFacts$);
-    if (!facts) {
-      throw new Error("Queued model policy must be prepared before routing");
-    }
-    return facts;
-  });
+  const policyFacts$ = computed(
+    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
+      return await get(initialFacts$);
+    },
+  );
   const policy$ = computed(async (get) => {
     const [selection, facts] = await Promise.all([
       get(queuedModelInputsSelection$),
@@ -2921,7 +2896,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelSources = {
     internalInput$: queuedModelInputsInternalInput$,
-    internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$,
     input$: queuedModelInputsInput$,
     selection$: queuedModelInputsSelection$,
     orgMetadata$: orgMetadata$,
@@ -2936,7 +2910,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelSources;
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$),
         get(orgMetadata$),
@@ -2970,7 +2944,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const memberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$).userId,
+      (await get(queuedMemberModelRoutesInput$)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -3003,7 +2977,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$).orgId),
+          eq(modelProviders.orgId, (await get(queuedModelRoutingInput$)).orgId),
           eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
         ),
       )
@@ -3031,7 +3005,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$).orgId,
+            (await get(queuedModelRoutingInput$)).orgId,
           ),
         ),
       )
@@ -3082,37 +3056,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     modelPin$: queuedModelRoutingModelPin$,
     customSurface$: customSurface$,
   };
-  const {
-    input$: queuedModelRuntimeInput$,
-    selection$: queuedModelRuntimeSelection$,
-  } = queuedModelSources;
+  const { selection$: queuedModelRuntimeSelection$ } = queuedModelSources;
   const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
   const queuedModelRuntimeFeatureSwitchContext$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$);
-      if (input.featureSwitchContext) {
-        return input.featureSwitchContext;
-      }
-      const rows = await get(db$)
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, input.orgId),
-            inArray(userFeatureSwitches.userId, [
-              input.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
-            ]),
-          ),
-        );
-      return {
-        orgId: input.orgId,
-        userId: input.userId,
-        overrides: userFeatureSwitchOverridesFromRows(rows, input.userId),
-      };
+      return await get(promptFeaturesFeatures$);
     },
   );
   const keyIdsByVendor$ = computed(async (get) => {
@@ -3199,7 +3147,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -3207,7 +3158,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return row?.total ?? 0;
   });
   const usagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$);
+    const input = await get(queuedModelCreditsInput$);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -3241,7 +3192,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const credits = { creditBalance$: creditBalance$ };
   const { input$: queuedModelAllowanceInput$ } = queuedModelSources;
   const allowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$);
+    const { orgId } = await get(queuedModelAllowanceInput$);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -3354,10 +3305,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    const facts = await get(queuedProviderAdmissionPolicyFacts$);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$);
@@ -3366,7 +3318,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return get(personalSubscription$);
       },
       capabilities: () => {
-        return get(queuedProviderAdmissionPolicyFacts$).orgPlanCapabilities;
+        return facts.orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$);
@@ -3380,7 +3332,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     input$: queuedModelCommandsInput$,
     capabilities$: queuedModelCommandsCapabilities$,
     initialPolicies$: queuedModelCommandsInitialPolicies$,
-    internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$,
   } = queuedModelSources;
   const initialFacts$ = computed(async (get) => {
     const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
@@ -3398,16 +3349,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       stored,
     });
   });
-  const orgModelPolicyInitializationInitializeModelPolicy$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const facts = await get(initialFacts$);
-      signal.throwIfAborted();
-      return facts;
-    },
-  );
-  const ensureModelPolicy$ = orgModelPolicyInitializationInitializeModelPolicy$;
-  const allowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$).orgId };
+  const allowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
   const resolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -3447,28 +3390,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
-  const queuedModelCommandsInitializeModelPolicy$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$);
-      const facts =
-        input.userId === "__no_preference__"
-          ? await get(initialFacts$)
-          : await set(ensureModelPolicy$, signal);
-      signal.throwIfAborted();
-      set(queuedModelCommandsInternalPolicyFacts$, facts);
-    },
-  );
   const commands = {
-    initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const {
-    internalInput$,
-    internalPolicyFacts$,
-    selection$,
-    capabilities$,
-    initialPolicies$,
-  } = queuedModelSources;
+  const { selection$, capabilities$, initialPolicies$ } = queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -3476,104 +3401,110 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     builtInRuntimeRoute$,
   } = runtime;
   const { providerAdmission$ } = admission;
-  const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
-  const queuedModelResolveQueuedModel$ = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+  const { refreshUsageAllowance$ } = commands;
+  const promptAllowanceWriteResult$ = state<{
+    readonly remainingUnits: number;
+  } | null>(null);
+  const refreshPromptUsageAllowance$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const selection = await get(selection$);
       signal.throwIfAborted();
-      set(internalInput$, input);
-      set(internalPolicyFacts$, null);
-      const [selection] = await Promise.all([
-        get(selection$),
-        get(capabilities$),
-        get(initialPolicies$),
-        get(queuedModelFeatureSwitchContext$),
-      ]);
-      signal.throwIfAborted();
-      if (!selection) {
-        return badRequestMessage("Queued input is missing its model selection");
-      }
-      // Re-resolve the captured model against the claim's catalog snapshot
-      // (current at the pick, not at enqueue) with the same resolution as
-      // enqueue and run creation; a replaced model routes to its final
-      // replacement. Already-started runs are never re-resolved.
       if (
+        !selection ||
         !resolveRunSelectionModel(
           await get(claimCatalog$),
           selection.selectedModel,
         )
       ) {
-        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+        return;
       }
-      await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
-        return pin;
+        return;
       }
-      const [
-        admission,
-        featureSwitchContext,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      ] = await Promise.all([
-        get(providerAdmission$),
-        get(queuedModelFeatureSwitchContext$),
-        get(builtInRuntimeRoute$),
-        get(queuedModelMemberAccountSnapshot$),
-      ]);
+      const admission = await get(providerAdmission$);
       signal.throwIfAborted();
-      const allowance = admission.needsAllowance
-        ? await set(refreshUsageAllowance$, signal)
-        : null;
-      // `null`: a Built-in pin with no available route.
-      const unpriced =
-        builtInModelRuntimeRoute === null && pin.selectedModel
-          ? await unpricedBuiltInModelRejection(get(db$), {
-              catalog: await get(claimCatalog$),
-              model: pin.selectedModel,
-              serviceTier: selection.codexServiceTier,
-              resolution: get(usagePricingResolution$),
-            })
-          : undefined;
-      signal.throwIfAborted();
-      return {
-        pin,
-        providerAdmission: {
-          effectiveModelProvider: admission.effectiveModelProvider,
-          cliAgentType: admission.cliAgentType,
-          error:
-            admission.error ??
-            unpriced ??
-            (admission.needsAllowance &&
-            (!allowance || allowance.remainingUnits <= 0)
-              ? pickChatRunModelInsufficientCredits()
-              : undefined),
-        },
-        featureSwitchContext,
-        runCodexServiceTier: selection.codexServiceTier ?? undefined,
-        reasoningEffort: selection.reasoningEffort ?? undefined,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      };
+      if (admission.needsAllowance) {
+        const allowance = await set(refreshUsageAllowance$, signal);
+        signal.throwIfAborted();
+        set(promptAllowanceWriteResult$, allowance);
+      }
     },
   );
-  const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
-  const promptInternalInputInternalInput$ =
-    state<QueuedPromptGraphInput | null>(null);
-  const promptInternalModelInternalModel$ =
-    state<QueuedMessageModelRouteResolution | null>(null);
-  const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
-    readonly material: QueuedLaunchMaterial | null;
-  } | null>(null);
-  const promptInputInput$ = computed((get) => {
-    const input = get(promptInternalInputInternalInput$);
-    if (!input) {
-      throw new Error("Prompt preparation has no selected input");
+  const queuedModelResolveQueuedModel$ = computed(async (get) => {
+    const [selection] = await Promise.all([
+      get(selection$),
+      get(capabilities$),
+      get(initialPolicies$),
+      get(queuedModelFeatureSwitchContext$),
+    ]);
+    if (!selection) {
+      return badRequestMessage("Queued input is missing its model selection");
     }
-    return input;
+    if (
+      !resolveRunSelectionModel(
+        await get(claimCatalog$),
+        selection.selectedModel,
+      )
+    ) {
+      return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+    }
+    const pin = await get(modelPin$);
+    if ("status" in pin) {
+      return pin;
+    }
+    const [
+      admission,
+      featureSwitchContext,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    ] = await Promise.all([
+      get(providerAdmission$),
+      get(queuedModelFeatureSwitchContext$),
+      get(builtInRuntimeRoute$),
+      get(queuedModelMemberAccountSnapshot$),
+    ]);
+    const allowance = get(promptAllowanceWriteResult$);
+    const unpriced =
+      builtInModelRuntimeRoute === null && pin.selectedModel
+        ? await unpricedBuiltInModelRejection(get(db$), {
+            catalog: await get(claimCatalog$),
+            model: pin.selectedModel,
+            serviceTier: selection.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          })
+        : undefined;
+    return {
+      pin,
+      providerAdmission: {
+        effectiveModelProvider: admission.effectiveModelProvider,
+        cliAgentType: admission.cliAgentType,
+        error:
+          admission.error ??
+          unpriced ??
+          (admission.needsAllowance &&
+          (!allowance || allowance.remainingUnits <= 0)
+            ? pickChatRunModelInsufficientCredits()
+            : undefined),
+      },
+      featureSwitchContext,
+      runCodexServiceTier: selection.codexServiceTier ?? undefined,
+      reasoningEffort: selection.reasoningEffort ?? undefined,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    };
+  });
+  const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
+  const promptSelectedHead$ = computed(async (get) => {
+    const head = await get(head$);
+    if (!head) {
+      throw new Error("Prompt preparation has no selected head");
+    }
+    return head;
   });
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const picked = await get(pickedEvent$);
     // The picked head already excludes consumed and revoked inputs.
     const event =
@@ -3667,7 +3598,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptAgentAgent$ = computed(
     async (get): Promise<QueuedPromptAgent | null> => {
-      const { head } = get(promptInputInput$);
+      const head = await get(promptSelectedHead$);
       const db = get(db$);
       if (
         ![
@@ -3710,9 +3641,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const promptArgsArgs$ = computed(
-    async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { head, timing } = get(promptInputInput$);
-      const db = get(db$);
+    async (get): Promise<QueuedChatPromptData> => {
+      const head = await get(promptSelectedHead$);
       const [queuedMessage, agent] = await Promise.all([
         get(promptQueuedMessageQueuedMessage$),
         get(promptAgentAgent$),
@@ -3721,19 +3651,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Prompt preparation lost its selected head or agent");
       }
       return {
-        db,
         threadId: head.chatThreadId,
         userId: head.userId,
         agent: { id: agent.agentId, orgId: head.orgId },
         expectedThreadAgentId: agent.expectedThreadAgentId,
         queuedMessage,
-        timing,
       };
     },
   );
   const promptFeaturesFeatures$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const { head } = get(promptInputInput$);
+      const head = await get(promptSelectedHead$);
       const db = get(db$);
       const rows = await db
         .select({
@@ -3768,6 +3696,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(promptFeaturesFeatures$),
       get(promptProjectionProjection$),
     ]);
+    const picked = await get(pickedEvent$);
+    if (!picked) {
+      throw new Error("Claim has no picked event");
+    }
     return {
       eventId: args.queuedMessage.id,
       chatThreadId: args.threadId,
@@ -3775,6 +3707,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       userId: args.userId,
       featureSwitchContext: features,
       contextType: args.queuedMessage.contextType,
+      contextId: args.queuedMessage.contextId,
+      userMessage: picked.userMessage,
       userMessageProjection: projection,
       agentRunSource: agentRunSourceAnnotation(args.queuedMessage.userMessage),
     };
@@ -3800,18 +3734,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         threadTs: chatSlackContext.threadTs,
         routeThreadTs: chatSlackContext.routeThreadTs,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatSlackContext,
-        and(
-          eq(chatSlackContext.id, chatEvents.contextId),
-          eq(chatSlackContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatSlackContext)
       .innerJoin(
         slackChatThreadRoutes,
         and(
-          eq(slackChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(slackChatThreadRoutes.chatThreadId, chatSlackContext.chatThreadId),
           eq(slackChatThreadRoutes.channelId, chatSlackContext.channelId),
           or(
             and(
@@ -3842,9 +3769,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "slack"),
+          eq(chatSlackContext.id, z.string().parse(args.contextId)),
+          eq(chatSlackContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -3877,18 +3803,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         routeThreadId: feishuChatThreadRoutes.threadId,
         feishuDisplayName: feishuOrgConnections.feishuUserName,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatFeishuContext,
-        and(
-          eq(chatFeishuContext.id, chatEvents.contextId),
-          eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatFeishuContext)
       .innerJoin(
         feishuChatThreadRoutes,
         and(
-          eq(feishuChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(
+            feishuChatThreadRoutes.chatThreadId,
+            chatFeishuContext.chatThreadId,
+          ),
           eq(
             feishuChatThreadRoutes.connectionId,
             chatFeishuContext.connectionId,
@@ -3917,9 +3839,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "feishu"),
+          eq(chatFeishuContext.id, z.string().parse(args.contextId)),
+          eq(chatFeishuContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4008,18 +3929,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         installationBotId: teamsOrgInstallations.botId,
         installationBotName: teamsOrgInstallations.botName,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatTeamsContext,
-        and(
-          eq(chatTeamsContext.id, chatEvents.contextId),
-          eq(chatTeamsContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatTeamsContext)
       .innerJoin(
         teamsChatThreadRoutes,
         and(
-          eq(teamsChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(teamsChatThreadRoutes.chatThreadId, chatTeamsContext.chatThreadId),
           eq(teamsChatThreadRoutes.connectionId, chatTeamsContext.connectionId),
           eq(
             teamsChatThreadRoutes.conversationId,
@@ -4046,9 +3960,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "teams"),
+          eq(chatTeamsContext.id, z.string().parse(args.contextId)),
+          eq(chatTeamsContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4079,18 +3992,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         agentId: agents.id,
         officialUserLinkId: telegramOfficialUserLinks.id,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatTelegramContext,
-        and(
-          eq(chatTelegramContext.id, chatEvents.contextId),
-          eq(chatTelegramContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatTelegramContext)
       .innerJoin(
         chatThreads,
         and(
-          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.id, chatTelegramContext.chatThreadId),
           eq(chatThreads.userId, args.userId),
         ),
       )
@@ -4106,9 +4012,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "telegram"),
+          eq(chatTelegramContext.id, z.string().parse(args.contextId)),
+          eq(chatTelegramContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4137,18 +4042,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
         agentId: agents.id,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatAgentphoneContext,
-        and(
-          eq(chatAgentphoneContext.id, chatEvents.contextId),
-          eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatAgentphoneContext)
       .innerJoin(
         chatThreads,
         and(
-          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.id, chatAgentphoneContext.chatThreadId),
           eq(chatThreads.userId, args.userId),
         ),
       )
@@ -4163,9 +4061,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "agentphone"),
+          eq(chatAgentphoneContext.id, z.string().parse(args.contextId)),
+          eq(chatAgentphoneContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4189,16 +4086,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         messageId: chatDiscordContext.messageId,
         sessionKey: discordChatThreadRoutes.sessionKey,
         conversationContext: chatDiscordContext.conversationContext,
-        userMessage: canonicalChatEventUserMessage(),
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatDiscordContext,
-        and(
-          eq(chatDiscordContext.id, chatEvents.contextId),
-          eq(chatDiscordContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatDiscordContext)
       .innerJoin(
         discordChatThreadRoutes,
         eq(discordChatThreadRoutes.id, chatDiscordContext.routeId),
@@ -4209,13 +4098,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "discord"),
+          eq(chatDiscordContext.id, z.string().parse(args.contextId)),
+          eq(chatDiscordContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
-    return context ?? null;
+    return context ? { ...context, userMessage: args.userMessage } : null;
   });
   const promptDiscordRouteDiscordRoute$ = computed(async (get) => {
     const [context, args] = await Promise.all([
@@ -4353,13 +4241,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           break;
         }
         case "discord": {
-          const resolved = get(
-            promptInternalDiscordMaterialInternalDiscordMaterial$,
-          );
-          if (!resolved) {
-            throw new Error("Discord material has not been resolved");
-          }
-          const { material } = resolved;
+          const material = await get(promptDiscordMaterial$);
           if (material) {
             return material;
           }
@@ -4372,42 +4254,29 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptModelModel$ = computed((get) => {
-    const model = get(promptInternalModelInternalModel$);
-    if (!model) {
-      throw new Error("Prompt model has not been resolved");
-    }
-    return model;
+  const promptModelModel$ = computed(async (get) => {
+    return await get(promptResolvePromptModelResolvePromptModel$);
   });
-  const promptSessionSession$ = computed(async (get) => {
-    const [args, model] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptModelModel$),
+  const promptThreadSessionSnapshot$ = computed(async (get) => {
+    const [head, agent] = await Promise.all([
+      get(promptSelectedHead$),
+      get(promptAgentAgent$),
     ]);
-    if ("error" in model) {
+    if (!agent) {
       return null;
     }
-    const { routedModel } = routeQueuedMessagePiExecution({
-      input: args,
-      modelRoute: model.route,
-    });
-    await observeAgentRunPreCreateParallelStage("thread-session", {
-      command: {
-        auth: { userId: args.userId, orgId: args.agent.orgId },
-      },
-    });
-    const [thread] = await args.db
+    const [thread] = await get(db$)
       .select(chatThreadSessionSelection())
       .from(chatThreads)
       .leftJoin(
         agentSessions,
         and(
           eq(agentSessions.id, chatThreads.agentSessionId),
-          eq(agentSessions.userId, args.userId),
-          eq(agentSessions.orgId, args.agent.orgId),
+          eq(agentSessions.userId, head.userId),
+          eq(agentSessions.orgId, head.orgId),
         ),
       )
-      .leftJoin(agents, eq(agents.id, args.agent.id))
+      .leftJoin(agents, eq(agents.id, agent.agentId))
       .leftJoin(
         conversations,
         eq(conversations.id, agentSessions.conversationId),
@@ -4420,12 +4289,27 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
       .where(
         and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.expectedThreadAgentId ?? args.agent.id),
+          eq(chatThreads.id, head.chatThreadId),
+          eq(chatThreads.userId, head.userId),
+          eq(chatThreads.agentId, agent.expectedThreadAgentId ?? agent.agentId),
         ),
       )
       .limit(1);
+    return thread ?? null;
+  });
+  const promptSessionSession$ = computed(async (get) => {
+    const [args, model, thread] = await Promise.all([
+      get(promptArgsArgs$),
+      get(promptModelModel$),
+      get(promptThreadSessionSnapshot$),
+    ]);
+    if ("error" in model) {
+      return null;
+    }
+    const { routedModel } = routeQueuedMessagePiExecution({
+      input: args,
+      modelRoute: model.route,
+    });
     if (!thread) {
       throw new Error("Chat thread not found while resolving session binding");
     }
@@ -4438,7 +4322,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     });
   });
   const incompleteRoundAnchors$ = computed(async (get) => {
-    const { db, threadId } = await get(promptArgsArgs$);
+    const db = get(db$);
+    const { threadId } = await get(promptArgsArgs$);
     const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
       (beforeSeq) => {
         const isSuccessfulRun = sql`COALESCE(
@@ -4605,7 +4490,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(promptArgsArgs$),
         get(promptIncompleteSelectionIncompleteSelection$),
       ]);
-      const { db, threadId } = args;
+      const db = get(db$);
+      const { threadId } = args;
       if (selection.length === 0) {
         return [];
       }
@@ -4668,7 +4554,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return [];
     }
     const contextType = args.queuedMessage.contextType;
-    const rows = await args.db
+    const rows = await get(db$)
       .select({
         runId: agentRuns.id,
         status: agentRuns.status,
@@ -4710,7 +4596,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!runIds.length) {
       return [];
     }
-    return await args.db
+    return await get(db$)
       .select({
         runId: chatEvents.runId,
         eventType: chatEvents.eventType,
@@ -4723,13 +4609,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(chatEvents.chatThreadId, args.threadId),
           chatEventTextCondition(),
           inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(args.db),
+          visibleChatEventCondition(get(db$)),
           isWebChatContextType(args.queuedMessage.contextType)
             ? or(
                 chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
                 inArray(
                   chatEvents.seqId,
-                  args.db
+                  get(db$)
                     .select({ seqId: max(chatEvents.seqId) })
                     .from(chatEvents)
                     .where(
@@ -4738,7 +4624,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                         chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
                         isNotNull(canonicalChatEventContent()),
                         inArray(chatEvents.runId, runIds),
-                        visibleChatEventCondition(args.db),
+                        visibleChatEventCondition(get(db$)),
                       ),
                     )
                     .groupBy(chatEvents.runId),
@@ -4788,7 +4674,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!ids.length) {
         return [];
       }
-      const rows = await args.db
+      const rows = await get(db$)
         .select({ id: presentationTemplates.id })
         .from(presentationTemplates)
         .where(
@@ -4824,7 +4710,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return [];
     }
-    const rows = await args.db
+    const rows = await get(db$)
       .select({ id: userTemplates.id, manifest: userTemplates.manifest })
       .from(userTemplates)
       .where(
@@ -4891,7 +4777,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const promptHostHost$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const db = get(db$);
     const [host] = await db
       .select({
@@ -4916,7 +4802,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return host ?? null;
   });
   const promptCaptureCapture$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const db = get(db$);
     const [row] = await db
       .select({ id: chatNetworkBodyCaptures.chatEventId })
@@ -4989,29 +4875,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
     },
   );
-  const promptResolvePromptModelResolvePromptModel$ = command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<QueuedMessageModelRouteResolution> => {
-      const [args, features] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptFeaturesFeatures$),
-      ]);
-      signal.throwIfAborted();
-      const model = await set(
-        resolveQueuedModel$,
-        {
-          orgId: args.agent.orgId,
-          userId: args.userId,
-          threadId: args.threadId,
-          eventId: args.queuedMessage.id,
-          featureSwitchContext: features,
-          providerModelSupport: "trust-enqueued",
-        },
-        signal,
-      );
-      signal.throwIfAborted();
+  const promptResolvePromptModelResolvePromptModel$ = computed(
+    async (get): Promise<QueuedMessageModelRouteResolution> => {
+      const model = await get(resolveQueuedModel$);
       if ("status" in model) {
         return { error: model.body.error };
       }
@@ -5050,200 +4916,135 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const promptCheckPromptDiscordAccessCheckPromptDiscordAccess$ = command(
-    async (
-      { get, set },
-      input: {
-        readonly channelId: string;
-        readonly mode: "view" | "read" | "write";
-      },
-      signal: AbortSignal,
-    ) => {
-      const [args, target] = await Promise.all([
+  const promptDiscordMaterial$ = computed(
+    async (get): Promise<QueuedLaunchMaterial | null> => {
+      const [args, context, target] = await Promise.all([
         get(promptLoaderArgsLoaderArgs$),
+        get(promptDiscordContextDiscordContext$),
         get(promptDiscordRouteDiscordRoute$),
       ]);
-      signal.throwIfAborted();
-      if (!target) {
+      if (args.contextType !== "discord" || !context || !target) {
         return null;
       }
-      const access = await set(
-        requireDiscordConversationAccess$,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          guildId: target.guildId,
-          ...input,
-        },
-        signal,
+      const identity = {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: target.guildId,
+      };
+      // Preserve each fresh authority boundary and its order: source view,
+      // optional history read, then destination write permission. No POST occurs.
+      const sourceAccess = checkedQueuedDiscordAccess(
+        await get(
+          discordConversationAccess({
+            ...identity,
+            channelId: context.sourceChannelId,
+            mode: "view",
+          }),
+        ),
+        target,
       );
-      signal.throwIfAborted();
-      if (access.kind === "denied") {
-        if (access.response.status === 403 || access.response.status === 404) {
-          return null;
-        }
-        throw new Error(
-          `Discord access check failed: ${access.response.status}`,
-        );
-      }
-      if (
-        access.binding.connectionId !== target.connectionId ||
-        access.binding.discordUserId !== target.discordUserId
-      ) {
+      if (!sourceAccess) {
         return null;
       }
-      return access;
+      let conversationContextAllowed =
+        sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+      if (context.conversationContext !== null && conversationContextAllowed) {
+        conversationContextAllowed =
+          checkedQueuedDiscordAccess(
+            await get(
+              discordConversationAccess({
+                ...identity,
+                channelId: context.sourceChannelId,
+                mode: "read",
+              }),
+            ),
+            target,
+          ) !== null;
+      }
+      const destinationAccess = checkedQueuedDiscordAccess(
+        await get(
+          discordConversationAccess({
+            ...identity,
+            channelId: target.channelId,
+            mode: "write",
+          }),
+        ),
+        target,
+      );
+      if (!destinationAccess) {
+        return null;
+      }
+      const material = renderPromptDiscordMaterial({
+        context,
+        target,
+        args,
+        access: { ...destinationAccess, conversationContextAllowed },
+      });
+      return {
+        ...material,
+        triggerSource: "discord",
+        delivery: { discordDelivery: material.discordDelivery },
+      };
     },
   );
-  const promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$ =
-    command(
-      async (
-        { get, set },
-        signal: AbortSignal,
-      ): Promise<QueuedLaunchMaterial | null> => {
-        const [args, context, target] = await Promise.all([
-          get(promptLoaderArgsLoaderArgs$),
-          get(promptDiscordContextDiscordContext$),
-          get(promptDiscordRouteDiscordRoute$),
-        ]);
-        signal.throwIfAborted();
-        if (args.contextType !== "discord" || !context || !target) {
-          return null;
-        }
-        const sourceAccess = await set(
-          promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-          { channelId: context.sourceChannelId, mode: "view" },
-          signal,
-        );
-        if (!sourceAccess) {
-          return null;
-        }
-        let conversationContextAllowed =
-          sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
-        if (
-          context.conversationContext !== null &&
-          conversationContextAllowed
-        ) {
-          conversationContextAllowed =
-            (await set(
-              promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-              { channelId: context.sourceChannelId, mode: "read" },
-              signal,
-            )) !== null;
-        }
-        const destinationAccess = await set(
-          promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-          { channelId: target.channelId, mode: "write" },
-          signal,
-        );
-        if (!destinationAccess) {
-          return null;
-        }
-        const access = { ...destinationAccess, conversationContextAllowed };
-        const material = renderPromptDiscordMaterial({
-          context,
-          target,
-          access,
-          args,
-        });
-        return {
-          ...material,
-          triggerSource: "discord",
-          delivery: { discordDelivery: material.discordDelivery },
-        };
-      },
-    );
-  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
-  const initializeQueuedPrompt$ = command(
-    async (
-      { get, set },
-      head: ChatQueueHeadContext,
-      runTiming: ApiDispatchTimingCollector,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
-      const timing = new ChatCallbackPreCreateTimingCollector();
-      set(promptInternalInputInternalInput$, {
-        head,
-        timing,
-        runTiming,
-      });
-      set(promptInternalModelInternalModel$, null);
-      set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
-      set(internalEarlyAssembly$, null);
+  const internalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
       const selected = await settle(
         Promise.all([
           get(promptQueuedMessageQueuedMessage$),
           get(promptAgentAgent$),
         ]),
-        signal,
       );
-      signal.throwIfAborted();
       if (!selected.ok) {
-        set(
-          internalEarlyAssembly$,
-          queuedPromptPreparationRejection(selected.error, head),
-        );
-        return false;
+        return queuedPromptPreparationRejection(selected.error, head);
       }
       const [queued, agent] = selected.value;
       if (queued?.id !== head.id) {
-        set(internalEarlyAssembly$, { kind: "not-ready" });
+        return { kind: "not-ready" };
+      }
+      return agent ? null : missingQueuedAgentRejection(head);
+    },
+  );
+  const initializeQueuedPrompt$ = command(
+    async (
+      { get },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const early = await get(internalEarlyAssembly$);
+      signal.throwIfAborted();
+      if (early) {
         return false;
       }
-      timing.recordElapsed({
+      const queued = await get(promptQueuedMessageQueuedMessage$);
+      signal.throwIfAborted();
+      if (!queued) {
+        throw new Error("Prepared prompt has no selected queue input");
+      }
+      timing.prompt.recordElapsed({
         actionType:
           "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
         spanKind: "nested",
         startedAt: queued.createdAt.getTime(),
         finishedAt: head.apiStartTime,
       });
-      if (!agent) {
-        set(internalEarlyAssembly$, missingQueuedAgentRejection(head));
-        return false;
-      }
       return true;
     },
   );
-  const resolvePromptLaunchInputs$ = command(
-    async (
-      { set },
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const [model, material] = await Promise.all([
-        set(promptResolvePromptModelResolvePromptModel$, signal),
-        head.contextType === "discord"
-          ? set(
-              promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$,
-              signal,
-            )
-          : null,
-      ]);
-      signal.throwIfAborted();
-      set(promptInternalModelInternalModel$, model);
-      set(promptInternalDiscordMaterialInternalDiscordMaterial$, { material });
-    },
-  );
+
   const promptAssembleQueuedPromptRunAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(internalEarlyAssembly$);
+      const early = await get(internalEarlyAssembly$);
       if (early) {
         return early;
       }
-      const input = get(promptInternalInputInternalInput$);
-      if (!input) {
-        throw new Error("Prompt preparation has no selected input");
-      }
-      const { head, timing } = input;
-      const prepared = await settle(
-        timing.measure(
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-          "top_level",
-          () => {
-            return get(promptRunInputRunInput$);
-          },
-        ),
-      );
+      const head = await get(promptSelectedHead$);
+      const prepared = await settle(get(promptRunInputRunInput$));
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
       }
@@ -5260,15 +5061,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return {
         kind: "assembled",
-        run: {
-          ...buildQueuedCreateAgentRunArgs(runInput, head.apiStartTime),
-          timing: input.runTiming,
-        },
+        run: { ...buildQueuedCreateAgentRunArgs(runInput, head.apiStartTime) },
         producerBinding: agent.producerBinding ?? null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
-          context: { userId: head.userId, timing, runInput },
+          context: { userId: head.userId, runInput },
         },
       };
     },
@@ -5281,22 +5079,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        await get(promptSelectedHead$),
       );
       return false;
     }
     return !("error" in templates);
   });
   const promptExecutionSelectionIdentityInput$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = get(promptInputInput$);
-    const db = get(db$);
+    const head = await get(promptSelectedHead$);
     const args = await get(promptArgsArgs$);
     return {
-      db,
-      timing,
       auth: {
         tokenType: "session" as const,
         userId: args.userId,
@@ -5330,8 +5125,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       modelRoute: model.route,
     });
     return {
-      db: identity.db,
-      timing: identity.timing,
       command: {
         auth: identity.auth,
         apiStartTime: identity.apiStartTime,
@@ -5372,12 +5165,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         requiredOfficialWorkflowIds:
           args.queuedMessage.requiredOfficialWorkflowIds,
         piExecution,
-        timing: identity.timing,
       },
     };
   });
   const promptExecutionResourcesThreadSession$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(promptSessionSession$)) ?? undefined;
@@ -5388,14 +5180,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const promptExecutionResourcesFeatureSwitchContext$ = computed(
     async (get) => {
-      return get(internalEarlyAssembly$)
+      return (await get(internalEarlyAssembly$))
         ? undefined
         : await get(promptFeaturesFeatures$);
     },
   );
   const promptExecutionResourcesMemberAccountSnapshot$ = computed(
     async (get) => {
-      if (get(internalEarlyAssembly$)) {
+      if (await get(internalEarlyAssembly$)) {
         return null;
       }
       const model = await get(promptModelModel$);
@@ -5403,21 +5195,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const availableMaterial$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
     const material = await settle(get(promptMaterialMaterial$));
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        await get(promptSelectedHead$),
       );
       return null;
     }
     return material.value;
   });
   const promptExecutionResourcesCallbackInputs$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     const [args, material] = await Promise.all([
@@ -5438,7 +5230,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return (await get(availableMaterial$))?.connectorSourceId;
   });
   const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return {};
     }
     const templates = await get(promptTemplatesTemplates$);
@@ -5446,10 +5238,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ? {}
       : additionalVolumesForRun(templates.presentationTemplateVolumes);
   });
-  const internalHead$ = state<ChatQueueHeadContext | null>(null);
+  const internalHead$ = head$;
   const internalTargetRevision$ = state(0);
-  const queuedAutomationInputsHead$ = computed((get) => {
-    const head = get(internalHead$);
+  const queuedAutomationInputsHead$ = computed(async (get) => {
+    const head = await get(internalHead$);
     if (!head) {
       throw new Error("Queued automation context requires a selected input");
     }
@@ -5457,7 +5249,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const event$ = computed(
     async (get): Promise<QueuedAutomationEvent | null> => {
-      const head = get(queuedAutomationInputsHead$);
+      const head = await get(queuedAutomationInputsHead$);
       if (head.contextId === null) {
         return null;
       }
@@ -5655,18 +5447,35 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const reconciliation = {
     reconcileOfficialWorkflow$: reconcileOfficialWorkflow$,
   };
-  const automationLaunchReadinessInternalInput$ =
-    state<AssembleWorkflowAutomationRunArgs | null>(null);
-  const automationLaunchReadinessInput$ = computed((get) => {
-    const input = get(automationLaunchReadinessInternalInput$);
-    if (!input) {
-      throw new Error("Automation launch requires a selected queued input");
+  const automationLaunchReadinessInput$ = computed(async (get) => {
+    const [head, event, target, launchMaterial, autonomyBudget] =
+      await Promise.all([
+        get(head$),
+        get(event$),
+        get(target$),
+        get(material.launchMaterial$),
+        get(budget.autonomyBudget$),
+      ]);
+    if (
+      !head ||
+      !event ||
+      !target ||
+      !launchMaterial ||
+      autonomyBudget.kind === "invalid"
+    ) {
+      throw new Error("Automation launch requires a valid queued input");
     }
-    return input;
+    return queuedAutomationLaunchArguments({
+      head,
+      event,
+      target,
+      material: launchMaterial,
+      autonomyBudget: autonomyBudget.autonomyBudget,
+    });
   });
   const previousRunFailure$ = computed(
     async (get): Promise<RunFailure | null> => {
-      const args = get(automationLaunchReadinessInput$);
+      const args = await get(automationLaunchReadinessInput$);
       const { automation } = args.due;
       if (args.activePreviousRunPolicy === "allow" || !automation.lastRunId) {
         return null;
@@ -5682,7 +5491,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const ownerMember$ = computed(async (get) => {
-    const { automation } = get(automationLaunchReadinessInput$).due;
+    const { automation } = (await get(automationLaunchReadinessInput$)).due;
     const [member] = await get(db$)
       .select({ role: orgMembersCache.role })
       .from(orgMembersCache)
@@ -5696,7 +5505,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return member ?? null;
   });
   const visibleTarget$ = computed(async (get) => {
-    const { automation } = get(automationLaunchReadinessInput$).due;
+    const { automation } = (await get(automationLaunchReadinessInput$)).due;
     const [target] = await get(db$)
       .select({
         agentId: workflows.agentId,
@@ -5719,8 +5528,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return target ?? null;
   });
   const targetReadable$ = computed(async (get) => {
-    const { automation, agentId, allowClaimedOnceScheduleAutomation } = get(
-      automationLaunchReadinessInput$,
+    const { automation, agentId, allowClaimedOnceScheduleAutomation } = (
+      await get(automationLaunchReadinessInput$)
     ).due;
     const claimedOnceSchedule =
       allowClaimedOnceScheduleAutomation === true &&
@@ -5765,12 +5574,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const workflowAutomationLaunchReadGraphSources = {
-    internalInput$: automationLaunchReadinessInternalInput$,
     input$: automationLaunchReadinessInput$,
     readiness$: automationLaunchReadinessReadiness$,
   };
   const {
-    internalInput$: workflowAutomationLaunchReadGraphInternalInput$,
     input$: workflowAutomationLaunchReadGraphInput$,
     readiness$: workflowAutomationLaunchReadGraphReadiness$,
   } = workflowAutomationLaunchReadGraphSources;
@@ -5778,8 +5585,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphSources;
   const automationLaunchMaterialsComputerUseHostGrant$ = computed(
     async (get): Promise<ComputerUseHostGrant> => {
-      const { automation, chatThreadId } = get(
-        automationLaunchMaterialsInput$,
+      const { automation, chatThreadId } = (
+        await get(automationLaunchMaterialsInput$)
       ).due;
       const [host] = await get(db$)
         .select({
@@ -5806,7 +5613,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const automationLaunchMaterialsRunInput$ = computed(
     async (get): Promise<WorkflowAutomationRunInput> => {
-      const args = get(automationLaunchMaterialsInput$);
+      const args = await get(automationLaunchMaterialsInput$);
       const computerUseHostGrant = await get(
         automationLaunchMaterialsComputerUseHostGrant$,
       );
@@ -5829,18 +5636,32 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     automationLaunchMaterialsComputerUseHostGrant$;
   const workflowAutomationLaunchReadGraphRunInput$ =
     automationLaunchMaterialsRunInput$;
-  const queuedModelInputsInternalInput$2 = state<QueuedModelInput | null>(null);
-  const queuedModelInputsInternalPolicyFacts$2 =
-    state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$2 = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$2);
+  const queuedModelInputsInternalInput$2 = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const [head, target] = await Promise.all([
+        get(head$),
+        get(capturedAutomationTarget$),
+      ]);
+      if (!head || !target) {
+        throw new Error("Automation claim has no selected model input");
+      }
+      return {
+        orgId: claim.orgId,
+        userId: target.automation.ownerUserId,
+        threadId: claim.chatThreadId,
+        eventId: head.id,
+      };
+    },
+  );
+  const queuedModelInputsInput$2 = computed(async (get) => {
+    const input = await get(queuedModelInputsInternalInput$2);
     if (!input) {
       throw new Error("Queued model preparation requires a selected input");
     }
     return input;
   });
   const queuedModelInputsSelection$2 = computed(async (get) => {
-    const input = get(queuedModelInputsInput$2);
+    const input = await get(queuedModelInputsInput$2);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -5848,7 +5669,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return head.canonicalModelSelection;
   });
   const queuedModelInputsOrgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$2);
+    const { orgId } = await get(queuedModelInputsInput$2);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -5861,7 +5682,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsCapabilities$2 = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$2);
+      const { orgId } = await get(queuedModelInputsInput$2);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -5906,15 +5727,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$2).orgId));
+      .where(
+        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId),
+      );
   });
-  const queuedModelInputsPolicyFacts$ = computed((get) => {
-    const facts = get(queuedModelInputsInternalPolicyFacts$2);
-    if (!facts) {
-      throw new Error("Queued model policy must be prepared before routing");
-    }
-    return facts;
-  });
+  const queuedModelInputsPolicyFacts$ = computed(
+    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
+      return await get(queuedModelCommandsInitialFacts$);
+    },
+  );
   const queuedModelInputsPolicy$ = computed(async (get) => {
     const [selection, facts] = await Promise.all([
       get(queuedModelInputsSelection$2),
@@ -5934,7 +5755,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelSources2 = {
     internalInput$: queuedModelInputsInternalInput$2,
-    internalPolicyFacts$: queuedModelInputsInternalPolicyFacts$2,
     input$: queuedModelInputsInput$2,
     selection$: queuedModelInputsSelection$2,
     orgMetadata$: queuedModelInputsOrgMetadata$,
@@ -5949,7 +5769,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelSources2;
   const queuedMemberModelRoutesMemberAccountSnapshot$2 = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$2);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$2);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$2),
         get(queuedModelInputsOrgMetadata$),
@@ -5983,7 +5803,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedMemberModelRoutesMemberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$2);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$2).userId,
+      (await get(queuedMemberModelRoutesInput$2)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -6016,7 +5836,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$2).orgId),
+          eq(
+            modelProviders.orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
+          ),
           eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
         ),
       )
@@ -6044,7 +5867,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$2).orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
           ),
         ),
       )
@@ -6102,7 +5925,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const { modelPin$: queuedModelRuntimeModelPin$2 } = queuedModelRouting;
   const queuedModelRuntimeFeatureSwitchContext$2 = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$2);
+      const input = await get(queuedModelRuntimeInput$2);
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
@@ -6212,7 +6035,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$2).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$2)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -6220,7 +6046,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return row?.total ?? 0;
   });
   const queuedModelCreditsUsagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$2);
+    const input = await get(queuedModelCreditsInput$2);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -6256,7 +6082,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const { input$: queuedModelAllowanceInput$2 } = queuedModelSources2;
   const queuedModelAllowanceAllowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$2);
+    const { orgId } = await get(queuedModelAllowanceInput$2);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -6370,10 +6196,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    const facts = await get(queuedProviderAdmissionPolicyFacts$2);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$2)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$2))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$2);
@@ -6382,7 +6209,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return get(personalSubscription$2);
       },
       capabilities: () => {
-        return get(queuedProviderAdmissionPolicyFacts$2).orgPlanCapabilities;
+        return facts.orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$2);
@@ -6396,7 +6223,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     input$: queuedModelCommandsInput$2,
     capabilities$: queuedModelCommandsCapabilities$2,
     initialPolicies$: queuedModelCommandsInitialPolicies$2,
-    internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$2,
   } = queuedModelSources2;
   const queuedModelCommandsInitialFacts$ = computed(async (get) => {
     const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
@@ -6414,17 +6240,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       stored,
     });
   });
-  const orgModelPolicyInitializationInitializeModelPolicy$2 = command(
-    async ({ get }, signal: AbortSignal) => {
-      const facts = await get(queuedModelCommandsInitialFacts$);
-      signal.throwIfAborted();
-      return facts;
-    },
-  );
-  const queuedModelCommandsEnsureModelPolicy$ =
-    orgModelPolicyInitializationInitializeModelPolicy$2;
-  const queuedModelCommandsAllowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$2).orgId };
+  const queuedModelCommandsAllowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$2)).orgId };
   });
   const capturedResolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -6465,24 +6282,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedModelCommandsRefreshUsageAllowance$2 =
     capturedResolveUsageAllowance$;
-  const queuedModelCommandsInitializeModelPolicy$2 = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$2);
-      const facts =
-        input.userId === "__no_preference__"
-          ? await get(queuedModelCommandsInitialFacts$)
-          : await set(queuedModelCommandsEnsureModelPolicy$, signal);
-      signal.throwIfAborted();
-      set(queuedModelCommandsInternalPolicyFacts$2, facts);
-    },
-  );
   const queuedModelCommands = {
-    initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$2,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$2,
   };
   const {
-    internalInput$: queuedModelInternalInput$,
-    internalPolicyFacts$: queuedModelInternalPolicyFacts$,
     selection$: queuedModelSelection$,
     capabilities$: queuedModelCapabilities$,
     initialPolicies$: queuedModelInitialPolicies$,
@@ -6496,124 +6299,101 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelRuntime;
   const { providerAdmission$: queuedModelProviderAdmission$ } =
     queuedModelAdmission;
-  const {
-    initializeModelPolicy$: queuedModelInitializeModelPolicy$,
-    refreshUsageAllowance$: queuedModelRefreshUsageAllowance$,
-  } = queuedModelCommands;
-  const queuedModelResolveQueuedModel$2 = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+  const { refreshUsageAllowance$: queuedModelRefreshUsageAllowance$ } =
+    queuedModelCommands;
+  const automationAllowanceWriteResult$ = state<{
+    readonly remainingUnits: number;
+  } | null>(null);
+  const refreshAutomationUsageAllowance$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const selection = await get(queuedModelSelection$);
       signal.throwIfAborted();
-      set(queuedModelInternalInput$, input);
-      set(queuedModelInternalPolicyFacts$, null);
-      const [selection] = await Promise.all([
-        get(queuedModelSelection$),
-        get(queuedModelCapabilities$),
-        get(queuedModelInitialPolicies$),
-        get(queuedModelFeatureSwitchContext$2),
-      ]);
-      signal.throwIfAborted();
-      if (!selection) {
-        return badRequestMessage("Queued input is missing its model selection");
-      }
-      // Re-resolve the captured model against the claim's catalog snapshot
-      // (current at the pick, not at enqueue) with the same resolution as
-      // enqueue and run creation; a replaced model routes to its final
-      // replacement. Already-started runs are never re-resolved.
       if (
+        !selection ||
         !resolveRunSelectionModel(
           await get(claimCatalog$),
           selection.selectedModel,
         )
       ) {
-        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+        return;
       }
-      await set(queuedModelInitializeModelPolicy$, signal);
       const pin = await get(queuedModelModelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
-        return pin;
+        return;
       }
-      const [
-        admission,
-        featureSwitchContext,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      ] = await Promise.all([
-        get(queuedModelProviderAdmission$),
-        get(queuedModelFeatureSwitchContext$2),
-        get(queuedModelBuiltInRuntimeRoute$),
-        get(queuedModelMemberAccountSnapshot$2),
-      ]);
+      const admission = await get(queuedModelProviderAdmission$);
       signal.throwIfAborted();
-      const allowance = admission.needsAllowance
-        ? await set(queuedModelRefreshUsageAllowance$, signal)
-        : null;
-      // `null`: a Built-in pin with no available route.
-      const unpriced =
-        builtInModelRuntimeRoute === null && pin.selectedModel
-          ? await unpricedBuiltInModelRejection(get(db$), {
-              catalog: await get(claimCatalog$),
-              model: pin.selectedModel,
-              serviceTier: selection.codexServiceTier,
-              resolution: get(usagePricingResolution$),
-            })
-          : undefined;
-      signal.throwIfAborted();
-      return {
-        pin,
-        providerAdmission: {
-          effectiveModelProvider: admission.effectiveModelProvider,
-          cliAgentType: admission.cliAgentType,
-          error:
-            admission.error ??
-            unpriced ??
-            (admission.needsAllowance &&
-            (!allowance || allowance.remainingUnits <= 0)
-              ? pickChatRunModelInsufficientCredits()
-              : undefined),
-        },
-        featureSwitchContext,
-        runCodexServiceTier: selection.codexServiceTier ?? undefined,
-        reasoningEffort: selection.reasoningEffort ?? undefined,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      };
+      if (admission.needsAllowance) {
+        const allowance = await set(queuedModelRefreshUsageAllowance$, signal);
+        signal.throwIfAborted();
+        set(automationAllowanceWriteResult$, allowance);
+      }
     },
   );
-  const automationLaunchEffectsResolveQueuedModel$ =
-    queuedModelResolveQueuedModel$2;
-  const automationLaunchEffectsResolveAutomationModel$ = command(
-    async (
-      { get, set },
-      args: Pick<AssembleWorkflowAutomationRunArgs, "due" | "queueEventId">,
-      timing: ApiDispatchTimingCollector,
-      signal: AbortSignal,
-    ): Promise<ModelContext> => {
-      return await measureApiDispatchTiming(
-        timing,
-        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-        "nested",
-        async () => {
-          const context = await set(
-            automationLaunchEffectsResolveQueuedModel$,
-            {
-              orgId: args.due.automation.orgId,
-              userId: args.due.automation.ownerUserId,
-              threadId: args.due.chatThreadId,
-              eventId: args.queueEventId,
-            },
-            signal,
-          );
-          signal.throwIfAborted();
-          return workflowModelContext(
-            await get(claimCatalog$),
-            args.due.chatThreadId,
-            context,
-          );
-        },
-      );
-    },
-  );
+  const queuedModelResolveQueuedModel$2 = computed(async (get) => {
+    const [selection] = await Promise.all([
+      get(queuedModelSelection$),
+      get(queuedModelCapabilities$),
+      get(queuedModelInitialPolicies$),
+      get(queuedModelFeatureSwitchContext$2),
+    ]);
+    if (!selection) {
+      return badRequestMessage("Queued input is missing its model selection");
+    }
+    if (
+      !resolveRunSelectionModel(
+        await get(claimCatalog$),
+        selection.selectedModel,
+      )
+    ) {
+      return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+    }
+    const pin = await get(queuedModelModelPin$);
+    if ("status" in pin) {
+      return pin;
+    }
+    const [
+      admission,
+      featureSwitchContext,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    ] = await Promise.all([
+      get(queuedModelProviderAdmission$),
+      get(queuedModelFeatureSwitchContext$2),
+      get(queuedModelBuiltInRuntimeRoute$),
+      get(queuedModelMemberAccountSnapshot$2),
+    ]);
+    const allowance = get(automationAllowanceWriteResult$);
+    const unpriced =
+      builtInModelRuntimeRoute === null && pin.selectedModel
+        ? await unpricedBuiltInModelRejection(get(db$), {
+            catalog: await get(claimCatalog$),
+            model: pin.selectedModel,
+            serviceTier: selection.codexServiceTier,
+            resolution: get(usagePricingResolution$),
+          })
+        : undefined;
+    return {
+      pin,
+      providerAdmission: {
+        effectiveModelProvider: admission.effectiveModelProvider,
+        cliAgentType: admission.cliAgentType,
+        error:
+          admission.error ??
+          unpriced ??
+          (admission.needsAllowance &&
+          (!allowance || allowance.remainingUnits <= 0)
+            ? pickChatRunModelInsufficientCredits()
+            : undefined),
+      },
+      featureSwitchContext,
+      runCodexServiceTier: selection.codexServiceTier ?? undefined,
+      reasoningEffort: selection.reasoningEffort ?? undefined,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    };
+  });
   const automationLaunchEffectsRecordQueuedWorkflowReward$ = command(
     async (
       { set },
@@ -6631,31 +6411,29 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal.throwIfAborted();
     },
   );
-  const workflowAutomationLaunchReadGraphResolveAutomationModel$ =
-    automationLaunchEffectsResolveAutomationModel$;
   const workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$ =
     automationLaunchEffectsRecordQueuedWorkflowReward$;
-  const workflowAutomationLaunchReadGraphInternalTiming$ =
-    state<ApiDispatchTimingCollector | null>(null);
-  const workflowAutomationLaunchReadGraphInternalModel$ =
-    state<ModelContext | null>(null);
-  const workflowAutomationLaunchReadGraphInternalAssembly$ = state<
-    AssembledWorkflowAutomationRun | RunFailure | null
-  >(null);
-  const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
-    const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
-    if (!timing) {
-      throw new Error("Automation timing is missing its selected input");
-    }
-    return timing;
-  });
-  const workflowAutomationLaunchReadGraphModel$ = computed((get) => {
-    const model = get(workflowAutomationLaunchReadGraphInternalModel$);
-    if (!model) {
-      throw new Error("Automation model has not been resolved");
-    }
-    return model;
-  });
+  const workflowAutomationLaunchReadGraphModel$ = computed(
+    async (get): Promise<ModelContext> => {
+      const [args, context] = await Promise.all([
+        get(automationExecutionInput$),
+        get(queuedModelResolveQueuedModel$2),
+      ]);
+      return args
+        ? workflowModelContext(
+            await get(claimCatalog$),
+            args.due.chatThreadId,
+            context,
+          )
+        : {
+            ok: false,
+            failure: {
+              kind: "conflict",
+              message: "Workflow automation no longer exists",
+            },
+          };
+    },
+  );
   const automationExecutionInput$ = computed(async (get) => {
     const [head, event, target] = await Promise.all([
       get(head$),
@@ -6680,7 +6458,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return null;
       }
       return {
-        timing: get(workflowAutomationLaunchReadGraphTiming$),
         auth: workflowAutomationAgentRunAuth(args.due.automation),
         apiStartTime: args.apiStartTime,
         agentId: args.due.agentId,
@@ -6700,15 +6477,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(automationExecutionInput$),
       ]);
       return identity && model.ok && args
-        ? {
-            timing: identity.timing,
-            command: automationSelectionCommand(args, model, identity.timing),
-          }
+        ? { command: automationSelectionCommand(args, model) }
         : null;
     },
   );
-  const workflowAutomationLaunchInternalInput$ =
-    workflowAutomationLaunchReadGraphInternalInput$;
   const workflowAutomationLaunchInput$ =
     workflowAutomationLaunchReadGraphInput$;
   const readiness$ = workflowAutomationLaunchReadGraphReadiness$;
@@ -6716,43 +6488,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphComputerUseHostGrant$;
   const workflowAutomationLaunchRunInput$ =
     workflowAutomationLaunchReadGraphRunInput$;
-  const resolveAutomationModel$ =
-    workflowAutomationLaunchReadGraphResolveAutomationModel$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
-  const internalTiming$ = workflowAutomationLaunchReadGraphInternalTiming$;
-  const workflowAutomationLaunchInternalModel$ =
-    workflowAutomationLaunchReadGraphInternalModel$;
-  const internalAssembly$ = workflowAutomationLaunchReadGraphInternalAssembly$;
-  const timing$ = workflowAutomationLaunchReadGraphTiming$;
   const workflowAutomationLaunchModel$ =
     workflowAutomationLaunchReadGraphModel$;
   const workflowAutomationLaunchIdentityInput$ =
     workflowAutomationLaunchReadGraphIdentityInput$;
   const workflowAutomationLaunchSelectionInput$ =
     workflowAutomationLaunchReadGraphSelectionInput$;
-  const prepareAutomationModel$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<ModelContext> => {
-      const args = await get(automationExecutionInput$);
-      signal.throwIfAborted();
-      return !args
-        ? {
-            ok: false,
-            failure: {
-              kind: "conflict",
-              message: "Workflow automation no longer exists",
-            },
-          }
-        : await set(resolveAutomationModel$, args, get(timing$), signal);
-    },
-  );
-  const assembleWorkflowAutomationRun$ = command(
-    async (
-      { get },
-      signal: AbortSignal,
-    ): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
-      const args = get(workflowAutomationLaunchInput$);
-      const timing = get(timing$);
+  const assembleWorkflowAutomationRun$ = computed(
+    async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
+      const args = await get(workflowAutomationLaunchInput$);
+
       const [selection, model, computerUseHostGrant, runInput, readiness] =
         await Promise.all([
           get(workflowAutomationLaunchSelectionInput$),
@@ -6761,7 +6508,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(workflowAutomationLaunchRunInput$),
           get(readiness$),
         ]);
-      signal.throwIfAborted();
       if (readiness) {
         return readiness;
       }
@@ -6773,11 +6519,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           "A valid automation model is missing execution identity",
         );
       }
-      timing.recordElapsed(
-        "api_dispatch_pre_create_agent_workflow_automation_create_run",
-        "nested",
-        now(),
-      );
+
       return {
         kind: "assembled",
         run: {
@@ -6809,26 +6551,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const initializeWorkflowAutomationRun$ = command(
     async (
-      { set },
+      { get },
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(workflowAutomationLaunchInternalInput$, args);
-      const assembly = await set(assembleWorkflowAutomationRun$, signal);
+      const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
-      set(internalAssembly$, assembly);
       // An assembled launch records its independent Get Started reward; the
       // caller runs it alongside the launch reads rather than ahead of them.
       return assembly.kind === "assembled" ? args : null;
     },
   );
-  const workflowAutomationLaunchAssembly$ = computed((get) => {
-    const assembly = get(internalAssembly$);
-    if (!assembly) {
-      throw new Error("Automation assembly has not been resolved");
-    }
-    return assembly;
-  });
+  const workflowAutomationLaunchAssembly$ = assembleWorkflowAutomationRun$;
   const workflowAutomationLaunchMemberAccountSnapshot$ = computed(
     async (get) => {
       const model = await get(workflowAutomationLaunchModel$);
@@ -6841,10 +6575,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedAutomationRunSources;
   const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
     material;
-  const queuedAutomationAssemblerInternalEarlyAssembly$ =
-    state<ChatQueueRunAssembly | null>(null);
+
   const {
-    internalHead$: initializeQueuedAutomationInternalHead$,
     event$: initializeQueuedAutomationEvent$,
     target$: initializeQueuedAutomationTarget$,
   } = queuedAutomationRunSources;
@@ -6858,33 +6590,68 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     reconcileOfficialWorkflow$:
       initializeQueuedAutomationReconcileOfficialWorkflow$,
   } = reconciliation;
+  const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
+      const [event, target, launch, autonomy] = await Promise.all([
+        get(initializeQueuedAutomationEvent$),
+        get(initializeQueuedAutomationTarget$),
+        get(initializeQueuedAutomationLaunchMaterial$),
+        get(initializeQueuedAutomationAutonomyBudget$),
+      ]);
+      if (!event || !target || !launch) {
+        return {
+          kind: "rejected",
+          rejection: {
+            userId: target?.automation.ownerUserId ?? head.userId,
+            error: {
+              code: "CONFLICT",
+              message: !target
+                ? "Workflow automation no longer exists"
+                : "Workflow queue event payload is unreadable",
+            },
+          },
+        };
+      }
+      return autonomy.kind === "invalid"
+        ? {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: autonomy.error,
+            },
+          }
+        : null;
+    },
+  );
   const initializeAutomationExecution$ = command(
-    async (
-      { get, set },
+    (
+      _store,
       head: ChatQueueHeadContext,
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
-    ): Promise<false> => {
-      set(initializeQueuedAutomationInternalHead$, head);
-      set(
-        internalTiming$,
-        workflowAutomationTiming(runTiming, head.apiStartTime),
-      );
-      const input = await get(automationExecutionInput$);
+    ): false => {
       signal.throwIfAborted();
-      if (!input) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: head.userId,
-            error: {
-              code: "CONFLICT",
-              message: "Workflow automation no longer exists",
-            },
-          },
-        });
-      }
+      workflowAutomationTiming(runTiming, head.apiStartTime);
       return false;
+    },
+  );
+  const rejectQueuedAutomationPreparation$ = command(
+    async (
+      { set },
+      head: ChatQueueHeadContext,
+      assembly: Extract<ChatQueueRunAssembly, { readonly kind: "rejected" }>,
+      signal: AbortSignal,
+    ): Promise<never> => {
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: assembly.rejection },
+        signal,
+      );
+      throw new ClaimInputAlreadyRejected();
     },
   );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
@@ -6892,10 +6659,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(initializeQueuedAutomationInternalHead$, head);
-      set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
-      const unreadable = (message: string): ChatQueueRunAssembly => {
+    ): Promise<AssembleWorkflowAutomationRunArgs> => {
+      const unreadable = (
+        message: string,
+      ): Extract<ChatQueueRunAssembly, { readonly kind: "rejected" }> => {
         return {
           kind: "rejected",
           rejection: {
@@ -6911,15 +6678,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ]);
       signal.throwIfAborted();
       if (!event || !loadedTarget) {
-        set(
-          queuedAutomationAssemblerInternalEarlyAssembly$,
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
           unreadable(
             !event
               ? "Workflow queue event payload is unreadable"
               : "Workflow automation no longer exists",
           ),
+          signal,
         );
-        return null;
       }
       if (loadedTarget.automation.officialBlueprintKey !== null) {
         const reconciled = await set(
@@ -6928,17 +6696,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           signal,
         );
         if (reconciled.kind !== "current") {
-          set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-            kind: "rejected",
-            rejection: {
-              error: {
-                code: "CONFLICT",
-                message: reconciliationConflictMessage(reconciled),
+          return await set(
+            rejectQueuedAutomationPreparation$,
+            head,
+            {
+              kind: "rejected",
+              rejection: {
+                error: {
+                  code: "CONFLICT",
+                  message: reconciliationConflictMessage(reconciled),
+                },
+                userId: loadedTarget.automation.ownerUserId,
               },
-              userId: loadedTarget.automation.ownerUserId,
             },
-          });
-          return null;
+            signal,
+          );
         }
       }
       const [target, material, autonomyBudget] = await Promise.all([
@@ -6948,40 +6720,52 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ]);
       signal.throwIfAborted();
       if (!target) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: loadedTarget.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Official Workflow automation no longer exists",
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: loadedTarget.automation.ownerUserId,
+              error: {
+                code: "CONFLICT",
+                message: "Official Workflow automation no longer exists",
+              },
             },
           },
-        });
-        return null;
+          signal,
+        );
       }
       if (!material) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: target.automation.ownerUserId,
-            error: {
-              code: "CONFLICT",
-              message: "Workflow queue event payload is unreadable",
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: {
+                code: "CONFLICT",
+                message: "Workflow queue event payload is unreadable",
+              },
             },
           },
-        });
-        return null;
+          signal,
+        );
       }
       if (autonomyBudget.kind === "invalid") {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: target.automation.ownerUserId,
-            error: autonomyBudget.error,
+        return await set(
+          rejectQueuedAutomationPreparation$,
+          head,
+          {
+            kind: "rejected",
+            rejection: {
+              userId: target.automation.ownerUserId,
+              error: autonomyBudget.error,
+            },
           },
-        });
-        return null;
+          signal,
+        );
       }
       return queuedAutomationLaunchArguments({
         head,
@@ -6993,15 +6777,26 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const resolveAutomationModelSnapshot$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      const model = await set(prepareAutomationModel$, signal);
-      signal.throwIfAborted();
-      set(workflowAutomationLaunchInternalModel$, model);
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      await measureApiDispatchTiming(
+        timing,
+        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+        "nested",
+        async () => {
+          await set(refreshAutomationUsageAllowance$, signal);
+          await get(workflowAutomationLaunchModel$);
+          signal.throwIfAborted();
+        },
+      );
     },
   );
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
+      const early = await get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
       }
@@ -7050,7 +6845,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
-    if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
+    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
@@ -7099,7 +6894,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const featureSwitchContext$ = computed(async (get) => {
     return (await get(isAutomation$))
-      ? undefined
+      ? get(queuedModelFeatureSwitchContext$2)
       : get(promptExecutionResourcesFeatureSwitchContext$);
   });
   const memberAccountSnapshot$ = computed(async (get) => {
@@ -7151,7 +6946,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Run identity is unavailable");
       }
       return {
-        timing: input.timing,
         command: {
           auth: input.auth,
           apiStartTime: input.apiStartTime,
@@ -7164,34 +6958,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreateAgentIdAgentId$ = computed(async (get) => {
-    const { command: args, timing } = await get(
-      selectedIdentityInputIdentityInput$,
-    );
-    const db = get(db$);
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_resolve_agent_id",
-      async () => {
-        if (args.body.agentId) {
-          return args.body.agentId;
-        }
-        if (!args.body.sessionId) {
-          return null;
-        }
-        const [session] = await db
-          .select({ agentId: agentSessions.agentId })
-          .from(agentSessions)
-          .where(
-            and(
-              eq(agentSessions.id, args.body.sessionId),
-              eq(agentSessions.userId, args.auth.userId),
-              eq(agentSessions.orgId, args.auth.orgId),
-            ),
-          )
-          .limit(1);
-        return session?.agentId ?? null;
-      },
-    );
+    // Raw configuration reads need the captured agent, not a valid launch.
+    // Source validation can reject the input while these finite reads finish.
+    return (await get(claimReadIdentity$))?.agentId ?? null;
   });
   const preCreateRequestObservationRequestObservation$ = computed(
     async (get) => {
@@ -7204,69 +6973,71 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
-      const [agentId, observation] = await Promise.all([
-        get(preCreateAgentIdAgentId$),
-        get(preCreateRequestObservationRequestObservation$),
-      ]);
+      const agentId = await get(preCreateAgentIdAgentId$);
       if (!agentId) {
         return null;
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_agent",
-        async () => {
-          if (observation) {
-            return observation.agent;
-          }
-          const [agent] = await db
-            .select({
-              id: agents.id,
-              name: agents.name,
-              orgId: agents.orgId,
-              defaultAgentId: orgMetadata.defaultAgentId,
-              owner: agents.owner,
-              visibility: agents.visibility,
-              displayName: agents.displayName,
-              description: agents.description,
-              sound: agents.sound,
-              modelProviderId: agents.modelProviderId,
-              selectedModel: agents.selectedModel,
-            })
-            .from(agents)
-            .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-            .where(eq(agents.id, agentId))
-            .limit(1);
-          return agent ?? null;
-        },
-        {
-          authorized_request_agent_source:
-            observation === undefined ? "database" : "request_observation",
-        },
-      );
+      return await (async () => {
+        const [agent] = await db
+          .select({
+            id: agents.id,
+            name: agents.name,
+            orgId: agents.orgId,
+            defaultAgentId: orgMetadata.defaultAgentId,
+            owner: agents.owner,
+            visibility: agents.visibility,
+            displayName: agents.displayName,
+            description: agents.description,
+            sound: agents.sound,
+            modelProviderId: agents.modelProviderId,
+            selectedModel: agents.selectedModel,
+          })
+          .from(agents)
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(eq(agents.id, agentId))
+          .limit(1);
+        return agent ?? null;
+      })();
     },
   );
+  const claimReadIdentity$ = computed(async (get) => {
+    const head = await get(head$);
+    if (!head) {
+      return null;
+    }
+    if (head.contextType === "automation") {
+      const input = await get(automationExecutionInput$);
+      return input
+        ? {
+            userId: input.due.automation.ownerUserId,
+            orgId: input.due.automation.orgId,
+            agentId: input.due.agentId,
+            checkedAt: new Date(head.apiStartTime),
+          }
+        : null;
+    }
+    const agent = await get(promptAgentAgent$);
+    return agent
+      ? {
+          userId: head.userId,
+          orgId: head.orgId,
+          agentId: agent.agentId,
+          checkedAt: new Date(head.apiStartTime),
+        }
+      : null;
+  });
   const preCreateBootstrapQueryArgsBootstrapQueryArgs$ = computed(
     async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agent = await get(preCreateAgentAgent$);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
+      const identity = await get(claimReadIdentity$);
+      if (!identity) {
+        throw new Error("Bootstrap requires a captured execution identity");
       }
-      return {
-        userId: command.auth.userId,
-        orgId: command.auth.orgId,
-        agentId: agent.id,
-        checkedAt: new Date(command.apiStartTime),
-      };
+      return identity;
     },
   );
   const bootstrapCustomConnectorQuery$ = computed(async (get) => {
-    const [, args] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
-    ]);
+    const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
     const db = get(db$);
     return {
       query: db
@@ -7307,7 +7078,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const preCreateBootstrapMetadataRowsBootstrapMetadataRows$ = computed(
     async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
       const [args, featureContext, { query: customConnectorQuery }] =
         await Promise.all([
@@ -7413,7 +7183,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateWorkflowRowsWorkflowRows$ = computed(
     async (get): Promise<RunWorkflowSourceRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
       const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
       return await db
@@ -7444,61 +7213,46 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateBootstrapRowsBootstrapRows$ = computed(
     async (get): Promise<RunBootstrapSnapshotRows> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       let snapshot: RunBootstrapSnapshotRows | undefined;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-        async () => {
-          const [metadataRows, workflowRows] = await Promise.all([
-            get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
-            get(preCreateWorkflowRowsWorkflowRows$),
-          ]);
-          snapshot = { metadataRows, workflowRows };
-          return snapshot;
-        },
-        () => {
-          return bootstrapLoadTimingDimensions(snapshot);
-        },
-      );
+      return await (async () => {
+        const [metadataRows, workflowRows] = await Promise.all([
+          get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
+          get(preCreateWorkflowRowsWorkflowRows$),
+        ]);
+        snapshot = { metadataRows, workflowRows };
+        return snapshot;
+      })();
     },
   );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const { command } = await get(selectedIdentityInputIdentityInput$);
+    const identity = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
     const [metadataRows, featureContext] = await Promise.all([
       get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
       get(featureSwitchContext$),
     ]);
     return materializeRunBootstrapContext(
       { metadataRows, workflowRows: [] },
-      { userId: command.auth.userId, orgId: command.auth.orgId },
+      { userId: identity.userId, orgId: identity.orgId },
       featureContext,
     );
   });
   const preCreateBootstrapBootstrap$ = computed(async (get) => {
-    const { command, timing } = await get(selectedIdentityInputIdentityInput$);
+    const { command } = await get(selectedIdentityInputIdentityInput$);
     const [rows, metadata] = await Promise.all([
       get(preCreateBootstrapRowsBootstrapRows$),
       get(preCreateBootstrapMetadata$),
     ]);
     let context: RunBootstrapContext | undefined;
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      () => {
-        context = {
-          ...metadata,
-          workflows: workflowsForRunFromRows(
-            rows.workflowRows,
-            command.auth.userId,
-          ),
-        };
-        return context;
-      },
-      () => {
-        return bootstrapMaterializeTimingDimensions(rows, context);
-      },
-    );
+    return await (() => {
+      context = {
+        ...metadata,
+        workflows: workflowsForRunFromRows(
+          rows.workflowRows,
+          command.auth.userId,
+        ),
+      };
+      return context;
+    })();
   });
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
     async (
@@ -7510,7 +7264,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         }
       | ReturnType<typeof conflict>
     > => {
-      const { command, timing } = await get(preCreateInput$);
+      const { command } = await get(preCreateInput$);
       const db = get(db$);
       const pin = command.agentRunModelPin;
       if (
@@ -7522,79 +7276,67 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return { command };
       }
       const providerType = pin.modelProvider;
-      await observeAgentRunPreCreateParallelStage("subscription-account", {
-        command,
-      });
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_capture_subscription_account",
-        async () => {
-          const preloaded = personalSubscriptionAccountCandidates({
-            command,
-            providerType,
-            modelProviderId: pin.modelProviderId,
-            snapshot: await get(memberAccountSnapshot$),
-          });
-          const accountCandidates =
-            preloaded ??
-            (await db
-              .select()
-              .from(modelProviderAccounts)
-              .where(
-                and(
-                  eq(modelProviderAccounts.orgId, command.auth.orgId),
-                  eq(modelProviderAccounts.userId, command.auth.userId),
-                  isNull(modelProviderAccounts.disconnectedAt),
-                  pin.modelProviderId === null
-                    ? and(
+      return await (async () => {
+        const preloaded = personalSubscriptionAccountCandidates({
+          command,
+          providerType,
+          modelProviderId: pin.modelProviderId,
+          snapshot: await get(memberAccountSnapshot$),
+        });
+        const accountCandidates =
+          preloaded ??
+          (await db
+            .select()
+            .from(modelProviderAccounts)
+            .where(
+              and(
+                eq(modelProviderAccounts.orgId, command.auth.orgId),
+                eq(modelProviderAccounts.userId, command.auth.userId),
+                isNull(modelProviderAccounts.disconnectedAt),
+                pin.modelProviderId === null
+                  ? and(
+                      eq(modelProviderAccounts.type, providerType),
+                      eq(modelProviderAccounts.isActive, true),
+                    )
+                  : or(
+                      eq(modelProviderAccounts.id, pin.modelProviderId),
+                      and(
+                        eq(
+                          modelProviderAccounts.modelProviderId,
+                          pin.modelProviderId,
+                        ),
                         eq(modelProviderAccounts.type, providerType),
                         eq(modelProviderAccounts.isActive, true),
-                      )
-                    : or(
-                        eq(modelProviderAccounts.id, pin.modelProviderId),
-                        and(
-                          eq(
-                            modelProviderAccounts.modelProviderId,
-                            pin.modelProviderId,
-                          ),
-                          eq(modelProviderAccounts.type, providerType),
-                          eq(modelProviderAccounts.isActive, true),
-                        ),
                       ),
-                ),
-              )
-              .limit(pin.modelProviderId === null ? 1 : 2));
-          const account =
-            accountCandidates.find((candidate) => {
-              return candidate.id === pin.modelProviderId;
-            }) ?? accountCandidates[0];
-          if (!account || account.type !== providerType) {
-            return conflict(
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-            );
-          }
-          return {
-            capturedPersonalSubscriptionAccount: {
-              id: account.id,
-              orgId: account.orgId,
-              userId: account.userId,
-              type: providerType,
-            },
-            command: {
-              ...command,
-              modelProviderId: account.id,
-              agentRunModelPin: { ...pin, modelProviderId: account.id },
-            },
-          };
-        },
-      );
+                    ),
+              ),
+            )
+            .limit(pin.modelProviderId === null ? 1 : 2));
+        const account =
+          accountCandidates.find((candidate) => {
+            return candidate.id === pin.modelProviderId;
+          }) ?? accountCandidates[0];
+        if (!account || account.type !== providerType) {
+          return conflict(
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
+          );
+        }
+        return {
+          capturedPersonalSubscriptionAccount: {
+            id: account.id,
+            orgId: account.orgId,
+            userId: account.userId,
+            type: providerType,
+          },
+          command: {
+            ...command,
+            modelProviderId: account.id,
+            agentRunModelPin: { ...pin, modelProviderId: account.id },
+          },
+        };
+      })();
     },
   );
-  const catalogInput$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentityInputIdentityInput$);
-    const db = get(db$);
-    return { db, timing };
-  });
   const requestedSlugs$ = computed(async (get) => {
     const bootstrap = await get(preCreateBootstrapMetadata$);
     return {
@@ -7602,107 +7344,95 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       metadataConnectorSlugs: bootstrap.connectorCatalogMetadataSlugs,
     };
   });
-  const catalogReadInput$ = computed(async (get) => {
-    const { db, timing } = await get(catalogInput$);
-    return { db, timing: new ConnectorCatalogLoadTiming(timing, undefined) };
-  });
   const connectorCatalogIdentity$ = computed(
     async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(catalogReadInput$);
-      if (input === undefined) {
-        return undefined;
-      }
       const sourceId = connectorCatalogSource().sourceId;
       const capabilityDigest =
         connectorCatalogExecutableCapabilityState().digest;
       const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await input.db
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
+      const row = await (async () => {
+        const [row] = await get(db$)
+          .select({
+            projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+            schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+            catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+            catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+            projectionVersion:
+              connectorCatalogRuntimeProjectionSets.projectionVersion,
+            connectorCount:
+              connectorCatalogRuntimeProjectionSets.connectorCount,
+            projectionValidationBackendVersion:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+            projectionValidationBuildCommitSha:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+            evaluatedCapabilityDigest:
+              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            compatibilityValidationBackendVersion:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+            compatibilityValidationBuildCommitSha:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+            filteredAuthMethods:
+              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+          })
+          .from(connectorCatalogActiveSnapshot)
+          .leftJoin(
+            connectorCatalogRuntimeProjectionSets,
+            and(
+              eq(
+                connectorCatalogRuntimeProjectionSets.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+            ),
+          )
+          .leftJoin(
+            connectorCatalogCompatibilityEvaluation,
+            and(
+              eq(
+                connectorCatalogCompatibilityEvaluation.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+              eq(
                 connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
+                capabilityDigest,
               ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
+            ),
+          )
+          .where(
+            and(
+              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+              eq(
+                connectorCatalogActiveSnapshot.schemaVersion,
+                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
               ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
-      await projectionIdentityReadHook.get()?.();
+            ),
+          )
+          .limit(1);
+        return row;
+      })();
       return {
         identity:
           row === undefined
@@ -7738,10 +7468,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const runtimeCatalogProjectionRowsProjectionRows$ = computed(async (get) => {
-    const [captured, requested, { db, timing }] = await Promise.all([
+    const db = get(db$);
+    const [captured, requested] = await Promise.all([
       get(connectorCatalogIdentity$),
       get(runtimeCatalogInputRequestedSlugs$),
-      get(catalogReadInput$),
     ]);
     if (captured === undefined) {
       throw new Error("Connector catalog identity input is unavailable");
@@ -7764,47 +7494,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const rows: ConnectorCatalogRuntimeProjectionRowsRead =
       uncachedSlugs.length === 0
         ? { kind: "ready", connectors: [], missingConnectorSlugs: [] }
-        : await timing.measure(
-            "api_dispatch_connector_catalog_query_projection_rows",
-            async () => {
-              const selectedRows = await timing.measure(
-                "api_dispatch_connector_catalog_fetch_projection_rows",
-                async () => {
-                  return await db
-                    .select({
-                      connectorSlug:
-                        connectorCatalogRuntimeProjections.connectorSlug,
-                      connectorDigest:
-                        connectorCatalogRuntimeProjections.connectorDigest,
-                      connectorPayload:
-                        connectorCatalogRuntimeProjections.connectorPayload,
-                    })
-                    .from(connectorCatalogRuntimeProjections)
-                    .where(
-                      and(
-                        eq(
-                          connectorCatalogRuntimeProjections.projectionSetId,
-                          projection.identity.projectionSetId,
-                        ),
-                        inArray(
-                          connectorCatalogRuntimeProjections.connectorSlug,
-                          uncachedSlugs,
-                        ),
-                      ),
-                    );
-                },
+        : await (async () => {
+            const selectedRows = await db
+              .select({
+                connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
+                connectorDigest:
+                  connectorCatalogRuntimeProjections.connectorDigest,
+                connectorPayload:
+                  connectorCatalogRuntimeProjections.connectorPayload,
+              })
+              .from(connectorCatalogRuntimeProjections)
+              .where(
+                and(
+                  eq(
+                    connectorCatalogRuntimeProjections.projectionSetId,
+                    projection.identity.projectionSetId,
+                  ),
+                  inArray(
+                    connectorCatalogRuntimeProjections.connectorSlug,
+                    uncachedSlugs,
+                  ),
+                ),
               );
-              return timing.measureProjectionRowValidation(
-                (validationTiming) => {
-                  return validateConnectorCatalogRuntimeProjectionRows({
-                    rows: selectedRows,
-                    connectorSlugs: uncachedSlugs,
-                    timing: validationTiming,
-                  });
-                },
-              );
-            },
-          );
+            return validateConnectorCatalogRuntimeProjectionRows({
+              rows: selectedRows,
+              connectorSlugs: uncachedSlugs,
+            });
+          })();
     return {
       kind: "projection" as const,
       captured,
@@ -7825,133 +7541,127 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
-    const { db, timing } = await get(catalogReadInput$);
-    return await timing.measure(
-      "api_dispatch_connector_catalog_count_projection_rows",
-      async () => {
-        const [row] = await db
-          .select({ value: count() })
-          .from(connectorCatalogRuntimeProjections)
-          .where(
-            eq(
-              connectorCatalogRuntimeProjections.projectionSetId,
-              rows.projection.identity.projectionSetId,
-            ),
-          );
-        if (row === undefined) {
-          throw new Error(
-            "Connector runtime projection count query returned no row",
-          );
-        }
-        return row.value;
-      },
-    );
+    const db = get(db$);
+
+    return await (async () => {
+      const [row] = await db
+        .select({ value: count() })
+        .from(connectorCatalogRuntimeProjections)
+        .where(
+          eq(
+            connectorCatalogRuntimeProjections.projectionSetId,
+            rows.projection.identity.projectionSetId,
+          ),
+        );
+      if (row === undefined) {
+        throw new Error(
+          "Connector runtime projection count query returned no row",
+        );
+      }
+      return row.value;
+    })();
   });
   const freshIdentityInput$ = computed(async (get) => {
     const rows = await get(runtimeCatalogProjectionRowsProjectionRows$);
-    return rows.kind === "projection" &&
+    return (
+      rows.kind === "projection" &&
       rows.rows.kind === "ready" &&
       rows.rows.missingConnectorSlugs.length > 0
-      ? await get(catalogReadInput$)
-      : undefined;
+    );
   });
   const capturedConnectorCatalogIdentity$ = computed(
     async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(freshIdentityInput$);
-      if (input === undefined) {
+      const needed = await get(freshIdentityInput$);
+      if (!needed) {
         return undefined;
       }
       const sourceId = connectorCatalogSource().sourceId;
       const capabilityDigest =
         connectorCatalogExecutableCapabilityState().digest;
       const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await input.db
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
+      const row = await (async () => {
+        const [row] = await get(db$)
+          .select({
+            projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+            schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+            catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+            catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+            projectionVersion:
+              connectorCatalogRuntimeProjectionSets.projectionVersion,
+            connectorCount:
+              connectorCatalogRuntimeProjectionSets.connectorCount,
+            projectionValidationBackendVersion:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+            projectionValidationBuildCommitSha:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+            evaluatedCapabilityDigest:
+              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            compatibilityValidationBackendVersion:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+            compatibilityValidationBuildCommitSha:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+            filteredAuthMethods:
+              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+          })
+          .from(connectorCatalogActiveSnapshot)
+          .leftJoin(
+            connectorCatalogRuntimeProjectionSets,
+            and(
+              eq(
+                connectorCatalogRuntimeProjectionSets.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+            ),
+          )
+          .leftJoin(
+            connectorCatalogCompatibilityEvaluation,
+            and(
+              eq(
+                connectorCatalogCompatibilityEvaluation.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+              eq(
                 connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
+                capabilityDigest,
               ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
+            ),
+          )
+          .where(
+            and(
+              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+              eq(
+                connectorCatalogActiveSnapshot.schemaVersion,
+                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
               ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
-      await projectionIdentityReadHook.get()?.();
+            ),
+          )
+          .limit(1);
+        return row;
+      })();
       return {
         identity:
           row === undefined
@@ -8021,7 +7731,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     }
     return {
-      ...(await get(catalogReadInput$)),
       identity: result.captured.identity,
     };
   });
@@ -8030,51 +7739,45 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (args === undefined) {
       return undefined;
     }
-    const row = await args.timing.measure(
-      "api_dispatch_connector_catalog_query_payload",
-      async () => {
-        const [row] = await args.db
-          .select({
-            catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-            catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-            catalogValidationBackendVersion:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-            catalogValidationBuildCommitSha:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-            executableCapabilityDigest:
-              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            filteredAuthMethods:
-              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-          })
-          .from(connectorCatalogActiveSnapshot)
-          .leftJoin(
-            connectorCatalogCompatibilityEvaluation,
-            externalCatalogJoin(args.identity.capabilityDigest),
-          )
-          .where(
-            and(
-              eq(
-                connectorCatalogActiveSnapshot.sourceId,
-                args.identity.sourceId,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.schemaVersion,
-                args.identity.schemaVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogVersion,
-                args.identity.catalogVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogDigest,
-                args.identity.catalogDigest,
-              ),
+    const row = await (async () => {
+      const [row] = await get(db$)
+        .select({
+          catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
+          catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
+          catalogValidationBackendVersion:
+            connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+          catalogValidationBuildCommitSha:
+            connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+          executableCapabilityDigest:
+            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+          filteredAuthMethods:
+            connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+        })
+        .from(connectorCatalogActiveSnapshot)
+        .leftJoin(
+          connectorCatalogCompatibilityEvaluation,
+          externalCatalogJoin(args.identity.capabilityDigest),
+        )
+        .where(
+          and(
+            eq(connectorCatalogActiveSnapshot.sourceId, args.identity.sourceId),
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
+              args.identity.schemaVersion,
             ),
-          )
-          .limit(1);
-        return row;
-      },
-    );
+            eq(
+              connectorCatalogActiveSnapshot.catalogVersion,
+              args.identity.catalogVersion,
+            ),
+            eq(
+              connectorCatalogActiveSnapshot.catalogDigest,
+              args.identity.catalogDigest,
+            ),
+          ),
+        )
+        .limit(1);
+      return row;
+    })();
     if (row === undefined) {
       throw new ExternalConnectorCatalogUnavailableError(
         "captured_identity_unavailable",
@@ -8084,7 +7787,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return decodeAcceptedConnectorCatalogPayload({
         identity: args.identity,
         capability: connectorCatalogExecutableCapabilityState(),
-        timing: args.timing,
         row,
       });
     });
@@ -8121,8 +7823,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
       }
       const snapshot = await readCachedConnectorCatalogSnapshot({
+        timing: undefined,
         identity: input.identity,
-        timing: input.timing,
         load: async () => {
           return await get(snapshotPayload$);
         },
@@ -8137,10 +7839,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const runtimeCatalogSelectionResultSelectionResult$ = computed(
     async (get): Promise<RuntimeSelectionBuildResult> => {
-      const [result, { timing }] = await Promise.all([
-        get(runtimeCatalogProjectionResultProjectionResult$),
-        get(catalogReadInput$),
-      ]);
+      const result = await get(runtimeCatalogProjectionResultProjectionResult$);
       if (result.kind === "fallback") {
         const acceptedSnapshot = await get(
           capturedConnectorCatalogSnapshotCompleteSnapshot$,
@@ -8153,7 +7852,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           load: {
             selection: runtimeSelectionFromAcceptedSnapshot({
               acceptedSnapshot,
-              timing,
               ...result.requested,
             }),
             source: "full_fallback",
@@ -8169,7 +7867,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         cacheOutcome: result.cacheOutcome,
         load: {
           selection: materializeProjectedRuntimeSelection({
-            timing,
             projection: result.projection,
             connectors: [...result.cached, ...result.rows.connectors],
             ...result.requested,
@@ -8180,42 +7877,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runtimeCatalogSelectionConnectorCatalog$ = computed(async (get) => {
-    const { timing } = await get(catalogReadInput$);
-    return await timing.measureComplete(async () => {
+    return await (async () => {
       const [requested, captured] = await Promise.all([
         get(runtimeCatalogInputRequestedSlugs$),
         get(connectorCatalogIdentity$),
       ]);
-      timing.recordRequestedConnectorCounts(requested);
+
       if (captured === undefined) {
         throw new Error("Connector catalog identity input is unavailable");
       }
       const identity = captured.projection;
       if (identity.kind === "fallback") {
         const result = await get(runtimeCatalogSelectionResultSelectionResult$);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: result.cacheOutcome,
-          fallbackReason: result.load.fallbackReason,
-        });
+
         return result.load.selection;
       }
       const key = runtimeSelectionProjectionKey({
         identity: identity.projection.identity,
         ...requested,
       });
-      timing.recordProjectionCacheObservation(
-        observeRuntimeSelection(identity.projection.identity, key),
-      );
+
       const cache = runtimeSelectionCache();
       if (cache.inFlight?.key === key) {
         const result = await cache.inFlight.promise;
-        timing.recordMaterializedConnectorCount(0);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: "in_flight",
-          fallbackReason: result.load.fallbackReason,
-        });
+
         return result.load.selection;
       }
       const promise = get(runtimeCatalogSelectionResultSelectionResult$);
@@ -8224,25 +7909,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         clearRuntimeSelectionInFlight(cache, key, promise);
       });
       clearRuntimeSelectionInFlight(cache, key, promise);
-      timing.recordProjectionResult({
-        source: result.load.source,
-        cacheOutcome: result.cacheOutcome,
-        fallbackReason: result.load.fallbackReason,
-      });
+
       return result.load.selection;
-    });
+    })();
   });
   const selectedCatalog$ = runtimeCatalogSelectionConnectorCatalog$;
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [{ command }, bootstrap] = await Promise.all([
-        get(selectedIdentityInputIdentityInput$),
-        get(preCreateBootstrapMetadata$),
-      ]);
-      await observeAgentRunPreCreateParallelStage(
-        "post-authorization-context",
-        { command },
-      );
+      const bootstrap = await get(preCreateBootstrapMetadata$);
       return isEmptyRunConnectorScope(bootstrap)
         ? { kind: "empty" }
         : { kind: "scoped", selection: await get(selectedCatalog$) };
@@ -8250,27 +7924,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       const [bootstrap, catalog] = await Promise.all([
         get(preCreateBootstrapMetadata$),
         get(preCreateConnectorCatalogConnectorCatalog$),
       ]);
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        async () => {
-          const stored = permissionGrantsToFirewallPolicies(
-            bootstrap.permissionGrants,
-          );
-          return catalog.kind === "empty"
-            ? stored
-            : await expandConnectorServerFirewallPolicies({
-                catalog: catalog.selection.serverFirewalls,
-                stored,
-                connectorSlugs: [...bootstrap.allowedConnectorSlugs],
-              });
-        },
-      );
+      return await (async () => {
+        const stored = permissionGrantsToFirewallPolicies(
+          bootstrap.permissionGrants,
+        );
+        return catalog.kind === "empty"
+          ? stored
+          : await expandConnectorServerFirewallPolicies({
+              catalog: catalog.selection.serverFirewalls,
+              stored,
+              connectorSlugs: [...bootstrap.allowedConnectorSlugs],
+            });
+      })();
     },
   );
   const sessionPrompt$ = computed(async (get) => {
@@ -8280,7 +7949,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       get,
     ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
-      const { timing } = await get(preCreateInput$);
       const [
         bootstrapResult,
         agentResult,
@@ -8312,7 +7980,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         ...bootstrap,
         ...account,
         agent,
-        timing,
         cloudBrowserEnabled: undefined,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
@@ -8367,13 +8034,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return {
       input,
-      args: await measureAgentRunPreCreate(
-        input.timing,
-        "api_dispatch_pre_create_agent_build_create_run_args",
-        () => {
-          return buildCreateAgentRunArgs(input);
-        },
-      ),
+      args: await buildCreateAgentRunArgs(input),
     };
   });
   const preCreateExecutionInput$ = preCreateInput$;
@@ -8388,9 +8049,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
   const scope$ = computed(async (get) => {
-    const { command } = await get(preCreateExecutionIdentityInput$);
-    const db = get(db$);
-    return { db, orgId: command.auth.orgId, userId: command.auth.userId };
+    const head = await get(head$);
+    if (!head) {
+      throw new Error("Member reads require the selected head");
+    }
+    if (head.contextType !== "automation") {
+      return { orgId: head.orgId, userId: head.userId };
+    }
+    const identity = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
+    return { orgId: identity.orgId, userId: identity.userId };
   });
   const environmentInput$ = computed(async (get) => {
     const scope = await get(scope$);
@@ -8408,7 +8075,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runDisabledPaidToolsSnapshot$ = computed(
     async (get): Promise<DisabledPaidToolsSnapshot> => {
       const args = await get(scope$);
-      const { db } = args;
+      const db = get(db$);
       const rows = await db
         .select({ toolId: userDisabledPaidTools.toolId })
         .from(userDisabledPaidTools)
@@ -8431,7 +8098,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runMemberSnapshot$ = computed(
     async (get): Promise<RunMemberSnapshot> => {
       const args = await get(scope$);
-      const { db } = args;
+      const db = get(db$);
       const [member] = await db
         .select({
           timezone: orgMembersMetadata.timezone,
@@ -8453,7 +8120,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isRouteError(args)) {
       return args;
     }
-    const { db, secretNames: secretNamesToLoad } = args;
+    const db = get(db$);
+    const { secretNames: secretNamesToLoad } = args;
     const variableQuery = db
       .select({
         kind: sql`'variable'`
@@ -8531,8 +8199,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     environment$: runEnvironmentSnapshot$,
   };
   const providerInput$ = computed(
-    async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
-      const input = await get(preCreateExecutionInput$);
+    async (
+      get,
+    ): Promise<
+      Omit<RunModelProviderReadInput, "db"> | CreateRunErrorResult
+    > => {
       const [agent, account] = await Promise.all([
         get(preCreateExecutionAgent$),
         get(preCreateExecutionSubscriptionAccount$),
@@ -8544,8 +8215,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        db: get(db$),
-        timing: input.timing,
         args: {
           ...selectedRunModelProviderArgs(
             account.command,
@@ -8586,7 +8255,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return validation;
     }
     const composeFramework = validation.framework;
-    const db = input.db;
+    const db = get(db$);
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
@@ -8721,7 +8390,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return null;
     }
-    const [row] = await context.input.db
+    const [row] = await get(db$)
       .select({
         id: modelProviderSurfaces.id,
         protocol: modelProviderSurfaces.protocol,
@@ -8781,7 +8450,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ) {
         return null;
       }
-      const [key] = await context.input.db
+      const [key] = await get(db$)
         .select({ apiKey: builtInModelKeys.apiKey })
         .from(builtInModelKeys)
         .where(eq(builtInModelKeys.id, route.modelKeyId))
@@ -8808,7 +8477,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return null;
     }
-    const rows = await context.input.db
+    const rows = await get(db$)
       .select({
         account: modelProviderAccounts,
         selectedModel: modelProviders.selectedModel,
@@ -8871,7 +8540,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const multiAuth = hasAuthMethods(type);
     const hasFirewallAuth =
       multiAuth && getModelProviderFirewall(type) !== undefined;
-    const rows = await context.input.db
+    const rows = await get(db$)
       .select({
         provider: {
           id: modelProviders.id,
@@ -8974,25 +8643,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!context.shouldResolve) {
       return null;
     }
-    const hold = observeRunContextParallelStage(
-      "model-provider",
-      context.input.args,
-    );
-    if (hold) {
-      await hold;
-    }
-    return await context.input.timing.measure(
-      "api_dispatch_prepare_context_resolve_model_provider",
-      "nested",
-      async () => {
-        return (
-          (await get(environment$)) ??
-          providerUnavailable(
-            `No model provider configured and ${frameworkApiKeyEnv(context.requestedFramework)} is not declared in compose environment`,
-          )
-        );
-      },
-    );
+    return await ((await get(environment$)) ??
+      providerUnavailable(
+        `No model provider configured and ${frameworkApiKeyEnv(context.requestedFramework)} is not declared in compose environment`,
+      ));
   });
   const runModelProviderModelRoute$ = computed(async (get) => {
     const context = await get(providerContext$);
@@ -9033,12 +8687,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     modelRoute$: modelRoute$,
   };
   const connectorInput$ = computed(
-    async (get): Promise<RunConnectorReadInput> => {
-      const { command, timing } = await get(preCreateExecutionIdentityInput$);
-      const db = get(db$);
+    async (get): Promise<Omit<RunConnectorReadInput, "db">> => {
+      const { command } = await get(preCreateExecutionIdentityInput$);
       return {
-        db,
-        timing,
         args: {
           orgId: command.auth.orgId,
           userId: command.auth.userId,
@@ -9065,12 +8716,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .featureSwitchContext;
   });
   const runCustomConnectorDefinitionRows$ = computed(async (get) => {
-    const { db, args, timing } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const ids = (await get(preCreateConnectorScope$)).allowedCustomConnectorIds;
     if (ids.length === 0) {
       return [];
     }
-    const startedAt = now();
     const rows = await db
       .select({
         connector: customConnectorDefinitionSelection(),
@@ -9094,18 +8745,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           inArray(orgCustomConnectors.id, [...ids]),
         ),
       );
-    timing.recordElapsed(
-      "api_dispatch_prepare_context_load_custom_connector_rows",
-      "nested",
-      startedAt,
-      now(),
-    );
+
     return rows.map((row) => {
       return normaliseCustomConnectorRow(row.connector, row.oauthConfig);
     });
   });
   const runOwnedConnectorThread$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     if (args.chatThreadId === undefined) {
       return null;
     }
@@ -9127,7 +8774,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runThreadSelectionRow$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = await get(connectorInput$);
+      const db = get(db$);
+      const { args } = await get(connectorInput$);
       const [thread, scope] = await Promise.all([
         get(runOwnedConnectorThread$),
         get(preCreateConnectorScope$),
@@ -9162,7 +8810,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runConnectorAccountRows$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const scope = await get(preCreateConnectorScope$);
     const selections = await get(runThreadSelectionRow$);
     const sourceIds = [
@@ -9174,7 +8823,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isEmptyRunConnectorScope(scope)) {
       return [];
     }
-    await observeRunConnectorAccountsRead();
     return await db
       .select({
         connectorId: connectors.id,
@@ -9327,7 +8975,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (isRouteError(selection)) {
         return selection;
       }
-      await observeRunContextParallelStage("connector-contexts", input.args);
       const {
         connectorCatalogSelection,
         connectorScope,
@@ -9379,7 +9026,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runStoredConnectorSelectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (
       await get(preCreateConnectorScope$)
@@ -9427,7 +9075,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const { db, args, timing } = await get(connectorInput$);
+      const db = get(db$);
+      const { args } = await get(connectorInput$);
       const selectedConnectors = await get(runStoredConnectorSelectionView$);
       if (!selectedConnectors) {
         return [];
@@ -9471,10 +9120,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         .where(eq(variables.type, "connector"))
         .groupBy(variables.connectorId)
         .as("stored_connector_variable_groups");
-      const startedAt = now();
-      const dimensions = storedConnectorTimingDimensions({
-        scopeSource: (await get(preCreateConnectorScope$)).source,
-      });
       const rows = await onRejection(
         db
           .with(selectedConnectors)
@@ -9501,26 +9146,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             variableGroups,
             eq(variableGroups.connectorId, selectedConnectors.connectorId),
           ),
-        () => {
-          timing.recordElapsed(
-            "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-            "nested",
-            startedAt,
-            now(),
-            dimensions,
-          );
-        },
+        () => {},
       );
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-        "nested",
-        startedAt,
-        now(),
-        {
-          ...dimensions,
-          stored_connector_candidate_count_bucket: countBucket(rows.length),
-        },
-      );
+
       return rows.map((row) => {
         return {
           ...row,
@@ -9586,7 +9214,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runCustomConnectorConnectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (await get(preCreateConnectorScope$))
       .allowedCustomConnectorIds;
@@ -9653,7 +9282,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
   });
   const runCustomConnectorValueView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const connections = await get(runCustomConnectorConnectionView$);
     if (!connections) {
       return null;
@@ -9718,7 +9348,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { db, timing } = await get(connectorInput$);
+      const db = get(db$);
+
       const [connections, values] = await Promise.all([
         get(runCustomConnectorConnectionView$),
         get(runCustomConnectorValueView$),
@@ -9726,7 +9357,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!connections || !values) {
         return [];
       }
-      const startedAt = now();
       const rows = await db
         .with(connections, values)
         .select({
@@ -9749,12 +9379,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         })
         .from(connections)
         .leftJoin(values, eq(values.memberConnectorId, connections.id));
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_custom_connector_value_rows",
-        "nested",
-        startedAt,
-        now(),
-      );
+
       return rows;
     },
   );
@@ -9866,60 +9491,43 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           };
         }),
       );
-      return await (
-        await get(connectorInput$)
-      ).timing.measure(
-        "api_dispatch_prepare_context_build_custom_connector_firewalls",
-        "nested",
-        async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-          });
-        },
-      );
+      return await buildNewRunCustomConnectorRuntimeContext({
+        rows: chosenRows,
+        permissionBundlesByConnectorId,
+        featureSwitchContext,
+        connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+        grants: args.customConnectorGrants,
+      });
     },
   );
   const runConnectorReadConnectorSnapshot$ = computed(
     async (
       get,
     ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const scope = await get(preCreateConnectorScope$);
-      return await input.timing.measure(
-        "api_dispatch_prepare_context_load_connector_contexts",
-        "nested",
-        async () => {
-          const [preparation, storedConnectorSnapshot, customConnectorContext] =
-            await Promise.all([
-              get(runConnectorPreparation$),
-              get(runStoredConnectorSnapshot$),
-              get(runCustomConnectorContext$),
-            ]);
-          if (isRouteError(preparation)) {
-            return preparation;
-          }
-          if (isRouteError(storedConnectorSnapshot)) {
-            return storedConnectorSnapshot;
-          }
-          if (isRouteError(customConnectorContext)) {
-            return customConnectorContext;
-          }
-          return {
+      return await (async () => {
+        const [preparation, storedConnectorSnapshot, customConnectorContext] =
+          await Promise.all([
+            get(runConnectorPreparation$),
+            get(runStoredConnectorSnapshot$),
+            get(runCustomConnectorContext$),
+          ]);
+        if (isRouteError(preparation)) {
+          return preparation;
+        }
+        if (isRouteError(storedConnectorSnapshot)) {
+          return storedConnectorSnapshot;
+        }
+        if (isRouteError(customConnectorContext)) {
+          return customConnectorContext;
+        }
+        return {
+          storedConnectorSnapshot,
+          storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
             storedConnectorSnapshot,
-            storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
-              storedConnectorSnapshot,
-            ),
-            customConnectorContext,
-          };
-        },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
-        }),
-      );
+          ),
+          customConnectorContext,
+        };
+      })();
     },
   );
   const connectorSelection$ = runConnectorSelection$;
@@ -9952,7 +9560,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const inputs$ = computed(
     async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
       const [
-        input,
         selection,
         snapshot,
         modelProvider,
@@ -9961,7 +9568,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         metadata,
         agent,
       ] = await Promise.all([
-        get(preCreateExecutionIdentityInput$),
         get(connectorSelection$),
         get(connectorSnapshot$),
         get(modelRoute$),
@@ -9987,7 +9593,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return {
         db: get(db$),
-        timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
@@ -10002,13 +9607,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const input = await get(inputs$);
     return isRouteError(input)
       ? input
-      : await input.timing.measure(
-          "api_dispatch_prepare_context_build_permission_manifest",
-          "nested",
-          async () => {
-            return await buildPreparedPermissionManifest(input);
-          },
-        );
+      : await buildPreparedPermissionManifest(input);
   });
   const runConnectorEagerSecretPlan$ = computed(async (get) => {
     const [input, permissionManifest] = await Promise.all([
@@ -10167,7 +9766,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const candidates$ = computed(async (get) => {
     const { args } = await get(workflowInput$);
-    await observeRunContextParallelStage("official-workflow", args);
     const modelState = await get(modelState$);
     if (modelState === undefined || isRouteError(modelState)) {
       return [];
@@ -10361,79 +9959,71 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     shared: shared,
     bootstrapMetadata$: preCreateBootstrapMetadata$,
   };
+  const automationThreadSessionSnapshot$ = computed(async (get) => {
+    const identity = await get(claimReadIdentity$);
+    if (!identity) {
+      return null;
+    }
+    const db = get(db$);
+    const threadId = claim.chatThreadId;
+    const [thread] = await db
+      .select(chatThreadSessionSelection())
+      .from(chatThreads)
+      .leftJoin(
+        agentSessions,
+        and(
+          eq(agentSessions.id, chatThreads.agentSessionId),
+          eq(agentSessions.userId, identity.userId),
+          eq(agentSessions.orgId, identity.orgId),
+        ),
+      )
+      .leftJoin(agents, eq(agents.id, identity.agentId))
+      .leftJoin(
+        conversations,
+        eq(conversations.id, agentSessions.conversationId),
+      )
+      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
+      .leftJoin(
+        chatThreadConversationRun,
+        eq(chatThreadConversationRun.id, conversations.runId),
+      )
+      .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, identity.userId),
+          eq(chatThreads.agentId, identity.agentId),
+        ),
+      )
+      .limit(1);
+    return thread ?? null;
+  });
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, timing } = await get(preCreateInput$);
-      const db = get(db$);
+      const [{ command }, agent, thread] = await Promise.all([
+        get(preCreateInput$),
+        get(preCreateAgentAgent$),
+        get(automationThreadSessionSnapshot$),
+      ]);
       if (!command.chatThreadId) {
         return undefined;
       }
-      const agent = await get(preCreateAgentAgent$);
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      await observeAgentRunPreCreateParallelStage("thread-session", {
-        command,
-      });
-      const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
         throw new Error("Thread-bound agent run is missing its model route");
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_thread_session",
-        async () => {
-          const [thread] = await db
-            .select(chatThreadSessionSelection())
-            .from(chatThreads)
-            .leftJoin(
-              agentSessions,
-              and(
-                eq(agentSessions.id, chatThreads.agentSessionId),
-                eq(agentSessions.userId, command.auth.userId),
-                eq(agentSessions.orgId, command.auth.orgId),
-              ),
-            )
-            .leftJoin(agents, eq(agents.id, agent.id))
-            .leftJoin(
-              conversations,
-              eq(conversations.id, agentSessions.conversationId),
-            )
-            .leftJoin(
-              blobs,
-              eq(blobs.hash, conversations.cliAgentSessionHistoryHash),
-            )
-            .leftJoin(
-              chatThreadConversationRun,
-              eq(chatThreadConversationRun.id, conversations.runId),
-            )
-            .leftJoin(
-              agentRuns,
-              eq(agentRuns.id, chatThreads.agentSessionRunId),
-            )
-            .where(
-              and(
-                eq(chatThreads.id, threadId),
-                eq(chatThreads.userId, command.auth.userId),
-                eq(
-                  chatThreads.agentId,
-                  command.expectedThreadAgentId ?? agent.id,
-                ),
-              ),
-            )
-            .limit(1);
-          if (!thread) {
-            throw new Error(
-              "Chat thread not found while resolving session binding",
-            );
-          }
-          return resolveChatThreadSessionSnapshot(thread, {
-            agentId: agent.id,
-            route,
-          });
-        },
-      );
+      if (!thread) {
+        throw new Error(
+          "Chat thread not found while resolving session binding",
+        );
+      }
+      return resolveChatThreadSessionSnapshot(thread, {
+        agentId: agent.id,
+        route,
+      });
     },
   );
   const capturedSelectedStorageInput$ = computed(
@@ -10532,7 +10122,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           additionalVolumeSources: metadata.additionalVolumeSources,
           framework: piSandbox === undefined ? framework : "pi",
           persistedStorageMounts: resolved.persistedStorageMounts,
-          timing: input.timing,
           stats: new StorageManifestBuildStats(),
         },
       };
@@ -10598,80 +10187,71 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const capturedStorageBaseIndex$ = computed(async (get) => {
     const selection = await get(storageSelection$);
-    const input = {
-      db: selection.args.db,
-      requests: selection.requests,
-      timing: selection.args.timing,
-    };
-    const index = await measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_load_storage_index",
-      "nested",
-      async () => {
-        const uniqueRequests = uniqueStorageIndexRequests(input.requests);
-        if (uniqueRequests.length === 0) {
-          return new Map<string, StorageIndexEntry>();
-        }
-        const orgIds = uniqueRequests.map((request) => {
-          return request.lookup.orgId;
-        });
-        const userIds = uniqueRequests.map((request) => {
-          return request.lookup.userId;
-        });
-        const names = uniqueRequests.map((request) => {
-          return request.lookup.name;
-        });
-        const exactVersionIds = uniqueRequests.map((request) => {
-          return request.exactVersionId;
-        });
-        const rows: StorageIndexRow[] = await input.db
-          .select({
-            orgId: storages.orgId,
-            userId: storages.userId,
-            name: storages.name,
-            storageId: storages.id,
-            headVersionId: storages.headVersionId,
-            s3Prefix: storages.s3Prefix,
-            headId: headStorageVersions.id,
-            headS3Key: headStorageVersions.s3Key,
-            headArchiveSize: headStorageVersions.archiveSize,
-            headFileCount: headStorageVersions.fileCount,
-            exactId: exactStorageVersions.id,
-            exactS3Key: exactStorageVersions.s3Key,
-            exactArchiveSize: exactStorageVersions.archiveSize,
-            exactFileCount: exactStorageVersions.fileCount,
-          })
-          .from(storages)
-          .innerJoin(
-            sql`unnest(
+    const input = { db: selection.args.db, requests: selection.requests };
+    const index = await (async () => {
+      const uniqueRequests = uniqueStorageIndexRequests(input.requests);
+      if (uniqueRequests.length === 0) {
+        return new Map<string, StorageIndexEntry>();
+      }
+      const orgIds = uniqueRequests.map((request) => {
+        return request.lookup.orgId;
+      });
+      const userIds = uniqueRequests.map((request) => {
+        return request.lookup.userId;
+      });
+      const names = uniqueRequests.map((request) => {
+        return request.lookup.name;
+      });
+      const exactVersionIds = uniqueRequests.map((request) => {
+        return request.exactVersionId;
+      });
+      const rows: StorageIndexRow[] = await input.db
+        .select({
+          orgId: storages.orgId,
+          userId: storages.userId,
+          name: storages.name,
+          storageId: storages.id,
+          headVersionId: storages.headVersionId,
+          s3Prefix: storages.s3Prefix,
+          headId: headStorageVersions.id,
+          headS3Key: headStorageVersions.s3Key,
+          headArchiveSize: headStorageVersions.archiveSize,
+          headFileCount: headStorageVersions.fileCount,
+          exactId: exactStorageVersions.id,
+          exactS3Key: exactStorageVersions.s3Key,
+          exactArchiveSize: exactStorageVersions.archiveSize,
+          exactFileCount: exactStorageVersions.fileCount,
+        })
+        .from(storages)
+        .innerJoin(
+          sql`unnest(
         ${sql.param(orgIds)}::text[],
         ${sql.param(userIds)}::text[],
         ${sql.param(names)}::varchar(256)[],
         ${sql.param(exactVersionIds)}::varchar(64)[]
       ) AS requested(org_id, user_id, name, version_id)`,
-            and(
-              eq(storages.orgId, sql`requested.org_id`),
-              eq(storages.userId, sql`requested.user_id`),
-              eq(storages.name, sql`requested.name`),
+          and(
+            eq(storages.orgId, sql`requested.org_id`),
+            eq(storages.userId, sql`requested.user_id`),
+            eq(storages.name, sql`requested.name`),
+          ),
+        )
+        .leftJoin(
+          headStorageVersions,
+          eq(storages.headVersionId, headStorageVersions.id),
+        )
+        .leftJoin(
+          exactStorageVersions,
+          and(
+            eq(
+              exactStorageVersions.id,
+              sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
             ),
-          )
-          .leftJoin(
-            headStorageVersions,
-            eq(storages.headVersionId, headStorageVersions.id),
-          )
-          .leftJoin(
-            exactStorageVersions,
-            and(
-              eq(
-                exactStorageVersions.id,
-                sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
-              ),
-              eq(exactStorageVersions.storageId, storages.id),
-            ),
-          );
-        return buildStorageIndex(rows);
-      },
-    );
+            eq(exactStorageVersions.storageId, storages.id),
+          ),
+        );
+      return buildStorageIndex(rows);
+    })();
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.
     return { selection, input, index };
@@ -10715,75 +10295,69 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const agentRunStorageStoragePlan$ = computed(
     async (get): Promise<AgentRunStoragePlan> => {
       const { selection, storageIndex } = await get(capturedStorageIndex$);
-      return await measureApiDispatchTiming(
-        selection.args.timing,
-        "api_dispatch_prepare_storage_manifest_resolve_plan",
-        "nested",
-        async () => {
-          if (selection.kind === "captured") {
-            return {
-              requested: await resolveValidatedPersistedStorageMounts({
-                ...selection.args,
+      return await (async () => {
+        if (selection.kind === "captured") {
+          return {
+            requested: await resolveValidatedPersistedStorageMounts({
+              ...selection.args,
+              bucket: selection.bucket,
+              storageIndex,
+              branch: "captured",
+            }),
+            sessionWriteback: undefined,
+            missingArtifacts: [],
+          };
+        }
+        const missingArtifacts = selection.remainingArtifacts.filter(
+          (artifact) => {
+            const entry = storageIndex.get(
+              storageIndexKey(
+                selection.args.runtimeOrgId,
+                selection.args.userId,
+                artifact.name,
+              ),
+            );
+            return !entry || entry.headVersionId === null;
+          },
+        );
+        const missingNames = new Set(
+          missingArtifacts.map((artifact) => {
+            return artifact.name;
+          }),
+        );
+        const [requested, sessionWriteback] = await Promise.all([
+          resolveStorageEntries(
+            {
+              ...selection.request.input,
+              artifacts: selection.remainingArtifacts.filter((artifact) => {
+                return !missingNames.has(artifact.name);
+              }),
+              storageIndex,
+            },
+            "requested",
+          ),
+          selection.canonicalWritebackMounts.length === 0
+            ? undefined
+            : resolveSessionWritebackStorageMounts({
+                db: selection.args.db,
                 bucket: selection.bucket,
                 storageIndex,
-                branch: "captured",
+                mounts: selection.canonicalWritebackMounts,
+                stats: selection.args.stats,
               }),
-              sessionWriteback: undefined,
-              missingArtifacts: [],
-            };
-          }
-          const missingArtifacts = selection.remainingArtifacts.filter(
-            (artifact) => {
-              const entry = storageIndex.get(
-                storageIndexKey(
-                  selection.args.runtimeOrgId,
-                  selection.args.userId,
-                  artifact.name,
-                ),
-              );
-              return !entry || entry.headVersionId === null;
+        ]);
+        return {
+          requested: {
+            ...requested,
+            input: {
+              ...requested.input,
+              artifacts: selection.remainingArtifacts,
             },
-          );
-          const missingNames = new Set(
-            missingArtifacts.map((artifact) => {
-              return artifact.name;
-            }),
-          );
-          const [requested, sessionWriteback] = await Promise.all([
-            resolveStorageEntries(
-              {
-                ...selection.request.input,
-                artifacts: selection.remainingArtifacts.filter((artifact) => {
-                  return !missingNames.has(artifact.name);
-                }),
-                storageIndex,
-              },
-              "requested",
-            ),
-            selection.canonicalWritebackMounts.length === 0
-              ? undefined
-              : resolveSessionWritebackStorageMounts({
-                  db: selection.args.db,
-                  bucket: selection.bucket,
-                  storageIndex,
-                  mounts: selection.canonicalWritebackMounts,
-                  timing: selection.args.timing,
-                  stats: selection.args.stats,
-                }),
-          ]);
-          return {
-            requested: {
-              ...requested,
-              input: {
-                ...requested.input,
-                artifacts: selection.remainingArtifacts,
-              },
-            },
-            sessionWriteback,
-            missingArtifacts,
-          };
-        },
-      );
+          },
+          sessionWriteback,
+          missingArtifacts,
+        };
+      })();
     },
   );
   const sessionWritebackEntries$ = computed(async (get) => {
@@ -10869,9 +10443,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         logicalLookupCount: groups.length,
       },
       groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
     };
   });
   const mixedStorageManifestPresignedUrlCacheRows$ = computed(async (get) => {
@@ -10883,67 +10454,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!lookup) {
       return undefined;
     }
-    const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const { pairs, cacheKeysByRequest } = lookup;
     const condition = storageManifestCacheLookupCondition(pairs);
-    const rows = await measureApiDispatchTiming(
-      args.observation?.timing,
-      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-      "nested",
-      async () => {
-        const lookup = async () => {
-          return await args.db
-            .select({
-              scope: systemStoragePresignedUrlCache.scope,
-              cacheKey: systemStoragePresignedUrlCache.cacheKey,
-              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-              expiresAt: systemStoragePresignedUrlCache.expiresAt,
-            })
-            .from(systemStoragePresignedUrlCache)
-            .where(condition);
-        };
-        const query = args.observation
-          ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-          : lookup();
-        return await query.finally(() => {
-          for (const acquisition of acquisitionCapture.acquisitions) {
-            args.observation?.timing.recordDuration(
-              "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-              "nested",
-              acquisition.durationMs,
-              now(),
-              {
-                storage_manifest_branch:
-                  args.observation?.branch ?? "unobserved",
-                storage_manifest_cache_scope: "all_scopes",
-                storage_manifest_cache_lookup_kind: "mixed",
-                storage_manifest_cache_pool_acquire_path: acquisition.path,
-                storage_manifest_cache_requested_count_bucket:
-                  storageManifestCacheCountBucket(requestedCount),
-                storage_manifest_cache_unique_key_count_bucket:
-                  storageManifestCacheCountBucket(pairs.length),
-              },
-            );
-          }
-        });
-      },
-      () => {
-        return {
-          storage_manifest_branch: args.observation?.branch ?? "unobserved",
-          storage_manifest_cache_scope: "all_scopes",
-          storage_manifest_cache_requested_count_bucket:
-            storageManifestCacheCountBucket(requestedCount),
-          storage_manifest_cache_unique_key_count_bucket:
-            storageManifestCacheCountBucket(pairs.length),
-          storage_manifest_cache_logical_lookup_count_bucket:
-            storageManifestCacheCountBucket(args.input.logicalLookupCount),
-          storage_manifest_cache_pool_acquire_count_bucket:
-            storageManifestCacheCountBucket(
-              acquisitionCapture.acquisitions.length,
-            ),
-        };
-      },
-    );
+    const rows = await (async () => {
+      const lookup = async () => {
+        return await args.db
+          .select({
+            scope: systemStoragePresignedUrlCache.scope,
+            cacheKey: systemStoragePresignedUrlCache.cacheKey,
+            presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+            expiresAt: systemStoragePresignedUrlCache.expiresAt,
+          })
+          .from(systemStoragePresignedUrlCache)
+          .where(condition);
+      };
+      return await lookup();
+    })();
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
       Map<string, SelectedStoragePresignedUrlCacheRow>
@@ -11119,9 +10645,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         logicalLookupCount: groups.length,
       },
       groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
     };
   });
   const capturedMixedStorageManifestPresignedUrlCacheRows$ = computed(
@@ -11134,67 +10657,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!lookup) {
         return undefined;
       }
-      const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-      const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+      const { pairs, cacheKeysByRequest } = lookup;
       const condition = storageManifestCacheLookupCondition(pairs);
-      const rows = await measureApiDispatchTiming(
-        args.observation?.timing,
-        "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-        "nested",
-        async () => {
-          const lookup = async () => {
-            return await args.db
-              .select({
-                scope: systemStoragePresignedUrlCache.scope,
-                cacheKey: systemStoragePresignedUrlCache.cacheKey,
-                presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-                expiresAt: systemStoragePresignedUrlCache.expiresAt,
-              })
-              .from(systemStoragePresignedUrlCache)
-              .where(condition);
-          };
-          const query = args.observation
-            ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-            : lookup();
-          return await query.finally(() => {
-            for (const acquisition of acquisitionCapture.acquisitions) {
-              args.observation?.timing.recordDuration(
-                "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-                "nested",
-                acquisition.durationMs,
-                now(),
-                {
-                  storage_manifest_branch:
-                    args.observation?.branch ?? "unobserved",
-                  storage_manifest_cache_scope: "all_scopes",
-                  storage_manifest_cache_lookup_kind: "mixed",
-                  storage_manifest_cache_pool_acquire_path: acquisition.path,
-                  storage_manifest_cache_requested_count_bucket:
-                    storageManifestCacheCountBucket(requestedCount),
-                  storage_manifest_cache_unique_key_count_bucket:
-                    storageManifestCacheCountBucket(pairs.length),
-                },
-              );
-            }
-          });
-        },
-        () => {
-          return {
-            storage_manifest_branch: args.observation?.branch ?? "unobserved",
-            storage_manifest_cache_scope: "all_scopes",
-            storage_manifest_cache_requested_count_bucket:
-              storageManifestCacheCountBucket(requestedCount),
-            storage_manifest_cache_unique_key_count_bucket:
-              storageManifestCacheCountBucket(pairs.length),
-            storage_manifest_cache_logical_lookup_count_bucket:
-              storageManifestCacheCountBucket(args.input.logicalLookupCount),
-            storage_manifest_cache_pool_acquire_count_bucket:
-              storageManifestCacheCountBucket(
-                acquisitionCapture.acquisitions.length,
-              ),
-          };
-        },
-      );
+      const rows = await (async () => {
+        const lookup = async () => {
+          return await args.db
+            .select({
+              scope: systemStoragePresignedUrlCache.scope,
+              cacheKey: systemStoragePresignedUrlCache.cacheKey,
+              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+              expiresAt: systemStoragePresignedUrlCache.expiresAt,
+            })
+            .from(systemStoragePresignedUrlCache)
+            .where(condition);
+        };
+        return await lookup();
+      })();
       const rowsByScope = new Map<
         StorageManifestPresignedUrlCacheScope,
         Map<string, SelectedStoragePresignedUrlCacheRow>
@@ -11347,7 +10825,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             sessionWriteback === undefined
               ? requested
               : combinePreparedStorageEntries({ requested, sessionWriteback }),
-          timing: plan.requested.input.timing,
           stats: plan.requested.input.stats,
         }),
       ]);
@@ -11439,11 +10916,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           }
         : selected.args;
-      return {
-        db: get(db$),
-        args,
-        timing: selected.input.timing,
-      };
+      return { db: get(db$), args };
     },
   );
   const resolutionOptions$ = computed(async (get) => {
@@ -11477,21 +10950,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           agentOwner: preloaded.ownerUserId,
         };
       }
-      const [row] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_agent",
-        "nested",
-        async () => {
-          return await input.db
-            .select({
-              agentId: agents.id,
-              agentOrgId: agents.orgId,
-              agentOwner: agents.owner,
-            })
-            .from(agents)
-            .where(eq(agents.id, agentId))
-            .limit(1);
-        },
-      );
+      const [row] = await input.db
+        .select({
+          agentId: agents.id,
+          agentOrgId: agents.orgId,
+          agentOwner: agents.owner,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
       return row;
     },
   );
@@ -11514,64 +10981,58 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         db,
         args: { userId, orgId },
       } = input;
-      const [snapshot] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-        "nested",
-        async () => {
-          return await db
-            .select({
-              session: {
-                id: agentSessions.id,
-                agentId: agentSessions.agentId,
-                conversationId: agentSessions.conversationId,
-                storageMounts: agentSessions.storageMounts,
-              },
-              agent: {
-                id: agents.id,
-                orgId: agents.orgId,
-                owner: agents.owner,
-              },
-              conversation: {
-                id: conversations.id,
-                runId: conversations.runId,
-                cliAgentType: conversations.cliAgentType,
-                cliAgentSessionId: conversations.cliAgentSessionId,
-                cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-                cliAgentSessionHistoryHash:
-                  conversations.cliAgentSessionHistoryHash,
-              },
-              historyBlob: {
-                hash: blobs.hash,
-                encoding: blobs.encoding,
-              },
-              previousRun: {
-                id: agentRuns.id,
-                vars: agentRuns.vars,
-                storageMounts: agentRuns.storageMounts,
-                selectedModel: agentRuns.selectedModel,
-              },
-            })
-            .from(agentSessions)
-            .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-            .leftJoin(
-              conversations,
-              eq(agentSessions.conversationId, conversations.id),
-            )
-            .leftJoin(
-              blobs,
-              eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
-            )
-            .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-            .where(
-              and(
-                eq(agentSessions.id, agentSessionId),
-                eq(agentSessions.userId, userId),
-                eq(agentSessions.orgId, orgId),
-              ),
-            )
-            .limit(1);
-        },
-      );
+      const [snapshot] = await db
+        .select({
+          session: {
+            id: agentSessions.id,
+            agentId: agentSessions.agentId,
+            conversationId: agentSessions.conversationId,
+            storageMounts: agentSessions.storageMounts,
+          },
+          agent: {
+            id: agents.id,
+            orgId: agents.orgId,
+            owner: agents.owner,
+          },
+          conversation: {
+            id: conversations.id,
+            runId: conversations.runId,
+            cliAgentType: conversations.cliAgentType,
+            cliAgentSessionId: conversations.cliAgentSessionId,
+            cliAgentSessionHistory: conversations.cliAgentSessionHistory,
+            cliAgentSessionHistoryHash:
+              conversations.cliAgentSessionHistoryHash,
+          },
+          historyBlob: {
+            hash: blobs.hash,
+            encoding: blobs.encoding,
+          },
+          previousRun: {
+            id: agentRuns.id,
+            vars: agentRuns.vars,
+            storageMounts: agentRuns.storageMounts,
+            selectedModel: agentRuns.selectedModel,
+          },
+        })
+        .from(agentSessions)
+        .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+        .leftJoin(
+          conversations,
+          eq(agentSessions.conversationId, conversations.id),
+        )
+        .leftJoin(
+          blobs,
+          eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
+        )
+        .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
+        .where(
+          and(
+            eq(agentSessions.id, agentSessionId),
+            eq(agentSessions.userId, userId),
+            eq(agentSessions.orgId, orgId),
+          ),
+        )
+        .limit(1);
       return snapshot;
     },
   );
@@ -11586,12 +11047,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       initialRunBody(input.args),
       input.args.userId,
       input.args.orgId,
-      {
-        ...(await get(resolutionOptions$)),
-        agentObservation,
-        sessionSnapshot,
-        timing: input.timing,
-      },
+      { ...(await get(resolutionOptions$)), agentObservation, sessionSnapshot },
     );
   });
   const body$ = computed(async (get) => {
@@ -11729,15 +11185,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
   const runMemberUserTimezone$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("user-timezone", input.args);
     return selectedRunContextShared
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
   const runMemberImageModel$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("image-model", input.args);
     const stored = (await get(runMemberSnapshot$)).member?.selectedImageModel;
     return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
   });
@@ -11833,14 +11285,32 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return undefined;
     },
   );
-  const runAdmissionCheckInternalInput$ = state<RunAdmissionInput | null>(null);
-  const runAdmissionCheckInput$ = computed((get) => {
-    const input = get(runAdmissionCheckInternalInput$);
-    if (!input) {
-      throw new Error("Run admission input is not installed");
-    }
-    return input;
-  });
+  const runAdmissionCheckInput$ = computed(
+    async (get): Promise<RunAdmissionInput> => {
+      const [input, model] = await Promise.all([
+        get(preCreateInput$),
+        get(modelRoute$),
+      ]);
+      return isRouteError(model)
+        ? {
+            catalog: await get(claimCatalog$),
+            orgId: claim.orgId,
+            userId: input.command.auth.userId,
+            modelProviderType: "built-in",
+            selectedModel: input.command.selectedModelOverride,
+            enforceBuiltInCredits: true,
+          }
+        : {
+            catalog: await get(claimCatalog$),
+            orgId: claim.orgId,
+            userId: input.command.auth.userId,
+            modelProviderType: model?.type ?? input.command.body.modelProvider,
+            selectedModel:
+              model?.selectedModel ?? input.command.selectedModelOverride,
+            enforceBuiltInCredits: isBuiltInModelProviderType(model?.type),
+          };
+    },
+  );
   const capturedRunAdmissionReadInput$ = computed(async (get) => {
     return { ...(await get(runAdmissionCheckInput$)), at: nowDate() };
   });
@@ -12108,15 +11578,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : insufficientCredits();
     },
   );
-  const runAdmissionCheckCheckAdmission$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      set(runAdmissionCheckInternalInput$, input);
-      return await set(runAdmissionCheckAdmission$, signal);
-    },
-  );
-
-  const checkAdmission$ = runAdmissionCheckCheckAdmission$;
+  const checkAdmission$ = runAdmissionCheckAdmission$;
   const capturedDirectSendInsufficientCreditsMessage$ = computed(
     async (get) => {
       const input = await get(input$);
@@ -12273,8 +11735,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
       piLaunchConfig: args.piLaunchConfig,
-      timing: args.timing,
-    } satisfies PreparePiLaunchResourcesArgs;
+    } satisfies Omit<PreparePiLaunchResourcesArgs, "timing">;
   });
   const capturedPiMemoryRecallSelection$ = computed(async (get) => {
     const args = await get(preparePiLaunchResourcesInput$);
@@ -12421,48 +11882,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return undefined;
       }
       const piSandbox = args.piSandbox;
-      return measureApiDispatchTiming(
-        args.timing,
-        "api_dispatch_prepare_pi_launch_resources",
-        "nested",
-        () => {
-          return Promise.resolve(
-            assemblePiLaunchResources({
-              modelConfig: piSandbox,
-              piLaunchConfig: args.piLaunchConfig,
-              memoryRecall,
-              resumeSession:
-                args.chatThreadId === undefined
-                  ? undefined
-                  : args.resumeSession,
-              sessionId: args.chatThreadId ?? args.runId,
-            }),
-          );
-        },
+      return Promise.resolve(
+        assemblePiLaunchResources({
+          modelConfig: piSandbox,
+          piLaunchConfig: args.piLaunchConfig,
+          memoryRecall,
+          resumeSession:
+            args.chatThreadId === undefined ? undefined : args.resumeSession,
+          sessionId: args.chatThreadId ?? args.runId,
+        }),
       );
     },
   );
-  const observeExecution$ = command(async ({ get }, signal: AbortSignal) => {
-    if (!(await get(selectionInput$))) {
-      signal.throwIfAborted();
-      return;
-    }
-    const { command: selected } = await get(preCreateInput$);
-    signal.throwIfAborted();
-    await observeAgentRunPiExecutionSnapshot({
-      userId: selected.auth.userId,
-      orgId: selected.auth.orgId,
-      chatThreadId: selected.chatThreadId,
-      piExecution: selectedRunPiExecution(selected),
-      threadSessionCliAgentType: selected.threadSessionRoute?.cliAgentType,
-    });
-    signal.throwIfAborted();
-  });
   const runIdentity$ = computed(async (get) => {
-    const ids = get(internalRunIds$);
-    if (!ids) {
-      throw new Error("Claim has no run identity");
-    }
+    const ids = get(runIds$);
     if (!(await get(selectionInput$))) {
       return null;
     }
@@ -12496,12 +11929,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return storagePlan;
       }
       const contextInput = await get(contextInput$);
-      const prepared = {
-        args: contextInput.args,
-        context,
-        contextInput,
-        timing: contextInput.timing,
-      };
+      const prepared = { args: contextInput.args, context, contextInput };
       const args = prepared.args;
       const finalAppendSystemPrompt =
         args.piExecution && args.piStableContext
@@ -12514,7 +11942,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         args,
         context: finalizePreparedRunContext(prepared, finalAppendSystemPrompt),
-        timing: prepared.timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
           isBuiltInModelProviderType(context.modelProvider?.type),
@@ -12546,7 +11973,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!identity) {
       throw new Error("Selected claim has no run identity");
     }
-    return atomicLaunchPayloadInput({
+    return atomicLaunchPayloadData({
       createArgs: input.args,
       context: input.context,
       run: {
@@ -12554,12 +11981,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         sessionId: identity.sessionId,
         shouldCreateSession: identity.shouldCreateSession,
       },
-      timing: input.timing,
     });
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const args = await get(runnerArgs$);
       signal.throwIfAborted();
       if (!args || isRouteError(args)) {
@@ -12567,16 +11997,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return prepareRunnerStorageInput({
         db: set(writeDb$),
-        args,
+        args: { ...args, timing },
         storageManifestStats: new StorageManifestBuildStats(),
       });
     },
   );
   const prepareCallbacks$ = command(async ({ get }, signal: AbortSignal) => {
-    const identity = get(internalRunIds$);
-    if (!identity) {
-      throw new Error("Claim has no run identity");
-    }
+    const identity = get(runIds$);
     const [callbacks, bootstrap] = await Promise.all([
       get(callbackInputs$),
       get(preCreateBootstrapMetadata$),
@@ -12612,9 +12039,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return get(preparedStorage$);
   });
   const prepareRunnerStorage$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const [input, preparedStorage, piResources] = await Promise.all([
-        set(prepareRunnerInput$, signal),
+        set(prepareRunnerInput$, timing, signal),
         get(preparedStorage$),
         get(piLaunchResources$),
       ]);
@@ -12724,37 +12155,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           model.body.error.code === "PROVIDER_UNAVAILABLE" &&
           isBuiltInModelProviderType(input.command.body.modelProvider)
         ) {
-          const credits = await set(
-            checkAdmission$,
-            {
-              catalog: await get(claimCatalog$),
-              orgId: claim.orgId,
-              userId: input.command.auth.userId,
-              modelProviderType: "built-in",
-              selectedModel: input.command.selectedModelOverride,
-              enforceBuiltInCredits: true,
-            },
-            signal,
-          );
+          const credits = await set(checkAdmission$, signal);
           if (credits) {
             return credits;
           }
         }
         return model;
       }
-      return await set(
-        checkAdmission$,
-        {
-          catalog: await get(claimCatalog$),
-          orgId: claim.orgId,
-          userId: input.command.auth.userId,
-          modelProviderType: model?.type ?? input.command.body.modelProvider,
-          selectedModel:
-            model?.selectedModel ?? input.command.selectedModelOverride,
-          enforceBuiltInCredits: isBuiltInModelProviderType(model?.type),
-        },
-        signal,
-      );
+      return await set(checkAdmission$, signal);
     },
   );
   const authorizeIdentity$ = command(
@@ -12769,23 +12177,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return { identityInput, authorization };
     },
   );
-  const authorizeClaimIdentity$ = command(
-    async (
-      { set },
-      resolvePromptInputs: boolean,
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ) => {
-      const [, authorized] = await Promise.all([
-        resolvePromptInputs
-          ? set(resolvePromptLaunchInputs$, head, signal)
-          : undefined,
-        set(authorizeIdentity$, signal),
-      ]);
-      signal.throwIfAborted();
-      return authorized;
-    },
-  );
   const initializeRunPreparation$ = command(
     async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -12797,19 +12188,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const resolvePromptInputs =
         head.contextType === "automation"
           ? await set(initializeAutomationExecution$, head, timing.run, signal)
-          : await set(initializeQueuedPrompt$, head, timing.run, signal);
+          : await set(initializeQueuedPrompt$, head, timing, signal);
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
-        authorizeClaimIdentity$,
-        resolvePromptInputs,
-        head,
+        authorizeIdentity$,
         signal,
       );
       signal.throwIfAborted();
       if (!identityInput) {
         const assembly =
           head.contextType === "automation"
-            ? get(queuedAutomationAssemblerInternalEarlyAssembly$)
+            ? await get(queuedAutomationAssemblerInternalEarlyAssembly$)
             : await get(assembly$);
         signal.throwIfAborted();
         await set(
@@ -12826,31 +12215,38 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return null;
       }
       if (authorization) {
-        const rejection =
-          head.contextType === "automation"
-            ? {
-                userId: identityInput.auth.userId,
-                error: authorization.body.error,
-              }
-            : claimAssemblyRejection(
-                await get(assembly$),
-                head,
-                authorization.body.error,
-              );
-        signal.throwIfAborted();
+        const rejection: ChatQueueHeadRejection = {
+          userId: identityInput.auth.userId,
+          error: authorization.body.error,
+          ...(head.contextType === "automation"
+            ? {}
+            : { delivery: { kind: "source" as const, head } }),
+        };
         await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
       }
-      set(internalRunIds$, { runId: randomUUID(), newSessionId: randomUUID() });
+      // Only explicit policy/allowance writes and live delivery checks wait
+      // for agent authorization. The pure input snapshots are already running.
+      if (resolvePromptInputs) {
+        if (head.contextType === "discord") {
+          await get(promptMaterialMaterial$);
+          signal.throwIfAborted();
+        }
+        await set(refreshPromptUsageAllowance$, signal);
+      }
       return head;
     },
   );
   /** Runner input owns the random token; storage then reads its result. */
   const prepareRunnerResources$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const [plan, storage] = await Promise.all([
         get(runPlan$),
-        set(prepareRunnerStorage$, signal),
+        set(prepareRunnerStorage$, timing, signal),
       ]);
       signal.throwIfAborted();
       const runnerInput: RunnerInputResult =
@@ -12862,8 +12258,41 @@ export function createClaimRunObjects(claim: ThreadClaim) {
    * Automation launch arguments are the only write-derived input of these
    * reads; Web input starts them at once.
    */
+  const readClaimAssembly$ = command(
+    async (
+      { get },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
+      const assembly =
+        head.contextType === "automation"
+          ? await get(assembly$)
+          : await timing.prompt.measure(
+              "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
+              "top_level",
+              () => {
+                return get(assembly$);
+              },
+            );
+      signal.throwIfAborted();
+      if (head.contextType === "automation" && assembly.kind === "assembled") {
+        timing.run.recordElapsed(
+          "api_dispatch_pre_create_agent_workflow_automation_create_run",
+          "nested",
+          now(),
+        );
+      }
+      return assembly;
+    },
+  );
   const prepareLaunchResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
         const launch = await set(
@@ -12872,11 +12301,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           signal,
         );
         signal.throwIfAborted();
-        if (!launch) {
-          // The automation input was already rejected from its reads; no
-          // launch read can change that, so none is started.
-          return { kind: "rejected" as const, assembly: await get(assembly$) };
-        }
         rewardArgs = await set(
           initializeWorkflowAutomationRun$,
           launch,
@@ -12885,14 +12309,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         signal.throwIfAborted();
       }
       const [runner, , callbackRows, assembly, identity] = await Promise.all([
-        set(prepareRunnerResources$, signal),
+        set(prepareRunnerResources$, timing.run, signal),
         rewardArgs
           ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
           : undefined,
         set(prepareCallbacks$, signal),
-        get(assembly$),
+        set(readClaimAssembly$, head, timing, signal),
         get(runIdentity$),
-        set(observeExecution$, signal),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
         get(runEnvironmentSnapshot$),
@@ -12908,9 +12331,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const prepareClaimResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       if (head.contextType === "automation") {
-        await set(resolveAutomationModelSnapshot$, signal);
+        await set(resolveAutomationModelSnapshot$, timing.run, signal);
         signal.throwIfAborted();
       }
       // Storage mounts and runtime-secret KMS do not read reconciled
@@ -12919,14 +12347,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         await Promise.all([
           set(prepareEncryptedSecrets$, signal),
           set(checkClaimAdmission$, signal),
-          set(prepareLaunchResources$, head, signal),
+          set(prepareLaunchResources$, head, timing, signal),
           get(storageMounts$),
           get(preparedAllowanceRefresh$),
         ]);
       signal.throwIfAborted();
-      if (launch.kind === "rejected") {
-        return { kind: "rejected" as const, assembly: launch.assembly };
-      }
       const [input, storage, runnerInput] = launch.runner;
       const contextDraft = set(
         claimRunPrepareStoredContextDraft$,
@@ -12979,22 +12404,177 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return { kind: "passed" };
     },
   );
+  const readClaimStorageSources$ = command(
+    async ({ get }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      const automation = head.contextType === "automation";
+      if (automation) {
+        const target = await get(capturedAutomationTarget$);
+        signal.throwIfAborted();
+        if (!target || target.automation.officialBlueprintKey !== null) {
+          // Official launch arguments depend on the reconciliation write's
+          // returned authority/revision. Reading the full mount graph twice
+          // across that write would not be an independent early snapshot.
+          return;
+        }
+      }
+      // Catalog-projected policy facts are read-only. The catalog cutover
+      // removed lazy org default seeding; it is not a storage write barrier.
+      const pin = await get(automation ? queuedModelModelPin$ : modelPin$);
+      signal.throwIfAborted();
+      if ("status" in pin) {
+        return;
+      }
+      const admission = await get(
+        automation ? queuedModelProviderAdmission$ : providerAdmission$,
+      );
+      signal.throwIfAborted();
+      if (admission.needsAllowance || admission.error) {
+        return;
+      }
+      if (!(await get(selectionInput$)) || !(await get(selectedCommand$))) {
+        signal.throwIfAborted();
+        return;
+      }
+      signal.throwIfAborted();
+      // No initialization write can change these inputs. Start the actual
+      // memoized mount/index/URL read graph, not a throwaway prefetch query.
+      await get(storageMounts$);
+      signal.throwIfAborted();
+    },
+  );
+  const readClaimAgentSources$ = command(
+    async ({ get }, signal: AbortSignal) => {
+      const identity = await get(claimReadIdentity$);
+      signal.throwIfAborted();
+      if (!identity) {
+        return;
+      }
+      await Promise.all([
+        get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
+        get(preCreateWorkflowRowsWorkflowRows$),
+        get(runEnvironmentSnapshot$),
+      ]);
+      signal.throwIfAborted();
+    },
+  );
+  const readClaimInputSources$ = command(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      if (
+        head.contextType === "automation" &&
+        !(await get(capturedAutomationTarget$))
+      ) {
+        signal.throwIfAborted();
+        return;
+      }
+      signal.throwIfAborted();
+      // Model/member reads have no agent-identity barrier. Agent-specific
+      // rows start concurrently and wait only for the selected agent itself.
+      const commonReads = [
+        set(readClaimAgentSources$, signal),
+        set(readClaimStorageSources$, head, signal),
+        get(runMemberSnapshot$),
+        get(runDisabledPaidToolsSnapshot$),
+      ];
+      if (head.contextType === "automation") {
+        await Promise.all([
+          get(automationThreadSessionSnapshot$),
+          get(queuedModelSelection$),
+          get(queuedModelCapabilities$),
+          get(queuedModelInitialPolicies$),
+          get(queuedModelFeatureSwitchContext$2),
+          get(queuedModelMemberAccountSnapshot$2),
+          ...commonReads,
+        ]);
+      } else {
+        await Promise.all([
+          get(promptThreadSessionSnapshot$),
+          get(selection$),
+          get(capabilities$),
+          get(initialPolicies$),
+          get(queuedModelFeatureSwitchContext$),
+          get(queuedModelMemberAccountSnapshot$),
+          ...(head.contextType === "discord"
+            ? [get(promptMaterialMaterial$)]
+            : []),
+          ...commonReads,
+        ]);
+      }
+      signal.throwIfAborted();
+    },
+  );
+  const initializeClaimIdentityForReads$ = command(
+    async ({ set }, timing: ClaimRunTiming, signal: AbortSignal) => {
+      const head = await set(initializeRunPreparation$, timing, signal);
+      signal.throwIfAborted();
+      if (!head) {
+        throw new ClaimInputAlreadyRejected();
+      }
+      return head;
+    },
+  );
+  const prepareClaimReadSnapshots$ = command(
+    async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
+      const head = await get(head$);
+      signal.throwIfAborted();
+      if (!head) {
+        return null;
+      }
+      // The same memoized snapshots feed session/model preparation. Their I/O
+      // starts before initialization/authorization, and rejection is fail-fast.
+      const initialized = await settle(
+        Promise.all([
+          set(readClaimInputSources$, head, signal),
+          set(initializeClaimIdentityForReads$, timing, signal),
+        ]),
+        signal,
+      );
+      if (!initialized.ok) {
+        if (initialized.error instanceof ClaimInputAlreadyRejected) {
+          return null;
+        }
+        const rejected = queuedPromptPreparationRejection(
+          initialized.error,
+          head,
+        );
+        if (rejected.kind !== "rejected") {
+          throw new Error("A failed input read must produce a rejection");
+        }
+        await set(
+          rejectChatQueueHead$,
+          {
+            head,
+            rejection: {
+              ...rejected.rejection,
+              delivery: { kind: "source" as const, head },
+            },
+          },
+          signal,
+        );
+        return null;
+      }
+      signal.throwIfAborted();
+      return head;
+    },
+  );
   const prepareRunContext$ = command(
     async (
       { set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<RunContext | { readonly kind: "passed" }> => {
-      const head = await set(initializeRunPreparation$, timing, signal);
+      const head = await set(prepareClaimReadSnapshots$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
         return { kind: "passed" };
       }
       const resources = await settle(
-        set(prepareClaimResources$, head, signal),
+        set(prepareClaimResources$, head, timing, signal),
         signal,
       );
       if (!resources.ok) {
+        if (resources.error instanceof ClaimInputAlreadyRejected) {
+          return { kind: "passed" };
+        }
         return await set(
           rejectUnresolvedOfficialArtifact$,
           head,
@@ -13003,21 +12583,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
       }
       signal.throwIfAborted();
-      if (resources.value.kind === "rejected") {
-        const early = resources.value.assembly;
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection:
-              early.kind === "rejected"
-                ? early.rejection
-                : unreadyQueueHeadRejection(head),
-          },
-          signal,
-        );
-        return { kind: "passed" };
-      }
       const [
         input,
         storage,

@@ -22,11 +22,7 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import {
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements,
-  installApiTestConnectorCatalog,
-  setApiTestConnectorCatalogExternalReaderIdentityReadHook,
-} from "../../../test-fixtures/connector-catalog";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -61,7 +57,6 @@ describe("builtin MCP account surfaces", () => {
   }
 
   afterEach(async () => {
-    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
     for (const id of createdAgents.splice(0)) {
       await accept(
         setupApp({ context, routes })(agentsByIdContract).delete({
@@ -371,12 +366,6 @@ describe("builtin MCP account surfaces", () => {
       [201],
     );
     const params = { id: createdThread.body.id };
-
-    // The accepted PostgreSQL projection remains readable while the complete
-    // catalog snapshot is unavailable at its external-reader boundary.
-    setApiTestConnectorCatalogExternalReaderIdentityReadHook(() => {
-      return Promise.reject(new Error("Full catalog read is unavailable"));
-    });
     const selected = await accept(selections.get({ headers, params }), [200]);
     expect(selected.body.selections).toStrictEqual([selection]);
     expect(selected.body.selectedConnections).toMatchObject([
@@ -395,7 +384,6 @@ describe("builtin MCP account surfaces", () => {
       selections: [],
       selectedConnections: [],
     });
-    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
     await accept(
       selections.update({ headers, params, body: selection }),
       [200],

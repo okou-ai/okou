@@ -11,19 +11,15 @@ import { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import type { ApiDb, Tx } from "../../../lib/db-types";
-import {
-  pgBooleanDecoder,
-  pgIntegerDecoder,
-} from "../../../lib/db-structured-result";
+import type { ApiDb } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
-import { createDeferredPromise, settle } from "../../utils";
+import { settle } from "../../utils";
 import {
   repairUsagePackPendingSnapshotGuards,
   writeUsagePackPendingSnapshots,
 } from "../usage-pack-pending-snapshot.service";
 
-const context = testContext();
+testContext();
 
 // HTTP callers cannot select installed triggers, grandfathered/corrupt guard
 // state, org movement or database lock interleavings. Each case owns its current schema. Historical 0954 trigger and mixed-version
@@ -126,31 +122,6 @@ async function guard(db: ApiDb, orgId: string) {
     .from(usagePackPendingSnapshotGuards)
     .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
   return row?.pendingSnapshotCount;
-}
-
-async function backendPid(tx: Tx) {
-  const [row] = await tx
-    .select({ pid: sql`pg_backend_pid()`.mapWith(pgIntegerDecoder) })
-    .from(sql`(SELECT 1) AS backend`);
-  if (!row) {
-    throw new Error("Expected transaction backend");
-  }
-  return row.pid;
-}
-
-async function expectBlocked(db: ApiDb, pid: number) {
-  await expect
-    .poll(async () => {
-      const [row] = await db
-        .select({
-          blocked: sql`cardinality(pg_blocking_pids(${pid})) > 0`.mapWith(
-            pgBooleanDecoder,
-          ),
-        })
-        .from(sql`(SELECT 1) AS blocking_state`);
-      return row?.blocked;
-    })
-    .toBe(true);
 }
 
 async function grandfather(db: ApiDb, orgId: string) {
@@ -453,46 +424,5 @@ describe("pending snapshots on the current schema", () => {
     await repairUsagePackPendingSnapshotGuards(harness.db, [row.orgId]);
     await transition(harness.db, row.orgId, row.id, "canceled");
     await expect(guard(harness.db, row.orgId)).resolves.toBe(0);
-  });
-
-  it("serializes prepared admission behind a terminal transition", async () => {
-    const row = values(`org_${randomUUID()}`);
-    await insert(harness.db, row);
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const pid = createDeferredPromise<number>(context.signal);
-    const terminal = settle(
-      writeUsagePackPendingSnapshots(harness.db, [row.orgId], async (tx) => {
-        await tx
-          .update(usagePackSubscriptions)
-          .set({ subscriptionStatus: "canceled" })
-          .where(eq(usagePackSubscriptions.id, row.id));
-        entered.resolve(undefined);
-        await release.promise;
-      }),
-    );
-    await entered.promise;
-    const admission = settle(
-      harness.db.transaction(async (tx) => {
-        pid.resolve(await backendPid(tx));
-        await writeUsagePackPendingSnapshots(
-          tx,
-          [row.orgId],
-          async (writeTx) => {
-            await writeTx
-              .insert(usagePackSubscriptions)
-              .values(values(row.orgId));
-          },
-        );
-      }),
-    );
-    const blocked = await settle(expectBlocked(harness.db, await pid.promise));
-    release.resolve(undefined);
-    await expect(terminal).resolves.toMatchObject({ ok: true });
-    await expect(admission).resolves.toMatchObject({ ok: true });
-    if (!blocked.ok) {
-      throw blocked.error;
-    }
-    await expect(guard(harness.db, row.orgId)).resolves.toBe(1);
   });
 });

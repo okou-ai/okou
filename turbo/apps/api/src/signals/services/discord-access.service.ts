@@ -1,10 +1,4 @@
-import { command } from "ccstate";
-import type { DiscordChannel } from "../external/discord-client";
-import {
-  discordDmReadDenied,
-  discordUnavailable,
-  type DiscordFailureResponse,
-} from "./discord-api-response";
+import { command, computed } from "ccstate";
 import {
   discordIntegrationEnabledForOwner,
   getDiscordAppConfig,
@@ -13,6 +7,12 @@ import {
   discordUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
+import type { DiscordChannel } from "../external/discord-client";
+import {
+  discordDmReadDenied,
+  discordUnavailable,
+  type DiscordFailureResponse,
+} from "./discord-api-response";
 import {
   resolveDiscordProviderAccess,
   type DiscordAccessMode,
@@ -27,16 +27,16 @@ export type DiscordBindingAccess =
     }
   | { kind: "denied"; response: DiscordFailureResponse };
 
-export const requireDiscordBinding$ = command(
-  async (
-    { get },
-    args: { orgId: string; userId: string; guildId?: string },
-    signal: AbortSignal,
-  ): Promise<DiscordBindingAccess> => {
+/** A read snapshot for one authorization boundary, keyed only by identities. */
+export function discordBindingAccess(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly guildId?: string;
+}) {
+  return computed(async (get): Promise<DiscordBindingAccess> => {
     const enabled = await get(
       discordIntegrationEnabledForOwner(args.orgId, args.userId),
     );
-    signal.throwIfAborted();
     if (!enabled) {
       return {
         kind: "denied",
@@ -67,7 +67,6 @@ export const requireDiscordBinding$ = command(
       };
     }
     const binding = await get(discordUserBinding(args));
-    signal.throwIfAborted();
     if (
       !binding ||
       (args.guildId !== undefined && binding.guildId !== args.guildId)
@@ -80,6 +79,19 @@ export const requireDiscordBinding$ = command(
       botToken: config.botToken,
       messageContentEnabled: config.messageContentEnabled,
     };
+  });
+}
+
+export const requireDiscordBinding$ = command(
+  async (
+    { get },
+    args: { orgId: string; userId: string; guildId?: string },
+    signal: AbortSignal,
+  ): Promise<DiscordBindingAccess> => {
+    signal.throwIfAborted();
+    const access = await get(discordBindingAccess(args));
+    signal.throwIfAborted();
+    return access;
   },
 );
 
@@ -92,6 +104,31 @@ export type DiscordConversationAccess =
       messageContentEnabled: boolean;
     }
   | { kind: "denied"; response: DiscordFailureResponse };
+
+/** A finite, memoized permission read; no request signal is captured by its graph. */
+export function discordConversationAccess(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly guildId?: string;
+  readonly channelId: string;
+  readonly mode: DiscordAccessMode;
+}) {
+  return computed(async (get): Promise<DiscordConversationAccess> => {
+    const current = await get(discordBindingAccess(args));
+    if (current.kind === "denied") {
+      return current;
+    }
+    const access = await resolveDiscordProviderAccess({
+      ...current.binding,
+      botToken: current.botToken,
+      channelId: args.channelId,
+      mode: args.mode,
+    });
+    return access.kind === "denied"
+      ? access
+      : { ...current, channel: access.channel };
+  });
+}
 
 /** Re-resolve this command at delivery time; never retain its earlier authority. */
 export const requireDiscordConversationAccess$ = command(

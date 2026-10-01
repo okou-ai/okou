@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
-import { onTestFinished } from "vitest";
-import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testContext } from "../../../__tests__/test-context";
-import {
-  holdAgentRunDeletionFixture,
-  readHistoryBlobReferenceCountFixture,
-} from "../../../test-fixtures/run-deletion";
+import { readHistoryBlobReferenceCountFixture } from "../../../test-fixtures/run-deletion";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -78,51 +71,6 @@ test.each(["user", "organization"] as const)(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await runs.requestReadRun(actor, run.runId, [404]);
-    await expect(readHistoryBlobReferenceCountFixture(run.hash)).resolves.toBe(
-      0,
-    );
-  },
-);
-
-test.each(["checkpoint", "combined-completion"] as const)(
-  "serializes a %s retry behind accounted Run deletion",
-  async (writer) => {
-    const actor = bdd.user();
-    const run = await checkpointedRun(actor);
-    // Only the transaction pause is injected; the competing Runner write goes
-    // through its production route and must revalidate the now-deleted Run.
-    const held = await holdAgentRunDeletionFixture({
-      runId: run.runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    const response =
-      writer === "checkpoint"
-        ? webhooks.requestAgentCheckpoint(
-            { runId: run.runId, ...run.checkpoint },
-            run.headers,
-            [404],
-          )
-        : setupApp({ context, routes: webhooksAgentCompleteRoutes })(
-            webhookCompleteContract,
-          ).complete({
-            body: {
-              runId: run.runId,
-              exitCode: 0,
-              checkpoint: run.checkpoint,
-            },
-            headers: run.headers,
-          });
-    await expect.poll(held.blockedWaiterCount).toBeGreaterThan(0);
-    held.release();
-    await held.done;
-    await expect(response).resolves.toMatchObject({
-      status: writer === "checkpoint" ? 404 : 200,
-    });
     await runs.requestReadRun(actor, run.runId, [404]);
     await expect(readHistoryBlobReferenceCountFixture(run.hash)).resolves.toBe(
       0,

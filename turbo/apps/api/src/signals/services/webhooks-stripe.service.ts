@@ -1,6 +1,9 @@
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
 import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
-import { refundDuplicateSubscriptionInvoice } from "./billing-duplicate-subscription.service";
+import {
+  areDuplicateInitialPurchases,
+  refundDuplicateSubscriptionInvoice,
+} from "./billing-duplicate-subscription.service";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
 import {
@@ -148,6 +151,7 @@ interface CheckoutSessionInput {
 }
 
 interface InvoiceInput {
+  readonly billing_reason?: string | null;
   readonly id: string;
   readonly customer: string | { readonly id: string } | null;
   readonly metadata: Record<string, string> | null;
@@ -3071,11 +3075,12 @@ type BindSubscriptionToCustomerOrgArgs = {
 );
 
 /**
- * A rejected Plan invoice whose organization entitlement is held by another
- * live subscription is a duplicate initial purchase: it is refunded instead of
- * granted. Read after the rejected publication so the winner is committed.
+ * A Plan invoice whose organization entitlement is held by another live
+ * subscription bought concurrently as an initial purchase is a duplicate: it
+ * is refunded instead of granted, whatever its tier. Read before publication
+ * so neither a rejection nor a tier upgrade grants it.
  */
-async function planInvoiceLostToLiveSubscription(
+async function planInvoiceIsDuplicateInitialPurchase(
   db: Db,
   publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
 ): Promise<boolean> {
@@ -3091,7 +3096,10 @@ async function planInvoiceLostToLiveSubscription(
       wallet.subscriptionStatus === "trialing" ||
       wallet.subscriptionStatus === "past_due") &&
     (wallet.currentPeriodEnd === null || wallet.currentPeriodEnd > nowDate()) &&
-    legacyPlanInvoiceAdmission(wallet, publication) === "rejected"
+    (await areDuplicateInitialPurchases(
+      publication.subscriptionId,
+      wallet.stripeSubscriptionId,
+    ))
   );
 }
 
@@ -3681,6 +3689,15 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       orgId: org.orgId,
       details,
     };
+    // Only a subscription's first invoice can be a duplicate initial purchase.
+    if (
+      invoice.billing_reason === "subscription_create" &&
+      (await planInvoiceIsDuplicateInitialPurchase(db, publication))
+    ) {
+      await refundDuplicateSubscriptionInvoice(invoice, subscriptionId);
+      signal.throwIfAborted();
+      return org.orgId;
+    }
     const replacedSubscriptionIds =
       legacyPlanInvoiceAdmission(org, publication) === "rejected"
         ? []
@@ -3692,14 +3709,6 @@ const handlePlanSubscriptionInvoicePaid$ = command(
     signal.throwIfAborted();
     const result = await set(publishLegacyPlanInvoice$, publication, signal);
     signal.throwIfAborted();
-    if (
-      !result.processed &&
-      (await planInvoiceLostToLiveSubscription(db, publication))
-    ) {
-      await refundDuplicateSubscriptionInvoice(invoice, subscriptionId);
-      signal.throwIfAborted();
-      return org.orgId;
-    }
     if (result.processed && result.cancelReplaced) {
       await cancelReplacedPlanSubscriptions({
         orgId: org.orgId,

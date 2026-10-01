@@ -61,6 +61,7 @@ export interface StripeSubscriptionItem {
 
 export interface StripeSubscription {
   readonly id: string;
+  readonly created?: number;
   readonly customer: string | { readonly id: string };
   readonly status: string;
   readonly metadata?: Record<string, string> | null;

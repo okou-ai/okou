@@ -24,7 +24,11 @@ import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.s
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { insertChatEvent } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import {
+  notifyRunningChatRunOfPendingInput,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import { waitUntil } from "../context/wait-until";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -262,13 +266,15 @@ const admitChatRunFinishedAutomation$ = command(
         throw admission.error;
       }
       // A competing callback committed this input; wake the thread anyway.
-      set(
-        scheduleEnqueuedChatThreadPick$,
-        {
-          orgId: automation.orgId,
-          chatThreadId,
-        },
-        signal,
+      waitUntil(
+        set(
+          pickEnqueuedChatThread$,
+          { orgId: automation.orgId, chatThreadId },
+          signal,
+        ),
+      );
+      waitUntil(
+        notifyRunningChatRunOfPendingInput(set(writeDb$), chatThreadId),
       );
     }
   },
@@ -343,14 +349,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // Queue admission is durable independently of its launch. A source retry
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
-          set(
-            scheduleEnqueuedChatThreadPick$,
-            {
-              orgId: row.automation.orgId,
-              chatThreadId: row.chatThreadId,
-            },
-            signal,
+          waitUntil(
+            set(
+              pickEnqueuedChatThread$,
+              { orgId: row.automation.orgId, chatThreadId: row.chatThreadId },
+              signal,
+            ),
           );
+          waitUntil(notifyRunningChatRunOfPendingInput(db, row.chatThreadId));
         }
         continue;
       }

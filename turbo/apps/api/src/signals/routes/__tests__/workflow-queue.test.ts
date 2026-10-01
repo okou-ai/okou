@@ -4,21 +4,20 @@ import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/mo
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach } from "vitest";
+import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
-import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
   readChatEventContextFixture,
   setQueuedUserMessageCreatedAtFixture,
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
-import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -42,9 +41,11 @@ import {
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import {
-  readThreadSessionBinding,
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey,
 } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
@@ -493,31 +494,38 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 describe("workflow queue", () => {
   it("rejects a workflow automation when every built-in route is unavailable", async () => {
     const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    // The automation thread keeps its model; only its route turns built-in.
+    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
     await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
       {
-        model: "claude-fable-5-1",
+        model,
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId: scenario.orgId,
-      model: "claude-fable-5-1",
-      defaultProviderType: "built-in",
-    });
-
-    const response = await withBuiltInModelRuntimeRouteUnavailableForTest(
-      "claude-fable-5-1",
-      async () => {
-        return await postWorkflowWebhook(
-          automation,
-          "launch without a built-in model key",
-        );
+    // The automation thread pins the preferred Built-in model.
+    const automation = await createWebhookAutomation(scenario);
+    // Provider failures cool down every Built-in candidate of the model.
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      {
+        provider_type: "anthropic-api-key",
+        upstream_model: "claude-fable-5-1",
       },
+      {
+        provider_type: "openrouter-api-key",
+        upstream_model: "anthropic/claude-fable-5.1",
+      },
+    ]);
+
+    const response = await postWorkflowWebhook(
+      automation,
+      "launch without a built-in model key",
     );
     // The trigger is accepted; the launch rejection appears in the thread.
     expectAccepted(response);
@@ -674,11 +682,12 @@ describe("workflow queue", () => {
     ]);
 
     await requestRunCompletionThroughSandbox(scenario, firstRunId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return workflowRunIds(automation.threadId);
-      })
-      .toHaveLength(2);
+      })(),
+    ).resolves.toHaveLength(2);
     const secondRunId = (await workflowRunIds(automation.threadId))[1];
     if (!secondRunId) {
       throw new Error("Expected one queued event to create the next run");
@@ -688,11 +697,12 @@ describe("workflow queue", () => {
     ).resolves.toHaveLength(1);
 
     await requestRunCompletionThroughSandbox(scenario, secondRunId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return workflowRunIds(automation.threadId);
-      })
-      .toHaveLength(3);
+      })(),
+    ).resolves.toHaveLength(3);
     await expect(
       pendingAutomationEvents(automation.threadId),
     ).resolves.toHaveLength(0);
@@ -835,11 +845,12 @@ describe("workflow queue", () => {
       // Freeing the slot picks the queued thread.
       await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);
       await flushWaitUntilForTest();
-      await expect
-        .poll(() => {
+      await flushWaitUntilForTest();
+      await expect(
+        (() => {
           return workflowRunIds(automation.threadId);
-        })
-        .toHaveLength(2);
+        })(),
+      ).resolves.toHaveLength(2);
       await expect(
         pendingAutomationEvents(automation.threadId),
       ).resolves.toStrictEqual([]);
@@ -1593,14 +1604,6 @@ describe("workflow queue", () => {
     if (!queuedEvent) {
       throw new Error("Expected the claimed one-time event to remain queued");
     }
-
-    const busyBinding = await readThreadSessionBinding(
-      context,
-      created.body.chatThreadId,
-    );
-    if (!busyBinding.agent_session_id) {
-      throw new Error("Expected the busy run to bind the thread session");
-    }
     await completeRunThroughSandbox(scenario, busyRunId);
     const runIds = await workflowRunIds(created.body.chatThreadId);
     expect(runIds).toHaveLength(2);
@@ -1608,21 +1611,17 @@ describe("workflow queue", () => {
     if (!drainedRunId) {
       throw new Error("Expected the queued one-time event to drain");
     }
-    const drainedBinding = await readThreadSessionBinding(
-      context,
-      created.body.chatThreadId,
-    );
-    expect(drainedBinding).toMatchObject({
-      agent_session_id: busyBinding.agent_session_id,
-      agent_session_run_id: drainedRunId,
-      run_session_id: busyBinding.agent_session_id,
-    });
     const drainedClaim = await completeRunThroughSandbox(
       scenario,
       drainedRunId,
     );
     expect(drainedClaim.resumeSession?.sessionId).toBe(
       `workflow-queue-cli-${busyRunId}`,
+    );
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, drainedRunId),
+    ).resolves.toBe(
+      await readCompletedRunSessionId(context, scenario.actor, busyRunId),
     );
     const drained = await wf.readAutomation(created.body.id);
     expect(drained.enabled).toBeFalsy();
@@ -1648,13 +1647,6 @@ describe("workflow queue", () => {
       await postWorkflowWebhook(automation, "first"),
       automation.threadId,
     );
-    const firstBinding = await readThreadSessionBinding(
-      context,
-      automation.threadId,
-    );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the first workflow run to bind the session");
-    }
     expectAccepted(await postWorkflowWebhook(automation, "second"));
 
     // A user message sent while the automation run is active joins the chat
@@ -1693,13 +1685,6 @@ describe("workflow queue", () => {
       return chatEventDisplayText(message) === "user interjection";
     });
     expect(queuedUserMessage?.runId).toBeUndefined();
-    await expect(
-      readThreadSessionBinding(context, automation.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: secondWorkflowRunId,
-      run_session_id: firstBinding.agent_session_id,
-    });
 
     // The user message drains only after the automation run finishes.
     const workflowClaim = await completeRunThroughSandbox(
@@ -1720,13 +1705,6 @@ describe("workflow queue", () => {
     if (!userMessage?.runId) {
       throw new Error("Expected the queued user message to claim a run");
     }
-    await expect(
-      readThreadSessionBinding(context, automation.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: userMessage.runId,
-      run_session_id: firstBinding.agent_session_id,
-    });
     const userClaim = await completeRunThroughSandbox(
       scenario,
       userMessage.runId,
@@ -1734,6 +1712,17 @@ describe("workflow queue", () => {
     expect(userClaim.resumeSession?.sessionId).toBe(
       `workflow-queue-cli-${secondWorkflowRunId}`,
     );
+    const session = await readCompletedRunSessionId(
+      context,
+      scenario.actor,
+      firstRunId,
+    );
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, secondWorkflowRunId),
+    ).resolves.toBe(session);
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, userMessage.runId),
+    ).resolves.toBe(session);
   });
 
   it("revokes one pending automation event with the caller's client event id", async () => {

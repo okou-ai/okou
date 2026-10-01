@@ -315,22 +315,25 @@ once, refund the extra payment afterwards; no strong consistency on the Stripe
 side. `billing_purchase` is deleted with all seven acquisitions; the existing
 claim UPDATEs remain best-effort checks.
 
+- **Duplicate initial purchase.** Two subscriptions are duplicates when each
+  was created before the other became effective (the paid time of its first
+  and only paid invoice), read from existing Stripe facts by
+  `areDuplicateInitialPurchases` (billing-duplicate-subscription.service.ts).
+  A normal upgrade is created after the subscription it replaces was paid, so
+  it never matches and keeps the existing replacement behavior.
 - **Only once.** The organization row's subscription binding is the single
-  entitlement. Usage-pack activation and paid-invoice fulfillment project the
-  org Plan with `orgAcceptsSubscriptionWhere` (usage-pack-fulfillment-plan.ts):
-  binding empty, equal to this subscription, not live
-  (`active`/`trialing`/`past_due`), or past its period end. A losing pack
-  rolls back its whole fulfillment transaction (member grants included). Plan
-  invoices keep the existing conditional wallet publication
-  (`legacyPlanInvoiceWalletWhere`) and admission, which rejects a different
-  subscription of the same or lower tier; `uq_credit_expires_invoice` and the
-  pack invoice receipt/grant idempotency keep each invoice single.
-- **Refund.** `refundDuplicateSubscriptionInvoice`
-  (billing-duplicate-subscription.service.ts) runs outside SQL on the losing
-  `invoice.paid`: a credit note refunding `amount_paid`, then cancellation
-  without proration. It is triggered by the pack fulfillment loss
-  (`commitOrRefundUsagePackFulfillment$`) and by a rejected Plan invoice whose
-  org is bound to another live subscription (`planInvoiceLostToLiveSubscription`).
+  entitlement and the first effective purchase keeps it, whatever the tiers.
+  Usage-pack activation and fulfillment project the org Plan only through
+  `orgAcceptsSubscriptionWhere` (binding empty, the same subscription, not
+  live, or past its period end); a losing pack rolls back its whole
+  fulfillment, member grants included. A Plan invoice whose subscription's
+  first invoice (`billing_reason = subscription_create`) duplicates the bound
+  live subscription is neither rejected-and-kept nor treated as an upgrade: it
+  is refunded before publication. `uq_credit_expires_invoice` and the pack
+  receipt/grant keys keep each invoice single.
+- **Refund.** `refundDuplicateSubscriptionInvoice` runs outside SQL on the
+  losing `invoice.paid`: a credit note refunding `amount_paid`, then
+  cancellation without proration unless Stripe already shows it canceled.
   Timing: on that webhook delivery; missed deliveries are replayed by the
   hourly `/api/cron/reconcile-billing-entitlements` paid-invoice replay.
 - **Exactly one refund.** Stripe idempotency keys
@@ -338,12 +341,10 @@ claim UPDATEs remain best-effort checks.
   credit-note lookup by metadata purpose on that invoice before creating, so
   redelivery after the 24h idempotency window still refunds once. No local
   state is added.
-- Tests (usage-pack-subscription-lifecycle): Plan first then pack, pack first
-  then Plan, and concurrent delivery: one entitlement, one credit note and
-  cancellation for the loser, replay does not grant or refund again.
-- Bound: a higher-tier second subscription is still an upgrade under the
-  existing replacement rules (granted, old subscription canceled without
-  refund), exactly as before.
+- Tests (usage-pack-subscription-lifecycle): Plan then pack, pack then Plan,
+  concurrent delivery, Pro then Team and Team then Pro duplicates (first
+  effective kept, the other refunded and canceled once, replay changes
+  nothing), and a real upgrade created after the Pro payment (no refund).
 
 ## Paid invoice for a canceled change (option 2)
 

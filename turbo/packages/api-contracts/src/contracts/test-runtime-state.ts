@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { initContract } from "./base";
-import { connectorRuntimeTargetsSchema } from "./runners";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
 const c = initContract();
@@ -121,51 +120,11 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("mutate-runner-job-connector-permission-baseline"),
-    run_id: z.uuid(),
-    mode: z.enum([
-      "remove",
-      "malformed",
-      "capability-mismatch",
-      "catalog-mismatch",
-      "authority-mismatch",
-      "inconsistent",
-      "incomplete",
-    ]),
-  }),
-  z.object({
-    action: z.literal("set-runner-job-connector-runtime-targets"),
-    run_id: z.uuid(),
-    connector_runtime_targets: connectorRuntimeTargetsSchema,
-  }),
-  z.object({
-    action: z.literal("remove-run-canonical-storage-state"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-runner-job-storage-state"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-claim-owner"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-storage-persistence-state"),
-    run_id: z.uuid(),
-    session_id: z.uuid(),
-    checkpoint_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("read-run-uploaded-file-sources"),
     run_id: z.uuid(),
   }),
   z.object({
     action: z.literal("read-chat-event-snapshot-head"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-chat-event-rows-as-previous-api"),
     thread_id: z.uuid(),
   }),
   z.object({
@@ -221,14 +180,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
       .optional(),
   }),
   z.object({
-    action: z.literal("read-thread-session-binding"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-thread-session-conversation"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("seed-pending-artifact-catalog-file"),
     user_id: z.string(),
     org_id: z.string(),
@@ -250,11 +201,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
       "clear-workflow-automation-event-connector-as-previous-api",
     ),
     automation_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("set-custom-connector-auth-template-fixture"),
-    connector_id: z.uuid(),
-    value_template: z.string(),
   }),
   z.object({
     action: z.literal("reconcile-socialkit-downloads"),
@@ -311,16 +257,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       snapshot_count: z.int().positive(),
     })
     .nullable()
-    .optional(),
-  previous_api_chat_event_rows: z
-    .array(
-      z.object({
-        id: z.uuid(),
-        event_type: z.string(),
-        revokes_event_id: z.uuid().nullable(),
-        payload_keys: z.array(z.string()),
-      }),
-    )
     .optional(),
   api_started_at: z.string().nullable().optional(),
   run_time_budget: z
@@ -407,46 +343,7 @@ export const testRuntimeStateActionResponseSchema = z.object({
       runner_job_count: z.int().nonnegative(),
     })
     .optional(),
-  thread_session_binding: z
-    .object({
-      agent_session_id: z.uuid().nullable(),
-      agent_session_run_id: z.uuid().nullable(),
-      run_session_id: z.uuid().nullable(),
-    })
-    .optional(),
-  thread_session_conversation: z
-    .object({
-      agent_session_id: z.uuid().nullable(),
-      conversation_id: z.uuid().nullable(),
-      conversation_run_id: z.uuid().nullable(),
-    })
-    .optional(),
   file_id: z.uuid().optional(),
-  storage_persistence: z
-    .object({
-      run_canonical: z.boolean(),
-      session_canonical: z.boolean(),
-      checkpoint_canonical: z.boolean(),
-    })
-    .optional(),
-  runner_job_storage_state: z
-    .object({
-      has_stored_storage_manifest: z.boolean(),
-      canonical_mount_count: z.number().int().nonnegative(),
-      has_run_context_storage: z.boolean(),
-    })
-    .optional(),
-  runner_claim_owner: z
-    .object({
-      runner_id: z.uuid().nullable(),
-      heartbeat_generation: z
-        .number()
-        .int()
-        .positive()
-        .max(Number.MAX_SAFE_INTEGER)
-        .nullable(),
-    })
-    .optional(),
 });
 
 export const testRuntimeStateContract = c.router({

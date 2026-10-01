@@ -1,3 +1,7 @@
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import {
   isOneClickConnectorGrantKind,
   type PublicConnectorCatalogAuthMethodDetail,
@@ -16,47 +20,37 @@ import {
   type PublicConnectorCatalogStatusItem,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
-import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
 
+import { logger } from "../../lib/log";
+import { singleton } from "../../lib/singleton";
+import type { ReadonlyDb } from "../external/db";
+import { onRejection, safeSync, settle } from "../utils";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
   type ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import {
   connectorCatalogArtifactFailureCode,
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
+import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import { deriveConnectorCatalogFirewallPermissions } from "@okouai/connectors/connector-catalog/artifacts/relationships";
-import { logger } from "../../lib/log";
-import { singleton, testOverride } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
-import { onRejection, safeSync, settle } from "../utils";
-import type { ApiDispatchTimingActionType } from "./api-dispatch-timing.service";
-import {
-  connectorAuthMethodFeatureSwitch,
-  connectorAuthMethodHiddenFeatureSwitch,
-} from "./connector-auth-method-feature-switches";
 import {
   connectorCatalogCompatibilityEvaluationSchema,
   connectorCatalogExecutableCapabilityState,
   evaluateConnectorCatalogCompatibility,
   type ExecutableCapabilityState,
 } from "./connector-catalog-compatibility.service";
-import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
 import type { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
@@ -65,6 +59,11 @@ import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
 } from "./connector-catalog-validator-authority";
+import type { ApiDispatchTimingActionType } from "./api-dispatch-timing.service";
+import {
+  connectorAuthMethodFeatureSwitch,
+  connectorAuthMethodHiddenFeatureSwitch,
+} from "./connector-auth-method-feature-switches";
 import {
   CONNECTOR_DISCOVERY_PER_CATEGORY,
   CONNECTOR_SEARCH_LIMIT,
@@ -73,6 +72,7 @@ import {
   createConnectorPopularityIndex,
   isInternalConnector,
 } from "./connector-popularity";
+import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 
 const log = logger("connector-catalog:reader");
 const CONNECTOR_CATALOG_ICON_BASE_URL = "https://static.vm0.io/";
@@ -193,31 +193,6 @@ export class ExternalConnectorCatalogUnavailableError extends Error {
     super("Accepted external connector catalog is unavailable");
     this.name = "ExternalConnectorCatalogUnavailableError";
     this.code = `CONNECTOR_CATALOG_UNAVAILABLE:${reason}`;
-  }
-}
-
-type ConnectorCatalogExternalReaderIdentityReadHook = () => Promise<void>;
-
-const externalReaderIdentityReadHook = testOverride<
-  ConnectorCatalogExternalReaderIdentityReadHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setConnectorCatalogExternalReaderIdentityReadHookForTest(
-  hook: ConnectorCatalogExternalReaderIdentityReadHook,
-): void {
-  externalReaderIdentityReadHook.set(hook);
-}
-
-export function clearConnectorCatalogExternalReaderIdentityReadHookForTest(): void {
-  externalReaderIdentityReadHook.clear();
-}
-
-async function runExternalReaderIdentityReadHook(): Promise<void> {
-  const hook = externalReaderIdentityReadHook.get();
-  if (hook) {
-    await hook();
   }
 }
 
@@ -577,7 +552,6 @@ export async function readCachedConnectorCatalogSnapshot(args: {
   readonly timing: ConnectorCatalogLoadTiming | undefined;
 }): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
   const { identity: currentIdentity, timing } = args;
-  await runExternalReaderIdentityReadHook();
   const currentKey = identityKey(currentIdentity);
   const cache = preparedCatalogCache();
   if (cache.completed?.key === currentKey) {

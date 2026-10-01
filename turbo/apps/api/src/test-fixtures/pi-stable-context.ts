@@ -1,8 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type {
   PiStableContextBuildInput,
   PiStableContextProjection,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import {
   piStableContextArtifactResources,
   piStableContextArtifacts,
@@ -10,32 +10,15 @@ import {
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { onTestFinished } from "vitest";
 import { writeDb$, type Db } from "../signals/external/db";
-import {
-  clearStableAgentPromptBuildHookForTest,
-  clearStableContextCacheIdentityBuildHookForTest,
-  setStableAgentPromptBuildHookForTest,
-  setStableContextCacheIdentityBuildHookForTest,
-} from "../signals/services/agent-run-preparation-hooks";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
-import {
-  invalidatePiStableContext,
-  withPiStableContextGlobalInvalidationOwnersForTest,
-} from "../signals/services/pi-stable-context-generation.service";
+import { invalidatePiStableContext } from "../signals/services/pi-stable-context-generation.service";
 
 const store = createStore();
-
-export async function withOwnedPiStableContextGlobalInvalidationFixture<T>(
-  owners: readonly { readonly orgId: string; readonly agentId: string }[],
-  work: () => Promise<T>,
-): Promise<T> {
-  return await withPiStableContextGlobalInvalidationOwnersForTest(owners, work);
-}
 
 export async function seedAgentStableContextPublicationFixture(args: {
   readonly orgId: string;
@@ -253,29 +236,4 @@ export async function readPiStableContextStorageDemandFixture(headId: string) {
     .where(eq(piStableContextHeads.id, headId))
     .limit(1);
   return head ?? null;
-}
-
-export async function withStableAgentPromptBuildCountFixture<T>(
-  work: () => Promise<T>,
-): Promise<{
-  readonly buildCount: number;
-  readonly cacheIdentityBuildCount: number;
-  readonly result: T;
-}> {
-  let buildCount = 0;
-  let cacheIdentityBuildCount = 0;
-  setStableAgentPromptBuildHookForTest(() => {
-    buildCount += 1;
-  });
-  setStableContextCacheIdentityBuildHookForTest(() => {
-    cacheIdentityBuildCount += 1;
-  });
-  const clear = () => {
-    clearStableAgentPromptBuildHookForTest();
-    clearStableContextCacheIdentityBuildHookForTest();
-  };
-  onTestFinished(clear);
-  const result = await work();
-  clear();
-  return { buildCount, cacheIdentityBuildCount, result };
 }

@@ -65,7 +65,6 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -2713,7 +2712,7 @@ describe("Stage 1 background credential availability", () => {
       });
     }),
   )(
-    "uses the exact $scope $type route while company routing is unavailable",
+    "uses the exact $scope $type source route",
     async ({ type, scope, url, model, contextWindow }) => {
       const storage = createStorageFixture();
       const source = await apiKeySource(
@@ -2743,14 +2742,9 @@ describe("Stage 1 background credential availability", () => {
         source,
       });
       const provider = installSourceProvider();
-      await expect(
-        withBuiltInModelRuntimeRouteUnavailableForTest(
-          "deepseek-v4.1-flash",
-          async () => {
-            return await runScoped(storage);
-          },
-        ),
-      ).resolves.toMatchObject({ succeeded: 1 });
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        succeeded: 1,
+      });
       expect(provider.calls).toHaveLength(1);
       const call = provider.calls[0];
       expect(call?.url).toBe(url);

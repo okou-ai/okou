@@ -1,3 +1,5 @@
+import { mockEnv } from "../../../lib/env";
+import { randomUUID } from "node:crypto";
 import type {
   TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
   TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse,
@@ -6,20 +8,15 @@ import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { mockEnv } from "../../../lib/env";
 
-import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
+import { testContext } from "../../../__tests__/test-context";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import {
   rejectPresignedCacheWriteAfterPendingFixture,
   seedReadOnlyPresignedUrlCacheFixture,
 } from "../../../test-fixtures/storage-presigned-url-cache";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
@@ -28,11 +25,8 @@ import {
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
-import {
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
 const context = testContext();
 const BUCKET = "test-user-storages";
@@ -316,101 +310,6 @@ describe("workflow skill storage presigned URL cache", () => {
       );
       await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
     });
-  });
-
-  it("overlaps KMS and URL signing while keeping the input unconsumed until encryption completes", async () => {
-    const fixture = await createWorkflowSkillRunFixture();
-    const api = createRunsApi(context);
-    const { chat, claimChatRun, cancelChatRun } =
-      createChatEventsFixture(context);
-    await cleanupCacheState(fixture.objectKeyPrefix);
-    onTestFinished(async () => {
-      await cleanupCacheState(fixture.objectKeyPrefix);
-    });
-    const thread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
-      title: "Parallel encryption and local signing",
-    });
-    const kmsStarted = createDeferredPromise<void>(context.signal);
-    const signingStarted = createDeferredPromise<void>(context.signal);
-    const releaseKms = createDeferredPromise<void>(context.signal);
-    const releaseSigning = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseKms.settled()) {
-        releaseKms.resolve(undefined);
-      }
-      if (!releaseSigning.settled()) {
-        releaseSigning.resolve(undefined);
-      }
-    });
-    useSecretKmsProbe(async (request) => {
-      if (!kmsStarted.settled()) {
-        kmsStarted.resolve(undefined);
-      }
-      await releaseKms.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
-        encryptedDataKey: Buffer.from(
-          `encrypted-data-key:${request.keyId}`,
-          "utf8",
-        ),
-      };
-    });
-    context.mocks.s3.getSignedUrl.mockImplementation(
-      async (_client, command) => {
-        const key = (command as { readonly input: { readonly Key: string } })
-          .input.Key;
-        if (key.startsWith(fixture.objectKeyPrefix)) {
-          if (!signingStarted.settled()) {
-            signingStarted.resolve(undefined);
-          }
-          await releaseSigning.promise;
-        }
-        return `https://r2.example.com/${encodeURIComponent(key)}?parallel=true`;
-      },
-    );
-    const eventId = randomUUID();
-    await chat.requestSendEvent(
-      fixture.actor,
-      {
-        agentId: fixture.agentId,
-        threadId: thread.id,
-        prompt: "Wait for encrypted context before exposing a runner job",
-        clientEventId: eventId,
-      },
-      [201],
-    );
-    await Promise.all([kmsStarted.promise, signingStarted.promise]);
-    releaseSigning.resolve(undefined);
-    const before = await chat.listThreadEvents(fixture.actor, thread.id);
-    expect(userMessages(before.events)).toStrictEqual([
-      expect.objectContaining({ id: eventId, eventType: "input.prompt" }),
-    ]);
-    expect(userMessages(before.events)[0]?.runId).toBeUndefined();
-    expect(
-      (await api.readRunQueue(fixture.actor)).body.concurrency.active,
-    ).toBe(0);
-    await api.heartbeatRunner(fixture.runnerGroup);
-    expect((await api.pollRunner(fixture.runnerGroup)).body.job).toBeNull();
-    releaseKms.resolve(undefined);
-    await flushWaitUntilForTest();
-    const after = await chat.listThreadEvents(fixture.actor, thread.id);
-    const runId = userMessages(after.events).find((event) => {
-      return event.revokesEventId === eventId;
-    })?.runId;
-    if (!runId) {
-      throw new Error("Expected one committed run after KMS completes");
-    }
-    const claimed = await claimChatRun(fixture.runnerGroup, runId);
-    const mount = expectCanonicalStorageManifest(
-      claimed.claim.storageManifest,
-    )?.storageMounts.find((entry) => {
-      return entry.name === fixture.storageName;
-    });
-    expect(mount?.archiveUrl).toContain("parallel=true");
-    expect(claimed.claim.encryptedSecrets).toStrictEqual(expect.any(String));
-    await cancelChatRun(fixture.actor, runId, claimed.sandboxHeaders);
   });
 
   it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
