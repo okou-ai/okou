@@ -120,10 +120,10 @@ importers:
         version: 3.13.1(react-dom@19.2.6(react@19.2.8))(react@19.2.8)
       '@hono/node-server':
         specifier: ^2.0.10
-        version: 2.0.10(hono@4.13.5)
+        version: 2.0.10(hono@4.13.12)
       '@hono/otel':
         specifier: ^1.1.2
-        version: 1.1.2(hono@4.13.5)
+        version: 1.1.2(hono@4.13.12)
       '@langfuse/otel':
         specifier: 5.10.0
         version: 5.10.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
@@ -203,8 +203,8 @@ importers:
         specifier: 4.12.0
         version: 4.12.0
       hono:
-        specifier: ^4.13.0
-        version: 4.13.5
+        specifier: ^4.13.7
+        version: 4.13.12
       html-to-text:
         specifier: ^10.0.1
         version: 10.0.1
@@ -250,10 +250,10 @@ importers:
     devDependencies:
       '@hono/node-server-v1':
         specifier: npm:@hono/node-server@1.19.14
-        version: '@hono/node-server@1.19.14(hono@4.13.5)'
+        version: '@hono/node-server@1.19.14(hono@4.13.12)'
       '@hono/vite-build':
         specifier: ^1.11.1
-        version: 1.11.1(hono@4.13.5)
+        version: 1.11.1(hono@4.13.12)
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
@@ -7773,8 +7773,8 @@ packages:
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
 
-  hono@4.13.5:
-    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
+  hono@4.13.12:
+    resolution: {integrity: sha512-6E2QDAc9Ick9Sq77ZrGS/dk2WUYni91aufTw6LJKpV7w8kW5/GxVUc650FOADOmlwg3K+f7Pun6XlV+pYmW6gw==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@2.8.9:
@@ -12649,23 +12649,23 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@hono/node-server@1.19.14(hono@4.13.5)':
+  '@hono/node-server@1.19.14(hono@4.13.12)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.12
 
-  '@hono/node-server@2.0.10(hono@4.13.5)':
+  '@hono/node-server@2.0.10(hono@4.13.12)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.12
 
-  '@hono/otel@1.1.2(hono@4.13.5)':
+  '@hono/otel@1.1.2(hono@4.13.12)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.43.0
-      hono: 4.13.5
+      hono: 4.13.12
 
-  '@hono/vite-build@1.11.1(hono@4.13.5)':
+  '@hono/vite-build@1.11.1(hono@4.13.12)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.12
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -13266,7 +13266,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.30.0(zod@4.5.4)':
     dependencies:
-      '@hono/node-server': 2.0.10(hono@4.13.5)
+      '@hono/node-server': 2.0.10(hono@4.13.12)
       ajv: 8.20.0
       ajv-formats: 3.0.1
       content-type: 1.0.5
@@ -13276,7 +13276,7 @@ snapshots:
       eventsource-parser: 3.1.0
       express: 5.2.1
       express-rate-limit: 8.5.2(express@5.2.1)
-      hono: 4.13.5
+      hono: 4.13.12
       jose: 6.2.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -17872,7 +17872,7 @@ snapshots:
     dependencies:
       react-is: 16.13.1
 
-  hono@4.13.5: {}
+  hono@4.13.12: {}
 
   hosted-git-info@2.8.9: {}
 
