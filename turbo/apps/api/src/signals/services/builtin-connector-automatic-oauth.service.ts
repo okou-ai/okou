@@ -15,7 +15,7 @@ import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dc
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
-import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -23,16 +23,12 @@ import {
   connectorOAuthStateExpiresAt,
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
-import { pgTextDecoder } from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeSync, settle } from "../utils";
 import {
-  publishAutomaticAuthorizationState$,
+  automaticAccountExists$,
   publishAutomaticConnection$,
-  readAutomaticAccountSnapshot$,
-  type AutomaticCallbackAccountSnapshot,
   type AutomaticConnectionPublication,
 } from "./builtin-connector-automatic-connection.service";
 import {
@@ -54,6 +50,7 @@ import {
 import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
 import {
   claimBuiltinConnectorOAuthState$,
+  insertConnectorOAuthState,
   type StoredBuiltinOAuthState,
 } from "./connector-oauth-state.service";
 import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
@@ -74,7 +71,6 @@ import {
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
-import { runAfterSameProcessRefresh } from "./same-process-refresh";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
 const contextBase = z.object({
@@ -85,7 +81,6 @@ const contextBase = z.object({
   storageVersion: z.number().int().positive(),
   contractHash: z.string().regex(/^[a-f0-9]{64}$/u),
   endpoint: httpsUrl,
-  reconnectRevision: z.string().nullable(),
   issuer: httpsUrl,
   resource: httpsUrl,
   resourceMetadataUrl: httpsUrl.nullable(),
@@ -139,7 +134,6 @@ interface Failure {
   readonly reason: FailureReason;
   readonly connectorSlug?: string;
 }
-class StaleBuiltinAutomaticContractError extends Error {}
 
 function contractFromMethod(
   runtime: ConnectorRuntimeMethod,
@@ -249,9 +243,6 @@ function dcrStore(db: Db, orgId: string, contract: BuiltinAutomaticContract) {
 }
 
 function failure(error: unknown): Failure {
-  if (error instanceof StaleBuiltinAutomaticContractError) {
-    return { kind: "error", reason: "stale-contract" };
-  }
   if (error instanceof McpAutomaticOAuthError) {
     return {
       kind: "error",
@@ -441,20 +432,19 @@ export const startBuiltinConnectorAutomatic$ = command(
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
     }
-    const expected =
-      args.account.intent === "reconnect"
-        ? await set(
-            readAutomaticAccountSnapshot$,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              connectorSlug: contract.connectorSlug,
-              connectionId: args.account.connectionId,
-            },
-            signal,
-          )
-        : null;
-    if (args.account.intent === "reconnect" && expected === null) {
+    if (
+      args.account.intent === "reconnect" &&
+      !(await set(
+        automaticAccountExists$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: contract.connectorSlug,
+          connectionId: args.account.connectionId,
+        },
+        signal,
+      ))
+    ) {
       return { kind: "error", reason: "invalid-account" };
     }
     const state = generateConnectorOAuthState();
@@ -483,11 +473,9 @@ export const startBuiltinConnectorAutomatic$ = command(
           orgId: args.orgId,
           userId: args.userId,
           connectorSlug: contract.connectorSlug,
-          catalogIdentity: contract.catalogIdentity,
           authMethod: contract.authMethodId,
           storageVersion: contract.storageVersion,
           account: args.account,
-          expected,
           binding: null,
           identity: null,
           expiresAt: null,
@@ -521,38 +509,30 @@ export const startBuiltinConnectorAutomatic$ = command(
       endpoint: contract.endpoint,
       storageVersion: contract.storageVersion,
       contractHash: contract.contractHash,
-      reconnectRevision: expected?.stateRevision ?? null,
     });
-    return await set(
-      publishAutomaticAuthorizationState$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: contract.connectorSlug,
-        catalogIdentity: contract.catalogIdentity,
-        account: args.account,
-        expected,
-        authorizationUrl: authorization.authorizationUrl,
-        state: {
-          state,
-          connectorSlug: contract.connectorSlug,
-          authMethod: contract.authMethodId,
-          storageVersion: null,
-          userId: args.userId,
-          orgId: args.orgId,
-          agentId: args.agentId,
-          authorizeAgent: args.authorizeAgent,
-          redirectUri: args.redirectUri,
-          authorizationUrl: authorization.authorizationUrl,
-          codeVerifier: authorization.codeVerifier,
-          oauthRequestedScopes: authorization.requestedScope,
-          oauthContext: JSON.stringify(context),
-          accountMutation: args.account,
-          expiresAt: connectorOAuthStateExpiresAt(),
-        },
-      },
-      signal,
-    );
+    const oauthAttemptId = await insertConnectorOAuthState(set(writeDb$), {
+      state,
+      connectorSlug: contract.connectorSlug,
+      authMethod: contract.authMethodId,
+      storageVersion: null,
+      userId: args.userId,
+      orgId: args.orgId,
+      agentId: args.agentId,
+      authorizeAgent: args.authorizeAgent,
+      redirectUri: args.redirectUri,
+      authorizationUrl: authorization.authorizationUrl,
+      codeVerifier: authorization.codeVerifier,
+      oauthRequestedScopes: authorization.requestedScope,
+      oauthContext: JSON.stringify(context),
+      accountMutation: args.account,
+      expiresAt: connectorOAuthStateExpiresAt(),
+    });
+    signal.throwIfAborted();
+    return {
+      kind: "authorization",
+      authorizationUrl: authorization.authorizationUrl,
+      oauthAttemptId,
+    };
   },
 );
 
@@ -561,7 +541,6 @@ async function prepareAutomaticCallbackPublication(
     readonly stored: StoredBuiltinOAuthState;
     readonly context: z.infer<typeof builtinAutomaticContextSchema>;
     readonly contract: BuiltinAutomaticContract;
-    readonly expected: AutomaticCallbackAccountSnapshot | null;
     readonly token: McpAutomaticOAuthTokenResult;
   },
   signal: AbortSignal,
@@ -583,11 +562,9 @@ async function prepareAutomaticCallbackPublication(
     orgId: stored.orgId,
     userId: stored.userId,
     connectorSlug: contract.connectorSlug,
-    catalogIdentity: contract.catalogIdentity,
     authMethod: contract.authMethodId,
     storageVersion: contract.storageVersion,
     account: stored.accountMutation,
-    expected: args.expected,
     identity: token.userInfo,
     expiresAt: token.expiresAt,
     scopes: token.scopes,
@@ -635,27 +612,6 @@ const finishAutomaticOAuth$ = command(
     ) {
       return { kind: "error", reason: "stale-contract" } as const;
     }
-    const expected =
-      stored.accountMutation.intent === "reconnect"
-        ? await set(
-            readAutomaticAccountSnapshot$,
-            {
-              orgId: stored.orgId,
-              userId: stored.userId,
-              connectorSlug: contract.connectorSlug,
-              connectionId: stored.accountMutation.connectionId,
-              expectedRevision: context.reconnectRevision,
-            },
-            signal,
-          )
-        : null;
-    if (
-      (stored.accountMutation.intent === "reconnect" && expected === null) ||
-      (stored.accountMutation.intent !== "reconnect" &&
-        context.reconnectRevision !== null)
-    ) {
-      return { kind: "error", reason: "invalid-account" } as const;
-    }
     const owner = contractOwner(stored.orgId, contract);
     const client =
       context.registrationMethod === "dcr"
@@ -698,7 +654,7 @@ const finishAutomaticOAuth$ = command(
       return failure(exchanged.error);
     }
     const publication = await prepareAutomaticCallbackPublication(
-      { stored, context, contract, expected, token: exchanged.value },
+      { stored, context, contract, token: exchanged.value },
       signal,
     );
     const published = await set(
@@ -869,7 +825,6 @@ export const completeBuiltinConnectorAutomatic$ = command(
 async function readBuiltinConnectorAutomaticOAuthBinding(
   db: Db,
   connectorId: string,
-  authorization: LockedAutomaticCredentialContext,
 ): Promise<
   | (McpAutomaticOAuthBinding & {
       readonly endpoint: string;
@@ -902,16 +857,7 @@ async function readBuiltinConnectorAutomaticOAuthBinding(
         eq(connectors.userId, builtinConnectorAccountOauthBindings.userId),
       ),
     )
-    .where(
-      and(
-        eq(connectors.id, connectorId),
-        eq(
-          builtinConnectorAccountOauthBindings.createdAt,
-          sql`${authorization.initialBindingCreatedAt}::timestamp`,
-        ),
-        sql`${builtinConnectorAccountOauthBindings}.xmin::text = ${authorization.initialBindingRowVersion}`,
-      ),
-    )
+    .where(eq(connectors.id, connectorId))
     .limit(1);
   if (
     !row ||
@@ -981,30 +927,6 @@ type CredentialResult =
       readonly reason: "reconnect" | "temporary" | "stale-contract";
     };
 
-type AutomaticRefreshBinding = NonNullable<
-  Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
->;
-
-/** Another refresh or credential change won the exact publication CAS. */
-interface PublicationLost {
-  readonly kind: "publication-lost";
-}
-
-/** Decisions from the local read transaction; KMS and HTTP happen after it. */
-type LockedAutomaticOutcome =
-  | CredentialResult
-  | {
-      readonly kind: "stored-access";
-      readonly encryptedAccess: string;
-      readonly tokenExpiresAt: Date | null;
-    }
-  | {
-      readonly kind: "refresh-required";
-      readonly binding: AutomaticRefreshBinding;
-      readonly account: ObservedAutomaticAccount;
-      readonly encryptedRefreshToken: string;
-    };
-
 interface ResolveAutomaticCredentialArgs {
   readonly db: Db;
   readonly orgId: string;
@@ -1016,100 +938,9 @@ interface ResolveAutomaticCredentialArgs {
   readonly forceRefresh?: boolean;
 }
 
-interface LockedAutomaticCredentialContext {
-  readonly contract: BuiltinAutomaticContract;
-  readonly accessName: string;
-  readonly initialAccessEncrypted: string | undefined;
-  readonly initialBindingCreatedAt: string;
-  readonly initialBindingRowVersion: string;
-  readonly accountIdentity: ReturnType<typeof and>;
-}
-
-type ObservedAutomaticAccount = typeof connectors.$inferSelect & {
-  readonly stateRevision: string;
-  readonly rowVersion: string;
-};
-
-function automaticAccountSnapshotCondition(account: ObservedAutomaticAccount) {
-  return and(
-    eq(connectors.id, account.id),
-    eq(connectors.orgId, account.orgId),
-    eq(connectors.userId, account.userId),
-    account.connectorSlug === null
-      ? isNull(connectors.connectorSlug)
-      : eq(connectors.connectorSlug, account.connectorSlug),
-    eq(connectors.authMethod, account.authMethod),
-    eq(connectors.storageVersion, account.storageVersion),
-    eq(connectors.updatedAt, sql`${account.stateRevision}::timestamp`),
-    sql`${connectors}.xmin::text = ${account.rowVersion}`,
-  );
-}
-
-function automaticStoredRefreshTokenCondition(args: {
-  readonly account: ObservedAutomaticAccount;
-  readonly name: string;
-  readonly encryptedValue: string;
-}) {
-  return sql`EXISTS (
-    SELECT 1 FROM ${secrets}
-    WHERE ${secrets.connectorId} = ${args.account.id}
-      AND ${secrets.orgId} = ${args.account.orgId}
-      AND ${secrets.userId} = ${args.account.userId}
-      AND ${secrets.name} = ${args.name}
-      AND ${secrets.encryptedValue} = ${args.encryptedValue}
-  )`;
-}
-
-function automaticRefreshMetadata(
-  account: ObservedAutomaticAccount,
-  token: McpAutomaticOAuthTokenResult,
-  identity: ReturnType<typeof resolveRefreshedOAuthIdentity>,
-) {
-  return {
-    tokenExpiresAt: token.expiresAt,
-    oauthGrantedScopes:
-      token.scopes === null
-        ? account.oauthGrantedScopes
-        : JSON.stringify(token.scopes),
-    ...(identity.kind === "update"
-      ? {
-          externalId: identity.externalId,
-          externalUsername: identity.externalUsername,
-          externalEmail: identity.externalEmail,
-        }
-      : {}),
-    updatedAt: sql`clock_timestamp()`,
-  };
-}
-
-function automaticInitialAuthorizationCondition(
-  context: LockedAutomaticCredentialContext,
-) {
-  return and(
-    context.accountIdentity,
-    sql`EXISTS (
-      SELECT 1 FROM ${builtinConnectorAccountOauthBindings}
-      WHERE ${builtinConnectorAccountOauthBindings.connectorAccountId} = ${connectors.id}
-        AND ${builtinConnectorAccountOauthBindings}.xmin::text = ${context.initialBindingRowVersion}
-        AND ${builtinConnectorAccountOauthBindings.createdAt} = ${context.initialBindingCreatedAt}::timestamp
-    )`,
-  );
-}
-
-function automaticAccountTokenOwnerCondition(
-  account: ObservedAutomaticAccount,
-) {
-  return and(
-    eq(secrets.connectorId, account.id),
-    eq(secrets.orgId, account.orgId),
-    eq(secrets.userId, account.userId),
-  );
-}
-
 async function markReconnect(
   db: Db,
-  account: ObservedAutomaticAccount,
-  refreshToken?: { readonly name: string; readonly encryptedValue: string },
+  connectorId: string,
 ): Promise<CredentialResult> {
   await db
     .update(connectors)
@@ -1118,86 +949,27 @@ async function markReconnect(
       reconnectReason: "authorization_expired_or_revoked",
       updatedAt: sql`clock_timestamp()`,
     })
-    .where(
-      and(
-        automaticAccountSnapshotCondition(account),
-        refreshToken === undefined
-          ? undefined
-          : automaticStoredRefreshTokenCondition({ account, ...refreshToken }),
-      ),
-    );
+    .where(eq(connectors.id, connectorId));
   return { kind: "unavailable", reason: "reconnect" };
 }
 
 /**
- * Ordinary refresh outside any transaction: KMS decryption, discovery and the
- * provider token request run first; one short transaction then takes the
- * lifecycle key and publishes by exact account/token CAS.
+ * Provider refresh runs outside any transaction; one short transaction then
+ * writes the refreshed tokens and account metadata.
  */
-async function handleAutomaticRefreshFailure(
+async function refreshAutomatic(
   context: {
-    readonly db: Db;
-    readonly orgId: string;
+    readonly args: ResolveAutomaticCredentialArgs;
     readonly contract: BuiltinAutomaticContract;
-    readonly binding: AutomaticRefreshBinding;
-    readonly account: ObservedAutomaticAccount;
-    readonly observedRefreshToken: {
-      readonly name: string;
-      readonly encryptedValue: string;
-    };
-  },
-  error: unknown,
-): Promise<CredentialResult> {
-  const { binding } = context;
-  if (
-    isAutomaticOAuthInvalidClient(error) &&
-    binding.registrationMethod === "dcr"
-  ) {
-    // Registration retirement is local SQL outside provider I/O; existing
-    // registration uniqueness and binding FKs prevent dangling bindings.
-    await context.db.transaction(async (tx) => {
-      await dcrStore(tx, context.orgId, context.contract).retire(
-        binding.dcrRegistration.id,
-      );
-    });
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  if (
-    isAutomaticOAuthInvalidClient(error) ||
-    isAutomaticOAuthInvalidGrant(error) ||
-    (error instanceof McpAutomaticOAuthError && error.kind === "binding-drift")
-  ) {
-    return await markReconnect(
-      context.db,
-      context.account,
-      context.observedRefreshToken,
-    );
-  }
-  if (error instanceof McpAutomaticOAuthError && error.kind === "temporary") {
-    return { kind: "unavailable", reason: "temporary" };
-  }
-  throw error;
-}
-
-async function refreshAutomaticOutsideTransaction(
-  args: ResolveAutomaticCredentialArgs,
-  contract: BuiltinAutomaticContract,
-  observed: {
-    readonly binding: AutomaticRefreshBinding;
-    readonly account: ObservedAutomaticAccount;
+    readonly binding: NonNullable<
+      Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
+    >;
+    readonly account: typeof connectors.$inferSelect;
     readonly encryptedRefreshToken: string;
   },
   signal: AbortSignal,
-): Promise<CredentialResult | PublicationLost> {
-  const { binding, account, encryptedRefreshToken } = observed;
-  const refreshName = tokenStorageName(contract, "refreshToken");
-  if (refreshName === null) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const observedRefreshToken = {
-    name: refreshName,
-    encryptedValue: encryptedRefreshToken,
-  };
+): Promise<CredentialResult> {
+  const { args, contract, binding, account, encryptedRefreshToken } = context;
   const store = dcrStore(args.db, args.orgId, contract);
   const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
   signal.throwIfAborted();
@@ -1223,17 +995,32 @@ async function refreshAutomaticOutsideTransaction(
     signal,
   );
   if (!refreshed.ok) {
-    return await handleAutomaticRefreshFailure(
-      {
-        db: args.db,
-        orgId: args.orgId,
-        contract,
-        binding,
-        account,
-        observedRefreshToken,
-      },
-      refreshed.error,
-    );
+    if (
+      isAutomaticOAuthInvalidClient(refreshed.error) &&
+      binding.registrationMethod === "dcr"
+    ) {
+      await args.db.transaction(async (tx) => {
+        await dcrStore(tx, args.orgId, contract).retire(
+          binding.dcrRegistration.id,
+        );
+      });
+      return { kind: "unavailable", reason: "reconnect" };
+    }
+    if (
+      isAutomaticOAuthInvalidClient(refreshed.error) ||
+      isAutomaticOAuthInvalidGrant(refreshed.error) ||
+      (refreshed.error instanceof McpAutomaticOAuthError &&
+        refreshed.error.kind === "binding-drift")
+    ) {
+      return await markReconnect(args.db, account.id);
+    }
+    if (
+      refreshed.error instanceof McpAutomaticOAuthError &&
+      refreshed.error.kind === "temporary"
+    ) {
+      return { kind: "unavailable", reason: "temporary" };
+    }
+    throw refreshed.error;
   }
   const identity = resolveRefreshedOAuthIdentity(
     {
@@ -1244,45 +1031,13 @@ async function refreshAutomaticOutsideTransaction(
     refreshed.value.userInfo,
   );
   if (identity.kind === "mismatch") {
-    return await markReconnect(args.db, account, observedRefreshToken);
+    return await markReconnect(args.db, account.id);
   }
   const tokens = await encryptAutomaticTokens(
     { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
     signal,
   );
-  const published = await args.db.transaction(async (tx) => {
-    // Publish credentials locally after provider I/O.
-    if (
-      !(await credentialDestinationMatches(
-        tx,
-        contract,
-        args.expectedEndpoint,
-        signal,
-      ))
-    ) {
-      throw new StaleBuiltinAutomaticContractError(
-        "Builtin MCP credential destination changed during refresh",
-      );
-    }
-    // Claim the exact observed owner and stored refresh token before writing
-    // any token from this response; the bundle publishes together or not at all.
-    const [claimed] = await tx
-      .update(connectors)
-      .set(automaticRefreshMetadata(account, refreshed.value, identity))
-      .where(
-        and(
-          automaticAccountSnapshotCondition(account),
-          automaticStoredRefreshTokenCondition({
-            account,
-            name: refreshName,
-            encryptedValue: encryptedRefreshToken,
-          }),
-        ),
-      )
-      .returning({ id: connectors.id });
-    if (!claimed) {
-      return false;
-    }
+  await args.db.transaction(async (tx) => {
     await writeEncryptedTokens(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -1290,11 +1045,25 @@ async function refreshAutomaticOutsideTransaction(
       contract,
       tokens,
     });
-    return true;
+    await tx
+      .update(connectors)
+      .set({
+        tokenExpiresAt: refreshed.value.expiresAt,
+        oauthGrantedScopes:
+          refreshed.value.scopes === null
+            ? account.oauthGrantedScopes
+            : JSON.stringify(refreshed.value.scopes),
+        ...(identity.kind === "update"
+          ? {
+              externalId: identity.externalId,
+              externalUsername: identity.externalUsername,
+              externalEmail: identity.externalEmail,
+            }
+          : {}),
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(connectors.id, account.id));
   });
-  if (!published) {
-    return { kind: "publication-lost" };
-  }
   return {
     kind: "oauth",
     accessToken: refreshed.value.accessToken,
@@ -1342,45 +1111,70 @@ async function credentialDestinationMatches(
   );
 }
 
-async function resolveLockedAutomatic(
-  tx: Tx,
+/**
+ * Catalog propagation is best-effort: a request matched by a stale runner
+ * catalog must never receive credentials for an endpoint or auth contract that
+ * the API no longer accepts for this account connection.
+ */
+async function acceptedCredentialContract(
   args: ResolveAutomaticCredentialArgs,
-  context: LockedAutomaticCredentialContext,
   signal: AbortSignal,
-): Promise<LockedAutomaticOutcome> {
-  const { contract, accessName, initialAccessEncrypted } = context;
-  // The exact account row lock arbitrates against replacement, deletion and
-  // other credential writers, which all update or delete this row.
-  const [account] = await tx
-    .select({
-      ...getTableColumns(connectors),
-      stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
-      rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
-    })
-    .from(connectors)
-    .where(automaticInitialAuthorizationCondition(context))
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!account) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  if (account.automaticAuthType === "none") {
-    return { kind: "none" };
-  }
-  // Catalog propagation is best-effort: a request matched by a stale runner
-  // catalog must never receive credentials for an endpoint or auth contract that
-  // the API no longer accepts for this account connection.
+): Promise<{
+  readonly contract: BuiltinAutomaticContract;
+  readonly accessName: string;
+} | null> {
+  const contract = await currentContract(
+    args.db,
+    args.connectorSlug,
+    args.authMethodId,
+  );
+  const accessName = contract && tokenStorageName(contract, "accessToken");
   if (
+    !contract ||
+    !accessName ||
     !(await credentialDestinationMatches(
-      tx,
+      args.db,
       contract,
       args.expectedEndpoint,
       signal,
     ))
   ) {
+    return null;
+  }
+  return { contract, accessName };
+}
+
+export async function resolveBuiltinConnectorAutomaticMcpCredential(
+  args: ResolveAutomaticCredentialArgs,
+  signal: AbortSignal,
+): Promise<CredentialResult> {
+  const { db } = args;
+  const [account] = await db
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, args.connectorId),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        eq(connectors.connectorSlug, args.connectorSlug),
+        eq(connectors.authMethod, args.authMethodId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (!account) {
+    return { kind: "unavailable", reason: "reconnect" };
+  }
+  // A public MCP has no credential contract to validate or refresh.
+  if (account.automaticAuthType === "none") {
+    return { kind: "none" };
+  }
+  const accepted = await acceptedCredentialContract(args, signal);
+  if (!accepted) {
     return { kind: "unavailable", reason: "stale-contract" };
   }
+  const { contract, accessName } = accepted;
   if (
     account.automaticAuthType !== "oauth" ||
     account.needsReconnect ||
@@ -1389,34 +1183,39 @@ async function resolveLockedAutomatic(
     return { kind: "unavailable", reason: "reconnect" };
   }
   const binding = await readBuiltinConnectorAutomaticOAuthBinding(
-    tx,
+    db,
     account.id,
-    context,
   );
-  if (!binding) {
-    // A fresh read after the account lock must still find the observed consent.
-    // Do not mark a replacement authorization as revoked.
-    return { kind: "unavailable", reason: "reconnect" };
-  }
   if (
+    !binding ||
     binding.contractHash !== contract.contractHash ||
     binding.endpoint !== contract.endpoint
   ) {
-    return await markReconnect(tx, account);
+    return await markReconnect(db, account.id);
   }
-  const store = dcrStore(tx, args.orgId, contract);
   if (
     binding.registrationMethod === "dcr" &&
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
-    await store.retire(binding.dcrRegistration.id);
+    await db.transaction(async (tx) => {
+      await dcrStore(tx, args.orgId, contract).retire(
+        binding.dcrRegistration.id,
+      );
+    });
     return { kind: "unavailable", reason: "reconnect" };
   }
-  const tokenRows = await tx
+  const tokenRows = await db
     .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
     .from(secrets)
-    .where(automaticAccountTokenOwnerCondition(account));
+    .where(
+      and(
+        eq(secrets.connectorId, account.id),
+        eq(secrets.orgId, args.orgId),
+        eq(secrets.userId, args.userId),
+      ),
+    );
+  signal.throwIfAborted();
   const access = tokenRows.find((token) => {
     return token.name === accessName;
   });
@@ -1424,196 +1223,30 @@ async function resolveLockedAutomatic(
     return token.name === tokenStorageName(contract, "refreshToken");
   });
   if (!access) {
-    return await markReconnect(tx, account);
+    return await markReconnect(db, account.id);
   }
-  // The unchanged consent binding, checked while locking the account, proves
-  // that newer ciphertext belongs to this authorization. Reconnect replaces the
-  // binding even when the account, provider identity and client stay the same.
-  const refreshedSinceInitialRead =
-    access.encryptedValue !== initialAccessEncrypted;
+  // Providers may omit refresh tokens: use a still-valid access token until expiry.
   if (
-    (!args.forceRefresh || refreshedSinceInitialRead) &&
-    accessTokenRemainsValid(account.tokenExpiresAt, 60_000)
+    !args.forceRefresh &&
+    accessTokenRemainsValid(account.tokenExpiresAt, refresh ? 60_000 : 0)
   ) {
     return {
-      kind: "stored-access",
-      encryptedAccess: access.encryptedValue,
+      kind: "oauth",
+      accessToken: await decryptStoredSecretValue(access.encryptedValue),
       tokenExpiresAt: account.tokenExpiresAt,
     };
   }
-  // Providers may omit refresh tokens: use a still-valid access token until expiry.
   if (!refresh) {
-    if (
-      !args.forceRefresh &&
-      accessTokenRemainsValid(account.tokenExpiresAt, 0)
-    ) {
-      return {
-        kind: "stored-access",
-        encryptedAccess: access.encryptedValue,
-        tokenExpiresAt: account.tokenExpiresAt,
-      };
-    }
-    return await markReconnect(tx, account);
+    return await markReconnect(db, account.id);
   }
-  return {
-    kind: "refresh-required",
-    binding,
-    account,
-    encryptedRefreshToken: refresh.encryptedValue,
-  };
-}
-
-async function resolveAutomaticOutcome(
-  args: ResolveAutomaticCredentialArgs,
-  contract: BuiltinAutomaticContract,
-  outcome: LockedAutomaticOutcome,
-  signal: AbortSignal,
-): Promise<CredentialResult | PublicationLost> {
-  if (outcome.kind === "stored-access") {
-    return {
-      kind: "oauth",
-      accessToken: await decryptStoredSecretValue(outcome.encryptedAccess),
-      tokenExpiresAt: outcome.tokenExpiresAt,
-    };
-  }
-  if (outcome.kind === "refresh-required") {
-    return await refreshAutomaticOutsideTransaction(
+  return await refreshAutomatic(
+    {
       args,
       contract,
-      outcome,
-      signal,
-    );
-  }
-  return outcome;
-}
-
-export async function resolveBuiltinConnectorAutomaticMcpCredential(
-  args: ResolveAutomaticCredentialArgs,
-  signal: AbortSignal,
-): Promise<CredentialResult> {
-  return await runAfterSameProcessRefresh(
-    JSON.stringify([
-      "automatic-mcp",
-      args.orgId,
-      args.userId,
-      args.connectorId,
-    ]),
-    async () => {
-      const first = await resolveAutomaticMcpCredentialOnce(args, signal);
-      if (first.kind !== "publication-lost") {
-        return first;
-      }
-      // Re-read once: the winner's published credential is normally usable.
-      const second = await resolveAutomaticMcpCredentialOnce(args, signal);
-      return second.kind === "publication-lost"
-        ? { kind: "unavailable", reason: "reconnect" }
-        : second;
+      binding,
+      account,
+      encryptedRefreshToken: refresh.encryptedValue,
     },
-  );
-}
-
-async function resolveAutomaticMcpCredentialOnce(
-  args: ResolveAutomaticCredentialArgs,
-  signal: AbortSignal,
-): Promise<CredentialResult | PublicationLost> {
-  const accountIdentity = and(
-    eq(connectors.id, args.connectorId),
-    eq(connectors.orgId, args.orgId),
-    eq(connectors.userId, args.userId),
-    eq(connectors.connectorSlug, args.connectorSlug),
-    eq(connectors.authMethod, args.authMethodId),
-  );
-  const [initialAccount] = await args.db
-    .select({
-      automaticAuthType: connectors.automaticAuthType,
-      binding: {
-        connectorAccountId:
-          builtinConnectorAccountOauthBindings.connectorAccountId,
-        createdAt:
-          sql`${builtinConnectorAccountOauthBindings.createdAt}::text`.mapWith(
-            pgTextDecoder,
-          ),
-        rowVersion:
-          sql`${builtinConnectorAccountOauthBindings}.xmin::text`.mapWith(
-            pgTextDecoder,
-          ),
-      },
-    })
-    .from(connectors)
-    .leftJoin(
-      builtinConnectorAccountOauthBindings,
-      eq(
-        builtinConnectorAccountOauthBindings.connectorAccountId,
-        connectors.id,
-      ),
-    )
-    .where(accountIdentity)
-    .limit(1);
-  signal.throwIfAborted();
-  if (!initialAccount) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  // A public MCP has no credential contract to validate or lease to refresh.
-  if (initialAccount.automaticAuthType === "none") {
-    return { kind: "none" };
-  }
-  if (!initialAccount.binding) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  const initialBinding = initialAccount.binding;
-  const contract = await currentContract(
-    args.db,
-    args.connectorSlug,
-    args.authMethodId,
-  );
-  if (!contract) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const accessName = tokenStorageName(contract, "accessToken");
-  if (!accessName) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const [initialAccess] = await args.db
-    .select({ encryptedValue: secrets.encryptedValue })
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.connectorId, args.connectorId),
-        eq(secrets.orgId, args.orgId),
-        eq(secrets.userId, args.userId),
-        eq(secrets.name, accessName),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  const resolved = await settle(
-    resolveAutomaticOutcome(
-      args,
-      contract,
-      await args.db.transaction(async (tx) => {
-        return await resolveLockedAutomatic(
-          tx,
-          args,
-          {
-            contract,
-            accessName,
-            initialAccessEncrypted: initialAccess?.encryptedValue,
-            initialBindingCreatedAt: initialBinding.createdAt,
-            initialBindingRowVersion: initialBinding.rowVersion,
-            accountIdentity,
-          },
-          signal,
-        );
-      }),
-      signal,
-    ),
     signal,
   );
-  if (!resolved.ok) {
-    if (resolved.error instanceof StaleBuiltinAutomaticContractError) {
-      return { kind: "unavailable", reason: "stale-contract" };
-    }
-    throw resolved.error;
-  }
-  return resolved.value;
 }

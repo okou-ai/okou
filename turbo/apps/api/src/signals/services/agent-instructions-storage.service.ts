@@ -12,7 +12,6 @@ import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
   commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
-  prepareVolumeServerSideWithDb$,
   type PreparedServerSideVolume,
   type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
@@ -142,28 +141,6 @@ export async function commitPreparedAgentInstructionsStorageInTransaction(
   }
   signal.throwIfAborted();
 }
-
-export const writeAgentInstructionsStorageInTransaction$ = command(
-  async (
-    { set },
-    args: WriteAgentInstructionsStorageArgs & { readonly tx: Tx },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const volume = await set(
-      prepareVolumeServerSideWithDb$,
-      { db: args.tx, input: instructionVolumeInput(args) },
-      signal,
-    );
-    await commitPreparedAgentInstructionsStorageInTransaction(
-      {
-        tx: args.tx,
-        volume,
-        stableContextPublication: args.stableContextPublication,
-      },
-      signal,
-    );
-  },
-);
 
 export const deleteAgentInstructionsStorage$ = command(
   async (

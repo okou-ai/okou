@@ -140,7 +140,7 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
   },
 );
 
-export function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
+function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
   return and(
     eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
     eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),

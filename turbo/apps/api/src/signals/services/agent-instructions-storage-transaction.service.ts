@@ -61,3 +61,14 @@ export async function removeLockedAgentInstructionsStoragesInTransaction(
     ),
   );
 }
+
+export async function removeAgentInstructionsStorageInTransaction(
+  tx: Tx,
+  args: { readonly orgId: string; readonly agentName: string },
+): Promise<string | null> {
+  const lockedStorages = await lockAgentInstructionsStoragesInTransaction(tx, [
+    args,
+  ]);
+  await removeLockedAgentInstructionsStoragesInTransaction(tx, lockedStorages);
+  return lockedStorages[0]?.s3Prefix ?? null;
+}

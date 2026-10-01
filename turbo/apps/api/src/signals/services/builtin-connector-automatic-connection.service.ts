@@ -1,29 +1,17 @@
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
-import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
-import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import { pgTextDecoder } from "../../lib/db-structured-result";
-import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinDcrCatalogCondition } from "./builtin-connector-automatic-dcr.service";
-import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
 
 interface AutomaticConnectionOwner {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
-}
-
-export interface AutomaticCallbackAccountSnapshot {
-  readonly stateRevision: string;
-  readonly rowVersion: string;
 }
 
 function automaticConnectionOwnerCondition(owner: AutomaticConnectionOwner) {
@@ -34,49 +22,29 @@ function automaticConnectionOwnerCondition(owner: AutomaticConnectionOwner) {
   );
 }
 
-export const readAutomaticAccountSnapshot$ = command(
+export const automaticAccountExists$ = command(
   async (
     { set },
-    args: AutomaticConnectionOwner & {
-      readonly connectionId: string;
-      readonly expectedRevision?: string | null;
-    },
+    args: AutomaticConnectionOwner & { readonly connectionId: string },
     signal: AbortSignal,
-  ): Promise<AutomaticCallbackAccountSnapshot | null> => {
-    if (args.expectedRevision === null) {
-      return null;
-    }
-    const db = set(writeDb$);
-    const [account] = await db
-      .select({
-        stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
-          pgTextDecoder,
-        ),
-        rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
-      })
+  ): Promise<boolean> => {
+    const [account] = await set(writeDb$)
+      .select({ id: connectors.id })
       .from(connectors)
       .where(
         and(
           automaticConnectionOwnerCondition(args),
           eq(connectors.id, args.connectionId),
-          args.expectedRevision === undefined
-            ? undefined
-            : eq(
-                connectors.updatedAt,
-                sql`${args.expectedRevision}::timestamp`,
-              ),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    return account ?? null;
+    return account !== undefined;
   },
 );
 
 export interface AutomaticConnectionPublication extends AutomaticConnectionOwner {
-  readonly catalogIdentity: ExternalCatalogIdentity;
   readonly account: ConnectorAccountMutationIntent;
-  readonly expected: AutomaticCallbackAccountSnapshot | null;
   readonly authMethod: string;
   readonly storageVersion: number;
   readonly binding: Omit<
@@ -116,47 +84,7 @@ function automaticConnectionMetadata(input: AutomaticConnectionPublication) {
   };
 }
 
-function automaticBoundRegistrationCondition(
-  input: AutomaticConnectionPublication,
-) {
-  if (!input.binding?.dcrRegistrationId) {
-    throw new Error("Automatic DCR publication requires its registration");
-  }
-  return and(
-    eq(builtinConnectorDcrRegistrations.id, input.binding.dcrRegistrationId),
-    eq(builtinConnectorDcrRegistrations.orgId, input.orgId),
-    eq(builtinConnectorDcrRegistrations.connectorSlug, input.connectorSlug),
-    eq(builtinConnectorDcrRegistrations.authMethod, input.binding.authMethod),
-    eq(
-      builtinConnectorDcrRegistrations.contractHash,
-      input.binding.contractHash,
-    ),
-    eq(builtinConnectorDcrRegistrations.issuer, input.binding.issuer),
-    eq(builtinConnectorDcrRegistrations.clientId, input.binding.clientId),
-    eq(
-      builtinConnectorDcrRegistrations.tokenEndpointAuthMethod,
-      input.binding.tokenEndpointAuthMethod,
-    ),
-    or(
-      isNull(builtinConnectorDcrRegistrations.expiresAt),
-      gt(builtinConnectorDcrRegistrations.expiresAt, nowDate()),
-    ),
-  );
-}
-
-function automaticReconnectCondition(input: AutomaticConnectionPublication) {
-  if (input.account.intent !== "reconnect" || input.expected === null) {
-    throw new Error("Automatic reconnect requires its observed account");
-  }
-  return and(
-    automaticConnectionOwnerCondition(input),
-    eq(connectors.id, input.account.connectionId),
-    eq(connectors.updatedAt, sql`${input.expected.stateRevision}::timestamp`),
-    sql`${connectors}.xmin::text = ${input.expected.rowVersion}`,
-  );
-}
-
-/** Provider exchange and encryption finish before this finite publication. */
+/** Provider exchange and encryption finish before this local write. */
 export const publishAutomaticConnection$ = command(
   async (
     { set },
@@ -164,45 +92,27 @@ export const publishAutomaticConnection$ = command(
     signal: AbortSignal,
   ): Promise<
     | { readonly kind: "connected"; readonly connectionId: string }
-    | {
-        readonly kind: "error";
-        readonly reason: "stale-contract" | "invalid-account";
-      }
+    | { readonly kind: "error"; readonly reason: "invalid-account" }
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      // Plain MVCC check, as main's assertCurrentContract; no row lock.
-      const [catalog] = await tx
-        .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
-        .from(connectorCatalogActiveSnapshot)
-        .where(builtinDcrCatalogCondition(input.catalogIdentity))
-        .limit(1);
-      if (!catalog) {
-        return { kind: "error", reason: "stale-contract" };
-      }
-      if (input.binding?.registrationMethod === "dcr") {
-        const [registration] = await tx
-          .select({ id: builtinConnectorDcrRegistrations.id })
-          .from(builtinConnectorDcrRegistrations)
-          .where(automaticBoundRegistrationCondition(input))
-          .limit(1);
-        if (!registration) {
-          return { kind: "error", reason: "stale-contract" };
-        }
-      }
       const metadata = automaticConnectionMetadata(input);
       let connection: { readonly id: string } | undefined;
       if (input.account.intent === "reconnect") {
         [connection] = await tx
           .update(connectors)
           .set({ ...metadata, updatedAt: sql`clock_timestamp()` })
-          .where(automaticReconnectCondition(input))
+          .where(
+            and(
+              automaticConnectionOwnerCondition(input),
+              eq(connectors.id, input.account.connectionId),
+            ),
+          )
           .returning({ id: connectors.id });
       } else {
-        // No sibling locks: the default is tried first against
-        // idx_connectors_org_user_slug_default, which only admits it while
-        // no default is committed (and waits for an in-flight one); otherwise
-        // the account becomes a non-default sibling.
+        // The first account becomes the default; once a default exists,
+        // idx_connectors_org_user_slug_default rejects it and the account is
+        // created as a non-default sibling.
         const values = {
           orgId: input.orgId,
           userId: input.userId,
@@ -265,78 +175,6 @@ export const publishAutomaticConnection$ = command(
       }
       signal.throwIfAborted();
       return { kind: "connected", connectionId };
-    });
-  },
-);
-
-export const publishAutomaticAuthorizationState$ = command(
-  async (
-    { set },
-    args: AutomaticConnectionOwner & {
-      readonly catalogIdentity: ExternalCatalogIdentity;
-      readonly account: ConnectorAccountMutationIntent;
-      readonly expected: AutomaticCallbackAccountSnapshot | null;
-      readonly state: typeof connectorOauthStates.$inferInsert;
-      readonly authorizationUrl: string;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly kind: "authorization";
-        readonly authorizationUrl: string;
-        readonly oauthAttemptId: string;
-      }
-    | {
-        readonly kind: "error";
-        readonly reason: "invalid-account" | "stale-contract";
-      }
-  > => {
-    const db = set(writeDb$);
-    return await db.transaction(async (tx) => {
-      const [catalog] = await tx
-        .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
-        .from(connectorCatalogActiveSnapshot)
-        .where(builtinDcrCatalogCondition(args.catalogIdentity))
-        .limit(1);
-      if (!catalog) {
-        return { kind: "error", reason: "stale-contract" };
-      }
-      if (args.account.intent === "reconnect") {
-        if (!args.expected) {
-          return { kind: "error", reason: "invalid-account" };
-        }
-        const [account] = await tx
-          .select({ id: connectors.id })
-          .from(connectors)
-          .where(
-            and(
-              automaticConnectionOwnerCondition(args),
-              eq(connectors.id, args.account.connectionId),
-              eq(
-                connectors.updatedAt,
-                sql`${args.expected.stateRevision}::timestamp`,
-              ),
-              sql`${connectors}.xmin::text = ${args.expected.rowVersion}`,
-            ),
-          )
-          .limit(1);
-        if (!account) {
-          return { kind: "error", reason: "invalid-account" };
-        }
-      }
-      const [state] = await tx
-        .insert(connectorOauthStates)
-        .values(args.state)
-        .returning({ id: connectorOauthStates.id });
-      if (!state) {
-        throw new Error("Failed to create Automatic OAuth state");
-      }
-      signal.throwIfAborted();
-      return {
-        kind: "authorization",
-        authorizationUrl: args.authorizationUrl,
-        oauthAttemptId: state.id,
-      };
     });
   },
 );
