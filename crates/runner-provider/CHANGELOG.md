@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.0...runner-provider-v0.5.1) (2026-10-01)
+
+
+### Documentation
+
+* **rust:** correct builtin firewall catalog validator path ([#37433](https://github.com/okou-ai/okou/issues/37433)) ([bee3673](https://github.com/okou-ai/okou/commit/bee3673a65726f4bb12b3735112b52b44adca943))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.4.6...runner-provider-v0.5.0) (2026-09-30)
 
 
