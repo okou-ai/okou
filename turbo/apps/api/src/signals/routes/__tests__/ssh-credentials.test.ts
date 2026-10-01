@@ -534,7 +534,9 @@ describe("reusable SSH credential owner routes", () => {
       credentials().delete({
         headers,
         params,
-        body: { expectedRevision: remaining.body.credentials[0]?.revision ?? 0 },
+        body: {
+          expectedRevision: remaining.body.credentials[0]?.revision ?? 0,
+        },
       }),
       [204],
     );
