@@ -103,26 +103,22 @@ describe("GitHub file integration routes", () => {
   }
 
   /**
-   * Creates a real run for the fixture agent through the test-only adapter.
-   * Run admission needs org credits, granted through the Stripe webhook
-   * product path. A provider-only fixture admits the run without selecting a
-   * model and without reading legacy Compose content.
+   * Creates a real run for the fixture agent through the Thread entry. Run
+   * admission needs org credits, granted through the Stripe webhook product
+   * path.
    */
   async function seedRunForFixture(
     fixture: GitHubFileFixture,
   ): Promise<{ readonly runId: string }> {
     bdd.acceptAgentStorageWrites();
     await api.grantProEntitlement(fixture.actor);
-    await api.createOrgModelProvider(fixture.actor, {
-      type: "openrouter-api-key",
-      secret: "test-openrouter-key",
-    });
+    await api.ensureOrgModelProvider(fixture.actor);
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    const run = await api.createRun(fixture.actor, {
+    api.configureRunnerGroup();
+    const run = await api.createThreadRun(fixture.actor, {
       agentId: fixture.composeId,
       prompt: "deliver github file",
-      modelProvider: "openrouter-api-key",
     });
     return { runId: run.runId };
   }
