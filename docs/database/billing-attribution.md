@@ -11,8 +11,10 @@ Clerk cleanup, or production retention behavior switches in this change.
 IDs, original `agent_runs.created_at`, and the bounded usage-view source. It has
 no FK to content, users, agents, sessions, or threads. Since Advisory Lock
 Cleanup R1 (migration `1310_retire_application_billing_capture_triggers`) no
-database trigger captures it: both Run insertion paths in
-`agent-run-execution.service.ts` write it explicitly with
+database trigger captures it: the pending launch persistence
+(`persistPendingAtomicLaunch` in `execution-launch-persistence.service.ts`,
+shared by the Thread pick and Pi maintenance) and the Pi failed-launch record
+(`pi-memory-maintenance-execution.service.ts`) write it explicitly with
 `billingRunAttributionWrite` in the same launch transaction, so failed run
 creation rolls it back. Matching retries are idempotent; the conflict update only
 applies when org/user/start/source match and only fills an `unknown` thread
@@ -62,15 +64,15 @@ with explicit writer SQL. The Stage 1 row is updated by #34267. The detailed
 current trace is the
 [R1 billing writer trace](../advisory-lock-release-1-billing-trigger-writers.md).
 
-| Production writer                                    | Explicit capture / provenance                                                                                                     |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-run-execution.service.ts` (both insert paths) | `billingRunAttributionWrite` in the launch transaction; includes canonical launch CTE.                                            |
-| `managed-usage.service.ts`                           | Captures canonical attribution, writes raw fields and observation; explicit runless when actor has no run.                        |
-| `provider-usage-publication.service.ts`              | Runner, OpenRouter and image-result usage capture identity, insert categories and mark observation together.                      |
-| `pi-memory-stage1-usage.service.ts`                  | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                                          |
-| `x-resource-usage.service.ts`                        | Capture, resource claims, final quantities and observation share the local transaction.                                           |
-| `built-in-generation.service.ts`                     | Job INSERT supplies original billing Run ID and context; webhook job projections include independent identity.                    |
-| `cron-compact-usage-events.service.ts`               | Explicitly resolves legacy/missing identities, publishes hourly rows with billing fields and marks observation in the same batch. |
+| Production writer                                                                       | Explicit capture / provenance                                                                                                     |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `execution-launch-persistence.service.ts`, `pi-memory-maintenance-execution.service.ts` | `billingRunAttributionWrite` in the launch transaction (pending launch and Pi failed launch); includes canonical launch CTE.      |
+| `managed-usage.service.ts`                                                              | Captures canonical attribution, writes raw fields and observation; explicit runless when actor has no run.                        |
+| `provider-usage-publication.service.ts`                                                 | Runner, OpenRouter and image-result usage capture identity, insert categories and mark observation together.                      |
+| `pi-memory-stage1-usage.service.ts`                                                     | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                                          |
+| `x-resource-usage.service.ts`                                                           | Capture, resource claims, final quantities and observation share the local transaction.                                           |
+| `built-in-generation.service.ts`                                                        | Job INSERT supplies original billing Run ID and context; webhook job projections include independent identity.                    |
+| `cron-compact-usage-events.service.ts`                                                  | Explicitly resolves legacy/missing identities, publishes hourly rows with billing fields and marks observation in the same batch. |
 
 `src/test-fixtures`, `routes/test-*`, `__tests__`, `__benches__`, and
 `src/scripts/dev-bench-seed.ts` are fixtures/benchmarks, not production usage

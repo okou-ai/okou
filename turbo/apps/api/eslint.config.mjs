@@ -697,30 +697,6 @@ export default [
     },
   },
   {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "src/**/__tests__/**/*.ts",
-      "src/**/*.test.ts",
-      "src/test-fixtures/thread-bound-run-admission.ts",
-      "src/signals/routes/test-run-fixture.ts",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     // Keep finite persisted/state-machine contract matrices as narrow
     // exceptions. Route tests cover constructible behavior, while these exact
     // transition inputs are not available through production APIs. Being an
@@ -857,12 +833,6 @@ export default [
               group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
-            },
           ],
         },
       ],
@@ -901,12 +871,6 @@ export default [
                 "**/production-bootstrap.ts",
               ],
               message: lowerLayerRouteImportMessage,
-            },
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },

@@ -80,9 +80,9 @@ subscription routes are
 `usage_pricing` is the billing authority for Built-in model usage, reached
 through the pricing link of the route a run was assigned:
 
-1. **Run creation.** Run creation (the queue pick, or a direct run) selects
+1. **Run creation.** Run creation (the queue pick, or Pi maintenance) selects
    and captures the Built-in concrete route (`builtInModelRuntimeRoute`), then
-   `prepareModelUsageContext` (`agent-run-execution.service.ts`) reads that
+   `prepareModelUsageContext` (`run-model-provider-environment.service.ts`) reads that
    route's `pricing_provider` from the same catalog snapshot
    (`catalogBuiltInRoute`) as `modelUsageProvider`, together with the billable
    firewalls and the long-context threshold
