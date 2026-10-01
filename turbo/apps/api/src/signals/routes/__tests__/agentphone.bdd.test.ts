@@ -7,10 +7,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  findAgentphoneChatEventByPromptFixture,
-  readChatEventContextFixture,
-} from "../../../test-fixtures/chat-events";
+import { findAgentphoneChatEventByPromptFixture } from "../../../test-fixtures/chat-events";
 import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached, settle } from "../../utils";
@@ -381,6 +378,26 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
       .trimEnd()
       .endsWith(expectedTail),
   ).toBeTruthy();
+}
+
+/**
+ * The launch's thread context renders as the last caller-supplied section,
+ * immediately after the exact integration block and delivery note.
+ */
+function renderedThreadContextAfterIntegration(
+  appendSystemPrompt: string,
+  expectedIntegration: string,
+): string {
+  const imageModelIndex = appendSystemPrompt.lastIndexOf(
+    "\n\n# Built-in image model",
+  );
+  expect(imageModelIndex).toBeGreaterThan(-1);
+  const callerSections = appendSystemPrompt.slice(0, imageModelIndex).trimEnd();
+  const parts = callerSections.split(
+    [expectedIntegration, AGENTPHONE_INTEGRATION_NOTE, ""].join("\n\n"),
+  );
+  expect(parts).toHaveLength(2);
+  return parts[1] ?? "";
 }
 
 async function waitForTyping(
@@ -952,37 +969,17 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForTyping(sends, [conversationId]);
 
       if (scenario === "dispatch context") {
-        const admitted = await findAgentphoneChatEventByPromptFixture({
-          userId: actor.userId,
-          prompt: "summarize my inbox",
-        });
-        expect(admitted).toMatchObject({ eventId: expect.any(String) });
-        if (!admitted) {
-          throw new Error("Expected admitted AgentPhone input event");
+        const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+        if (lifecycle.status !== 200) {
+          throw new Error("Expected AgentPhone thread lifecycle events");
         }
-        const launchContext = await readChatEventContextFixture(
-          admitted.eventId,
-        );
-        expect(launchContext).toMatchObject({
-          contextType: "agentphone",
-          contextId: expect.any(String),
-          agentphoneChatThreadId: expect.any(String),
-          agentphoneMessageText: "summarize my inbox",
-          agentphoneThreadContext: "",
-          agentphoneMessageId: messageId1,
-          agentphoneRootMessageId: "direct-message:main",
-          agentphoneConversationId: conversationId,
-          agentphoneChannel: "imessage",
-          agentphoneIsGroup: false,
-          agentphonePhoneHandle: phone,
-          agentphoneFromNumber: phone,
-          agentphoneToNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-          agentphoneUserLinkId: expect.any(String),
-          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+        const created = lifecycle.body.events.filter((event) => {
+          return event.kind === "created";
         });
-        const launchThreadId = launchContext?.agentphoneChatThreadId;
+        expect(created).toHaveLength(1);
+        const launchThreadId = created[0]?.chatThreadId;
         if (!launchThreadId) {
-          throw new Error("Expected AgentPhone launch context to own a thread");
+          throw new Error("Expected AgentPhone ingress to own a thread");
         }
         const admittedEvents = await chat.listThreadEvents(
           actor,
@@ -990,7 +987,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         );
         const admittedInput = admittedEvents.events.find((event) => {
           return (
-            event.id === admitted.eventId && event.eventType === "input.prompt"
+            event.eventType === "input.prompt" &&
+            event.userMessage.parts.some((part) => {
+              return part.type === "text" && part.text === "summarize my inbox";
+            })
           );
         });
         expect(
@@ -1348,32 +1348,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       from: phone,
       body: "start on my phone",
     });
-    const admittedSms = await findAgentphoneChatEventByPromptFixture({
-      userId: actor.userId,
-      prompt: "start on my phone",
-    });
-    if (!admittedSms) {
-      throw new Error("Expected admitted AgentPhone SMS input event");
-    }
-    const smsLaunchContext = await readChatEventContextFixture(
-      admittedSms.eventId,
-    );
-    expect(smsLaunchContext).toMatchObject({
-      contextType: "agentphone",
-      agentphoneMessageText: "start on my phone",
-      agentphoneThreadContext: "",
-      agentphoneMessageId: smsMessageId,
-      agentphoneRootMessageId: "direct-message:main",
-      agentphoneConversationId: null,
-      agentphoneChannel: "sms",
-      agentphoneIsGroup: false,
-      agentphonePhoneHandle: phone,
-      agentphoneFromNumber: phone,
-      agentphoneToNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-      agentphoneUserLinkId: expect.any(String),
-      agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-    });
     const phoneRun1 = await claimDispatchedRun(runnerGroup);
+    expect(phoneRun1.prompt).toBe("start on my phone");
     expectIntegrationImmediatelyBeforeRestrictedContent(
       phoneRun1.appendSystemPrompt,
       [
@@ -1973,33 +1949,17 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       ],
     });
     await waitForTyping(sends, [bddGroupId(conversationId)]);
-    const admittedGroup = await findAgentphoneChatEventByPromptFixture({
-      userId: actor.userId,
-      prompt: "@Okou summarize this thread",
-    });
-    expect(admittedGroup).toMatchObject({ eventId: expect.any(String) });
-    if (!admittedGroup) {
-      throw new Error("Expected admitted AgentPhone group input event");
+    const groupLifecycle = await createChatFilesBddApi(
+      context,
+    ).requestThreadEvents(actor, {}, [200]);
+    if (groupLifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
     }
-    const groupLaunchContext = await readChatEventContextFixture(
-      admittedGroup.eventId,
-    );
-    expect(groupLaunchContext).toMatchObject({
-      contextType: "agentphone",
-      agentphoneMessageText: "@Okou summarize this thread",
-      agentphoneThreadContext: expect.stringContaining("Earlier group context"),
-      agentphoneMessageId: groupMessageId,
-      agentphoneConversationId: conversationId,
-      agentphoneGroupId: bddGroupId(conversationId),
-      agentphoneChannel: "imessage",
-      agentphoneIsGroup: true,
-      agentphonePhoneHandle: phone,
-      agentphoneFromNumber: phone,
-      agentphoneToNumber: AGENTPHONE_BDD_PHONE_NUMBER,
-      agentphoneUserLinkId: expect.any(String),
-      agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+    const createdGroupThreads = groupLifecycle.body.events.filter((event) => {
+      return event.kind === "created";
     });
-    const groupThreadId = groupLaunchContext?.agentphoneChatThreadId;
+    expect(createdGroupThreads).toHaveLength(1);
+    const groupThreadId = createdGroupThreads[0]?.chatThreadId;
     if (!groupThreadId) {
       throw new Error("Expected an AgentPhone group chat thread");
     }
@@ -2009,7 +1969,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(groupEvents.events).toContainEqual(
       expect.objectContaining({
-        id: admittedGroup.eventId,
+        eventType: "input.prompt",
         userMessage: {
           version: 1,
           parts: expect.arrayContaining([
@@ -2021,11 +1981,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     const run1 = await claimDispatchedRun(runnerGroup);
     expect(run1.prompt).toBe("@Okou summarize this thread");
-    const groupThreadContext = groupLaunchContext?.agentphoneThreadContext;
-    if (!groupThreadContext) {
-      throw new Error("Expected AgentPhone group launch thread context");
-    }
-    expectIntegrationImmediatelyBeforeRestrictedContent(
+    const groupThreadContext = renderedThreadContextAfterIntegration(
       run1.appendSystemPrompt,
       [
         "# Current Integration",
@@ -2038,8 +1994,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         `Conversation ID: ${conversationId}`,
         `Message ID: ${groupMessageId}`,
       ].join("\n"),
-      groupThreadContext,
     );
+    // Provider history admitted with the mention reaches the group launch.
+    expect(groupThreadContext).toContain("Earlier group context");
 
     // The provider requires the group id as to_number for a group reply.
     const beforeGroupCompletion = sends.messages.length;

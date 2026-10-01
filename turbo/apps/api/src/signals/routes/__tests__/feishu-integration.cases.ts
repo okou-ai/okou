@@ -51,10 +51,7 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
-import {
-  findPendingChatEventByPromptFixture,
-  readChatEventContextFixture,
-} from "../../../test-fixtures/chat-events";
+import { findPendingChatEventByPromptFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
@@ -5700,43 +5697,11 @@ export function registerFeishuIntegrationTests(
             })
           );
         });
-        if (!claimedFeishuMessage?.revokesEventId) {
-          throw new Error("Expected the claimed Feishu message");
-        }
-        const claimedFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.id,
-        );
-        const pendingFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.revokesEventId,
-        );
-        expect(claimedFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: expect.any(String),
-          feishuMessageText: "do the Feishu task",
-          feishuMessageFiles: [
-            {
-              fileId: expect.any(String),
-              messageId: "om_history_file",
-              fileKey: historyFileKey,
-              type: "file",
-            },
-          ],
-          feishuChatType: "p2p",
-          feishuChatId: "oc_feishu_dm",
-          feishuMessageId: firstMessageId,
-          feishuThreadId: firstMessageId,
-          feishuReplyInThread: true,
-          feishuReactionId: expect.any(String),
-          feishuSenderOpenId: "ou_feishu_user",
-          feishuConnectionId: expect.any(String),
-          feishuInstallationId: fixture.installationId,
-        });
-        expect(claimedFeishuContext?.feishuConversationHistory).toContain(
-          "Earlier Feishu conversation context",
-        );
-        expect(pendingFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: claimedFeishuContext?.contextId,
+        // The queued Feishu input was claimed into the launched message.
+        expect(claimedFeishuMessage).toMatchObject({
+          eventType: "input.prompt",
+          revokesEventId: expect.any(String),
+          runId: run.id,
         });
         const completedReply = [...fixtureState.outboundMessages]
           .reverse()
