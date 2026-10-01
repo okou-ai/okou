@@ -1581,7 +1581,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly outputTokens?: number;
     readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
     readonly responsesModel?: {
-      readonly provider: "openai" | "openai-codex" | "deepseek";
+      readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
     readonly checkpointObjects: Map<string, Buffer>;

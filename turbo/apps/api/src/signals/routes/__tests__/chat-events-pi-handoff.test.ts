@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
@@ -51,15 +51,6 @@ const {
   completeSandboxFirstPiRun,
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
-
-async function builtInCatalogUpstreamModel(model: string): Promise<string> {
-  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
-    ?.upstreamModel;
-  if (upstreamModel === undefined) {
-    throw new Error(`Expected a Built-in catalog route for ${model}`);
-  }
-  return upstreamModel;
-}
 
 describe("CHAT-02: model-first provider policies", () => {
   it.each(["identity", "gzip", "zstd"] as const)(
@@ -455,6 +446,8 @@ describe("CHAT-02: model-first provider policies", () => {
       const usagePricingResolution =
         await createPiUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
+      const { upstreamModel } =
+        await readPrimaryBuiltInRouteFixture(selectedModel);
 
       const run = await sendChatRun(
         actor,
@@ -469,15 +462,15 @@ describe("CHAT-02: model-first provider policies", () => {
 
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.piModelConfig).toMatchObject({
-        provider: isDeepSeek ? "deepseek" : "openai",
-        model: await builtInCatalogUpstreamModel(selectedModel),
+        provider: isDeepSeek ? "openrouter" : "openai",
+        model: upstreamModel,
       });
       expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
       expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
       expect(claimEnvironment(claimed.claim).OPENAI_API_KEY).toBe(
         modelProviderSecretPlaceholder(
-          isDeepSeek ? "deepseek" : "openai-api-key",
-          isDeepSeek ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY",
+          isDeepSeek ? "openrouter-codex" : "openai-api-key",
+          isDeepSeek ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY",
         ),
       );
       const sandboxUsageEvent = {
