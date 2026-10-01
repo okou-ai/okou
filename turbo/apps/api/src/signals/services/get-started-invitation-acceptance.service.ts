@@ -46,14 +46,13 @@ const publishAcceptedReward$ = command(
   ) => {
     const db = set(writeDb$);
     const { rowCount } = await db.execute(
-      getStartedMemberRewardSql(
-        plan.claim,
-        plan.rewardKey,
-        plan.slot,
-        undefined,
-        plan.at,
-        plan.acceptance,
-      ),
+      getStartedMemberRewardSql({
+        claim: plan.claim,
+        rewardKey: plan.rewardKey,
+        rewardSlot: plan.slot,
+        at: plan.at,
+        acceptance: plan.acceptance,
+      }),
     );
     signal.throwIfAborted();
     return rowCount;

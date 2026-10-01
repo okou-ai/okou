@@ -381,7 +381,7 @@ const persistChatThreadTitle$ = command(
         { kind: "renamed", userId, orgId, chatThreadId: threadId, title },
         {
           cte: sql`updated AS (${update.getSQL()})`,
-          gate: exists(sql`SELECT 1 FROM updated`),
+          gate: sql`EXISTS (SELECT 1 FROM updated)`,
           agentId: sql`(SELECT agent_id FROM updated)`,
         },
       ),

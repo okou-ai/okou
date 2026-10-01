@@ -9,7 +9,7 @@ import {
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
 import { HttpResponse, http } from "msw";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -338,6 +338,12 @@ test.each([
       }),
     );
     const older = review([submitted.body.id]);
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await older;
+    });
     await entered.promise;
     expect((await status()).shareClaim?.status).toBe("reviewing");
     mockNow(new Date("2026-09-15T08:01:01.000Z"));

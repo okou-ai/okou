@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   getRewardAvailabilityFromAwards,
@@ -36,6 +36,21 @@ const currentClaim$ = command(
   },
 );
 
+const readRewardAvailability$ = command(
+  async (
+    { get },
+    claim: GetStartedClaimRow,
+    rewardKey: string,
+    signal: AbortSignal,
+  ) => {
+    const awards = await get(db$)
+      .select()
+      .from(getStartedRewardAvailabilityQuery(claim, rewardKey));
+    signal.throwIfAborted();
+    return getRewardAvailabilityFromAwards(claim, rewardKey, awards);
+  },
+);
+
 const publishReward$ = command(
   async (
     { set },
@@ -50,13 +65,13 @@ const publishReward$ = command(
   ) => {
     const db = set(writeDb$);
     const { rowCount } = await db.execute(
-      getStartedMemberRewardSql(
-        plan.claim,
-        plan.rewardKey,
-        plan.slot,
-        plan.evidenceText,
-        plan.at,
-      ),
+      getStartedMemberRewardSql({
+        claim: plan.claim,
+        rewardKey: plan.rewardKey,
+        rewardSlot: plan.slot,
+        evidenceText: plan.evidenceText,
+        at: plan.at,
+      }),
     );
     signal.throwIfAborted();
     return rowCount;
@@ -95,14 +110,11 @@ export const grantGetStartedClaim$ = command(
     ) {
       return claim;
     }
-    const awards = await db
-      .select()
-      .from(getStartedRewardAvailabilityQuery(claim, args.rewardKey));
-    signal.throwIfAborted();
-    const availability = getRewardAvailabilityFromAwards(
+    const availability = await set(
+      readRewardAvailability$,
       claim,
       args.rewardKey,
-      awards,
+      signal,
     );
     if (availability.kind === "ineligible") {
       const [ineligible] = await db

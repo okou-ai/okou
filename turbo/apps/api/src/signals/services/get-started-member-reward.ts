@@ -46,18 +46,19 @@ export function getStartedRewardAvailabilityQuery(
  * is written and the statement reports zero rows. Reward key and slot
  * uniqueness remain enforced by their unique indexes.
  */
-export function getStartedMemberRewardSql(
-  claim: GetStartedClaimRow,
-  rewardKey: string,
-  rewardSlot: number | null,
-  evidenceText: string | undefined,
-  at: Date,
-  acceptance?: {
+export function getStartedMemberRewardSql(args: {
+  readonly claim: GetStartedClaimRow;
+  readonly rewardKey: string;
+  readonly rewardSlot: number | null;
+  readonly evidenceText?: string;
+  readonly at: Date;
+  readonly acceptance?: {
     readonly invitationId: string | null;
     readonly inviteeUserId: string;
     readonly completedAt: Date;
-  },
-) {
+  };
+}) {
+  const { claim, rewardKey, rewardSlot, evidenceText, at, acceptance } = args;
   if (!claim.beneficiaryUserId || claim.rewardTarget !== "user") {
     throw new Error(
       "Organization rewards must commit with the Slack installation",
