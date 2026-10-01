@@ -857,6 +857,54 @@ async function recordFailedMaintenanceLaunch(
   });
 }
 
+/** The selected model's runtime, then its usage pricing and permissions. */
+async function prepareMaintenanceModelAndUsage(
+  args: {
+    readonly db: Db;
+    readonly readDb: Parameters<typeof prepareMaintenanceUsage>[0]["db"];
+    readonly resolution: Parameters<
+      typeof prepareMaintenanceUsage
+    >[0]["resolution"];
+    readonly admitted: MaintenanceAdmission;
+    readonly job: ClaimedPiMemoryPhase2Job;
+    readonly source: NonNullable<Parameters<typeof prepareMaintenanceModel>[3]>;
+    readonly timing: ApiDispatchTimingCollector;
+  },
+  signal: AbortSignal,
+) {
+  const { modelProvider, piSandbox } = await prepareMaintenanceModel(
+    args.db,
+    args.admitted,
+    args.job,
+    args.source,
+    signal,
+  );
+  signal.throwIfAborted();
+  const { permissionManifest, usage } = await prepareMaintenanceUsage({
+    db: args.readDb,
+    resolution: args.resolution,
+    catalog: args.admitted.catalog,
+    modelProvider,
+    timing: args.timing,
+  });
+  signal.throwIfAborted();
+  return { modelProvider, piSandbox, permissionManifest, usage };
+}
+
+/**
+ * Launch preparation failed after admission: keep the failed run record (with
+ * its callback rows), re-validate the claim fence and bind nothing.
+ */
+async function failMaintenanceLaunch(
+  db: Db,
+  args: Parameters<typeof recordFailedMaintenanceLaunch>[1],
+  signal: AbortSignal,
+): Promise<never> {
+  await recordFailedMaintenanceLaunch(db, args);
+  signal.throwIfAborted();
+  throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
+}
+
 /**
  * Launch preparation and, for a built-in model, the Stripe entitlement refresh
  * for the allowance window run together outside the transaction. Either
@@ -881,141 +929,150 @@ const prepareMaintenanceLaunchAndAllowance$ = command(
   },
 );
 
+/** The claimed job's exact memory base version, mounted for writeback. */
+function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
+  return {
+    mode: "writeback" as const,
+    orgId: job.orgId,
+    userId: job.userId,
+    storageId: job.baseVersion.storageId,
+    versionId: job.baseVersion.versionId,
+    name: AUTO_MEMORY_ARTIFACT_NAME,
+    mountPath: PI_MEMORY_ROOT,
+    missingRootPolicy: "fail" as const,
+  };
+}
+
 /**
- * Independent memory-maintenance sandbox execution for one claimed Pi
- * Phase 2 job. It prepares the exact memory mount, the selected model
+ * Independent memory-maintenance sandbox execution graph for one claimed Pi
+ * Phase 2 job. Construction captures the plain job and builds the storage
+ * (with its cache command), member and paid-tool nodes once. startRun$ admits
+ * the job (which may refresh a subscription), then prepares the exact memory mount, the selected model
  * credential and the Pi maintenance launch, atomically commits the run with
  * its job binding, then activates it. It never enters Thread admission or
  * Agent resolution. A committed execution is creation success; later
  * activation/cache failures are not compensated.
  */
-export const startMaintenanceRun$ = command(
-  async (
-    { get, set },
-    job: ClaimedPiMemoryPhase2Job,
-    signal: AbortSignal,
-  ): Promise<string> => {
-    const db = set(writeDb$);
-    const apiStartTime = now();
-    const admitted = await admitMaintenance(db, job, signal);
-    const timing = new ApiDispatchTimingCollector();
-    const owner = { orgId: job.orgId, userId: job.userId };
-    const storageObjects = createExecutionStorageObjects([
-      {
-        mode: "writeback",
-        ...owner,
-        storageId: job.baseVersion.storageId,
-        versionId: job.baseVersion.versionId,
-        name: AUTO_MEMORY_ARTIFACT_NAME,
-        mountPath: PI_MEMORY_ROOT,
-        missingRootPolicy: "fail",
-      },
-    ]);
-    const [source, member, disabledPaidTools, preparedMounts] =
-      await Promise.all([
-        get(
-          createModelSourceSnapshot({
-            ...owner,
-            source: pinnedSourceIdentity(admitted.credential),
-          }),
-        ),
-        get(createExecutionMemberMetadata(owner)),
-        get(createAgentDisabledPaidTools(job.userId, job.orgId)),
-        settle(get(storageObjects.preparedMounts$), signal),
-      ]);
-    signal.throwIfAborted();
-    if (!source) {
-      throw new PiMaintenanceDispositionError("credential_unavailable");
-    }
-    const { modelProvider, piSandbox } = await prepareMaintenanceModel(
-      db,
-      admitted,
-      job,
-      source,
-      signal,
-    );
-    signal.throwIfAborted();
-    const { catalog, framework } = admitted;
-    const { permissionManifest, usage } = await prepareMaintenanceUsage({
-      db: get(db$),
-      resolution: get(usagePricingResolution$),
-      catalog,
-      modelProvider,
-      timing,
-    });
-    signal.throwIfAborted();
-    const runId = randomUUID();
-    const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
-    const { body, launchSnapshot, selectedImageModel } = maintenanceRunBody(
-      framework,
-      member.preferences?.selectedImageModel,
-    );
-    const runFacts = {
-      job,
-      runId,
-      apiStartTime,
-      body,
-      selectedImageModel,
-      launchSnapshot,
-      modelProvider,
-      selectionDigest,
-      timing,
-    };
-    const prepared = await set(
-      prepareMaintenanceLaunchAndAllowance$,
-      {
-        ...runFacts,
+export function createMaintenanceRunObjects(job: ClaimedPiMemoryPhase2Job) {
+  const owner = { orgId: job.orgId, userId: job.userId };
+  const storageObjects = createExecutionStorageObjects([
+    maintenanceMemoryMount(job),
+  ]);
+  const member$ = createExecutionMemberMetadata(owner);
+  const disabledPaidTools$ = createAgentDisabledPaidTools(
+    job.userId,
+    job.orgId,
+  );
+  const startRun$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<string> => {
+      const db = set(writeDb$);
+      const apiStartTime = now();
+      const admitted = await admitMaintenance(db, job, signal);
+      const timing = new ApiDispatchTimingCollector();
+      const [source, member, disabledPaidTools, preparedMounts] =
+        await Promise.all([
+          get(
+            createModelSourceSnapshot({
+              ...owner,
+              source: pinnedSourceIdentity(admitted.credential),
+            }),
+          ),
+          get(member$),
+          get(disabledPaidTools$),
+          settle(get(storageObjects.preparedMounts$), signal),
+        ]);
+      signal.throwIfAborted();
+      if (!source) {
+        throw new PiMaintenanceDispositionError("credential_unavailable");
+      }
+      const { modelProvider, piSandbox, permissionManifest, usage } =
+        await prepareMaintenanceModelAndUsage(
+          {
+            db,
+            readDb: get(db$),
+            resolution: get(usagePricingResolution$),
+            admitted,
+            job,
+            source,
+            timing,
+          },
+          signal,
+        );
+      const { framework } = admitted;
+      const runId = randomUUID();
+      const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
+      const { body, launchSnapshot, selectedImageModel } = maintenanceRunBody(
         framework,
-        piSandbox,
-        permissionManifest,
-        usage,
-        disabledPaidTools,
-        userTimezone: member.preferences?.timezone ?? undefined,
-        featureSwitchContext: admitted.featureSwitchContext,
-        preparedMounts,
-      },
-      signal,
-    );
-    if (!prepared.ok) {
-      // Launch preparation failed after admission: keep the failed run record
-      // (with its callback rows) and re-validate the claim fence, binding nothing.
-      await recordFailedMaintenanceLaunch(db, {
-        ...runFacts,
+        member.preferences?.selectedImageModel,
+      );
+      const runFacts = {
+        job,
+        runId,
+        apiStartTime,
+        body,
+        selectedImageModel,
+        launchSnapshot,
+        modelProvider,
+        selectionDigest,
+        timing,
+      };
+      const prepared = await set(
+        prepareMaintenanceLaunchAndAllowance$,
+        {
+          ...runFacts,
+          framework,
+          piSandbox,
+          permissionManifest,
+          usage,
+          disabledPaidTools,
+          userTimezone: member.preferences?.timezone ?? undefined,
+          featureSwitchContext: admitted.featureSwitchContext,
+          preparedMounts,
+        },
+        signal,
+      );
+      if (!prepared.ok) {
+        return await failMaintenanceLaunch(
+          db,
+          {
+            ...runFacts,
+            credential: admitted.credential,
+            error: prepared.error,
+          },
+          signal,
+        );
+      }
+      const [launch, preparedAllowanceRefresh] = prepared.value;
+      const commit = withLaunch(
+        maintenanceCommitArgs({
+          ...runFacts,
+          pin: admitted.credential.pin,
+          launch,
+        }),
+        launch,
+      );
+      const committed = await commitMaintenanceRun(db, {
+        job,
+        allowanceRefresh: preparedAllowanceRefresh,
         credential: admitted.credential,
-        error: prepared.error,
+        selectionDigest,
+        commit,
+        apiStartTime,
       });
       signal.throwIfAborted();
-      throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
-    }
-    const [launch, preparedAllowanceRefresh] = prepared.value;
-    const commit = withLaunch(
-      maintenanceCommitArgs({
-        ...runFacts,
-        pin: admitted.credential.pin,
-        launch,
-      }),
-      launch,
-    );
-    const committed = await commitMaintenanceRun(db, {
-      job,
-      allowanceRefresh: preparedAllowanceRefresh,
-      credential: admitted.credential,
-      selectionDigest,
-      commit,
-      apiStartTime,
-    });
-    signal.throwIfAborted();
-    await set(activateMaintenanceRun$, committed.pendingActivation, signal);
-    // The approved log-only presigned URL cache write.
-    const cache = await settle(
-      set(storageObjects.updatePresignedUrlCache$, signal),
-      signal,
-    );
-    if (!cache.ok) {
-      log.warn("Pi maintenance presigned URL cache update failed", {
-        runId: committed.runId,
-      });
-    }
-    return committed.runId;
-  },
-);
+      await set(activateMaintenanceRun$, committed.pendingActivation, signal);
+      // The approved log-only presigned URL cache write.
+      const cache = await settle(
+        set(storageObjects.updatePresignedUrlCache$, signal),
+        signal,
+      );
+      if (!cache.ok) {
+        log.warn("Pi maintenance presigned URL cache update failed", {
+          runId: committed.runId,
+        });
+      }
+      return committed.runId;
+    },
+  );
+  return { startRun$ };
+}

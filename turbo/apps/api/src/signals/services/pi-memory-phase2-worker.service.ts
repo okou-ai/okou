@@ -2,15 +2,15 @@ import { PiMemoryQuotaError } from "./pi-memory-quota.service";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
+  createMaintenanceRunObjects,
   PiMaintenanceDispositionError,
-  startMaintenanceRun$,
 } from "./pi-memory-maintenance-execution.service";
 
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
@@ -176,13 +176,24 @@ const recoverMaintenanceRun$ = command(
   },
 );
 
+// The claimed job is a write result; its maintenance graph is derived once
+// per claim, as the Thread pick derives its claim graph.
+const internalClaimedJob$ = state<ClaimedPiMemoryPhase2Job | null>(null);
+const claimedMaintenanceRunObjects$ = computed((get) => {
+  const claim = get(internalClaimedJob$);
+  return claim ? createMaintenanceRunObjects(claim) : null;
+});
+
 const dispatchClaim$ = command(
   async (
-    { set },
-    input: { readonly db: Db; readonly claim: ClaimedPiMemoryPhase2Job },
+    { get, set },
     signal: AbortSignal,
   ): Promise<PiMemoryPhase2WorkerResult> => {
-    const runId = await set(startMaintenanceRun$, input.claim, signal);
+    const objects = get(claimedMaintenanceRunObjects$);
+    if (!objects) {
+      throw new Error("Pi maintenance dispatch requires a claimed job");
+    }
+    const runId = await set(objects.startRun$, signal);
     return { outcome: "dispatched", runId };
   },
 );
@@ -205,10 +216,8 @@ export const executePiMemoryPhase2Work$ = command(
     if (!claim) {
       return { outcome: "no_work" };
     }
-    const dispatched = await settle(
-      set(dispatchClaim$, { db, claim }, signal),
-      signal,
-    );
+    set(internalClaimedJob$, claim);
+    const dispatched = await settle(set(dispatchClaim$, signal), signal);
     if (dispatched.ok) {
       return dispatched.value;
     }
