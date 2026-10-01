@@ -1316,6 +1316,118 @@ test.each(["publish", "delete", "cancel"] as const)(
   },
 );
 
+test("a losing snapshot creator preserves the ordinary share that won its client ID", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const privateSelection = await f.selection(file.url);
+  const ordinarySelection = await f.selection(
+    "Ordinary conversation remains readable",
+  );
+  const id = randomUUID();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const originalSend = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    const response = await originalSend(command);
+    if (
+      command instanceof PutObjectCommand &&
+      command.input.Key === `shared-thread-artifacts/okou/${id}.json` &&
+      command.input.IfNoneMatch === "*"
+    ) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+    return response;
+  });
+  const pending = api()(sharedThreadsContract).create({
+    headers: headers(f.actor),
+    params: { threadId: privateSelection.threadId },
+    body: { id, eventIds: [privateSelection.eventId] },
+  });
+  const outcome = Promise.allSettled([pending]);
+  onTestFinished(async () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+    await outcome;
+  });
+  await entered.promise;
+  await accept(
+    api()(sharedThreadsContract).create({
+      headers: headers(f.actor),
+      params: { threadId: ordinarySelection.threadId },
+      body: { id, eventIds: [ordinarySelection.eventId] },
+    }),
+    [201],
+  );
+  release.resolve(undefined);
+  await accept(pending, [409]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id } }),
+    [200],
+  );
+  expect(shared.body.messages).toContainEqual(
+    expect.objectContaining({
+      content: "Ordinary conversation remains readable",
+    }),
+  );
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [200]);
+});
+
+test("deletes an unpublished snapshot while copying and never republishes its grant", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const id = randomUUID();
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const originalSend = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (command instanceof CopyObjectCommand) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+    return originalSend(command);
+  });
+  const pending = api()(sharedThreadsContract).create({
+    headers: headers(f.actor),
+    params: { threadId: selection.threadId },
+    body: { id, eventIds: [selection.eventId] },
+  });
+  const outcome = Promise.allSettled([pending]);
+  onTestFinished(async () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+    await outcome;
+  });
+  await entered.promise;
+  await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [404]);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id },
+    }),
+    [204],
+  );
+  release.resolve(undefined);
+  await accept(pending, [400]);
+  await accept(api()(sharedThreadsContract).get({ params: { id } }), [404]);
+  await accept(api()(sharedThreadsContract).meta({ params: { id } }), [404]);
+  expect(
+    (await chat.listArtifactCatalog(f.actor, { kind: "shared-thread" }))
+      .artifacts,
+  ).toStrictEqual([]);
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      headers: headers(f.actor),
+      params: { reference: referenceName(file.url) },
+    }),
+    [200],
+  );
+});
+
 test("drains an in-flight copy before rolling back another copy's failure", async () => {
   const f = await fixture();
   const first = await f.upload();
