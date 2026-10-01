@@ -21,6 +21,6 @@ pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
 #[cfg(test)]
 mod test_fixtures {
     pub(crate) mod http_body;
-    pub(crate) mod ignored_child;
+    pub(crate) use runner_host::test_fixtures::ignored_child;
     pub(crate) mod raw_http;
 }
