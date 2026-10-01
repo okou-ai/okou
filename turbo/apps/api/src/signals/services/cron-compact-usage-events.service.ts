@@ -621,7 +621,15 @@ async function compactUsageEventBatch(
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
   return await db.transaction(async (tx) => {
     const lockStartedAt = performance.now();
-    await lockUsageEventCompaction(tx);
+    // While old API instances and operator code may still use the global key,
+    // a scoped batch joins it shared before taking its own exclusive org key.
+    await lockUsageEventCompaction(
+      tx,
+      orgId === undefined ? "exclusive" : "shared",
+    );
+    if (orgId !== undefined) {
+      await lockUsageEventCompaction(tx, "exclusive", orgId);
+    }
     const lockWaitMs = Math.round(performance.now() - lockStartedAt);
     signal.throwIfAborted();
 

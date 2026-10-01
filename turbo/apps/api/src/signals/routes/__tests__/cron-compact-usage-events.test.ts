@@ -15,6 +15,7 @@ import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
   deleteUsageStateFixture$,
+  deleteUsageData$,
   deleteRun$,
   insertUsageEvent$,
   materializeHourlyUsage$,
@@ -313,6 +314,56 @@ describe("usage event compaction cron", () => {
       hourly: 1,
     });
     await expect(readStorage(foreign)).resolves.toStrictEqual({
+      raw: 1,
+      processedRaw: 1,
+      hourly: 0,
+    });
+  });
+
+  it("deletes a user's raw and hourly facts across organizations without deleting other users", async () => {
+    const first = await seedFixture();
+    const second = await seedFixture();
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...first,
+        status: "processed",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    await store.set(
+      insertUsageEvent$,
+      {
+        orgId: second.orgId,
+        userId: first.userId,
+        status: "processed",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    await store.set(
+      materializeHourlyUsage$,
+      { orgId: second.orgId, userId: first.userId, runId: null },
+      context.signal,
+    );
+    await store.set(
+      insertUsageEvent$,
+      { ...second, status: "processed" },
+      context.signal,
+    );
+
+    await store.set(
+      deleteUsageData$,
+      { scope: "user", id: first.userId },
+      context.signal,
+    );
+    await expect(readStorage(first)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 0,
+    });
+    await expect(readStorage(second)).resolves.toStrictEqual({
       raw: 1,
       processedRaw: 1,
       hourly: 0,

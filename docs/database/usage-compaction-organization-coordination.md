@@ -1,12 +1,17 @@
 # Organization-scoped usage compaction coordination (Draft design)
 
-> Status: investigation for [#37484](https://github.com/okou-ai/okou/issues/37484), the middle PR in [#37480](https://github.com/okou-ai/okou/issues/37480). **No organization-scoped protocol has been activated or proven safe for merger.** Keep the current global lock until the cross-org deletion and rollout gates below pass. This document is not a production rollout instruction.
+> Status: implementation-in-progress for [#37484](https://github.com/okou-ai/okou/issues/37484), the middle PR in [#37480](https://github.com/okou-ai/okou/issues/37480). **The Draft branch has a dual-lock compatibility scaffold, not an activated production switch or a proven safe removal of the global key.** Keep the current global lock until the user-deletion and rollout gates below pass. This document is not a production rollout instruction.
 
 ## Goal and existing guarantees
 
 The configured Cron selects up to 500 oldest eligible raw `usage_event` **seeds** every minute. Each selected physical grain includes `org_id`, `user_id`, processed hour, Run/billing identity, resource tuple, and both allowance-window IDs. It expands to all eligible raw and preexisting hourly facts in that grain, locks them, replaces them with one reconciled hourly fact, and deletes raw in one transaction. The 500-row seed does **not** bound the selected grain's physical work. Readers and settlement must retain quantity, charged credits, per-window allowance totals, the original time anchor, synchronous final receipt, FEFO and complete-grain `bigint` overflow rollback. Do not introduce temporary same-grain hourly fragments to achieve a row cap.
 
 A single exclusive `usage_event_compaction` transaction advisory key currently covers the Cron; settlement, Social inline settlement, Agent deletion and threadless Run deletion take it shared. User/org usage deletion and explicit attribution backfill take it exclusive. The installed historical `purge_quiescent_provisional_billing_attribution` function also names this key. The separate `credit_<orgId>` key protects funding decisions and allowance admission; it is not a drop-in replacement for compaction coordination.
+
+## What the Draft branch currently implements
+
+- The existing helper can name a test-isolated per-org advisory key without adding a new raw SQL callsite. A specifically scoped compaction takes global **shared**, then per-org **exclusive**; the production Cron still takes global **exclusive** because it does not yet dispatch orgs. Ordinary settlement, Social, Agent deletion and threadless Run cleanup take global shared then per-org shared. Organization cleanup takes global exclusive then its org exclusive; user cleanup takes global exclusive, inventories the user's distinct raw/hourly/Social/Session/Run org IDs and takes those org keys in sorted order. The operator's explicitly scoped backfill also takes both keys. The installed historical function still uses the global key, which remains compatible with this scaffold.
+- This _adds_ an advisory acquisition to each ordinary settlement and is not itself a measured lock-count improvement. It exists only in a Draft PR: no lock-free discovery, fair dispatcher, key-only user-deletion proof, mixed-version retirement or production cutover has been validated. Do not merge it as the completed performance optimization.
 
 ## Candidate org-level protocol (not yet proven)
 

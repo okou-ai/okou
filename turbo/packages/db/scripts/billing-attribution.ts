@@ -249,6 +249,12 @@ try {
           // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
           "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
         );
+        // The global key bridges old binaries; scoped compaction takes it
+        // shared before the per-org key until the deployment cutover completes.
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext($1))",
+          [`usage_event_compaction:org:${scope[0]}`],
+        );
         await client.query(
           `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
           VALUES ($5, $1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
