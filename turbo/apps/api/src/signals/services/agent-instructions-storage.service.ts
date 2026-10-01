@@ -3,12 +3,19 @@ import {
   getInstructionsFilename,
   SUPPORTED_FRAMEWORKS,
 } from "@okouai/core/frameworks";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
+import { agents } from "@okouai/db/schema/agent";
+import { storages } from "@okouai/db/schema/storage";
+import { and, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
-import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
+import { enqueueStorageObjectCleanup } from "./storage-object-cleanup.service";
+import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
@@ -16,7 +23,6 @@ import {
   type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import {
   completePiStableContextPublication,
   lockPiStableContextPublication,
@@ -27,6 +33,7 @@ import {
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
   readonly agentName: string;
+  readonly storageId?: string;
   readonly instructions: string;
   readonly framework?: string;
   readonly stableContextPublication?: PiStableContextPublicationFence;
@@ -54,6 +61,7 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
   return {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
+    ...(args.storageId === undefined ? {} : { storageId: args.storageId }),
     piResourceIndex: true as const,
     ...(args.stableContextPublication
       ? { stableContextPublication: args.stableContextPublication }
@@ -145,29 +153,63 @@ export async function commitPreparedAgentInstructionsStorageInTransaction(
 
 export const deleteAgentInstructionsStorage$ = command(
   async (
-    { get, set },
-    args: { readonly orgId: string; readonly agentName: string },
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentName: string;
+      readonly storageId: string;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    const s3Prefix = await writeDb.transaction(async (tx) => {
-      return await removeAgentInstructionsStorageInTransaction(tx, args);
+    const cleanupJobId = await writeDb.transaction(async (tx) => {
+      const [storage] = await tx
+        .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.id, args.storageId),
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            eq(storages.name, getInstructionsStorageName(args.agentName)),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!storage) {
+        return null;
+      }
+      // Creation can have committed even if its caller lost the receipt. Never
+      // remove instructions belonging to an already published Agent.
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(eq(agents.orgId, args.orgId), eq(agents.name, args.agentName)),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (agent) {
+        return null;
+      }
+      await tx.delete(storages).where(eq(storages.id, storage.id));
+      return await enqueueStorageObjectCleanup(
+        tx,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          target: { kind: "prefix", value: storage.s3Prefix },
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      );
     });
     signal.throwIfAborted();
 
-    if (s3Prefix) {
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const objects = await get(listS3ObjectsUnderPrefix(bucket, s3Prefix));
-      signal.throwIfAborted();
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
-      signal.throwIfAborted();
+    if (cleanupJobId) {
+      await set(purgeDeletedStoragePrefix$, { jobIds: [cleanupJobId] }, signal);
     }
   },
 );

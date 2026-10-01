@@ -1,6 +1,12 @@
 import { command, computed, type Computed } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { storages } from "@okouai/db/schema/storage";
+import {
+  getCustomSkillStorageName,
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -18,10 +24,7 @@ import { isLockNotAvailable } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
 import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
-import {
-  lockAgentInstructionsStoragesInTransaction,
-  removeLockedAgentInstructionsStoragesInTransaction,
-} from "./agent-instructions-storage-transaction.service";
+import { enqueueStorageObjectCleanup } from "./storage-object-cleanup.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
@@ -202,7 +205,12 @@ async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
       }
     : { kind: "ready" as const };
 }
-export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
+
+export async function deleteAgentInTransaction(
+  tx: Tx,
+  args: DeleteAgentArgs,
+  signal: AbortSignal,
+) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
@@ -256,10 +264,37 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
   // Storage parents precede stable artifacts/edges in the publisher and GC
   // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
-  const lockedInstructionsStorages =
-    await lockAgentInstructionsStoragesInTransaction(tx, [
-      { orgId: args.orgId, agentName: lifecycle.agentName },
-    ]);
+  // The Agent lock also fences child Workflow publication. Their rows cascade
+  // with the Agent, but their org-owned Storage containers have no such FK.
+  // Drain existing Workflow writers before Storage locks, matching ordinary
+  // Workflow deletion/update rather than waiting for them in the later cascade.
+  const childWorkflows = await tx
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(
+      and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
+    )
+    .orderBy(asc(workflows.id))
+    .for("update");
+  const storageNames = [
+    getInstructionsStorageName(lifecycle.agentName),
+    ...childWorkflows.map((workflow) => {
+      return getCustomSkillStorageName(workflow.id);
+    }),
+  ];
+  const lockedStorages = await tx
+    .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, args.orgId),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        inArray(storages.name, storageNames),
+      ),
+    )
+    .orderBy(asc(storages.id))
+    .for("update");
+
   // Remove current non-FK lifecycle rows before the Agent cascade.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
   // Revoke unsent native Morning Brief mail before the Agent cascade.
@@ -275,14 +310,36 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // Sweep again afterward so any generation/publication they initialized
   // after the first scan cannot outlive the deleted Agent.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
-  await removeLockedAgentInstructionsStoragesInTransaction(
-    tx,
-    lockedInstructionsStorages,
-  );
-  const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
+
+  if (lockedStorages.length > 0) {
+    await tx.delete(storages).where(
+      inArray(
+        storages.id,
+        lockedStorages.map((storage) => {
+          return storage.id;
+        }),
+      ),
+    );
+  }
+  const cleanupJobIds: string[] = [];
+  for (const storage of lockedStorages) {
+    cleanupJobIds.push(
+      await enqueueStorageObjectCleanup(
+        tx,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          target: { kind: "prefix", value: storage.s3Prefix },
+          userId: args.member.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      ),
+    );
+  }
+
   return {
     kind: "deleted" as const,
-    s3Prefix,
+    cleanupJobIds,
     automations,
     conversationDeletion: await releaseDeletedConversationReferences(
       tx,
@@ -388,7 +445,7 @@ export const deleteAgentById$ = command(
     signal.throwIfAborted();
     const transaction = await settle(
       writeDb.transaction(async (tx) => {
-        return await deleteAgentInTransaction(tx, args);
+        return await deleteAgentInTransaction(tx, args, signal);
       }),
       signal,
     );
@@ -432,13 +489,10 @@ export const deleteAgentById$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.s3Prefix) {
+    if (result.cleanupJobIds.length > 0) {
       await set(
         purgeDeletedStoragePrefix$,
-        {
-          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-          s3Prefix: result.s3Prefix,
-        },
+        { jobIds: result.cleanupJobIds },
         signal,
       );
     }

@@ -55,6 +55,15 @@ Older workers ignore this new kind and cannot erase the queued obligation; a
 rollback delays cleanup until compatible workers return. Older deletion code
 still uses R2-first ordering until it drains. Existing user-deletion jobs retain
 their current handler/checkpoint contract and can resume through the new code.
+Ordinary Agent/Workflow deletion and creation compensation now enqueue exact
+prefixes in their own reference-deletion transaction, using that same v1 input
+and kernel. Event-watch failure or request cancellation after commit can skip
+immediate cleanup without losing the target. Fresh creation optionally supplies
+an internal caller-owned Storage UUID; this does not change any persisted or
+public request shape, and compensation never adopts a replacement generation.
+No migration is required. Existing v1 workers can process these jobs; older
+ordinary deletion instances remain non-durable until drained. Rollback preserves
+queued obligations but restores the old producer behavior for new deletions.
 See [Storage version publication](storage-version-publication.md) for the bounded
 cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
 

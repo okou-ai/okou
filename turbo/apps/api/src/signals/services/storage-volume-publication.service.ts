@@ -45,6 +45,8 @@ interface VolumeFileInput {
 export interface PrepareVolumeServerSideInput {
   readonly orgId: string;
   readonly storageName: string;
+  /** Fresh creation owns this generation even if preparation fails. */
+  readonly storageId?: string;
   readonly files: readonly VolumeFileInput[];
   readonly piResourceIndex?: true;
   /** An explicitly owned generation, either already reserved or private and
@@ -288,10 +290,17 @@ function assertServerSideVersionIdentity(
 /** DB-only container reservation; callers own any required publication locks. */
 export async function resolveCanonicalVolumeStorage(
   db: Db,
-  args: { readonly orgId: string; readonly storageName: string },
+  args: {
+    readonly orgId: string;
+    readonly storageName: string;
+    readonly storageId?: string;
+  },
   signal: AbortSignal,
 ): Promise<ServerSideVolumeStorage> {
-  const { storageId, s3Prefix } = newStorageS3Location(args.orgId);
+  const { storageId, s3Prefix } = newStorageS3Location(
+    args.orgId,
+    args.storageId,
+  );
   await db
     .insert(storages)
     .values({
@@ -320,6 +329,9 @@ export async function resolveCanonicalVolumeStorage(
   signal.throwIfAborted();
   if (!storage) {
     throw new Error(`Failed to create storage for ${args.storageName}`);
+  }
+  if (args.storageId !== undefined && storage.id !== args.storageId) {
+    throw new Error(`Storage generation changed for ${args.storageName}`);
   }
   return storage;
 }

@@ -50,7 +50,7 @@ import {
   updateUserBuiltinConnectors,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
-import { onRejection } from "../utils";
+import { awaitWithSignal, onRejection, settleIncludingAbort } from "../utils";
 import type { RouteEntry } from "../route-entry";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
@@ -329,11 +329,25 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const agentId = randomUUID();
+  const storageId = randomUUID();
   const cleanupInstructions = async (): Promise<void> => {
-    await set(
-      deleteAgentInstructionsStorage$,
-      { orgId: auth.orgId, agentName: agentId },
-      new AbortController().signal,
+    // The request may already be aborted. Compensation owns a bounded lifetime
+    // and never replaces the original creation failure, including cancellation.
+    const cleanupSignal = AbortSignal.timeout(5000);
+    await settleIncludingAbort(
+      awaitWithSignal(
+        set(
+          deleteAgentInstructionsStorage$,
+          {
+            orgId: auth.orgId,
+            userId: auth.userId,
+            agentName: agentId,
+            storageId,
+          },
+          cleanupSignal,
+        ),
+        cleanupSignal,
+      ),
     );
   };
 
@@ -357,6 +371,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       {
         orgId: auth.orgId,
         agentName: agentId,
+        storageId,
         instructions: "",
       },
       signal,

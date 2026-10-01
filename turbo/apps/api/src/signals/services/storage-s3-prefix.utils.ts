@@ -12,10 +12,12 @@ import { randomUUID } from "node:crypto";
  * production, so a prefix must always be read from `storages.s3_prefix`
  * and never derived from other columns.
  */
-export function newStorageS3Location(orgId: string): {
+export function newStorageS3Location(
+  orgId: string,
+  storageId: string = randomUUID(),
+): {
   readonly storageId: string;
   readonly s3Prefix: string;
 } {
-  const storageId = randomUUID();
   return { storageId, s3Prefix: `${orgId}/${storageId}` };
 }

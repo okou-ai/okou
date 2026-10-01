@@ -14,6 +14,7 @@ import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { lockAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
+import { enqueueStorageObjectCleanup } from "./storage-object-cleanup.service";
 import {
   invalidatePiStableContext,
   lockPiStableContextGenerationScopes,
@@ -32,7 +33,9 @@ interface DeleteWorkflowInput {
 
 interface DeleteOrphanedWorkflowVolumeInput {
   readonly orgId: string;
+  readonly userId: string;
   readonly workflowId: string;
+  readonly storageId: string;
 }
 
 async function retireDeletedWorkflowStableContext(
@@ -101,6 +104,7 @@ export const deleteOrphanedWorkflowVolume$ = command(
         .from(storages)
         .where(
           and(
+            eq(storages.id, args.storageId),
             eq(storages.orgId, args.orgId),
             eq(storages.userId, VOLUME_ORG_USER_ID),
             eq(storages.name, getCustomSkillStorageName(args.workflowId)),
@@ -132,9 +136,19 @@ export const deleteOrphanedWorkflowVolume$ = command(
       signal.throwIfAborted();
 
       await tx.delete(storages).where(eq(storages.id, storage.id));
+      const cleanupJobId = await enqueueStorageObjectCleanup(
+        tx,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          target: { kind: "prefix", value: storage.s3Prefix },
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      );
       return {
         deleted: true as const,
-        s3Prefix: storage.s3Prefix,
+        cleanupJobId,
       };
     });
     signal.throwIfAborted();
@@ -144,10 +158,7 @@ export const deleteOrphanedWorkflowVolume$ = command(
 
     await set(
       purgeDeletedStoragePrefix$,
-      {
-        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-        s3Prefix: result.s3Prefix,
-      },
+      { jobIds: [result.cleanupJobId] },
       signal,
     );
     return true;
@@ -245,12 +256,24 @@ export const deleteWorkflow$ = command(
             eq(storages.name, storageName),
           ),
         )
+        .for("update")
         .limit(1);
+      let cleanupJobId: string | null = null;
       if (storage) {
         // Stable-context publishers lock resource parents before the head.
         // Delete in the same parent-before-head order so a publisher holding a
         // Storage key-share lock cannot deadlock with Workflow invalidation.
         await tx.delete(storages).where(eq(storages.id, storage.id));
+        cleanupJobId = await enqueueStorageObjectCleanup(
+          tx,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "prefix", value: storage.s3Prefix },
+            userId: workflow.ownerUserId,
+            orgId: args.orgId,
+          },
+          signal,
+        );
       }
       await retireDeletedWorkflowStableContext(tx, {
         orgId: args.orgId,
@@ -258,7 +281,7 @@ export const deleteWorkflow$ = command(
       });
       return {
         deleted: true as const,
-        s3Prefix: storage?.s3Prefix ?? null,
+        cleanupJobId,
         automations,
       };
     });
@@ -274,13 +297,10 @@ export const deleteWorkflow$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.s3Prefix) {
+    if (result.cleanupJobId) {
       await set(
         purgeDeletedStoragePrefix$,
-        {
-          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-          s3Prefix: result.s3Prefix,
-        },
+        { jobIds: [result.cleanupJobId] },
         signal,
       );
     }

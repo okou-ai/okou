@@ -546,7 +546,9 @@ const cleanupUnpublishedWorkflow$ = command(
     { set },
     args: {
       readonly orgId: string;
+      readonly userId: string;
       readonly workflowId: string;
+      readonly storageId: string;
     },
   ): Promise<void> => {
     // Cleanup gets its own bounded lifetime, including when create was aborted.
@@ -570,7 +572,12 @@ const cleanupUnpublishedWorkflow$ = command(
 const prepareAndCreateWorkflow$ = command(
   async ({ set }, args: WorkflowCreationInput, signal: AbortSignal) => {
     const workflowId = randomUUID();
-    const cleanup = { orgId: args.orgId, workflowId };
+    const cleanup = {
+      orgId: args.orgId,
+      userId: args.member.userId,
+      workflowId,
+      storageId: randomUUID(),
+    };
     const result = await onRejection(
       (async () => {
         const volume = await set(
@@ -578,6 +585,7 @@ const prepareAndCreateWorkflow$ = command(
           {
             orgId: args.orgId,
             storageName: getCustomSkillStorageName(workflowId),
+            storageId: cleanup.storageId,
             piResourceIndex: true,
             files: [
               {
@@ -1762,16 +1770,24 @@ const publishCopiedWorkflow$ = command(
       },
       signal,
     );
-    const cleanup = { orgId: args.orgId, workflowId: targetWorkflowId };
+    const cleanup = {
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: targetWorkflowId,
+      storageId: randomUUID(),
+    };
     return await onRejection(
       (async () => {
         const volume = await set(
           prepareVolumeServerSide$,
-          copiedWorkflowVolumeInput(
-            args.orgId,
-            targetWorkflowId,
-            snapshot.source,
-          ),
+          {
+            ...copiedWorkflowVolumeInput(
+              args.orgId,
+              targetWorkflowId,
+              snapshot.source,
+            ),
+            storageId: cleanup.storageId,
+          },
           signal,
         );
         const publication = await settle(

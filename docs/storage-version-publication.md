@@ -148,11 +148,29 @@ cleanup inventory commit together. Export output keys are likewise captured in
 the same transaction that deletes their export references. No R2 call occurs in
 these transactions.
 
+Ordinary Agent and Workflow deletion use the same transactional inventory.
+Agent deletion drains child Workflow writers before locking its complete
+org-owned instructions and Workflow Storage set in UUID order; their exact
+prefixes survive the Agent/Workflow cascades. Workflow deletion and orphaned
+creation compensation likewise enqueue the captured prefix in the source
+removal transaction, with no R2 calls while those locks are held. Cancellation
+or event-watch reconciliation failure after commit can skip the request's
+optional cleanup attempt, but cannot lose its inventory.
+
+Fresh Agent and Workflow creation (including copy/remix) allocate a Storage
+UUID before preparation. Preparation refuses to adopt another canonical
+generation, and compensation deletes only that owned UUID after checking that
+no Agent/Workflow was published. A canonical replacement, live entity, peer or
+sibling prefix is retained. Compensation has a five-second independent lifetime
+and cannot replace the original creation error, including cancellation.
+
 The inventory uses handler version 1 of `storage-object-cleanup` in the existing
 `background_jobs` table. It has no owner foreign key, so deleting a user or
 organization cannot cascade away the cleanup obligation. A request attempts a
 small owned batch after database deletion; `/api/cron/process-background-jobs`
-reclaims pending work or expired leases independently of a Clerk redelivery.
+reclaims pending work or expired leases independently of the original deletion
+request or a Clerk redelivery. Ordinary lifecycle requests use this same worker
+for their optional owned job batch, not a separate unbounded prefix purge.
 
 A prefix job lists at most 1,000 objects, deletes that page, then yields if the
 listing was truncated. It uses delete-first pagination, not a persisted R2
@@ -205,4 +223,9 @@ compatible worker serves them. Older Clerk cleanup instances still use their
 previous R2-first order until they drain, so the new deletion invariant starts
 with the new implementation, not merely with the creation of its first job.
 Existing user-deletion jobs can retry through the new path without a checkpoint
-migration. Rolling the API back delays new cleanup jobs rather than losing them.
+migration. Ordinary lifecycle producers use the same v1 handler and payload,
+so previously compatible workers can process their jobs without deployment
+ordering. Older ordinary deletion instances retain their prior non-durable
+purge behavior until they drain; the stronger invariant begins with the new
+producer. Rolling the API back delays retained cleanup jobs rather than losing
+them.
