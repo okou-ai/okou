@@ -666,40 +666,6 @@ export async function steerRunTimeBudgetFixture(
   return response.run_time_budget;
 }
 
-export async function readThreadSessionBinding(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["thread_session_binding"]>
-> {
-  const response = await postAction(context, {
-    action: "read-thread-session-binding",
-    thread_id: threadId,
-  });
-  if (!response.thread_session_binding) {
-    throw new Error("readThreadSessionBinding missing thread_session_binding");
-  }
-  return response.thread_session_binding;
-}
-
-export async function readThreadSessionConversation(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["thread_session_conversation"]>
-> {
-  const response = await postAction(context, {
-    action: "read-thread-session-conversation",
-    thread_id: threadId,
-  });
-  if (!response.thread_session_conversation) {
-    throw new Error(
-      "readThreadSessionConversation missing thread_session_conversation",
-    );
-  }
-  return response.thread_session_conversation;
-}
-
 export async function seedPendingArtifactCatalogFile(
   context: TestContext,
   args: {

@@ -290,17 +290,6 @@ export function requireOrgId(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
-export function totalChargedCredits(
-  rows: readonly { readonly creditsCharged: number | null }[],
-): number {
-  return rows.reduce((total, row) => {
-    if (row.creditsCharged === null) {
-      throw new Error("Expected processed usage to have charged credits");
-    }
-    return total + row.creditsCharged;
-  }, 0);
-}
-
 export async function createGptUsagePricingResolution(): Promise<
   UsagePricingFixture["resolution"]
 > {

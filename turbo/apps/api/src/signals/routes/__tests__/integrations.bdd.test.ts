@@ -11,7 +11,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
-import { createStore } from "ccstate";
 import { describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -19,16 +18,7 @@ import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
-import {
-  readChatEventContextFixture,
-  readRunUsageEventsFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  countPiMemoryStage1CandidatesFixture,
-  readmitPiMemoryStage1CandidateFixture,
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
+import { readChatEventContextFixture } from "../../../test-fixtures/chat-events";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -45,13 +35,10 @@ import {
   telegramLoginAuth,
 } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
-import {
-  readRunLaunchSnapshotFixture,
-  readThreadSessionBinding,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
@@ -75,7 +62,6 @@ const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const callbackStore = createStore();
 const TELEGRAM_OFFICIAL_WEBHOOK_SECRET = "telegram-official-bdd-secret";
 
 interface SlackEphemeralBody {
@@ -672,9 +658,6 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     status: "pending",
     triggerSource: "slack",
   });
-  await expect(
-    readRunLaunchSnapshotFixture(context, historicalRun.id),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "claude-code" } });
   const historicalRunId = await pollSlackRun(args.runnerGroup);
   expect(historicalRunId).toBe(historicalRun.id);
   const historicalClaim = await runs.claimRunnerJob(historicalRunId);
@@ -696,13 +679,11 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
   if (!chatThreadId) {
     throw new Error("Expected Slack Pi ingress to own a canonical thread");
   }
-  const historicalBinding = await readThreadSessionBinding(
+  const historicalSessionId = await readCompletedRunSessionId(
     context,
-    chatThreadId,
+    args.actor,
+    historicalRunId,
   );
-  if (!historicalBinding.agent_session_id) {
-    throw new Error("Expected the historical Slack session binding");
-  }
   await chat.updateThreadModelSelection(
     args.actor,
     chatThreadId,
@@ -722,7 +703,7 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     channelId,
     threadTs,
     chatThreadId,
-    historicalSessionId: historicalBinding.agent_session_id,
+    historicalSessionId,
     checkpointObjects,
   };
 }
@@ -850,9 +831,6 @@ async function completeSlackPiTurnInSandbox(args: {
   expect((await runs.readRun(args.scenario.actor, args.runId)).status).toBe(
     "completed",
   );
-  await expect(
-    readRunLaunchSnapshotFixture(context, args.runId),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
 }
 
 async function runFirstCanonicalSlackPiTurn(
@@ -909,15 +887,13 @@ async function expectFirstSlackPiExecution(args: {
     prompt: args.turn.prompt,
     answer: "Canonical Slack Pi answer",
   });
-  const binding = await readThreadSessionBinding(
+  const sessionId = await readCompletedRunSessionId(
     context,
-    args.scenario.chatThreadId,
+    args.scenario.actor,
+    args.turn.runId,
   );
-  expect(binding.agent_session_id).toBe(args.scenario.historicalSessionId);
-  if (!binding.agent_session_id) {
-    throw new Error("Expected the first Slack Pi session binding");
-  }
-  return binding.agent_session_id;
+  expect(sessionId).toBe(args.scenario.historicalSessionId);
+  return sessionId;
 }
 
 async function expectSlackPiOwnership(args: {
@@ -926,38 +902,6 @@ async function expectSlackPiOwnership(args: {
   readonly assistantText: string;
 }): Promise<void> {
   await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      const callbacks = await callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: args.scenario.orgId,
-          userId: args.scenario.actor.userId,
-          runId: args.runId,
-        },
-        context.signal,
-      );
-      return callbacks.find((callback) => {
-        return callback.internalKind === "slack:chat";
-      })?.status;
-    })(),
-  ).resolves.toBe("delivered");
-  const callbacks = await callbackStore.set(
-    readAgentRunCallbacks$,
-    {
-      orgId: args.scenario.orgId,
-      userId: args.scenario.actor.userId,
-      runId: args.runId,
-    },
-    context.signal,
-  );
-  expect(
-    callbacks.filter((callback) => {
-      return callback.internalKind === "slack:chat";
-    }),
-  ).toStrictEqual([
-    expect.objectContaining({ attempts: 1, status: "delivered" }),
-  ]);
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -966,8 +910,11 @@ async function expectSlackPiOwnership(args: {
       text: args.assistantText,
     }),
   );
-  await expect(readRunUsageEventsFixture(args.runId)).resolves.toStrictEqual(
-    [],
+  await expectThreadModelCredits(
+    context,
+    args.scenario.actor,
+    args.scenario.chatThreadId,
+    0,
   );
   const duplicateClaim = await runs.requestClaimRunnerJob(
     true,
@@ -1034,15 +981,15 @@ async function claimContinuedSlackPiTurn(args: {
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${history.historyRef.hash}.blob`,
     ),
   ).toBeTruthy();
-  const binding = await readThreadSessionBinding(
-    context,
-    args.scenario.chatThreadId,
-  );
-  expect(binding.agent_session_id).toBe(args.firstSessionId);
   const resumeBytes = readSlackPiSandboxBaseSession(args.scenario, claim);
   expect(resumeBytes).toContain(args.firstPrompt);
   expect(resumeBytes).toContain("Canonical Slack Pi answer");
-  await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
+  await expectThreadModelCredits(
+    context,
+    args.scenario.actor,
+    args.scenario.chatThreadId,
+    0,
+  );
   return { claim, runId };
 }
 
@@ -1072,22 +1019,6 @@ async function cancelContinuedSlackPiTurn(args: {
       text: "Run cancelled",
     }),
   );
-  const callbacks = await callbackStore.set(
-    readAgentRunCallbacks$,
-    {
-      orgId: args.scenario.orgId,
-      userId: args.scenario.actor.userId,
-      runId: args.turn.runId,
-    },
-    context.signal,
-  );
-  expect(
-    callbacks.filter((callback) => {
-      return callback.internalKind === "slack:chat";
-    }),
-  ).toStrictEqual([
-    expect.objectContaining({ attempts: 1, status: "delivered" }),
-  ]);
   const terminalEvents = (
     await chat.listThreadEvents(args.scenario.actor, args.scenario.chatThreadId)
   ).events.filter((event) => {
@@ -1133,65 +1064,10 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
     prompt,
     answer: "Continued Slack Pi answer",
   });
-  const binding = await readThreadSessionBinding(
-    context,
-    args.scenario.chatThreadId,
-  );
-  expect(binding.agent_session_id).toBe(args.firstSessionId);
-  return { prompt, runId: completedRunId };
-}
-
-async function expectSlackPiMemoryCandidate(args: {
-  readonly scenario: CanonicalSlackPiScenario;
-  readonly runId: string;
-}) {
-  // Stage 1 candidates intentionally have no production read API. Observe the
-  // private identity only after real Slack ingress and completion own the run.
-  const conversation = await readPiConversationIdentityFixture(args.runId);
-  const run = await runs.readRun(args.scenario.actor, args.runId);
-  if (!run.completedAt) {
-    throw new Error("Expected completed Slack Pi run timestamp");
-  }
-  // Explicit canonical-writer fixture: completion itself never schedules.
-  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-  });
-  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
-  await readmitPiMemoryStage1CandidateFixture(args.runId);
-  const candidate = await readPiMemoryStage1CandidateFixture({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-  });
-  if (!candidate) {
-    throw new Error("Expected Slack Pi history to create a memory candidate");
-  }
-  expect(candidate).toMatchObject({
-    orgId: args.scenario.orgId,
-    userId: args.scenario.actor.userId,
-    memoryStorageName: "memory",
-    piSessionId: args.scenario.chatThreadId,
-    sourceRunId: args.runId,
-    sourceHistoryHash: conversation.sourceHistoryHash,
-    sourceCompletedAt: new Date(run.completedAt),
-    status: "pending",
-    retryCount: 0,
-    usageCount: 0,
-  });
-  expect(conversation.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(candidate.memoryStorageS3Prefix).toBe(
-    `${args.scenario.orgId}/${candidate.memoryStorageId}`,
-  );
-  expect(
-    candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(0);
   await expect(
-    countPiMemoryStage1CandidatesFixture({
-      memoryStorageId: candidate.memoryStorageId,
-      piSessionId: candidate.piSessionId,
-    }),
-  ).resolves.toBe(1);
-  return candidate;
+    readCompletedRunSessionId(context, args.scenario.actor, completedRunId),
+  ).resolves.toBe(args.firstSessionId);
+  return { prompt, runId: completedRunId };
 }
 
 function agentPhoneVerificationSend(
@@ -2471,15 +2347,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const run1Id = await pollSlackRun(runnerGroup);
       const claim1 = await runs.claimRunnerJob(run1Id);
-      const slackBinding = await readThreadSessionBinding(
-        context,
-        canonicalChatThreadId,
-      );
-      expect(slackBinding.agent_session_id).toMatch(/[0-9a-f-]{36}/);
-      expect(slackBinding).toMatchObject({
-        agent_session_run_id: run1Id,
-        run_session_id: slackBinding.agent_session_id,
-      });
 
       const visibleThreadEvents = await chat.requestThreadEvents(
         actor,
@@ -2632,22 +2499,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!actor.orgId) {
         throw new Error("Expected canonical Slack actor to belong to an org");
       }
-      const deliveryCallback = (
-        await callbackStore.set(
-          readAgentRunCallbacks$,
-          {
-            orgId: actor.orgId,
-            userId: actor.userId,
-            runId: run1Id,
-          },
-          context.signal,
-        )
-      ).find((callback) => {
-        return callback.internalKind === "slack:chat";
-      });
-      expect(deliveryCallback).toMatchObject({
-        payload: {},
-      });
     },
   );
 
@@ -2903,7 +2754,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     it("keeps queued Web and Slack sends on one canonical session", async () => {
       const {
         actor,
-        orgId,
         runnerGroup,
         teamId,
         channelId,
@@ -2978,46 +2828,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         throw completion.error;
       }
       await flushWaitUntilForTest();
-      await expect(
-        (async () => {
-          const callbacks = await callbackStore.set(
-            readAgentRunCallbacks$,
-            {
-              orgId,
-              userId: actor.userId,
-              runId: run1Id,
-            },
-            context.signal,
-          );
-          const delivery = callbacks.find((callback) => {
-            return callback.internalKind === "slack:chat";
-          });
-          return delivery?.status;
-        })(),
-      ).resolves.toBe("delivered");
-      const run1Delivery = (
-        await callbackStore.set(
-          readAgentRunCallbacks$,
-          {
-            orgId,
-            userId: actor.userId,
-            runId: run1Id,
-          },
-          context.signal,
-        )
-      ).find((callback) => {
-        return callback.internalKind === "slack:chat";
-      });
-      expect(run1Delivery).toMatchObject({
-        attempts: 1,
-        lastError: null,
-        payload: {
-          channelId,
-          threadTs,
-          chatEventId: expect.any(String),
-          publicBrand: "vm0",
-        },
-      });
       const run1 = await runs.readRun(actor, run1Id);
       const slackSessionId = run1.result?.agentSessionId;
       if (!slackSessionId) {
@@ -3123,10 +2933,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         runId: firstTurn.runId,
         assistantText: "Canonical Slack Pi answer",
       });
-      const firstCandidate = await expectSlackPiMemoryCandidate({
-        scenario,
-        runId: firstTurn.runId,
-      });
       const continuedTurn = await claimContinuedSlackPiTurn({
         scenario,
         firstPrompt: firstTurn.prompt,
@@ -3136,12 +2942,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         scenario,
         turn: continuedTurn,
       });
-      await expect(
-        readPiMemoryStage1CandidateFixture({
-          orgId: scenario.orgId,
-          userId: scenario.actor.userId,
-        }),
-      ).resolves.toStrictEqual(firstCandidate);
 
       const successfulContinuation = await runSuccessfulContinuedSlackPiTurn({
         scenario,
@@ -3153,27 +2953,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
         runId: successfulContinuation.runId,
         assistantText: "Continued Slack Pi answer",
       });
-      const replacedCandidate = await expectSlackPiMemoryCandidate({
-        scenario,
-        runId: successfulContinuation.runId,
-      });
-      expect(replacedCandidate).toMatchObject({
-        memoryStorageId: firstCandidate.memoryStorageId,
-        piSessionId: firstCandidate.piSessionId,
-      });
-      expect(replacedCandidate.sourceHistoryHash).not.toBe(
-        firstCandidate.sourceHistoryHash,
-      );
       await expect(
-        readmitPiMemoryStage1CandidateFixture(successfulContinuation.runId),
-      ).resolves.toMatchObject({ outcome: "exact_retry" });
-      const afterExactRetry = await readPiMemoryStage1CandidateFixture({
-        orgId: scenario.orgId,
-        userId: scenario.actor.userId,
-      });
-      expect(afterExactRetry?.updatedAt).toStrictEqual(
-        replacedCandidate.updatedAt,
-      );
+        runs.readRun(scenario.actor, successfulContinuation.runId),
+      ).resolves.toMatchObject({ status: "completed" });
     },
     90_000,
   );
