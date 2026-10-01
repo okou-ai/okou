@@ -2384,10 +2384,9 @@ describe("RUN-04: agent run telemetry families", () => {
       description: "Bounded run context reads.",
       visibility: "private",
     });
-    const agentRun = await api.createRun(actor, {
+    const agentRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "bounded run context",
-      modelProvider: "anthropic-api-key",
     });
     onTestFinished(async () => {
       await api.requestCancelRun(actor, agentRun.runId, [200]);
