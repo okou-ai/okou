@@ -1,31 +1,28 @@
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { modelRoutes } from "@okouai/db/schema/model-route";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import {
-  getRunModelAccess,
-  isCodexFastModeModel,
-  isModelSupportedByProvider,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+  loadSystemDefaultRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { nowDate } from "../../lib/time";
 import {
-  getModelReasoningEfforts,
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { subscriptionModelCatalog } from "@okouai/db/schema/subscription-model-catalog";
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
+  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
   type PreparedMemberModelRouteContext,
 } from "./effective-model-route.service";
-
 export type MemberSubscriptionModel = Readonly<{
   id: string;
-  model: SupportedRunModel;
+  model: string;
   displayName: string;
   efforts: readonly ReasoningEffort[];
   serviceTier: string | null;
@@ -50,46 +47,53 @@ export async function loadMemberSubscriptionModels(
   if (subscriptions.length === 0) {
     return [];
   }
+  // Personal subscription routes live in the global catalog; replaced
+  // models have no routes, and names and ordering come from the model row.
   const rows = await db
-    .select()
-    .from(subscriptionModelCatalog)
+    .select({
+      id: modelRoutes.id,
+      model: modelRoutes.model,
+      subscriptionType: modelRoutes.subscriptionType,
+      displayName: runModelCatalog.displayName,
+      efforts: modelRoutes.efforts,
+      serviceTiers: modelRoutes.serviceTiers,
+      createdAt: modelRoutes.createdAt,
+      updatedAt: modelRoutes.updatedAt,
+    })
+    .from(modelRoutes)
+    .innerJoin(runModelCatalog, eq(modelRoutes.model, runModelCatalog.model))
     .where(
-      inArray(
-        subscriptionModelCatalog.subscriptionType,
-        subscriptions.map((subscription) => {
-          return subscription.type;
-        }),
+      and(
+        eq(modelRoutes.enabled, true),
+        isNull(runModelCatalog.replacedBy),
+        inArray(
+          modelRoutes.subscriptionType,
+          subscriptions.map((subscription) => {
+            return subscription.type;
+          }),
+        ),
       ),
     )
-    .orderBy(
-      asc(subscriptionModelCatalog.sortOrder),
-      asc(subscriptionModelCatalog.model),
-    );
+    .orderBy(asc(runModelCatalog.sortOrder), asc(modelRoutes.model));
   return rows.flatMap((row) => {
     const subscription = subscriptions.find((candidate) => {
       return candidate.type === row.subscriptionType;
     });
     // Retired catalog models are a reachable state; they simply stop listing.
-    if (
-      !subscription ||
-      !isSupportedRunModel(row.model) ||
-      getRunModelAccess(row.model) !== "allowed"
-    ) {
+    if (!subscription) {
       return [];
     }
+    const serviceTier = row.serviceTiers.includes("priority")
+      ? "priority"
+      : null;
+    // The route row is the product authority for efforts and tiers; only
+    // protocol facts are checked: the effort vocabulary, and Fast
+    // (`priority`) exists only on the Codex protocol.
     if (
-      !isModelSupportedByProvider(row.model, subscription.type) ||
       row.efforts.some((effort) => {
-        return (
-          !reasoningEffortSchema.safeParse(effort).success ||
-          !getModelReasoningEfforts(row.model).includes(
-            effort as ReasoningEffort,
-          )
-        );
+        return !reasoningEffortSchema.safeParse(effort).success;
       }) ||
-      (row.serviceTier === "priority" &&
-        (subscription.type !== "codex-oauth-token" ||
-          !isCodexFastModeModel(row.model)))
+      (serviceTier === "priority" && subscription.type !== "codex-oauth-token")
     ) {
       throw new Error(
         `Invalid subscription model catalog row ${row.subscriptionType}/${row.model}`,
@@ -103,7 +107,7 @@ export async function loadMemberSubscriptionModels(
         efforts: row.efforts.map((effort) => {
           return reasoningEffortSchema.parse(effort);
         }),
-        serviceTier: row.serviceTier,
+        serviceTier,
         providerType: subscription.type,
         providerId: subscription.providerId,
         needsReconnect: subscription.needsReconnect,
@@ -114,9 +118,14 @@ export async function loadMemberSubscriptionModels(
   });
 }
 
-/** Only an Auto member's connected, catalog-listed subscription is plan-exempt. */
-export async function isAutoPersonalSubscriptionRoute(args: {
+/**
+ * Admission read of `isMemberSubscriptionRoute` from current connection facts:
+ * in Auto and Custom mode alike, only the member's own valid subscription on
+ * the model's catalog subscription route is plan-exempt.
+ */
+export async function isPersonalSubscriptionRoute(args: {
   db: ReadonlyDb;
+  catalog: ModelCatalog;
   orgId: string;
   userId: string;
   model: string | null | undefined;
@@ -129,24 +138,12 @@ export async function isAutoPersonalSubscriptionRoute(args: {
   ) {
     return false;
   }
-  const [org] = await args.db
-    .select({ mode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId))
-    .limit(1);
-  if (org?.mode !== "auto") {
-    return false;
-  }
-  const member = await loadMemberModelRouteContext(
-    args.db,
-    args.orgId,
-    args.userId,
-  );
-  const models = await loadMemberSubscriptionModels(args.db, member);
-  return models.some((entry) => {
-    return (
-      entry.model === args.model && entry.providerType === args.providerType
-    );
+  return isMemberSubscriptionRoute({
+    catalog: args.catalog,
+    member: await loadMemberModelRouteContext(args.db, args.orgId, args.userId),
+    model: args.model,
+    providerType: args.providerType,
+    credentialScope: "member",
   });
 }
 
@@ -177,21 +174,14 @@ export async function resetStaleAutoMemberSelection(
       )
       .limit(1),
     db
-      .select({
-        model: orgModelPolicies.model,
-        isDefault: orgModelPolicies.isDefault,
-      })
+      .select({ model: orgModelPolicies.model })
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, orgId)),
   ]);
   const selectedModel = member?.selectedModel;
-  const defaultPolicy = policies.find((policy) => {
-    return policy.isDefault;
-  });
   if (
     org?.mode !== "auto" ||
     !selectedModel ||
-    !defaultPolicy ||
     policies.some((policy) => {
       return policy.model === selectedModel;
     })
@@ -212,7 +202,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: defaultPolicy.model,
+      selectedModel: await loadSystemDefaultRunModel(db),
       serviceTier: null,
       updatedAt: nowDate(),
     })

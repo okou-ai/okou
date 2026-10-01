@@ -1,44 +1,43 @@
-import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { command } from "ccstate";
 import {
+  type CodexServiceTier,
+  type ChatThreadServiceTier,
   chatThreadsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  type ChatThreadServiceTier,
-  type CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command } from "ccstate";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
+import { authRoute } from "../auth/auth-route";
+import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-
+import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
-import { clerk$ } from "../external/clerk";
-import { publishThreadListChanged } from "../external/realtime";
-import type { RouteEntry } from "../route-entry";
-import { agentExistsInOrg } from "../services/agent-deletion.service";
-import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
-import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
-import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
-import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import {
   createChatThread$,
   type CreatedChatThread,
   type ExistingChatThread,
 } from "../services/chat-thread.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { agentExistsInOrg } from "../services/agent-deletion.service";
 import {
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
+import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
+import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
+import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import { loadModelCatalog } from "../services/model-catalog.service";
+import type { RouteEntry } from "../route-entry";
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
 function modelFirstSelection(selectedModel: string) {
@@ -221,7 +220,10 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in pin) {
     return pin;
   }
+  const catalog = await loadModelCatalog(set(writeDb$));
+  signal.throwIfAborted();
   const codexServiceTierError = validateCodexServiceTier({
+    catalog,
     pin,
     codexServiceTier,
   });
@@ -239,7 +241,9 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel: pin.selectedModel,
+    modelProviderType: pin.modelProviderType,
     modelSettings: defaults.modelSettings,
     requested: body.data.reasoningEffort,
   });

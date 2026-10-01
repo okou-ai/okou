@@ -62,7 +62,7 @@ async function entitledChatActor() {
   await api.updateOrgModelPolicies(result.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: result.providerId,
@@ -157,7 +157,7 @@ async function configureRuntimeContextGateway(
   await api.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
       modelProviderId: null,

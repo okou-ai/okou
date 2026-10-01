@@ -8,6 +8,7 @@ import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences"
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { orgModelPolicies$ } from "../../../../../signals/external/org-model-policies.ts";
+import { modelCatalog$ } from "../../../../../signals/external/model-catalog.ts";
 import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
@@ -27,6 +28,7 @@ function DefaultModelPreference() {
   const { t } = useTranslation();
   const userPreference = useLastResolved(userModelPreference$);
   const policies = useLastResolved(orgModelPolicies$);
+  const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateDefaultModelPreference$,
   );
@@ -34,6 +36,7 @@ function DefaultModelPreference() {
   const current = resolveModelFirstStoredUserSelection({
     userPreference,
     policies,
+    catalog,
   });
   const mutating = updateLoadable.state === "loading";
 
@@ -56,7 +59,10 @@ function DefaultModelPreference() {
         onChange={handleChange}
         triggerClassName="h-9 w-full sm:w-[260px]"
         disabled={
-          userPreference === undefined || policies === undefined || mutating
+          userPreference === undefined ||
+          policies === undefined ||
+          catalog === undefined ||
+          mutating
         }
         showInheritOption
       />

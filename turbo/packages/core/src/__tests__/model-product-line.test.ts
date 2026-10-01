@@ -5,8 +5,8 @@ import {
 } from "../model-product-line";
 
 /**
- * The per-model lines are asserted against `PI_MODEL_POLICY` in
- * `pi-admission-policy.test.ts`. These cases pin the derivation itself: the ID
+ * The per-model lines are asserted against the seeded catalog's Pi route
+ * classes in `pi-admission-policy.test.ts`. These cases pin the derivation itself: the ID
  * shapes vendors and gateways actually ship, and the direction the classifier
  * fails in when it does not recognise one.
  */

@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.701.0](https://github.com/okou-ai/okou/compare/api-v1.700.5...api-v1.701.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+* **vnc:** add owner-selected qemu client certificate profiles ([#37408](https://github.com/okou-ai/okou/issues/37408)) ([56ca824](https://github.com/okou-ai/okou/commit/56ca824a5ee3673a06c8fb122fadac0fe6a0b83b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.532.0
+    * @okouai/core bumped to 8.725.0
+    * @okouai/db bumped to 1.316.0
+    * @okouai/pi-agent-runtime bumped to 1.45.0
+
 ## [1.700.5](https://github.com/okou-ai/okou/compare/api-v1.700.4...api-v1.700.5) (2026-09-30)
 
 

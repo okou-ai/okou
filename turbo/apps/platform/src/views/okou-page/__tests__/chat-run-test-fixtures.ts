@@ -1,8 +1,8 @@
+import { mockCatalogHasModel } from "../../../mocks/handlers/api-model-catalog.ts";
 import type {
   ChatEventUsagePayload,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
@@ -33,7 +33,7 @@ export function installRunChat(
   options: LifecycleOptions = {},
 ): ReturnType<typeof mockChatLifecycleWithoutBrowserSession> {
   const requestedModel = options.selectedModel ?? DEFAULT_MODEL;
-  const selectedModel = isSupportedRunModel(requestedModel)
+  const selectedModel = mockCatalogHasModel(requestedModel)
     ? requestedModel
     : DEFAULT_MODEL;
   context.mocks.data.agents([

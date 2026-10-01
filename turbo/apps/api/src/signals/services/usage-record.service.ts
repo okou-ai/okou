@@ -22,7 +22,6 @@ import {
   sum,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -44,14 +43,14 @@ import {
   safeUsageIntegerSum,
   usageBreakdownKindExpr,
   usageCreditsExpr,
+  usageDisplayProviderExpr,
 } from "./usage-reporting-breakdown";
-import { resolveUsageEmails$ } from "./usage.service";
 import {
   fixedRangeToPeriod,
   type UsagePeriod,
   type UsageRangeArg,
 } from "./usage-period";
-
+import { resolveUsageEmails$ } from "./usage.service";
 interface UsageRecordArgs {
   readonly userId: string;
   readonly orgId: string;
@@ -303,9 +302,7 @@ function usageRecordBreakdownQuery(
         userId: usage.userId,
         kind: usageBreakdownKindExpr(usage).as("kind"),
         usageKind: sql`${usage.kind}`.mapWith(pgTextDecoder).as("usage_kind"),
-        provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`
-          .mapWith(pgTextDecoder)
-          .as("provider"),
+        provider: usageDisplayProviderExpr(usage).as("provider"),
         credits: usageCreditsExpr(usage).as("credits"),
       })
       .from(usage)

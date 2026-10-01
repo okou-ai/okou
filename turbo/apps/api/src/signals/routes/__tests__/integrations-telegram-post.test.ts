@@ -583,15 +583,17 @@ async function seedModelPolicies(args: {
 /**
  * Replaces the seeded org policies with built-in Fable. Fable stays on the
  * Claude Code harness, so Telegram runs remain claimable native Runner jobs.
+ * Built-in Fable needs a paid plan, so the fixture org is upgraded to Pro.
  */
 async function seedNativeFablePolicies(
   fixture: TelegramPostFixture,
 ): Promise<void> {
+  await runsApi.grantProEntitlement(actorForFixture(fixture));
   await seedModelPolicies({ fixture, selectedModel: "claude-fable-5-1" });
   await runsApi.updateOrgModelPolicies(actorForFixture(fixture), [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -875,14 +877,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await runsApi.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: provider.providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openAiProvider.providerId,
@@ -1121,13 +1122,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
 
       await sendDm("/model gpt-6-astra", 3506);
+      // `/model` leaves the member preference the fixture configured.
       await expect(
         postTelegramStateAction({
           action: "get-selected-model",
           org_id: dm.member.orgId,
           user_id: dm.member.userId,
         }),
-      ).resolves.toMatchObject({ selected_model: null });
+      ).resolves.toMatchObject({ selected_model: "claude-fable-5-1" });
       const alternate = await completeDm("switch the main DM model", 3507);
       expect(alternate.claim.cliAgentType).toBe("codex");
       expect(alternate.chatThread.id).toBe(main.chatThread.id);

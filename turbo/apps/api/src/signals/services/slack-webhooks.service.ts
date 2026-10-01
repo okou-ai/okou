@@ -1,23 +1,14 @@
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { agents } from "@okouai/db/schema/agent";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { command, computed, type Computed } from "ccstate";
+import { agents } from "@okouai/db/schema/agent";
 import { and, eq, or } from "drizzle-orm";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import {
-  OFFICIAL_SLACK_APP_NAME,
-  officialSlackBotMention,
-} from "../../lib/slack-official-app";
 import {
   getSlackSignatureHeaders,
   verifySlackSignature,
@@ -36,34 +27,40 @@ import {
   buildWelcomeMessage,
 } from "../../lib/slack-webhook-blocks";
 import type { SlackFile } from "../../lib/slack-webhook-context";
-import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
   createSlackClient,
   type SlackClient,
 } from "../external/slack-message-client";
-import { onRejection, safeJsonParse, tapError } from "../utils";
-import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
-import { decryptPersistentSecretValue } from "./crypto.utils";
+import { nowDate } from "../../lib/time";
+import {
+  OFFICIAL_SLACK_APP_NAME,
+  officialSlackBotMention,
+} from "../../lib/slack-official-app";
+import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import { decryptPersistentSecretValue } from "./crypto.utils";
 import {
-  readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import {
+  listOrgModelPolicies$,
+  listOrgModelPoliciesWithSystemDefault$,
+} from "./model-policy.service";
+import { publishSlackAdminSignal$ } from "./slack-connect.service";
+import {
+  slackSessionThreadTs,
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
   findSlackChatThreadRoute$,
   findSlackDirectMessageChatThreadId$,
-  slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
-import { publishSlackAdminSignal$ } from "./slack-connect.service";
-
+import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
+import { onRejection, safeJsonParse, tapError } from "../utils";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
 
@@ -854,15 +851,14 @@ const slackModelPickerState$ = command(
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly {
-      readonly model: SupportedRunModel;
+      readonly model: string;
       readonly label: string;
       readonly isDefault: boolean;
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -870,17 +866,13 @@ const slackModelPickerState$ = command(
     return {
       enabled: true,
       options: policies.policies.flatMap((policy) => {
-        if (
-          !isSupportedRunModel(policy.model) ||
-          !visibleModels.has(policy.model) ||
-          policy.routeStatus !== "valid"
-        ) {
+        if (policy.routeStatus !== "valid") {
           return [];
         }
         return {
           model: policy.model,
           label: policy.modelLabel,
-          isDefault: policy.isDefault,
+          isDefault: policy.model === systemDefaultModel,
         };
       }),
       currentSelectedModel,
@@ -904,11 +896,7 @@ const isModelCommandAvailable$ = command(
       signal,
     );
     return policies.policies.some((policy) => {
-      return (
-        isSupportedRunModel(policy.model) &&
-        getBuiltInVisibleModels().includes(policy.model) &&
-        policy.routeStatus === "valid"
-      );
+      return policy.routeStatus === "valid";
     });
   },
 );

@@ -1,38 +1,31 @@
-import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import {
-  getBuiltInVisibleModels,
-  getCanonicalModelDisplayName,
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { v5 as uuidv5 } from "uuid";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { command } from "ccstate";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq } from "drizzle-orm";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { inferMimetype } from "../../lib/mimetype";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { now } from "../../lib/time";
-import {
-  sendAgentPhoneMessage,
-  sendAgentPhoneTypingIndicator,
-} from "../external/agentphone-client";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
-import { bestEffort, safeUrlParse } from "../utils";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
-  ensureAgentPhoneChatThreadRoute$,
-  findAgentPhoneRoutedChatThreadId$,
-} from "./agentphone-chat-ingress.service";
+  sendAgentPhoneMessage,
+  sendAgentPhoneTypingIndicator,
+} from "../external/agentphone-client";
+import { bestEffort, safeUrlParse } from "../utils";
 import {
   agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
@@ -46,17 +39,20 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { InputFileImportError } from "./canonical-asset.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
-  readIntegrationChatThreadModel$,
+  findAgentPhoneRoutedChatThreadId$,
+  ensureAgentPhoneChatThreadRoute$,
+} from "./agentphone-chat-ingress.service";
+import {
   updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
+import { InputFileImportError } from "./canonical-asset.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -64,11 +60,8 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveDefaultModelFirstPin } from "./model-selection.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -955,7 +948,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -969,23 +962,20 @@ function findModelOption(
     compactLookupKey(normalizedInput),
   ]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [option.model, normalizeRunModelId(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatAgentPhoneModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1003,7 +993,9 @@ function formatAgentPhoneModelOptionsMessage(
   });
 
   const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
+    ? (options.find((option) => {
+        return option.model === currentSelectedModel;
+      })?.label ?? currentSelectedModel)
     : "workspace default";
   return [
     "Available models",
@@ -1027,7 +1019,6 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const chatThreadId = await set(
       findAgentPhoneRoutedChatThreadId$,
       {
@@ -1055,25 +1046,21 @@ const handleModelCommand$ = command(
       );
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
 
     const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        !visibleModels.has(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
+      if (policy.routeStatus !== "valid") {
         return [];
       }
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        isDefault: policy.model === systemDefaultModel,
       };
     });
 

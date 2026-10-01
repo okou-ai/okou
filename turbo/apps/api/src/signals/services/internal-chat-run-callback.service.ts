@@ -136,6 +136,7 @@ import {
   modelProviderWriteTypeForLaunch,
   type ModelFirstPin,
 } from "./model-selection.service";
+import type { PiCatalogModel } from "@okouai/core/pi-execution";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
 import {
   additionalVolumesForRun,
@@ -2159,6 +2160,8 @@ export interface QueuedMessageModelRoute {
   readonly modelPin: ModelFirstPin;
   readonly effectiveModelProvider: string | null | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
+  /** The selected model's catalog projection from the pick's snapshot. */
+  readonly piCatalogModel: PiCatalogModel | null;
   readonly cliAgentType: string | null;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
@@ -2171,7 +2174,7 @@ export function routeQueuedMessagePiExecution(args: {
   const piExecution = shouldUsePiExecution({
     chatThreadId: args.input.threadId,
     modelProviderType: args.modelRoute.effectiveModelProvider,
-    selectedModel: args.modelRoute.modelPin.selectedModel,
+    catalogModel: args.modelRoute.piCatalogModel,
     codexServiceTier: args.modelRoute.codexServiceTier,
     builtInModelRuntimeRoute: args.modelRoute.builtInModelRuntimeRoute,
   });

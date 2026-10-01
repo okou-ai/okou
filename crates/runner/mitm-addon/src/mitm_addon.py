@@ -152,6 +152,7 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
     metadata_keys.AUTH_CACHE_HIT,
     metadata_keys.AUTH_URL_REWRITE,
     metadata_keys.MODEL_USAGE_PROVIDER,
+    metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
 )
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
@@ -1440,6 +1441,7 @@ async def request(flow: http.HTTPFlow) -> None:
             )
             flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
+            flow.metadata.pop(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
             if _is_websocket_upgrade_request(flow):
                 flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True

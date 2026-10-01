@@ -68,8 +68,9 @@ final class ChatServiceTests: XCTestCase {
       case "/api/model-policies":
         return ChatHTTPResponse(
           body:
-            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[],\"workspaceDefaultModel\":\"claude-sonnet-5\",\"workspaceDefaultPolicyId\":null}"
+            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"}]}"
         )
+      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
         createdRequests.withLock { $0.append(body) }
@@ -90,6 +91,98 @@ final class ChatServiceTests: XCTestCase {
     XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [fixtureAgent, secondaryAgent])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol", "gpt-5.6-sol"])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
+  }
+
+  func testCreateWithoutSavedModelUsesRoutableCatalogDefault() async throws {
+    struct CreatedRequest: Decodable, Sendable {
+      let model: String
+    }
+    let routeStatus = Mutex("valid")
+    let createdModels = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body:
+            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
+        )
+      case "/api/user-model-preference":
+        return ChatHTTPResponse(
+          body:
+            "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
+        )
+      case "/api/model-policies":
+        let status = routeStatus.withLock { $0 }
+        return ChatHTTPResponse(
+          body:
+            "{\"revision\":\"test\",\"writePreconditionRequired\":true,\"policies\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"\(status)\"}]}"
+        )
+      case "/api/model-catalog":
+        return modelCatalogResponse(systemDefaultModel: "claude-sonnet-5")
+      case "/api/chat-threads":
+        let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
+        createdModels.withLock { $0.append(body.model) }
+        return ChatHTTPResponse(
+          status: 201,
+          body:
+            "{\"id\":\"\(newThread)\",\"title\":null,\"createdAt\":\"\(fixtureDate)\",\"selectedModel\":\"\(body.model)\",\"serviceTier\":null}"
+        )
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let created = try await ChatService(client: fixture.client).createThread()
+    XCTAssertEqual(created.selectedModel, "claude-sonnet-5")
+    XCTAssertEqual(createdModels.withLock { $0 }, ["claude-sonnet-5"])
+
+    routeStatus.withLock { $0 = "missing_provider" }
+    do {
+      _ = try await ChatService(client: fixture.client).createThread()
+      XCTFail("Expected no available default model")
+    } catch ChatServiceError.noDefaultModel {}
+  }
+
+  func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
+    struct CreatedRequest: Decodable, Sendable {
+      let model: String
+      let reasoningEffort: String?
+    }
+    let createdRequests = Mutex<[CreatedRequest]>([])
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
+            """)
+      case "/api/user-model-preference":
+        return ChatHTTPResponse(
+          body: """
+            {"selectedModel":"claude-opus-4-8","serviceTier":"priority",\
+            "modelSettings":{"claude-opus-5-5":{"effort":"high"}},\
+            "selectedImageModel":null,"updatedAt":null}
+            """)
+      case "/api/model-policies":
+        return ChatHTTPResponse(
+          body: """
+            {"revision":"test","writePreconditionRequired":true,"policies":[]}
+            """)
+      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+      case "/api/chat-threads":
+        let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
+        createdRequests.withLock { $0.append(body) }
+        return ChatHTTPResponse(
+          status: 201,
+          body: """
+            {"id":"\(newThread)","title":null,"createdAt":"\(fixtureDate)",\
+            "selectedModel":"claude-opus-5-5","serviceTier":null}
+            """)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let created = try await ChatService(client: fixture.client).createThread()
+    XCTAssertEqual(created.selectedModel, "claude-opus-5-5")
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["claude-opus-5-5"])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
 
   func testUnsupportedEventSchemaRequiresAnUpdate() async throws {

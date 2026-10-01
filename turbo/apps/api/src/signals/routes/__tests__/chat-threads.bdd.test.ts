@@ -1,28 +1,24 @@
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import AdmZip from "adm-zip";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
-  chatThreadUsageContract,
   type ChatEvent,
-  type ChatEventUsagePayload,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  cronCompactUsageEventsContract,
   cronProjectChatEventSearchContract,
+  cronCompactUsageEventsContract,
 } from "@okouai/api-contracts/contracts/cron";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import AdmZip from "adm-zip";
-import { http, HttpResponse } from "msw";
+import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
+import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -53,8 +49,6 @@ import {
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
 } from "../../../test-fixtures/chat-thread-events";
-import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
-
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
 import {
   seedOrgMetadata,
@@ -63,8 +57,8 @@ import {
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
-import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
+import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import {
   createBddApi,
@@ -79,9 +73,9 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
+  mockGoogleDriveArtifactUploadRejection,
   mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -96,7 +90,8 @@ import {
   generatedStripeSubscriptionId,
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
-
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 const TEST_APP_ROUTES = Object.freeze([
   ...cronProjectChatEventSearchRoutes,
   ...chatThreadRoutes,
@@ -167,7 +162,7 @@ async function selectNativeClaudeModel(actor: ApiTestUser, providerId: string) {
   await api.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -213,7 +208,7 @@ async function sendChatRun(
     readonly prompt: string;
     readonly threadId?: string;
     readonly chatThreadSortEventId?: string;
-    readonly model?: SupportedRunModel;
+    readonly model?: string;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const { runId, threadId } = await chat.sendAndLaunch(actor, body);
@@ -780,14 +775,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "claude-opus-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -2407,7 +2401,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -2446,7 +2440,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("allows free model pins and rejects all other models for limited-free-1 workspaces", async () => {
+  it("pins okou-1.0 on its Built-in route for limited-free-1 workspaces", async () => {
     const { actor, agentId } = await entitledChatActor(
       "Limited free model pin agent",
     );
@@ -2457,31 +2451,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     // no product API can move an entitled org onto it, so downgrade the tier
     // through the shared system-config seed while keeping the pro balance.
     const billingStatus = await api.readBillingStatus(actor);
-    // Configure the workspace while it can still add a Pro-only built-in model,
-    // so the downgraded plan keeps one configured route the plan itself gates.
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4-flash",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-5.6-luna",
-        isDefault: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-6-astra",
-        isDefault: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
     await seedOrgMetadata({
       orgId: actor.orgId,
       tier: "limited-free-1",
@@ -2490,52 +2459,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "deepseek-v4-flash",
+      model: "okou-1.0",
       title: "limited free model pin",
     });
-    const restrictedSelection = await chat.requestUpdateThreadModelSelection(
-      actor,
-      thread.id,
-      "gpt-6-astra",
-      [402],
-    );
-    expectApiError(restrictedSelection.body);
-    expect(restrictedSelection.body.error).toStrictEqual({
-      message:
-        "Insufficient credits. Add credits or configure your own API key to continue.",
-      code: "INSUFFICIENT_CREDITS",
-    });
-    await expect(chat.readThread(actor, thread.id)).resolves.not.toHaveProperty(
-      "selectedModel",
-    );
-
-    for (const selectedModel of [
-      "gpt-5.6-sol",
-      "gpt-6-luna",
-      "claude-sonnet-5",
-      "claude-opus-5",
-    ] as const) {
-      const unconfiguredSelection =
-        await chat.requestUpdateThreadModelSelection(
-          actor,
-          thread.id,
-          selectedModel,
-          [400],
-        );
-      expectApiError(unconfiguredSelection.body);
-      expect(unconfiguredSelection.body.error).toStrictEqual({
-        message: "The selected model is not available in this workspace",
-        code: "BAD_REQUEST",
-      });
-
-      await expect(
-        chat.readThread(actor, thread.id),
-      ).resolves.not.toHaveProperty("selectedModel");
-    }
-
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-5.6-luna");
-    const detail = await chat.readThread(actor, thread.id);
-    expect(detail).not.toHaveProperty("selectedModel");
+    expect(thread.title).toBe("limited free model pin");
+    await chat.updateThreadModelSelection(actor, thread.id, "okou-1.0");
   }, 90_000);
 
   it("updates the Computer Use host binding on a chat thread", async () => {
@@ -2819,6 +2747,9 @@ describe("CHAT-01 chat thread read state", () => {
 
     const peerProvider = await api.ensureOrgModelProvider(peer);
     await selectNativeClaudeModel(peer, peerProvider.providerId);
+    // The peer's policy replacement moved the owner's removed preference to
+    // the fixed default; keep the owner on the native Claude route.
+    await chat.updateUserModelPreference(owner, "claude-fable-5-1");
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",
@@ -2957,6 +2888,7 @@ describe("CHAT-01 chat thread read state", () => {
     });
     await api.grantProEntitlement(sameUserOtherOrg);
     await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await chat.updateUserModelPreference(peer, "claude-fable-5-1");
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
@@ -3608,7 +3540,7 @@ describe("CHAT-03 run usage events", () => {
 
   it("reads complete allowance-covered usage from the settled ledger", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
-    const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
 
     const { actor, agentId } = await entitledChatActor(
@@ -3633,7 +3565,7 @@ describe("CHAT-03 run usage events", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

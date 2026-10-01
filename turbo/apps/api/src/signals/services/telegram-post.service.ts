@@ -1,16 +1,15 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { command } from "ccstate";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { v5 as uuidv5 } from "uuid";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import {
-  getBuiltInVisibleModels,
-  getCanonicalModelDisplayName,
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type OrgModelPolicy,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -19,17 +18,13 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { v5 as uuidv5 } from "uuid";
-import { env } from "../../lib/env";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { logger } from "../../lib/log";
 import { escapeHtml } from "../../lib/telegram-format";
-import { now } from "../../lib/time";
-import { request$ } from "../context/hono";
+import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { pathParamsOf } from "../context/request";
+import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -47,21 +42,28 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
+import { now } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import {
+  bindTelegramReplyMessageRoute,
+  type TelegramOwnerLink,
+  createTelegramChatThread$,
+  ensureTelegramChatThreadRoute$,
+  findTelegramRoutedChatThreadId$,
+} from "./telegram-chat-ingress.service";
+import {
+  updateIntegrationChatThreadModel$,
+  readIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
 import {
   InputFileImportError,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import {
-  readIntegrationChatThreadModel$,
-  updateIntegrationChatThreadModel$,
-} from "./integration-chat-thread-model.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -69,22 +71,12 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
-import { touchNativeChatThread } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import {
-  bindTelegramReplyMessageRoute,
-  createTelegramChatThread$,
-  ensureTelegramChatThreadRoute$,
-  findTelegramRoutedChatThreadId$,
-  type TelegramOwnerLink,
-} from "./telegram-chat-ingress.service";
 import {
   formatTelegramUserDisplayName,
   linkOfficialTelegramUser$,
 } from "./telegram-link.service";
-
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 const log = logger("api:telegram:post");
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -1460,24 +1452,6 @@ interface TelegramModelCommandArgs {
   readonly userId: string;
 }
 
-function telegramModelCommandOptions(policies: readonly OrgModelPolicy[]) {
-  const visibleModels = new Set(getBuiltInVisibleModels());
-  return policies.flatMap((policy) => {
-    if (
-      !isSupportedRunModel(policy.model) ||
-      !visibleModels.has(policy.model) ||
-      policy.routeStatus !== "valid"
-    ) {
-      return [];
-    }
-    return {
-      model: policy.model,
-      label: policy.modelLabel,
-      isDefault: policy.isDefault,
-    };
-  });
-}
-
 const handleModelCommand$ = command(
   async (
     { set },
@@ -1517,13 +1491,22 @@ const handleModelCommand$ = command(
       signal.throwIfAborted();
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
-    const options = telegramModelCommandOptions(policies.policies);
+    const options = policies.policies.flatMap((policy) => {
+      if (policy.routeStatus !== "valid") {
+        return [];
+      }
+      return {
+        model: policy.model,
+        label: policy.modelLabel,
+        isDefault: policy.model === systemDefaultModel,
+      };
+    });
     if (options.length === 0) {
       await postTelegramMessage({
         botToken: args.botToken,
@@ -1627,7 +1610,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1641,23 +1624,20 @@ function findModelOption(
     compactLookupKey(normalizedInput),
   ]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [option.model, normalizeRunModelId(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatTelegramModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1677,7 +1657,9 @@ function formatTelegramModelOptionsMessage(
   });
 
   const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
+    ? (options.find((option) => {
+        return option.model === currentSelectedModel;
+      })?.label ?? currentSelectedModel)
     : "workspace default";
   return [
     "<b>Available models</b>",

@@ -1,9 +1,8 @@
 import { isPiExecutionRoute } from "@okouai/core/pi-execution";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  defaultModelReasoningEffort,
-  getRouteReasoningEfforts,
-  modelReasoningEffort,
+  narrowRouteReasoningEfforts,
+  reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -11,23 +10,51 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import type { ModelCatalog } from "../external/model-catalog.ts";
 
-/** Saved preferences remain independent of the route's current capability. */
-export function preferredChatReasoningEffort(
-  selection: ModelProviderSelection | null | undefined,
-): ReasoningEffort | undefined {
-  return modelReasoningEffort(
-    selection?.selectedModel,
-    selection?.modelSettings,
-  );
+function catalogRouteQuery(policy: OrgModelPolicy) {
+  const route = getMemberModelPolicyRoute(policy);
+  return {
+    providerType: route.providerType,
+    concreteProviderType: route.runtimeProviderType,
+  };
 }
 
-/** Resolve the same model/provider runtime policy used by server admission. */
+/**
+ * The saved preference of the selected model, independent of the route's
+ * current capability; without one the route's catalog default applies.
+ */
+export function preferredChatReasoningEffort(
+  selection: ModelProviderSelection | null | undefined,
+  catalog?: ModelCatalog | null,
+): ReasoningEffort | undefined {
+  const model = selection?.selectedModel;
+  if (!model) {
+    return undefined;
+  }
+  const saved = selection.modelSettings?.[model]?.effort;
+  if (saved !== undefined) {
+    return saved;
+  }
+  const parsed = reasoningEffortSchema.safeParse(catalog?.defaultEffort(model));
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * The catalog route's efforts are the product authority; execution-time
+ * protocol narrowing (Pi and provider-specific rules) is applied on top.
+ */
 export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
   policy: OrgModelPolicy | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): readonly ReasoningEffort[] {
-  if (!selection || !policy || !isMemberModelPolicyConfigurable(policy)) {
+  if (
+    !selection ||
+    !policy ||
+    !catalog ||
+    !isMemberModelPolicyConfigurable(policy, catalog)
+  ) {
     return [];
   }
   const route = getMemberModelPolicyRoute(policy);
@@ -36,13 +63,20 @@ export function availableChatReasoningEfforts(
     return [];
   }
   const piExecution = isPiExecutionRoute({
-    selectedModel: selection.selectedModel,
+    catalogModel: catalog.piModel(selection.selectedModel),
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
   });
-  const routeEfforts = getRouteReasoningEfforts({
+  const catalogEfforts = catalog
+    .efforts(selection.selectedModel, catalogRouteQuery(policy))
+    .flatMap((effort) => {
+      const parsed = reasoningEffortSchema.safeParse(effort);
+      return parsed.success ? [parsed.data] : [];
+    });
+  const routeEfforts = narrowRouteReasoningEfforts({
     model: selection.selectedModel,
+    efforts: catalogEfforts,
     piExecution,
     runtimeProviderType,
   });
@@ -57,19 +91,23 @@ export function availableChatReasoningEfforts(
 export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   policy: OrgModelPolicy | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): ReasoningEffort | undefined {
-  if (!selection) {
+  if (!selection || !policy || !catalog) {
     return undefined;
   }
-  const available = availableChatReasoningEfforts(selection, policy);
+  const available = availableChatReasoningEfforts(selection, policy, catalog);
   const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;
   }
-  const defaultEffort = defaultModelReasoningEffort(selection.selectedModel);
-  return defaultEffort && available.includes(defaultEffort)
-    ? defaultEffort
-    : undefined;
+  const defaultEffort = catalog.defaultEffort(
+    selection.selectedModel,
+    catalogRouteQuery(policy),
+  );
+  return available.find((effort) => {
+    return effort === defaultEffort;
+  });
 }
 
 /** Preserve the map across model and Fast changes; never copy one model's effort. */

@@ -12,6 +12,7 @@ import {
 } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /*
 helper gap:
@@ -231,6 +232,14 @@ describe("CHAT-01 chat thread lifecycle", () => {
     });
 
     await api.renameThread(owner, thread.id, "Pinned launch plan");
+    await createRunsApi(context).updateOrgModelPolicies(owner, [
+      {
+        model: "gpt-6-luna",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     await api.updateThreadModelSelection(owner, thread.id, "gpt-6-luna");
     await api.pinThread(owner, thread.id);
     const readEmpty = await api.markThreadRead(owner, thread.id);

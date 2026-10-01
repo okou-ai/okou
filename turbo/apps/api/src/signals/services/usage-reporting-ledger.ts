@@ -1,10 +1,9 @@
 import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
-
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
@@ -18,10 +17,11 @@ import {
   MODEL_TOKEN_USAGE_KINDS,
 } from "./model-token-categories";
 import {
+  usageDisplayProviderExpr,
   usageBreakdownKindExpr,
   usageCreditsExpr,
 } from "./usage-reporting-breakdown";
-
+import { QueryBuilder } from "drizzle-orm/pg-core";
 interface BillingWindow {
   readonly start: Date;
   readonly end: Date;
@@ -83,6 +83,7 @@ export function memberUsageBreakdownQuery(
   const usage = buildFinalizedUsageRelation(
     normalizeFinalizedUsagePeriod(billingWindow),
   );
+  const provider = usageDisplayProviderExpr(usage);
   const kind = usageBreakdownKindExpr(usage);
   const credits = usageCreditsExpr(usage);
   return new QueryBuilder()
@@ -90,18 +91,17 @@ export function memberUsageBreakdownQuery(
       key: sql`${usage.userId}`.mapWith(pgTextDecoder).as("key"),
       kind: kind.as("kind"),
       usageKind: sql`${usage.kind}`.mapWith(pgTextDecoder).as("usage_kind"),
-      provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`
-        .mapWith(pgTextDecoder)
-        .as("provider"),
+      provider: provider.as("provider"),
       credits: sql`${sum(credits)}::bigint`
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits"),
     })
     .from(usage)
+    .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
     .where(eq(usage.orgId, orgId))
-    .groupBy(usage.userId, kind, usage.kind, usage.provider)
+    .groupBy(usage.userId, kind, usage.kind, provider)
     .having(gt(sum(credits), sql`0`))
-    .orderBy(asc(usage.userId), asc(kind), asc(usage.provider), asc(usage.kind))
+    .orderBy(asc(usage.userId), asc(kind), asc(provider), asc(usage.kind))
     .as("member_usage_breakdown");
 }
 

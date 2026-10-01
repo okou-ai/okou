@@ -309,10 +309,10 @@ Ordinary failure counters use SQL arithmetic and committed thresholds/returned
 state, not application-side `current + 1`. Both fixes were integrated before
 this continuation and are preserved.
 
-## Allowance index 1299 preflight
+## Allowance index 1305 preflight
 
-The current allowance uniqueness migration is 1299 (earlier references to 1296
-predate main's migration renumbering). Before an authorized release, query the
+The current allowance uniqueness migration is 1305 (earlier references to 1296
+and 1299 predate main's model-catalog integration). Before an authorized release, query the
 target database read-only:
 
 ```sql
@@ -329,7 +329,7 @@ ownership/limits/expiry; account for raw allocations and hourly window
 references; remap to a canonical existing window; reconcile consumed units
 against immutable receipts. Do not blindly sum counters, delete referenced
 history or skip the index. Conflicting facts require investigation. Repeat the
-query after authorized repair before migration 1299.
+query after authorized repair before migration 1305.
 
 ## Purchase overlap recovery remains implementation work
 

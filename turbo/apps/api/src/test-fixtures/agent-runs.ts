@@ -1,35 +1,35 @@
+import { randomUUID } from "node:crypto";
+import { createStore, state } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { storages } from "@okouai/db/schema/storage";
-import { createStore, state } from "ccstate";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { and, count, eq, inArray } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { db } from "../lib/db";
 import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
-import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
-import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
-import { agentRunList } from "../signals/services/agent-runs.service";
 import { createAgentRun$ } from "../signals/services/background-agent-run.service";
-import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
+import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
+import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
+import { agentRunList } from "../signals/services/agent-runs.service";
 import {
   isCompressedSessionHistoryBlobEncoding,
   normalizeSessionHistoryBlobEncoding,
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
-
+import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
+import { loadModelCatalog } from "../signals/services/model-catalog.service";
 /**
  * Test fixtures for retired agent-run API capabilities.
  *
@@ -425,6 +425,9 @@ export type DirectRunFixtureRequest = Omit<
 > & {
   readonly triggerSource?: TriggerSource;
   readonly connectorScope?: CreateAgentRunArgs["connectorScope"];
+  /** A requested model and route, as a caller that selects them passes them. */
+  readonly selectedModelOverride?: string;
+  readonly selectedModelProviderType?: string;
   readonly ownedSystemStorageMounts?: readonly {
     readonly storageId: string;
     readonly version?: string;
@@ -484,7 +487,13 @@ export async function createDirectRunFixture(args: {
   readonly body: DirectRunFixtureRequest;
   readonly signal: AbortSignal;
 }) {
-  const { connectorScope, ownedSystemStorageMounts, ...body } = args.body;
+  const {
+    connectorScope,
+    ownedSystemStorageMounts,
+    selectedModelOverride,
+    selectedModelProviderType,
+    ...body
+  } = args.body;
   const resolvedOwnedSystemStorageMounts =
     await resolveOwnedSystemStorageMounts(
       ownedSystemStorageMounts,
@@ -494,10 +503,12 @@ export async function createDirectRunFixture(args: {
   return await store.set(
     createAgentRun$,
     {
+      catalog: await loadModelCatalog(db()),
       userId: args.userId,
       orgId: args.orgId,
       apiStartTime: now(),
-      modelProviderType: body.modelProviderType,
+      modelProviderType: selectedModelProviderType ?? body.modelProviderType,
+      ...(selectedModelOverride === undefined ? {} : { selectedModelOverride }),
       piExecution: false,
       testOnlyResolveDirectRun: resolveDirectRun,
       connectorScope: connectorScope ?? {
@@ -632,6 +643,22 @@ export async function readRunModelRuntimeRouteFixture(runId: string) {
     .limit(1);
   if (!run) {
     throw new Error("Expected one run runtime route");
+  }
+  return run;
+}
+
+/** Launch options a run captured for its runtime (effort and service tier). */
+export async function readRunModelLaunchOptionsFixture(runId: string) {
+  const [run] = await db()
+    .select({
+      reasoningEffort: agentRuns.reasoningEffort,
+      codexServiceTier: agentRuns.codexServiceTier,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error("Expected one run launch options row");
   }
   return run;
 }

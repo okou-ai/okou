@@ -89,7 +89,7 @@ enum ChatServiceError: LocalizedError, Sendable {
     case .agentUnavailable:
       "This agent is no longer available. Choose another agent and try again."
     case .noDefaultModel:
-      "This workspace has no default model. Choose one on the Okou website, then refresh."
+      "No model is available for new chats. Choose a model on the Okou website, then refresh."
     case .invalidContract(let detail):
       "Chat data could not be read. Refresh or update the TestFlight app. \(detail)"
     case .settingsChanged:

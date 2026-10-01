@@ -656,7 +656,6 @@ export function createMiscRoutesApi(context: TestContext) {
             policies: policies.map((policy) => {
               return {
                 model: policy.model,
-                isDefault: policy.isDefault,
                 defaultProviderType: isBuiltInModelProviderType(
                   policy.defaultProviderType,
                 )

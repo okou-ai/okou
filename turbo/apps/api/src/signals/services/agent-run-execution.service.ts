@@ -1,517 +1,529 @@
-/**
- * Execution support for non-chat callers, plus shared pure transformations and
- * transaction primitives. Chat owns its claim graph and pending transaction in
- * claim-run-context.ts and pick-chat-run.service.ts.
- */
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
-import type {
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { state, computed, command, type State, type Computed } from "ccstate";
+import { settle, onRejection, tapError, safeSync } from "../utils";
 import {
-  type ConnectorAuthMethodId,
-  type ConnectorSlug,
-  connectorSlugSchema,
-} from "@okouai/api-contracts/contracts/connector-identity";
-import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contracts/model-provider-gateways";
+  conflict,
+  badRequestMessage,
+  notFound,
+  providerUnavailable,
+} from "../../lib/error";
 import {
-  type ModelProviderCodexRuntimeConfig,
-  type ModelProviderCredentialScope,
-  type ModelProviderEnvBindings,
-  type ModelProviderType,
-  type SupportedRunModel,
-  getBuiltInConcreteProviderType,
-  getDefaultModel,
-  getFrameworkForType,
-  getModelImageInputSupport,
-  getModelProviderCodexCatalogForModel,
-  getModelProviderCodexRuntimeCapabilities,
-  getModelProviderCodexRuntimeConfig,
-  getModelProviderEnvBindings,
-  getModelProviderFirewall,
-  getProviderRuntimeModel,
-  getSecretNameForType,
-  getSecretsForAuthMethod,
-  hasAuthMethods,
-  isBuiltInModelProviderType,
-  isSupportedRunModel,
-  MODEL_PROVIDER_TYPES,
-  normalizeRunModelId,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
+  type OfficialWorkflowRunObservation,
+  acquireOfficialWorkflowRunCatalogAdmissionLock,
+  validateOfficialWorkflowRunForInsert,
+  createOfficialWorkflowRunObjects,
+  OfficialWorkflowRunAdmissionError,
+} from "./official-workflow-run.service";
+import { now, nowDate } from "../../lib/time";
+import { db$, type Db, writeDb$, type ReadonlyDb } from "../external/db";
 import {
-  getOpenRouterBaseUrl,
-  OPENROUTER_US_ORIGIN,
-} from "@okouai/api-contracts/contracts/openrouter-routing";
+  measureApiDispatchTiming,
+  ApiDispatchTimingCollector,
+  type ApiDispatchTimingDimensions,
+  type ApiDispatchTimingActionType,
+  type ApiDispatchTimingDimensionsInput,
+  measureApiDispatchTimingSync,
+  ApiDispatchPhaseCollector,
+} from "./api-dispatch-timing.service";
 import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import {
-  type PiModelConfigV4,
-  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
-} from "@okouai/api-contracts/contracts/pi-native";
-import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import {
-  type RunContextResponse,
-  runCreateBodySchema,
-} from "@okouai/api-contracts/contracts/run-routes";
-import {
-  type ConnectorRuntimeTargetRegistration,
-  type PiInstalledCliRequirement,
-  type PiLaunchConfig,
-  type PiMemoryRecallSelection,
-  type PiModelConfig,
-  type PiModelConfigLegacy,
-  type SecretConnectorMetadata,
-  type StorageMountEntry,
-  type StoredConnectorPermissionBaseline,
-  type StoredExecutionContext,
-  type StoredStorageMountEntry,
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  CANONICAL_CLAUDE_CONFIG_DIR,
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  CANONICAL_CODEX_HOME_DIR,
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  DEFAULT_PROFILE,
-  PI_AGENT_DIR,
-  PI_MEMORY_ROOT,
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  PI_SKILLS_ROOT,
-  piMemoryRecallSelectionSchema,
-} from "@okouai/api-contracts/contracts/runners";
-import {
-  type CreateRunResponse,
-  type RunStatus,
-  unifiedRunRequestSchema,
-} from "@okouai/api-contracts/contracts/runs";
-import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
-import {
-  type ConnectorRuntimeBindingEntry,
-  connectorAuthMethodRuntimeMetadata,
-} from "@okouai/connectors/connector-auth-method";
-import {
-  type FirewallPermissionGrant,
-  type FirewallPermissionGrantAction,
-  permissionGrantsToFirewallPolicies,
-} from "@okouai/connectors/firewall-metadata/policy";
-import {
-  type ExecutionFirewallEntry,
-  type ExecutionFirewalls,
-  type ExpandedFirewallConfig,
-  type Firewall,
-  type FirewallPolicies,
-  type FirewallPolicy,
-  type NetworkPolicies,
-  canonicalizeFirewallBaseUrlVarsForExecution,
-  extractSecretNamesFromApis,
-  FirewallBaseUrlResolutionError,
-} from "@okouai/connectors/firewall-types";
-import {
+  isFeatureEnabled,
   type FeatureSwitchContext,
   getAllFeatureStates,
-  isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import {
   type SupportedFramework,
   getInstructionsFilename,
   isSupportedFramework,
 } from "@okouai/core/frameworks";
-import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
+import type { PersistedStorageMount } from "@okouai/db/types";
 import {
-  type ImageModel,
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
-} from "@okouai/core/image-model-catalog";
-import { isPiDeepSeekModel, isPiNativeModel } from "@okouai/core/pi-execution";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { isStaffOrg } from "@okouai/core/staff-org";
+  type SystemStoragePresignedUrlCacheStatus,
+  type WorkflowSkillStoragePresignedUrlCacheStatus,
+  type StorageManifestCacheEntryKind,
+  type StorageManifestCacheBranch,
+  materializeRunStoragePresignedUrls$,
+  createStorageManifestPresignedUrlCacheRows,
+  type ReadOnlyStoragePresignedUrlRequest,
+  type StorageManifestPresignedUrlCacheSnapshot,
+  type SystemStoragePresignedUrlRequest,
+  type WorkflowSkillStoragePresignedUrlRequest,
+  type StorageManifestCacheObservationContext,
+  type StoragePresignedUrlResult,
+  systemStoragePresignedUrlCacheKey,
+  SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+  workflowSkillStoragePresignedUrlCacheKey,
+  WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+  readOnlyStoragePresignedUrlCacheKey,
+  READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+  type ReadOnlyStoragePresignedUrlCacheStatus,
+} from "./system-storage-presigned-url-cache.service";
+import { env, optionalEnv } from "../../lib/env";
 import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
   getInstructionsStorageName,
-  getSkillStorageName,
-  MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
+  MEMORY_ARTIFACT_NAME,
+  getSkillStorageName,
+  getCustomSkillStorageName,
+  getCustomConnectorSkillStorageName,
+  getCustomConnectorSkillName,
 } from "@okouai/core/storage-names";
 import {
-  expandVariables,
   expandVariablesInString,
+  expandVariables,
   extractAndGroupVariables,
 } from "@okouai/core/variable-expander";
 import {
+  PI_AGENT_DIR,
+  CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CLAUDE_CONFIG_DIR,
+  type StoredStorageMountEntry,
+  type PiModelConfig,
+  type PiLaunchConfig,
+  type PiMemoryRecallSelection,
+  type StoredExecutionContext,
+  type StorageMountEntry,
+  type SecretConnectorMetadata,
+  type PiModelConfigLegacy,
+  type StoredConnectorPermissionBaseline,
+  type ConnectorRuntimeTargetRegistration,
+  piMemoryRecallSelectionSchema,
+  PI_MEMORY_ROOT,
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  type PiInstalledCliRequirement,
+  agentRunConnectorDiagnosticRegistrationPayloadSchema,
+  PI_SKILLS_ROOT,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  DEFAULT_PROFILE,
+  AGENT_EXECUTION_TIMEOUT_SECONDS,
+} from "@okouai/api-contracts/contracts/runners";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
+import {
+  sql,
+  and,
+  eq,
+  like,
+  isNull,
+  type WithSubquery,
+  type SQL,
+  type SQLWrapper,
+  inArray,
+  or,
+  asc,
+  desc,
+  isNotNull,
+  ne,
+} from "drizzle-orm";
+import {
+  VERSION_ID_LENGTH,
   isValidVersionPrefix,
   MIN_VERSION_PREFIX_LENGTH,
-  VERSION_ID_LENGTH,
 } from "@okouai/core/version-id";
+import { alias, unionAll } from "drizzle-orm/pg-core";
+import {
+  type RunContextResponse,
+  runCreateBodySchema,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
+  createMemorySummaryProjectionObjects,
+  type MemorySummaryProjectionReadInput,
+} from "./memory-summary-projection.service";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
+import {
+  type ModelProviderType,
+  type ModelProviderCodexRuntimeConfig,
+  type ModelProviderCredentialScope,
+  isBuiltInModelProviderType,
+  getFrameworkForType,
+  MODEL_PROVIDER_TYPES,
+  getSecretNameForType,
+  getModelProviderFirewall,
+  getModelProviderEnvBindings,
+  getDefaultModel,
+  type ModelProviderEnvBindings,
+  getModelProviderCodexRuntimeConfig,
+  getModelProviderCodexRuntimeCapabilities,
+  getModelProviderCodexCatalogForModel,
+  hasAuthMethods,
+  getSecretsForAuthMethod,
+  normalizeRunModelId,
+  getModelImageInputSupport,
+} from "@okouai/api-contracts/contracts/model-providers";
+import {
+  type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
+  type AgentExecutionDefinition,
+  buildAgentExecutionConfig,
+} from "./agent-execution-config";
+import {
+  type SessionExecutionIdentity,
+  canReuseSession,
+} from "./session-compatibility";
+import { z } from "zod";
+import {
+  unifiedRunRequestSchema,
+  type CreateRunResponse,
+  type RunStatus,
+} from "@okouai/api-contracts/contracts/runs";
+import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
+import {
+  type PiModelConfigV4,
+  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
+} from "@okouai/api-contracts/contracts/pi-native";
+import {
+  type ExpandedFirewallConfig,
+  type ExecutionFirewalls,
+  type NetworkPolicies,
+  FirewallBaseUrlResolutionError,
+  type FirewallPolicies,
+  type ExecutionFirewallEntry,
+  type Firewall,
+  canonicalizeFirewallBaseUrlVarsForExecution,
+  type FirewallPolicy,
+  extractSecretNamesFromApis,
+} from "@okouai/connectors/firewall-types";
+import {
+  type BuiltInModelRuntimeRoute,
+  isBuiltInModelRuntimeRoutePermitted,
+  resolveBuiltInModelRuntimeRouteFromCatalog,
+  unpricedBuiltInModelMessage,
+} from "./built-in-model-runtime-route.service";
+import {
+  catalogBuiltInCandidates,
+  catalogBuiltInRoute,
+  catalogHasProviderRoute,
+  loadModelCatalog,
+  catalogProviderUpstreamModel,
+  type ModelCatalog,
+  type CatalogRoute,
+} from "./model-catalog.service";
+import {
+  type BuiltInRoutePricing,
+  builtInRoutePricingRejectionMessage,
+  loadBuiltInRoutePricing,
+  unpricedBuiltInRouteCategories,
+} from "./built-in-route-pricing";
+import {
+  usagePricingResolution$,
+  type UsagePricingResolution,
+} from "../context/usage-pricing-resolution";
+import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
+import { resolveRunSelectionModel } from "./model-selection.service";
+import {
+  type ConnectorSlug,
+  connectorSlugSchema,
+  type ConnectorAuthMethodId,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import type {
-  PiStableContextOwner,
   PiStableContextPromptProjection,
+  PiStableContextOwner,
   PiStableContextSemanticInput,
   PiStableContextSourceVector,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agents } from "@okouai/db/schema/agent";
+import {
+  type CapturedPersonalSubscriptionAccount,
+  isPersonalSubscriptionProviderType,
+  validatePersonalSubscriptionAdmission,
+  personalModelProviderAccountById,
+  readPersonalSubscriptionAccount,
+  activePersonalModelProviderAccount,
+  type MemberModelAccountSnapshot,
+} from "./model-provider-account.service";
+import type {
+  RunCallback,
+  DispatchFailedRunCallbacks,
+  PersistProducerRunBinding,
+  AgentRunModelPin,
+  AgentRunPreCreateSource,
+  AgentRunRequestAgent,
+} from "./agent-run-contracts";
+import {
+  type ChatThreadSessionResolution,
+  type ChatThreadSessionResolutionAction,
+  type ChatThreadExecutionSnapshot,
+  type ChatThreadSessionRoute,
+  chatThreadSessionSelection,
+  chatThreadConversationRun,
+  resolveChatThreadSessionSnapshot,
+} from "./chat-session-continuity.service";
+import {
+  type RunWorkflowRef,
+  type RunWorkflowSourceRow,
+  workflowsForRunFromRows,
+} from "./workflow-data.service";
+import {
+  type QueueFirstRunAssociation,
+  type QueueFirstRunClaimResult,
+  type QueueFirstRunSessionSnapshotState,
+  type QueueFirstRunAdmission,
+  resolveQueueFirstRunAdmission,
+  claimQueueFirstRunAssociation,
+} from "./chat-queued-event.service";
+import type { PendingRunActivation } from "./agent-run-activation.types";
+import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  type RunContextAxiomSnapshot,
+  environmentRecordToEntries,
+  executionFirewallsToAxiomEntries,
+  networkPoliciesRecordToEntries,
+  featureFlagsRecordToEntries,
+} from "./run-context-snapshot.service";
+import { generateOkouToken } from "../auth/tokens";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  encryptPersistentSecretsMap,
+  encryptPersistentSecretValue,
+  decryptStoredSecretValue,
+} from "./crypto.utils";
+import {
+  resolvePiLangfuseDebugConfig,
+  piLangfuseDebugPlatformEnvironment,
+  isPiLangfuseDebugRunEnvironment,
+} from "../../lib/pi-langfuse-debug";
+import { PiNativeConfigurationError } from "./pi-native-model-config";
+import {
+  type PiExecutionRoute,
+  normalizePiExecutionRoute,
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+  assertPiNativeCredential,
+  materializePiExecutionRoute,
+} from "@okouai/pi-agent-runtime";
+import { piPreparationObserver } from "./pi-preparation-timing.service";
+import {
+  startPiPreparationObservation,
+  measurePiPreparation,
+  measurePiPreparationSync,
+} from "@okouai/pi-agent-runtime/api";
+import { logger } from "../../lib/log";
+import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
+import {
+  type ImageModel,
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+} from "@okouai/core/image-model-catalog";
+import { randomUUID } from "node:crypto";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { connectors } from "@okouai/db/schema/connector";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  type RunMetadataValues,
+  normalizeRunMetadata,
+} from "./agent-run-metadata-write.service";
+import {
+  AdmissionAttemptTiming,
+  type AdmissionAttemptOutcome,
+} from "./api-dispatch-admission-timing.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { Tx } from "../../lib/db-types";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import {
+  isFreePlanForCreditAdmission,
+  createRunAdmissionObjects,
+  type RunAdmissionInput,
+} from "./run-admission.service";
+import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
+import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
+import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+  zodEnumDriverValueDecoder,
+  pgNullDecoder,
+  pgInt8ToBigIntDecoder,
+  zodDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
+import {
+  activateUsageAllowanceWindowsForRun,
+  type PreparedUsageAllowanceRefresh,
+  prepareUsageAllowanceRefresh$,
+} from "./usage-allowance.service";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { recordSandboxOperation } from "../external/sandbox-op-log";
+import { ingestToAxiom, getDatasetName } from "../external/axiom";
+import {
+  type ConnectorRuntimeSelection,
+  createConnectorRuntimeSelectionObjects,
+  getConnectorRuntimeConnector,
+  type ConnectorRuntimeMethod,
+} from "./connector-catalog-runtime.service";
+import {
+  systemSkillStorageResolution$,
+  type SystemSkillStorageResolution,
+} from "../context/system-skill-storage-resolution";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
+  userFeatureSwitchOverridesFromRows,
+  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
+  type UserFeatureSwitchOverrideRow,
+} from "./feature-switch-scope";
+import { agents } from "@okouai/db/schema/agent";
 import { conversations } from "@okouai/db/schema/conversation";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import { blobs } from "@okouai/db/schema/blob";
+import {
+  type CompressedSessionHistoryBlobEncoding,
+  normalizeSessionHistoryBlobEncoding,
+  isCompressedSessionHistoryBlobEncoding,
+} from "./session-history-blobs";
+import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
+import { variables } from "@okouai/db/schema/variable";
+import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { secrets as secretsTable } from "@okouai/db/schema/secret";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import { variables } from "@okouai/db/schema/variable";
-import { workflows } from "@okouai/db/schema/workflow";
-import type { PersistedStorageMount } from "@okouai/db/types";
-import {
-  type PiExecutionRoute,
-  assertPiNativeCredential,
-  materializePiExecutionRoute,
-  normalizePiExecutionRoute,
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
-import {
-  measurePiPreparation,
-  measurePiPreparationSync,
-  startPiPreparationObservation,
-} from "@okouai/pi-agent-runtime/api";
-import { type Computed, type State, command, computed, state } from "ccstate";
-import {
-  type SQL,
-  type SQLWrapper,
-  type WithSubquery,
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  like,
-  ne,
-  or,
-  sql,
-} from "drizzle-orm";
-import { alias, unionAll } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
-import { z } from "zod";
-import {
-  nullableDriverValueDecoder,
-  pgBooleanDecoder,
-  pgInt8ToBigIntDecoder,
-  pgNullDecoder,
-  pgTextDecoder,
-  zodDriverValueDecoder,
-  zodEnumDriverValueDecoder,
-} from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
-import { env, optionalEnv } from "../../lib/env";
-import {
-  badRequestMessage,
-  conflict,
-  notFound,
-  providerUnavailable,
-} from "../../lib/error";
-import { logger } from "../../lib/log";
-import {
-  isPiLangfuseDebugRunEnvironment,
-  piLangfuseDebugPlatformEnvironment,
-  resolvePiLangfuseDebugConfig,
-} from "../../lib/pi-langfuse-debug";
-import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
-import { now, nowDate } from "../../lib/time";
-import type { AuthContext } from "../../types/auth";
-import { generateOkouToken } from "../auth/tokens";
-import { previewAutomationBypass$ } from "../context/hono";
-import {
-  type SystemSkillStorageResolution,
-  systemSkillStorageResolution$,
-} from "../context/system-skill-storage-resolution";
-import { getDatasetName, ingestToAxiom } from "../external/axiom";
-import { type Db, type ReadonlyDb, db$, writeDb$ } from "../external/db";
-import { recordSandboxOperation } from "../external/sandbox-op-log";
-import { onRejection, safeSync, settle, tapError } from "../utils";
-import {
-  type AgentConnectorScopeSnapshot,
-  type AgentConnectorSlugRow,
-  type AgentCustomConnectorRow,
-  type CustomConnectorDefinitionVersion,
-  agentConnectorScopeFromRows,
-} from "./agent-connector-scope.service";
-import {
-  type AgentExecutionDefinition,
-  type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
-  buildAgentExecutionConfig,
-} from "./agent-execution-config";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import type { PendingRunActivation } from "./agent-run-activation.types";
-import type {
-  AgentRunModelPin,
-  AgentRunPreCreateSource,
-  AgentRunRequestAgent,
-  DispatchFailedRunCallbacks,
-  PersistProducerRunBinding,
-  RunCallback,
-} from "./agent-run-contracts";
-import {
-  type RunMetadataValues,
-  normalizeRunMetadata,
-} from "./agent-run-metadata-write.service";
-import {
-  observeAgentRunPiExecutionSnapshot,
-  observeAgentRunPreCreateParallelStage,
-  observeRunConnectorAccountsRead,
   observeRunContextParallelStage,
-  observeStableAgentPromptBuild,
+  observeRunConnectorAccountsRead,
+  observeAgentRunPreCreateParallelStage,
   observeStableContextCacheIdentityBuild,
+  observeStableAgentPromptBuild,
+  observeAgentRunPiExecutionSnapshot,
 } from "./agent-run-preparation-hooks";
 import {
-  buildAgentToolsPrompt,
-  buildAgentToolsPromptInputs,
-} from "./agent-tools-prompt.service";
+  modelProviderSurfaces,
+  modelProviderConnections,
+} from "@okouai/db/schema/model-provider-gateway";
+import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import {
-  type AdmissionAttemptOutcome,
-  AdmissionAttemptTiming,
-} from "./api-dispatch-admission-timing.service";
+  compileModelProviderGatewayRuntime,
+  GATEWAY_RUNTIME_SECRET_NAME,
+} from "./model-provider-gateway-runtime";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
-  type ApiDispatchTimingActionType,
-  type ApiDispatchTimingDimensions,
-  type ApiDispatchTimingDimensionsInput,
-  ApiDispatchPhaseCollector,
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-  measureApiDispatchTimingSync,
-} from "./api-dispatch-timing.service";
+  OPENROUTER_US_ORIGIN,
+  getOpenRouterBaseUrl,
+} from "@okouai/api-contracts/contracts/openrouter-routing";
+import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
+import { piCatalogModel } from "@okouai/core/pi-execution";
+import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
+import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
+import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import {
-  type BuiltInModelRuntimeRoute,
-  isBuiltInModelRuntimeRoutePermitted,
-  resolveBuiltInModelRuntimeRoute,
-} from "./built-in-model-runtime-route.service";
+  normaliseCustomConnectorRow,
+  customConnectorValueMarkerKey,
+  customConnectorManualAuthReferencesMemberField,
+  customConnectorMissingRequiredFieldKeys,
+} from "./custom-connector.service";
+import { connectorAccountTargetKey } from "./connector-account-resolution.service";
+import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
+import type {
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { connectors } from "@okouai/db/schema/connector";
+import {
+  customConnectorPermissionBundleDependencySlug,
+  type CustomConnectorPermissionBundle,
+} from "./custom-connector-permission-bundle.service";
 import {
   type BuiltinConnectorCredentialAccess,
-  type BuiltinConnectorCredentialReadGroup,
-  builtinConnectorCredentialSecretReadCondition,
   resolveBuiltinConnectorCredentialAccess,
+  builtinConnectorCredentialSecretReadCondition,
+  type BuiltinConnectorCredentialReadGroup,
 } from "./builtin-connector-credential-access.service";
 import {
-  type QueueFirstRunAdmission,
-  type QueueFirstRunAssociation,
-  type QueueFirstRunClaimResult,
-  type QueueFirstRunSessionSnapshotState,
-  claimQueueFirstRunAssociation,
-  resolveQueueFirstRunAdmission,
-} from "./chat-queued-event.service";
-import {
-  type ChatThreadExecutionSnapshot,
-  type ChatThreadSessionResolution,
-  type ChatThreadSessionResolutionAction,
-  type ChatThreadSessionRoute,
-  chatThreadConversationRun,
-  chatThreadSessionSelection,
-  resolveChatThreadSessionSnapshot,
-} from "./chat-session-continuity.service";
-import { isWebChatTriggerSource } from "./chat-trigger-source.service";
-import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import {
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
-  createConnectorRuntimeSelectionObjects,
-  getConnectorRuntimeConnector,
-} from "./connector-catalog-runtime.service";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
+  type ConnectorRuntimeBindingEntry,
+  connectorAuthMethodRuntimeMetadata,
+} from "@okouai/connectors/connector-auth-method";
 import {
   type ConnectorCredentialStatus,
   builtinConnectorRuntimeCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  type BuildCustomConnectorRuntimeContextArgs,
-  type CustomConnectorRuntimeContext,
-  type CustomConnectorRuntimeDataRows,
-  allAllowPolicyForPermissions,
-  buildCustomConnectorRuntimeContext,
-  collectPermissionNames,
-  compactRecord,
-  customConnectorRuntimeFirewall,
-  customConnectorRuntimeSkill,
-  loadEffectiveCustomConnectorPermissionBundle,
-  orderedCustomConnectorRuntimeRows,
-  resolveConnectorNetworkPolicy,
-  resolveCustomConnectorBaseUrlVars,
-  runtimeFirewall,
-} from "./connector-runtime-preparation.service";
+  type CustomConnectorRuntimeStorageRow,
+  customConnectorRuntimeStorageSnapshot,
+} from "./custom-connector-credential-access.service";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import {
   type ConnectorServerFirewallExecutionMetadata,
   type ConnectorServerFirewallPermissionIndex,
   expandConnectorServerFirewallPolicies,
 } from "./connector-server-firewall-catalog.service";
-import {
-  decryptStoredSecretValue,
-  encryptPersistentSecretsMap,
-  encryptPersistentSecretValue,
-} from "./crypto.utils";
-import {
-  type CustomConnectorRuntimeStorageRow,
-  customConnectorRuntimeStorageSnapshot,
-} from "./custom-connector-credential-access.service";
-import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
-import {
-  type CustomConnectorPermissionBundle,
-  customConnectorPermissionBundleDependencySlug,
-} from "./custom-connector-permission-bundle.service";
-import {
-  customConnectorManualAuthReferencesMemberField,
-  customConnectorMissingRequiredFieldKeys,
-  customConnectorValueMarkerKey,
-  normaliseCustomConnectorRow,
-} from "./custom-connector.service";
-import {
-  type UserFeatureSwitchOverrideRow,
-  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
-  userFeatureSwitchOverridesFromRows,
-} from "./feature-switch-scope";
 import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import type { InternalRunCallbackKind } from "./internal-run-callback";
-import { billingRunAttributionWrite } from "./managed-usage-attribution";
-import {
-  type MemorySummaryProjectionReadInput,
-  createMemorySummaryProjectionObjects,
-} from "./memory-summary-projection.service";
-import {
-  type CapturedPersonalSubscriptionAccount,
-  type MemberModelAccountSnapshot,
-  activePersonalModelProviderAccount,
-  isPersonalSubscriptionProviderType,
-  personalModelProviderAccountById,
-  readPersonalSubscriptionAccount,
-  validatePersonalSubscriptionAdmission,
-} from "./model-provider-account.service";
-import {
-  compileModelProviderGatewayRuntime,
-  GATEWAY_RUNTIME_SECRET_NAME,
-} from "./model-provider-gateway-runtime";
-import {
-  type OfficialWorkflowRunObservation,
-  acquireOfficialWorkflowRunCatalogAdmissionLock,
-  createOfficialWorkflowRunObjects,
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  OfficialWorkflowRunAdmissionError,
-  validateOfficialWorkflowRunForInsert,
-} from "./official-workflow-run.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
-import { PiNativeConfigurationError } from "./pi-native-model-config";
-import { piPreparationObserver } from "./pi-preparation-timing.service";
-import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
-import { piStableContextVariantDigest } from "./pi-stable-context.service";
-import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
-import {
-  type RunAdmissionInput,
-  createRunAdmissionObjects,
-  isFreePlanForCreditAdmission,
-} from "./run-admission.service";
-import {
-  type RunContextAxiomSnapshot,
-  environmentRecordToEntries,
-  executionFirewallsToAxiomEntries,
-  featureFlagsRecordToEntries,
-  networkPoliciesRecordToEntries,
-} from "./run-context-snapshot.service";
-import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import {
-  type SessionExecutionIdentity,
-  canReuseSession,
-} from "./session-compatibility";
-import {
-  type CompressedSessionHistoryBlobEncoding,
-  isCompressedSessionHistoryBlobEncoding,
-  normalizeSessionHistoryBlobEncoding,
-} from "./session-history-blobs";
-import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
-import {
-  type ReadOnlyStoragePresignedUrlCacheStatus,
-  type ReadOnlyStoragePresignedUrlRequest,
-  type StorageManifestCacheBranch,
-  type StorageManifestCacheEntryKind,
-  type StorageManifestCacheObservationContext,
-  type StorageManifestPresignedUrlCacheSnapshot,
-  type StoragePresignedUrlResult,
-  type SystemStoragePresignedUrlCacheStatus,
-  type SystemStoragePresignedUrlRequest,
-  type WorkflowSkillStoragePresignedUrlCacheStatus,
-  type WorkflowSkillStoragePresignedUrlRequest,
-  createStorageManifestPresignedUrlCacheRows,
-  materializeRunStoragePresignedUrls$,
-  READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-  readOnlyStoragePresignedUrlCacheKey,
-  SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-  systemStoragePresignedUrlCacheKey,
-  WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-  workflowSkillStoragePresignedUrlCacheKey,
-} from "./system-storage-presigned-url-cache.service";
-import {
-  type PreparedUsageAllowanceRefresh,
-  activateUsageAllowanceWindowsForRun,
-  prepareUsageAllowanceRefresh$,
-} from "./usage-allowance.service";
-import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
+import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { isStaffOrg } from "@okouai/core/staff-org";
+import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
+import { previewAutomationBypass$ } from "../context/hono";
+import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
+import { isWebChatTriggerSource } from "./chat-trigger-source.service";
+import type { AuthContext } from "../../types/auth";
 import {
   type WebChatSessionPromptContext,
   type WebChatSessionPromptInput,
   createWebChatSessionPromptObjects,
 } from "./web-chat-session-prompt.service";
+import type { InternalRunCallbackKind } from "./internal-run-callback";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userCache } from "@okouai/db/schema/user-cache";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
+import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import {
-  type RunWorkflowRef,
-  type RunWorkflowSourceRow,
-  workflowsForRunFromRows,
-} from "./workflow-data.service";
-
+  type FirewallPermissionGrantAction,
+  type FirewallPermissionGrant,
+  permissionGrantsToFirewallPolicies,
+} from "@okouai/connectors/firewall-metadata/policy";
+import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
+import { workflows } from "@okouai/db/schema/workflow";
+import {
+  type AgentConnectorScopeSnapshot,
+  type AgentConnectorSlugRow,
+  type AgentCustomConnectorRow,
+  agentConnectorScopeFromRows,
+  type CustomConnectorDefinitionVersion,
+} from "./agent-connector-scope.service";
+import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
+import {
+  buildAgentToolsPromptInputs,
+  buildAgentToolsPrompt,
+} from "./agent-tools-prompt.service";
+import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
+import { piStableContextVariantDigest } from "./pi-stable-context.service";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import {
+  type CustomConnectorRuntimeContext,
+  compactRecord,
+  resolveCustomConnectorBaseUrlVars,
+  loadEffectiveCustomConnectorPermissionBundle,
+  type CustomConnectorRuntimeDataRows,
+  type BuildCustomConnectorRuntimeContextArgs,
+  orderedCustomConnectorRuntimeRows,
+  buildCustomConnectorRuntimeContext,
+  customConnectorRuntimeSkill,
+  allAllowPolicyForPermissions,
+  resolveConnectorNetworkPolicy,
+  collectPermissionNames,
+  customConnectorRuntimeFirewall,
+  runtimeFirewall,
+} from "./connector-runtime-preparation.service";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 // Storage planning and explicit resource materialization.
 
 type StorageManifestEntryKind = StorageManifestCacheEntryKind;
@@ -4561,6 +4573,8 @@ export interface ResolvedModelProviderEnvironment {
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
   readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  /** Catalog route `upstream_model` placed into the provider environment. */
+  readonly upstreamModel?: string;
   readonly credentialHeader?: NonNullable<
     PiModelConfigLegacy["credentialHeader"]
   >;
@@ -4584,7 +4598,8 @@ interface PermissionManifest {
 
 interface ModelUsageContext {
   readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
+  readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
 }
 
 interface StoredExecutionSecrets {
@@ -4654,6 +4669,12 @@ interface PiStableContextCacheIdentity {
 }
 
 export interface CreateAgentRunArgs {
+  /**
+   * The run's model catalog snapshot. The entry point (or the queue pick,
+   * against the current catalog) loads it once; every model decision of this
+   * run reads it.
+   */
+  readonly catalog: ModelCatalog;
   readonly retainedRunId?: string;
   readonly userId: string;
   readonly orgId: string;
@@ -5141,18 +5162,39 @@ export function modelProviderFramework(
 }
 
 export function frameworkForProviderSelection(
+  catalog: ModelCatalog,
   providerType: ModelProviderType,
   selectedModel: string | null | undefined,
 ): SupportedFramework | null {
   if (!isBuiltInModelProviderType(providerType)) {
     return getFrameworkForType(providerType);
   }
-  const builtInModel =
-    selectedModel ?? MODEL_PROVIDER_TYPES["built-in"].defaultModel;
-  if (!builtInModel) {
-    return null;
-  }
-  return getFrameworkForType(getBuiltInConcreteProviderType(builtInModel));
+  // The Built-in framework follows the primary catalog candidate's concrete
+  // provider protocol.
+  const [primary] = catalogBuiltInCandidates(
+    catalog,
+    selectedModel ?? catalog.systemDefaultModel,
+  );
+  const concrete = primary?.concreteProviderType;
+  return concrete !== undefined && isModelProviderType(concrete)
+    ? getFrameworkForType(concrete)
+    : null;
+}
+
+/**
+ * Upstream model ID sent to a selected (non Built-in) provider: the catalog
+ * route's `upstream_model`. A model outside the catalog (custom deployments)
+ * is sent verbatim.
+ */
+function providerUpstreamModel(
+  catalog: ModelCatalog,
+  type: ModelProviderType,
+  model: string,
+): string {
+  return (
+    catalogProviderUpstreamModel(catalog, normalizeRunModelId(model), type) ??
+    model
+  );
 }
 
 function createRunFrameworkObject(
@@ -5179,6 +5221,7 @@ function createRunFrameworkObject(
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
         frameworkForProviderSelection(
+          args.catalog,
           args.modelProviderType,
           args.selectedModelOverride,
         ) ?? composeFramework
@@ -5229,6 +5272,7 @@ function createRunFrameworkObject(
 
     return (
       frameworkForProviderSelection(
+        args.catalog,
         provider.type,
         args.selectedModelOverride ?? provider.selectedModel,
       ) ?? composeFramework
@@ -5866,6 +5910,7 @@ function resolveModelProviderCodexRuntimeConfig(args: {
 }
 
 function modelProviderEnvironment(args: {
+  readonly catalog: ModelCatalog;
   readonly id: string | null;
   readonly type: ModelProviderType;
   readonly config: SingleSecretModelProviderConfig;
@@ -5892,7 +5937,9 @@ function modelProviderEnvironment(args: {
     defaultModel: args.config.defaultModel,
     envBindings,
   });
-  const runtimeModel = model ? getProviderRuntimeModel(args.type, model) : "";
+  const runtimeModel = model
+    ? providerUpstreamModel(args.catalog, args.type, model)
+    : "";
   const environmentSecret = modelProviderEnvironmentSecretValue(
     args.type,
     args.config.secretName,
@@ -5917,6 +5964,7 @@ function modelProviderEnvironment(args: {
     credentialOwner:
       args.sourceUserId === ORG_SENTINEL_USER_ID ? "organization" : "member",
     environment,
+    ...(runtimeModel ? { upstreamModel: runtimeModel } : {}),
     secrets,
     selectedModel: model,
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
@@ -6038,6 +6086,7 @@ function providerEnvironmentFromSecretMap(
 
 function resolveMultiAuthRuntimeModel(
   args: {
+    readonly catalog: ModelCatalog;
     readonly type: ModelProviderType;
     readonly configuredModel?: string | null;
     readonly piExecution?: boolean;
@@ -6049,13 +6098,19 @@ function resolveMultiAuthRuntimeModel(
     cloud && args.configuredModel !== undefined
       ? args.configuredModel
       : selectedModel
-        ? getProviderRuntimeModel(args.type, selectedModel)
+        ? providerUpstreamModel(args.catalog, args.type, selectedModel)
         : null;
   if (
     cloud &&
     args.piExecution &&
     (!selectedModel ||
-      !isCloudModelMappingValid(args.type, selectedModel, runtimeModel))
+      !isCloudModelMappingValid(
+        args.type,
+        selectedModel,
+        runtimeModel,
+        catalogHasProviderRoute(args.catalog, selectedModel, args.type),
+        args.catalog.byModel,
+      ))
   ) {
     throw new PiNativeConfigurationError(
       "Cloud provider requires its explicitly configured deployment or profile",
@@ -6129,6 +6184,7 @@ async function loadModelProviderEnvironmentSecretRows(
 async function multiAuthModelProviderEnvironment(
   db: ReadonlyDb,
   args: {
+    readonly catalog: ModelCatalog;
     readonly id: string | null;
     readonly orgId: string;
     readonly userId: string;
@@ -6163,21 +6219,45 @@ async function multiAuthModelProviderEnvironment(
 
 async function builtInModelProviderEnvironment(
   db: ReadonlyDb,
+  catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
-  resolvedRoute?: BuiltInModelRuntimeRoute,
+  {
+    resolvedRoute,
+    newRunPricing,
+  }: {
+    readonly resolvedRoute: BuiltInModelRuntimeRoute | undefined;
+    readonly newRunPricing: NewRunRoutePricingRequest | undefined;
+  },
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
     return null;
   }
+  // A route captured earlier must still be an enabled catalog candidate; a
+  // freshly resolved one already comes from the catalog.
+  if (
+    resolvedRoute &&
+    !isBuiltInModelRuntimeRoutePermitted(catalog, resolvedRoute)
+  ) {
+    return null;
+  }
   const route =
     resolvedRoute ??
-    (await resolveBuiltInModelRuntimeRoute(
+    (await resolveBuiltInModelRuntimeRouteFromCatalog(
       db,
+      catalog,
       selectedModel,
       featureSwitchContext,
+      newRunPricing
+        ? await loadBuiltInRoutePricing(db, {
+            catalog,
+            model: selectedModel,
+            serviceTier: newRunPricing.serviceTier,
+            resolution: newRunPricing.resolution,
+          })
+        : undefined,
     ));
-  if (!route || !isBuiltInModelRuntimeRoutePermitted(route)) {
+  if (!route) {
     return null;
   }
   const [key] = await db
@@ -6199,7 +6279,19 @@ async function builtInModelProviderEnvironment(
   });
 }
 
+/**
+ * A new run's Built-in route selection skips candidates whose billable
+ * categories for the requested service tier lack usage_pricing.
+ */
+interface NewRunRoutePricingRequest {
+  readonly serviceTier: CodexServiceTier | undefined;
+  readonly resolution: UsagePricingResolution;
+}
+
 export interface ResolveModelProviderEnvironmentArgs {
+  /** Loaded once per run and shared by every candidate route. */
+  readonly catalog: ModelCatalog;
+  readonly newRunPricing?: NewRunRoutePricingRequest;
   readonly orgId: string;
   readonly userId: string;
   readonly framework: SupportedFramework;
@@ -6315,6 +6407,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
 
   if (hasAuthMethods(account.type)) {
     return await multiAuthModelProviderEnvironment(db, {
+      catalog: args.catalog,
       id: account.id,
       orgId: account.orgId,
       userId: account.userId,
@@ -6471,6 +6564,7 @@ async function resolveMultiAuthCandidate(
 ): Promise<ResolvedModelProviderEnvironment | null> {
   // Plain reads without a transaction or row lock, Azure and Bedrock included.
   return await multiAuthModelProviderEnvironment(db, {
+    catalog: args.catalog,
     id: row.id,
     orgId: args.orgId,
     userId: row.userId,
@@ -6492,12 +6586,16 @@ async function resolveCandidateModelProviderEnvironment(
     const selectedModel =
       args.selectedModelOverride ??
       row.selectedModel ??
-      MODEL_PROVIDER_TYPES["built-in"].defaultModel;
+      args.catalog.systemDefaultModel;
     const provider = await builtInModelProviderEnvironment(
       db,
+      args.catalog,
       selectedModel,
       args.featureSwitchContext,
-      args.builtInModelRuntimeRoute,
+      {
+        resolvedRoute: args.builtInModelRuntimeRoute,
+        newRunPricing: args.newRunPricing,
+      },
     );
     return provider?.concreteType &&
       getFrameworkForType(provider.concreteType) === args.framework
@@ -6534,10 +6632,13 @@ async function resolveModelProviderEnvironment(
   if (isBuiltInModelProviderType(args.modelProviderType)) {
     const provider = await builtInModelProviderEnvironment(
       db,
-      args.selectedModelOverride ??
-        MODEL_PROVIDER_TYPES["built-in"].defaultModel,
+      args.catalog,
+      args.selectedModelOverride ?? args.catalog.systemDefaultModel,
       args.featureSwitchContext,
-      args.builtInModelRuntimeRoute,
+      {
+        resolvedRoute: args.builtInModelRuntimeRoute,
+        newRunPricing: args.newRunPricing,
+      },
     );
     return provider?.concreteType &&
       getFrameworkForType(provider.concreteType) === args.framework
@@ -9022,6 +9123,30 @@ function piLangfuseExecutionEnvironment(args: {
   };
 }
 
+/**
+ * The Runner's model usage metering fields: billable firewalls, the provider
+ * usage is reported under, and the long-context threshold captured from the
+ * run's assigned Built-in route (`0`: the route explicitly bills a single
+ * tier, so the Runner must not fall back to its generated map).
+ */
+function modelUsageExecutionFields(args: {
+  readonly billableFirewalls: readonly string[];
+  readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
+}): Pick<
+  StoredExecutionContext,
+  | "billableFirewalls"
+  | "modelUsageProvider"
+  | "modelUsageLongContextMinTotalInputTokens"
+> {
+  return {
+    billableFirewalls: [...args.billableFirewalls],
+    modelUsageProvider: args.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      args.modelUsageLongContextMinTotalInputTokens,
+  };
+}
+
 export function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
@@ -9037,7 +9162,8 @@ export function buildStoredExecutionContextDraft(
     readonly customConnectorContext: CustomConnectorRuntimeContext;
     readonly permissionManifest: PermissionManifest | undefined;
     readonly billableFirewalls: readonly string[];
-    readonly modelUsageProvider: SupportedRunModel | undefined;
+    readonly modelUsageProvider: string | undefined;
+    readonly modelUsageLongContextMinTotalInputTokens: number;
     readonly apiStartTime: number;
     readonly additionalVolumes:
       | readonly AgentRunCreateAdditionalVolume[]
@@ -9140,8 +9266,7 @@ export function buildStoredExecutionContextDraft(
       tools: args.body.tools,
       settings: args.body.settings,
       featureFlags: getAllFeatureStates(args.featureSwitchContext),
-      billableFirewalls: [...args.billableFirewalls],
-      modelUsageProvider: args.modelUsageProvider,
+      ...modelUsageExecutionFields(args),
       codexRuntimeConfig: args.modelProvider?.codexRuntimeConfig ?? null,
     },
     secretNames,
@@ -9364,7 +9489,7 @@ function isModelProviderFirewallName(name: string): boolean {
 function validateModelUsageProviderInvariant(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
+  readonly modelUsageProvider: string | undefined;
 }): CreateRunErrorResult | null {
   if (!isBuiltInModelProviderType(args.modelProvider?.type)) {
     return null;
@@ -9381,31 +9506,157 @@ function validateModelUsageProviderInvariant(args: {
 }
 
 export function prepareModelUsageContext(args: {
+  readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionManifest: PermissionManifest | undefined;
+  /**
+   * The run's Built-in route pricing, read from the same catalog snapshot;
+   * required for a Built-in run (null for every other run).
+   */
+  readonly routePricing: BuiltInRoutePricing | null;
 }): ModelUsageContext | CreateRunErrorResult {
   const billableFirewalls = billableFirewallsForPermissions({
     modelProvider: args.modelProvider,
     permissions: args.permissionManifest,
   });
-  const modelUsageProvider = modelUsageProviderForContext(args.modelProvider);
-  const validation = validateModelUsageProviderInvariant({
-    modelProvider: args.modelProvider,
-    billableFirewalls,
-    modelUsageProvider,
-  });
+  const route = builtInRouteForContext(args.catalog, args.modelProvider);
+  const modelUsageProvider = isBuiltInModelProviderType(
+    args.modelProvider?.type,
+  )
+    ? (route?.pricingProvider ?? undefined)
+    : catalogModelUsageProvider(args.catalog, args.modelProvider);
+  const validation =
+    validateModelUsageProviderInvariant({
+      modelProvider: args.modelProvider,
+      billableFirewalls,
+      modelUsageProvider,
+    }) ??
+    validateBuiltInRoutePricing({
+      billableFirewalls,
+      route,
+      routePricing: args.routePricing,
+    });
 
-  return validation ?? { billableFirewalls, modelUsageProvider };
+  return (
+    validation ?? {
+      billableFirewalls,
+      modelUsageProvider,
+      // The assigned route's own pricing trigger; a pricing alias never
+      // changes it. Non-Built-in runs are not platform-billed.
+      modelUsageLongContextMinTotalInputTokens:
+        route?.longContextMinTotalInputTokens ?? 0,
+    }
+  );
 }
 
-function modelUsageProviderForContext(
+/**
+ * The pricing snapshot of a Built-in run's model candidates (one read), or
+ * null for every other run.
+ */
+export async function loadRunRoutePricing(
+  db: ReadonlyDb,
+  args: {
+    readonly catalog: ModelCatalog;
+    readonly modelProvider: ResolvedModelProviderEnvironment | null;
+    readonly serviceTier: CodexServiceTier | undefined;
+    readonly resolution: UsagePricingResolution;
+  },
+): Promise<BuiltInRoutePricing | null> {
+  const selectedModel = args.modelProvider?.selectedModel;
+  if (!selectedModel || !isBuiltInModelProviderType(args.modelProvider?.type)) {
+    return null;
+  }
+  return await loadBuiltInRoutePricing(db, {
+    catalog: args.catalog,
+    model: normalizeRunModelId(selectedModel),
+    serviceTier: args.serviceTier,
+    resolution: args.resolution,
+  });
+}
+
+/**
+ * Final new-run admission: every usage category the assigned Built-in route
+ * can report for this run's service tier must resolve to a `usage_pricing`
+ * row (or the provider's `__fallback__` row) with settlement's lookup, so a
+ * run never executes into `missing_pricing`. Route selection already skips
+ * unpriced candidates; this also covers a route captured earlier.
+ */
+function validateBuiltInRoutePricing(args: {
+  readonly billableFirewalls: readonly string[];
+  readonly route: CatalogRoute | null;
+  readonly routePricing: BuiltInRoutePricing | null;
+}): CreateRunErrorResult | null {
+  if (
+    !args.route ||
+    !args.billableFirewalls.some(isModelProviderFirewallName)
+  ) {
+    return null;
+  }
+  if (!args.routePricing) {
+    throw new Error("A Built-in run requires its route pricing snapshot");
+  }
+  const unpriced = unpricedBuiltInRouteCategories(
+    args.routePricing,
+    args.route,
+  );
+  if (unpriced.length === 0) {
+    return null;
+  }
+  return providerUnavailable(
+    builtInRoutePricingRejectionMessage(args.route.model, [
+      {
+        concreteProviderType: args.route.concreteProviderType,
+        categories: unpriced,
+      },
+    ]),
+  );
+}
+
+/**
+ * The catalog Built-in route a Built-in run was assigned. Its pricing link is
+ * the provider the Runner addon reports model usage events under, which
+ * settlement uses as the `usage_pricing` provider; it is read from the same
+ * catalog snapshot as the route itself, and the selected model stays the
+ * run's model.
+ */
+function builtInRouteForContext(
+  catalog: ModelCatalog,
   modelProvider: ResolvedModelProviderEnvironment | null,
-): SupportedRunModel | undefined {
+): CatalogRoute | null {
+  if (
+    !modelProvider?.selectedModel ||
+    !isBuiltInModelProviderType(modelProvider.type)
+  ) {
+    return null;
+  }
+  const concreteProviderType =
+    modelProvider.builtInModelRuntimeRoute?.providerType ??
+    modelProvider.concreteType;
+  if (!concreteProviderType) {
+    return null;
+  }
+  return catalogBuiltInRoute(
+    catalog,
+    normalizeRunModelId(modelProvider.selectedModel),
+    concreteProviderType,
+  );
+}
+
+/**
+ * Runs other than Built-in are not platform-billed (only Built-in runs have
+ * billable model firewalls) and keep reporting under the catalog model ID.
+ */
+function catalogModelUsageProvider(
+  catalog: ModelCatalog,
+  modelProvider: ResolvedModelProviderEnvironment | null,
+): string | undefined {
+  // A provider-only model ID (for example a BYOK provider default) has no
+  // catalog pricing identity.
   if (!modelProvider?.selectedModel) {
     return undefined;
   }
-  const canonicalModel = normalizeRunModelId(modelProvider.selectedModel);
-  return isSupportedRunModel(canonicalModel) ? canonicalModel : undefined;
+  const model = normalizeRunModelId(modelProvider.selectedModel);
+  return catalog.byModel.has(model) ? model : undefined;
 }
 
 function sessionStorageMountsForPersistence(args: {
@@ -9464,7 +9715,8 @@ interface BuildRunnerJobPayloadInput {
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
+  readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly apiStartTime: number;
   readonly additionalVolumes:
     | readonly AgentRunCreateAdditionalVolume[]
@@ -11170,6 +11422,8 @@ export function atomicLaunchPayloadInput(args: {
     permissionManifest: args.context.permissionManifest,
     billableFirewalls: args.context.billableFirewalls,
     modelUsageProvider: args.context.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      args.context.modelUsageLongContextMinTotalInputTokens,
     apiStartTime: args.createArgs.apiStartTime,
     additionalVolumes: args.context.additionalVolumes,
     additionalVolumeSources: args.context.additionalVolumeSources,
@@ -11213,7 +11467,8 @@ export interface PreparedRunContext {
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
+  readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly connectorScope: EffectiveConnectorScope;
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes:
@@ -11259,8 +11514,13 @@ export async function materializePreparedPiProvider(
   if (!createArgs.piExecution) {
     return provider;
   }
+  const catalogModel = piCatalogModel(
+    createArgs.catalog,
+    provider?.selectedModel,
+  );
   const config = resolvePiSandboxModelConfig(
     provider,
+    catalogModel,
     createArgs.codexServiceTier,
     createArgs.agentRunMetadata?.reasoningEffort,
   );
@@ -11276,7 +11536,7 @@ export async function materializePreparedPiProvider(
     if (
       !("schemaVersion" in config) &&
       (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      isPiDeepSeekModel(provider.selectedModel)
+      catalogModel?.piRouteClass === "deepseek"
     ) {
       const credential = safeSync(() => {
         return assertPiNativeCredential(
@@ -11337,7 +11597,7 @@ export async function materializePreparedPiProvider(
 export function resolvePreparedPiModelConfig(args: {
   readonly createArgs: Pick<
     CreateAgentRunArgs,
-    "piExecution" | "codexServiceTier" | "agentRunMetadata"
+    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
 }): PiModelConfig | undefined {
@@ -11346,6 +11606,7 @@ export function resolvePreparedPiModelConfig(args: {
   }
   const config = resolvePiSandboxModelConfig(
     args.modelProvider,
+    piCatalogModel(args.createArgs.catalog, args.modelProvider?.selectedModel),
     args.createArgs.codexServiceTier,
     args.createArgs.agentRunMetadata?.reasoningEffort,
   );
@@ -11364,6 +11625,7 @@ async function resolveRunModelProvider(
     readonly content: agentRunCreateAgentExecutionConfig;
     readonly framework: SupportedFramework;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly usagePricingResolution: UsagePricingResolution;
   },
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const hasFrameworkKey = hasExplicitFrameworkApiKey(
@@ -11379,6 +11641,7 @@ async function resolveRunModelProvider(
     isBuiltInModelProviderType(args.modelProviderType);
   const modelProvider = shouldResolveModelProvider
     ? await resolveModelProviderEnvironment(db, {
+        catalog: args.catalog,
         orgId: args.orgId,
         userId: args.userId,
         framework: options.framework,
@@ -11392,11 +11655,38 @@ async function resolveRunModelProvider(
         piExecution: args.piExecution,
         retainedRunId: args.retainedRunId,
         featureSwitchContext: options.featureSwitchContext,
+        newRunPricing: {
+          serviceTier: args.codexServiceTier,
+          resolution: options.usagePricingResolution,
+        },
       })
     : null;
 
   if (!shouldResolveModelProvider || modelProvider) {
     return modelProvider;
+  }
+
+  // A new Built-in run whose every executable candidate lacks usage pricing
+  // is rejected as unbillable, not as an unconfigured provider.
+  if (
+    isBuiltInModelProviderType(args.modelProviderType) &&
+    !args.builtInModelRuntimeRoute
+  ) {
+    const selectedModel =
+      args.selectedModelOverride ?? args.catalog.systemDefaultModel;
+    const unpriced = unpricedBuiltInModelMessage(
+      args.catalog,
+      selectedModel,
+      await loadBuiltInRoutePricing(db, {
+        catalog: args.catalog,
+        model: selectedModel,
+        serviceTier: args.codexServiceTier,
+        resolution: options.usagePricingResolution,
+      }),
+    );
+    if (unpriced) {
+      return providerUnavailable(unpriced);
+    }
   }
 
   return providerUnavailable(
@@ -11588,7 +11878,8 @@ export interface PreparedRuntimeContext {
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
+  readonly modelUsageProvider: string | undefined;
+  readonly modelUsageLongContextMinTotalInputTokens: number;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
@@ -11687,6 +11978,7 @@ export async function resolvePreparedRunModelProvider(args: {
     PreparedRunBodyContext,
     "requestedFramework" | "featureSwitchContext"
   > & { readonly content: agentRunCreateAgentExecutionConfig };
+  readonly usagePricingResolution: UsagePricingResolution;
 }): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { content, requestedFramework, featureSwitchContext } =
     args.bodyContext;
@@ -11705,6 +11997,7 @@ export async function resolvePreparedRunModelProvider(args: {
         content,
         framework: requestedFramework,
         featureSwitchContext,
+        usagePricingResolution: args.usagePricingResolution,
       });
     },
   );
@@ -12134,6 +12427,7 @@ function createRunBodyObjects(
 }
 
 async function multiAuthModelProviderEnvironmentFromSnapshot(args: {
+  readonly catalog: ModelCatalog;
   readonly id: string | null;
   readonly orgId: string;
   readonly userId: string;
@@ -12230,6 +12524,7 @@ async function multiAuthModelProviderEnvironmentFromSnapshot(args: {
       args.userId === ORG_SENTINEL_USER_ID ? "organization" : "member",
     authMethod: args.authMethod,
     environment,
+    ...(runtimeModel ? { upstreamModel: runtimeModel } : {}),
     secrets: hasFirewallAuth ? {} : forwardableSecrets,
     selectedModel,
     secretConnectorMap: authMaps?.secretConnectorMap,
@@ -12288,6 +12583,7 @@ export function builtInModelProviderEnvironmentFromSnapshot(args: {
     secrets: { [secretName]: key.apiKey },
     selectedModel,
     builtInModelRuntimeRoute: route,
+    upstreamModel: route.upstreamModel,
     ...(usesUsEndpoint ? { firewall } : {}),
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
@@ -12370,6 +12666,7 @@ export async function personalProviderEnvironmentFromSnapshot(
 
   if (hasAuthMethods(account.type)) {
     return await multiAuthModelProviderEnvironmentFromSnapshot({
+      catalog: args.catalog,
       id: account.id,
       orgId: account.orgId,
       userId: account.userId,
@@ -12408,6 +12705,7 @@ export async function personalProviderEnvironmentFromSnapshot(
     return null;
   }
   return modelProviderEnvironment({
+    catalog: args.catalog,
     id: account.id,
     type: account.type,
     config,
@@ -12420,6 +12718,7 @@ export async function personalProviderEnvironmentFromSnapshot(
 
 type RunModelProviderArgs = Pick<
   CreateAgentRunArgs,
+  | "catalog"
   | "orgId"
   | "userId"
   | "modelProviderId"
@@ -12484,6 +12783,7 @@ function createPinnedProviderReadContext(
       !hasExplicitFrameworkApiKey(content, requestedFramework) ||
       isBuiltInModelProviderType(args.modelProviderType);
     const environmentArgs: ResolveModelProviderEnvironmentArgs = {
+      catalog: args.catalog,
       orgId: args.orgId,
       userId: args.userId,
       framework: requestedFramework,
@@ -12541,7 +12841,7 @@ function createPinnedBuiltInProviderSnapshot({
       if (
         !route ||
         route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(route) ||
+        !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
         getFrameworkForType(route.providerType) !== args.framework
       ) {
         return null;
@@ -12809,6 +13109,7 @@ export async function regularProviderEnvironmentFromSnapshot(
   }
   if (hasAuthMethods(row.type)) {
     return await multiAuthModelProviderEnvironmentFromSnapshot({
+      catalog: args.catalog,
       id: row.id,
       orgId: args.orgId,
       userId: row.userId,
@@ -12825,12 +13126,16 @@ export async function regularProviderEnvironmentFromSnapshot(
   if (!isSingleSecretModelProviderConfig(config) || !row.encryptedValue) {
     return null;
   }
+  const piRouteClass = piCatalogModel(
+    args.catalog,
+    args.selectedModelOverride,
+  )?.piRouteClass;
   const captureSecret =
     args.piExecution &&
-    (isPiNativeModel(args.selectedModelOverride) ||
-      isPiDeepSeekModel(args.selectedModelOverride));
+    (piRouteClass === "claude-native" || piRouteClass === "deepseek");
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
+      catalog: args.catalog,
       id: row.id,
       type: row.type,
       config,
@@ -12845,6 +13150,7 @@ export async function regularProviderEnvironmentFromSnapshot(
   );
   return hasUsableModelProviderSecretValue(secretValue)
     ? modelProviderEnvironment({
+        catalog: args.catalog,
         id: row.id,
         type: row.type,
         config,
@@ -12971,6 +13277,7 @@ function createRunModelProviderObjects(
               requestedFramework: context.requestedFramework,
               featureSwitchContext: context.featureSwitchContext,
             },
+            usagePricingResolution: get(usagePricingResolution$),
           }),
     );
     if (!providerResult.ok) {
@@ -12980,8 +13287,15 @@ function createRunModelProviderObjects(
     if (isRouteError(provider)) {
       return provider;
     }
-    if (context.input.args.codexServiceTier === "ultrafast") {
-      return badRequestMessage("Astra Ultrafast is temporarily disabled");
+    if (
+      context.input.args.codexServiceTier === "ultrafast" &&
+      !isCatalogUltrafastServiceTierSupported(
+        context.input.args.catalog,
+        provider?.selectedModel,
+        provider?.type,
+      )
+    ) {
+      return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),
@@ -14517,9 +14831,17 @@ function createRunRuntimeObjects(
       if (isRouteError(connectors)) {
         return connectors;
       }
+      const input = await get(input$);
       const usage = prepareModelUsageContext({
+        catalog: input.args.catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
+        routePricing: await loadRunRoutePricing(input.db, {
+          catalog: input.args.catalog,
+          modelProvider,
+          serviceTier: input.args.codexServiceTier,
+          resolution: get(usagePricingResolution$),
+        }),
       });
       if (isRouteError(usage)) {
         return usage;
@@ -14591,6 +14913,7 @@ export interface RunWorkflowReadInput {
   readonly db: ReadonlyDb;
   readonly args: Pick<
     CreateAgentRunArgs,
+    | "catalog"
     | "orgId"
     | "userId"
     | "injectSkillVolumes"
@@ -14801,6 +15124,8 @@ export function composePreparedRunContext({
     permissionManifest: runtimeContext.permissionManifest,
     billableFirewalls: runtimeContext.billableFirewalls,
     modelUsageProvider: runtimeContext.modelUsageProvider,
+    modelUsageLongContextMinTotalInputTokens:
+      runtimeContext.modelUsageLongContextMinTotalInputTokens,
     connectorScope: runtimeContext.connectorScope,
     ...metadata,
     officialWorkflowRun,
@@ -15441,6 +15766,7 @@ function createCheckUnavailableProviderCreditsCommand() {
       return await set(
         checkAdmission$,
         {
+          catalog: args.catalog,
           orgId: args.orgId,
           userId: args.userId,
           modelProviderType: "built-in",
@@ -15470,7 +15796,7 @@ function createPrepareAgentRunCommand(
       // A preview request that passed the protection guard carries the bypass as
       // API-authored environment while the runner preserves its existing filter.
       const previewAutomationBypass = get(previewAutomationBypass$);
-      const args = previewAutomationBypass
+      const requestArgs = previewAutomationBypass
         ? {
             ...input.args,
             platformEnvironment: {
@@ -15479,6 +15805,20 @@ function createPrepareAgentRunCommand(
             },
           }
         : input.args;
+      // The requested model resolves against the run's catalog snapshot with
+      // the queue pick's resolution: a provider-prefixed upstream ID names its
+      // catalog model and a replaced model runs as its final replacement. An
+      // ID the catalog does not know stays the provider's own model.
+      const requestedModel = requestArgs.selectedModelOverride;
+      const args =
+        requestedModel === undefined
+          ? requestArgs
+          : {
+              ...requestArgs,
+              selectedModelOverride:
+                resolveRunSelectionModel(requestArgs.catalog, requestedModel) ??
+                requestedModel,
+            };
       const { timing } = input;
       const db = set(writeDb$);
       if (input.checkOrgPlanStatusBeforeContext) {
@@ -15489,6 +15829,7 @@ function createPrepareAgentRunCommand(
             return await set(
               checkPlanStatus$,
               {
+                catalog: args.catalog,
                 db,
                 orgId: args.orgId,
                 userId: args.userId,
@@ -15584,6 +15925,7 @@ function createCompleteAgentRunCommand(
             return set(
               checkAdmission$,
               {
+                catalog: args.catalog,
                 db,
                 orgId: args.orgId,
                 userId: args.userId,
@@ -16151,6 +16493,8 @@ export interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
 }
 
 interface BuildCreateAgentRunArgsInput {
+  /** One catalog snapshot per run, loaded by the entry point. */
+  readonly catalog: ModelCatalog;
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
@@ -16309,6 +16653,7 @@ export function buildCreateAgentRunArgs(
       args.agent,
       args.capturedPersonalSubscriptionAccount,
     ),
+    catalog: args.catalog,
     body: createRunBody({
       body: command.body,
       agent: args.agent,
@@ -17348,7 +17693,7 @@ export function selectedRunModelProviderArgs(
   capturedPersonalSubscriptionAccount:
     | CapturedPersonalSubscriptionAccount
     | undefined,
-): RunModelProviderArgs {
+): Omit<RunModelProviderArgs, "catalog"> {
   return {
     orgId: command.auth.orgId,
     userId: command.auth.userId,
@@ -17375,13 +17720,15 @@ function createPreCreateModelObjects(
   agent$: ReturnType<typeof createPreCreateAgent>,
   bootstrapMetadata$: ReturnType<typeof createPreCreateBootstrapMetadata>,
   subscriptionAccount$: ReturnType<typeof createPreCreateSubscriptionAccount>,
+  catalog$: AsyncRead<ModelCatalog>,
 ) {
   const providerInput$ = computed(
     async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
       const input = await get(input$);
-      const [agent, account] = await Promise.all([
+      const [agent, account, catalog] = await Promise.all([
         get(agent$),
         get(subscriptionAccount$),
+        get(catalog$),
       ]);
       if ("status" in account) {
         return account;
@@ -17392,11 +17739,14 @@ function createPreCreateModelObjects(
       return {
         db: get(db$),
         timing: input.timing,
-        args: selectedRunModelProviderArgs(
-          account.command,
-          agent,
-          account.capturedPersonalSubscriptionAccount,
-        ),
+        args: {
+          ...selectedRunModelProviderArgs(
+            account.command,
+            agent,
+            account.capturedPersonalSubscriptionAccount,
+          ),
+          catalog,
+        },
       };
     },
   );
@@ -17429,6 +17779,7 @@ function createPreCreateOfficialWorkflowObjects(
   input$: ReturnType<typeof createPreCreateInput>,
   workflowRows$: ReturnType<typeof createPreCreateWorkflowRows>,
   { framework$, modelRoute$ }: ReturnType<typeof createPreCreateModelObjects>,
+  catalog$: AsyncRead<ModelCatalog>,
 ) {
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
@@ -17441,6 +17792,7 @@ function createPreCreateOfficialWorkflowObjects(
       return {
         db,
         args: {
+          catalog: await get(catalog$),
           orgId: command.auth.orgId,
           userId: command.auth.userId,
           injectSkillVolumes: { workflows },
@@ -17737,14 +18089,18 @@ function createPreCreatePreparedInput(
   threadSession$: AsyncRead<ChatThreadSessionResolution | undefined>,
   sessionPrompt$: AsyncRead<string | undefined>,
   command$: AsyncRead<AnyCreateAgentRunCommandArgs | null>,
+  catalog$: AsyncRead<ModelCatalog>,
 ) {
   return computed(async (get) => {
-    const [input, resolution, appendSystemPrompt, fullCommand] =
+    // One catalog snapshot per run. A queued input picked later reads the
+    // catalog current at the pick, not at enqueue.
+    const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
         get(postAuthorization$),
         get(threadSession$),
         get(sessionPrompt$),
         get(command$),
+        get(catalog$),
       ]);
     if (!fullCommand) {
       return null;
@@ -17760,6 +18116,7 @@ function createPreCreatePreparedInput(
     }
     return {
       ...input,
+      catalog,
       command: {
         ...fullCommand,
         modelProviderId: input.command.modelProviderId,
@@ -17992,6 +18349,7 @@ function createPreCreateExecutionObjects(args: {
     typeof createPreCreatePermissionPolicies
   >;
   readonly workflowRows$: ReturnType<typeof createPreCreateWorkflowRows>;
+  readonly catalog$: AsyncRead<ModelCatalog>;
 }) {
   const {
     input$,
@@ -18009,6 +18367,7 @@ function createPreCreateExecutionObjects(args: {
     agent$,
     bootstrapMetadata$,
     subscriptionAccount$,
+    args.catalog$,
   );
   const connectors = createPreCreateConnectorObjects(
     identityInput$,
@@ -18035,6 +18394,7 @@ function createPreCreateExecutionObjects(args: {
     input$,
     workflowRows$,
     model,
+    args.catalog$,
   );
   const userTimezone$ = computed(async (get) => {
     return (await get(bootstrapMetadata$)).userInfo.timezone ?? undefined;
@@ -18136,6 +18496,11 @@ function createSelectedAgentRunReadGraph(
   sources?: SelectedAgentRunGraphSources,
 ) {
   const input$ = createPreCreateInput(internalInput$, sources?.selectionInput$);
+  // One catalog snapshot per run creation (or queue pick): a queued input
+  // reads the catalog current at the pick, not at enqueue.
+  const catalog$ = computed((get) => {
+    return loadModelCatalog(get(db$));
+  });
   const identityInput$ = createSelectedIdentityInput(input$, sources);
   const command$ =
     sources?.command$ ??
@@ -18227,11 +18592,13 @@ function createSelectedAgentRunReadGraph(
     threadSession$,
     sessionPrompt$,
     command$,
+    catalog$,
   );
   const runArgs$ = createPreCreateRunArgs(preparedInput$);
   const shared = createPreCreateExecutionObjects({
     connectorSourceId$: sources?.connectorSourceId$,
     input$,
+    catalog$,
     identityInput$,
     agent$,
     bootstrapMetadata$,
@@ -18242,6 +18609,7 @@ function createSelectedAgentRunReadGraph(
   });
   return {
     input$,
+    catalog$,
     identityInput$,
     agentId$,
     agent$,
@@ -18353,6 +18721,7 @@ function createSelectedStorageInputObject(
         : requestedFramework;
       const piSandbox = resolvePreparedPiModelConfig({
         createArgs: {
+          catalog: await get(graph.catalog$),
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },

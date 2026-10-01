@@ -1,18 +1,18 @@
 import {
-  chatThreadUsageContract,
   type ChatEventUsagePayload,
+  chatThreadUsageContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-
 const context = testContext();
 
 function usageButton(total: string): HTMLElement {
@@ -243,4 +243,75 @@ test("Chat stays usable while an outgoing API cannot read settled usage", async 
       return button.getAttribute("aria-label") === "Credit usage 999";
     }),
   ).toBeFalsy();
+});
+
+test("Credit usage names each model row from the server catalog, keeping retired models and mapping upstream IDs", async () => {
+  const catalog = createMockModelCatalog();
+  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...catalog,
+      models: catalog.models.map((entry) => {
+        return entry.model === "gpt-6-luna"
+          ? { ...entry, displayName: "Luna From Catalog" }
+          : entry;
+      }),
+      routes: catalog.routes.map((route) => {
+        return route.model === "gpt-6-luna" &&
+          route.providerType === "openrouter-codex"
+          ? { ...route, upstreamModel: "openai/gpt-6-luna" }
+          : route;
+      }),
+    });
+  });
+  await setupUsageChat(
+    "b0000000-0000-4000-a000-000000000807",
+    "a0000000-0000-4000-a000-000000000807",
+    {
+      version: 1,
+      totalCredits: 30,
+      settledAt: "2026-08-14T12:00:02.000Z",
+      breakdown: [
+        {
+          // Retired and replaced by claude-opus-5-5; history keeps its own name.
+          kind: "model/claude-opus-4-8/tokens.output",
+          credits: 7,
+          providers: [{ provider: "anthropic", credits: 7 }],
+        },
+        {
+          // Upstream ID of the gpt-6-luna OpenRouter route.
+          kind: "model/openai/gpt-6-luna/tokens.output",
+          credits: 11,
+          providers: [{ provider: "openrouter", credits: 11 }],
+        },
+        {
+          kind: "model/claude-sonnet-4-6/tokens.input",
+          credits: 12,
+          providers: [{ provider: "anthropic", credits: 12 }],
+        },
+      ],
+    },
+  );
+
+  await openUsage("30");
+
+  const details = screen.getByRole("dialog");
+  await waitFor(() => {
+    expect(within(details).getByText("Luna From Catalog")).toBeInTheDocument();
+  });
+  for (const [label, credits] of [
+    ["Claude Opus 4.8", "7"],
+    ["Luna From Catalog", "11"],
+    ["Claude Sonnet 4.6", "12"],
+  ]) {
+    expect(within(details).getByText(label).parentElement).toHaveTextContent(
+      `${label}${credits}`,
+    );
+  }
+  expect(
+    within(details).queryByText("Claude Opus 5.5"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(details).queryByText("Claude Sonnet 5.5"),
+  ).not.toBeInTheDocument();
+  expect(within(details).queryByText("GPT 6 Luna")).not.toBeInTheDocument();
 });

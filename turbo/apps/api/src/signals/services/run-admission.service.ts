@@ -1,17 +1,13 @@
 import {
-  getRunModelAccess,
-  getRunModelRouteAccess,
   isBuiltInModelProviderType,
-  normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { command, computed, type Computed } from "ccstate";
+import { computed, command, type Computed } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
-
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -27,13 +23,21 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
+import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
+import { isPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import {
   createUsageAllowanceObjects,
   resolveUsageAllowanceAvailability,
 } from "./usage-allowance.service";
-import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-
+import {
+  catalogModelForSelectedId,
+  catalogRunModelRouteAccess,
+} from "./model-route-capabilities.service";
+import {
+  catalogHasProviderRoute,
+  isCatalogModelRunnable,
+  type ModelCatalog,
+} from "./model-catalog.service";
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
   | ReturnType<typeof paidPlanRequired>
@@ -63,6 +67,8 @@ export interface RunCreditAdmissionState {
 
 /** One admission phase; callers replace this input before a fresh check. */
 export interface RunAdmissionInput {
+  /** The run's catalog snapshot, loaded once by the caller. */
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
@@ -181,10 +187,11 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     createRunAdmissionUsagePackObject(readInput$),
   );
   const { resolveAvailability$ } = createUsageAllowanceObjects(readInput$);
-  const autoPersonalSubscription$ = computed(async (get) => {
+  const personalSubscription$ = computed(async (get) => {
     const input = await get(readInput$);
-    return await isAutoPersonalSubscriptionRoute({
+    return await isPersonalSubscriptionRoute({
       db: get(db$),
+      catalog: input.catalog,
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,
@@ -192,9 +199,9 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     });
   });
   const checkAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const [input, autoPersonalSubscription] = await Promise.all([
+    const [input, personalSubscription] = await Promise.all([
       get(readInput$),
-      get(autoPersonalSubscription$),
+      get(personalSubscription$),
     ]);
     signal.throwIfAborted();
     if (!input.enforceBuiltInCredits) {
@@ -204,14 +211,15 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
         checkOrgPlanRunAdmission({
           ...input,
           capabilities,
-          autoPersonalSubscription,
+          personalSubscription,
         }) ?? null
       );
     }
     const availability = await get(availability$);
     signal.throwIfAborted();
-    if (getRunModelAccess(input.selectedModel) === "retired") {
-      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    const routeFailure = checkCatalogRunRoute(input.catalog, input);
+    if (routeFailure) {
+      return routeFailure;
     }
     if (!availability) {
       return insufficientCredits();
@@ -219,7 +227,7 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     const failure = checkOrgPlanRunAdmission({
       ...input,
       capabilities: availability,
-      autoPersonalSubscription,
+      personalSubscription,
     });
     if (failure) {
       return failure;
@@ -354,6 +362,7 @@ export async function resolveOrgCreditAvailability(params: {
 
 export async function checkOrgCreditsForRunAdmission(params: {
   readonly db: Db;
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
@@ -368,14 +377,16 @@ export async function checkOrgCreditsForRunAdmission(params: {
 
 export async function checkResolvedOrgCreditsForRunAdmission(params: {
   readonly db: Db;
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
 }): Promise<RunAdmissionFailure | undefined> {
-  const autoPersonalSubscription = await isAutoPersonalSubscriptionRoute({
+  const personalSubscription = await isPersonalSubscriptionRoute({
     db: params.db,
+    catalog: params.catalog,
     orgId: params.orgId,
     userId: params.userId,
     model: params.selectedModel,
@@ -383,7 +394,7 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
   });
   return await checkResolvedOrgCreditsForRunAdmissionWithAllowance({
     ...params,
-    autoPersonalSubscription,
+    personalSubscription,
     resolveAllowance: async () => {
       return await resolveUsageAllowanceAvailability(params.db, params.orgId);
     },
@@ -391,27 +402,28 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
 }
 
 async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
-  readonly autoPersonalSubscription: boolean;
+  readonly personalSubscription: boolean;
   readonly resolveAllowance: () => Promise<{
     readonly remainingUnits: number;
   } | null>;
 }): Promise<RunAdmissionFailure | undefined> {
   const { availability } = params;
-  if (getRunModelAccess(params.selectedModel) === "retired") {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-  }
   if (!availability) {
-    return insufficientCredits();
+    return (
+      checkCatalogRunRoute(params.catalog, params) ?? insufficientCredits()
+    );
   }
   const planAdmission = checkOrgPlanRunAdmission({
+    catalog: params.catalog,
     capabilities: availability,
     modelProviderType: params.modelProviderType,
     selectedModel: params.selectedModel,
-    autoPersonalSubscription: params.autoPersonalSubscription,
+    personalSubscription: params.personalSubscription,
   });
   if (planAdmission) {
     return planAdmission;
@@ -431,38 +443,120 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
     : insufficientCredits();
 }
 
+/**
+ * Runtime guard from the run's catalog snapshot: the selected model must be
+ * an active catalog model with an enabled route, and a Built-in run needs an
+ * enabled Built-in route. Retired or unknown IDs are resolved (or rejected)
+ * before admission; this only stops an unresolved ID from reaching a runner.
+ */
+export function checkCatalogRunRoute(
+  catalog: ModelCatalog,
+  params: {
+    readonly modelProviderType: string | null | undefined;
+    readonly selectedModel?: string | null;
+  },
+): RunAdmissionFailure | undefined {
+  if (!params.selectedModel) {
+    return undefined;
+  }
+  // Normalized through the catalog like the plan check: a catalog model ID,
+  // or a route upstream ID that names exactly one catalog model.
+  const model = catalogModelForSelectedId(catalog, params.selectedModel);
+  const builtIn = isBuiltInModelProviderType(params.modelProviderType);
+  if (model !== null) {
+    if (!isCatalogModelRunnable(catalog, model)) {
+      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    }
+    return builtIn && !catalogHasProviderRoute(catalog, model, "built-in")
+      ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
+      : undefined;
+  }
+  // Built-in only runs catalog models.
+  if (builtIn) {
+    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  }
+  // A provider-native ID is an upstream model of catalog routes. It is
+  // retired only when every catalog model it is an upstream of is retired;
+  // an ID the catalog does not know stays the provider's own model.
+  const upstreamOf = catalog.routes.filter((route) => {
+    return route.upstreamModel === params.selectedModel;
+  });
+  return upstreamOf.length > 0 &&
+    !upstreamOf.some((route) => {
+      return route.enabled && isCatalogModelRunnable(catalog, route.model);
+    })
+    ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
+    : undefined;
+}
+
+/**
+ * The denial for a catalog model a free (restricted) plan cannot run on the
+ * requested route. It names the catalog's free Built-in models and the one
+ * other way in: the member's own connected subscription.
+ */
+export function restrictedPlanModelRequired(
+  catalog: ModelCatalog,
+  displayName: string,
+): ReturnType<typeof paidPlanRequired> {
+  const freeModels = catalog.models
+    .filter((model) => {
+      return model.builtInOnRestrictedPlans && model.replacedBy === null;
+    })
+    .map((model) => {
+      return model.displayName;
+    });
+  const choose =
+    freeModels.length > 0 ? `choose ${freeModels.join(" or ")} or ` : "";
+  return paidPlanRequired(
+    displayName,
+    `On the free plan, ${choose}connect your own Claude Code or Codex subscription.`,
+  );
+}
+
 export function checkOrgPlanRunAdmission(params: {
+  /** The run's catalog snapshot, loaded once by the caller. */
+  readonly catalog: ModelCatalog;
   readonly capabilities: OrgPlanRunAdmissionCapabilities | null;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly autoPersonalSubscription?: boolean;
+  /**
+   * The run uses the member's own connected, valid subscription on the
+   * model's catalog subscription route (Auto or Custom), verified by the
+   * caller through `isMemberSubscriptionRoute`. It is the only route a free
+   * plan may use besides its free Built-in models.
+   */
+  readonly personalSubscription?: boolean;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
-  const modelAccess = getRunModelRouteAccess(
+  const modelAccess = catalogRunModelRouteAccess(
+    params.catalog,
     params.selectedModel,
     params.modelProviderType,
-    capabilities?.restrictedBuiltInModels && !params.autoPersonalSubscription,
+    capabilities?.restrictedBuiltInModels && !params.personalSubscription,
   );
-  if (modelAccess === "retired") {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  const routeFailure = checkCatalogRunRoute(params.catalog, params);
+  if (routeFailure) {
+    return routeFailure;
   }
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
   }
-  if (
-    modelAccess === "pro_required" &&
-    ["claude-sonnet-5-5", "gpt-6.1-sol"].includes(
-      normalizeBuiltInModelId(params.selectedModel ?? ""),
-    )
-  ) {
-    return paidPlanRequired(
-      normalizeBuiltInModelId(params.selectedModel ?? "") === "gpt-6.1-sol"
-        ? "GPT 6.1 Sol"
-        : "Claude Sonnet 5.5",
+  // A catalog model a free plan cannot run on this route asks for a paid
+  // plan by name and points at the free alternatives.
+  const restrictedModel =
+    modelAccess === "pro_required" && params.selectedModel
+      ? params.catalog.byModel.get(
+          catalogModelForSelectedId(params.catalog, params.selectedModel) ?? "",
+        )
+      : undefined;
+  if (restrictedModel) {
+    return restrictedPlanModelRequired(
+      params.catalog,
+      restrictedModel.displayName,
     );
   }
   return (!capabilities.supportByok &&
-    !params.autoPersonalSubscription &&
+    !params.personalSubscription &&
     !isBuiltInModelProviderType(params.modelProviderType)) ||
     modelAccess === "pro_required"
     ? insufficientCredits()

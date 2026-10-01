@@ -1,25 +1,28 @@
-import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+} from "./helpers/integration-input-assets";
+import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
+import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { HttpResponse, http } from "msw";
 import { createStore } from "ccstate";
-import { http, HttpResponse } from "msw";
-import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
 import {
   readChatEventContextFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
-import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   countPiMemoryStage1CandidatesFixture,
   readmitPiMemoryStage1CandidateFixture,
@@ -28,32 +31,30 @@ import {
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   agentPhoneBddWebhookSecret,
   createBddIntegrationApi,
   telegramLoginAuth,
 } from "./helpers/api-bdd-integrations";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  captureIntegrationInputUploads,
-  expectIntegrationInputPreview,
-} from "./helpers/integration-input-assets";
+import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
+  seedBuiltInModelCandidateKeys,
 } from "./helpers/runtime-state";
-
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /*
 helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
@@ -300,7 +301,7 @@ async function configureFastCodexPreference(
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "gpt-6-astra",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -629,14 +630,13 @@ async function configureCanonicalSlackPiActor(
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: anthropicProviderId,
     },
     {
       model: selectedModel,
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: openaiProviderId,
@@ -3606,9 +3606,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
           text: "Switched to *GPT 6 Astra* for this conversation.",
         }),
       );
+      // The picker leaves the member preference the fixture configured.
       await expect(
         integrations.readUserModelPreference(actor),
-      ).resolves.toMatchObject({ selectedModel: null });
+      ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
       expect(
         (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
       ).toBe("gpt-6-astra");
@@ -4257,7 +4258,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("captures the organization default for a NULL Slack thread without changing its pin", async () => {
+  it("captures the fixed organization default for a NULL Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4311,6 +4312,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
+    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4323,14 +4325,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
+    // An existing thread without a pin uses the fixed org default, not the
+    // member preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
-    const resolvedClaim = await runs.claimRunnerJob(resolvedRunId);
-    expect(resolvedClaim.cliAgentType).toBe("claude-code");
-    expect(resolvedClaim.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
-      ANTHROPIC_MODEL: "claude-fable-5-1",
-    });
-    expect(resolvedClaim.environment).not.toHaveProperty("OPENAI_API_KEY");
+    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4347,11 +4347,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }),
     );
 
-    await completeSlackTriggeredRun({
-      runId: resolvedRunId,
-      sandboxToken: resolvedClaim.sandboxToken,
-      cliAgentType: resolvedClaim.cliAgentType,
-    });
+    await runs.requestCancelRun(actor, resolvedRunId, [200]);
   }, 90_000);
 
   it("prompts disconnected Slack users and filters non-actionable messages", async () => {
@@ -4612,7 +4608,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    await integrations.updateUserModelPreference(actor, "gpt-6-luna");
+    await integrations.updateUserModelPreference(
+      actor,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,
@@ -5054,7 +5053,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -5279,6 +5278,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       workspaceId: teamId,
       slackUserId: slackUser2,
     });
+    // A member's new thread starts from their own preference.
+    await integrations.updateUserModelPreference(actor2, "claude-fable-5-1");
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUser2,

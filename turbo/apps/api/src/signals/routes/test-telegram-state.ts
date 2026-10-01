@@ -5,10 +5,6 @@ import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution
 import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   testTelegramStateContract,
   type TestTelegramStateActionBody,
 } from "@okouai/api-contracts/contracts/test-telegram-state";
@@ -48,6 +44,7 @@ import {
 } from "./test-endpoint-helpers";
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 
 const actionBody$ = bodyResultOf(testTelegramStateContract.action);
 
@@ -423,7 +420,7 @@ async function seedTelegramPostModelKeys(
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: await loadSystemDefaultBuiltInVendor(db),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
     {
@@ -849,7 +846,6 @@ async function seedModelPoliciesForAction(
     {
       orgId: required.org_id!,
       model: "claude-sonnet-5",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       createdByUserId: required.user_id!,

@@ -1,26 +1,22 @@
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { sql, and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-
 import { command } from "ccstate";
-import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
   getInstructionsStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq, inArray, isNull, notExists } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { writeAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import { grantOnboardingCredits$ } from "./onboarding-credit-grants.service";
 import { upsertOrgNoSecretModelProvider$ } from "./model-provider.service";
@@ -31,8 +27,11 @@ import {
   DEFAULT_AGENT_SOUND,
 } from "./default-agent-profile";
 import { onRejection, settle } from "../utils";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { writeAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-
 const L = logger("org-limited-free-bootstrap.service");
 
 interface EnsureOrgLimitedFreeBootstrapArgs {
@@ -171,7 +170,15 @@ const publishBootstrapCandidate$ = command(
         .set({
           defaultAgentId: candidate.agentId,
           ...(!paid
-            ? { tier: "limited-free-1", onboardingPaymentPending: false }
+            ? {
+                tier: "limited-free-1",
+                onboardingPaymentPending: false,
+                modelMode: sql`CASE WHEN EXISTS (
+                  SELECT 1 FROM ${orgModelPolicies}
+                  WHERE ${orgModelPolicies.orgId} = ${candidate.orgId}
+                    AND ${orgModelPolicies.model} <> ${await loadSystemDefaultRunModel(tx)}
+                ) THEN ${orgMetadata.modelMode} ELSE 'auto' END`,
+              }
             : {}),
           updatedAt: nowDate(),
         })
@@ -330,7 +337,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       {
         orgId: args.orgId,
         type: "built-in",
-        selectedModel: LIMITED_FREE1_DEFAULT_RUN_MODEL,
+        selectedModel: await loadSystemDefaultRunModel(set(writeDb$)),
       },
       signal,
     );

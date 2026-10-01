@@ -2,6 +2,14 @@
  * Model identities the pinned Pi runtime can resolve, grouped by the Pi catalog
  * provider that owns them.
  *
+ * Identities are runtime knowledge, not a product model list. Built-in and
+ * API-key Responses routes ask the runtime for the route's `upstream_model`,
+ * so a model added only as catalog rows is admitted to Pi when its route points
+ * at an upstream model listed here (for example a new catalog model whose
+ * `openrouter-codex` route sends `openai/gpt-6-luna`). Only routes that pin
+ * `catalogModel` (native Claude, the Codex subscription, custom gateways and
+ * OpenRouter presets) resolve by the catalog model ID.
+ *
  * This is a leaf data module on purpose. `@okouai/core/pi-execution` is part of
  * the Platform browser bundle graph, so Pi admission must never reach for
  * `@earendil-works/pi-ai` to answer a capability question. The entries below

@@ -13,7 +13,11 @@ Billing tier selection may remap those keys to reporter-owned
 events.
 
 Run contexts set ``flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER]`` to the
-canonical model id the proxy should report for model token usage. Billable rows
+usage provider (the Built-in route's ``usage_pricing`` provider) the proxy
+should report for model token usage, and
+``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` to the long-context
+threshold the API captured from the run's route (``0``: explicit single tier).
+Billable rows
 go to ``/api/webhooks/agent/usage-event``.
 """
 
@@ -167,8 +171,11 @@ def report_model_provider_usage(
     is consumed by ``terminal_usage.report_model_provider_usage_once``
     separately from those per-call admission keys.
 
-    Terminal reporting classifies each source independently. Models in
-    ``MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` require a valid non-negative
+    Terminal reporting classifies each source independently. Providers with a
+    long-context threshold (the registry's API-captured
+    ``modelUsageLongContextMinTotalInputTokens``, where ``0`` means single
+    tier; ``MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` only when the field is
+    absent) require a valid non-negative
     integer ``tokens.input`` quantity to resolve the billing tier. A source
     without a resolvable tier is skipped; if it contains positive usage in
     ``MODEL_USAGE_CATEGORIES``, it emits an error-level ``usage_underbilling``
@@ -338,7 +345,7 @@ def log_terminal_model_provider_usage_sources(
     for source in _iter_model_provider_usage_sources(flow):
         provider = _reported_model(flow, source.usage)
         usage_events: list[UsageEvent] = []
-        billing_tier = _model_usage_tier(provider, source.usage)
+        billing_tier = _model_usage_tier(flow, provider, source.usage)
         if billing_tier is not None:
             usage_events = _build_usage_events(
                 run_id,
@@ -457,7 +464,7 @@ def _build_model_provider_usage_events(
     events: list[UsageEvent] = []
     for source in _iter_model_provider_usage_sources(flow):
         provider = _reported_model(flow, source.usage)
-        billing_tier = _model_usage_tier(provider, source.usage)
+        billing_tier = _model_usage_tier(flow, provider, source.usage)
         if billing_tier is None:
             if has_positive_model_provider_usage(source.usage):
                 _log_model_usage_tier_unresolved(flow, run_id, provider)
@@ -589,8 +596,8 @@ def _source_model_usage_pricing(
     provider: str,
     usage: dict,
 ) -> tuple[_ModelUsageTier, _ModelServiceTier] | None:
-    billing_tier = _model_usage_tier(provider, usage)
-    if provider not in MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS:
+    billing_tier = _model_usage_tier(flow, provider, usage)
+    if _long_context_min_total_input_tokens(flow, provider) is None:
         return (billing_tier, _model_service_tier(usage)) if billing_tier else None
 
     tiers = _model_provider_usage_tiers(flow)
@@ -676,8 +683,32 @@ def _model_provider_usage_tiers(
     return new_tiers
 
 
-def _model_usage_tier(provider: str, usage: dict) -> _ModelUsageTier | None:
-    min_input_tokens = MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS.get(provider)
+def _long_context_min_total_input_tokens(flow: http.HTTPFlow, provider: str) -> int | None:
+    """Return the long-context threshold that applies to ``provider``.
+
+    The API captures the threshold from the run's Built-in route and sends it
+    with the usage provider: a positive value is the threshold and ``0``
+    explicitly means a single tier. An explicit value is authoritative, so a
+    route without long-context pricing never inherits a threshold from the
+    generated map, and a provider absent from the map still bills
+    ``.long_context``. Only a registry entry without the field (an API that
+    predates catalog thresholds) falls back to the generated map keyed by
+    provider; delete that fallback with the map (see
+    docs/deployment-compatibility.md).
+    """
+    if flow_metadata.model_usage_provider(flow.metadata) == provider:
+        explicit = flow_metadata.model_usage_long_context_min_total_input_tokens(flow.metadata)
+        if explicit is not None:
+            return explicit if explicit > 0 else None
+    return MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS.get(provider)
+
+
+def _model_usage_tier(
+    flow: http.HTTPFlow,
+    provider: str,
+    usage: dict,
+) -> _ModelUsageTier | None:
+    min_input_tokens = _long_context_min_total_input_tokens(flow, provider)
     if min_input_tokens is None:
         return _MODEL_USAGE_TIER_BASE
 

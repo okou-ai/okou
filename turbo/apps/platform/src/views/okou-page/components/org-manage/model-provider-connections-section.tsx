@@ -99,7 +99,10 @@ function AddConnectionMenu() {
             <DropdownMenuItem
               key={template}
               onClick={() => {
-                openCreate(template, settingsDialogSignal);
+                detach(
+                  openCreate(template, settingsDialogSignal),
+                  Reason.DomCallback,
+                );
               }}
             >
               {templateLabels[template]}

@@ -1368,10 +1368,22 @@ const storedExecutionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
@@ -1476,10 +1488,22 @@ const executionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, captured
+  // by the API from the run's Built-in route
+  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
+  // the route bills a single tier and the proxy must not consult its generated
+  // map. Absent: an API without catalog thresholds; only then does the proxy
+  // fall back to its generated map keyed by `modelUsageProvider`.
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()

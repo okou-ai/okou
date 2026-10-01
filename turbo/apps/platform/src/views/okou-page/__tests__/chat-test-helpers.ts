@@ -22,7 +22,6 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   runsCancelContract,
   runsByIdContract,
@@ -51,12 +50,10 @@ const MOCK_RUN_ID = "d0000000-0000-4000-a000-000000000001";
 
 interface ModelSelectionRequest {
   readonly modelProviderId: string;
-  readonly selectedModel: SupportedRunModel;
+  readonly selectedModel: string;
 }
 
-function modelFirstSelection(
-  selectedModel: SupportedRunModel,
-): ModelSelectionRequest {
+function modelFirstSelection(selectedModel: string): ModelSelectionRequest {
   return {
     modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
     selectedModel,
@@ -64,7 +61,7 @@ function modelFirstSelection(
 }
 
 function modelSelectionFromBody(body: {
-  readonly model?: SupportedRunModel | null;
+  readonly model?: string | null;
 }): ModelSelectionRequest | null | undefined {
   if (body.model === undefined) {
     return undefined;
@@ -280,7 +277,7 @@ function appendDefaultCompletionMarkers(args: {
 function initialMockThreadModelSelection(
   options:
     | {
-        selectedModel?: SupportedRunModel | null;
+        selectedModel?: string | null;
         codexServiceTier?: CodexServiceTier | null;
         modelSettings?: ModelSettings;
         reasoningEffort?: ReasoningEffort | null;
@@ -314,7 +311,7 @@ export function mockChatLifecycle(
     chatEvents?: MockChatEvent[];
     runUsage?: Readonly<Record<string, ChatEventUsagePayload>>;
     threadTitle?: string | null;
-    selectedModel?: SupportedRunModel | null;
+    selectedModel?: string | null;
     codexServiceTier?: CodexServiceTier | null;
     modelSettings?: ModelSettings;
     reasoningEffort?: ReasoningEffort | null;
@@ -387,7 +384,7 @@ export function mockChatLifecycle(
     onThreadCreate?: (body: {
       clientThreadId?: string;
       eventId?: string;
-      model?: SupportedRunModel;
+      model?: string;
       modelSelection: ModelSelectionRequest;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
@@ -645,7 +642,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: SupportedRunModel;
+    model?: string;
     runOptions?: ChatRunOptionsRequest;
   }) => {
     const clientEventId = body.clientEventId ?? crypto.randomUUID();
@@ -681,7 +678,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: SupportedRunModel;
+    model?: string;
     runOptions?: ChatRunOptionsRequest;
     computerUseHostId?: string | null;
     cloudBrowserEnabled?: boolean;

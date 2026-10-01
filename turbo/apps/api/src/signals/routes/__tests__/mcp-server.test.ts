@@ -1,3 +1,5 @@
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -7,32 +9,20 @@ import type {
   StandardSchemaWithJSON,
 } from "@modelcontextprotocol/server";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
-import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
-  mcpCreateChatThreadInputSchema,
-  mcpCreateChatThreadOutputSchema,
-  mcpCreateChatWithMessageOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import {
-  mcpListAgentsInputSchema,
-  mcpListAgentsOutputSchema,
-  mcpListModelsInputSchema,
-  mcpListModelsOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
+  mcpGetChatThreadInputSchema,
+  mcpGetChatThreadOutputSchema,
+  mcpGetChatIndicatorsInputSchema,
+  mcpGetChatIndicatorsOutputSchema,
+  mcpListChatThreadsInputSchema,
+  mcpListChatThreadsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import {
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-messages";
-import {
-  mcpCancelRunInputSchema,
-  mcpCancelRunOutputSchema,
-  mcpRevokeQueuedMessageInputSchema,
-  mcpRevokeQueuedMessageOutputSchema,
-  mcpSendChatMessageInputSchema,
-  mcpSendChatMessageOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
 import {
   mcpSearchChatMessagesInputSchema,
@@ -43,36 +33,45 @@ import {
   mcpGetChatStatusOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
+  mcpListAgentsInputSchema,
+  mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
+  mcpListModelsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
+import {
+  mcpCreateChatThreadInputSchema,
+  mcpCreateChatThreadOutputSchema,
+  mcpCreateChatWithMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
   mcpUpdateChatThreadInputSchema,
   mcpUpdateChatThreadOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
-import {
-  mcpGetChatIndicatorsInputSchema,
-  mcpGetChatIndicatorsOutputSchema,
-  mcpGetChatThreadInputSchema,
-  mcpGetChatThreadOutputSchema,
-  mcpListChatThreadsInputSchema,
-  mcpListChatThreadsOutputSchema,
-} from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
-import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import {
+  mcpSendChatMessageInputSchema,
+  mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
+  mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunInputSchema,
+  mcpCancelRunOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
+import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { gunzipSync, gzipSync } from "node:zlib";
 import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
-
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   clearMockMonotonicNow,
@@ -81,13 +80,17 @@ import {
   withMockNowForTest,
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { mcpServerRoutes } from "../mcp-server";
+import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
+import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { modelPoliciesRoutes } from "../model-policies";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import {
-  rejectSearchablePromptFixture,
-  setChatSearchEventTimestampPrecisionFixture,
-  updateChatSearchSourceThreadFixture,
-} from "../../../test-fixtures/chat-event-search";
+import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
   holdAgentRowLockFixture,
@@ -95,24 +98,25 @@ import {
   setQueuedUserMessageCreatedAtFixture,
   timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import {
+  rejectSearchablePromptFixture,
+  setChatSearchEventTimestampPrecisionFixture,
+  updateChatSearchSourceThreadFixture,
+} from "../../../test-fixtures/chat-event-search";
+import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { mcpServerRoutes } from "../mcp-server";
-import { modelPoliciesRoutes } from "../model-policies";
-import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { userModelPreferenceRoutes } from "../user-model-preference";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { deleteDiscordFixture } from "./helpers/discord";
 import {
   discordChatThreads,
@@ -121,22 +125,18 @@ import {
   postDiscordMessage,
   setupConnectedDiscordActor,
 } from "./helpers/discord-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  seedBuiltInModelCandidateKeys,
+  updateChatEventSnapshotHead,
+} from "./helpers/runtime-state";
 import {
   deleteFakeChatEventObject,
   installFakeChatEventR2,
   writeFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
-import {
-  seedBuiltInModelCandidateKeys,
-  updateChatEventSnapshotHead,
-} from "./helpers/runtime-state";
-
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 const context = testContext();
 const resource = "https://api.mcp.example.test/mcp";
 const issuer = "https://clerk.mcp.example.test";
@@ -1000,7 +1000,7 @@ async function nativeRunnerChatActor(
   await f.api.updateOrgModelPolicies(actor.actor, [
     {
       model: NATIVE_RUNNER_MODEL,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: actor.providerId,
@@ -1048,7 +1048,7 @@ async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
     (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
       return {
         model,
-        isDefault: model === "claude-sonnet-5",
+        preferred: model === "claude-sonnet-5",
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1162,14 +1162,13 @@ describe("MCP chat discovery and creation", () => {
     ).toHaveLength(20);
   });
 
-  it("does not initialize missing model policies through a discovery read", async () => {
+  it("discovers the projected system default without stored policies", async () => {
     const auth = await fixture();
-    const first = await callTool(auth.token(), "list_models");
-    expect(first.isError).toBeTruthy();
-    structuredToolError(first);
-    await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
-      first,
-    );
+    const models = await listModels(auth.token());
+    expect(models.defaultModel).toStrictEqual({
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      source: "org_default",
+    });
   });
 
   it("lists connected personal subscription models for the Auto member", async () => {
@@ -1224,7 +1223,7 @@ describe("MCP chat discovery and creation", () => {
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1275,8 +1274,8 @@ describe("MCP chat discovery and creation", () => {
     const { subscriptionId } = await runs.grantProEntitlement(f.actor);
     await runs.updateOrgModelPolicies(f.actor, [
       {
-        model: "gpt-5.6-luna",
-        isDefault: true,
+        model: "gpt-6-luna",
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -1285,10 +1284,38 @@ describe("MCP chat discovery and creation", () => {
     const token = f.auth.token({ scope: defaultScopes });
     expect((await listModels(token)).models).toContainEqual(
       expect.objectContaining({
-        id: "gpt-5.6-luna",
+        id: "gpt-6-luna",
         selectable: true,
         availability: "connection_required",
       }),
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: f.auth.userId, orgId: f.auth.orgId },
+      { [FeatureSwitchKey.PersonalModelProviderAccounts]: true },
+    );
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      f.actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: `account-${randomUUID()}`,
+          }),
+        },
+      },
+      [200, 201],
+    );
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { selectedModel: "gpt-6-luna", serviceTier: "priority" },
+      }),
+      [200],
     );
     await createWebhookCallbackApi(context).postStripeEvent(
       {
@@ -1299,77 +1326,49 @@ describe("MCP chat discovery and creation", () => {
       [200],
     );
 
-    // Every runnable plan supports BYOK, so the member subscription route
-    // survives the downgrade and the policies need no synchronization.
+    // The member's own connected subscription route is exempt from the free
+    // plan restriction, so it stays available and remains the member default.
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-5.6-luna",
-      source: "org_default",
+      model: "gpt-6-luna",
+      source: "member_default",
     });
     expect(models.models).toContainEqual(
-      expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
+      expect.objectContaining({
+        id: "gpt-6-luna",
+        selectable: true,
+        availability: "available",
+      }),
     );
     const created = await createThread(token, {
       requestId: randomUUID(),
       agentId: f.agent.agentId,
       title: "After plan synchronization",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
     });
-    expect(created.model.selectedModel).toBe("gpt-5.6-luna");
+    expect(created.model.selectedModel).toBe("gpt-6-luna");
     expect(
       (await getMessages(token, { threadId: created.threadId })).messages,
     ).toStrictEqual([]);
   });
 
-  it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
+  it("projects the system default without a stored default policy", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     await runs.grantProEntitlement(f.actor);
     await runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
     const token = f.auth.token({ scope: defaultScopes });
-    const billing = await runs.readBillingStatus(f.actor);
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    // "limited-free-1" is the only plan that still restricts Built-in models,
-    // and it is assigned by the org-creation bootstrap rather than any product
-    // API, so seed the tier directly while keeping the balance.
-    await seedOrgMetadata({
-      orgId: f.actor.orgId,
-      tier: "limited-free-1",
-      credits: billing.credits,
-    });
 
-    const pending = await callTool(token, "list_models");
-    expect(pending.isError).toBeTruthy();
-    structuredToolError(pending);
-    expect(pending.content).toContainEqual({
-      type: "text",
-      text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-    });
-    await expect(callTool(token, "list_models")).resolves.toStrictEqual(
-      pending,
-    );
-
-    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-    const settings = await accept(
-      setupApp({ context, routes: modelPoliciesRoutes })(
-        modelPoliciesMainContract,
-      ).list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(settings.body.workspaceDefaultModel).toBe("gpt-6-luna");
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-6-luna",
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
       source: "org_default",
     });
   });
@@ -1388,14 +1387,13 @@ describe("MCP chat discovery and creation", () => {
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
       },
       {
         model: "gpt-5.6-sol",
-        isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -1404,7 +1402,7 @@ describe("MCP chat discovery and creation", () => {
     const token = f.auth.token();
     const models = await listModels(token);
     expect(models).toMatchObject({
-      defaultModel: { model: "claude-sonnet-5", source: "org_default" },
+      defaultModel: { model: "claude-sonnet-5", source: "member_default" },
       admission: "checked_on_send",
     });
     expect(models.models).toContainEqual(
@@ -1608,14 +1606,13 @@ describe("MCP chat discovery and creation", () => {
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
       },
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: f.providerId,
@@ -1987,14 +1984,17 @@ describe("MCP chat discovery and creation", () => {
       title: "Newer combined state",
       model: {
         selectedModel: null,
-        effectiveModel: "claude-sonnet-5",
+        effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
         source: "org_default",
       },
     });
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "Newer combined state",
-        model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
+        model: {
+          selectedModel: null,
+          effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+        },
       },
     });
   });
@@ -2088,7 +2088,15 @@ describe("MCP chat discovery and creation", () => {
 
   it("preserves Fast, reasoning and browser settings", async () => {
     const f = await threadFixture();
-    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const model = "gpt-6-luna";
+    await createRunsApi(context).updateOrgModelPolicies(f.actor, [
+      {
+        model,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const created = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
       title: "Preserve settings",
@@ -7808,7 +7816,7 @@ describe("external MCP entry", () => {
       (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
         return {
           model,
-          isDefault: model === "claude-sonnet-5",
+          preferred: model === "claude-sonnet-5",
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -7837,7 +7845,7 @@ describe("external MCP entry", () => {
     const model = (await getThread(token, created.id)).thread.model;
     expect(model).toMatchObject({
       selectedModel: null,
-      effectiveModel: "claude-sonnet-5",
+      effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       admission: "checked_on_send",
     });
     expect(model.source).toBe("org_default");

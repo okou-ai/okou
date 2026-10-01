@@ -1,9 +1,9 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { isPiNativeRoute } from "@okouai/core/pi-execution";
 import {
-  getProviderRuntimeModel,
-  isBuiltInModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+  isPiNativeRoute,
+  type PiCatalogModel,
+} from "@okouai/core/pi-execution";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   piModelConfigV4Schema,
   type PiModelConfigV4,
@@ -27,6 +27,8 @@ export interface PiNativeModelProviderInput {
   readonly concreteType?: string;
   readonly selectedModel: string | null;
   readonly environment: Readonly<Record<string, string>>;
+  /** The catalog route's upstream model the provider environment carries. */
+  readonly upstreamModel?: string;
   readonly credentialOwner?: PiModelConfigV4["credentialOwner"];
   readonly authMethod?: string | null;
   readonly credentialHeader?: {
@@ -35,10 +37,14 @@ export interface PiNativeModelProviderInput {
   };
 }
 
-function nativeConfigIdentity(provider: PiNativeModelProviderInput) {
+function nativeConfigIdentity(
+  provider: PiNativeModelProviderInput,
+  catalogEntry: PiCatalogModel,
+) {
   const catalogModel = piNativeCatalogModelSchema.parse(provider.selectedModel);
   if (
-    !isPiNativeRoute(provider.type, catalogModel) ||
+    catalogEntry.model !== catalogModel ||
+    !isPiNativeRoute(provider.type, catalogEntry) ||
     !provider.credentialOwner
   ) {
     throw new PiNativeConfigurationError(
@@ -119,9 +125,9 @@ function resolveNativeBedrockConfig(
 /** Build native launch metadata from the selected provider, never ambient auth. */
 export function resolvePiNativeModelConfig(
   provider: PiNativeModelProviderInput,
+  catalogModel: PiCatalogModel,
 ): PiModelConfigV4 {
-  const common = nativeConfigIdentity(provider);
-  const catalogModel = common.catalogModel;
+  const common = nativeConfigIdentity(provider, catalogModel);
   const route = provider.concreteType ?? provider.type;
   const environment = provider.environment;
   if (route === "aws-bedrock") {
@@ -151,8 +157,7 @@ export function resolvePiNativeModelConfig(
     : undefined;
   if (fixed) {
     if (
-      common.model !==
-        getProviderRuntimeModel(route as keyof typeof standard, catalogModel) ||
+      common.model !== provider.upstreamModel ||
       (environment.ANTHROPIC_BASE_URL !== undefined &&
         environment.ANTHROPIC_BASE_URL !== fixed.baseUrl)
     ) {

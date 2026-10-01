@@ -2689,21 +2689,30 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
-          # Fresh Clerk organizations bootstrap onto limited-free-1, so the
-          # deterministic runner policy must stay within that plan's catalog.
+          # The runner account is upgraded to Pro (runner-token.ts): free plans
+          # run only okou-1.0 on Built-in, and this policy pins DeepSeek and Luna.
           # The model policy write precondition is mandatory, so send the
-          # revision this read observed.
+          # revision this read observed. The server projects the catalog system
+          # default into every policy list, so writes list only other models;
+          # the member preference makes DeepSeek the model new chats use.
+          # New organizations start in Auto mode, where policy writes are rejected.
+          # Runner accounts pin explicit models, so switch them to Custom. The mode
+          # switch is Debug-gated: enable Debug for the switch, then drop it again.
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${E2E_API_URL}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${E2E_API_URL}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${E2E_API_URL}/api/feature-switches" >/dev/null
+
           revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
           payload="$(jq -nc --arg revision "$revision" '{
             revision: $revision,
             policies: [
-              {model: "deepseek-v4-flash", isDefault: true, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
-              {model: "gpt-5.6-luna", isDefault: false, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
+              {model: "deepseek-v4-flash", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
+              {model: "gpt-5.6-luna", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
             ]
           }')"
 
           curl -fsS "${headers[@]}" -X PUT -d "$payload" "${E2E_API_URL}/api/model-policies" >/dev/null
-          curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":null,"serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":"deepseek-v4-flash","serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap runner mock model provider
@@ -2738,6 +2747,14 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          # New organizations start in Auto mode, where provider connections and
+          # policy writes are rejected. Runner accounts pin explicit models, so
+          # switch them to Custom first. The mode switch is Debug-gated: enable
+          # Debug for the switch, then drop it again.
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
+
           provider_payload=$(jq -nc \
             --arg secret "$OPENAI_API_KEY" \
             '{type: "openai-api-key", secret: $secret}')
@@ -2749,26 +2766,32 @@ jobs:
             <<< "$provider_response")
 
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
+          # The server projects the catalog system default into every policy
+          # list and ignores it on writes, so listed policies are re-sent as-is.
+          # A fresh Custom organization stores no Luna policy, so add the Luna
+          # BYOK route explicitly instead of rewriting a listed one.
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
               revision,
-              policies: [
-                .policies[] |
-                  {
-                    model,
-                    isDefault,
-                    defaultProviderType,
-                    credentialScope,
-                    modelProviderId
-                  } |
-                  if .model == "gpt-5.6-luna" then
-                    . + {
-                      defaultProviderType: "openai-api-key",
-                      credentialScope: "org",
-                      modelProviderId: $providerId
+              policies: (
+                [
+                  .policies[] |
+                    select(.model != "gpt-5.6-luna") |
+                    {
+                      model,
+                      defaultProviderType,
+                      credentialScope,
+                      modelProviderId
                     }
-                  else . end
-              ]
+                ] + [
+                  {
+                    model: "gpt-5.6-luna",
+                    defaultProviderType: "openai-api-key",
+                    credentialScope: "org",
+                    modelProviderId: $providerId
+                  }
+                ]
+              )
             }
           ' <<< "$policies")
           curl -fsS "${headers[@]}" \
@@ -2799,16 +2822,30 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          # New organizations start in Auto mode, where policy writes are rejected.
+          # Runner accounts pin explicit models, so switch them to Custom. The mode
+          # switch is Debug-gated: enable Debug for the switch, then drop it again.
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
+
           revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
           # Native Codex runner contracts use the policy-excluded Astra route;
           # retain Luna for explicit Pi billing and provider-fallback coverage.
+          # The server projects the catalog system default into every policy
+          # list; the member preference makes Astra the model new chats use.
           policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
-            '[{"model":"gpt-6-astra","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","isDefault":false,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
+            '[{"model":"gpt-6-astra","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
             '{revision: $revision, policies: $policies}')
           curl -fsS "${headers[@]}" \
             -X PUT \
             -d "$policy_payload" \
             "${api_url}/api/model-policies" \
+            >/dev/null
+          curl -fsS "${headers[@]}" \
+            -X PUT \
+            -d '{"selectedModel":"gpt-6-astra","serviceTier":null}' \
+            "${api_url}/api/user-model-preference" \
             >/dev/null
 
           # Keep this account's preview agent setting independent of the Pi account.
@@ -2834,7 +2871,16 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          # New organizations start in Auto mode, where policy writes are rejected.
+          # Runner accounts pin explicit models, so switch them to Custom. The mode
+          # switch is Debug-gated: enable Debug for the switch, then drop it again.
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":true}}' "${api_url}/api/feature-switches" | jq -e '.effectiveSwitches._debug == true' >/dev/null
+          curl -fsS "${headers[@]}" -X PUT -d '{"mode":"custom"}' "${api_url}/api/model-policies/mode" | jq -e '.mode == "custom"' >/dev/null
+          curl -fsS "${headers[@]}" -X POST -d '{"switches":{"_debug":false}}' "${api_url}/api/feature-switches" >/dev/null
+
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
+          # The server projects the catalog system default into every policy
+          # list and ignores it on writes, so listed policies are re-sent as-is.
           policy_payload=$(jq -c --arg model "$claude_model" '
             {
               revision,
@@ -2843,7 +2889,6 @@ jobs:
                   select(.model != $model) |
                   {
                     model,
-                    isDefault,
                     defaultProviderType,
                     credentialScope,
                     modelProviderId
@@ -2851,7 +2896,6 @@ jobs:
                 ] + [
                   {
                     model: $model,
-                    isDefault: false,
                     defaultProviderType: "built-in",
                     credentialScope: "org",
                     modelProviderId: null

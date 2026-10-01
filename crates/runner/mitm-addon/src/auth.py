@@ -251,6 +251,9 @@ def _prepare_firewall_metadata(
     flow.metadata[metadata_keys.FIREWALL_PARAMS] = allow.params
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = firewall_billable
     flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = sandbox_info.get("modelUsageProvider")
+    flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = sandbox_info.get(
+        "modelUsageLongContextMinTotalInputTokens"
+    )
 
 
 def prepare_firewall_metadata(

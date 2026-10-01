@@ -1,3 +1,4 @@
+import { loadModelCatalog } from "./model-catalog.service";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import type {
@@ -13,10 +14,7 @@ import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import {
-  onboardingModelPolicyWritePlan,
-  policySeedValues,
-} from "./model-policy.service";
+import { onboardingModelPolicyWritePlan } from "./model-policy.service";
 
 interface OrgOnboardingCompletion {
   readonly orgId: string;
@@ -93,16 +91,15 @@ export const markOrgOnboardingComplete$ = command(
         return true;
       }
       const owner = eq(orgModelPolicies.orgId, args.orgId);
-      const before = await tx.select().from(orgModelPolicies).where(owner);
-      let initializeSeed = false;
-      if (before.length === 0) {
-        const inserted = await tx
-          .insert(orgModelPolicies)
-          .values(policySeedValues(args.orgId, args.userId))
-          .onConflictDoNothing()
-          .returning({ id: orgModelPolicies.id });
-        initializeSeed = inserted.length > 0;
+      const [metadata] = await tx
+        .select({ mode: orgMetadata.modelMode })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId))
+        .limit(1);
+      if (metadata?.mode === "auto") {
+        return true;
       }
+      const catalog = await loadModelCatalog(tx);
       // Onboarding writes provider-less seed rows without coordinating other
       // low-frequency policy operations; existing uniqueness arbitrates inserts.
       const existing = await tx.select().from(orgModelPolicies).where(owner);
@@ -110,7 +107,7 @@ export const markOrgOnboardingComplete$ = command(
         ...args,
         provider: args.modelProvider,
         existing,
-        initializeSeed,
+        catalog,
         now,
       });
       if (plan) {

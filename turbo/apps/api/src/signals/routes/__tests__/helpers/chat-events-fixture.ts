@@ -1,5 +1,15 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { seededProviderTypes } from "@okouai/core/__tests__/seeded-model-catalog";
+import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { Header } from "tar";
+import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
+import { createStoragesBddApi } from "./api-bdd-storages";
+import { storageTextFile } from "./api-bdd-storage-files";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -13,24 +23,16 @@ import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/cont
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
-  getProvidersForModel,
-  type ModelProviderType,
-  type SupportedRunModel,
   type UpsertModelProviderRequest,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
-import { Header } from "tar";
 import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -38,10 +40,8 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
-import { nowDate } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
-import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
 import { readRunUsageEventsFixture } from "../../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
@@ -77,10 +77,9 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
-import { storageTextFile } from "./api-bdd-storage-files";
-import { createStoragesBddApi } from "./api-bdd-storages";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
+import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
@@ -88,7 +87,6 @@ import {
   seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
 } from "./runtime-state";
-
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
   ...chatThreadRoutes,
@@ -156,7 +154,7 @@ export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
         },
       ] as const
     ).filter((route) => {
-      return getProvidersForModel(selectedModel).includes(route.type);
+      return seededProviderTypes(selectedModel).includes(route.type);
     });
   },
 );
@@ -249,7 +247,7 @@ export interface ChatRunSendBody {
   readonly threadId?: string;
   readonly clientThreadId?: string;
   readonly clientEventId?: string;
-  readonly model?: SupportedRunModel;
+  readonly model?: string;
   readonly runOptions?: ChatRunOptionsRequest;
   readonly template?: GenerationTemplateRequest;
   readonly computerUseHostId?: string | null;
@@ -656,7 +654,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -676,7 +674,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: route.selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: route.type,
         credentialScope: "org",
         modelProviderId: providerId,
@@ -716,7 +714,7 @@ export function createChatEventsFixture(context: TestContext) {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-luna",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -758,7 +756,7 @@ export function createChatEventsFixture(context: TestContext) {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -805,7 +803,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -1278,7 +1276,7 @@ export function createChatEventsFixture(context: TestContext) {
       readonly clientEventId?: string;
       readonly prompt: string;
       readonly threadId?: string;
-      readonly model?: SupportedRunModel;
+      readonly model?: string;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageInputDocument;
     },
@@ -1733,7 +1731,7 @@ export function createChatEventsFixture(context: TestContext) {
     await api.updateOrgModelPolicies(args.actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
