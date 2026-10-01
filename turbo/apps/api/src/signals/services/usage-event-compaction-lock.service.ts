@@ -22,14 +22,12 @@ export async function withUsageEventCompactionLockScopeForTest<T>(
 export async function lockUsageEventCompaction(
   db: UsageEventCompactionLockDb,
   mode: "shared" | "exclusive" = "exclusive",
-  orgId?: string,
 ): Promise<void> {
   const scope = scopedUsageEventCompactionLock.peek()?.getStore();
-  const lockKey = [
-    "usage_event_compaction",
-    ...(scope === undefined ? [] : ["test", scope]),
-    ...(orgId === undefined ? [] : ["org", orgId]),
-  ].join(":");
+  const lockKey =
+    scope === undefined
+      ? "usage_event_compaction"
+      : `usage_event_compaction:test:${scope}`;
   await db.execute(
     mode === "shared"
       ? // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock

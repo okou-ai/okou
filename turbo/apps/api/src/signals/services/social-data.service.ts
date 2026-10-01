@@ -642,7 +642,6 @@ const settleSocialDataJob$ = command(
     const resolution = get(usagePricingResolution$);
     const effects = await db.transaction(async (tx) => {
       await lockUsageEventCompaction(tx, "shared");
-      await lockUsageEventCompaction(tx, "shared", claim.job.orgId);
       signal.throwIfAborted();
       const [job] = await tx
         .select()
@@ -652,11 +651,6 @@ const settleSocialDataJob$ = command(
       signal.throwIfAborted();
       if (!job || job.creditsCharged !== null) {
         return null;
-      }
-      if (job.orgId !== claim.job.orgId) {
-        throw new Error(
-          "Social data job changed organization during settlement",
-        );
       }
       if (job.actualCostUsdMicros === null) {
         throw new Error("Completed Social data job has no settlement cost");

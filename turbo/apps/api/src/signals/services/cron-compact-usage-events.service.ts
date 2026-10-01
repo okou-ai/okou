@@ -673,13 +673,10 @@ async function compactUsageEventBatch(
   }
   return await db.transaction(async (tx) => {
     const lockStartedAt = performance.now();
-    // Old settlement instances take only global shared. Retain global
-    // exclusive for scoped batches until those requests have drained; global
-    // shared plus org exclusive would not exclude an old same-org settler.
+    // Keep the existing coordination protocol until its replacement and
+    // old/new writer cutover are proved. Organization-scoped selection alone
+    // does not permit concurrent settlement or retirement of the global key.
     await lockUsageEventCompaction(tx);
-    if (orgId !== undefined) {
-      await lockUsageEventCompaction(tx, "exclusive", orgId);
-    }
     const lockWaitMs = Math.round(performance.now() - lockStartedAt);
     signal.throwIfAborted();
 

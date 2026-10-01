@@ -220,11 +220,9 @@ async function deleteIfStillEligible(
     // Account cleanup and compaction hold ledger rows before Runs. Exclude
     // that maintenance before our Run-delete FK acquires ledger-row locks.
     await lockUsageEventCompaction(tx, "shared");
-    await lockUsageEventCompaction(tx, "shared", candidate.orgId);
     const [current] = await tx
       .select({
         status: agentRuns.status,
-        orgId: agentRuns.orgId,
         completedAt: agentRuns.completedAt,
         cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
       })
@@ -234,7 +232,6 @@ async function deleteIfStillEligible(
     if (
       !current ||
       current.status !== candidate.status ||
-      current.orgId !== candidate.orgId ||
       current.completedAt?.getTime() !== candidate.completedAt?.getTime() ||
       current.cancellationRecoveryCompleted !==
         candidate.cancellationRecoveryCompleted ||
