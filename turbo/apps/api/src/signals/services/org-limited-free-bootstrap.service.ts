@@ -19,7 +19,7 @@ import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
-  commitPreparedAgentInstructionsStorage,
+  commitPreparedAgentInstructionsStorageInTransaction,
   prepareAgentInstructionsStorage$,
 } from "./agent-instructions-storage.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
@@ -97,12 +97,13 @@ async function ensureBootstrapInstructionsStorage(
   orgId: string,
   candidate: BootstrapInstructionsStorage,
 ) {
-  await tx
+  const [inserted] = await tx
     .insert(storages)
     .values(bootstrapStorageValues(orgId, candidate))
     .onConflictDoNothing({
       target: [storages.orgId, storages.userId, storages.name],
-    });
+    })
+    .returning({ id: storages.id });
   // Take the strong parent lock directly, not NO KEY UPDATE then an upgrade:
   // version writers may already own FK KEY SHARE before updating this row.
   const [storage] = await tx
@@ -123,7 +124,7 @@ async function ensureBootstrapInstructionsStorage(
   if (!storage) {
     throw new Error("Canonical bootstrap instructions Storage disappeared");
   }
-  return storage;
+  return { ...storage, insertedCandidate: inserted?.id === storage.id };
 }
 
 async function enqueueBootstrapPrefixCleanup(
@@ -165,21 +166,47 @@ async function publishBootstrap(
   const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
   signal.throwIfAborted();
   const cleanupJobIds: string[] = [];
+  if (
+    storage.id === args.candidate.id &&
+    storage.s3Prefix !== args.candidate.s3Prefix
+  ) {
+    throw new Error("Bootstrap candidate Storage generation changed");
+  }
   if (existingAgentId || storage.headVersionId) {
     // A concurrent winner (including edited seed instructions) owns this HEAD.
-    // Remove only a new, still-unpublished candidate inserted by this attempt.
-    if (storage.id === args.candidate.id) {
+    // INSERT RETURNING, not identity equality, owns unpublished retirement.
+    if (storage.insertedCandidate) {
       await tx.delete(storages).where(eq(storages.id, args.candidate.id));
       signal.throwIfAborted();
     }
-    cleanupJobIds.push(
-      await enqueueBootstrapPrefixCleanup(
-        tx,
-        args,
-        args.candidate.s3Prefix,
-        signal,
-      ),
-    );
+    if (storage.id !== args.candidate.id || storage.insertedCandidate) {
+      cleanupJobIds.push(
+        await enqueueBootstrapPrefixCleanup(
+          tx,
+          args,
+          args.candidate.s3Prefix,
+          signal,
+        ),
+      );
+    }
+    if (!existingAgentId && storage.headVersionId) {
+      const [head] = await tx
+        .select({ id: storageVersions.id })
+        .from(storageVersions)
+        .where(
+          and(
+            eq(storageVersions.id, storage.headVersionId),
+            eq(storageVersions.storageId, storage.id),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!head) {
+        throw new Error(
+          "Bootstrap instructions HEAD belongs to another Storage",
+        );
+      }
+    }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
       : await finalizeBootstrap(tx, args);
@@ -212,7 +239,7 @@ async function publishBootstrap(
     );
   }
 
-  await commitPreparedAgentInstructionsStorage(
+  await commitPreparedAgentInstructionsStorageInTransaction(
     { tx, volume: args.volume },
     signal,
   );
@@ -521,7 +548,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
           orgId: args.orgId,
           agentName: DEFAULT_AGENT_NAME,
           instructions: SEED_INSTRUCTIONS,
-          storageGeneration: candidate,
+          storage: candidate,
         },
         signal,
       );

@@ -41,7 +41,8 @@ this transaction.
 - A committed peer default wins. The losing candidate cannot rewrite HEAD or
   edited seed instructions.
 - An incumbent registered HEAD is preserved even when default metadata needs
-  repair. Its content is not reseeded.
+  repair. Its version must belong to the locked canonical parent; a foreign HEAD
+  fails closed. Its content is not reseeded.
 - A parent with neither HEAD nor registered versions has never published content.
   Under its strong row lock it may be retired by exact identity and replaced by
   the already-uploaded private candidate in the same transaction. A null HEAD
@@ -53,6 +54,11 @@ this transaction.
   default are preserved. Configured non-default policies retain Custom even when
   they precede metadata creation; on conflict they retain the stored mode.
   Unconfigured new organizations still start in Auto.
+
+Only an `INSERT RETURNING` receipt owns retirement of a newly inserted,
+unpublished candidate; ID equality alone does not. A candidate's captured prefix
+must also match its selected parent before publication. An existing live
+same-identity generation is retained rather than treated as disposable work.
 
 Losing candidates and retired empty parents enqueue exact-prefix cleanup v1 in
 that transaction. Preparation or publication failure joins all started PUTs

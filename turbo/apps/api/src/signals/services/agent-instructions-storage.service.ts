@@ -14,7 +14,7 @@ import {
   prepareVolumeServerSide$,
   prepareVolumeServerSideWithDb$,
   type PreparedServerSideVolume,
-  type ServerSideVolumeStorageIdentity,
+  type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
@@ -83,20 +83,20 @@ export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
     args: WriteAgentInstructionsStorageArgs & {
-      readonly storageGeneration?: ServerSideVolumeStorageIdentity;
+      readonly storage?: ServerSideVolumeStorage;
     },
     signal: AbortSignal,
   ): Promise<PreparedServerSideVolume> => {
     return await set(
       prepareVolumeServerSide$,
-      { ...instructionVolumeInput(args), storage: args.storageGeneration },
+      { ...instructionVolumeInput(args), storage: args.storage },
       signal,
     );
   },
 );
 
 /** DB-only commit. The caller owns/revalidates the Agent and Storage parent. */
-export async function commitPreparedAgentInstructionsStorage(
+export async function commitPreparedAgentInstructionsStorageInTransaction(
   args: {
     readonly tx: Tx;
     readonly volume: PreparedServerSideVolume;
@@ -154,7 +154,7 @@ export const writeAgentInstructionsStorageInTransaction$ = command(
       { db: args.tx, input: instructionVolumeInput(args) },
       signal,
     );
-    await commitPreparedAgentInstructionsStorage(
+    await commitPreparedAgentInstructionsStorageInTransaction(
       {
         tx: args.tx,
         volume,

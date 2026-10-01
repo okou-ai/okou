@@ -46,6 +46,10 @@ export interface PrepareVolumeServerSideInput {
   readonly storageName: string;
   readonly files: readonly VolumeFileInput[];
   readonly piResourceIndex?: true;
+  /** An explicitly owned generation, either already reserved or private and
+   * unregistered. The caller revalidates/creates its parent before publication;
+   * preparation must not resolve a different canonical parent. */
+  readonly storage?: ServerSideVolumeStorage;
 }
 
 export interface PreparedServerSideVolume {
@@ -57,7 +61,7 @@ export interface PreparedServerSideVolume {
   };
 }
 
-export interface ServerSideVolumeStorageIdentity {
+export interface ServerSideVolumeStorage {
   readonly id: string;
   readonly s3Prefix: string;
 }
@@ -65,9 +69,6 @@ export interface ServerSideVolumeStorageIdentity {
 interface PrepareVolumeServerSideWithDbInput {
   readonly db: Db;
   readonly input: PrepareVolumeServerSideInput;
-  /** A private, unregistered generation. The caller owns its later publication
-   * or cleanup; preparation must not resolve a different canonical parent. */
-  readonly storage?: ServerSideVolumeStorageIdentity;
 }
 
 interface S3StorageManifest {
@@ -339,7 +340,7 @@ export const prepareVolumeServerSideWithDb$ = command(
     });
     const updatedAt = nowDate();
     const storage =
-      args.storage ??
+      input.storage ??
       (await resolveCanonicalVolumeStorage(writeDb, input, signal));
 
     const versionId = computeContentHashFromHashes(storage.id, fileEntries);
@@ -406,15 +407,13 @@ export const prepareVolumeServerSideWithDb$ = command(
 export const prepareVolumeServerSide$ = command(
   async (
     { set },
-    args: PrepareVolumeServerSideInput & {
-      readonly storage?: ServerSideVolumeStorageIdentity;
-    },
+    args: PrepareVolumeServerSideInput,
     signal: AbortSignal,
   ): Promise<PreparedServerSideVolume> => {
     const writeDb = set(writeDb$);
     return await set(
       prepareVolumeServerSideWithDb$,
-      { db: writeDb, input: args, storage: args.storage },
+      { db: writeDb, input: args },
       signal,
     );
   },
