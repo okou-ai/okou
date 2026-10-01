@@ -10,6 +10,9 @@ import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { pgTextDecoder } from "../lib/db-structured-result";
+import { billingRunAttributionWrite } from "../signals/services/managed-usage-attribution";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -1967,14 +1970,32 @@ export async function insertCanonicalChatEventWritesFixture(args: {
       orgId: args.orgId,
       agentId: args.agentId,
     });
-    await tx.insert(agentRuns).values({
-      id: single.interruptTargetRunId,
-      userId: args.userId,
-      orgId: args.orgId,
-      sessionId: interruptTargetSessionId,
-      status: "queued",
-      prompt: "canonical interrupt target",
-    });
+    const [run] = await tx
+      .insert(agentRuns)
+      .values({
+        id: single.interruptTargetRunId,
+        userId: args.userId,
+        orgId: args.orgId,
+        sessionId: interruptTargetSessionId,
+        status: "queued",
+        prompt: "canonical interrupt target",
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    if (!run) {
+      throw new Error("Expected canonical interrupt target run insertion");
+    }
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
     await insertCanonicalSingleWrites(tx, args.threadId, single);
     await insertCanonicalBatchWrites(tx, args.threadId, batch);
     await insertCanonicalReplacementWrite(tx, args.threadId, replacement);

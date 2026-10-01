@@ -29,6 +29,24 @@ command in `voice-io-post.service.ts` writes behavior counters, not raw billing
 usage. The older foundation document's writer list is therefore historical and
 must not be used as a current producer inventory without this trace.
 
+## Six application trigger invariants
+
+| Installed trigger / table                                          | Invariant and explicit replacement                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capture_billing_run_attribution` / `agent_runs`                   | Capture independent original Run ID, owner, exact stored start, normalized source/thread at Run insertion; launch/benchmark/converted fixtures publish `billingRunAttributionWrite` in the insertion transaction. Deleting live content must not delete attribution. |
+| `capture_generation_billing_identity` / `built_in_generation_jobs` | Preserve original billing Run ID/context independently of live Run FK, including late result after live deletion; the owning job creation supplies these values and lifecycle updates do not replace them.                                                           |
+| `capture_usage_billing_attribution` / `usage_event`                | Publish owned Run identity and original allowance anchor, or explicit intentional runless context; unresolved historical facts remain unknown. Managed, Runner/provider, X and Pi producers supply the appropriate values locally.                                   |
+| `mark_raw_billing_usage_observed` / `usage_event`                  | Insertion monotonically marks known canonical Run observation in the same raw publication transaction, including reserved then deleted zero rows; publication builders perform the explicit mark.                                                                    |
+| `capture_hourly_billing_attribution` / `usage_event_hourly_rollup` | Compaction preserves raw identity/context/exact anchor and rejects amount/identity disagreement before deleting the selected raw batch; explicit compaction SQL owns that commit.                                                                                    |
+| `mark_hourly_billing_usage_observed` / `usage_event_hourly_rollup` | Hourly publication monotonically marks known Run observation together with hourly insertion and raw deletion; compaction and the retained operator explicitly publish it.                                                                                            |
+
+The table is a source-contract mapping, not authorization to drop these triggers
+without finishing every current fixture and identity-mutation boundary below.
+All six remain installed in the shipped schema; only an isolated local test
+copy has them removed. Their remaining retirement is unfinished R1 work, not
+merely writer drain or an implementation deferred to R2. Credit issuance and
+settlement semantics are unchanged.
+
 ## Retention and mutation transitions
 
 `billing_run_attribution` has no content, user, organization or thread foreign
@@ -88,10 +106,16 @@ before tests can run against a trigger-free schema.
   Existing Runner SSH (43), queue-monitor (9) and Telegram integration (39) API
   tests pass against the isolated six-trigger-free schema; ordinary assertions
   are unchanged. They add no endpoint or sequencing gate.
-- Other direct Run setup remains in `test-pi-memory-stage1-state.ts` and the
-  `test-fixtures/chat-event-retention.ts` / `chat-events.ts` seeders. Several
-  service-local Pi fixtures also insert Runs directly. Their caller-specific
-  billing expectations have not all been migrated by this inventory.
+- `test-fixtures/chat-event-retention.ts` and the canonical interrupt-target
+  Run in `chat-events.ts` now insert Run/canonical attribution in one transaction
+  using exact returned database time, owner, source and thread identity. Existing
+  retention cron, archived consumer and canonical event storage APIs pass all
+  14 cases against a freshly migrated current-main database with all six billing
+  triggers removed. Thread-bound and threadless setup preserve their own source;
+  no new endpoint, fixture field, lock or coordination state is introduced.
+- Other direct Run setup remains in `test-pi-memory-stage1-state.ts` and several
+  service-local Pi fixtures. Their caller-specific billing expectations have
+  not all been migrated by this inventory.
 - `services/__tests__/pi-memory-stage1-usage.service.test.ts` contains direct
   raw INSERTs without anchors and identity mutation assertions. Historical
   database migration scripts separately construct historical schemas and
@@ -111,11 +135,12 @@ capture/observation values explicitly; transaction ownership remains unfinished
 in the identified launch, Pi and operator paths. The test-only producer audit
 and conversions above are unfinished work, rather than a deployment condition.
 
-The outgoing API still relies on the six installed triggers: old Run and job
-INSERTs omit canonical/original identities, old raw producers omit resolved
-anchors and observation, and old compaction depends on hourly capture. Current
-R1 SQL alone does not make those old writes safe without the triggers. R2
-retirement requires no such API serving or in-flight writer, a compatible
-rollback target, and verified R1 producer/fixture coverage. Production-data
-convergence for removing reader fallbacks is a separate gate. The two-release
-plan is unchanged.
+Older API versions relied on the installed triggers; that is historical context,
+not a requirement to build rolling-version coordination. Under the current R1
+scope, all current producer/fixture and identity-mutation boundaries must be
+finished and verified before the six application triggers are retired. These
+unfinished conversions and trigger removal remain R1 implementation, not an
+R2 or writer-drain-only deliverable. Historical migration-definition retirement
+still follows the two-release fallback plan. Production-data convergence before
+removing reader fallbacks is a separate evidence gate; no production operator
+or erasure action is authorized here.
