@@ -1,8 +1,6 @@
-import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
-import { PiNativeConfigurationError } from "./pi-native-model-config";
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
+
 import {
   createConnectorSourceSnapshots,
   type ConnectorSourceSnapshot,
@@ -11,12 +9,14 @@ import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
-import {
-  compileModelRuntime,
-  type ModelCredentialValues,
-} from "./execution-model-runtime";
+import { compileModelRuntime } from "./execution-model-runtime";
 import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
-import { decryptStoredSecretValue } from "./crypto.utils";
+import {
+  prepareManagedModelEnvironment,
+  prepareRegisteredModelEnvironment,
+  resolveModelCredentialValues,
+} from "./execution-model-preparation.service";
+
 import {
   createExecutionStorageObjects,
   type ExecutionStorageRequest,
@@ -174,7 +174,6 @@ import {
   type AgentRunIdentityCommand,
   loadRunRoutePricing,
   type AgentRunSelectionInput,
-  builtInModelProviderEnvironmentFromSnapshot,
   type CreateQueueFirstAgentRunCommandArgs,
   frameworkApiKeyEnv,
   frameworkForProviderSelection,
@@ -373,7 +372,6 @@ import type {
 
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import {
-  catalogProviderUpstreamModel,
   catalogBuiltInCandidates,
   catalogHasProviderRoute,
   loadModelCatalog,
@@ -561,11 +559,6 @@ import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integr
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
-  getSecretNameForType,
-  getSecretsForAuthMethod,
-  getModelProviderFirewall,
-  hasAuthMethods,
-  type ModelProviderType,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -2464,58 +2457,6 @@ type RunnerInputResult =
   | CreateRunErrorResult
   | null;
 
-function modelCredentialsAreUsable(
-  source: ModelSourceSnapshot,
-  type: ModelProviderType,
-  credentials: ModelCredentialValues,
-): boolean {
-  if (hasAuthMethods(type)) {
-    const method =
-      source.configuration.kind === "registered-provider"
-        ? source.configuration.authMethod
-        : null;
-    const rules = method ? getSecretsForAuthMethod(type, method) : undefined;
-    return (
-      rules !== undefined &&
-      Object.entries(rules).every(([name, rule]) => {
-        return !rule.required || !!credentials[name];
-      })
-    );
-  }
-  const name = getSecretNameForType(type);
-  return name !== undefined && name !== null && !!credentials[name]?.trim();
-}
-
-function selectedSourceUpstream(
-  catalog: ModelCatalog,
-  source: ModelSourceSnapshot,
-  type: ModelProviderType,
-  logicalModel: string,
-  piExecution: boolean | undefined,
-): string | null {
-  const cloud = type === "aws-bedrock" || type === "azure-foundry";
-  const upstream =
-    cloud && source.configuration.kind === "registered-provider"
-      ? source.configuration.configuredModel
-      : catalogProviderUpstreamModel(catalog, logicalModel, type);
-  if (
-    cloud &&
-    piExecution &&
-    !isCloudModelMappingValid(
-      type,
-      logicalModel,
-      upstream,
-      catalogHasProviderRoute(catalog, logicalModel, type),
-      catalog.byModel,
-    )
-  ) {
-    throw new PiNativeConfigurationError(
-      "Cloud provider requires its explicitly configured deployment or profile",
-    );
-  }
-  return upstream;
-}
-
 function customConnectorSourceStorageRows(
   snapshot: ConnectorSourceSnapshot,
 ): readonly CustomConnectorRuntimeStorageRow[] {
@@ -2577,18 +2518,6 @@ function customConnectorSourceStorageRows(
     : values.map((value) => {
         return { ...base, ...value };
       });
-}
-
-function capturesPiProviderSecret(
-  catalog: ModelCatalog,
-  model: string,
-  piExecution: boolean | undefined,
-): boolean {
-  const routeClass = piCatalogModel(catalog, model)?.piRouteClass;
-  return (
-    piExecution === true &&
-    (routeClass === "claude-native" || routeClass === "deepseek")
-  );
 }
 
 interface QueuedProviderAdmissionSurface {
@@ -8894,45 +8823,12 @@ export function createThreadClaimRunObjects(
     state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
   const resolveModelCredentialValues$ = command(
     async ({ get }, source: ModelSourceSnapshot, signal: AbortSignal) => {
-      const values: Record<string, string> = {};
-      for (const credential of source.credentials) {
-        if (credential.kind === "encrypted") {
-          values[credential.name] = await decryptStoredSecretValue(
-            credential.encryptedValue,
-          );
-        } else {
-          if (
-            source.identity.kind !== "built-in" ||
-            credential.modelKeyId !== source.identity.modelKeyId ||
-            source.configuration.kind !== "registered-provider"
-          ) {
-            throw new Error("Managed key identity mismatch");
-          }
-          const [key] = await get(db$)
-            .select({
-              vendor: builtInModelKeys.vendor,
-              apiKey: builtInModelKeys.apiKey,
-            })
-            .from(builtInModelKeys)
-            .where(eq(builtInModelKeys.id, credential.modelKeyId))
-            .limit(1);
-          signal.throwIfAborted();
-          if (!key?.apiKey) {
-            return null;
-          }
-          if (key.vendor !== source.configuration.managedVendor) {
-            throw new Error("Managed key vendor changed");
-          }
-          values[credential.name] = key.apiKey;
-        }
-        signal.throwIfAborted();
-      }
-      return values;
+      return await resolveModelCredentialValues(get(db$), source, signal);
     },
   );
   const prepareRegisteredModelRuntime$ = command(
     async (
-      { get, set },
+      { get },
       source: ModelSourceSnapshot,
       selectedModel: string,
       options: {
@@ -8942,176 +8838,30 @@ export function createThreadClaimRunObjects(
       },
       signal: AbortSignal,
     ): Promise<ResolvedModelProviderEnvironment | null> => {
-      const { userId, sourceId, piExecution } = options;
       const catalog = await get(claimCatalog$);
       signal.throwIfAborted();
-      const type = modelProviderTypeSchema.parse(
-        source.configuration.providerType,
-      );
-      const credentials = await set(
-        resolveModelCredentialValues$,
+      return await prepareRegisteredModelEnvironment(
+        get(db$),
         source,
+        selectedModel,
+        { ...options, catalog },
         signal,
       );
-      if (!credentials) {
-        return null;
-      }
-      if (!modelCredentialsAreUsable(source, type, credentials)) {
-        return null;
-      }
-      const upstreamModel = selectedSourceUpstream(
-        catalog,
-        source,
-        type,
-        selectedModel,
-        piExecution,
-      );
-      if (!upstreamModel) {
-        return null;
-      }
-      const compiled = compileModelRuntime({
-        source,
-        selection: { kind: "configured", selectedModel, upstreamModel },
-        credentials,
-      });
-      const deferred = getModelProviderFirewall(type) !== undefined;
-      const capture = capturesPiProviderSecret(
-        catalog,
-        selectedModel,
-        piExecution,
-      );
-      const names = Object.keys(compiled.secrets);
-      const sourceUserId =
-        source.credentialOwner === "organization"
-          ? ORG_SENTINEL_USER_ID
-          : userId;
-      const environment = { ...compiled.environment };
-      // Pi owns account routing through its explicit source binding rather
-      // than the native Codex CLI-only routing environment variable.
-      if (piExecution && type === "codex-oauth-token") {
-        delete environment.CODEX_OAUTH_ACCOUNT_ID;
-      }
-      const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
-        type,
-        logicalModel: compiled.selectedModel,
-        runtimeModel: compiled.upstreamModel,
-        environment,
-      });
-      return {
-        id: sourceId,
-        type,
-        credentialOwner: compiled.credentialOwner,
-        environment,
-        secrets: deferred && !capture ? {} : { ...compiled.secrets },
-        selectedModel: compiled.selectedModel,
-        upstreamModel: compiled.upstreamModel,
-        ...(source.configuration.kind === "registered-provider" &&
-        source.configuration.authMethod
-          ? { authMethod: source.configuration.authMethod }
-          : {}),
-        ...(deferred
-          ? {
-              secretConnectorMap: Object.fromEntries(
-                names.map((name) => {
-                  return [name, type];
-                }),
-              ),
-              secretConnectorMetadataMap: Object.fromEntries(
-                names.map((name) => {
-                  return [
-                    name,
-                    {
-                      sourceType: "model-provider" as const,
-                      sourceUserId,
-                      ...(source.identity.kind === "member"
-                        ? { sourceId: source.identity.accountId }
-                        : {}),
-                      metadataKey: type,
-                    },
-                  ];
-                }),
-              ),
-            }
-          : {}),
-        ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
-      };
     },
   );
   const prepareManagedModelRuntime$ = command(
     async (
-      { set },
+      { get },
       source: ModelSourceSnapshot,
       args: ResolveModelProviderEnvironmentArgs,
       signal: AbortSignal,
     ): Promise<ResolvedModelProviderEnvironment | null> => {
-      if (source.identity.kind !== "built-in") {
-        throw new Error("Managed preparation requires a managed source");
-      }
-      const route = args.builtInModelRuntimeRoute;
-      if (
-        !route ||
-        route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
-        getFrameworkForType(route.providerType) !== args.framework ||
-        route.modelKeyId !== source.identity.modelKeyId
-      ) {
-        return null;
-      }
-      const credentials = await set(
-        resolveModelCredentialValues$,
+      return await prepareManagedModelEnvironment(
+        get(db$),
         source,
+        args,
         signal,
       );
-      if (!credentials) {
-        return null;
-      }
-      const compiled = compileModelRuntime({
-        source,
-        selection: {
-          kind: "built-in",
-          selectedModel: route.selectedModel,
-          providerType: route.providerType,
-          upstreamModel: route.upstreamModel,
-          modelKeyId: route.modelKeyId,
-        },
-        credentials,
-      });
-      const secretName = getSecretNameForType(route.providerType);
-      if (!secretName || !credentials[secretName]) {
-        return null;
-      }
-      // Preserve private US-routing/firewall/Codex protocol without a query.
-      const protocol = builtInModelProviderEnvironmentFromSnapshot({
-        route,
-        selectedModel: route.selectedModel,
-        featureSwitchContext: args.featureSwitchContext,
-        apiKey: credentials[secretName],
-      });
-      if (!protocol) {
-        return null;
-      }
-      const environment = { ...compiled.environment };
-      if (route.providerType === "openrouter-api-key") {
-        const endpoint = protocol.environment.ANTHROPIC_BASE_URL;
-        if (!endpoint) {
-          throw new Error("Managed messages endpoint is missing");
-        }
-        environment.ANTHROPIC_BASE_URL = endpoint;
-      }
-      if (route.providerType === "openrouter-codex") {
-        const endpoint = protocol.environment.OPENAI_BASE_URL;
-        if (!endpoint) {
-          throw new Error("Managed responses endpoint is missing");
-        }
-        environment.OPENAI_BASE_URL = endpoint;
-      }
-      return {
-        ...protocol,
-        selectedModel: compiled.selectedModel,
-        upstreamModel: compiled.upstreamModel,
-        environment,
-        secrets: { ...compiled.secrets },
-      };
     },
   );
   const resolveConfiguredModelRuntime$ = command(
