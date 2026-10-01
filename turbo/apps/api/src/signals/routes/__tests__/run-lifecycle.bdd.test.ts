@@ -1886,21 +1886,14 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("returns canonical storage manifests without API-only ownership fields", async () => {
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const composeName = `bdd-storage-manifest-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     await api.heartbeatRunner(runnerGroup);
 
-    const canonicalRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const canonicalRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "canonical storage claim",
     });
     const canonicalClaim = await api.claimRunnerJob(canonicalRun.runId);
@@ -2093,19 +2086,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("keeps a committed artifact head after initial empty artifact creation", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
-    const { actor } = await entitledRunActor();
-    const composeName = `bdd-artifact-head-commit-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const initialRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "initial empty artifact creation should not block later commits",
     });
     onTestFinished(async () => {
@@ -2203,8 +2186,8 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       }),
     );
 
-    const committedRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const committedRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "committed artifact head should stay non-empty",
     });
     onTestFinished(async () => {
@@ -15901,7 +15884,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("checkpoints direct compose runs without vars", async () => {
+  it("rejects a standalone checkpoint while pending and checkpoints on completion", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -15912,20 +15895,13 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
 
-    // Direct compose runs created without vars leave the stored vars null,
-    // and their agent-run rows carry no model provider or pinned model.
-    const composeName = `bdd-null-vars-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD checkpoint agent",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "checkpoint without vars",
     });
     const sandboxHeaders = {
