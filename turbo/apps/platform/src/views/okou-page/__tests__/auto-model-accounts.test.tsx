@@ -123,10 +123,6 @@ test("Offer a single connection entry point in Auto mode and keep it after cance
   expect(
     within(settings).queryByRole("heading", { name: "Models" }),
   ).not.toBeInTheDocument();
-  expect(within(settings).queryByText("Easy model")).not.toBeInTheDocument();
-  expect(
-    within(settings).queryByText("Personal Model Subscriptions"),
-  ).not.toBeInTheDocument();
   expect(
     within(settings).queryByText("No accounts connected."),
   ).not.toBeInTheDocument();

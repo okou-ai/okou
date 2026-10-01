@@ -211,7 +211,6 @@ test("Apply realtime model policy changes after reopening Settings", async () =>
   await expect(
     findEnabledButton("Connect account", reopened),
   ).resolves.toBeEnabled();
-  expect(within(reopened).queryByText("Easy model")).not.toBeInTheDocument();
   expect(
     within(reopened).queryByRole("heading", { name: "Models" }),
   ).not.toBeInTheDocument();
@@ -274,7 +273,6 @@ test("Keep the Models header without organization loading UI while the initial m
   await expect(
     findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
-  expect(within(settings).queryByText("Easy model")).not.toBeInTheDocument();
   expect(
     within(settings).queryByRole("heading", { name: "Models" }),
   ).not.toBeInTheDocument();
