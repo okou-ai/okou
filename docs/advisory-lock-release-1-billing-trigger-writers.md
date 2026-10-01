@@ -3,8 +3,8 @@
 This source inventory follows imported table bindings, INSERT/UPDATE callers,
 raw SQL builders and the retained operator. R1 migration 1309 retires the six
 application capture/observation triggers after explicit current writer/fixture
-coverage. Their historical function definitions remain for migration-layer
-retirement only; no current producer invokes them. This is not a production
+coverage and drops their seven functions in the same migration; no trigger,
+current producer or operator script invokes them. This is not a production
 catalog, production operation or data-convergence report.
 
 ## Production writers
@@ -44,9 +44,12 @@ The table is the current owning-command SQL replacement contract. Migration
 1309 drops all six application hooks in the normal R1 schema, with no replacement
 trigger/lock/state and no rolling-writer compatibility. Run/job/raw/hourly source
 and observation publish explicitly. Credit issuance and settlement semantics
-are unchanged. Only historical migration-layer function-definition retirement
-remains for the second release; reader fallback removal still needs its separate
-production convergence evidence.
+are unchanged. 1309 also drops the seven functions (`capture_*`,
+`mark_billing_usage_observed`, `ensure_billing_run_*`, `billing_usage_source`):
+nothing calls them once the triggers are gone, and the operator script inlines
+the source mapping the API writers already use. Dropping them needs no second
+release because no running API version calls them directly. Reader fallback
+removal still needs its separate production convergence evidence.
 
 ## Retention and mutation transitions
 
@@ -143,7 +146,7 @@ Older API versions relied on the installed triggers; that is historical context,
 not a requirement to build rolling-version coordination. Under the current R1
 scope, current producer/fixture and identity-mutation contracts are explicit,
 and migration 1309 retires the six application hooks in R1, not R2 or a
-writer-drain-only deliverable. Historical migration-definition retirement
-still follows the two-release fallback plan. Production-data convergence before
+writer-drain-only deliverable; their functions are dropped in the same
+migration. Production-data convergence before
 removing reader fallbacks is a separate evidence gate; no production operator
 or erasure action is authorized here.

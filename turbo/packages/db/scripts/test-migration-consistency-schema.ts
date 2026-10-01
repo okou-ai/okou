@@ -247,7 +247,6 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
 async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
-  await client.query("BEGIN");
 
   try {
     const sourceConstraint = await client.query<{ validated: boolean }>(`
@@ -256,53 +255,8 @@ async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
         AND conname = 'billing_run_attribution_source_check'
     `);
     assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
-    const sources = await client.query<{
-      triggerSource: string | null;
-      source: string;
-    }>(`
-      SELECT trigger_source AS "triggerSource",
-        billing_usage_source(trigger_source) AS source
-      FROM unnest(ARRAY[
-        'web', 'automation-schedule', 'automation-event', 'goal',
-        'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone',
-        'github', 'agent', 'unsupported', NULL
-      ]::text[]) WITH ORDINALITY AS inputs(trigger_source, position)
-      ORDER BY position
-    `);
-    assert.deepEqual(sources.rows, [
-      { triggerSource: "web", source: "chat" },
-      { triggerSource: "automation-schedule", source: "automation" },
-      { triggerSource: "automation-event", source: "automation" },
-      { triggerSource: "goal", source: "automation" },
-      { triggerSource: "slack", source: "slack" },
-      { triggerSource: "discord", source: "discord" },
-      { triggerSource: "teams", source: "teams" },
-      { triggerSource: "telegram", source: "telegram" },
-      { triggerSource: "email", source: "email" },
-      { triggerSource: "agentphone", source: "agentphone" },
-      { triggerSource: "github", source: "github" },
-      { triggerSource: "agent", source: "agent" },
-      { triggerSource: "unsupported", source: "other" },
-      { triggerSource: null, source: "other" },
-    ]);
-
-    await client.query(`
-      SELECT ensure_billing_run_attribution(
-        '3ae9c61f-3d08-4a8b-9810-3c627ed746de',
-        'discord-source-validation-org', 'discord-source-validation-user',
-        '2026-09-24 00:00:00'::timestamp, billing_usage_source('discord')
-      )
-    `);
-    const attribution = await client.query<{ source: string }>(`
-      SELECT source FROM billing_run_attribution
-      WHERE run_id = '3ae9c61f-3d08-4a8b-9810-3c627ed746de'
-    `);
-    assert.deepEqual(attribution.rows, [{ source: "discord" }]);
-    console.log(
-      "   ✅ Discord billing capture preserves existing source mappings\n",
-    );
+    console.log("   ✅ Billing attribution source constraint is validated\n");
   } finally {
-    await client.query("ROLLBACK");
     await client.end();
   }
 }
@@ -1255,58 +1209,7 @@ type PermanentFunction = {
 // pgcrypto and vector functions are deliberately absent from the function list.
 const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
-    functionName: "billing_usage_source",
-    identityArguments: "trigger_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "56fbba07cf9d2a5877b03524c215c28b",
-    functionName: "ensure_billing_run_attribution",
-    identityArguments:
-      "billing_id uuid, billed_org text, billed_user text, original_start timestamp without time zone, billing_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "58e58b34a3eb3679ad3ba9d984bf2b8b",
-    functionName: "capture_billing_run_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "8699ee12596b337ac2df0a58e1ec6d59",
-    functionName: "ensure_billing_run_thread",
-    identityArguments: "billing_id uuid, original_thread uuid",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "b002912b7bba9df6783801b84490bada",
-    functionName: "capture_usage_billing_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "81ad11f2d8edaa5b6d708e02e21b792a",
-    functionName: "capture_generation_billing_identity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "edb73467bdfa0f1f58e388f2df908b89",
-    functionName: "mark_billing_usage_observed",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-] as const satisfies readonly PermanentFunction[];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];

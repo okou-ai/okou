@@ -13104,6 +13104,121 @@ describe("usage pack allocation management", () => {
     ]);
   });
 
+  it("settles a paid upgrade and its subscription deletion in exactly one order", async () => {
+    mockNow(new Date("2035-01-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const fixture = await seedManagedUsagePack([
+      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+    ]);
+    const sourceUserId =
+      (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
+        .allocations[0]?.userId ?? "";
+    const oldSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      oldSubscription,
+    );
+    mockUsagePackChangePreviews(1500, 5000);
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const preview = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: sourceUserId, targetUsagePackUsd: 50 },
+      }),
+      [200],
+    );
+    const prorationTimestamp = Math.floor(
+      new Date(preview.body.prorationDate).getTime() / 1000,
+    );
+    const pendingInvoiceId = `in_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      ...oldSubscription,
+      pending_update: { expires_at: prorationTimestamp + 300 },
+      latest_invoice: {
+        id: pendingInvoiceId,
+        status: "open",
+        hosted_invoice_url: `https://invoice.stripe.test/${pendingInvoiceId}`,
+      },
+    });
+    const confirmed = await accept(
+      client.confirmChange({
+        params: { changeId: preview.body.changeId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: {},
+      }),
+      [200],
+    );
+    expect(confirmed.body.status).toBe("pending_payment");
+
+    const paidInvoice = managedUsagePackUpgradeInvoice(fixture, {
+      invoiceId: pendingInvoiceId,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_20,
+      targetPriceId: TEST_PRICE_USAGE_PACK_50,
+      prorationTimestamp,
+    });
+    const canceledSubscription = { ...oldSubscription, status: "canceled" };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      canceledSubscription,
+    );
+    const [paid, deleted] = await Promise.allSettled([
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+      postManagedUsagePackEvent(
+        "customer.subscription.deleted",
+        canceledSubscription,
+      ),
+    ]);
+    expect(deleted.status).toBe("fulfilled");
+    const settled = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+    const replayedPaid = await Promise.allSettled([
+      postManagedUsagePackEvent("invoice.paid", paidInvoice),
+    ]);
+    await postManagedUsagePackEvent(
+      "customer.subscription.deleted",
+      canceledSubscription,
+    );
+    const replayed = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+
+    const change = settled.changes.find((candidate) => {
+      return candidate.id === preview.body.changeId;
+    });
+    // Either the paid publication or the cancellation transition wins; the
+    // loser rolls back instead of publishing a second grant or overwriting.
+    if (change?.status === "failed") {
+      expect(settled.grants).toHaveLength(2);
+      expect(settled.fulfillmentInvoiceIds).not.toContain(pendingInvoiceId);
+    } else {
+      expect(paid.status).toBe("fulfilled");
+      expect(replayedPaid[0]?.status).toBe("fulfilled");
+      expect(change?.status).toMatch(/^(applied|completed)$/);
+      expect(
+        settled.grants.filter((grant) => {
+          return grant.originalAmount === 15_000;
+        }),
+      ).toHaveLength(1);
+    }
+    expect(replayed.grants).toStrictEqual(settled.grants);
+    expect(replayed.fulfillmentInvoiceIds).toStrictEqual(
+      settled.fulfillmentInvoiceIds,
+    );
+    expect(
+      replayed.changes.find((candidate) => {
+        return candidate.id === preview.body.changeId;
+      })?.status,
+    ).toBe(change?.status);
+  });
+
   it("completes an immediately paid upgrade during confirmation", async () => {
     mockNow(new Date("2035-01-20T00:00:00.000Z"));
     onTestFinished(() => {
@@ -14367,6 +14482,123 @@ describe("usage pack allocation management", () => {
       }),
       [200],
     );
+  });
+
+  it("keeps one open removal per member across concurrent removals of different members", async () => {
+    mockNow(new Date("2035-04-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const adminUserId = `user_${randomUUID()}`;
+    const firstUserId = `user_${randomUUID()}`;
+    const secondUserId = `user_${randomUUID()}`;
+    const fixture = await seedManagedUsagePack([
+      { userId: adminUserId, usagePackUsd: 20 },
+      { userId: firstUserId, usagePackUsd: 20 },
+      { userId: secondUserId, usagePackUsd: 50 },
+    ]);
+    for (const userId of [firstUserId, secondUserId]) {
+      for (const grantType of ["purchased", "bonus"] as const) {
+        await usagePackStateAction({
+          action: "set-grant-remaining",
+          orgId: fixture.orgId,
+          userId,
+          grantType,
+          remainingAmount: 0,
+        });
+      }
+    }
+    mocks.clerk.session(adminUserId, fixture.orgId, "org:admin");
+    context.mocks.clerk.users.getUserList.mockImplementation((params) => {
+      const requested = JSON.stringify(params);
+      return Promise.resolve({
+        data: [firstUserId, secondUserId]
+          .filter((userId) => {
+            return requested.includes(`${userId}@example.test`);
+          })
+          .map((id) => {
+            return { id };
+          }),
+      });
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [adminUserId, firstUserId, secondUserId].map((userId) => {
+          return { publicUserData: { userId } };
+        }),
+      },
+    );
+    context.mocks.clerk.organizations.deleteOrganizationMembership.mockResolvedValue(
+      {},
+    );
+    const currentSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([
+        [TEST_PRICE_USAGE_PACK_20, 2],
+        [TEST_PRICE_USAGE_PACK_50, 1],
+      ]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      currentSubscription,
+    );
+    context.mocks.stripe.subscriptions.update.mockResolvedValue(
+      currentSubscription,
+    );
+    const client = setupApp({ context, routes: orgMembersRoutes })(
+      orgMembersContract,
+    );
+    const remove = async (userId: string) => {
+      return await accept(
+        client.removeMember({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { email: `${userId}@example.test` },
+        }),
+        [200],
+      );
+    };
+
+    const results = await Promise.allSettled([
+      remove(firstUserId),
+      remove(secondUserId),
+    ]);
+    expect(
+      results.some((result) => {
+        return result.status === "fulfilled";
+      }),
+    ).toBeTruthy();
+    // A member whose removal lost the organization's single open change
+    // fails before any billing effect and succeeds once the winner settles.
+    for (const [index, userId] of [firstUserId, secondUserId].entries()) {
+      if (results[index]?.status === "rejected") {
+        await remove(userId);
+      }
+    }
+
+    const state = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+    for (const userId of [firstUserId, secondUserId]) {
+      expect(
+        state.changes.filter((change) => {
+          return (
+            change.userId === userId &&
+            change.kind === "removal" &&
+            change.status !== "failed"
+          );
+        }),
+      ).toHaveLength(1);
+      expect(
+        state.refunds.filter((refund) => {
+          return refund.userId === userId && refund.status !== "available";
+        }),
+      ).toStrictEqual([]);
+    }
+    expect(
+      state.allocations.filter((allocation) => {
+        return allocation.userId === adminUserId;
+      }),
+    ).toStrictEqual([expect.objectContaining({ status: "active" })]);
   });
 
   it("infers a legacy invoice refund when the removed member owns the last package", async () => {

@@ -59,7 +59,7 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 ## Per-key inventory
 
 Initial inventory: **17 API + 1 operator** definitions. At `0ea5f20d`:
-**6 API + 0 operator**. Now: **3 API + 0 operator** after the unsafe credit retirement was withdrawn; invitation and serving
+**6 API + 0 operator**. Now: **2 API + 0 operator** (`billing_purchase`, `credit_`) after the unsafe credit retirement was withdrawn and `usage_pack_billing` retired; invitation and serving
 compaction retirement; shared/exclusive compaction counted separately before
 removal. A later main integration must recheck any imported definitions. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
@@ -69,7 +69,7 @@ removed; that simplification remains explicit R1 implementation work below.
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stripe_customer_<org>`                    | **Deleted.** Stripe customer creation is outside SQL with the existing shared organization idempotency key; local missing-binding UPDATE and organization PK arbitrate new financial writers. Fast-path binding reads are unchanged.                                                                                                                                                                                                        |
 | `stripe_concurrency_subscription:<id>`     | **Deleted.** Timestamp/xmin publication and invoice-line uniqueness remain; daily 24-bucket observation repair uses the existing hourly billing cron. This does not complete desired concurrency configuration or duplicate-charge recovery.                                                                                                                                                                                                |
-| `usage_pack_billing:<org>`                 | **Still present, R1 financial work.** Plan/migration/legacy Plan/concurrency/cancel/restore and last-member/deferred changes are not all declarative. No outgoing-version-only exemption is claimed.                                                                                                                                                                                                                                        |
+| `usage_pack_billing:<org>`                 | **Deleted.** Every acquisition and the SQL builder are removed. Paid invoice publication uses invoice receipts and conditional change/root status; open standalone changes stay single through `uq_usage_pack_changes_active_org`; member grants/refunds through status-conditional refund preparation; quantity/schedule sync is declarative outside SQL.                                                                                  |
 | `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
 | `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
 | `credit_<org>`                             | **Unfinished R1 financial work.** Attempted issuance retirement was withdrawn after distinct-Run overissue. Same-identity unique insertion and conditional financial writes remain, but cannot alone prevent contemporary first-window duplication; see the diagnostic and decision boundary below.                                                                                                                                         |
@@ -283,6 +283,30 @@ asserts exactly one invoice receipt. These narrow retirements do **not** certify
 all configuration writers or the organization key independent. Three production
 SQL definitions remain, and `billing_purchase` and the remaining
 `usage_pack_billing` writers are unfinished R1 work, not compatibility gates.
+
+## Organization usage-pack key retirement
+
+The last five `usage_pack_billing` acquisitions and `usagePackBillingLockSql` /
+`lockUsagePackBillingOrg` are deleted. No row lock, empty write, retry, field or
+JSON state replaces them; row locks that already existed on main are unchanged.
+
+| Writer                             | Financial arbitration                                                                                                                                                                                                                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial pack/Plan activation       | Root UPDATE is conditional on observed status and the prepared allocation set; pending count publishes conditionally on the count read. Allocation writers admit only active roots, so none races a pending root. `billing_purchase` stays with the undecided first-purchase protocol.            |
+| Paid invoice fulfillment           | Duplicate deliveries queue on the existing root/allocation row reads and then observe the committed receipt; grant identities stay invoice+allocation+grant type with complete-write checks. `billing_purchase` stays as above.                                                                   |
+| Member removal reservation         | The same member queues on its active allocation row (existing). Another member's open standalone change occupies `uq_usage_pack_changes_active_org`; the reservation insert uses `ON CONFLICT DO NOTHING` and fails with the same "billing change must finish" outcome before any billing effect. |
+| Member removal preparation         | Refund amounts come from the member's grant rows read in the same transaction and a status-conditional `available -> pending` refund transition; the open removal stays single through the same unique index.                                                                                     |
+| Canceled subscription finalization | Each change transition is conditional on its observed status. A paid publication that commits first rolls the batch back; one that loses finds the failed change through its own status condition. Neither order publishes a grant twice.                                                         |
+
+Public billing API cases: concurrent `invoice.paid` and
+`customer.subscription.deleted` for a pending paid upgrade (exactly one winner,
+no extra grant, stable replay), and concurrent removal of two different members
+(one open removal per member, no refund side effect, retry succeeds).
+
+Pre-existing gap, unchanged by this retirement and listed for decision: when the
+deletion transition wins, the change is failed and the later `invoice.paid` for
+that upgrade returns 500 ("not ready for fulfillment") on every redelivery. The
+serial order behaves the same with or without the key.
 
 ## Serving compaction retirement
 

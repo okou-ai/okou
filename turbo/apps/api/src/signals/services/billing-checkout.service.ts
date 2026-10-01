@@ -1198,12 +1198,10 @@ async function claimPlanPurchase(
   const staleBefore = new Date(at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS);
   const persistsClaim = preview.sourceSubscriptionId === null;
   return await db.transaction(async (tx) => {
-    // R1 compatibility only: outgoing (pre-Release-1) Plan confirm and
-    // usage-pack snapshot/confirm writers hold billing_purchase across their
-    // Stripe list/create. Acquiring it here orders this claim after any such
-    // section already in progress; the winner's Stripe read below then sees
-    // its subscription. Remove in Release 2 once no serving or rollback API
-    // version holds billing_purchase across provider I/O.
+    // Unfinished R1 work, not a rolling-version exemption: initial Plan and
+    // usage-pack purchases do not yet share one recoverable claim on an
+    // existing record. This key stays only until the pending first-purchase
+    // protocol decision lands; it is not kept for any older API version.
     await tx.execute(billingPurchaseLockSql(orgId));
     const claimed = await tx
       .update(orgMetadata)

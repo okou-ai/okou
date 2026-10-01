@@ -77,7 +77,6 @@ import { upsertOrgPlanEntitlement } from "./org-plan-entitlements.service";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
   handleUsagePackAllocationChangeInvoicePaid,
-  usagePackBillingLockSql,
   reconcileUsagePackAllocationChanges,
   reconcileUsagePackAllocationChangeSubscription,
   reconcileUsagePackAllocationChangeSubscriptionDeleted,
@@ -1624,12 +1623,10 @@ async function claimUsagePackPurchase(
   const planClaimStaleBefore = new Date(
     at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS,
   );
-  // R1 compatibility only: writeUsagePackPendingSnapshots first acquires
-  // billing_purchase, which outgoing (pre-Release-1) Plan confirm and
-  // usage-pack snapshot/confirm writers hold across their Stripe list/create.
-  // It orders this claim after any such section in progress. Remove in
-  // Release 2 once no serving or rollback API version holds the key across
-  // provider I/O.
+  // writeUsagePackPendingSnapshots still acquires billing_purchase as
+  // unfinished R1 work: Plan and usage-pack initial purchases do not yet share
+  // one recoverable claim on an existing record. It is retained only until the
+  // pending first-purchase protocol decision lands, not for older versions.
   return await writeUsagePackPendingSnapshots(
     db,
     [orgId],
@@ -3535,11 +3532,11 @@ const commitUsagePackPlanActivation$ = command(
     const db = set(writeDb$);
     const orgId = args.context.subscription.orgId;
     await db.transaction(async (tx) => {
-      // No row locks: activation writers hold the retained usage_pack_billing
-      // and billing_purchase keys, and the subscription write below is
-      // conditional on the root status and prepared allocation set it was
-      // decided from.
-      await tx.execute(usagePackBillingLockSql(orgId));
+      // The subscription write below is conditional on the root status and
+      // prepared allocation set it was decided from, and the pending count is
+      // published conditionally on the count read here. Allocation writers only
+      // admit active roots, so none races this pending root. billing_purchase
+      // stays with the undecided initial purchase protocol.
       await tx.execute(billingPurchaseLockSql(orgId));
       const roots = await tx
         .select()
@@ -3739,7 +3736,10 @@ const commitUsagePackFulfillment$ = command(
     const orgId = args.context.subscription.orgId;
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
     await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingLockSql(orgId));
+      // Duplicate invoice deliveries queue on the root rows below and then see
+      // the committed receipt; allocation rows read for the grant snapshot are
+      // likewise held. billing_purchase stays with the undecided initial
+      // purchase protocol.
       await tx.execute(billingPurchaseLockSql(orgId));
       const roots = await tx
         .select()

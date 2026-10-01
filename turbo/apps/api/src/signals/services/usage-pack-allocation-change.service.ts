@@ -897,18 +897,6 @@ function usagePackAllocationAdditionCharge(
   };
 }
 
-export function usagePackBillingLockSql(orgId: string) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_billing:${orgId}`}, 0))`;
-}
-
-export async function lockUsagePackBillingOrg(
-  tx: Pick<WriteTx, "execute">,
-  orgId: string,
-): Promise<void> {
-  await tx.execute(usagePackBillingLockSql(orgId));
-}
-
 async function expireStaleUsagePackPreviews(
   tx: WriteTx,
   orgId: string,
@@ -2306,7 +2294,6 @@ export async function reserveUsagePackMemberRemoval(
   signal.throwIfAborted();
   const at = nowDate();
   const reservationId = await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, args.orgId);
     await expireStaleUsagePackPreviews(tx, args.orgId, at);
     const [allocation] = await tx
       .select()
@@ -2396,9 +2383,15 @@ export async function reserveUsagePackMemberRemoval(
         createdAt: at,
         updatedAt: at,
       })
+      // The same member's reservations queue on its active allocation row.
+      // Another member's committed open change keeps the active-org unique
+      // index occupied; that is the same blocking outcome as above.
+      .onConflictDoNothing()
       .returning({ id: usagePackAllocationChanges.id });
     if (!reservation) {
-      throw new Error("Failed to reserve usage pack member removal");
+      throw new Error(
+        "A usage pack billing change must finish before member removal",
+      );
     }
     return reservation.id;
   });
@@ -2523,7 +2516,8 @@ async function prepareUsagePackMemberRemoval(
 } | null> {
   const at = nowDate();
   return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, args.orgId);
+    // Refund amounts come from the member's grant rows that this read keeps
+    // stable through zeroing; open changes stay single by active-org index.
     await prepareUsagePackMemberCreditRefunds(tx, args);
     await tx
       .update(usagePackCreditGrants)
@@ -3168,21 +3162,13 @@ async function finalizeCanceledUsagePackChanges(
   if (finalizable.length === 0) {
     return 0;
   }
-  const hasUnresolvedPayment = finalizable.some((change) => {
-    return (
-      (change.kind === "addition" || change.kind === "upgrade") &&
-      (change.status === "applying" || change.status === "pending_payment")
-    );
-  });
   const at = nowDate();
   const result = await settle(
     db.transaction(async (tx) => {
-      // Deferred downgrade/removal has no payable grant to publish here.
-      // Unresolved paid changes keep their separate unfinished financial key;
-      // do not infer an unpaid invoice from provider cancellation alone.
-      if (hasUnresolvedPayment) {
-        await lockUsagePackBillingOrg(tx, context.subscription.orgId);
-      }
+      // Each transition is conditional on the change status it was read in.
+      // A paid invoice publication that commits first makes this batch roll
+      // back; one that loses finds the failed change through its own status
+      // condition, so neither order publishes a grant twice.
       let finalized = 0;
       for (const change of finalizable) {
         if (

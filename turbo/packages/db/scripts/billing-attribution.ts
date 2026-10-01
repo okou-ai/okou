@@ -31,6 +31,14 @@ assert.ok(
   "--org-id is required; global mutation is not supported",
 );
 assert.ok(process.env.DATABASE_URL, "DATABASE_URL is required");
+// Same Run trigger-source mapping the API writers publish; the database keeps
+// no billing function after application trigger retirement.
+function billingUsageSource(column: string): string {
+  return `CASE WHEN ${column} = 'web' THEN 'chat'
+    WHEN ${column} IN ('automation-schedule', 'automation-event', 'goal') THEN 'automation'
+    WHEN ${column} IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN ${column}
+    ELSE 'other' END`;
+}
 function budget(value: string, max: number): number {
   const parsed = Number(value);
   assert.ok(
@@ -144,7 +152,7 @@ function facts(current: Exclude<Phase, "done">, filter: string) {
     (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND (a.run_id IS NOT NULL OR r.id IS NOT NULL)) AS eligible,
     (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND a.run_id IS NULL AND r.id IS NULL) AS missing_source,
     ((a.run_id IS NOT NULL AND (a.org_id <> t.org_id OR a.user_id <> t.user_id ${anchorConflict}
-      OR (r.id IS NOT NULL AND (a.run_started_at <> r.created_at OR a.source <> billing_usage_source(r.trigger_source)))))
+      OR (r.id IS NOT NULL AND (a.run_started_at <> r.created_at OR a.source <> ${billingUsageSource("r.trigger_source")}))))
       OR (r.id IS NOT NULL AND (r.org_id <> t.org_id OR r.user_id <> t.user_id))) AS conflict,
     ${current === "raw" ? "(t.status <> 'processed' AND (t.billing_anchor_at IS NULL OR t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')))" : "false"} AS pending_anchor_gap,
     ${current === "raw" ? "($7::timestamp IS NOT NULL AND t.created_at >= $7::timestamp AND t.billing_context IN ('legacy_unknown', 'missing_run'))" : "false"} AS new_writer_gap,
@@ -301,7 +309,7 @@ try {
                   // whose identity disagrees with its run stays reported and
                   // unmodified, exactly as the source phases below require.
                   `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context)
-                SELECT id, org_id, user_id, created_at, billing_usage_source(trigger_source), chat_thread_id,
+                SELECT id, org_id, user_id, created_at, ${billingUsageSource("trigger_source")}, chat_thread_id,
                   CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
                 FROM agent_runs WHERE id = ANY($1::uuid[])
                 ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
@@ -322,7 +330,7 @@ try {
                   ${current === "jobs" ? "" : "AND (t.billing_anchor_at IS NULL OR t.billing_anchor_at = a.run_started_at)"}
                   AND NOT EXISTS (SELECT 1 FROM agent_runs r
                     WHERE r.id = a.run_id
-                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR billing_usage_source(r.trigger_source) <> a.source))`,
+                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR ${billingUsageSource("r.trigger_source")} <> a.source))`,
                   [ids],
                 );
           populated = integer(result.rowCount);
