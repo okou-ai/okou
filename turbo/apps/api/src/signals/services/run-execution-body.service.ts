@@ -94,7 +94,7 @@ import {
   AnyCreateAgentRunCommandArgs,
   AuthorizedAgentRunRequestObservation,
   CreateAgentRunCommandArgs,
-  CreateQueueFirstAgentRunCommandArgs,
+  QueuedRunCommandArgs,
   UserInfo,
   selectedRunModelProviderArgs,
 } from "./run-model-provider-environment.service";
@@ -1070,9 +1070,52 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   };
 }
 
-export function buildCreateAgentRunArgs(
+/**
+ * Explicit run arguments a product entry point (chat/automation) prepares for
+ * Thread: exactly the facts this builder sets, no legacy direct-run knobs.
+ */
+export interface ProductRunArgs {
+  readonly catalog: CreateAgentRunArgs["catalog"];
+  readonly orgId: string;
+  readonly userId: string;
+  readonly modelProviderId?: string;
+  readonly modelProviderCredentialScope?: CreateAgentRunArgs["modelProviderCredentialScope"];
+  readonly modelProviderType?: string;
+  readonly capturedPersonalSubscriptionAccount?: CreateAgentRunArgs["capturedPersonalSubscriptionAccount"];
+  readonly selectedModelOverride?: string;
+  readonly builtInModelRuntimeRoute?: CreateAgentRunArgs["builtInModelRuntimeRoute"];
+  readonly piExecution: boolean;
+  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly agentRunMetadata?: CreateAgentRunArgs["agentRunMetadata"];
+  readonly queueFirstAssociation?: CreateAgentRunArgs["queueFirstAssociation"];
+  readonly body: CreateRunBody;
+  readonly apiStartTime: number;
+  readonly piStableContext?: CreateAgentRunArgs["piStableContext"];
+  readonly chatThreadId?: string;
+  readonly connectorSourceId?: string;
+  readonly threadSessionResolution?: CreateAgentRunArgs["threadSessionResolution"];
+  readonly platformEnvironment?: Record<string, string>;
+  readonly callbacks?: CreateAgentRunArgs["callbacks"];
+  readonly includeOkouTokenSecret?: boolean;
+  readonly productAgentExecutionPlan?: CreateAgentRunArgs["productAgentExecutionPlan"];
+  readonly preloadedAgentExecutionObservation?: CreateAgentRunArgs["preloadedAgentExecutionObservation"];
+  readonly okouTokenComputerUseHostId?: string;
+  readonly okouTokenCloudBrowserEnabled?: boolean;
+  readonly enforceBuiltInCredits?: boolean;
+  readonly injectSkillVolumes?: CreateAgentRunArgs["injectSkillVolumes"];
+  readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly connectorScope: CreateAgentRunArgs["connectorScope"];
+  readonly validateEnvironmentReferences?: boolean;
+  readonly dispatchFailedCallbacks?: CreateAgentRunArgs["dispatchFailedCallbacks"];
+  readonly persistProducerRunBinding?: CreateAgentRunArgs["persistProducerRunBinding"];
+  readonly agentRunModelPin?: CreateAgentRunArgs["agentRunModelPin"];
+  readonly timing?: CreateAgentRunArgs["timing"];
+  readonly timingDimensions?: CreateAgentRunArgs["timingDimensions"];
+}
+
+export function buildProductRunArgs(
   args: BuildCreateAgentRunArgsInput,
-): CreateAgentRunArgs {
+): ProductRunArgs {
   const command = args.command;
   const { userInfo, initialStablePrompt, piStableContext } =
     buildStableRunPromptContext(args);
@@ -1225,7 +1268,7 @@ export interface AgentRunIdentityInput {
   readonly apiStartTime: number;
   readonly chatThreadId?: string;
   readonly expectedThreadAgentId?: string;
-  readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
+  readonly queueFirstAssociation?: QueuedRunCommandArgs["queueFirstAssociation"];
 }
 export interface AgentRunGraphInput {
   readonly command: AgentRunIdentityCommand;

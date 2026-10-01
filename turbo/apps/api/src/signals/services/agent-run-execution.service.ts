@@ -448,7 +448,7 @@ import {
   RunBootstrapContext,
   agentRunsCreateForbidden,
   bootstrapMetadataRowKindSchema,
-  buildCreateAgentRunArgs,
+  buildProductRunArgs,
   buildMergedVariables,
   buildResolvedRunBody,
   enforceCaptureNetworkBodiesGate,
@@ -8241,7 +8241,7 @@ function createPreCreateRunArgs(
         input.timing,
         "api_dispatch_pre_create_agent_build_create_run_args",
         () => {
-          return buildCreateAgentRunArgs(input);
+          return buildProductRunArgs(input);
         },
       ),
     };

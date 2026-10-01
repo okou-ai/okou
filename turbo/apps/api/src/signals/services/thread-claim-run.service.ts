@@ -83,7 +83,7 @@ import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-m
 import {
   recordQueuedPromptRunLaunch$,
   buildChatPriorRunsContext,
-  buildQueuedCreateAgentRunArgs,
+  buildQueuedRunCommand,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
   type QueuedChatPromptData,
@@ -121,7 +121,7 @@ import {
   type AgentRunGraphInput,
   type AgentRunIdentityInput,
   agentRunsCreateForbidden,
-  buildCreateAgentRunArgs,
+  buildProductRunArgs,
   buildMergedVariables,
   buildResolvedRunBody,
   enforceCaptureNetworkBodiesGate,
@@ -135,6 +135,7 @@ import {
   resolveRunBodyEnvironment,
   selectedAgentRunVariables,
   validateCompose,
+  type ProductRunArgs,
 } from "./run-execution-body.service";
 import {
   type AtomicLaunchCommitCompletion,
@@ -144,7 +145,6 @@ import {
   flushQueueFirstClaimLostTiming,
 } from "./execution-launch-admission.service";
 import {
-  type AtomicLaunchRunInput,
   buildPreparedPermissionManifest,
   buildStoredExecutionContextDraft,
   buildStoredExecutionSecrets,
@@ -170,7 +170,7 @@ import {
   type AgentRunIdentityCommand,
   loadRunRoutePricing,
   type AgentRunSelectionInput,
-  type CreateQueueFirstAgentRunCommandArgs,
+  type QueuedRunCommandArgs,
   frameworkApiKeyEnv,
   frameworkForProviderSelection,
   hasExplicitFrameworkApiKey,
@@ -1691,7 +1691,7 @@ function automationSelectionCommand(
   timing: ApiDispatchTimingCollector,
 ): AgentRunSelectionInput &
   Pick<
-    CreateQueueFirstAgentRunCommandArgs,
+    QueuedRunCommandArgs,
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
   const { automation, agentId, chatThreadId } = args.due;
@@ -1801,7 +1801,7 @@ function isDirectSendContext(contextType: string | null): boolean {
 type ThreadRunnerFacts = Omit<BuildRunnerJobPayloadInput, "run" | "timing">;
 
 interface RunPlan {
-  readonly args: AtomicLaunchRunInput["args"];
+  readonly args: ProductRunArgs;
   readonly timing: ApiDispatchTimingCollector;
   readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
@@ -2193,7 +2193,7 @@ type PromptDiscordContext = {
 };
 
 type ClaimQueueRunCommandArgs = Omit<
-  CreateQueueFirstAgentRunCommandArgs,
+  QueuedRunCommandArgs,
   "dispatchFailedCallbacks" | "persistProducerRunBinding"
 >;
 
@@ -5608,7 +5608,7 @@ export function createThreadClaimRunObjects(
       return {
         kind: "assembled",
         run: {
-          ...buildQueuedCreateAgentRunArgs(runInput, head.apiStartTime),
+          ...buildQueuedRunCommand(runInput, head.apiStartTime),
           timing: input.runTiming,
         },
         producerBinding: agent.producerBinding ?? null,
@@ -8414,7 +8414,7 @@ export function createThreadClaimRunObjects(
         input.timing,
         "api_dispatch_pre_create_agent_build_create_run_args",
         () => {
-          return buildCreateAgentRunArgs(input);
+          return buildProductRunArgs(input);
         },
       ),
     };
@@ -10717,7 +10717,7 @@ export function createThreadClaimRunObjects(
   const execution$ = computed(async (get) => {
     // Agent/session resolution has no dependency on connector firewall policies
     // or the completed runner body. Use the already-authorized identity and
-    // canonical session snapshot directly, as buildCreateAgentRunArgs does.
+    // canonical session snapshot directly, as buildProductRunArgs does.
     const [{ command, timing }, agent, session] = await Promise.all([
       get(preCreateInput$),
       get(preCreateAgentAgent$),
@@ -11777,8 +11777,10 @@ export function createThreadClaimRunObjects(
           okouTokenCloudBrowserEnabled: args.okouTokenCloudBrowserEnabled,
           chatThreadId: args.chatThreadId,
           platformEnvironment: args.platformEnvironment,
-          piLaunchConfig: args.piLaunchConfig,
-          artifactMissingRootPolicy: args.artifactMissingRootPolicy,
+          // Thread launches carry no producer Pi launch options or
+          // artifact root-policy override.
+          piLaunchConfig: undefined,
+          artifactMissingRootPolicy: undefined,
         },
       };
     },

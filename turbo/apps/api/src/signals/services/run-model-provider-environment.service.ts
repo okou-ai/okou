@@ -787,7 +787,7 @@ export interface CreateAgentRunCommandArgs {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
-export interface CreateQueueFirstAgentRunCommandArgs extends Omit<
+export interface QueuedRunCommandArgs extends Omit<
   CreateAgentRunCommandArgs,
   "chatThreadId" | "agentRunModelPin"
 > {
@@ -798,7 +798,7 @@ export interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 
 export type AnyCreateAgentRunCommandArgs =
   | CreateAgentRunCommandArgs
-  | CreateQueueFirstAgentRunCommandArgs;
+  | QueuedRunCommandArgs;
 
 export interface UserInfo {
   readonly name: string | null;
@@ -823,7 +823,7 @@ export type AgentRunSelectionInput = Omit<
   "body" | "appendSystemPrompt" | "callbacks"
 > & {
   readonly body: Omit<AgentRunCreateBody, "prompt">;
-  readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
+  readonly queueFirstAssociation?: QueuedRunCommandArgs["queueFirstAssociation"];
 };
 export type AgentRunIdentityCommand = Omit<
   AgentRunSelectionInput,

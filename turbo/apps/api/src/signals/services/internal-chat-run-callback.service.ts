@@ -652,7 +652,7 @@ export function queuedChatRunCallbackInputs(
   ];
 }
 
-export function buildQueuedCreateAgentRunArgs(
+export function buildQueuedRunCommand(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
 ) {
