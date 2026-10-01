@@ -206,11 +206,7 @@ function compileRegisteredRuntime(
   }
   const type = modelProviderTypeSchema.parse(source.configuration.providerType);
   const config = MODEL_PROVIDER_TYPES[type];
-  if (
-    !("secretName" in config) ||
-    !("envBindings" in config) ||
-    type === "deepseek"
-  ) {
+  if (!("secretName" in config) || !("envBindings" in config)) {
     throw new Error(
       "This registered protocol has not migrated to the pure runtime contract",
     );

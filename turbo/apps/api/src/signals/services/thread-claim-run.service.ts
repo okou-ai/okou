@@ -698,6 +698,7 @@ function isMigratedRegisteredSource(
       "vercel-ai-gateway-codex",
       "aws-bedrock",
       "azure-foundry",
+      "deepseek",
     ].includes(type)
   );
 }
@@ -8885,19 +8886,7 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const type = args.modelProviderType;
-    const registered =
-      type !== undefined &&
-      [
-        "anthropic-api-key",
-        "openai-api-key",
-        "openrouter-api-key",
-        "openrouter-codex",
-        "vercel-ai-gateway",
-        "vercel-ai-gateway-codex",
-        "aws-bedrock",
-        "azure-foundry",
-      ].includes(type);
-    if (registered && args.modelProviderCredentialScope !== undefined) {
+    if (isMigratedRegisteredSource(type, args.modelProviderCredentialScope)) {
       return await get(
         createModelSourceSnapshot({
           orgId: args.orgId,
