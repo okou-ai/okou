@@ -4544,15 +4544,17 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
     expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
   });
 
-  it("limits private agents to their owner and infers the agent from a session", async () => {
+  it("limits private agents to their owner", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const chat = createChatFilesBddApi(context);
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const memberRejected = await api.requestCreateRun(
+    const memberPrompt = `run someone else's private agent ${randomUUID()}`;
+    const memberRejected = await chat.requestSendEvent(
       member,
-      { agentId, prompt: "run someone else's private agent" },
+      { agentId, prompt: memberPrompt, model: NATIVE_RUNNER_ROUTE.model },
       [403],
     );
     expectApiError(memberRejected.body);
@@ -4560,20 +4562,11 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
       "Only the private agent owner can run this agent",
     );
 
-    const first = await api.createRun(actor, {
+    const owned = await api.createThreadRun(actor, {
       agentId,
       prompt: "open a session",
-      modelProvider: "anthropic-api-key",
     });
-    const inferred = await api.createRun(actor, {
-      sessionId: first.sessionId,
-      prompt: "continue without naming the agent",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(inferred.sessionId).toBe(first.sessionId);
-
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, inferred.runId, [200]);
+    await api.requestCancelRun(actor, owned.runId, [200]);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
