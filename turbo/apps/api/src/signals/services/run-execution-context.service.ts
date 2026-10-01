@@ -153,7 +153,7 @@ function builtInImageModelPrompt(model: ImageModel): string {
   ].join("\n");
 }
 
-function withFinalRunAppendSystemPrompt(args: {
+export function withFinalRunAppendSystemPrompt(args: {
   readonly body: CreateRunBody;
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;

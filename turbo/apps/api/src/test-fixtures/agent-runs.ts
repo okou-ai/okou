@@ -19,7 +19,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
-import { createAgentRun$ } from "../signals/services/background-agent-run.service";
+import { createDirectFixtureAgentRun$ } from "../signals/services/test-agent-run-fixture.service";
 import type { CreateAgentRunArgs } from "../signals/services/execution-launch-persistence.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { agentRunList } from "../signals/services/agent-runs.service";
@@ -502,7 +502,7 @@ export async function createDirectRunFixture(args: {
     );
   args.signal.throwIfAborted();
   return await store.set(
-    createAgentRun$,
+    createDirectFixtureAgentRun$,
     {
       catalog: await loadModelCatalog(db()),
       userId: args.userId,

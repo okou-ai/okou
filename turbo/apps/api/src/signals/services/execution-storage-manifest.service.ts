@@ -48,6 +48,7 @@ import {
   MIN_VERSION_PREFIX_LENGTH,
 } from "@okouai/core/version-id";
 import { alias, unionAll } from "drizzle-orm/pg-core";
+import type { PreparedExecutionStorageMount } from "./execution-storage.service";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
@@ -2675,4 +2676,46 @@ export async function withStoragePrefixVersions(
     ? await (second ? unionAll(first, second, ...remaining) : first)
     : [];
   return storageIndexWithPrefixVersions(index, versions);
+}
+
+/** Runner storage mount for one prepared exact execution storage mount. */
+export function storedMountFromPrepared(
+  prepared: PreparedExecutionStorageMount,
+  preserveExplicitMissingRootPolicy: boolean,
+): StoredStorageMountEntry {
+  const identity = {
+    orgId: prepared.orgId,
+    userId: prepared.userId,
+    storageId: prepared.storageId,
+    versionId: prepared.versionId,
+    name: prepared.name,
+    mountPath: prepared.mountPath,
+  };
+  if (prepared.writeback) {
+    const policy = preserveExplicitMissingRootPolicy
+      ? { missingRootPolicy: prepared.missingRootPolicy }
+      : {};
+    return prepared.empty
+      ? { ...identity, writeback: true, empty: true, ...policy }
+      : {
+          ...identity,
+          writeback: true,
+          archiveUrl: prepared.archiveUrl,
+          ...(prepared.archiveSize > 0
+            ? { archiveSize: prepared.archiveSize }
+            : {}),
+          ...policy,
+        };
+  }
+  return {
+    ...identity,
+    archiveUrl: prepared.archiveUrl,
+    ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
+    ...(prepared.baselineCandidate
+      ? { baselineCandidate: prepared.baselineCandidate }
+      : {}),
+    ...(prepared.instructionsTargetFilename === undefined
+      ? {}
+      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
+  };
 }

@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { db } from "../lib/db";
 import { now } from "../lib/time";
-import { createAgentRun$ } from "../signals/services/background-agent-run.service";
-import { createTestFixtureAgentRun$ } from "../signals/services/test-agent-run-fixture.service";
+import {
+  createDirectFixtureAgentRun$,
+  createTestFixtureAgentRun$,
+} from "../signals/services/test-agent-run-fixture.service";
 import {
   clearAgentRunPiExecutionSnapshotHookForTest,
   setAgentRunPiExecutionSnapshotHookForTest,
@@ -82,7 +84,7 @@ export async function createUnassociatedThreadBoundAgentRunFixture(
   chatThreadId: string = randomUUID(),
 ): Promise<void> {
   await createStore().set(
-    createAgentRun$,
+    createDirectFixtureAgentRun$,
     {
       catalog: await loadModelCatalog(db()),
       userId: USER_ID,

@@ -9,21 +9,18 @@ import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
-import { compileModelRuntime } from "./execution-model-runtime";
-import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
+
 import {
+  prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
-  resolveModelCredentialValues,
 } from "./execution-model-preparation.service";
 
 import {
   createExecutionStorageObjects,
   type ExecutionStorageRequest,
-  type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
 import {
-  type StoredStorageMountEntry,
   type PiMemoryRecallSelection,
   piMemoryRecallSelectionSchema,
 } from "@okouai/api-contracts/contracts/runners";
@@ -252,6 +249,7 @@ import {
   StorageManifestBuildStats,
   loadStorageBaseIndex,
   withStoragePrefixVersions,
+  storedMountFromPrepared,
 } from "./execution-storage-manifest.service";
 import {
   type AtomicLaunchCommitResult,
@@ -2988,47 +2986,6 @@ interface RejectedQueueHead {
 }
 
 /** Private Runner adaptation; resource outputs carry no Thread context. */
-function storedMountFromPrepared(
-  prepared: PreparedExecutionStorageMount,
-  preserveExplicitMissingRootPolicy: boolean,
-): StoredStorageMountEntry {
-  const identity = {
-    orgId: prepared.orgId,
-    userId: prepared.userId,
-    storageId: prepared.storageId,
-    versionId: prepared.versionId,
-    name: prepared.name,
-    mountPath: prepared.mountPath,
-  };
-  if (prepared.writeback) {
-    const policy = preserveExplicitMissingRootPolicy
-      ? { missingRootPolicy: prepared.missingRootPolicy }
-      : {};
-    return prepared.empty
-      ? { ...identity, writeback: true, empty: true, ...policy }
-      : {
-          ...identity,
-          writeback: true,
-          archiveUrl: prepared.archiveUrl,
-          ...(prepared.archiveSize > 0
-            ? { archiveSize: prepared.archiveSize }
-            : {}),
-          ...policy,
-        };
-  }
-  return {
-    ...identity,
-    archiveUrl: prepared.archiveUrl,
-    ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-    ...(prepared.baselineCandidate
-      ? { baselineCandidate: prepared.baselineCandidate }
-      : {}),
-    ...(prepared.instructionsTargetFilename === undefined
-      ? {}
-      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
-  };
-}
-
 export interface ThreadClaimRunObjects {
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
@@ -8814,11 +8771,6 @@ export function createThreadClaimRunObjects(
   // temporary argument slot. Source identity/read graphs remain immutable.
   const internalPreparedConfiguredEnvironment$ =
     state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
-  const resolveModelCredentialValues$ = command(
-    async ({ get }, source: ModelSourceSnapshot, signal: AbortSignal) => {
-      return await resolveModelCredentialValues(get(db$), source, signal);
-    },
-  );
   const prepareRegisteredModelRuntime$ = command(
     async (
       { get },
@@ -8914,67 +8866,16 @@ export function createThreadClaimRunObjects(
       if (source.identity.kind !== "gateway") {
         throw new Error("Selected gateway has an invalid source kind");
       }
-      const selectedModel = context.environmentArgs.selectedModelOverride;
-      const type = providerTypeForSurfaceProtocol(config.protocol);
-      if (!type) {
-        throw new Error("Gateway protocol has no provider type");
-      }
-      if (
-        !selectedModel ||
-        !config.modelMappings[selectedModel] ||
-        getFrameworkForType(type) !== context.environmentArgs.framework ||
-        (context.environmentArgs.modelProviderType !== undefined &&
-          context.environmentArgs.modelProviderType !== type)
-      ) {
-        return null;
-      }
-      const credentials = await set(
-        resolveModelCredentialValues$,
+      return await prepareGatewayModelEnvironment(
+        get(db$),
         source,
+        {
+          selectedModel: context.environmentArgs.selectedModelOverride,
+          framework: context.environmentArgs.framework,
+          modelProviderType: context.environmentArgs.modelProviderType,
+        },
         signal,
       );
-      if (!credentials) {
-        return null;
-      }
-      const compiled = compileModelRuntime({
-        source,
-        selection: {
-          kind: "configured",
-          selectedModel,
-          upstreamModel: config.modelMappings[selectedModel],
-        },
-        credentials,
-      });
-      // Supplementary Runner firewall/Codex protocol stays private to Thread.
-      // This is pure assembly from the same complete snapshot, not another query.
-      const protocol = compileModelProviderGatewayRuntime({
-        surfaceId: source.identity.surfaceId,
-        protocol: config.protocol,
-        apiBaseUrl: config.apiBaseUrl,
-        displayName: config.displayName,
-        authHeaderName: config.authHeaderName,
-        authHeaderTemplate: config.authHeaderTemplate,
-        logicalModel: compiled.selectedModel,
-        upstreamModel: compiled.upstreamModel,
-      });
-      return {
-        id: source.identity.surfaceId,
-        type,
-        credentialOwner: compiled.credentialOwner,
-        environment: { ...compiled.environment },
-        secrets: { ...compiled.secrets },
-        selectedModel: compiled.selectedModel,
-        upstreamModel: compiled.upstreamModel,
-        firewall: protocol.firewall,
-        inlineFirewall: true,
-        credentialHeader: {
-          name: config.authHeaderName,
-          valueTemplate: config.authHeaderTemplate,
-        },
-        ...(protocol.codexRuntimeConfig
-          ? { codexRuntimeConfig: protocol.codexRuntimeConfig }
-          : {}),
-      };
     },
   );
   const prepareConfiguredModelRuntime$ = command(

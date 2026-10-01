@@ -1415,7 +1415,7 @@ function storedExecutionContextWithPiResources(
   };
 }
 
-function preparedRunnerGroup(
+export function preparedRunnerGroup(
   content: agentRunCreateAgentExecutionConfig,
 ): string {
   const group = runnerGroup(content) ?? optionalEnv("RUNNER_DEFAULT_GROUP");
@@ -1531,41 +1531,47 @@ function shouldEnableFrameworkWebSearch(
   );
 }
 
-function finalizedRunnerLaunch({
-  args,
-  group,
-  body,
-  checkpointArtifacts,
-  builtContext,
-  piResources,
-}: {
-  args: BuildRunnerJobPayloadInput;
-  group: string;
-  body: ReturnType<typeof preparedRunnerJobBody>;
-  checkpointArtifacts: BuildRunnerJobPayloadInput["artifacts"];
-  builtContext: BuiltStoredExecutionContext;
-  piResources: PreparedPiLaunchResources | undefined;
+/**
+ * Final runner launch from explicit facts: the stored context draft with its
+ * prepared storage, Pi launch resources, run-context snapshot, runner job
+ * payload and persisted run/session storage mounts.
+ */
+export function assembleRunnerLaunch(args: {
+  readonly runId: string;
+  readonly userId: string;
+  readonly chatThreadId: string | undefined;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
+  readonly runnerGroup: string;
+  readonly body: CreateRunBody;
+  readonly checkpointArtifacts: readonly AgentRunCreateContextArtifact[];
+  readonly preparedStorage: PreparedAgentRunStorage;
+  readonly contextDraft: BuiltStoredExecutionContextDraft;
+  readonly piResources: PreparedPiLaunchResources | undefined;
 }): PreparedRunnerLaunch {
+  const builtContext = resolveBuiltStoredExecutionContext(
+    args.preparedStorage,
+    args.contextDraft,
+  );
   const storedContext = storedExecutionContextWithPiResources(
     builtContext.context,
-    piResources,
+    args.piResources,
     args.launchSnapshot.framework,
   );
   const persistedStorageMounts = withPiMemoryRecallEpoch(
     builtContext.persistedStorageMounts,
-    piResources?.memoryRecall,
+    args.piResources?.memoryRecall,
   );
   const runContextSnapshot = buildRunContextSnapshot({
-    runId: args.run.id,
+    runId: args.runId,
     userId: args.userId,
-    body,
+    body: args.body,
     builtContext: { ...builtContext, context: storedContext },
   });
   const cliAgentSessionId =
     storedContext.piSessionId ?? storedContext.resumeSession?.sessionId ?? null;
   return {
     runnerJobPayload: runnerJobPayload({
-      runnerGroup: group,
+      runnerGroup: args.runnerGroup,
       profile: args.launchSnapshot.runnerProfile,
       cliAgentSessionId,
       reuseKey: runnerReuseKey(args.chatThreadId),
@@ -1575,7 +1581,7 @@ function finalizedRunnerLaunch({
     runStorageMounts: persistedStorageMounts,
     sessionStorageMounts: sessionStorageMountsForPersistence({
       resolvedMounts: persistedStorageMounts,
-      artifacts: checkpointArtifacts,
+      artifacts: args.checkpointArtifacts,
     }),
   };
 }
@@ -1716,15 +1722,16 @@ export function finalizedMaterializedLaunch(
   contextDraft: BuiltStoredExecutionContextDraft,
 ): PreparedRunnerLaunch {
   const { args, group, body, checkpointArtifacts } = storage.input;
-  return finalizedRunnerLaunch({
-    args,
-    group,
+  return assembleRunnerLaunch({
+    runId: args.run.id,
+    userId: args.userId,
+    chatThreadId: args.chatThreadId,
+    launchSnapshot: args.launchSnapshot,
+    runnerGroup: group,
     body,
     checkpointArtifacts,
-    builtContext: resolveBuiltStoredExecutionContext(
-      storage.preparedStorage.prepared,
-      contextDraft,
-    ),
+    preparedStorage: storage.preparedStorage.prepared,
+    contextDraft,
     piResources: storage.piResources,
   });
 }

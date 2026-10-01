@@ -5,6 +5,8 @@
  * Lifted from Thread's private commands so the Pi maintenance entrypoint can
  * reuse the same boundary; owners keep their own commands and selection.
  */
+import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
+import { providerTypeForSurfaceProtocol } from "./effective-model-route.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
 import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
@@ -316,5 +318,79 @@ export async function prepareManagedModelEnvironment(
     upstreamModel: compiled.upstreamModel,
     environment,
     secrets: { ...compiled.secrets },
+  };
+}
+
+/** Exact selected gateway surface → effect-resolved key → gateway runtime. */
+export async function prepareGatewayModelEnvironment(
+  db: ReadonlyDb,
+  source: ModelSourceSnapshot,
+  selection: {
+    readonly selectedModel: string | undefined;
+    readonly framework: string;
+    readonly modelProviderType: string | undefined;
+  },
+  signal: AbortSignal,
+): Promise<ResolvedModelProviderEnvironment | null> {
+  const config = source.configuration;
+  if (source.identity.kind !== "gateway" || config.kind !== "gateway") {
+    throw new Error("Selected gateway has an invalid source kind");
+  }
+  const { selectedModel } = selection;
+  const type = providerTypeForSurfaceProtocol(config.protocol);
+  if (!type) {
+    throw new Error("Gateway protocol has no provider type");
+  }
+  if (
+    !selectedModel ||
+    !config.modelMappings[selectedModel] ||
+    getFrameworkForType(type) !== selection.framework ||
+    (selection.modelProviderType !== undefined &&
+      selection.modelProviderType !== type)
+  ) {
+    return null;
+  }
+  const credentials = await resolveModelCredentialValues(db, source, signal);
+  if (!credentials) {
+    return null;
+  }
+  const compiled = compileModelRuntime({
+    source,
+    selection: {
+      kind: "configured",
+      selectedModel,
+      upstreamModel: config.modelMappings[selectedModel],
+    },
+    credentials,
+  });
+  // Supplementary Runner firewall/Codex protocol is pure assembly from the
+  // same complete snapshot, not another query.
+  const protocol = compileModelProviderGatewayRuntime({
+    surfaceId: source.identity.surfaceId,
+    protocol: config.protocol,
+    apiBaseUrl: config.apiBaseUrl,
+    displayName: config.displayName,
+    authHeaderName: config.authHeaderName,
+    authHeaderTemplate: config.authHeaderTemplate,
+    logicalModel: compiled.selectedModel,
+    upstreamModel: compiled.upstreamModel,
+  });
+  return {
+    id: source.identity.surfaceId,
+    type,
+    credentialOwner: compiled.credentialOwner,
+    environment: { ...compiled.environment },
+    secrets: { ...compiled.secrets },
+    selectedModel: compiled.selectedModel,
+    upstreamModel: compiled.upstreamModel,
+    firewall: protocol.firewall,
+    inlineFirewall: true,
+    credentialHeader: {
+      name: config.authHeaderName,
+      valueTemplate: config.authHeaderTemplate,
+    },
+    ...(protocol.codexRuntimeConfig
+      ? { codexRuntimeConfig: protocol.codexRuntimeConfig }
+      : {}),
   };
 }
