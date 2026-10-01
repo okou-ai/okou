@@ -170,7 +170,9 @@ test.each(["same owner", "another user in the same org"] as const)(
           expect(originalOwner.body.credentials).toStrictEqual([]);
         }
       })().finally(() => {
-        release.resolve();
+        if (!release.settled()) {
+          release.resolve();
+        }
       }),
       delayed,
     ]);
