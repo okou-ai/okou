@@ -298,7 +298,7 @@ import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.serv
 import {
   isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 import {
   type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,

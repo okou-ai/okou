@@ -24,7 +24,7 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-import { isPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
+import { isPersonalSubscriptionRoute } from "./member-subscription-models.service";
 import {
   createUsageAllowanceObjects,
   resolveUsageAllowanceAvailability,

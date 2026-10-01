@@ -44,7 +44,7 @@ import {
 import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =

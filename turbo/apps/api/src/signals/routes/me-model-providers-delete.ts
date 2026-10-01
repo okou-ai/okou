@@ -7,7 +7,7 @@ import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { deleteUserModelProvider$ } from "../services/model-provider.service";
-import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
+import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);

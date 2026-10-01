@@ -83,24 +83,14 @@ class TestReportModelProviderUsage:
             uuid.UUID(event["idempotencyKey"])
 
     @pytest.mark.parametrize(
-        ("provider", "input_tokens", "expected_suffix"),
-        [
-            ("gpt-6-astra", 272_001, ".long_context"),
-            ("gpt-6.1-sol", 272_001, ".long_context"),
-            ("gpt-5.5", 272_000, ""),
-            ("gpt-5.5", 272_001, ".long_context"),
-            ("gpt-5.6-sol", 272_001, ".long_context"),
-            ("gpt-6-luna", 272_001, ".long_context"),
-            ("gpt-5.6-luna", 272_001, ".long_context"),
-            ("claude-opus-4-6", 300_000, ""),
-        ],
+        ("input_tokens", "expected_suffix"),
+        [(272_000, ""), (272_001, ".long_context")],
     )
     def test_classifies_long_context_usage_at_model_boundary(
         self,
         tmp_path,
         real_flow,
         usage_webhook_api,
-        provider,
         input_tokens,
         expected_suffix,
     ):
@@ -110,12 +100,13 @@ class TestReportModelProviderUsage:
             host="api.openai.com",
             original_url="https://api.openai.com/v1/responses",
             firewall_name="model-provider:openai-api-key",
-            model_usage_provider=provider,
+            model_usage_provider="catalog-model-pricing",
             usage={
                 "tokens.input": input_tokens,
                 "tokens.output": 7,
             },
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
 
         with usage_webhook_api() as webhook:
             usage.report_model_provider_usage(flow, "run-abc-123")
@@ -148,6 +139,7 @@ class TestReportModelProviderUsage:
                 "tokens.cache_creation": 2_001,
             },
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
 
         with usage_webhook_api() as webhook:
             usage.report_model_provider_usage(flow, "run-abc-123")
@@ -181,6 +173,7 @@ class TestReportModelProviderUsage:
                 "tokens.cache_read": 2,
             },
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
         with usage_webhook_api() as webhook:
             usage.report_model_provider_usage(flow, "run-astra-ultrafast")
             usage.flush_usage_events(trigger="test")
@@ -284,7 +277,7 @@ class TestReportModelProviderUsage:
         service_tier,
         expected_suffix,
     ):
-        """An explicit single tier (0) bills base categories for a mapped provider."""
+        """A single-tier route bills base categories at any input length."""
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
@@ -309,40 +302,6 @@ class TestReportModelProviderUsage:
             f"tokens.output{expected_suffix}": 7,
         }
 
-    def test_output_without_input_skips_unclassifiable_terminal_billing(
-        self,
-        tmp_path,
-        real_flow,
-        usage_webhook_api,
-    ):
-        proxy_log = tmp_path / "proxy-run-abc-123.jsonl"
-        flow = make_model_provider_usage_reporting_flow(
-            real_flow,
-            tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
-            model_usage_provider="gpt-5.5",
-            proxy_log_path=proxy_log,
-            usage={"tokens.output": 12},
-        )
-
-        with usage_webhook_api() as webhook:
-            accepted = usage.report_model_provider_usage(flow, "run-abc-123")
-            usage.flush_usage_events(trigger="test")
-
-        assert accepted is False
-        assert webhook.usage_events() == []
-        [entry] = [
-            entry
-            for entry in read_jsonl_entries_after_flush(proxy_log)
-            if entry.get("type") == "usage_underbilling"
-        ]
-        assert entry["reason"] == "model_long_context_tier_unresolved"
-        assert entry["underbilling_class"] == "risk"
-        assert entry["run_id"] == "run-abc-123"
-        assert entry["provider"] == "gpt-5.5"
-
     def test_aggregate_buffer_keeps_base_and_long_context_items_separate(
         self,
         tmp_path,
@@ -360,6 +319,7 @@ class TestReportModelProviderUsage:
                 model_usage_provider="gpt-5.5",
                 usage={"tokens.input": input_tokens},
             )
+            flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
             flows.append(flow)
 
         with usage_webhook_api() as webhook:

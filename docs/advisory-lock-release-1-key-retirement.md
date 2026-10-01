@@ -122,6 +122,31 @@ sequence/queue lock order changes. Admission errors still reject before commit.
 The attempted issuance/settlement retirement is withdrawn for the distinct-Run
 financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
+## Existing-subscription reflected allocation publication
+
+`commitReflectedUsagePackChanges` no longer acquires `usage_pack_billing` or
+executes `SELECT FOR UPDATE`. Existing accepted operation identities and exact
+observed status/owner/root/kind/group/recipient/source/replacement/Price/USD terms
+qualify the real change publication. Its source allocation is conditionally
+retired first with matching active state, owner, root, recipient and Price.
+Replacement insertion arbitrates through the existing live-member partial unique
+index; a conflict is not adoption of another operation's allocation. Any failed
+source/replacement/change condition rejects and rolls back the entire batch,
+including source retirement and superseded-schedule updates. It returns zero to
+the normal next reconciliation visit, with no retry/savepoint/new durable state.
+Malformed ownership/invariant and other SQL errors remain errors.
+
+This transaction publishes no credit grant, wallet debit, refundable source or
+invoice receipt and performs no provider I/O. Their separate paid-invoice
+publication retains the existing invoice identity and receipt-first transaction.
+The paid-upgrade public API regression confirms one provider mutation, two
+concurrent paid deliveries plus replay, one active replacement, exact purchased/
+bonus deltas, one refundable payment source and no duplicate invoice receipt.
+Grouped changes, deferred boundaries, immediately paid confirmation, existing
+invitation and recurring invoice cases also remain in the billing API suite.
+Initial purchase/credit decisions and admission writers are not altered by
+removing this completion acquisition; it does not retire the definition globally.
+
 ## Canceled deferred-change finalization — partial retirement
 
 `finalizeCanceledUsagePackChanges` no longer acquires the org key for deferred
@@ -357,9 +382,9 @@ Ordinary failure counters use SQL arithmetic and committed thresholds/returned
 state, not application-side `current + 1`. Both fixes were integrated before
 this continuation and are preserved.
 
-## Allowance index 1305 preflight
+## Allowance index 1306 preflight
 
-The current allowance uniqueness migration is 1305 (earlier references to 1296
+The current allowance uniqueness migration is 1306 (earlier references to 1296
 and 1299 predate main's model-catalog integration). Before an authorized release, query the
 target database read-only:
 
@@ -377,7 +402,7 @@ ownership/limits/expiry; account for raw allocations and hourly window
 references; remap to a canonical existing window; reconcile consumed units
 against immutable receipts. Do not blindly sum counters, delete referenced
 history or skip the index. Conflicting facts require investigation. Repeat the
-query after authorized repair before migration 1305.
+query after authorized repair before migration 1306.
 
 ## Purchase overlap recovery remains implementation work
 

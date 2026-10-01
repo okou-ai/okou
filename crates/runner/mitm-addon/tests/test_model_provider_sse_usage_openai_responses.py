@@ -114,6 +114,7 @@ class TestOpenAIResponsesSseUsage:
             real_flow,
             model_usage_provider="gpt-5.6-sol",
         )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
         mitm_addon.responseheaders(flow)
         response_stream(flow)(
             b"event: response.completed\n"

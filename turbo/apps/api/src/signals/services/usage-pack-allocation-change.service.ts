@@ -2963,54 +2963,40 @@ function changesReflectedBySubscription(
   return reflected;
 }
 
+class ReflectedUsagePackSnapshotChanged extends Error {}
+
 async function retireReflectedChangeSource(
   tx: WriteTx,
   change: UsagePackAllocationChangeRow,
   updatedAt: Date,
 ): Promise<void> {
   if (change.kind === "addition") {
-    const [existing] = await tx
-      .select({ id: usagePackAllocations.id })
-      .from(usagePackAllocations)
-      .where(
-        and(
-          eq(usagePackAllocations.orgId, change.orgId),
-          eq(usagePackAllocations.userId, change.userId),
-          ne(usagePackAllocations.status, "inactive"),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (existing) {
-      throw new Error(
-        `Usage pack addition ${change.id} already has an allocation`,
-      );
-    }
+    // The existing live-member unique index arbitrates replacement insertion.
     return;
   }
   if (!change.sourceAllocationId || !change.sourceStripePriceId) {
     throw new Error(`Usage pack change ${change.id} has no source`);
   }
   const [source] = await tx
-    .select()
-    .from(usagePackAllocations)
-    .where(eq(usagePackAllocations.id, change.sourceAllocationId))
-    .for("update")
-    .limit(1);
-  if (
-    !source ||
-    source.status !== "active" ||
-    source.userId !== change.userId ||
-    source.stripePriceId !== change.sourceStripePriceId
-  ) {
-    throw new Error(
-      `Usage pack change ${change.id} has no current source allocation`,
-    );
-  }
-  await tx
     .update(usagePackAllocations)
     .set({ status: "inactive", updatedAt })
-    .where(eq(usagePackAllocations.id, source.id));
+    .where(
+      and(
+        eq(usagePackAllocations.id, change.sourceAllocationId),
+        eq(usagePackAllocations.orgId, change.orgId),
+        eq(
+          usagePackAllocations.usagePackSubscriptionId,
+          change.usagePackSubscriptionId,
+        ),
+        eq(usagePackAllocations.status, "active"),
+        eq(usagePackAllocations.userId, change.userId),
+        eq(usagePackAllocations.stripePriceId, change.sourceStripePriceId),
+      ),
+    )
+    .returning({ id: usagePackAllocations.id });
+  if (!source) {
+    throw new ReflectedUsagePackSnapshotChanged();
+  }
 }
 
 async function createReflectedChangeReplacement(
@@ -3040,11 +3026,14 @@ async function createReflectedChangeReplacement(
       createdAt: updatedAt,
       updatedAt,
     })
+    .onConflictDoNothing({
+      target: [usagePackAllocations.orgId, usagePackAllocations.userId],
+      where: sql`${usagePackAllocations.userId} IS NOT NULL AND ${usagePackAllocations.status} <> 'inactive'`,
+    })
     .returning({ id: usagePackAllocations.id });
   if (!replacement) {
-    throw new Error(
-      `Failed to create replacement for usage pack change ${change.id}`,
-    );
+    // Roll back source retirement too; never adopt another operation's row.
+    throw new ReflectedUsagePackSnapshotChanged();
   }
   return replacement.id;
 }
@@ -3058,86 +3047,113 @@ async function commitReflectedUsagePackChanges(
   if (changes.length === 0) {
     return 0;
   }
-  return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, context.subscription.orgId);
-    let applied = 0;
-    const updatedAt = nowDate();
-    for (const expectedChange of changes) {
-      const [change] = await tx
-        .select()
-        .from(usagePackAllocationChanges)
-        .where(eq(usagePackAllocationChanges.id, expectedChange.id))
-        .for("update")
-        .limit(1);
-      if (
-        !change ||
-        change.status === "applied" ||
-        change.status === "completed"
-      ) {
-        continue;
-      }
-      if (change.status === "failed" || change.replacementAllocationId) {
-        throw new Error(
-          `Usage pack change ${expectedChange.id} changed during reconciliation`,
+  const result = await settle(
+    db.transaction(async (tx) => {
+      let applied = 0;
+      const updatedAt = nowDate();
+      for (const expectedChange of changes) {
+        const [change] = await tx
+          .select()
+          .from(usagePackAllocationChanges)
+          .where(eq(usagePackAllocationChanges.id, expectedChange.id))
+          .limit(1);
+        if (
+          !change ||
+          change.status === "applied" ||
+          change.status === "completed"
+        ) {
+          continue;
+        }
+        if (
+          change.status !== expectedChange.status ||
+          change.replacementAllocationId
+        ) {
+          throw new ReflectedUsagePackSnapshotChanged();
+        }
+        if (
+          change.orgId !== context.subscription.orgId ||
+          change.usagePackSubscriptionId !== context.subscription.id
+        ) {
+          throw new Error(
+            "Reflected usage pack change belongs to another billing owner",
+          );
+        }
+        await retireReflectedChangeSource(tx, change, updatedAt);
+        const replacementAllocationId = await createReflectedChangeReplacement(
+          tx,
+          context,
+          change,
+          period,
+          updatedAt,
         );
-      }
-      await retireReflectedChangeSource(tx, change, updatedAt);
-      const replacementAllocationId = await createReflectedChangeReplacement(
-        tx,
-        context,
-        change,
-        period,
-        updatedAt,
-      );
 
-      if (
-        change.kind === "upgrade" &&
-        change.subscriptionChangeId &&
-        change.stripeScheduleId
-      ) {
-        // The paid upgrade replaces an older downgrade for this member. Retire
-        // the old row before this one becomes applied; the partial unique index
-        // permits only one scheduled/applied change per member.
-        await tx
+        if (
+          change.kind === "upgrade" &&
+          change.subscriptionChangeId &&
+          change.stripeScheduleId
+        ) {
+          // The paid upgrade replaces an older downgrade for this member. Retire
+          // the old row before this one becomes applied; the partial unique index
+          // permits only one scheduled/applied change per member.
+          await tx
+            .update(usagePackAllocationChanges)
+            .set({
+              status: "failed",
+              failureReason: "scheduled_change_superseded",
+              completedAt: updatedAt,
+              updatedAt,
+            })
+            .where(
+              and(
+                eq(usagePackAllocationChanges.orgId, change.orgId),
+                eq(usagePackAllocationChanges.userId, change.userId),
+                eq(usagePackAllocationChanges.status, "scheduled"),
+                eq(
+                  usagePackAllocationChanges.stripeScheduleId,
+                  change.stripeScheduleId,
+                ),
+              ),
+            );
+        }
+
+        const completed =
+          change.kind !== "addition" && change.kind !== "upgrade";
+        const [published] = await tx
           .update(usagePackAllocationChanges)
           .set({
-            status: "failed",
-            failureReason: "scheduled_change_superseded",
-            completedAt: updatedAt,
+            replacementAllocationId,
+            status: completed ? "completed" : "applied",
+            completedAt: completed ? updatedAt : null,
+            effectiveAt:
+              change.effectiveAt ??
+              (change.kind === "addition" || change.kind === "upgrade"
+                ? updatedAt
+                : new Date(period.start * 1000)),
             updatedAt,
           })
           .where(
             and(
-              eq(usagePackAllocationChanges.orgId, change.orgId),
-              eq(usagePackAllocationChanges.userId, change.userId),
-              eq(usagePackAllocationChanges.status, "scheduled"),
-              eq(
-                usagePackAllocationChanges.stripeScheduleId,
-                change.stripeScheduleId,
-              ),
+              eq(usagePackAllocationChanges.id, change.id),
+              eq(usagePackAllocationChanges.status, expectedChange.status),
+              fulfillmentChangeIdentity(expectedChange),
             ),
-          );
+          )
+          .returning({ id: usagePackAllocationChanges.id });
+        if (!published) {
+          throw new ReflectedUsagePackSnapshotChanged();
+        }
+        applied += 1;
       }
-
-      const completed = change.kind !== "addition" && change.kind !== "upgrade";
-      await tx
-        .update(usagePackAllocationChanges)
-        .set({
-          replacementAllocationId,
-          status: completed ? "completed" : "applied",
-          completedAt: completed ? updatedAt : null,
-          effectiveAt:
-            change.effectiveAt ??
-            (change.kind === "addition" || change.kind === "upgrade"
-              ? updatedAt
-              : new Date(period.start * 1000)),
-          updatedAt,
-        })
-        .where(eq(usagePackAllocationChanges.id, change.id));
-      applied += 1;
-    }
-    return applied;
-  });
+      return applied;
+    }),
+  );
+  if (result.ok) {
+    return result.value;
+  }
+  if (result.error instanceof ReflectedUsagePackSnapshotChanged) {
+    return 0;
+  }
+  throw result.error;
 }
 
 class CanceledUsagePackSnapshotChanged extends Error {}

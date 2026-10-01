@@ -38,10 +38,6 @@ import {
  * active; "exactly one" and "has an enabled Built-in route" are validated by
  * the API catalog loader. Switch the default by clearing the old row before
  * setting the new one inside one transaction, then retire the old default.
- *
- * Transitional: `allow_new_org_policy` still gates adding a new organization
- * policy for code-active models (see docs/model-catalog.md). It is dropped
- * once readers switch to `replaced_by`.
  */
 export const runModelCatalog = pgTable(
   "run_model_catalog",
@@ -55,7 +51,6 @@ export const runModelCatalog = pgTable(
     lineageRank: integer("lineage_rank").notNull(),
     /** The target's lineage_rank, maintained by the self foreign key. */
     replacedByLineageRank: integer("replaced_by_lineage_rank"),
-    allowNewOrgPolicy: boolean("allow_new_org_policy").notNull().default(false),
     /**
      * Plan policy for organizations whose plan restricts Built-in models
      * (`org_plan_entitlements.restricted_built_in_models`, every free plan):

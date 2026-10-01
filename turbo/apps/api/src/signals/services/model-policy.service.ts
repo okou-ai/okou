@@ -47,7 +47,7 @@ import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 import {
   catalogActiveModels,
   catalogDisplayName,
@@ -75,13 +75,8 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-// `is_default` is neither read nor written; the column remains for API
-// instances from before the model catalog during the rollout.
 export type OrgModelPolicyRow = Readonly<
-  Omit<
-    typeof orgModelPolicies.$inferSelect,
-    "modelProviderSurfaceId" | "isDefault"
-  > & {
+  Omit<typeof orgModelPolicies.$inferSelect, "modelProviderSurfaceId"> & {
     readonly modelProviderSurfaceId: string | null;
   }
 >;
@@ -1157,7 +1152,6 @@ async function listOrgModelPolicies(
     writePreconditionRequired: true,
     modelsAvailableToAdd:
       modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
-    workspaceDefaultModel: catalog.systemDefaultModel,
   };
   return { response, systemDefaultModel: catalog.systemDefaultModel };
 }

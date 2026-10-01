@@ -519,7 +519,7 @@ describe("okou workflow automation commands", () => {
       expect(mockExit).not.toHaveBeenCalled();
     });
 
-    it("should report the fixed organization default for an unpinned thread", async () => {
+    it("should report the system default for an unpinned thread", async () => {
       captureCreateAutomation(cronAutomation);
       server.use(
         http.get(THREAD_METADATA_URL, () => {

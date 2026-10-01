@@ -6853,7 +6853,7 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     description: expect.stringContaining(
-                      "omitted model stores the current member or organization default at creation",
+                      "omitted model stores the member preference or system default at creation",
                     ),
                     inputSchema: {
                       properties: {
@@ -6878,7 +6878,7 @@ describe("external MCP entry", () => {
                   {
                     name: "update_chat_thread",
                     description: expect.stringContaining(
-                      "model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin",
+                      "model:null clears the pin; future inputs capture the system default at enqueue without changing the pin",
                     ),
                     inputSchema: {
                       properties: {

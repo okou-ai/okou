@@ -141,10 +141,6 @@ export const markOrgOnboardingComplete$ = command(
               ),
             );
         }
-        await tx
-          .update(orgModelPolicies)
-          .set({ isDefault: false })
-          .where(owner);
         for (const update of plan.updates) {
           await tx
             .update(orgModelPolicies)

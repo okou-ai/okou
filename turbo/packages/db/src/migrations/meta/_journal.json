@@ -1580,36 +1580,43 @@
     {
       "idx": 1303,
       "version": "7",
-      "when": 1790811514244,
-      "tag": "1303_retire_provisional_billing_purge",
+      "when": 1790818909561,
+      "tag": "1303_remove_model_catalog_compatibility",
       "breakpoints": true
     },
     {
       "idx": 1304,
       "version": "7",
-      "when": 1790811522444,
-      "tag": "1304_retire_billing_attribution_mutation_guard",
+      "when": 1790823535108,
+      "tag": "1304_retire_provisional_billing_purge",
       "breakpoints": true
     },
     {
       "idx": 1305,
       "version": "7",
-      "when": 1790811530668,
-      "tag": "1305_allowance_window_uniqueness",
+      "when": 1790823541860,
+      "tag": "1305_retire_billing_attribution_mutation_guard",
       "breakpoints": true
     },
     {
       "idx": 1306,
       "version": "7",
-      "when": 1790811538958,
-      "tag": "1306_connector_selection_delete_cascade",
+      "when": 1790823548666,
+      "tag": "1306_allowance_window_uniqueness",
       "breakpoints": true
     },
     {
       "idx": 1307,
       "version": "7",
-      "when": 1790811547208,
-      "tag": "1307_connector_selection_deferred_references",
+      "when": 1790823583526,
+      "tag": "1307_connector_selection_delete_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 1308,
+      "version": "7",
+      "when": 1790823590306,
+      "tag": "1308_connector_selection_deferred_references",
       "breakpoints": true
     }
   ]

@@ -5795,7 +5795,7 @@ describe("okou workflow automations", () => {
     );
 
     // The bound chat thread survives the automation deletion and still carries
-    // the org default model selection.
+    // the system default model selection.
     await expect(wf.readThreadSelectedModel(String(threadId))).resolves.toBe(
       "claude-fable-5-1",
     );

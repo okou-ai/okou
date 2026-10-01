@@ -1269,7 +1269,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("uses the fixed organization default for input when the stored DM model becomes unavailable", async () => {
+  it("uses the system default for input when the stored DM model becomes unavailable", async () => {
     const integrations = createBddIntegrationApi(context);
     const runs = createRunsApi(context);
     const { actor, complete, send, runnerGroup } = await modelSessionScenario({
@@ -1290,7 +1290,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       selectedModel: "gpt-6-astra",
     });
     await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
-    await send("use the fixed organization default");
+    await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
     let runId: string | undefined;
     await expect

@@ -115,8 +115,7 @@ function projectedPolicies(): OrgModelPolicy[] {
   ];
 }
 
-// Server admission (`allow_new_org_policy`) keeps some active models out of
-// `modelsAvailableToAdd`; the client must follow the server's list.
+// The client follows the server's `modelsAvailableToAdd` projection.
 const NON_ADMITTED_MODELS = new Set([
   "gpt-6-sol",
   "claude-opus-5-5",

@@ -26,7 +26,7 @@ import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
-import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
+import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
