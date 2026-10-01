@@ -61,7 +61,7 @@ import {
   type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   catalogModelOffersUltrafast,
@@ -1192,6 +1192,24 @@ const resolveNewThreadSendCollision$ = command(
  * selections it carries, and its attachment references. Returns null when an
  * existing thread already has this input.
  */
+function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
+  return prepareChatThreadInsert({
+    orgId: args.orgId,
+    id: thread.threadId,
+    userId: args.userId,
+    agentId: args.body.agentId,
+    title: null,
+    modelProviderId: null,
+    modelProviderType: null,
+    modelProviderCredentialScope: null,
+    selectedModel: thread.runSettings.selectedModel,
+    codexServiceTier: thread.runSettings.codexServiceTier,
+    modelSettings: thread.runSettings.modelSettings,
+    computerUseHostId: thread.computerAccess.computerUseHostId,
+    cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
+  });
+}
+
 const appendNormalSendInput$ = command(
   async (
     { set },
@@ -1211,21 +1229,7 @@ const appendNormalSendInput$ = command(
     const preferencePlan = userModelPreferencePlan(args, thread.runSettings);
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
-        const createdPlan = prepareChatThreadInsert({
-          orgId: args.orgId,
-          id: thread.threadId,
-          userId: args.userId,
-          agentId: args.body.agentId,
-          title: null,
-          modelProviderId: null,
-          modelProviderType: null,
-          modelProviderCredentialScope: null,
-          selectedModel: thread.runSettings.selectedModel,
-          codexServiceTier: thread.runSettings.codexServiceTier,
-          modelSettings: thread.runSettings.modelSettings,
-          computerUseHostId: thread.computerAccess.computerUseHostId,
-          cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-        });
+        const createdPlan = newSendThreadInsertPlan(args, thread);
         const [createdRow] = await tx
           .with(createdPlan.defaults)
           .insert(chatThreads)
@@ -1332,7 +1336,7 @@ const appendNormalSendInput$ = command(
 );
 const prepareNormalSend$ = command(
   async (
-    { get, set },
+    { set },
     args: NormalSendArgs,
     signal: AbortSignal,
   ): Promise<
@@ -1348,7 +1352,6 @@ const prepareNormalSend$ = command(
     | NormalSendFailure
     | CreatedChatEventResponse
   > => {
-    const db = get(db$);
     // MCP attribution is server-owned. Reject a forged source even on an
     // idempotent retry.
     if (
@@ -1506,14 +1509,18 @@ const prepareNormalSendInput$ = command(
       },
       signal,
     );
-    const modelSelection = await resolveChatInputModelSelection(set(writeDb$), {
-      orgId: args.orgId,
-      userId: args.userId,
-      ...args.runSettings,
-      reasoningEffort: args.body.runOptions?.reasoningEffort,
-      orgPlanCapabilities: args.orgPlanCapabilities,
-      catalog: args.catalog,
-    });
+    const modelSelection = await set(
+      resolveChatInputModelSelection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        ...args.runSettings,
+        reasoningEffort: args.body.runOptions?.reasoningEffort,
+        orgPlanCapabilities: args.orgPlanCapabilities,
+        catalog: args.catalog,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if ("status" in modelSelection) {
       return modelSelection;

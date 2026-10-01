@@ -453,8 +453,8 @@ const commitPlacedEntries$ = command(
       db,
       sql`
         with export_step_lease as materialized (${leased}),
-        export_step_progress as (${progress}),
-        export_step_inventory as (${changed})
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (${changed.getSQL()})
         select id from export_step_progress
       `,
       z.object({ id: z.string().uuid() }),
@@ -610,8 +610,8 @@ const scanStep$ = command(
       db,
       sql`
         with export_step_lease as materialized (${leased}),
-        export_step_progress as (${progress}),
-        export_step_inventory as (${changed})
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (${changed.getSQL()})
         select id from export_step_progress
       `,
       z.object({ id: z.string().uuid() }),
@@ -732,7 +732,7 @@ const inventoryStep$ = command(
       db,
       sql`
         with export_step_lease as materialized (${leased}),
-        export_step_progress as (${progress}),
+        export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
          select ${job.id}::uuid, ${state.entryCount + pageNumber}::integer, ${path}, ${sourceKey}, ${bytes.length}::bigint,
           ${bytes.length}::bigint, ${updateUserExportCrc32(0, bytes)}::bigint, true,
@@ -831,7 +831,7 @@ const manifestStep$ = command(
       db,
       sql`
         with export_step_lease as materialized (${leased}),
-        export_step_progress as (${progress}),
+        export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
          select ${job.id}::uuid, ${state.entryCount}::integer, ${path}, ${sourceKey}, ${bytes.length}::bigint,
           ${bytes.length}::bigint, ${updateUserExportCrc32(0, bytes)}::bigint, true,
@@ -933,7 +933,7 @@ const assembleStep$ = command(
       db,
       sql`
         with export_step_lease as materialized (${leased}),
-        export_step_progress as (${progress}),
+        export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (${
           result.part
             ? sql`insert into ${userExportParts} (job_id, part_number, etag)
@@ -1155,7 +1155,7 @@ const notifyStep$ = command(
     // existing outbox ID also makes a replay after a lost receipt harmless.
     const { rowCount } = await db.execute(sql`
       with export_notification_lease as materialized (${leased}),
-      completed_export as (${completion})
+      completed_export as (${completion.getSQL()})
       insert into ${emailOutbox} (id, from_address, to_addresses, subject, template, status, attempts)
       select ${job.id}::uuid, ${email.fromAddress}, ${sql.param(email.toAddresses, emailOutbox.toAddresses)},
         ${email.subject}, ${sql.param(email.template, emailOutbox.template)}, 'pending', 0
