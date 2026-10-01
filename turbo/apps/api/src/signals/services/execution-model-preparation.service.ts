@@ -106,16 +106,19 @@ function capturesPiProviderSecret(
   );
 }
 
-/** Firewall-resolved credentials: each stored secret's runtime reference. */
+/**
+ * Firewall-resolved credentials: each stored secret's runtime reference. A
+ * missing or empty stored value yields no reference, so the usability check
+ * rejects the source as unavailable (fail-closed, as on main).
+ */
 function deferredCredentialReferences(
   source: ModelSourceSnapshot,
-): ModelCredentialValues | null {
+): ModelCredentialValues {
   const values: Record<string, string> = {};
   for (const credential of source.credentials) {
-    if (credential.kind !== "encrypted") {
-      return null;
+    if (credential.kind === "encrypted" && credential.encryptedValue) {
+      values[credential.name] = `\${{ secrets.${credential.name} }}`;
     }
-    values[credential.name] = `\${{ secrets.${credential.name} }}`;
   }
   return values;
 }
@@ -181,9 +184,14 @@ export async function prepareRegisteredModelEnvironment(
   // As on main, a firewall-injected single-secret credential that Pi does not
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
-    (deferred && !capture && !hasAuthMethods(type)
+    deferred &&
+    !capture &&
+    !hasAuthMethods(type) &&
+    source.credentials.every((credential) => {
+      return credential.kind === "encrypted";
+    })
       ? deferredCredentialReferences(source)
-      : null) ?? (await resolveModelCredentialValues(db, source, signal));
+      : await resolveModelCredentialValues(db, source, signal);
   if (!credentials) {
     return null;
   }

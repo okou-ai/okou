@@ -20,7 +20,10 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
+import {
+  clearModelProviderSecretReferenceForTests,
+  overwriteModelProviderSecretForTests,
+} from "./helpers/model-provider-state";
 import {
   coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
@@ -2069,6 +2072,36 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization?.length ?? 0).toBeGreaterThan("Bearer ".length);
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
+
+  it("rejects a firewall-injected provider without a stored credential before run admission", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const { providerId } = await upsertOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "sk-ant-api03-missing-credential",
+    });
+    // claude-fable-5-1 has no Pi route: the firewall-injected key stays an
+    // encrypted reference instead of being decrypted at run creation.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    await clearModelProviderSecretReferenceForTests(context.signal, providerId);
+
+    const { picked } = await sendUntilPicked(actor, {
+      agentId,
+      prompt: "run without a stored provider credential",
+      model: "claude-fable-5-1",
+    });
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "provider_unavailable",
+    });
+  }, 60_000);
 
   it("rejects legacy blank OpenRouter provider secrets before run admission", async () => {
     const { actor, agentId } = await entitledChatActor();
