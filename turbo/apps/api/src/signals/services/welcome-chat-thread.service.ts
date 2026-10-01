@@ -11,7 +11,7 @@ import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { createChatThread$ } from "./chat-thread.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
 
 interface WelcomeThreadAction {
@@ -82,12 +82,10 @@ export const createWelcomeChatThread$ = command(
       );
     }
 
-    const pin = await resolveDefaultModelFirstPin(
-      set(writeDb$),
-      args.orgId,
-      args.userId,
-      undefined,
-      undefined,
+    const pin = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
     );
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));

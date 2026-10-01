@@ -1,10 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import {
-  loadSystemDefaultRunModel,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
@@ -153,6 +150,7 @@ export async function isPersonalSubscriptionRoute(args: {
  * still offers the saved model.
  */
 export async function resetStaleAutoMemberSelection(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   userId: string,
@@ -202,7 +200,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: await loadSystemDefaultRunModel(db),
+      selectedModel: await catalogSnapshot.systemDefaultModel,
       serviceTier: null,
       updatedAt: nowDate(),
     })

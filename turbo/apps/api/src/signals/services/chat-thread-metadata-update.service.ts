@@ -22,10 +22,10 @@ import {
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
 } from "./model-selection.service";
@@ -272,6 +272,7 @@ const prepareMetadataModel$ = command(
   async (
     { set },
     args: ChatThreadMetadataUpdateArgs,
+    catalog: ModelCatalog,
     signal: AbortSignal,
   ): Promise<PreparedPin> => {
     if (!hasModel(args.patch) || args.patch.model === null) {
@@ -287,14 +288,18 @@ const prepareMetadataModel$ = command(
     if (!thread) {
       return null;
     }
-    return await resolveModelSelectionPin({
-      db: set(writeDb$),
-      ...args.principal,
-      modelSelection: {
-        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-        selectedModel: args.patch.model,
+    return await set(
+      resolveModelSelectionPin$,
+      {
+        ...args.principal,
+        catalog,
+        modelSelection: {
+          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+          selectedModel: args.patch.model,
+        },
       },
-    });
+      signal,
+    );
   },
 );
 
@@ -303,10 +308,10 @@ const commitMetadata$ = command(
     { set },
     args: ChatThreadMetadataUpdateArgs,
     pin: PreparedPin,
+    catalog: ModelCatalog,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
     const db = set(writeDb$);
-    const catalog = await loadModelCatalog(db);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       const [current] = await tx
@@ -364,7 +369,8 @@ export const updateChatThreadMetadata$ = command(
     args: ChatThreadMetadataUpdateArgs,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
-    const pin = await set(prepareMetadataModel$, args, signal);
-    return await set(commitMetadata$, args, pin, signal);
+    const catalog = await set(loadModelCatalog$, signal);
+    const pin = await set(prepareMetadataModel$, args, catalog, signal);
+    return await set(commitMetadata$, args, pin, catalog, signal);
   },
 );

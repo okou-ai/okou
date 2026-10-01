@@ -1,4 +1,4 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -81,7 +81,7 @@ import {
   linkOfficialTelegramUser$,
 } from "./telegram-link.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 const log = logger("api:telegram:post");
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
@@ -1185,12 +1185,15 @@ const persistTelegramChatMessage$ = command(
       return { inserted: false };
     }
     const threadArgs = {
-      initialModel: await resolveDefaultModelFirstPin(
-        set(writeDb$),
-        args.source.orgId,
-        args.source.userLink.userId,
-        undefined,
-        undefined,
+      initialModel: await set(
+        resolveDefaultModelFirstPin$,
+        {
+          orgId: args.source.orgId,
+          userId: args.source.userLink.userId,
+          defaultSource: undefined,
+          orgPlanCapabilities: undefined,
+        },
+        signal,
       ),
       userId: args.source.userLink.userId,
       orgId: args.source.orgId,
@@ -1244,11 +1247,15 @@ const persistTelegramChatMessage$ = command(
       id: chatEventId,
       chatThreadId: binding.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: binding.chatThreadId,
-        orgId: args.source.orgId,
-        userId: args.source.userLink.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: binding.chatThreadId,
+          orgId: args.source.orgId,
+          userId: args.source.userLink.userId,
+        },
+        signal,
+      ),
       content: null,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? runPrompt.text : args.prompt,

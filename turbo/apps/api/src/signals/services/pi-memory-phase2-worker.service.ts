@@ -3,7 +3,7 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -185,6 +185,7 @@ const recoverMaintenanceRun$ = command(
 );
 
 async function checkNewAttemptQuotaAdmission(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   claim: ClaimedPiMemoryPhase2Job,
   credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
@@ -194,7 +195,7 @@ async function checkNewAttemptQuotaAdmission(
   // Canonical createAgentRun admission and final transaction remain authoritative.
   const admission = await checkOrgCreditsForRunAdmission({
     db,
-    catalog: await loadModelCatalog(db),
+    catalog: await catalogSnapshot,
     orgId: claim.orgId,
     userId: claim.userId,
     modelProviderType: credential.pin.modelProvider,
@@ -244,6 +245,25 @@ function createPiMemoryProducerRunBinding(
   };
 }
 
+function phase2MaintenanceInput(claim: ClaimedPiMemoryPhase2Job) {
+  const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
+  const maintenance = {
+    schemaVersion: 1,
+    memoryStorageId: claim.memoryStorageId,
+    claimedRevision: claim.claimedRevision,
+    claimedBaseVersionId: claim.baseVersion.versionId,
+    leaseToken: claim.leaseToken,
+    selectionDigest,
+    selected: claim.selected.map((candidate) => {
+      return {
+        ...candidate,
+        sourceCompletedAt: candidate.sourceCompletedAt.toISOString(),
+      };
+    }),
+  } as const;
+  return { selectionDigest, maintenance };
+}
+
 const dispatchClaim$ = command(
   async (
     { set },
@@ -263,30 +283,28 @@ const dispatchClaim$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
       return await failClaim(db, claim, nowDate(), "pi_memory_disabled");
     }
-    const credential = await resolvePiMemoryPhase2Credential(db, claim, signal);
+    const catalog = await set(loadModelCatalog$, signal);
+    const credential = await resolvePiMemoryPhase2Credential(
+      catalog,
+      db,
+      claim,
+      signal,
+    );
     signal.throwIfAborted();
 
-    if (!(await checkNewAttemptQuotaAdmission(db, claim, credential, signal))) {
+    if (
+      !(await checkNewAttemptQuotaAdmission(
+        catalog,
+        db,
+        claim,
+        credential,
+        signal,
+      ))
+    ) {
       return await failClaim(db, claim, nowDate(), "source_admission_denied");
     }
 
-    const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
-    const maintenance = {
-      schemaVersion: 1,
-      memoryStorageId: claim.memoryStorageId,
-      claimedRevision: claim.claimedRevision,
-      claimedBaseVersionId: claim.baseVersion.versionId,
-      leaseToken: claim.leaseToken,
-      selectionDigest,
-      selected: claim.selected.map((candidate) => {
-        return {
-          ...candidate,
-          sourceCompletedAt: candidate.sourceCompletedAt.toISOString(),
-        };
-      }),
-    } as const;
-    const catalog = await loadModelCatalog(db);
-    signal.throwIfAborted();
+    const { selectionDigest, maintenance } = phase2MaintenanceInput(claim);
     const result = await set(
       createAgentRun$,
       {

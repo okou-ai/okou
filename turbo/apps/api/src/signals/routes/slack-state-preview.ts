@@ -1,3 +1,7 @@
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import { randomUUID } from "node:crypto";
 import { command, computed } from "ccstate";
 import {
@@ -279,11 +283,18 @@ const seedDefaultAgent$ = command(
   },
 );
 
-async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
+async function seedBuiltInModelKeys(
+  catalogSnapshot: ModelCatalog,
+  db: Db,
+  agentId: string,
+): Promise<void> {
   await acquireBuiltInModelKeyFixture(
     db,
     agentId,
-    builtInModelKeyRows(agentId, await loadSystemDefaultBuiltInVendor(db)),
+    builtInModelKeyRows(
+      agentId,
+      await loadSystemDefaultBuiltInVendor(catalogSnapshot),
+    ),
   );
 }
 
@@ -860,7 +871,11 @@ const postSlackState$ = command(async ({ get, set }, signal: AbortSignal) => {
     : undefined;
   signal.throwIfAborted();
   if (defaultAgent) {
-    await seedBuiltInModelKeys(db, defaultAgent.agentId);
+    await seedBuiltInModelKeys(
+      await get(modelCatalog$),
+      db,
+      defaultAgent.agentId,
+    );
     signal.throwIfAborted();
   }
   await seedPostSlackUserData(db, body, actor);

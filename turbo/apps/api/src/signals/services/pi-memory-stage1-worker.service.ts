@@ -11,7 +11,7 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -807,6 +807,7 @@ const prepareSourceWork$ = command(
     const history = await set(loadAndProjectHistory$, { work }, signal);
     signal.throwIfAborted();
     const credential = await resolvePiMemoryStage1Credential(
+      await set(loadModelCatalog$, signal),
       set(writeDb$),
       {
         sourceRunId: work.selection.sourceRunId,
@@ -906,6 +907,7 @@ interface ProcessPreparedWorkArgs {
 }
 
 async function processPreparedWork(
+  catalogSnapshot: ModelCatalog,
   args: ProcessPreparedWorkArgs,
   signal: AbortSignal,
 ): Promise<WorkOutcome> {
@@ -921,7 +923,7 @@ async function processPreparedWork(
         beforeRequest: async (requestSignal) => {
           const admission = await checkOrgCreditsForRunAdmission({
             db: args.db,
-            catalog: await loadModelCatalog(args.db),
+            catalog: await catalogSnapshot,
             ...args.prepared.credential.billing,
             modelProviderType: args.prepared.credential.modelProviderType,
             selectedModel: args.prepared.credential.selectedModel,
@@ -1169,6 +1171,7 @@ export const executePiMemoryStage1Work$ = command(
         .slice(0, PI_MEMORY_STAGE1_PROVIDER_CONCURRENCY)
         .map(async (item) => {
           return await processPreparedWork(
+            await set(loadModelCatalog$, signal),
             {
               db,
               prepared: item,

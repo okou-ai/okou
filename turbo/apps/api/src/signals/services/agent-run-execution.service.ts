@@ -198,10 +198,10 @@ import {
   catalogBuiltInCandidates,
   catalogBuiltInRoute,
   catalogHasProviderRoute,
-  loadModelCatalog,
   catalogProviderUpstreamModel,
   type ModelCatalog,
   type CatalogRoute,
+  createModelCatalog,
 } from "./model-catalog.service";
 import {
   type BuiltInRoutePricing,
@@ -18430,7 +18430,7 @@ function createSelectedAgentRunReadGraph(
   // One catalog snapshot per run creation (or queue pick): a queued input
   // reads the catalog current at the pick, not at enqueue.
   const catalog$ = computed((get) => {
-    return loadModelCatalog(get(db$));
+    return get(createModelCatalog());
   });
   const identityInput$ = createSelectedIdentityInput(input$, sources);
   const command$ =

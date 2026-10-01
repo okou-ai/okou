@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { command } from "ccstate";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
@@ -187,6 +188,32 @@ function queueAdmissionSourceTransition(args: {
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
  */
+function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
+  const { automation, chatThreadId } = args.due;
+  return automation.kind === "schedule" &&
+    args.replacePendingScheduleTick !== false
+    ? { chatThreadId, automationId: automation.id }
+    : undefined;
+}
+
+const workflowAutomationInputModel$ = command(
+  async (
+    { set },
+    due: RunWorkflowAutomationNowArgs["due"],
+    signal: AbortSignal,
+  ) => {
+    return await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: due.chatThreadId,
+        orgId: due.automation.orgId,
+        userId: due.automation.ownerUserId,
+      },
+      signal,
+    );
+  },
+);
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -205,13 +232,15 @@ export const runWorkflowAutomationNow$ = command(
     }
 
     const { scheduleClaim, persistSourceTransition } = args;
-    const replacePendingTicks =
-      automation.kind === "schedule" &&
-      args.replacePendingScheduleTick !== false
-        ? { chatThreadId, automationId: automation.id }
-        : undefined;
+    const replacePendingTicks = pendingTickReplacement(args);
 
+    const modelSelection = await set(
+      workflowAutomationInputModel$,
+      args.due,
+      signal,
+    );
     const appendInput = await workflowAutomationQueueEventWriter(db, {
+      modelSelection,
       automation,
       queueEventId: args.queueEventId,
       workflowName: args.automationContext.workflowName,

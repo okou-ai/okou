@@ -7,7 +7,7 @@ import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installat
 import { command } from "ccstate";
 import { and, asc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 
 import type { Tx } from "../../lib/db-types";
@@ -406,11 +406,15 @@ const enqueueMessage$ = command(
       id: args.ingress.id,
       chatThreadId: args.ingress.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: args.ingress.chatThreadId,
-        orgId: args.orgId,
-        userId: args.ingress.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: args.ingress.chatThreadId,
+          orgId: args.orgId,
+          userId: args.ingress.userId,
+        },
+        signal,
+      ),
       runId: null,
       userMessage: createUserMessageDocument({
         text: args.context.messageText,

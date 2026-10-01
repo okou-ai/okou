@@ -15,7 +15,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { deleteModelProviderConnection$ } from "./model-provider-gateway.service";
 import { deleteOrgModelProvider$ } from "./model-provider.service";
-import { loadSystemDefaultRunModel } from "./model-catalog.service";
+import { systemDefaultRunModel$ } from "./model-catalog.service";
 import {
   listOrgModelPolicies$,
   updateOrgModelPolicies$,
@@ -138,7 +138,7 @@ const enterAutoMode$ = command(
 
 /** Subscription models were member-only; Custom members select org policies. */
 const enterCustomMode$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal) => {
+  async ({ get, set }, orgId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
     await db
       .update(orgMetadata)
@@ -153,7 +153,7 @@ const enterCustomMode$ = command(
         .select({ model: orgModelPolicies.model })
         .from(orgModelPolicies)
         .where(eq(orgModelPolicies.orgId, orgId)),
-      loadSystemDefaultRunModel(db),
+      get(systemDefaultRunModel$),
     ]);
     signal.throwIfAborted();
     const policies = [...stored, { model: systemDefaultModel }];

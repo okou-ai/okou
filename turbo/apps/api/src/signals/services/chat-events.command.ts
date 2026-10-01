@@ -62,7 +62,7 @@ import {
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import { resolveChatInputModelSelection } from "./chat-input-model.service";
-import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
   catalogModelOffersUltrafast,
   isCatalogFastServiceTierSupported,
@@ -1403,7 +1403,7 @@ const prepareNormalSend$ = command(
     if (invalidTemplate) {
       return invalidTemplate;
     }
-    const catalog = await loadModelCatalog(db);
+    const catalog = await set(loadModelCatalog$, signal);
     signal.throwIfAborted();
     if (
       args.body.model !== undefined &&

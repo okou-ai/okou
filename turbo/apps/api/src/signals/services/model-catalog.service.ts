@@ -7,7 +7,8 @@ import {
 import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import type { ReadonlyDb } from "../external/db";
+import { command, computed, type Computed } from "ccstate";
+import { db$ } from "../external/db";
 
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
@@ -423,59 +424,109 @@ export function catalogModelRank(catalog: ModelCatalog, model: string): number {
 }
 
 /**
- * Loaded per call: operators change the catalog directly in the database, and
+ * Loaded per owning graph: operators change the catalog directly in the database, and
  * the two reads are small. Correctness (a changed default is visible to the
  * next request) wins over caching until a measured need appears.
  */
-export async function loadModelCatalog(
-  db: Pick<ReadonlyDb, "select">,
-): Promise<ModelCatalog> {
-  const [models, routes] = await Promise.all([
-    db
-      .select({
-        model: runModelCatalog.model,
-        displayName: runModelCatalog.displayName,
-        sortOrder: runModelCatalog.sortOrder,
-        isSystemDefault: runModelCatalog.isSystemDefault,
-        replacedBy: runModelCatalog.replacedBy,
-        builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
-        piRouteClass: runModelCatalog.piRouteClass,
-      })
-      .from(runModelCatalog)
-      .orderBy(asc(runModelCatalog.sortOrder), asc(runModelCatalog.model)),
-    db
-      .select({
-        model: modelRoutes.model,
-        providerType: modelRoutes.providerType,
-        concreteProviderType: modelRoutes.concreteProviderType,
-        subscriptionType: modelRoutes.subscriptionType,
-        upstreamModel: modelRoutes.upstreamModel,
-        enabled: modelRoutes.enabled,
-        priority: modelRoutes.priority,
-        serviceTiers: modelRoutes.serviceTiers,
-        defaultServiceTier: modelRoutes.defaultServiceTier,
-        efforts: modelRoutes.efforts,
-        defaultEffort: modelRoutes.defaultEffort,
-        priceTier: modelRoutes.priceTier,
-        pricingKind: modelRoutes.pricingKind,
-        pricingProvider: modelRoutes.pricingProvider,
-        longContextMinTotalInputTokens:
-          modelRoutes.longContextMinTotalInputTokens,
-      })
-      .from(modelRoutes)
-      .orderBy(
-        asc(modelRoutes.model),
-        asc(modelRoutes.providerType),
-        sql`${modelRoutes.subscriptionType} asc nulls first`,
-        asc(modelRoutes.priority),
-      ),
-  ]);
-  return validateModelCatalog(models, routes);
+export function createModelCatalog(): Computed<Promise<ModelCatalog>> {
+  return computed(async (get): Promise<ModelCatalog> => {
+    const db = get(db$);
+    const [models, routes] = await Promise.all([
+      db
+        .select({
+          model: runModelCatalog.model,
+          displayName: runModelCatalog.displayName,
+          sortOrder: runModelCatalog.sortOrder,
+          isSystemDefault: runModelCatalog.isSystemDefault,
+          replacedBy: runModelCatalog.replacedBy,
+          builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
+          piRouteClass: runModelCatalog.piRouteClass,
+        })
+        .from(runModelCatalog)
+        .orderBy(asc(runModelCatalog.sortOrder), asc(runModelCatalog.model)),
+      db
+        .select({
+          model: modelRoutes.model,
+          providerType: modelRoutes.providerType,
+          concreteProviderType: modelRoutes.concreteProviderType,
+          subscriptionType: modelRoutes.subscriptionType,
+          upstreamModel: modelRoutes.upstreamModel,
+          enabled: modelRoutes.enabled,
+          priority: modelRoutes.priority,
+          serviceTiers: modelRoutes.serviceTiers,
+          defaultServiceTier: modelRoutes.defaultServiceTier,
+          efforts: modelRoutes.efforts,
+          defaultEffort: modelRoutes.defaultEffort,
+          priceTier: modelRoutes.priceTier,
+          pricingKind: modelRoutes.pricingKind,
+          pricingProvider: modelRoutes.pricingProvider,
+          longContextMinTotalInputTokens:
+            modelRoutes.longContextMinTotalInputTokens,
+        })
+        .from(modelRoutes)
+        .orderBy(
+          asc(modelRoutes.model),
+          asc(modelRoutes.providerType),
+          sql`${modelRoutes.subscriptionType} asc nulls first`,
+          asc(modelRoutes.priority),
+        ),
+    ]);
+    return validateModelCatalog(models, routes);
+  });
 }
 
-/** The DB-owned system default every organization uses. */
-export async function loadSystemDefaultRunModel(
-  db: ReadonlyDb,
-): Promise<string> {
-  return (await loadModelCatalog(db)).systemDefaultModel;
-}
+export const modelCatalog$ = createModelCatalog();
+
+/** Fresh reads for long-lived worker stores; capture and pass the returned snapshot. */
+export const loadModelCatalog$ = command(
+  async ({ get }, signal?: AbortSignal): Promise<ModelCatalog> => {
+    const db = get(db$);
+    const [models, routes] = await Promise.all([
+      db
+        .select({
+          model: runModelCatalog.model,
+          displayName: runModelCatalog.displayName,
+          sortOrder: runModelCatalog.sortOrder,
+          isSystemDefault: runModelCatalog.isSystemDefault,
+          replacedBy: runModelCatalog.replacedBy,
+          builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
+          piRouteClass: runModelCatalog.piRouteClass,
+        })
+        .from(runModelCatalog)
+        .orderBy(asc(runModelCatalog.sortOrder), asc(runModelCatalog.model)),
+      db
+        .select({
+          model: modelRoutes.model,
+          providerType: modelRoutes.providerType,
+          concreteProviderType: modelRoutes.concreteProviderType,
+          subscriptionType: modelRoutes.subscriptionType,
+          upstreamModel: modelRoutes.upstreamModel,
+          enabled: modelRoutes.enabled,
+          priority: modelRoutes.priority,
+          serviceTiers: modelRoutes.serviceTiers,
+          defaultServiceTier: modelRoutes.defaultServiceTier,
+          efforts: modelRoutes.efforts,
+          defaultEffort: modelRoutes.defaultEffort,
+          priceTier: modelRoutes.priceTier,
+          pricingKind: modelRoutes.pricingKind,
+          pricingProvider: modelRoutes.pricingProvider,
+          longContextMinTotalInputTokens:
+            modelRoutes.longContextMinTotalInputTokens,
+        })
+        .from(modelRoutes)
+        .orderBy(
+          asc(modelRoutes.model),
+          asc(modelRoutes.providerType),
+          sql`${modelRoutes.subscriptionType} asc nulls first`,
+          asc(modelRoutes.priority),
+        ),
+    ]);
+    signal?.throwIfAborted();
+    return validateModelCatalog(models, routes);
+  },
+);
+
+/** The DB-owned system default, derived from the same request catalog. */
+export const systemDefaultRunModel$ = computed(async (get): Promise<string> => {
+  return (await get(modelCatalog$)).systemDefaultModel;
+});

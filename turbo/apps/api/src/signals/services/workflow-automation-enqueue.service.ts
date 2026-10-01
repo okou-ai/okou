@@ -13,7 +13,7 @@ import {
   insertChatEventContext,
   revokeChatEvent,
 } from "./chat-event.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   createUserMessageDocument,
   withAgentRunSourceAnnotation,
@@ -128,6 +128,7 @@ export class ScheduleOccurrenceUnavailableError extends Error {
 }
 
 interface WorkflowAutomationQueueEventArgs {
+  readonly modelSelection: ChatInputModelSelection;
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly queueEventId?: string;
   readonly workflowName: string;
@@ -181,17 +182,7 @@ export async function workflowAutomationQueueEventWriter(
       id: args.queueEventId ?? randomUUID(),
       chatThreadId: args.chatThreadId,
       eventType: "input.automation" as const,
-      modelSelection: await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_enqueue_model_selection",
-        async () => {
-          return await resolveEnqueuedChatInputModel(tx, {
-            threadId: args.chatThreadId,
-            orgId: automation.orgId,
-            userId: automation.ownerUserId,
-          });
-        },
-      ),
+      modelSelection: args.modelSelection,
       content: null,
       userMessage,
       runId: null,
