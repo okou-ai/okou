@@ -15,26 +15,29 @@ contains migration `1290_retire_cloudflare_access_triggers`, removing both
 Cloudflare guards and their functions with independently documented serving and
 rollback evidence. This PR preserves that migration unchanged and withdraws its
 redundant unshipped scope-only retirement. With both unshipped Forms triggers
-withdrawn and migration `1297_retire_billing_attribution_mutation_guard` removing
-the redundant canonical guard, **six billing application triggers remain** in the
-proposed R1 schema. No production migration completion is inferred from main.
+withdrawn, migration `1306_retire_billing_attribution_mutation_guard` removing
+the redundant canonical guard and migration
+`1310_retire_application_billing_capture_triggers` removing the six billing
+capture/observation triggers and their functions, **no application triggers
+remain** in the proposed R1 schema (`EXPECTED_PERMANENT_TRIGGERS` is empty). No
+production migration completion is inferred from main.
 
-## Existing billing attribution triggers
+## Retired billing attribution triggers
 
 | Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths now publish attribution atomically with the Run; their broader launch transaction ownership is unfinished.  |
-| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Removed by migration 1292: every supported mutation already preserves these identities and monotone observation; see evidence below. |
+| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Removed by migration 1306: every supported mutation already preserves these identities and monotone observation; see evidence below. |
 | `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                   |
 | `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit.   |
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                    |
 
-Retirement of the six remaining billing triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. The [current producer and retention trace](./advisory-lock-release-1-billing-trigger-writers.md)
-now identifies all observed production writers and the remaining fixture
-dependencies. Command ownership and those fixture conversions remain open. Existing
-attribution readers and the retained convergence fallbacks do not replace
-these writes.
+Migration 1310 retires the six capture/observation triggers. Every traced
+production writer and fixture now publishes billing identity and observation
+explicitly in its owning transaction; see the [current producer and retention trace](./advisory-lock-release-1-billing-trigger-writers.md).
+No trigger enforces attribution immutability any more: the conditional writer
+predicates below are the only guard. Existing attribution readers and the
+retained convergence fallbacks do not replace these writes.
 
 The following producer changes are implemented:
 
@@ -108,7 +111,7 @@ The following producer changes are implemented:
   but does not complete ownership of its worker and provider caller graph.
 
 The standalone managed path commits before financial settlement as before;
-Social keeps its combined financial commit. Only the redundant canonical mutation guard is removed; capture and observation triggers remain. Existing public API
+Social keeps its combined financial commit. Migration 1306 removes the redundant canonical mutation guard and migration 1310 removes the capture and observation triggers. Existing public API
 coverage for managed Run billing display, runless allowance consumption and
 image webhook completion remains; behavioral verification belongs to the
 integrated PR pipeline.
@@ -121,10 +124,9 @@ when that row already exists, independently of a missing or differently owned
 live Run; only a matching live owner retains the content FK. Without canonical
 attribution, a differently owned live Run cannot establish a new billed
 identity. These are separate checks, not a fallback to the live Run's billing
-owner. Preserve the historical migrations. Once all R1 writers
-explicitly maintain the guarantees, use serving, in-flight and rollback evidence
-to retire current trigger/function definitions in a new migration. A source
-scan or the age of the old migrations cannot establish that gate.
+owner. The historical migrations are preserved; migration 1310 drops the
+current trigger/function definitions because R1 writers maintain these
+guarantees explicitly. No rolling-writer compatibility is required.
 
 ## Fixture writers and remaining audit evidence
 
@@ -146,13 +148,14 @@ and reader fallback removal still needs its own data evidence.
 
 ## Canonical mutation guard: independent retirement evidence
 
-Migration `1297_retire_billing_attribution_mutation_guard` removes
+Migration `1306_retire_billing_attribution_mutation_guard` removes
 `billing_run_attribution_immutable` and `reject_billing_attribution_update`.
-It does not remove any capture, observation or attribution reader fallback.
+It does not remove capture, observation or any attribution reader fallback;
+migration 1310 retires capture and observation separately.
 
 The outgoing API at main `13a2692` does not issue direct canonical attribution
 INSERT/UPDATE statements. Its trigger-driven writers use these historical SQL
-functions, whose current definitions remain installed:
+functions (dropped by migration 1310):
 
 - `ensure_billing_run_attribution` (1119, replaced by 1193) only updates the same
   Run ID on conflict after exact organization, user, original start and source
@@ -176,8 +179,8 @@ migrations remain unchanged.
 
 These predicates are already shared with outgoing writers, so this guard does
 not need a new preparation release or an API drain. The six capture/observation
-triggers still cover outgoing writers and require their own complete replacement
-audit and release gate. Existing user API tests continue to protect amounts,
+triggers are retired separately by migration 1310 after the explicit writer
+conversions above. Existing user API tests continue to protect amounts,
 retained grouping, cross-owner rejection and compaction; the permanent schema
 inventory verifies that the retired guard/function are absent.
 
@@ -191,8 +194,8 @@ That newer evidence supersedes this inventory's earlier foundation-writer
 uncertainty. The serving aliases and rollback floor must still be rechecked
 before release; this PR does not establish actual production journal completion.
 
-Supported SSH writers read the owned/same-org config `FOR SHARE`; conversion
-writers retain the config `FOR UPDATE`. Demotion detaches other-owner hosts
+Supported SSH writers read the owned/same-org config without a row lock and rely
+on the same-org FK; conversion writers retain the config `FOR UPDATE`. Demotion detaches other-owner hosts
 before changing scope. Promotion now additionally rejects an incompatible
 retained other-owner binding. The integration preserves that defensive predicate
 inside `convertCloudflareAccessToOrganization$`, without reintroducing main's
@@ -220,9 +223,9 @@ metadata and the two trigger/function inventory entries. The original non-null
 `ON DELETE CASCADE` cursor/watch relationship remains unchanged. Main `c26098d`
 and the observed production deployment tree `c501c3b7` exclude these PR-only
 migrations; #37313 is still open and unmerged. Existing published migration history, including main 1288, is untouched.
-Main migrations 1289 and 1290 are preserved. Drizzle generated the two remaining
-PR-only purge and canonical mutation-guard retirements as 1294 and 1295, without
-a Forms schema change or added table/column.
+Main migrations through 1304 are preserved. The two remaining PR-only purge and
+canonical mutation-guard retirements follow as 1305 and 1306, without a Forms
+schema change or added table/column.
 
 Application SQL still checks active authority, selected source and normal
 uniqueness. Late provider preparation cannot revive a disabled or revoked
@@ -236,7 +239,7 @@ Existing API tests must continue to verify attribution amounts/anchors,
 cross-owner SSH access rejection, Forms recovery for later notifications, duplicate notification
 deduplication and explicit disable/restart behavior. No lock waiter, temporary
 test trigger or artificial database gate is a substitute. The migration schema
-inventory must change alongside the eventual retirement migration.
+inventory is empty, matching migration 1310.
 
 The six remaining billing application triggers are explicit acceptance
 obligations. Their replacement writer/retention audit remains unfinished.

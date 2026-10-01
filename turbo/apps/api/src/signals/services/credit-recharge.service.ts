@@ -22,7 +22,6 @@ import {
 } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
@@ -33,7 +32,6 @@ const CREDITS_PER_DOLLAR = 1000;
 const STALE_THRESHOLD_MINUTES = 10;
 
 interface ClaimedRechargeState {
-  readonly rowVersion: string;
   readonly credits: number;
   readonly tier: string;
   readonly stripeCustomerId: string;
@@ -179,7 +177,6 @@ const claimAutoRecharge$ = command(
         ),
       )
       .returning({
-        rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
         credits: orgMetadata.credits,
         tier: orgMetadata.tier,
         stripeCustomerId: orgMetadata.stripeCustomerId,
@@ -211,19 +208,17 @@ const claimAutoRecharge$ = command(
   },
 );
 
-/** A stale provider result cannot clear a recharge admitted by a newer write. */
+/**
+ * A failed or skipped recharge always clears its pending flag: settlement
+ * debits rewrite the organization row in between, and a lingering flag would
+ * block recharge for the whole stale window while the balance keeps falling.
+ */
 const clearClaimedAutoRecharge$ = command(
-  async ({ set }, orgId: string, rowVersion: string): Promise<void> => {
-    const db = set(writeDb$);
-    await db
+  async ({ set }, orgId: string): Promise<void> => {
+    await set(writeDb$)
       .update(orgMetadata)
       .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(orgMetadata.orgId, orgId),
-          sql`${orgMetadata}.xmin::text = ${rowVersion}`,
-        ),
-      );
+      .where(eq(orgMetadata.orgId, orgId));
   },
 );
 
@@ -292,7 +287,7 @@ export const triggerAutoRecharge$ = command(
       });
     }
     if (!result.ok || !result.value) {
-      await set(clearClaimedAutoRecharge$, orgId, org.rowVersion);
+      await set(clearClaimedAutoRecharge$, orgId);
     }
     signal.throwIfAborted();
   },

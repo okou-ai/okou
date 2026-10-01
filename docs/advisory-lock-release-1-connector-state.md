@@ -34,7 +34,8 @@ lock-order descriptions are not a terminal protocol. Some earlier nonfinancial
 savepoint/CAS/version machinery still needs simplification; key removal alone
 does not certify that additional instruction complete. Do not move that work
 to R2. Follow the [current per-key inventory](./advisory-lock-release-1-key-retirement.md)
-for remaining financial keys and the six application triggers.
+for remaining financial keys; the six application billing triggers are retired
+by migration 1310.
 
 ## Verification boundary
 

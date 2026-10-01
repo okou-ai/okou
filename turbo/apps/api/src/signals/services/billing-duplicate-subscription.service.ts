@@ -17,18 +17,12 @@ const DUPLICATE_SUBSCRIPTION_REFUND_PURPOSE = "duplicate_subscription_refund";
  * redelivery and the hourly reconciliation replay of paid invoices.
  */
 export async function refundDuplicateSubscriptionInvoice(
-  invoice: { readonly id: string; readonly amount_paid?: number | null },
+  invoice: { readonly id: string; readonly amount_paid: number },
   subscriptionId: string,
 ): Promise<void> {
   const stripe = getStripeClient();
-  const amountPaid =
-    invoice.amount_paid ??
-    (await stripe.invoices.retrieve(invoice.id)).amount_paid;
-  if (
-    amountPaid === undefined ||
-    !Number.isSafeInteger(amountPaid) ||
-    amountPaid < 0
-  ) {
+  const amountPaid = invoice.amount_paid;
+  if (!Number.isSafeInteger(amountPaid) || amountPaid < 0) {
     throw new Error(`Invoice ${invoice.id} has an invalid paid amount`);
   }
   if (amountPaid > 0) {

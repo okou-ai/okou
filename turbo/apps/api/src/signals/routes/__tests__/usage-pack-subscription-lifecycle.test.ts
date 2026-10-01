@@ -1887,6 +1887,49 @@ describe("usage pack subscription Stripe lifecycle", () => {
       },
     );
 
+    it("grants one of two concurrently paid initial Plans and refunds the other once", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const first = legacyPlanPurchase(fixture, "team");
+      const second = legacyPlanPurchase(fixture, "team");
+      mockDuplicateStripe([first, second]);
+      // Both deliveries pass the duplicate check before either publishes: the
+      // Team replacement lookup between them waits for the other delivery.
+      const bothChecked = createDeferredPromise<void>(context.signal);
+      let lookups = 0;
+      context.mocks.stripe.subscriptions.list.mockImplementation(async () => {
+        lookups += 1;
+        if (lookups === 2) {
+          bothChecked.resolve();
+        }
+        await bothChecked.promise;
+        return { data: [], has_more: false };
+      });
+
+      await Promise.all([deliver(first), deliver(second)]);
+
+      const state = await readUsagePackState(fixture);
+      expect(state.org?.tier).toBe("team");
+      expect(state.legacyCredits).toHaveLength(1);
+      const refunded = JSON.stringify(
+        context.mocks.stripe.creditNotes.create.mock.calls[0],
+      );
+      const loser = refunded.includes(`"${first.invoice.id}"`) ? first : second;
+      expectRefundedOnce(loser);
+      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+        1,
+      );
+
+      await deliver(first, second);
+
+      await expect(readUsagePackState(fixture)).resolves.toStrictEqual(state);
+      expectRefundedOnce(loser);
+      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
     it("upgrades a paid Plan created earlier without refunding it", async () => {
       const fixture = await seedUsagePackLifecycle([
         { userId: `user_${randomUUID()}`, usagePackUsd: 20 },

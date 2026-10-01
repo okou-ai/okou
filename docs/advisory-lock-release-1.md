@@ -47,9 +47,9 @@ idempotency arbitrate it. Serving compaction's shared/exclusive keys are also
 deleted: only actual version-matching deleted facts become immutable rollups;
 raw-first cleanup and financial reconciliation remain. Remaining keys are
 financial: billing purchase, usage-pack billing and credit. They are R1 implementation work, not
-outgoing-version/R2 gates. Six application billing triggers also remain. Empty
-org-metadata UPDATEs and application-side failure increments are already fixed;
-allowance duplicate preflight is documented for current migration 1299.
+outgoing-version/R2 gates. Migration 1310 retires the six application billing
+triggers. Empty org-metadata UPDATEs and application-side failure increments are
+already fixed; allowance duplicate preflight is documented for migration 1307.
 Database-handle propagation remains a non-goal. No merge/release is authorized.
 
 ## Historical source and preparation evidence
@@ -65,7 +65,7 @@ Historical migration SQL is counted separately. The integration branch also
 includes main `3103651`, preserving browser preferences, thread-image schema
 contraction, retired Agent SSH/VNC grants, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
-database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; main's 1291–1293 subscription catalog migrations are preserved; the two PR-only retirements follow at 1294/1295. Integration `/model` controls retain main's routed-thread-only
+database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; main's later migrations through 1304 are preserved; the PR-only migrations follow at 1305–1310. Integration `/model` controls retain main's routed-thread-only
 behavior and no longer change a member default or recreate a retired session.
 
 Browser and custom account preparation from #37097 was verified against live
@@ -133,7 +133,7 @@ the baseline. A definition can serve multiple runtime callers.
   competing invocation without retry; scoped source writes retain their exact
   identity predicates. Local empty-inventory CLI smoke checks do not establish
   production convergence.
-- Migration `1297_retire_provisional_billing_purge` drops the unused current
+- Migration `1305_retire_provisional_billing_purge` drops the unused current
   `purge_quiescent_provisional_billing_attribution` function. Historical
   migrations stay unchanged. The schema snapshot adds no table columns.
 - The unshipped Forms detachment and cursor-trigger migrations are withdrawn.
@@ -150,11 +150,11 @@ the baseline. A definition can serve multiple runtime callers.
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
 
-Migration `1298_retire_billing_attribution_mutation_guard` also removes the
+Migration `1306_retire_billing_attribution_mutation_guard` also removes the
 redundant canonical attribution mutation guard. Outgoing capture functions and
 the retained operator already compare immutable identity, fill only unknown
 thread grouping, and never regress observation. The writer-by-writer evidence
-is in the trigger retirement inventory. The [production/fixture writer trace](./advisory-lock-release-1-billing-trigger-writers.md) identifies the explicit capture and retention behavior, plus remaining test-state producers. The six billing capture/observation triggers retain their separate implementation and compatibility requirements.
+is in the trigger retirement inventory. The [production/fixture writer trace](./advisory-lock-release-1-billing-trigger-writers.md) identifies the explicit capture and retention behavior, plus remaining test-state producers. Migration `1310_retire_application_billing_capture_triggers` then retires the six billing capture/observation triggers and their functions; writers publish attribution explicitly.
 
 ## Current implementation status
 
@@ -196,10 +196,9 @@ triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
 records the historical eleven-definition proposal. The two unshipped Forms
 triggers are withdrawn, main's migration 1290 retires both Cloudflare guards,
-and migration 1295 retires the canonical mutation guard. Six billing capture and
-observation definitions remain. Their explicit writer replacements remain an
-acceptance requirement; the existing schema-test constant named
-`EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.
+migration 1306 retires the canonical mutation guard and migration 1310 retires
+the six billing capture and observation definitions after their explicit writer
+replacements. The schema-test constant `EXPECTED_PERMANENT_TRIGGERS` is empty.
 
 The binding command shape added in commit `77a12aa` is retained. Commands take
 business inputs and an optional final `AbortSignal`, resolve `writeDb$` internally,

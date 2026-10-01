@@ -2810,6 +2810,52 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
+  it("keeps a brief disabled after enrollment once the member turns it off", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    const device = createAuthDeviceApiActions(context);
+    const started = await device.startCliDevice();
+    await device.requestCliApproval(
+      actor,
+      { device_code: started.device_code, timezone: "Asia/Shanghai" },
+      [200],
+    );
+    mockBriefMemberships([{ actor, createdAt }]);
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+    });
+
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    // Later enrollment and preference passes re-run completion; a disabled
+    // enrollment must not be completed (and re-enabled) again.
+    mockBriefMemberships([{ actor, createdAt }]);
+    await tickBriefEnrollment(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      unavailableReason: null,
+    });
+    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
+      nextRunAt: null,
+    });
+  });
+
   it("waits locally for a known member's timezone and installs as soon as initialization supplies it", async () => {
     const { actor, createdAt } = await prepareBriefMember();
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
@@ -5647,6 +5693,112 @@ describe("Official Workflow installations", () => {
       );
     },
   );
+
+  it("keeps an Official Forms automation paused during reconfiguration", async () => {
+    installCatalogStorageFixture();
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+    const definitionName = `api-test-google-forms-pause-${suffix}`;
+    await syncCatalog(
+      catalog([activeDefinition(definitionName, [googleFormsBlueprint(4)])]),
+    );
+
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    const { agentId } = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    mockGoogleFormsConnectorOAuth();
+    await workflowBdd.connectConnector(actor, "google-forms");
+    const headers = authHeaders(actor);
+    const nextFormId = `${GOOGLE_FORM_ID}${suffix}`;
+    let automationId: string | null = null;
+    let pausedDuringReconfiguration = false;
+    configureOfficialGoogleFormsMock({
+      formIds: [GOOGLE_FORM_ID, nextFormId],
+      creatingWatch: async (formId) => {
+        if (
+          formId !== nextFormId ||
+          automationId === null ||
+          pausedDuringReconfiguration
+        ) {
+          return;
+        }
+        pausedDuringReconfiguration = true;
+        await accept(
+          automationClient().disable({
+            headers,
+            params: { id: automationId },
+          }),
+          [200],
+        );
+      },
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: actor.orgId, userId: actor.userId },
+      {
+        [FeatureSwitchKey.OfficialWorkflows]: true,
+      },
+    );
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: {
+          agentId,
+          blueprints: [{ blueprintKey: "google-forms-trigger", bindings: [] }],
+        },
+      }),
+      [201],
+    );
+    const initial = installed.body.workflow.automations.find((automation) => {
+      return automation.official?.blueprintKey === "google-forms-trigger";
+    });
+    if (!initial) {
+      throw new Error("Expected an Official Google Forms automation");
+    }
+    automationId = initial.id;
+
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          googleFormsBlueprint(
+            7,
+            `https://docs.google.com/forms/d/${nextFormId}/edit`,
+          ),
+        ]),
+      ]),
+    );
+    // The pause commits while the new form watch is being prepared; the
+    // reconfiguration observed the enabled row and must not overwrite it.
+    await expect(
+      runOfficialWorkflowReconciliationWorker(),
+    ).resolves.toMatchObject({ completed: 0, retried: 1 });
+    expect(pausedDuringReconfiguration).toBeTruthy();
+
+    const reconciled = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    const current = reconciled.body.workflow.automations.find((automation) => {
+      return automation.id === initial.id;
+    });
+    expect(current).toMatchObject({
+      enabled: false,
+      eventConfig: { form: { id: GOOGLE_FORM_ID } },
+      official: { intendedEnabled: false },
+    });
+  });
 
   it("reconfigures an Official Notion automation without a feature override", async () => {
     installCatalogStorageFixture();

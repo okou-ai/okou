@@ -30,6 +30,7 @@ import {
   type OfficialAutomationRow,
 } from "./official-workflow-installation.service";
 import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation-dispatch.service";
+import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 
 interface FormsReconfiguration {
   readonly orgId: string;
@@ -130,7 +131,10 @@ const commitOfficialFormsReconfiguration$ = command(
           ),
           officialReconciliationStatus: "current",
         })
-        .where(eq(workflowAutomations.id, args.expected.id))
+        // The watch was prepared for the observed row, including its enabled
+        // state. A user pause or any other write since then wins; this
+        // reconfiguration then commits nothing and is retried from the new row.
+        .where(observedWorkflowAutomationCondition(args.expected))
         .returning(workflowAutomationColumns());
       if (!updated) {
         return false;

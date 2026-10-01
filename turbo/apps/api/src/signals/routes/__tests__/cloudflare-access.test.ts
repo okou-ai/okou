@@ -280,6 +280,52 @@ describe("inline SSH resource creation", () => {
     );
     await expect(resources()).resolves.toStrictEqual(initial);
   });
+
+  it("reports Access not found when its config is deleted while a rebind encrypts a new login", async () => {
+    owner();
+    const deleted = await config();
+    const existingHost = await host();
+    const initial = await resources();
+    useSecretKmsProbe(async (request, callNumber) => {
+      if (callNumber === 1) {
+        await accept(
+          configs().delete({
+            headers,
+            params: { configId: deleted.id },
+            body: { expectedRevision: deleted.revision },
+          }),
+          [204],
+        );
+      }
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.alloc(32, 7),
+        encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
+      };
+    });
+
+    await expect(
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            expectedGeneration: existingHost.generation,
+            port: 443,
+            credential: { create: login },
+            transport: { type: "cloudflare_access", configId: deleted.id },
+          },
+        }),
+        [404],
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
+    });
+    await expect(resources()).resolves.toStrictEqual({
+      ...initial,
+      configs: [],
+    });
+  });
 });
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);

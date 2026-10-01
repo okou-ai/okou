@@ -130,15 +130,17 @@ export function preparedSettlementPrices(
   },
   events: readonly UsageEventRecord[],
 ) {
-  return args.social
-    ? events.map((record) => {
-        return {
-          record,
-          grossCredits: batch.social?.grossCredits ?? 0,
-          billingError: null,
-        };
-      })
-    : batch.priced;
+  if (!args.social) {
+    return batch.priced;
+  }
+  const social = batch.social;
+  if (!social) {
+    // socialPlan already rejected a claimed job without a prepared snapshot.
+    throw new Error("Social settlement has no prepared price");
+  }
+  return events.map((record) => {
+    return { record, grossCredits: social.grossCredits, billingError: null };
+  });
 }
 export function reportCommittedSettlementPricing(
   orgId: string,

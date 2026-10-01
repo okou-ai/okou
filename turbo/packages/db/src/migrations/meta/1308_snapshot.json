@@ -1,6 +1,6 @@
 {
-  "id": "44c1c7af-49ae-4f0c-ac80-cf1fb5a5970c",
-  "prevId": "2d9ff895-d25c-4f99-8a8e-ef0ee2b1837e",
+  "id": "5a15d2c3-4579-409d-beae-0c20988960ec",
+  "prevId": "b1046cfa-22de-4821-b989-70a51d40255e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7679,7 +7679,7 @@
             "id",
             "connector_slug"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "fk_chat_thread_connector_selections_custom_connector": {
@@ -7694,7 +7694,7 @@
             "id",
             "custom_connector_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

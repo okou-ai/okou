@@ -196,7 +196,7 @@ test("Credit usage merges every Social Search vendor into one row and preserves 
   }
 });
 
-test("Chat stays usable while an outgoing API cannot read settled usage", async () => {
+test("Chat stays usable and shows no hint amount when settled usage cannot be read", async () => {
   const threadId = "b0000000-0000-4000-a000-000000000806";
   const runId = "a0000000-0000-4000-a000-000000000806";
   mockChatLifecycle(context, {

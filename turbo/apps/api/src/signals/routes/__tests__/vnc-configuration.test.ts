@@ -1664,7 +1664,7 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([saved.body]);
   });
 
-  it("accepts one concurrent password rotation, advances every shared host and rejects stale writes", async () => {
+  it("leaves concurrent password rotations recoverable, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
     await owner();
     const first = await accept(
@@ -1701,24 +1701,33 @@ describe("VNC owner configuration", () => {
         );
       }),
     );
+    const statuses = rotations
+      .map((result) => {
+        return result.status;
+      })
+      .sort();
+    expect([
+      [200, 200],
+      [200, 409],
+    ]).toContainEqual(statuses);
+    const applied = statuses.filter((status) => {
+      return status === 200;
+    }).length;
+    const revision = 1 + applied;
     expect(
-      rotations
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 409]);
-    const rotated = rotations.find((result) => {
-      return result.status === 200;
-    });
-    expect(rotated?.body).toMatchObject({ revision: 2 });
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: params.credentialId, revision }),
+      ]),
+    );
     const hosts = (await accept(connections().list({ headers }), [200])).body
       .connections;
     expect(hosts).toHaveLength(3);
     expect(hosts).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: first.body.id, generation: 2 }),
-        expect.objectContaining({ id: second.body.id, generation: 2 }),
+        expect.objectContaining({ id: first.body.id, generation: revision }),
+        expect.objectContaining({ id: second.body.id, generation: revision }),
         independent.body,
       ]),
     );
@@ -1764,16 +1773,32 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toHaveLength(2);
+    const renamed = await accept(
+      credentials().update({
+        headers,
+        params,
+        body: { expectedRevision: revision, name: "Recovered" },
+      }),
+      [200],
+    );
+    expect(renamed.body).toMatchObject({
+      name: "Recovered",
+      revision: revision + 1,
+    });
     const edited = await accept(
       connections().update({
         headers,
         params: { connectionId: first.body.id },
-        body: { expectedGeneration: 2, host: "new.example.com", security },
+        body: {
+          expectedGeneration: revision,
+          host: "new.example.com",
+          security,
+        },
       }),
       [200],
     );
     expect(edited.body).toMatchObject({
-      generation: 3,
+      generation: revision + 1,
       host: "new.example.com",
     });
   });

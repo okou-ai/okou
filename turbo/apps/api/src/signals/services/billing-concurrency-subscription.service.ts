@@ -2234,8 +2234,10 @@ export const changeConcurrencySubscription$ = command(
       const scheduled =
         args.quantity < subscription.quantity &&
         result.response.effectiveAt !== undefined;
-      const db = set(writeDb$);
-      const [published] = await db
+      // Stripe has already applied the change, so the local schedule is
+      // written unconditionally: a concurrent subscription.updated webhook
+      // rewriting this row must not turn an applied change into a 409.
+      await set(writeDb$)
         .update(orgConcurrencySubscriptions)
         .set({
           scheduledSlots: scheduled ? args.quantity : null,
@@ -2252,15 +2254,9 @@ export const changeConcurrencySubscription$ = command(
               orgConcurrencySubscriptions.stripeSubscriptionId,
               args.subscriptionId,
             ),
-            sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
-            sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
           ),
-        )
-        .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
+        );
       signal.throwIfAborted();
-      if (!published) {
-        return { ok: false, reason: "billing_changed" };
-      }
     }
     return result;
   },
@@ -2343,8 +2339,10 @@ export const cancelConcurrencySubscription$ = command(
     }
     signal.throwIfAborted();
 
-    const db = set(writeDb$);
-    const [published] = await db
+    // Stripe has already scheduled the cancellation; publish it locally
+    // without a row-version guard so a concurrent webhook rewrite cannot turn
+    // an applied cancellation into a 409.
+    await set(writeDb$)
       .update(orgConcurrencySubscriptions)
       .set({
         cancelAtPeriodEnd: true,
@@ -2359,15 +2357,9 @@ export const cancelConcurrencySubscription$ = command(
             orgConcurrencySubscriptions.stripeSubscriptionId,
             args.subscriptionId,
           ),
-          sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
-          sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
         ),
-      )
-      .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
+      );
     signal.throwIfAborted();
-    if (!published) {
-      return { ok: false, reason: "billing_changed" };
-    }
 
     return {
       ok: true,

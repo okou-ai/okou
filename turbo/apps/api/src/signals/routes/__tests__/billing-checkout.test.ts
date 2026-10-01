@@ -1445,6 +1445,143 @@ describe("POST /api/billing/checkout", () => {
     expect(billing.hasSubscription).toBeTruthy();
   });
 
+  it("keeps an Atom grant when a confirmed Plan purchase fails to create its subscription", async () => {
+    const fixture = await createUsagePackAtomGrantOrg("pro");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const customerId = `cus_${randomUUID().slice(0, 8)}`;
+    const paymentMethodId = `pm_${randomUUID().slice(0, 8)}`;
+    const subscriptionId = `sub_${randomUUID().slice(0, 8)}`;
+    const periodStart = currentSecond();
+    const periodEnd = periodStart + 30 * 86_400;
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      invoice_settings: { default_payment_method: paymentMethodId },
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      id: `in_preview_${randomUUID().slice(0, 8)}`,
+      hosted_invoice_url: null,
+      customer: customerId,
+      metadata: {},
+      amount_due: 20_000,
+      currency: "usd",
+      status: null,
+      lines: { has_more: false, data: [] },
+      parent: null,
+    });
+    // The Atom grant already bound a Stripe customer; the purchase uses it.
+    const operationInvoice = (customer: string) => {
+      return {
+        id: `in_${subscriptionId}`,
+        hosted_invoice_url: null,
+        customer,
+        metadata: {},
+        amount_due: 20_000,
+        currency: "usd",
+        status: "open",
+        lines: {
+          has_more: false,
+          data: [
+            {
+              amount: 20_000,
+              price: { id: TEST_PRICE_TEAM },
+              parent: { type: "subscription_item_details" as const },
+              period: { start: periodStart, end: periodEnd },
+            },
+          ],
+        },
+        parent: {
+          subscription_details: {
+            subscription: subscriptionId,
+            metadata: {},
+          },
+        },
+      };
+    };
+    context.mocks.stripe.subscriptions.create
+      .mockRejectedValueOnce(new Error("Stripe subscription create failed"))
+      .mockImplementation((params) => {
+        const { customer } = z.object({ customer: z.string() }).parse(params);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+          id: subscriptionId,
+          customer,
+          status: "active",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: {
+            data: [
+              {
+                price: { id: TEST_PRICE_TEAM },
+                current_period_end: periodEnd,
+              },
+            ],
+          },
+        });
+        context.mocks.stripe.invoices.pay.mockResolvedValue({
+          ...operationInvoice(customer),
+          status: "paid",
+        });
+        return Promise.resolve({
+          id: subscriptionId,
+          customer,
+          status: "incomplete",
+          metadata: {},
+          latest_invoice: operationInvoice(customer),
+        });
+      });
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingCheckoutContract,
+    );
+    const purchaseBody = {
+      tier: "team" as const,
+      supportsInAppPreview: true,
+      successUrl: `${APP_ORIGIN}/billing?billing=success`,
+      cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+    };
+    const preview = await accept(
+      client.create({
+        body: purchaseBody,
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    if (!("previewToken" in preview.body)) {
+      throw new Error("Expected a Plan purchase preview");
+    }
+    const confirmRequest = {
+      body: { ...purchaseBody, previewToken: preview.body.previewToken },
+      headers: { authorization: "Bearer clerk-session" },
+    };
+
+    await accept(client.create(confirmRequest), [500]);
+
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "pro",
+      subscriptionStatus: "atom_grant",
+      hasSubscription: false,
+    });
+
+    const confirmation = await accept(client.create(confirmRequest), [200]);
+
+    expect(confirmation.body).toStrictEqual({
+      status: "completed",
+      hostedInvoiceUrl: null,
+    });
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(2);
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "team",
+      subscriptionStatus: "active",
+      hasSubscription: true,
+    });
+  });
+
   it("resumes a pending Team purchase and applies it before returning", async () => {
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
     const pendingTeamSubscriptionId = `sub_${randomUUID().slice(0, 8)}`;
@@ -23044,6 +23181,188 @@ describe("POST /api/billing/concurrency-checkout", () => {
     });
   });
 
+  it("keeps a scheduled concurrency reduction when its subscription webhook lands before the local write", async () => {
+    const subscriptionId = `sub_${randomUUID()}`;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const periodStartUnix = 4_075_660_800;
+    const periodEndUnix = 4_078_252_800;
+    const fixture = await createConcurrencySubscriptionOrg({
+      subscriptionId,
+      slots: 5,
+      periodEnd: new Date(periodEndUnix * 1000),
+      tier: "team",
+    });
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const subscription = {
+      id: subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      latest_invoice: null,
+      pending_update: null,
+      schedule: scheduleId,
+      metadata: {},
+      items: {
+        data: [
+          {
+            id: `si_${randomUUID()}`,
+            price: {
+              id: TEST_PRICE_CONCURRENCY,
+              recurring: { interval: "month" as const, interval_count: 1 },
+            },
+            quantity: 5,
+            current_period_start: periodStartUnix,
+            current_period_end: periodEndUnix,
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+      id: scheduleId,
+      end_behavior: "release",
+      current_phase: { start_date: periodStartUnix, end_date: periodEndUnix },
+      phases: [
+        {
+          start_date: periodStartUnix,
+          end_date: periodEndUnix,
+          items: [{ price: TEST_PRICE_CONCURRENCY, quantity: 5 }],
+        },
+      ],
+    });
+    const webhookClient = setupApp({ context, routes: webhooksStripeRoutes })(
+      webhookStripeContract,
+    );
+    context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+      async () => {
+        const event = {
+          type: "customer.subscription.updated",
+          data: {
+            object: subscription,
+            previous_attributes: { schedule: null },
+          },
+        };
+        context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+        await accept(
+          webhookClient.post({
+            body: JSON.stringify(event),
+            extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
+          }),
+          [200],
+        );
+        return { id: scheduleId };
+      },
+    );
+
+    const client = setupApp({
+      context,
+      routes: billingConcurrencySubscriptionRoutes,
+    })(billingConcurrencySubscriptionContract);
+    const confirmed = await accept(
+      client.confirmChange({
+        params: { subscriptionId },
+        body: { quantity: 3 },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+
+    expect(confirmed.body).toStrictEqual({
+      status: "completed",
+      hostedInvoiceUrl: null,
+      effectiveAt: new Date(periodEndUnix * 1000).toISOString(),
+    });
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenCalledWith(
+      scheduleId,
+      expect.objectContaining({ phases: expect.any(Array) }),
+      { idempotencyKey: expect.any(String) },
+    );
+    const status = await readBillingStatus(fixture);
+    expect(status.concurrencySubscriptions[0]).toMatchObject({
+      id: subscriptionId,
+      quantity: 5,
+      scheduledQuantity: 3,
+      scheduledChangeAt: new Date(periodEndUnix * 1000).toISOString(),
+    });
+  });
+
+  it("keeps a concurrency cancellation when its subscription webhook lands before the local write", async () => {
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodEndUnix = 4_078_252_800;
+    const fixture = await createConcurrencySubscriptionOrg({
+      subscriptionId,
+      slots: 2,
+      periodEnd: new Date(periodEndUnix * 1000),
+    });
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const canceling = {
+      id: subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: true,
+      schedule: null,
+      metadata: {},
+      items: {
+        data: [
+          {
+            id: `si_${TEST_PRICE_CONCURRENCY}`,
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 2,
+            current_period_end: periodEndUnix,
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(canceling);
+    const webhookClient = setupApp({ context, routes: webhooksStripeRoutes })(
+      webhookStripeContract,
+    );
+    context.mocks.stripe.subscriptions.update.mockImplementation(async () => {
+      const event = {
+        type: "customer.subscription.updated",
+        data: {
+          object: canceling,
+          previous_attributes: { cancel_at_period_end: false },
+        },
+      };
+      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      await accept(
+        webhookClient.post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
+        }),
+        [200],
+      );
+      return canceling;
+    });
+
+    const client = setupApp({
+      context,
+      routes: billingConcurrencySubscriptionRoutes,
+    })(billingConcurrencySubscriptionContract);
+    const response = await accept(
+      client.cancel({
+        params: { subscriptionId },
+        body: {},
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      success: true,
+      currentPeriodEnd: new Date(periodEndUnix * 1000).toISOString(),
+    });
+    const status = await readBillingStatus(fixture);
+    expect(status.concurrencySubscriptions[0]).toMatchObject({
+      id: subscriptionId,
+      quantity: 2,
+      cancelAtPeriodEnd: true,
+    });
+  });
+
   it("converges concurrent cancellation of an active concurrency subscription", async () => {
     const subscriptionId = `sub_${randomUUID()}`;
     const periodEnd = new Date("2099-05-20T00:00:00Z");
@@ -23070,31 +23389,16 @@ describe("POST /api/billing/concurrency-checkout", () => {
             body: {},
             headers: { authorization: "Bearer clerk-session" },
           }),
-          [200, 409],
+          [200],
         );
       }),
     );
 
-    expect(
-      responses.some((response) => {
-        return response.status === 200;
-      }),
-    ).toBeTruthy();
     for (const response of responses) {
-      expect(response.body).toStrictEqual(
-        response.status === 200
-          ? {
-              success: true,
-              currentPeriodEnd: periodEnd.toISOString(),
-            }
-          : {
-              error: {
-                message:
-                  "Billing changed while updating concurrency; refresh and try again",
-                code: "CONFLICT",
-              },
-            },
-      );
+      expect(response.body).toStrictEqual({
+        success: true,
+        currentPeriodEnd: periodEnd.toISOString(),
+      });
     }
     expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
       subscriptionId,

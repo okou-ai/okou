@@ -86,8 +86,9 @@ removed; that simplification remains explicit R1 implementation work below.
 | `model_provider_state:<org>:<user>:<type>` | **Deleted.** Provider save/delete use existing provider identity; refresh no longer acquired it already. No outgoing-version fence.                                                                                                                                                                                                                                                                                                         |
 | `connector-mcp-oauth`                      | **Deleted.** DCR registration publication/retirement, OAuth exchange/refresh and connection publication no longer acquire it. Existing registration uniqueness and binding FKs remain; HTTP/KMS stays outside SQL.                                                                                                                                                                                                                          |
 
-Six application billing triggers remain. They require actual replacement;
-there is no permanent trigger exemption or third release assumption.
+Migration `1310_retire_application_billing_capture_triggers` retires the six
+application billing triggers; writers capture attribution explicitly. There is
+no permanent trigger exemption or third release assumption.
 
 ## Credit issuance retirement is withdrawn pending its financial protocol
 
@@ -366,7 +367,7 @@ source of quantity, charged credits, allowance units and window identities.
 Canonical missing identities are captured only for consumed facts; conflicts
 use `ON CONFLICT DO NOTHING`, not an empty UPDATE. A missing required identity
 rejects and rolls back the batch. Hourly publication depends on that capture,
-so the retained triggers are not used to supply omitted identity.
+and no trigger supplies omitted identity.
 
 Each batch stays at most 500 raw rows and appends immutable hourly fragments;
 old fragments are neither read nor rewritten. Complete source/insert totals
@@ -487,10 +488,10 @@ Ordinary failure counters use SQL arithmetic and committed thresholds/returned
 state, not application-side `current + 1`. Both fixes were integrated before
 this continuation and are preserved.
 
-## Allowance index 1306 preflight
+## Allowance index preflight
 
-The current allowance uniqueness migration is 1306 (earlier references to 1296
-and 1299 predate main's model-catalog integration). Before an authorized release, query the
+The allowance uniqueness migration is `1307_allowance_window_uniqueness`.
+Before an authorized release, query the
 target database read-only:
 
 ```sql
@@ -507,7 +508,7 @@ ownership/limits/expiry; account for raw allocations and hourly window
 references; remap to a canonical existing window; reconcile consumed units
 against immutable receipts. Do not blindly sum counters, delete referenced
 history or skip the index. Conflicting facts require investigation. Repeat the
-query after authorized repair before migration 1306.
+query after authorized repair before migration 1307.
 
 ## Purchase overlap recovery remains implementation work
 

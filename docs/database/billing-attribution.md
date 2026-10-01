@@ -9,13 +9,19 @@ Clerk cleanup, or production retention behavior switches in this change.
 
 `billing_run_attribution` stores one original run UUID, billed organization/user
 IDs, original `agent_runs.created_at`, and the bounded usage-view source. It has
-no FK to content, users, agents, sessions, or threads. The insertion trigger is
-part of both `insertLaunchRunRows` and `buildAtomicLaunchCteContext` transactions
-in `agent-run-create.service.ts`; failed run creation rolls it back. Matching
-retries are idempotent; a different org/user/time/source raises `23514`. Updates
-cannot replace the immutable identity. `usage_observed` only advances from false
-to true after a committed raw/rollup insertion or backfilled linkage; it cannot
-be cleared by raw compaction or the current destructive cleanup. The database source classifier follows
+no FK to content, users, agents, sessions, or threads. Since Advisory Lock
+Cleanup R1 (migration `1310_retire_application_billing_capture_triggers`) no
+database trigger captures it: both Run insertion paths in
+`agent-run-execution.service.ts` write it explicitly with
+`billingRunAttributionWrite` in the same launch transaction, so failed run
+creation rolls it back. Matching retries are idempotent; the conflict update only
+applies when org/user/start/source match and only fills an `unknown` thread
+identity, and a mismatch is rejected by the writer. Immutability is a writer
+contract, not a database guard: the mutation-guard trigger was retired by
+migration `1306_retire_billing_attribution_mutation_guard`, and every supported
+writer uses these conditional predicates. `usage_observed` is only set from false
+to true by the writer that commits a raw/rollup insertion or backfilled linkage;
+no writer clears it. The source classifier (`billingSource`) follows
 `usage-record.service.ts`: web -> chat; schedule/event -> automation;
 slack/teams/telegram/email/agentphone/github/agent pass through; otherwise other.
 The historical null trigger source is other, without copying trigger payloads.
@@ -32,16 +38,17 @@ canonical source remains reportable rather than being deleted or fabricated:
 | `missing_run`      | Original run ID, no anchor                     | A supplied run identity has no surviving verified source.                    |
 | `legacy_unknown`   | Neither                                        | Historical NULL association or legacy producer with insufficient provenance. |
 
-The raw INSERT trigger atomically attaches attribution for **every** writer,
-including old API instances and direct SQL. Its input never changes quantity,
-credits, idempotency key, status, processing time, or settlement. It can populate
-an older live run's attribution in that same transaction. Known attribution is
-immutable; processing updates and FK `SET NULL` leave it intact. A managed call
+Each raw usage producer explicitly writes these fields, captures a missing
+canonical attribution for its live run and marks observation in its own
+publication transaction; no trigger fills omitted fields, so direct SQL that
+omits them stays `legacy_unknown`. Capture never changes quantity, credits,
+idempotency key, status, processing time, or settlement. Processing updates and
+FK `SET NULL` do not rewrite billing identity. A managed call
 retains its supplied run identity even when its existing live-run lookup misses.
 This does not change the existing allowance fallback in A1.
 
-Generation jobs capture their original identity/runless classification in their
-own INSERT transaction and pass it through provider callbacks. Those two job
+Generation jobs explicitly write their original identity/runless classification
+in their own INSERT and pass it through provider callbacks. Those two job
 columns follow the **job's ordinary non-billing deletion lifecycle**, not ledger
 retention. Old jobs without a live run remain unknown. A runless usage anchor is
 the event time, not job creation, compaction, backfill, or callback-processing time
@@ -49,24 +56,26 @@ invented for a run that once existed.
 
 ## Writer and consumer inventory
 
-Foundation inventory verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`.
-The Stage 1 row is updated by #34267; the other foundation entries are unchanged:
+Foundation inventory verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`
+and updated for Advisory Lock Cleanup R1, which replaced every capture trigger
+with explicit writer SQL. The Stage 1 row is updated by #34267. The detailed
+current trace is the
+[R1 billing writer trace](../advisory-lock-release-1-billing-trigger-writers.md).
 
-| Production writer                                 | Atomic capture / provenance                                                                                            |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `agent-run-create.service.ts` (both insert paths) | Database run INSERT trigger; includes canonical launch CTE.                                                            |
-| `managed-usage.service.ts`                        | Raw trigger plus supplied original run ID; explicit runless when actor has no run.                                     |
-| `openrouter-usage.service.ts`                     | Raw trigger; explicit runless for request-local no-run usage.                                                          |
-| `webhooks-agent-health-usage-telemetry.ts`        | Raw trigger, runner-supplied run ID; current idempotent INSERT unchanged.                                              |
-| `pi-memory-stage1-usage.service.ts`               | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
-| `image-generation.service.ts`                     | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
-| `voice-io-post.service.ts`                        | Raw trigger; explicit request-local runless classification.                                                            |
-| `built-in-generation.service.ts`                  | Job INSERT trigger; webhook job projections include independent identity.                                              |
+| Production writer                                    | Explicit capture / provenance                                                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-run-execution.service.ts` (both insert paths) | `billingRunAttributionWrite` in the launch transaction; includes canonical launch CTE.                                            |
+| `managed-usage.service.ts`                           | Captures canonical attribution, writes raw fields and observation; explicit runless when actor has no run.                        |
+| `provider-usage-publication.service.ts`              | Runner, OpenRouter and image-result usage capture identity, insert categories and mark observation together.                      |
+| `pi-memory-stage1-usage.service.ts`                  | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                                          |
+| `x-resource-usage.service.ts`                        | Capture, resource claims, final quantities and observation share the local transaction.                                           |
+| `built-in-generation.service.ts`                     | Job INSERT supplies original billing Run ID and context; webhook job projections include independent identity.                    |
+| `cron-compact-usage-events.service.ts`               | Explicitly resolves legacy/missing identities, publishes hourly rows with billing fields and marks observation in the same batch. |
 
 `src/test-fixtures`, `routes/test-*`, `__tests__`, `__benches__`, and
 `src/scripts/dev-bench-seed.ts` are fixtures/benchmarks, not production usage
-writers. Their direct inserts also exercise the database boundary. Intentional
-legacy fixture inserts that omit new fields remain supported.
+writers. Fixture Run inserts write attribution explicitly as production does.
+Intentional legacy fixture inserts that omit new fields remain supported.
 
 Consumers were deliberately unchanged in A1: `credit-usage.service.ts`,
 `usage-allowance.service.ts`, `usage-record.service.ts`,
@@ -85,10 +94,10 @@ content: the reader resolves the **live** `chat_threads` row for the displayed
 title and for the decision to group by thread at all, so deleting a thread still
 collapses its usage into the threadless row exactly as the `agent_runs`
 `ON DELETE SET NULL` link did. `unknown` means "not captured yet" and is distinct
-from a run that genuinely had no thread. Capture is monotone: the run INSERT
-trigger, the usage-side capture for an older live run, and the operator backfill
-only fill `unknown`, and `reject_billing_attribution_update` rejects replacing a
-known grouping identity.
+from a run that genuinely had no thread. Capture is monotone: the run insertion
+writers, the usage-side capture for an older live run, and the operator backfill
+only fill `unknown` through their conditional conflict predicate. No database
+guard rejects replacing a known grouping identity; the writers never do.
 
 | Read                                                          | Was                                               | Now                                                        |
 | ------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
@@ -128,11 +137,9 @@ See [R1 usage boundaries](../advisory-lock-release-1-usage-boundaries.md).
 Advisory Lock Cleanup Release 1 keeps these fallbacks: neither a complete
 production inventory nor the required zero-gap/conflict conditions have been
 established by the code cleanup. Operator age and CI coverage do not establish
-data convergence. The bounded operator now owns live Run FK parents before
-source rows; contention rolls the batch back without advancing its checkpoint.
-It temporarily retains the shared compaction key for outgoing API/worker
-compatibility. Release 2 requires those writers to drain, compatible rollback
-artifacts and the prepared operator version before removing that key.
+data convergence. The bounded operator uses conditional source writes and
+conditional checkpoint advancement with no advisory key or explicit row lock; a
+competing invocation is rejected without retry and its batch rolls back.
 
 Two transitional fallbacks remain until the operator backfill converges, both
 declared at their call sites:
@@ -153,9 +160,9 @@ grouping identity.
 
 ## Compaction and deployment
 
-The compactor keeps its existing global transaction advisory lock, row locks,
-allowance-window grains, raw replacement, and exact quantity/credits/allowance
-reconciliation. Its physical grain adds all three billing fields. Distinct
+The compactor keeps its allowance-window grains, raw replacement, and exact
+quantity/credits/allowance reconciliation; since R1 it takes no advisory lock and
+explicitly captures attribution and observation for each bounded batch. Its physical grain adds all three billing fields. Distinct
 original runs whose live FKs became NULL cannot merge. Different original
 runless event times remain distinct. This can increase rollup row counts for
 runless workloads; no original timestamp is replaced with an hourly guess.
@@ -169,8 +176,7 @@ migrated schema. There is no full-table data backfill in a migration.
 **Before running backfill, verify that all old compactor instances have exited.**
 The four-day raw retention window separates new writes from normal compaction;
 this is not permission to run backdated writes or backfill during version overlap.
-Old compactors do not carry the new physical columns. Their live-run inserts can
-recover verified attribution via the trigger, but they cannot preserve distinct
+Old compactors do not carry the new physical columns and cannot preserve distinct
 NULL-live-run identities or runless timestamps. Once populated grains exist,
 retain this compactor in any rollback artifact: rollback may stop consumer use,
 but must not restore a compactor that discards these fields. No consumer is
@@ -229,13 +235,12 @@ have the remaining time budget and lock waits at most one second. Any failed
 batch rolls back metadata and cursor together; rerun the same job ID.
 
 The phases are live runs, generation jobs, raw usage, then hourly usage, ordered
-by primary key. Each committed batch holds the existing compaction advisory
-lock before locking its checkpoint/source rows. Live runs use `FOR NO KEY UPDATE`
-so first-usage FK key-share checks remain compatible; other source phases retain
-`FOR UPDATE`. No `SKIP LOCKED` cursor can skip
-held rows. New run and usage writers capture their own attribution. Normal
-compaction moving a legacy raw row to a new hourly ID captures its live source
-atomically; unresolvable NULL rows stay unknown. A fresh complete inventory after
+by primary key. Each committed batch writes its source rows conditionally and
+advances its checkpoint by compare-and-set, without an advisory lock, explicit
+row lock or `SKIP LOCKED`. New run and usage writers capture their own
+attribution. Normal compaction moving a legacy raw row to a new hourly ID
+explicitly captures its live source in the same transaction; unresolvable NULL
+rows stay unknown. A fresh complete inventory after
 convergence is authoritative; checkpoint counters are work counts, not a snapshot
 census. Restarting a completed job is a no-op; use a new job ID for another pass.
 
@@ -300,3 +305,16 @@ original-time replay, exact gross credit-value estimation, bounded raw/hourly
 UNION reconciliation, legacy/missing coverage, two-transaction constraint
 validation and retained-schema rollback. This does not expand idempotency
 retention, infer Phase 2 from `agent`/model, activate monitoring, or perform A2.
+
+## Compaction legacy-attribution fallback
+
+Usage compaction still rebuilds `billing_run_attribution` from `agent_runs` for
+raw `usage_event` facts written before explicit writer capture (rows whose
+`billing_context` is outside `run`, `runless` and `pi_memory_stage1`). This is a
+declared rollout fallback for historical raw facts only; current writers always
+capture attribution explicitly. Remove it once a production census returns zero:
+
+```sql
+SELECT count(*) FROM usage_event
+WHERE billing_context NOT IN ('run', 'runless', 'pi_memory_stage1');
+```

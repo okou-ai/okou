@@ -4065,6 +4065,111 @@ describe("okou workflow automations", () => {
     );
   });
 
+  it("keeps the Calendar sync baseline across a routine channel renewal", async () => {
+    const startedAt = Date.parse("2026-08-05T08:00:00.000Z");
+    mockNow(startedAt);
+    const scenario = await setupFixture();
+    await connectGoogleCalendar(scenario);
+    const existingEvent = {
+      id: "existing-event",
+      etag: '"existing-etag"',
+      status: "confirmed",
+      summary: "Already on calendar",
+    };
+    const initial = configureGoogleCalendarWatchMock({
+      baselineItems: [existingEvent],
+    });
+    configureGoogleCalendarStopMock();
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: { kind: "event", eventType: "google-calendar-event-created" },
+      }),
+      [201],
+    );
+    expect(initial.baselineCalls).toBe(1);
+
+    // An event is created after the last sync. A full re-list at renewal would
+    // absorb it into the baseline and its run would never fire.
+    const missedEvent = {
+      id: "created-before-renewal",
+      etag: '"version-1"',
+      status: "confirmed",
+      summary: "Created before renewal",
+    };
+    const channels: CalendarWatchRegistration[] = [];
+    const renewal = configureGoogleCalendarWatchMock({
+      baselineItems: [existingEvent, missedEvent],
+      incrementalItems: [missedEvent],
+      onWatchRegistered: (channel) => {
+        channels.push(channel);
+        return Promise.resolve();
+      },
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "calendar-access-token",
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }),
+    );
+    mockNow(startedAt + 6 * 24 * 60 * 60 * 1000);
+    const renewed = await accept(
+      renewGoogleCalendarWatchScopeClient().renew({
+        body: {
+          org_id: scenario.fixture.orgId,
+          user_id: scenario.fixture.userId,
+        },
+      }),
+      [200],
+    );
+    expect(renewed.body).toStrictEqual({
+      success: true,
+      renewed: 1,
+      failed: 0,
+    });
+    expect(renewal.watchCalls).toBe(1);
+    expect(renewal.baselineCalls).toBe(0);
+
+    const channel = channels.at(0);
+    if (!channel) {
+      throw new Error("Expected the renewed Calendar channel");
+    }
+    const response = await createApp({
+      signal: context.signal,
+      routes: TEST_APP_ROUTES,
+    }).request("/api/webhooks/google-calendar", {
+      method: "POST",
+      headers: {
+        "x-goog-channel-id": channel.channelId,
+        "x-goog-channel-token": channel.channelToken,
+        "x-goog-resource-id": channel.resourceId,
+        "x-goog-resource-state": "exists",
+        "x-goog-message-number": "2",
+      },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      dispatched: 1,
+      duplicates: 0,
+    });
+    expect(renewal.eventListRequests).toStrictEqual([
+      { syncToken: "calendar-sync-baseline" },
+    ]);
+
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+  });
+
   it("self-heals a renamed primary Calendar target without crossing accounts", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const legacyCalendarId = "legacy-primary@example.com";
@@ -4187,6 +4292,24 @@ describe("okou workflow automations", () => {
       [201],
     );
 
+    const firstDisabledAutomation = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: first.workflowId },
+        body: {
+          kind: "event",
+          eventType: "google-calendar-event-created",
+          eventConfig: {
+            provider: "google-calendar",
+            event: "event_created",
+            calendarId: legacyCalendarId,
+          },
+          enabled: false,
+        },
+      }),
+      [201],
+    );
+
     const second = await setupFixture();
     await connectGoogleCalendar(second, {
       accessToken: secondAccessToken,
@@ -4248,6 +4371,12 @@ describe("okou workflow automations", () => {
       wf.readAutomation(firstAutomation.body.id),
     ).resolves.toMatchObject({
       enabled: true,
+      eventConfig: { calendarId: "primary" },
+    });
+    await expect(
+      wf.readAutomation(firstDisabledAutomation.body.id),
+    ).resolves.toMatchObject({
+      enabled: false,
       eventConfig: { calendarId: "primary" },
     });
     mocks.clerk.session(

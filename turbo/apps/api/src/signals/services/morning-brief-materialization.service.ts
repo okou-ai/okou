@@ -5,7 +5,7 @@ import {
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -45,11 +45,13 @@ function revokeOldMembershipOccurrence(at: Date) {
  *
  * No row is locked. The native row (or, while absent, the unchanged owner key)
  * and the enrollment are read with their row versions; the native write is a
- * conditional UPDATE on its version and the enrollment write is the final
- * conditional UPDATE on the version this decision was made from. A concurrent
- * commit to either rolls the transaction back and the result is `conflict`
- * once: the enrollment keeps its pending state for the existing enrollment
- * retry schedule, and a preference request reports its retryable conflict.
+ * conditional UPDATE on its version. Completion is a conditional UPDATE on
+ * `state IN ('checking','pending')`; an enrollment that left those states
+ * (for example a user disable) after the read is left untouched and nothing
+ * is materialized. A concurrent native-row commit rolls the transaction back
+ * and the result is `conflict` once: the enrollment keeps its pending state
+ * for the existing enrollment retry schedule, and a preference request
+ * reports its retryable conflict.
  */
 export const completeAndMaterializeMorningBriefEnrollment$ = command(
   async (
@@ -97,25 +99,29 @@ async function attemptMaterialization(
     return;
   }
   const at = nowDate();
+  if (completes) {
+    // Only a still-checking/pending enrollment completes. A disable (or other terminal state) committed after the read
+    // wins, and this attempt becomes a no-op instead of re-completing it.
+    const [completed] = await tx
+      .update(morningBriefEnrollments)
+      .set({ state: "completed", workflowId, lastError: null, updatedAt: at })
+      .where(
+        and(
+          morningBriefEnrollmentWhere(owner),
+          inArray(morningBriefEnrollments.state, ["checking", "pending"]),
+        ),
+      )
+      .returning({ userId: morningBriefEnrollments.userId });
+    if (completed === undefined) {
+      return;
+    }
+  }
   await materializeNativeSchedule(tx, {
     owner,
     membershipId: enrollment.membershipId,
     snapshot,
     at,
   });
-  if (!completes) {
-    return;
-  }
-  // Publish actual enrollment completion; no empty timestamp write or
-  // version gate coordinates a completed enrollment with materialization.
-  const [gated] = await tx
-    .update(morningBriefEnrollments)
-    .set({ state: "completed", workflowId, lastError: null, updatedAt: at })
-    .where(morningBriefEnrollmentWhere(owner))
-    .returning({ userId: morningBriefEnrollments.userId });
-  if (gated === undefined) {
-    throw new MorningBriefSnapshotChanged();
-  }
 }
 
 /** Write the native row for a new membership; returns whether it wrote. */

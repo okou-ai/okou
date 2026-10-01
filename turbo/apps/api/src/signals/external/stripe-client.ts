@@ -333,7 +333,7 @@ export interface StripeInvoice {
     } | null;
   } | null;
   readonly amount_due: number;
-  readonly amount_paid?: number;
+  readonly amount_paid: number;
   readonly currency: string;
   readonly status: "draft" | "open" | "paid" | "uncollectible" | "void" | null;
   readonly paid?: boolean;

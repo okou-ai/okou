@@ -195,12 +195,12 @@ history. The prior `1289_google_forms_cursor_detachment` and
 `1290_google_forms_cursor_lifecycle` are removed, including both function/trigger
 inventory entries. The cursor schema is identical to main.
 
-Main's historical migrations through `1290_retire_cloudflare_access_triggers`
-are preserved. Drizzle regenerated the two PR-only migrations as
-`1297_retire_provisional_billing_purge` and
-`1298_retire_billing_attribution_mutation_guard`; the redundant scope-only
-retirement was withdrawn when main retired both Cloudflare triggers. The generated snapshots' structural schema
-matches main exactly; only their generated identity chain differs. The final
+Main's historical migrations through `1304_bright_grim_reaper` (including
+`1290_retire_cloudflare_access_triggers`) are preserved. The PR-only retirements
+follow as `1305_retire_provisional_billing_purge` and
+`1306_retire_billing_attribution_mutation_guard`; the redundant scope-only
+retirement was withdrawn when main retired both Cloudflare triggers. Neither
+retirement changes a table column. The final
 zero-trigger and no-new-field requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 

@@ -78,7 +78,7 @@ export function createChatRunUsageSignals(
               },
               fetchOptions: { signal },
             }),
-            [200, 404],
+            [200],
           ),
           signal,
         );
@@ -86,13 +86,7 @@ export function createChatRunUsageSignals(
           L.warn("Settled usage is temporarily unavailable", attempted.error);
           return;
         }
-        const result = attempted.value;
-        if (result.status === 404) {
-          // Pre-R1 APIs have no read route. During that actual rolling window,
-          // leave amounts unavailable rather than treating hint payloads as money.
-          return;
-        }
-        for (const run of result.body.runs) {
+        for (const run of attempted.value.body.runs) {
           next.set(run.runId, run.usage);
         }
       }

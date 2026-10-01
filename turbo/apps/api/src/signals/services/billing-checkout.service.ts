@@ -1081,6 +1081,8 @@ async function createConfirmedPlanSubscription(
     readonly orgId: string;
     readonly preview: PlanPurchasePreviewToken;
     readonly paymentMethod: BillingPurchasePaymentMethod;
+    /** Undo the purchase claim when Stripe did not create the subscription. */
+    readonly release: () => Promise<void>;
   },
   signal: AbortSignal,
 ): Promise<ConfirmPlanPurchaseResult> {
@@ -1094,19 +1096,26 @@ async function createConfirmedPlanSubscription(
     }),
     billingPurchaseId: preview.purchaseId,
   };
-  const subscription = await stripe.subscriptions.create(
-    {
-      customer: preview.customerId,
-      items: [{ price: preview.priceId, quantity: 1 }],
-      ...stripeBillingPurchasePaymentParams(paymentMethod),
-      metadata,
-      payment_behavior: "default_incomplete",
-      ...(preview.trialDays === undefined
-        ? {}
-        : { trial_period_days: preview.trialDays }),
-      expand: ["latest_invoice"],
-    },
-    { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
+  // A rejected create leaves no subscription to bind, so the claim is
+  // released and the previous status restored. If Stripe did create it
+  // anyway, the next confirm resumes it by purchase identity, and a webhook
+  // that already bound it is left untouched by the release predicate.
+  const subscription = await onRejection(
+    stripe.subscriptions.create(
+      {
+        customer: preview.customerId,
+        items: [{ price: preview.priceId, quantity: 1 }],
+        ...stripeBillingPurchasePaymentParams(paymentMethod),
+        metadata,
+        payment_behavior: "default_incomplete",
+        ...(preview.trialDays === undefined
+          ? {}
+          : { trial_period_days: preview.trialDays }),
+        expand: ["latest_invoice"],
+      },
+      { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
+    ),
+    args.release,
   );
   signal.throwIfAborted();
   const completion = await completeBillingOperationInvoiceWithInvoice(
@@ -1160,6 +1169,8 @@ async function completeExistingPlanPurchase(
     ...completion,
   };
 }
+
+const ATOM_GRANT_SUBSCRIPTION_STATUS = "atom_grant";
 
 interface PlanPurchaseOrgState {
   readonly customerId: string | null;
@@ -1392,8 +1403,13 @@ export const confirmPlanPurchase$ = command(
         subscriptionStatus: orgMetadata.subscriptionStatus,
         tier: orgMetadata.tier,
         rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
+        planEntitlementSource: orgPlanEntitlements.source,
       })
       .from(orgMetadata)
+      .leftJoin(
+        orgPlanEntitlements,
+        eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
+      )
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
     signal.throwIfAborted();
@@ -1441,9 +1457,14 @@ export const confirmPlanPurchase$ = command(
       return { status: "invalid_preview" };
     }
     signal.throwIfAborted();
+    // A stale claim taken over no longer shows the status it replaced; an
+    // unbound Atom grant is still identified by its Plan entitlement source,
+    // which the grant expiry cron relies on through the `atom_grant` status.
     const previousStatus =
       org.subscriptionStatus === PLAN_PURCHASE_CLAIM_STATUS
-        ? null
+        ? org.planEntitlementSource === "stripe_atom_grant"
+          ? ATOM_GRANT_SUBSCRIPTION_STATUS
+          : null
         : org.subscriptionStatus;
     const release = async () => {
       await releasePlanPurchaseClaim(db, orgId, preview, previousStatus);
@@ -1465,6 +1486,7 @@ export const confirmPlanPurchase$ = command(
         orgId,
         preview,
         paymentMethod: admission.paymentMethod,
+        release,
       },
       signal,
     );

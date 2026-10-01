@@ -153,6 +153,7 @@ interface CheckoutSessionInput {
 interface InvoiceInput {
   readonly billing_reason?: string | null;
   readonly id: string;
+  readonly amount_paid: number;
   readonly customer: string | { readonly id: string } | null;
   readonly metadata: Record<string, string> | null;
   readonly subtotal?: number | null;
@@ -3103,6 +3104,23 @@ async function planInvoiceIsDuplicateInitialPurchase(
   );
 }
 
+/** Refund and cancel a duplicate initial Plan purchase instead of granting it. */
+async function refundDuplicateInitialPlanPurchase(
+  db: Db,
+  invoice: InvoiceInput,
+  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
+): Promise<boolean> {
+  // Only a subscription's first invoice can be a duplicate initial purchase.
+  if (
+    invoice.billing_reason !== "subscription_create" ||
+    !(await planInvoiceIsDuplicateInitialPurchase(db, publication))
+  ) {
+    return false;
+  }
+  await refundDuplicateSubscriptionInvoice(invoice, publication.subscriptionId);
+  return true;
+}
+
 async function bindSubscriptionToCustomerOrg(
   db: Db,
   args: BindSubscriptionToCustomerOrgArgs,
@@ -3689,12 +3707,7 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       orgId: org.orgId,
       details,
     };
-    // Only a subscription's first invoice can be a duplicate initial purchase.
-    if (
-      invoice.billing_reason === "subscription_create" &&
-      (await planInvoiceIsDuplicateInitialPurchase(db, publication))
-    ) {
-      await refundDuplicateSubscriptionInvoice(invoice, subscriptionId);
+    if (await refundDuplicateInitialPlanPurchase(db, invoice, publication)) {
       signal.throwIfAborted();
       return org.orgId;
     }
@@ -3709,7 +3722,20 @@ const handlePlanSubscriptionInvoicePaid$ = command(
     signal.throwIfAborted();
     const result = await set(publishLegacyPlanInvoice$, publication, signal);
     signal.throwIfAborted();
-    if (result.processed && result.cancelReplaced) {
+    if (!result.processed) {
+      // A concurrent first purchase can publish between the check above and
+      // this publication; the rejected loser is then refunded here instead.
+      const refunded = await refundDuplicateInitialPlanPurchase(
+        db,
+        invoice,
+        publication,
+      );
+      signal.throwIfAborted();
+      return refunded
+        ? org.orgId
+        : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
+    }
+    if (result.cancelReplaced) {
       await cancelReplacedPlanSubscriptions({
         orgId: org.orgId,
         invoiceId: invoice.id,
@@ -3723,9 +3749,7 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       });
       signal.throwIfAborted();
     }
-    return result.processed
-      ? org.orgId
-      : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
+    return org.orgId;
   },
 );
 

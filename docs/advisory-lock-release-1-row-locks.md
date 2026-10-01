@@ -25,17 +25,17 @@ selections are deleted and counted).
 
 ## Syntactic count relative to main
 
-At `12dec82`, non-test API source has 288 explicit lock clauses against 377 on
-main (−89). Only five files still exceed main, each holding a lock moved from
-a main file:
+At `12dec82`, non-test API source had 288 explicit lock clauses against 377 on
+main (−89). Since then the Run-parent `KEY SHARE` locks in
+`credit-usage-settlement-plan.ts` and `managed-usage-attribution.ts`, the Run
+`SHARE` lock in `x-resource-usage-values.ts` and the allowance entitlement
+`FOR UPDATE` in `usage-allowance-settlement-plan.ts` were removed; allowance
+windows are arbitrated by the unique index described below. Only one new file
+still holds explicit locks, each moved from a main file:
 
-| File                                          | main | this PR | Why kept                                                                                                                         |
-| --------------------------------------------- | ---: | ------: | -------------------------------------------------------------------------------------------------------------------------------- |
-| `services/credit-usage-settlement-plan.ts`    |    0 |       1 | Run parent `KEY SHARE` keeps Run-before-usage order with Run deletion (the later FK inserts take the same lock).                 |
-| `services/managed-usage-attribution.ts`       |    0 |       1 | Same Run-parent ordering.                                                                                                        |
-| `services/usage-allowance-settlement-plan.ts` |    0 |       1 | Entitlement `FOR UPDATE`: the only arbiter preventing duplicate allowance windows; no existing unique constraint covers windows. |
-| `services/x-resource-usage-values.ts`         |    0 |       1 | Run `SHARE` keeps completion/provider fields stable across admission checks (moved from main).                                   |
-| `services/clerk-lifecycle-plan.ts`            |    0 |       3 | `run_uploaded_files` and stable-context locks moved from main's deletion services.                                               |
+| File                               | main | this PR | Why kept                                                                           |
+| ---------------------------------- | ---: | ------: | ---------------------------------------------------------------------------------- |
+| `services/clerk-lifecycle-plan.ts` |    0 |       3 | `run_uploaded_files` and stable-context locks moved from main's deletion services. |
 
 Grant and lot deductions are conditional on the row version and remaining
 balance with the batch rejected on a short row count; the wallet debit is
@@ -80,9 +80,9 @@ Clerk webhook redelivery, and pagination loops.
 
 The allowance window entitlement lock is replaced by the unique index
 `uq_org_usage_allowance_windows_entitlement_kind_starts` on existing columns
-(migration 1299) with `INSERT … ON CONFLICT`. Before releasing, verify that
+(migration 1307) with `INSERT … ON CONFLICT`. Before releasing, verify that
 production has no duplicate `(entitlement_id, kind, starts_at)` windows.
-The [preflight query and duplicate handling](./advisory-lock-release-1-key-retirement.md#allowance-index-1299-preflight)
+The [preflight query and duplicate handling](./advisory-lock-release-1-key-retirement.md#allowance-index-preflight)
 are required before deployment admission; this change did not query production.
 
 After `4f263928`, both newly introduced empty UPDATEs (connector selection and

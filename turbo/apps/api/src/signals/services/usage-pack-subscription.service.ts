@@ -287,7 +287,7 @@ interface UsagePackInvoiceLineInput {
 
 export interface UsagePackInvoiceInput {
   readonly id: string;
-  readonly amount_paid?: number;
+  readonly amount_paid: number;
   readonly customer: StripeObjectReference | null;
   readonly metadata: Record<string, string> | null;
   readonly status?: string | null;
@@ -3784,8 +3784,8 @@ const commitUsagePackFulfillment$ = command(
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
     await db.transaction(async (tx) => {
       // Duplicate invoice deliveries queue on the root rows below and then see
-      // the committed receipt; allocation rows read for the grant snapshot are
-      // likewise held.
+      // the committed receipt; the receipt primary key and the grant
+      // idempotency keys keep the grant single either way.
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3819,14 +3819,8 @@ const commitUsagePackFulfillment$ = command(
         .select()
         .from(usagePackAllocations)
         .where(fulfillmentAllocationWhere(args, subscription))
-        .orderBy(asc(usagePackAllocations.id))
-        .for("update");
+        .orderBy(asc(usagePackAllocations.id));
       requireFulfillmentAllocationSnapshot(args, allocations, subscription);
-      await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .for("update");
       const debtWhere = firstPaidUpgradeDebtWhere(orgId);
       const [debt] = await tx
         .select({ orgId: orgMetadata.orgId })

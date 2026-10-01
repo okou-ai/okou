@@ -23,7 +23,11 @@ import {
   SSH_ERROR_CODES,
   type SshErrorCode,
 } from "@okouai/api-contracts/contracts/ssh-errors";
-import { safeSqlStateCode, isUniqueViolation } from "../../lib/pg-errors";
+import {
+  isForeignKeyViolation,
+  safeSqlStateCode,
+  isUniqueViolation,
+} from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
@@ -113,6 +117,18 @@ function isVncReferenceRestriction(error: unknown): boolean {
     cause !== null &&
     "constraint" in cause &&
     cause.constraint === "vnc_connections_ssh_owner_fk"
+  );
+}
+
+/** A Cloudflare Access config deleted after the visibility read is not found. */
+function isCloudflareAccessReferenceViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    isForeignKeyViolation(error) &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === "ssh_connections_cloudflare_access_org_fk"
   );
 }
 
@@ -430,6 +446,9 @@ const commitSshConnectionCreation$ = command(
       if (isSshCredentialReferenceViolation(transaction.error)) {
         return sshCredentialFailure("notFound");
       }
+      if (isCloudflareAccessReferenceViolation(transaction.error)) {
+        return cloudflareAccessFailure("notFound");
+      }
       if (!isUniqueViolation(transaction.error, "ssh_connections_pkey")) {
         throw transaction.error;
       }
@@ -575,6 +594,9 @@ const commitSshConnectionUpdate$ = command(
     }
     if (isSshCredentialReferenceViolation(committed.error)) {
       return sshCredentialFailure("notFound");
+    }
+    if (isCloudflareAccessReferenceViolation(committed.error)) {
+      return cloudflareAccessFailure("notFound");
     }
     throw committed.error;
   },

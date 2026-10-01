@@ -1,6 +1,6 @@
 {
-  "id": "68393e3d-50ff-4462-884a-927115bfbf87",
-  "prevId": "e45bf0db-9737-4dae-94b2-fc13bada669c",
+  "id": "1404bc33-eeae-43de-a402-e36a59fbf690",
+  "prevId": "811030b4-d517-40f1-bc2f-d64639925aa5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -36540,9 +36540,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_vnc_connections_ssh": {
           "name": "idx_vnc_connections_ssh",
@@ -36561,9 +36561,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_vnc_connections_owner_created": {
           "name": "idx_vnc_connections_owner_created",
@@ -36594,9 +36594,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_vnc_connections_user": {
           "name": "idx_vnc_connections_user",
@@ -36615,64 +36615,64 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "vnc_connections_ssh_owner_fk": {
           "name": "vnc_connections_ssh_owner_fk",
           "tableFrom": "vnc_connections",
-          "tableTo": "ssh_connections",
           "columnsFrom": [
             "ssh_connection_id",
             "org_id",
             "user_id"
           ],
+          "tableTo": "ssh_connections",
           "columnsTo": [
             "id",
             "org_id",
             "user_id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "vnc_connections_credential_owner_fk": {
           "name": "vnc_connections_credential_owner_fk",
           "tableFrom": "vnc_connections",
-          "tableTo": "vnc_credentials",
           "columnsFrom": [
             "credential_id",
             "org_id",
             "user_id"
           ],
+          "tableTo": "vnc_credentials",
           "columnsTo": [
             "id",
             "org_id",
             "user_id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "vnc_connections_credential_profile_fk": {
           "name": "vnc_connections_credential_profile_fk",
           "tableFrom": "vnc_connections",
-          "tableTo": "vnc_credentials",
           "columnsFrom": [
             "credential_id",
             "org_id",
             "user_id",
             "auth_method"
           ],
+          "tableTo": "vnc_credentials",
           "columnsTo": [
             "id",
             "org_id",
             "user_id",
             "auth_method"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -36819,9 +36819,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_vnc_credentials_user": {
           "name": "idx_vnc_credentials_user",
@@ -36840,9 +36840,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -36850,22 +36850,22 @@
       "uniqueConstraints": {
         "uq_vnc_credentials_owner_id": {
           "name": "uq_vnc_credentials_owner_id",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "org_id",
             "user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "uq_vnc_credentials_owner_id_auth_method": {
           "name": "uq_vnc_credentials_owner_id_auth_method",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "org_id",
             "user_id",
             "auth_method"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},

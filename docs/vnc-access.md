@@ -20,28 +20,24 @@ The feature remains unavailable until a separate activation decision.
 VNC is not GA. Configuration and owner cleanup no longer acquire advisory
 locks, and no compatibility fallback is added for its old writer shape.
 
-A write captures the existing `org_members_metadata.created_at` value with
-PostgreSQL timestamp precision **before** its live Clerk membership lookup.
-Clerk remains the membership authority; the preference row is only the existing
-member lifecycle identity. KMS encryption and endpoint preparation run outside
-the transaction. The mutation command then locks the matching existing member
-row, checks the requested credential revision or host generation, executes its
-bounded SQL and commits. It never recreates the parent after the external
-membership decision or passes the transaction to a helper.
+A configuration write checks live Clerk membership in its route before any
+SQL; Clerk remains the membership authority. KMS encryption and endpoint
+preparation run outside the transaction. The mutation then checks the requested
+credential revision or host generation with an ordinary read and executes its
+bounded conditional SQL in a short transaction. It takes no member-row or other
+explicit row lock and reads no `org_members_metadata` lifecycle identity.
 
-User, organization and membership erasure lock the same member rows and erase
-VNC hosts, credentials and those member rows in one local transaction. This
-moves the already-required preference erasure earlier in authoritative cleanup.
-An admitted write either commits before erasure and is deleted with its owner,
-or loses the captured member identity and returns unavailable. An unrelated
-preference update leaves `created_at` unchanged. Read-only VNC admission does
-not initialize member preferences. Overlapping owner erasure uses a stable row
-order; unrelated owners remain independent.
+User, organization and membership erasure delete the scoped VNC hosts and then
+their credentials in one local transaction, without locking member rows. VNC is
+a non-money path, so no concurrency protection is added against a write admitted
+before erasure that commits after it; Runner access still rechecks live Clerk
+membership before use. Read-only VNC admission does not initialize member
+preferences.
 
 Credential rotation retains the existing revision and advances every referencing
 host's generation. Connection updates and deletes use their existing generation
-conditions. Override writes retain their live host/thread FK parents while
-inserting, so cleanup cannot leave a surviving access override. Live Runner
+conditions. Override writes insert through ordinary cascading foreign keys to
+their host and thread, so deleting a host also removes its access overrides. Live Runner
 membership and credential revision checks remain unchanged. No App/Runner wire
 contract, persisted field, coordination table or authorization flag is added.
 

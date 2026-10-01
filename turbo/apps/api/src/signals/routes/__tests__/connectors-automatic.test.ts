@@ -181,6 +181,7 @@ describe("builtin MCP automatic authentication", () => {
       externalId: null,
       externalUsername: null,
       externalEmail: null,
+      oauthScopes: ["read", "write"],
     });
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",

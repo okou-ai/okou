@@ -75,9 +75,7 @@ function automaticConnectionMetadata(input: AutomaticConnectionPublication) {
     externalEmail: input.identity?.email ?? null,
     oauthScopes: null,
     oauthGrantedScopes:
-      input.identity === null || input.scopes === null
-        ? null
-        : JSON.stringify(input.scopes),
+      input.scopes === null ? null : JSON.stringify(input.scopes),
     tokenExpiresAt: input.expiresAt,
     needsReconnect: false,
     reconnectReason: null,

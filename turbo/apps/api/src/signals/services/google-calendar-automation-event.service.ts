@@ -1329,7 +1329,31 @@ interface EnsureGoogleCalendarWatchArgs {
   readonly connectorId: string;
   readonly calendarId?: string;
   readonly forceRefresh?: boolean;
+  /**
+   * Routine renewal: replace the channel even when it is not yet inside the
+   * default renewal window, but keep the sync baseline (token and snapshots)
+   * unless the watch state itself requires a new one.
+   */
+  readonly renewal?: boolean;
   readonly reportProviderFailure?: boolean;
+}
+
+/**
+ * A watch only re-lists its baseline when it is new, explicitly forced, has no
+ * sync token or needs user action. A routine channel renewal keeps the sync
+ * token and snapshots so changes since the last sync are still delivered and
+ * existing events are not reclassified as created.
+ */
+function calendarWatchNeedsNewBaseline(
+  observed: GoogleCalendarWatchStateRow | null,
+  args: Pick<EnsureGoogleCalendarWatchArgs, "forceRefresh" | "renewal">,
+): boolean {
+  return (
+    observed === null ||
+    (args.forceRefresh === true && args.renewal !== true) ||
+    observed.syncToken === null ||
+    observed.actionRequiredReason !== null
+  );
 }
 
 export interface StagedGoogleCalendarWatchTarget {
@@ -1348,17 +1372,18 @@ type StageGoogleCalendarWatchTargetResult =
         readonly kind: "ok";
       }
     >;
-function calendarConsumerCondition(args: {
+interface CalendarAutomationTarget {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
   readonly calendarId: string;
-}) {
+}
+/** Every owned event automation on the target, enabled or not. */
+function calendarAutomationTargetCondition(args: CalendarAutomationTarget) {
   return and(
     eq(workflowAutomations.orgId, args.orgId),
     eq(workflowAutomations.ownerUserId, args.userId),
     eq(workflowAutomations.eventConnectorId, args.connectorId),
-    eq(workflowAutomations.enabled, true),
     eq(workflowAutomations.kind, "event"),
     inArray(workflowAutomations.eventType, [...GOOGLE_CALENDAR_EVENT_TYPES]),
     eq(sql`${workflowAutomations.eventConfig}->>'calendarId'`, args.calendarId),
@@ -1375,11 +1400,20 @@ const publishGoogleCalendarWatch$ = command(
       readonly channelId: string;
       readonly channelToken: string;
       readonly watch: z.infer<typeof calendarWatchResponseSchema>;
+      readonly resetBaseline: boolean;
     },
     signal: AbortSignal,
   ): Promise<GoogleCalendarWatchStateRow> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
+    const baselineReset = args.resetBaseline
+      ? {
+          previousChannelId: null,
+          previousChannelToken: null,
+          previousResourceId: null,
+          syncToken: null,
+        }
+      : {};
     const watchState = {
       orgId: args.orgId,
       userId: args.userId,
@@ -1387,10 +1421,7 @@ const publishGoogleCalendarWatch$ = command(
       channelToken: args.channelToken,
       resourceId: args.watch.resourceId,
       resourceUri: args.watch.resourceUri,
-      previousChannelId: null,
-      previousChannelToken: null,
-      previousResourceId: null,
-      syncToken: null,
+      ...baselineReset,
       watchExpirationAt: watchExpirationDate(
         args.watch.expiration,
         currentTime,
@@ -1421,9 +1452,11 @@ const publishGoogleCalendarWatch$ = command(
       if (!state) {
         throw new Error("Failed to persist Google Calendar watch state");
       }
-      await tx
-        .delete(googleCalendarEventSnapshots)
-        .where(eq(googleCalendarEventSnapshots.watchStateId, state.id));
+      if (args.resetBaseline) {
+        await tx
+          .delete(googleCalendarEventSnapshots)
+          .where(eq(googleCalendarEventSnapshots.watchStateId, state.id));
+      }
       signal.throwIfAborted();
       return state;
     });
@@ -1451,24 +1484,28 @@ const cleanupUnpublishedCalendarWatch$ = command(
   },
 );
 async function prepareCalendarWatchCandidate(
-  args: { readonly accessToken: string; readonly calendarId: string },
+  args: {
+    readonly accessToken: string;
+    readonly calendarId: string;
+    readonly resetBaseline: boolean;
+  },
   signal: AbortSignal,
 ): Promise<
   | {
       readonly kind: "ok";
-      readonly baseline: CalendarEventsListOk;
+      readonly baseline: CalendarEventsListOk | null;
       readonly watch: z.infer<typeof calendarWatchResponseSchema>;
       readonly channelId: string;
       readonly channelToken: string;
     }
   | Exclude<EnsureGoogleCalendarWatchResult, { readonly kind: "ok" }>
 > {
-  const baseline = await listCalendarEvents(
-    { ...args, syncToken: null },
-    signal,
-  );
+  const target = { accessToken: args.accessToken, calendarId: args.calendarId };
+  const baseline = args.resetBaseline
+    ? await listCalendarEvents({ ...target, syncToken: null }, signal)
+    : null;
   signal.throwIfAborted();
-  if (baseline.kind !== "ok") {
+  if (baseline !== null && baseline.kind !== "ok") {
     return {
       kind: "bad_request",
       message: "Failed to establish Google Calendar event automation baseline",
@@ -1487,7 +1524,7 @@ async function prepareCalendarWatchCandidate(
   const channelId = randomUUID();
   const channelToken = mintChannelToken();
   const watch = await watchCalendarEvents(
-    { ...args, channelId, channelToken },
+    { ...target, channelId, channelToken },
     signal,
   );
   signal.throwIfAborted();
@@ -1538,8 +1575,13 @@ const ensureGoogleCalendarWatchForUserInternal$ = command(
     ) {
       return { kind: "ok" };
     }
+    const resetBaseline = calendarWatchNeedsNewBaseline(observed, args);
     const candidate = await prepareCalendarWatchCandidate(
-      { accessToken: accessResult.access.accessToken, calendarId },
+      {
+        accessToken: accessResult.access.accessToken,
+        calendarId,
+        resetBaseline,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -1565,6 +1607,7 @@ const ensureGoogleCalendarWatchForUserInternal$ = command(
           channelId,
           channelToken,
           watch,
+          resetBaseline: baseline !== null,
         },
         signal,
       ),
@@ -1573,22 +1616,24 @@ const ensureGoogleCalendarWatchForUserInternal$ = command(
       },
     );
     signal.throwIfAborted();
-    await set(
-      upsertCalendarEventSnapshots$,
-      {
-        watchStateId: state.id,
-        events: baseline.events,
-        currentTime: nowDate(),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    await set(
-      publishCalendarBaselineCursor$,
-      { state, syncToken: baseline.nextSyncToken },
-      signal,
-    );
-    signal.throwIfAborted();
+    if (baseline !== null) {
+      await set(
+        upsertCalendarEventSnapshots$,
+        {
+          watchStateId: state.id,
+          events: baseline.events,
+          currentTime: nowDate(),
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(
+        publishCalendarBaselineCursor$,
+        { state, syncToken: baseline.nextSyncToken },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
     if (observed) {
       const episode = calendarWatchActionRequiredEpisode(observed);
       if (episode) {
@@ -1654,7 +1699,9 @@ const persistLegacyPrimaryCalendarMigration$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarWatchStateRow | null> => {
     const db = set(writeDb$);
-    const legacyConsumerCondition = calendarConsumerCondition({
+    // A disabled automation must not keep the dead alias either: re-enabling
+    // it would target a calendar ID that no longer resolves.
+    const legacyTargetCondition = calendarAutomationTargetCondition({
       orgId: args.orgId,
       userId: args.userId,
       connectorId: args.access.connectorId,
@@ -1702,7 +1749,7 @@ const persistLegacyPrimaryCalendarMigration$ = command(
           eventConfig: sql`jsonb_set(${workflowAutomations.eventConfig}, '{calendarId}', to_jsonb(${GOOGLE_CALENDAR_PRIMARY_ID}::text))`,
           updatedAt: currentTime,
         })
-        .where(legacyConsumerCondition);
+        .where(legacyTargetCondition);
       const [removed] = await tx
         .delete(googleCalendarWatchStates)
         .where(eq(googleCalendarWatchStates.id, legacy.id))
@@ -1984,7 +2031,12 @@ const reconcileGoogleCalendarWatchState$ = command(
     }
     const registered = await set(
       ensureGoogleCalendarWatchForUser$,
-      { ...state, forceRefresh: true, reportProviderFailure: false },
+      {
+        ...state,
+        forceRefresh: true,
+        renewal: true,
+        reportProviderFailure: false,
+      },
       signal,
     );
     if (registered.kind === "ok") {
