@@ -41,10 +41,8 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  readThreadSessionBinding,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
@@ -1597,14 +1595,6 @@ describe("workflow queue", () => {
     if (!queuedEvent) {
       throw new Error("Expected the claimed one-time event to remain queued");
     }
-
-    const busyBinding = await readThreadSessionBinding(
-      context,
-      created.body.chatThreadId,
-    );
-    if (!busyBinding.agent_session_id) {
-      throw new Error("Expected the busy run to bind the thread session");
-    }
     await completeRunThroughSandbox(scenario, busyRunId);
     const runIds = await workflowRunIds(created.body.chatThreadId);
     expect(runIds).toHaveLength(2);
@@ -1612,21 +1602,17 @@ describe("workflow queue", () => {
     if (!drainedRunId) {
       throw new Error("Expected the queued one-time event to drain");
     }
-    const drainedBinding = await readThreadSessionBinding(
-      context,
-      created.body.chatThreadId,
-    );
-    expect(drainedBinding).toMatchObject({
-      agent_session_id: busyBinding.agent_session_id,
-      agent_session_run_id: drainedRunId,
-      run_session_id: busyBinding.agent_session_id,
-    });
     const drainedClaim = await completeRunThroughSandbox(
       scenario,
       drainedRunId,
     );
     expect(drainedClaim.resumeSession?.sessionId).toBe(
       `workflow-queue-cli-${busyRunId}`,
+    );
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, drainedRunId),
+    ).resolves.toBe(
+      await readCompletedRunSessionId(context, scenario.actor, busyRunId),
     );
     const drained = await wf.readAutomation(created.body.id);
     expect(drained.enabled).toBeFalsy();
@@ -1652,13 +1638,6 @@ describe("workflow queue", () => {
       await postWorkflowWebhook(automation, "first"),
       automation.threadId,
     );
-    const firstBinding = await readThreadSessionBinding(
-      context,
-      automation.threadId,
-    );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the first workflow run to bind the session");
-    }
     expectAccepted(await postWorkflowWebhook(automation, "second"));
 
     // A user message sent while the automation run is active joins the chat
@@ -1697,13 +1676,6 @@ describe("workflow queue", () => {
       return chatEventDisplayText(message) === "user interjection";
     });
     expect(queuedUserMessage?.runId).toBeUndefined();
-    await expect(
-      readThreadSessionBinding(context, automation.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: secondWorkflowRunId,
-      run_session_id: firstBinding.agent_session_id,
-    });
 
     // The user message drains only after the automation run finishes.
     const workflowClaim = await completeRunThroughSandbox(
@@ -1724,13 +1696,6 @@ describe("workflow queue", () => {
     if (!userMessage?.runId) {
       throw new Error("Expected the queued user message to claim a run");
     }
-    await expect(
-      readThreadSessionBinding(context, automation.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: userMessage.runId,
-      run_session_id: firstBinding.agent_session_id,
-    });
     const userClaim = await completeRunThroughSandbox(
       scenario,
       userMessage.runId,
@@ -1738,6 +1703,17 @@ describe("workflow queue", () => {
     expect(userClaim.resumeSession?.sessionId).toBe(
       `workflow-queue-cli-${secondWorkflowRunId}`,
     );
+    const session = await readCompletedRunSessionId(
+      context,
+      scenario.actor,
+      firstRunId,
+    );
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, secondWorkflowRunId),
+    ).resolves.toBe(session);
+    await expect(
+      readCompletedRunSessionId(context, scenario.actor, userMessage.runId),
+    ).resolves.toBe(session);
   });
 
   it("revokes one pending automation event with the caller's client event id", async () => {
