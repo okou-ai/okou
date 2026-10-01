@@ -4066,6 +4066,7 @@ describe("okou workflow automations", () => {
   });
 
   it("keeps the Calendar sync baseline across a routine channel renewal", async () => {
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
     const startedAt = Date.parse("2026-08-05T08:00:00.000Z");
     mockNow(startedAt);
     const scenario = await setupFixture();
