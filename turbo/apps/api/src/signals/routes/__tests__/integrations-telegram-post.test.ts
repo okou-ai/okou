@@ -1874,12 +1874,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!run) {
       throw new Error("Expected the official-bot Telegram run");
     }
-    const log = await runReadsApi.requestReadLogById(
+    const telegramLogs = await runReadsApi.requestListLogs(
       actorForFixture(fixture),
-      run.id,
+      { triggerSource: "telegram", limit: 100 },
       [200],
     );
-    expect(log.body.triggerSource).toBe("telegram");
+    expect(telegramLogs.body.data).toContainEqual(
+      expect.objectContaining({ id: run.id, triggerSource: "telegram" }),
+    );
   });
 
   it("keeps an official-bot group mention routable after an overlapping model-key fixture releases", async () => {
