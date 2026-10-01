@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.24...runner-storage-v0.1.25) (2026-10-01)
+
+
+### Refactoring
+
+* **rust:** reuse host ignored-child harness in storage tests ([#37464](https://github.com/okou-ai/okou/issues/37464)) ([c3a0268](https://github.com/okou-ai/okou/commit/c3a0268098ef916b6d56681a377ecf8ff688445d))
+
 ## [0.1.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.23...runner-storage-v0.1.24) (2026-09-30)
 
 ## [0.1.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.22...runner-storage-v0.1.23) (2026-09-30)
