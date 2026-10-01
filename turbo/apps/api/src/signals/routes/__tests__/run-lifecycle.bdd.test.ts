@@ -2872,16 +2872,43 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect((await api.readRun(actor, first.runId)).status).toBe("completed");
   });
 
-  it("resumes direct sessions only on the same runtime and family", async () => {
+  it("resumes thread sessions only on the same runtime and family", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const selectedModel = await seedBuiltInDefaultModelKey();
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    // gpt-6-astra has no Pi route, so its built-in route runs a native CLI.
+    const selectedModel = await seedBuiltInModelKey("gpt-6-astra");
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
+    const anthropic = (await api.listOrgModelProviders(actor)).find(
+      (provider) => {
+        return provider.type === "anthropic-api-key";
+      },
+    );
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
+    }
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+    ]);
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a managed direct session",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
     const firstClaim = await api.claimRunnerJob(first.runId);
     const initialStorageManifest = expectCanonicalStorageManifest(
@@ -2917,13 +2944,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       admittableProfiles: [],
     });
 
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue on the same runtime and model family",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toMatchObject({
       sessionId: cliAgentSessionId,
@@ -2945,12 +2971,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
-
-    const changedRuntime = await api.createRun(actor, {
+    await finishCancelledRun(resumed.runId, resumedClaim.sandboxToken);
+    await flushWaitUntilForTest();
+    const changedRuntime = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue on a different native runtime",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
     const changedRuntimeClaim = await api.claimRunnerJob(changedRuntime.runId);
     expect(changedRuntimeClaim.cliAgentType).toBe("claude-code");
