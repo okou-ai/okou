@@ -40,7 +40,7 @@ import {
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import {
-  discordIntegrationEnabledForOwnerInDb,
+  discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
 } from "./discord-config";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
@@ -231,30 +231,28 @@ const discordModelSelectionAllowed$ = command(
     binding: DiscordVerifiedBinding,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const allowed = await set(writeDb$).transaction(async (tx) => {
-      const [connection] = await tx
-        .select({ id: discordOrgConnections.id })
-        .from(discordOrgConnections)
-        .where(
-          and(
-            eq(discordOrgConnections.id, binding.connectionId),
-            eq(discordOrgConnections.discordUserId, binding.discordUserId),
-            eq(discordOrgConnections.userId, binding.userId),
-            eq(discordOrgConnections.guildId, binding.guildId),
-          ),
-        )
-        .for("share");
-      return (
-        Boolean(connection) &&
-        (await discordIntegrationEnabledForOwnerInDb(
-          tx,
-          binding.orgId,
-          binding.userId,
-        ))
+    const enabled = await set(
+      discordIntegrationEnabledForOwner$,
+      binding.orgId,
+      binding.userId,
+      signal,
+    );
+    if (!enabled) {
+      return false;
+    }
+    const [connection] = await set(writeDb$)
+      .select({ id: discordOrgConnections.id })
+      .from(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.id, binding.connectionId),
+          eq(discordOrgConnections.discordUserId, binding.discordUserId),
+          eq(discordOrgConnections.userId, binding.userId),
+          eq(discordOrgConnections.guildId, binding.guildId),
+        ),
       );
-    });
     signal.throwIfAborted();
-    return allowed;
+    return connection !== undefined;
   },
 );
 

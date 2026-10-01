@@ -132,7 +132,7 @@ Direct production caller families still needing migration:
 
 ## Remaining feature-context legacy callers
 
-The adapter retains `db: Pick<ReadonlyDb, "select">`. The following 20 call
+The adapter retains `db: Pick<ReadonlyDb, "select">`. The following 19 call
 sites remain under `src/signals/services/`; these services' unrelated DB and
 transaction lifecycles were not silently rewritten:
 
@@ -144,7 +144,6 @@ transaction lifecycles were not silently rewritten:
 | `mcp-chat-discovery.service.ts`                                     | 481                           |
 | `connector-runtime-sync.service.ts`                                 | 281                           |
 | `pi-memory-stage1-credential.service.ts`                            | 603                           |
-| `discord-config.ts`                                                 | 45                            |
 | `pi-memory-stage1-worker.service.ts`                                | 787                           |
 | `pi-memory-stage1-candidate.service.ts`                             | 359                           |
 | `stripe-invoice-paid-workflow-automation-feature-switch.service.ts` | 19                            |
@@ -169,6 +168,13 @@ commit into an idle state that never existed. All snapshot SQL is inline in
 that owning command's callback. Physical-thread matching remains pure. Status
 cleanup uses plain payload facts and preserves the original preparation error
 when cleanup fails or aborts; the existing detached owner remains unchanged.
+
+Discord's feature gate now also uses a business-input read command. DM binding
+selection loads the low-frequency rollout decision before its existing
+installation/connection ownership transaction; those ownership checks remain.
+The model-picker's former read-only transaction is replaced by an owned gate
+read and a current connection-identity read. The computed gate constructs its
+context node before execution.
 
 This continuation does not migrate the 22 general Pi generation parameters.
 In particular, moving the instruction publication check into an independent
