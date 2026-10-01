@@ -9,7 +9,6 @@ import {
 } from "../../lib/error";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  type OfficialWorkflowRunObservation,
   acquireOfficialWorkflowRunCatalogAdmissionLock,
   validateOfficialWorkflowRunForInsert,
   createOfficialWorkflowRunObjects,
@@ -21,8 +20,6 @@ import {
   measureApiDispatchTiming,
   ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
-  type ApiDispatchTimingActionType,
-  type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTimingSync,
   ApiDispatchPhaseCollector,
 } from "./api-dispatch-timing.service";
@@ -31,11 +28,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  type SupportedFramework,
-  isSupportedFramework,
-} from "@okouai/core/frameworks";
-import type { PersistedStorageMount } from "@okouai/db/types";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import {
   type StorageManifestCacheBranch,
   materializeRunStoragePresignedUrls$,
@@ -55,24 +48,11 @@ import {
   type ReadOnlyStoragePresignedUrlCacheStatus,
 } from "./system-storage-presigned-url-cache.service";
 import { env } from "../../lib/env";
+import { SYSTEM_ORG_ID } from "@okouai/core/storage-names";
 import {
-  SYSTEM_ORG_ID,
-  getSkillStorageName,
-  getCustomSkillStorageName,
-  getCustomConnectorSkillStorageName,
-  getCustomConnectorSkillName,
-} from "@okouai/core/storage-names";
-import { extractAndGroupVariables } from "@okouai/core/variable-expander";
-import {
-  type PiModelConfig,
   type PiMemoryRecallSelection,
-  type StoredExecutionContext,
   type SecretConnectorMetadata,
   piMemoryRecallSelectionSchema,
-  PI_MEMORY_ROOT,
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  AGENT_EXECUTION_TIMEOUT_SECONDS,
 } from "@okouai/api-contracts/contracts/runners";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
@@ -106,20 +86,13 @@ import {
   hasAuthMethods,
   getSecretsForAuthMethod,
   normalizeRunModelId,
-  getModelImageInputSupport,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
   buildAgentExecutionConfig,
   agentEnvironmentSecretNames,
 } from "./agent-execution-config";
-import {
-  type SessionExecutionIdentity,
-  canReuseSession,
-} from "./session-compatibility";
 import { z } from "zod";
-import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type BuiltInModelRuntimeRoute,
   isBuiltInModelRuntimeRoutePermitted,
@@ -140,7 +113,6 @@ import {
 import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import { resolveRunSelectionModel } from "./model-selection.service";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { PiStableContextPromptProjection } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
   type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
@@ -149,10 +121,7 @@ import {
   activePersonalModelProviderAccount,
   type MemberModelAccountSnapshot,
 } from "./model-provider-account.service";
-import type {
-  RunCallback,
-  AgentRunPreCreateSource,
-} from "./agent-run-contracts";
+import type { RunCallback } from "./agent-run-contracts";
 import {
   type ChatThreadSessionResolution,
   type ChatThreadExecutionSnapshot,
@@ -161,7 +130,6 @@ import {
   resolveChatThreadSessionSnapshot,
 } from "./chat-session-continuity.service";
 import {
-  type RunWorkflowRef,
   type RunWorkflowSourceRow,
   workflowsForRunFromRows,
 } from "./workflow-data.service";
@@ -172,8 +140,6 @@ import {
   resolveQueueFirstRunAdmission,
   claimQueueFirstRunAssociation,
 } from "./chat-queued-event.service";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   encryptPersistentSecretsMap,
   encryptPersistentSecretValue,
@@ -186,12 +152,7 @@ import {
   measurePiPreparation,
   measurePiPreparationSync,
 } from "@okouai/pi-agent-runtime/api";
-import { logger } from "../../lib/log";
-import {
-  type ImageModel,
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
-} from "@okouai/core/image-model-catalog";
+import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { randomUUID } from "node:crypto";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -217,14 +178,10 @@ import {
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import {
-  type ConnectorRuntimeSelection,
   createConnectorRuntimeSelectionObjects,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
-import {
-  systemSkillStorageResolution$,
-  type SystemSkillStorageResolution,
-} from "../context/system-skill-storage-resolution";
+import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   userFeatureSwitchOverridesFromRows,
@@ -234,11 +191,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { conversations } from "@okouai/db/schema/conversation";
 import { blobs } from "@okouai/db/schema/blob";
-import {
-  type CompressedSessionHistoryBlobEncoding,
-  normalizeSessionHistoryBlobEncoding,
-  isCompressedSessionHistoryBlobEncoding,
-} from "./session-history-blobs";
 import { variables } from "@okouai/db/schema/variable";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { modelProviders } from "@okouai/db/schema/model-provider";
@@ -250,8 +202,6 @@ import {
   observeRunContextParallelStage,
   observeRunConnectorAccountsRead,
   observeAgentRunPreCreateParallelStage,
-  observeStableContextCacheIdentityBuild,
-  observeStableAgentPromptBuild,
   observeAgentRunPiExecutionSnapshot,
 } from "./agent-run-preparation-hooks";
 import {
@@ -286,12 +236,8 @@ import { expandConnectorServerFirewallPolicies } from "./connector-server-firewa
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { isStaffOrg } from "@okouai/core/staff-org";
-import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import { previewAutomationBypass$ } from "../context/hono";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
-import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import {
   type WebChatSessionPromptInput,
   createWebChatSessionPromptObjects,
@@ -302,7 +248,6 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import {
-  type FirewallPermissionGrantAction,
   type FirewallPermissionGrant,
   permissionGrantsToFirewallPolicies,
 } from "@okouai/connectors/firewall-metadata/policy";
@@ -310,36 +255,18 @@ import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { workflows } from "@okouai/db/schema/workflow";
 import {
-  type AgentConnectorScopeSnapshot,
   type AgentConnectorSlugRow,
   type AgentCustomConnectorRow,
   agentConnectorScopeFromRows,
-  type CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
-import {
-  buildAgentToolsPromptInputs,
-  buildAgentToolsPrompt,
-} from "./agent-tools-prompt.service";
-import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import { piStableContextVariantDigest } from "./pi-stable-context.service";
-import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import {
   type CustomConnectorRuntimeContext,
   resolveCustomConnectorBaseUrlVars,
   loadEffectiveCustomConnectorPermissionBundle,
 } from "./connector-runtime-preparation.service";
 import {
-  AdditionalVolumeSources,
-  AgentExecutionRequestObservation,
   AgentRunCallbackInsert,
-  AgentRunCreateAdditionalVolume,
-  AgentRunCreateContextArtifact,
-  ApiErrorResponse,
-  ArtifactMissingRootPolicy,
   AtomicLaunchCommitResult,
-  BuiltinConnectorRuntimeContext,
   CommitPreparedLaunchArgs,
   CreateAgentRunArgs,
   CreateRunBody,
@@ -347,30 +274,23 @@ import {
   CreateRunSuccessResult,
   DbTransaction,
   EffectiveConnectorScope,
-  FinalizedPreparedRunContext,
   LaunchRunIdentity,
   LaunchRunRowsArgs,
   PendingRunArguments,
-  PermissionManifest,
   PersistAtomicLaunchRowsArgs,
   PersistedAtomicLaunchRows,
   PreparedCommitPreparedLaunchArgs,
   PreparedRunContext,
   PreparedRunnerLaunch,
-  ProductAgentExecutionPlan,
   QueueFirstRunClaimLost,
   QueueFirstRunClaimed,
-  ResolvedAgentExecution,
   ResolvedModelProviderEnvironment,
   ResolvedRunExecution,
   RunRecord,
   RunnerJobPayload,
-  StorageManifestSource,
-  TestOnlyDirectRunResolver,
   ValidatedPreparedLaunchAdmission,
   buildAtomicLaunchCteContext,
   committedAtomicLaunchResponse,
-  firstAgent,
   launchRunMetadataValues,
   launchRunValues,
   launchSessionValues,
@@ -380,7 +300,6 @@ import {
   validateCapturedSubscriptionAccount,
 } from "./execution-launch-persistence.service";
 import {
-  AUTO_MEMORY_ARTIFACT_NAME,
   AgentRunRecord,
   AgentRunStorageInput,
   AgentRunStoragePlan,
@@ -396,7 +315,6 @@ import {
   ResolvedManifestStoragePlan,
   ResolvedStorageEntries,
   ResolvedStorageManifestEntryPlans,
-  RunStorageExecution,
   StorageIndex,
   StorageIndexEntry,
   StorageIndexRequest,
@@ -423,7 +341,6 @@ import {
   resolveStorageEntries,
   resolveStorageManifestInputs,
   resolveValidatedPersistedStorageMounts,
-  resolvedSessionStorage,
   selectedRunStorageExecution,
   skillsRootForRun,
   storageEntriesMetadata,
@@ -455,9 +372,7 @@ import {
   decryptStoredConnectorSecretRows,
   eagerStoredConnectorSecretInputs,
   eagerStoredConnectorSecretNames,
-  effectiveStoredConnectorEnvironment,
   emptyCustomConnectorRuntimeContext,
-  environmentTemplates,
   isEmptyRunConnectorScope,
   materializeStoredConnectorSnapshotRows,
   mergeRecords,
@@ -477,9 +392,7 @@ import {
   AgentRunIdentityCommand,
   AgentRunSelectionInput,
   AnyCreateAgentRunCommandArgs,
-  AuthorizedAgentRunRequestObservation,
   CreateAgentRunCommandArgs,
-  CreateQueueFirstAgentRunCommandArgs,
   NewRunRoutePricingRequest,
   ResolveModelProviderEnvironmentArgs,
   RunModelProviderArgs,
@@ -526,7 +439,6 @@ import {
   prepareRunnerStorageInput,
   preparedRunnerJobBody,
   runnerCheckpointArtifacts,
-  runnerProfile,
   withPaidToolPlatformEnvironment,
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./execution-runner-payload.service";
@@ -537,6 +449,51 @@ import {
   persistThreadSessionBinding,
   validateThreadSessionSnapshot,
 } from "./execution-launch-admission.service";
+import {
+  AgentRunAfterPreCreate,
+  AgentRunGraphInput,
+  AgentRunIdentityInput,
+  BootstrapMetadataQueryRow,
+  L,
+  ORG_SENTINEL_USER_ID,
+  PersistedRunEnvironmentSecret,
+  PersistedRunEnvironmentSnapshot,
+  PersistedRunEnvironmentVariable,
+  ResolveAgentExecutionOptions,
+  RunAgentObservation,
+  RunBodyEnvironment,
+  RunBootstrapContext,
+  agentRunsCreateForbidden,
+  bootstrapMetadataRowKindSchema,
+  buildCreateAgentRunArgs,
+  buildMergedVariables,
+  buildResolvedRunBody,
+  enforceCaptureNetworkBodiesGate,
+  initialRunBody,
+  insufficientCredits,
+  isRouteError,
+  matchingAuthorizedRequestObservation,
+  measureAgentRunPreCreate,
+  permissionValidityHorizon,
+  requireResolvedAgentIdMatch,
+  resolveProductAgentExecution,
+  resolveRunBodyEnvironment,
+  selectedAgentRunVariables,
+  validateCompose,
+} from "./run-execution-body.service";
+import {
+  PrepareRunContextInput,
+  PreparedAgentRun,
+  PreparedOfficialWorkflow,
+  PreparedRunBodyContext,
+  PreparedRuntimeContext,
+  RunWorkflowModelState,
+  RunWorkflowReadInput,
+  composePreparedRunContext,
+  finalizePreparedRunContext,
+  officialWorkflowRunCandidates,
+  prepareRunOutputMetadata,
+} from "./run-execution-context.service";
 
 function storageManifestCacheObservation(args: {
   readonly timing?: ApiDispatchTimingCollector;
@@ -1628,157 +1585,6 @@ function createAgentRunStorageObjects(
   return { storagePlan$, materializeAgentRunStorage$ };
 }
 
-const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
-  "preserveParentVersion";
-
-export const ORG_SENTINEL_USER_ID = "__org__";
-
-export const L: ReturnType<typeof logger> = logger("AgentRunCreate");
-
-const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
-  "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
-
-const IMAGE_RECOGNITION_PROMPT =
-  '# Image Recognition Fallback\n\nThis run\'s selected model cannot inspect images directly. To inspect one local PNG, JPEG, or WebP image up to 20 MB, run `okou image-recognition --file <image-path> --prompt "<instruction>"`.';
-
-const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
-  "# Restricted Explicit Content",
-  "",
-  "Do not create, continue, rewrite, transform, or facilitate any of the following:",
-  "- Pornography, explicit sexual acts, sexualized nudity, erotic roleplay, or other content intended for sexual arousal.",
-  "- Any sexual depiction or sexualization of minors.",
-  "- Graphic violence or gore, including detailed depictions of severe injury, torture, or dismemberment.",
-  "- Instructions, methods, or encouragement for suicide or self-harm.",
-  "",
-  "These rules apply to direct responses and to files, prompts, code, links, or tool calls used to generate text, images, video, or audio, regardless of user or custom instructions.",
-  "",
-  "You may assist with non-graphic news, medical, educational, historical, safety, moderation, or ordinary fictional contexts. When a request crosses these boundaries, refuse briefly and offer a safe, non-explicit or non-graphic alternative.",
-].join("\n");
-
-const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
-
-function buildMcpConnectorPrompt(
-  connectorSlugs: readonly string[],
-): string | undefined {
-  if (connectorSlugs.length === 0) {
-    return undefined;
-  }
-  const sortedSlugs = [...connectorSlugs].sort();
-  const listedSlugs = sortedSlugs.slice(
-    0,
-    MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT,
-  );
-  const omittedCount = sortedSlugs.length - listedSlugs.length;
-  const inventory = listedSlugs.map((slug) => {
-    return `- \`${slug}\``;
-  });
-  if (omittedCount > 0) {
-    inventory.push(
-      `- ${omittedCount} additional admitted MCP connector${omittedCount === 1 ? " was" : "s were"} omitted from this prompt`,
-    );
-  }
-
-  return [
-    "# MCP Connectors",
-    "",
-    "The following MCP connectors were admitted when this Run started:",
-    ...inventory,
-    "",
-    "Use the Okou CLI to discover and invoke their tools:",
-    "1. Run `okou mcp list --json` to check current connector metadata and availability.",
-    "2. Before choosing a tool, run `okou mcp list-tools <connector-slug> --json`.",
-    "3. Invoke the exact returned tool name with `okou mcp call <connector-slug> <tool-name> --input '<json>' --json`, providing JSON that matches its input schema.",
-    "",
-    "Current connector authorization or configuration may differ from this Run-start snapshot. Runner enforcement is authoritative; if discovery or invocation reports that a connector is unavailable, do not bypass it and start a new Run after authorization is updated.",
-  ].join("\n");
-}
-
-function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
-  return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
-}
-
-function builtInImageModelPrompt(model: ImageModel): string {
-  const alias = IMAGE_MODEL_CONFIGS[model].alias;
-  return [
-    "# Built-in image model",
-    "",
-    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
-    "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
-    "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
-    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
-  ].join("\n");
-}
-
-function withFinalRunAppendSystemPrompt(args: {
-  readonly body: CreateRunBody;
-  readonly framework: SupportedFramework;
-  readonly chatThreadId: string | undefined;
-  readonly imageRecognitionAvailable: boolean;
-  readonly mcpConnectorSlugs: readonly string[];
-  readonly selectedImageModel: ImageModel;
-  readonly cliAvailable: boolean;
-}): CreateRunBody {
-  const appendedParts: string[] = [];
-  if (args.cliAvailable) {
-    const mcpConnectorPrompt = buildMcpConnectorPrompt(args.mcpConnectorSlugs);
-    if (mcpConnectorPrompt) {
-      appendedParts.push(mcpConnectorPrompt);
-    }
-  }
-  if (args.imageRecognitionAvailable) {
-    appendedParts.push(IMAGE_RECOGNITION_PROMPT);
-  }
-  if (
-    args.framework === "codex" &&
-    isWebChatTriggerSource(args.body.triggerSource) &&
-    args.chatThreadId
-  ) {
-    appendedParts.push(CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT);
-  }
-  appendedParts.push(builtInImageModelPrompt(args.selectedImageModel));
-  // Keep this policy last so custom and integration prompts cannot override it.
-  appendedParts.push(RESTRICTED_EXPLICIT_CONTENT_PROMPT);
-
-  return {
-    ...args.body,
-    appendSystemPrompt: [args.body.appendSystemPrompt, ...appendedParts]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
-  };
-}
-
-interface RunArtifacts {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-}
-
-interface PreparedAdditionalVolume {
-  readonly volume: AgentRunCreateAdditionalVolume;
-  readonly source: StorageManifestSource;
-}
-
-interface PreparedAdditionalVolumes {
-  readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly sources: AdditionalVolumeSources;
-}
-
-interface ProductResolutionOptions {
-  readonly executionPlan: ProductAgentExecutionPlan;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
-}
-
-interface ResolveAgentExecutionOptions {
-  readonly agentObservation?: RunAgentObservation;
-  readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
-  readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
-  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly resetNativeSession?: boolean;
-  readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
-}
-
 type QueueFirstAgentRunResult =
   | CreateRunSuccessResult
   | CreateRunErrorResult
@@ -1803,23 +1609,6 @@ function assertThreadBoundRunHasQueueAssociation(
   }
 }
 
-export interface PersistedRunEnvironmentSecret {
-  readonly name: string;
-  readonly encryptedValue: string;
-  readonly userId: string;
-}
-
-export interface PersistedRunEnvironmentVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly userId: string;
-}
-
-interface PersistedRunEnvironmentSnapshot {
-  readonly secrets: readonly PersistedRunEnvironmentSecret[];
-  readonly variables: readonly PersistedRunEnvironmentVariable[];
-}
-
 interface RunResourceScope {
   readonly db: ReadonlyDb;
   readonly orgId: string;
@@ -1840,289 +1629,6 @@ export const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
   z.enum(["variable", "secret"]),
 );
 
-function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
-  return {
-    status: 403,
-    body: { error: { message, code: "FORBIDDEN" } },
-  };
-}
-
-export function insufficientCredits(): ApiErrorResponse<
-  402,
-  "INSUFFICIENT_CREDITS"
-> {
-  return {
-    status: 402,
-    body: {
-      error: {
-        message: "Insufficient credits. Please add credits to continue.",
-        code: "INSUFFICIENT_CREDITS",
-      },
-    },
-  };
-}
-
-function mergeAdditionalVolumes(args: {
-  readonly prepend: readonly PreparedAdditionalVolume[] | undefined;
-  readonly base: readonly PreparedAdditionalVolume[] | undefined;
-}): PreparedAdditionalVolumes {
-  const prepared =
-    args.prepend || args.base
-      ? [...(args.prepend ?? []), ...(args.base ?? [])]
-      : undefined;
-  return {
-    volumes: prepared?.map((item) => {
-      return item.volume;
-    }),
-    sources: prepared?.map((item) => {
-      return item.source;
-    }),
-  };
-}
-
-function prepareAdditionalVolumesWithSource(
-  volumes: readonly AgentRunCreateAdditionalVolume[] | undefined,
-  source: StorageManifestSource,
-): readonly PreparedAdditionalVolume[] | undefined {
-  return volumes?.map((volume) => {
-    return { volume, source };
-  });
-}
-
-function skillMountPath(skillsRoot: string, skillName: string): string {
-  return `${skillsRoot}/${skillName}`;
-}
-
-type ConnectorSkillVolumeSource = Extract<
-  StorageManifestSource,
-  "connector_skill" | "custom_connector_skill"
->;
-
-function buildExactConnectorSkillVolume(args: {
-  readonly name: string;
-  readonly version: string;
-  readonly mountPath: string;
-  readonly source: ConnectorSkillVolumeSource;
-}): PreparedAdditionalVolume {
-  return {
-    volume: {
-      name: args.name,
-      version: args.version,
-      mountPath: args.mountPath,
-      ...(args.source === "connector_skill" ? { system: true } : {}),
-    },
-    source: args.source,
-  };
-}
-
-// Legacy CLI runs use the framework resolved from the model provider, never
-// the framework declared in the compose. Eligible Pi runs instead receive the
-// fixed Pi root before Storage resolves any versions or overlays.
-function buildLegacySystemSkillVolumes(
-  skillNames: readonly string[],
-  skillsRoot: string,
-  storageResolution: SystemSkillStorageResolution,
-): readonly AgentRunCreateAdditionalVolume[] {
-  return [...new Set(skillNames)].flatMap((skillName) => {
-    const url = resolveSkillRef(skillName);
-    const parsed = parseGitHubTreeUrl(url);
-    if (!parsed) {
-      return [];
-    }
-    return [
-      {
-        name:
-          storageResolution[skillName] ?? getSkillStorageName(parsed.fullPath),
-        mountPath: skillMountPath(skillsRoot, parsed.skillName),
-        system: true,
-      },
-    ];
-  });
-}
-
-function buildConnectorSkillVolumes(
-  connectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
-  skillsRoot: string,
-): readonly PreparedAdditionalVolume[] {
-  return connectorSlugs.flatMap((connectorSlug) => {
-    const connector = getConnectorRuntimeConnector(snapshot, connectorSlug);
-    if (connector === undefined) {
-      throw new Error("Accepted connector skill metadata is unavailable");
-    }
-    if (connector.skill.kind === "none") {
-      return [];
-    }
-    const prepared = buildExactConnectorSkillVolume({
-      name: connector.skill.storageName,
-      version: connector.skill.versionId,
-      mountPath: skillMountPath(skillsRoot, connectorSlug),
-      source: "connector_skill",
-    });
-    return [prepared];
-  });
-}
-
-function mountedWorkflowRefs(
-  workflows: readonly RunWorkflowRef[],
-): readonly RunWorkflowRef[] {
-  return workflows.filter((workflow) => {
-    return !SEED_SKILLS.includes(workflow.name);
-  });
-}
-
-export function officialWorkflowRunCandidates(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  requiredWorkflowIds: readonly string[],
-): readonly {
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly definitionName: string;
-  readonly mountPath: string;
-}[] {
-  for (const workflow of workflows) {
-    if (
-      workflow.officialDefinitionName !== null &&
-      SEED_SKILLS.includes(workflow.name)
-    ) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-  }
-  const candidates = mountedWorkflowRefs(workflows).flatMap((workflow) => {
-    return workflow.officialDefinitionName === null
-      ? []
-      : [
-          {
-            workflowId: workflow.workflowId,
-            workflowName: workflow.name,
-            definitionName: workflow.officialDefinitionName,
-            mountPath: skillMountPath(skillsRoot, workflow.name),
-          },
-        ];
-  });
-  const candidateWorkflowIds = new Set(
-    candidates.map((candidate) => {
-      return candidate.workflowId;
-    }),
-  );
-  if (
-    new Set(requiredWorkflowIds).size !== requiredWorkflowIds.length ||
-    requiredWorkflowIds.some((workflowId) => {
-      return !candidateWorkflowIds.has(workflowId);
-    })
-  ) {
-    throw new OfficialWorkflowRunAdmissionError();
-  }
-  return candidates;
-}
-
-function buildWorkflowSkillVolumes(
-  workflows: readonly RunWorkflowRef[],
-  skillsRoot: string,
-  officialWorkflowRun: OfficialWorkflowRunObservation | undefined,
-): readonly PreparedAdditionalVolume[] {
-  return mountedWorkflowRefs(workflows).map((workflow) => {
-    if (workflow.officialDefinitionName !== null) {
-      const definition = officialWorkflowRun?.definitions.find((candidate) => {
-        return candidate.workflowId === workflow.workflowId;
-      });
-      if (!definition) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return {
-        volume: {
-          name: definition.artifact.storageName,
-          version: definition.artifact.storageVersion,
-          mountPath: definition.mountPath,
-          system: true,
-          expectedStorageId: definition.artifact.storageId,
-        },
-        source: "official_workflow" as const,
-      };
-    }
-    return {
-      volume: {
-        // The volume is keyed by the workflow id; it mounts at the slug.
-        name: getCustomSkillStorageName(workflow.workflowId),
-        mountPath: skillMountPath(skillsRoot, workflow.name),
-      },
-      source: "workflow_skill" as const,
-    };
-  });
-}
-
-function buildCustomConnectorSkillVolumes(
-  skills: CustomConnectorRuntimeContext["skills"],
-  skillsRoot: string,
-): readonly PreparedAdditionalVolume[] {
-  return skills.map((skill) => {
-    return buildExactConnectorSkillVolume({
-      name: getCustomConnectorSkillStorageName(skill.connectorId),
-      version: skill.versionId,
-      mountPath: skillMountPath(
-        skillsRoot,
-        getCustomConnectorSkillName(skill.connectorSlug, skill.connectorId),
-      ),
-      source: "custom_connector_skill",
-    });
-  });
-}
-
-function buildInjectedSkillVolumes(
-  args: {
-    readonly injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"];
-    readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-    readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-    readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  },
-  skillsRoot: string,
-): readonly PreparedAdditionalVolume[] | undefined {
-  if (!args.injectSkillVolumes) {
-    return undefined;
-  }
-  // Connector rollout switches govern discovery only. Once a connector slug is
-  // part of a run, its accepted catalog skill remains executable and mountable.
-  const systemSkillVolumes = [
-    ...(prepareAdditionalVolumesWithSource(
-      buildLegacySystemSkillVolumes(
-        SEED_SKILLS,
-        skillsRoot,
-        args.systemSkillStorageResolution,
-      ).map((volume) => {
-        return { ...volume, baselineCandidate: true };
-      }),
-      "system_skill",
-    ) ?? []),
-    ...(args.connectorCatalogSelection.kind === "scoped"
-      ? buildConnectorSkillVolumes(
-          args.allowedConnectorSlugs,
-          args.connectorCatalogSelection.selection,
-          skillsRoot,
-        )
-      : []),
-  ];
-  return [
-    ...systemSkillVolumes,
-    ...buildWorkflowSkillVolumes(
-      args.injectSkillVolumes.workflows,
-      skillsRoot,
-      args.officialWorkflowRun,
-    ),
-  ];
-}
-
-export function isRouteError(value: unknown): value is CreateRunErrorResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "status" in value &&
-    typeof (value as { readonly status: unknown }).status === "number" &&
-    (value as { readonly status: number }).status !== 201
-  );
-}
-
 function isReturnableRouteError(
   value: AtomicLaunchCommitResult | CreateRunErrorResult,
   signal: AbortSignal,
@@ -2132,16 +1638,6 @@ function isReturnableRouteError(
   }
   signal.throwIfAborted();
   return true;
-}
-
-function resolveFramework(
-  content: agentRunCreateAgentExecutionConfig,
-): SupportedFramework | null {
-  const framework = firstAgent(content)?.framework;
-  if (!isSupportedFramework(framework)) {
-    return null;
-  }
-  return framework;
 }
 
 /**
@@ -2241,296 +1737,6 @@ function createRunFrameworkObject(
       ) ?? composeFramework
     );
   });
-}
-
-function autoMemoryMountPath(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  if (piSandbox !== undefined) {
-    return PI_MEMORY_ROOT;
-  }
-  return framework === "codex"
-    ? CANONICAL_CODEX_MEMORY_MOUNT_PATH
-    : CANONICAL_CLAUDE_MEMORY_MOUNT_PATH;
-}
-
-function autoMemoryArtifact(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): AgentRunCreateContextArtifact {
-  return withAutoMemoryMissingRootPolicy({
-    name: AUTO_MEMORY_ARTIFACT_NAME,
-    mountPath: autoMemoryMountPath(framework, piSandbox),
-  });
-}
-
-function isCanonicalAutoMemoryArtifact(
-  artifact: AgentRunCreateContextArtifact,
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): boolean {
-  return (
-    artifact.name === AUTO_MEMORY_ARTIFACT_NAME &&
-    artifact.mountPath === autoMemoryMountPath(framework, piSandbox)
-  );
-}
-
-function withAutoMemoryMissingRootPolicy(
-  artifact: AgentRunCreateContextArtifact,
-): AgentRunCreateContextArtifact {
-  return {
-    ...artifact,
-    missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-  };
-}
-
-function withCanonicalAutoMemoryMissingRootPolicy(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): readonly AgentRunCreateContextArtifact[] {
-  return artifacts.map((artifact) => {
-    return isCanonicalAutoMemoryArtifact(artifact, framework, piSandbox)
-      ? withAutoMemoryMissingRootPolicy(artifact)
-      : artifact;
-  });
-}
-
-function claimsAutoMemorySlot(
-  artifact: AgentRunCreateContextArtifact,
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): boolean {
-  return (
-    artifact.name === AUTO_MEMORY_ARTIFACT_NAME ||
-    artifact.mountPath === autoMemoryMountPath(framework, piSandbox)
-  );
-}
-
-function withoutSupersededAutoMemoryArtifacts(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-  slotOwnerIndex: number,
-): readonly AgentRunCreateContextArtifact[] {
-  return artifacts.filter((artifact, index) => {
-    return (
-      index >= slotOwnerIndex ||
-      !isCanonicalAutoMemoryArtifact(artifact, framework, piSandbox)
-    );
-  });
-}
-
-function withPinnedPiContinuationMemory(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  previousRunStorageMounts: readonly PersistedStorageMount[] | undefined,
-): readonly AgentRunCreateContextArtifact[] {
-  const previousMemoryMount = previousRunStorageMounts?.find((mount) => {
-    return (
-      mount.name === AUTO_MEMORY_ARTIFACT_NAME &&
-      mount.mountPath === PI_MEMORY_ROOT &&
-      mount.version !== undefined
-    );
-  });
-  if (!previousMemoryMount?.version) {
-    return artifacts;
-  }
-  const pinnedMemoryArtifact = withAutoMemoryMissingRootPolicy({
-    name: AUTO_MEMORY_ARTIFACT_NAME,
-    version: previousMemoryMount.version,
-    mountPath: PI_MEMORY_ROOT,
-  });
-  let slotOwnerIndex: number | undefined;
-  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
-    const artifact = artifacts[index];
-    if (
-      artifact &&
-      (artifact.name === AUTO_MEMORY_ARTIFACT_NAME ||
-        artifact.mountPath === PI_MEMORY_ROOT)
-    ) {
-      slotOwnerIndex = index;
-      break;
-    }
-  }
-  if (slotOwnerIndex === undefined) {
-    return [...artifacts, pinnedMemoryArtifact];
-  }
-  const slotOwner = artifacts[slotOwnerIndex]!;
-  if (
-    slotOwner.name !== AUTO_MEMORY_ARTIFACT_NAME ||
-    slotOwner.mountPath !== PI_MEMORY_ROOT
-  ) {
-    return artifacts;
-  }
-  return artifacts.map((artifact, index) => {
-    return index === slotOwnerIndex ? pinnedMemoryArtifact : artifact;
-  });
-}
-
-function artifactsForRun(args: {
-  readonly resolved: Pick<
-    ResolvedRunExecution,
-    "agentSessionId" | "artifacts" | "previousRunStorageMounts"
-  >;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly includeAutoMemory: boolean;
-  readonly pinnedMemoryVersionId: string | undefined;
-}): RunArtifacts {
-  const isContinuation = Boolean(args.resolved.agentSessionId);
-  const baseArtifacts =
-    isContinuation && args.piSandbox !== undefined && args.includeAutoMemory
-      ? withPinnedPiContinuationMemory(
-          args.resolved.artifacts,
-          args.resolved.previousRunStorageMounts,
-        )
-      : args.resolved.artifacts;
-  // A producer-pinned memory baseline claims the auto-memory slot last.
-  const artifacts =
-    args.pinnedMemoryVersionId === undefined
-      ? baseArtifacts
-      : [
-          ...baseArtifacts,
-          {
-            ...autoMemoryArtifact(args.framework, args.piSandbox),
-            version: args.pinnedMemoryVersionId,
-          },
-        ];
-  if (!args.includeAutoMemory) {
-    return {
-      artifacts: artifacts.filter((artifact) => {
-        return (
-          artifact.name !== AUTO_MEMORY_ARTIFACT_NAME &&
-          artifact.mountPath !== PI_MEMORY_ROOT
-        );
-      }),
-    };
-  }
-
-  let autoMemorySlotArtifactIndex: number | undefined;
-  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
-    const artifact = artifacts[index];
-    if (
-      artifact &&
-      claimsAutoMemorySlot(artifact, args.framework, args.piSandbox)
-    ) {
-      autoMemorySlotArtifactIndex = index;
-      break;
-    }
-  }
-  if (autoMemorySlotArtifactIndex === undefined) {
-    return {
-      artifacts: [
-        ...artifacts,
-        autoMemoryArtifact(args.framework, args.piSandbox),
-      ],
-    };
-  }
-
-  const slotOwner = artifacts[autoMemorySlotArtifactIndex]!;
-  if (
-    !isCanonicalAutoMemoryArtifact(slotOwner, args.framework, args.piSandbox)
-  ) {
-    return {
-      artifacts: withoutSupersededAutoMemoryArtifacts(
-        artifacts,
-        args.framework,
-        args.piSandbox,
-        autoMemorySlotArtifactIndex,
-      ),
-    };
-  }
-
-  return {
-    artifacts: withCanonicalAutoMemoryMissingRootPolicy(
-      artifacts,
-      args.framework,
-      args.piSandbox,
-    ),
-  };
-}
-
-function missingEnvironmentReferences(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-  readonly storedConnectorEnvironment: Record<string, string> | undefined;
-  readonly connectorVars: Record<string, string> | undefined;
-}): string[] {
-  assertStoredConnectorEnvironmentReferences({
-    environment: effectiveStoredConnectorEnvironment({
-      content: args.content,
-      additionalEnvironment: args.additionalEnvironment,
-      storedConnectorEnvironment: args.storedConnectorEnvironment,
-    }),
-    vars: args.connectorVars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  const environment = environmentTemplates({
-    content: args.content,
-    additionalEnvironment: args.additionalEnvironment,
-  });
-  const environmentMissing = missingReferencesInEnvironment({
-    environment,
-    vars: args.vars,
-    secrets: args.secrets,
-    environmentSecretPlaceholders: args.environmentSecretPlaceholders,
-  });
-  return environmentMissing;
-}
-
-function missingReferencesInEnvironment(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
-}): string[] {
-  if (!args.environment) {
-    return [];
-  }
-  const grouped = extractAndGroupVariables(args.environment);
-  const missingVars = grouped.vars
-    .filter((ref) => {
-      return args.vars?.[ref.name] === undefined;
-    })
-    .map((ref) => {
-      return `vars.${ref.name}`;
-    });
-  const missingSecrets = grouped.secrets
-    .filter((ref) => {
-      return (
-        args.secrets?.[ref.name] === undefined &&
-        args.environmentSecretPlaceholders?.[ref.name] === undefined
-      );
-    })
-    .map((ref) => {
-      return `secrets.${ref.name}`;
-    });
-  return [...missingVars, ...missingSecrets];
-}
-
-function assertStoredConnectorEnvironmentReferences(args: {
-  readonly environment: Record<string, string> | undefined;
-  readonly vars: Record<string, string> | undefined;
-  readonly secrets: Record<string, string> | undefined;
-  readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
-}): void {
-  const missing = missingReferencesInEnvironment(args);
-  if (missing.length > 0) {
-    throw new Error(
-      `Stored connector environment is missing required values: ${missing.join(", ")}`,
-    );
-  }
 }
 
 interface SingleSecretModelProviderConfig {
@@ -3431,55 +2637,6 @@ function createRunEnvironmentSnapshotObject(
   });
 }
 
-export function buildMergedVariables(args: {
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly runVars: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  const orgVars: Record<string, string> = {};
-  const userVars: Record<string, string> = {};
-  for (const row of args.persistedEnvironment.variables) {
-    if (row.userId === ORG_SENTINEL_USER_ID) {
-      orgVars[row.name] = row.value;
-    } else {
-      userVars[row.name] = row.value;
-    }
-  }
-
-  const merged = { ...orgVars, ...userVars, ...args.runVars };
-  return Object.keys(merged).length > 0 ? merged : undefined;
-}
-
-async function buildReferencedSecrets(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
-  readonly runSecrets: Record<string, string> | undefined;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<Record<string, string> | undefined> {
-  const environment = firstAgent(args.content)?.environment;
-  const referencedNames = environment
-    ? extractAndGroupVariables(environment).secrets.map((ref) => {
-        return ref.name;
-      })
-    : [];
-  if (referencedNames.length === 0) {
-    return args.runSecrets;
-  }
-
-  const orgSecrets: Record<string, string> = {};
-  const userSecrets: Record<string, string> = {};
-  for (const row of args.persistedEnvironment.secrets) {
-    const target =
-      row.userId === ORG_SENTINEL_USER_ID ? orgSecrets : userSecrets;
-    target[row.name] = await decryptStoredSecretValue(
-      row.encryptedValue,
-      args.featureSwitchContext,
-    );
-  }
-
-  const merged = { ...orgSecrets, ...userSecrets, ...args.runSecrets };
-  return Object.keys(merged).length > 0 ? merged : undefined;
-}
-
 export const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
   z.array(z.string()),
 );
@@ -3517,12 +2674,6 @@ function createRunAdmissionCheckObjects() {
     },
   );
   return { checkAdmission$, checkPlanStatus$ };
-}
-
-export interface RunAgentObservation {
-  readonly agentId: string;
-  readonly agentOrgId: string;
-  readonly agentOwner: string;
 }
 
 function createRunAgentObservationObject(
@@ -3573,63 +2724,6 @@ function createRunAgentObservationObject(
     );
     return row;
   });
-}
-
-function resolveAgentObservation(
-  row: RunAgentObservation | undefined,
-  options: ProductResolutionOptions,
-): ResolvedAgentExecution | CreateRunErrorResult {
-  if (!row) {
-    return notFound("Agent not found");
-  }
-  return {
-    agentId: row.agentId,
-    ownerUserId: row.agentOwner,
-    orgId: row.agentOrgId,
-    content: options.executionPlan.content,
-    artifacts: [],
-  };
-}
-
-interface ResumeSessionSnapshot {
-  readonly runId: string;
-  readonly cliAgentSessionId: string;
-  readonly cliAgentSessionHistory: string | null;
-  readonly cliAgentSessionHistoryHash: string | null;
-  readonly sessionHistoryBlobEncoding: string | null;
-}
-
-function resumeSessionFromSnapshot(
-  snapshot: ResumeSessionSnapshot,
-): StoredExecutionContext["resumeSession"] | undefined {
-  const hash = snapshot.cliAgentSessionHistoryHash;
-  let encoding: CompressedSessionHistoryBlobEncoding | undefined;
-  if (snapshot.sessionHistoryBlobEncoding !== null) {
-    const parsedEncoding = normalizeSessionHistoryBlobEncoding(
-      snapshot.sessionHistoryBlobEncoding,
-    );
-    if (isCompressedSessionHistoryBlobEncoding(parsedEncoding)) {
-      encoding = parsedEncoding;
-    }
-  }
-  if (hash) {
-    return {
-      sessionId: snapshot.cliAgentSessionId,
-      historyGenerationRunId: snapshot.runId,
-      historyRef: {
-        kind: "blob",
-        hash,
-        ...(encoding ? { encoding } : {}),
-      },
-    };
-  }
-  if (snapshot.cliAgentSessionHistory) {
-    return {
-      sessionId: snapshot.cliAgentSessionId,
-      sessionHistory: snapshot.cliAgentSessionHistory,
-    };
-  }
-  return undefined;
 }
 
 function createRunSessionSnapshotObject(
@@ -3718,66 +2812,6 @@ function createRunSessionSnapshotObject(
   );
 }
 
-async function resolveSessionExecution(
-  snapshot: ChatThreadExecutionSnapshot | undefined,
-  options: ProductResolutionOptions,
-): Promise<ResolvedAgentExecution | CreateRunErrorResult> {
-  if (!snapshot) {
-    return notFound("Agent session not found");
-  }
-  if (!snapshot.agent) {
-    return notFound("Agent not found");
-  }
-
-  const conversation = snapshot.conversation;
-  const resumeSession = conversation
-    ? await measureApiDispatchTiming(
-        options.timing,
-        "api_dispatch_resolve_agent_execution_resolve_session_history",
-        "nested",
-        (): StoredExecutionContext["resumeSession"] | undefined => {
-          return resumeSessionFromSnapshot({
-            ...conversation,
-            sessionHistoryBlobEncoding: snapshot.historyBlob?.encoding ?? null,
-          });
-        },
-      )
-    : undefined;
-
-  return {
-    agentId: snapshot.agent.id,
-    ownerUserId: snapshot.agent.owner,
-    orgId: snapshot.agent.orgId,
-    content: options.executionPlan.content,
-    ...resolvedSessionStorage(snapshot.session),
-    previousRunStorageMounts: snapshot.previousRun?.storageMounts ?? undefined,
-    vars:
-      (snapshot.previousRun?.vars as Record<string, string> | null) ??
-      undefined,
-    agentSessionId: snapshot.session.id,
-    continuedFromAgentSessionId: snapshot.session.id,
-    resumeSession,
-    resumeSessionIdentity: {
-      selectedModel: snapshot.previousRun?.selectedModel ?? null,
-      cliAgentType: conversation?.cliAgentType ?? null,
-    },
-  };
-}
-
-function requireResolvedAgentIdMatch(
-  resolved: ResolvedAgentExecution | CreateRunErrorResult,
-  agentId: string | undefined,
-): ResolvedAgentExecution | CreateRunErrorResult {
-  if (
-    !isRouteError(resolved) &&
-    agentId !== undefined &&
-    resolved.agentId !== agentId
-  ) {
-    return badRequestMessage("agentId does not match sessionId");
-  }
-  return resolved;
-}
-
 export async function resolveAgentExecution(
   db: ReadonlyDb,
   body: CreateRunBody,
@@ -3820,144 +2854,6 @@ export async function resolveAgentExecution(
   }
 
   return await resolveProductAgentExecution(body, userId, orgId, options);
-}
-
-/** Product execution depends only on identity and the captured session/agent. */
-export async function resolveProductAgentExecution(
-  body: Pick<CreateRunBody, "agentId" | "sessionId">,
-  userId: string,
-  orgId: string,
-  options: Omit<ResolveAgentExecutionOptions, "testOnlyResolveDirectRun">,
-): Promise<ResolvedRunExecution | CreateRunErrorResult> {
-  const productAgentExecutionPlan = options.productAgentExecutionPlan;
-  if (productAgentExecutionPlan === undefined) {
-    throw new Error(
-      "Product Agent execution plan is required for canonical resolution",
-    );
-  }
-  if (productAgentExecutionPlan.identity === "no-agent") {
-    return {
-      agentId: null,
-      ownerUserId: userId,
-      orgId,
-      content: productAgentExecutionPlan.content,
-      artifacts: [],
-    };
-  }
-  if (body.sessionId) {
-    const resolved = await measureApiDispatchTiming(
-      options.timing,
-      "api_dispatch_resolve_agent_execution_by_session_id",
-      "nested",
-      async () => {
-        return await resolveSessionExecution(options.sessionSnapshot, {
-          executionPlan: productAgentExecutionPlan,
-          timing: options.timing,
-        });
-      },
-    );
-    if (!isRouteError(resolved) && options.resetNativeSession) {
-      return {
-        ...resolved,
-        agentId: body.agentId ?? resolved.agentId,
-        resumeSession: undefined,
-        resumeSessionIdentity: undefined,
-        previousRunStorageMounts: undefined,
-        vars: undefined,
-      };
-    }
-    return requireResolvedAgentIdMatch(resolved, body.agentId);
-  }
-  if (!body.agentId) {
-    return badRequestMessage("Missing agentId or sessionId");
-  }
-  const agentId = body.agentId;
-  const preloadedAgent = options.preloadedAgentExecutionObservation;
-  if (
-    preloadedAgent &&
-    preloadedAgent.requestUserId === userId &&
-    preloadedAgent.requestOrgId === orgId &&
-    preloadedAgent.agentId === agentId &&
-    preloadedAgent.agentOrgId === orgId
-  ) {
-    return {
-      agentId,
-      ownerUserId: preloadedAgent.ownerUserId,
-      orgId: preloadedAgent.agentOrgId,
-      content: productAgentExecutionPlan.content,
-      artifacts: [],
-    };
-  }
-  return await measureApiDispatchTiming(
-    options.timing,
-    "api_dispatch_resolve_agent_execution_by_agent_id",
-    "nested",
-    () => {
-      return resolveAgentObservation(options.agentObservation, {
-        executionPlan: productAgentExecutionPlan,
-        timing: options.timing,
-      });
-    },
-  );
-}
-
-export function enforceCaptureNetworkBodiesGate(
-  orgId: string,
-  captureNetworkBodies: boolean | undefined,
-): CreateRunErrorResult | null {
-  if (!captureNetworkBodies || env("ENV") !== "production") {
-    return null;
-  }
-
-  if (!isStaffOrg(orgId)) {
-    return forbidden("captureNetworkBodies is restricted to internal accounts");
-  }
-  return null;
-}
-
-export function validateCompose(
-  content: agentRunCreateAgentExecutionConfig,
-  vars: Record<string, string> | undefined,
-  secrets: Record<string, string> | undefined,
-  options?: {
-    readonly validateEnvironmentReferences?: boolean;
-    readonly environmentSecretPlaceholders?: Readonly<Record<string, string>>;
-    readonly additionalEnvironment?: Record<string, string>;
-    readonly storedConnectorEnvironment?: Record<string, string>;
-    readonly connectorVars?: Record<string, string>;
-  },
-): { readonly framework: SupportedFramework } | CreateRunErrorResult {
-  const framework = resolveFramework(content);
-  if (!framework) {
-    return badRequestMessage(
-      "Agent must have a supported framework configured",
-    );
-  }
-
-  if (options?.validateEnvironmentReferences !== false) {
-    const missing = missingEnvironmentReferences({
-      content,
-      vars,
-      secrets,
-      environmentSecretPlaceholders: options?.environmentSecretPlaceholders,
-      additionalEnvironment: options?.additionalEnvironment,
-      storedConnectorEnvironment: options?.storedConnectorEnvironment,
-      connectorVars: options?.connectorVars,
-    });
-    if (missing.length > 0) {
-      return badRequestMessage(
-        `Missing required values: ${missing.join(", ")}`,
-      );
-    }
-  }
-
-  return { framework };
-}
-
-export function initialRunBody(args: CreateAgentRunArgs): CreateRunBody {
-  return args.includeOkouTokenSecret
-    ? withPendingOkouTokenSecret(args.body)
-    : args.body;
 }
 
 function prepareLaunchRunIdentity(args: {
@@ -4869,159 +3765,6 @@ async function resolveRunModelProvider(
   );
 }
 
-export async function buildResolvedRunBody(args: {
-  readonly initialBody: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly canonicalOkouRuntime: boolean;
-  readonly resolvedEnvironment?: RunBodyEnvironment;
-}): Promise<CreateRunBody> {
-  const runVars =
-    args.initialBody.vars !== undefined
-      ? args.initialBody.vars
-      : args.resolved.vars;
-  const environment =
-    args.resolvedEnvironment ??
-    (await resolveRunBodyEnvironment({
-      content: args.resolved.content,
-      runVars,
-      runSecrets: args.initialBody.secrets,
-      persistedEnvironment: args.persistedEnvironment,
-      featureSwitchContext: args.featureSwitchContext,
-      canonicalOkouRuntime: args.canonicalOkouRuntime,
-    }));
-  return {
-    ...args.initialBody,
-    ...environment,
-    volumeVersions:
-      args.initialBody.volumeVersions !== undefined
-        ? args.initialBody.volumeVersions
-        : args.resolved.volumeVersions,
-  };
-}
-
-type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
-
-export async function resolveRunBodyEnvironment(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
-  readonly runVars: CreateRunBody["vars"];
-  readonly runSecrets: CreateRunBody["secrets"];
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly canonicalOkouRuntime: boolean;
-}): Promise<RunBodyEnvironment> {
-  const mergedVars = buildMergedVariables({
-    persistedEnvironment: args.persistedEnvironment,
-    runVars: args.runVars,
-  });
-  const mergedSecrets = await buildReferencedSecrets({
-    content: args.content,
-    runSecrets: args.runSecrets,
-    persistedEnvironment: args.persistedEnvironment,
-    featureSwitchContext: args.featureSwitchContext,
-  });
-
-  return {
-    vars: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedVars)
-      : mergedVars,
-    secrets: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedSecrets)
-      : mergedSecrets,
-  };
-}
-
-function validateRunEnvironmentReferences(args: {
-  readonly resolved: ResolvedRunExecution;
-  readonly body: CreateRunBody;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly validateEnvironmentReferences: boolean | undefined;
-}): CreateRunErrorResult | null {
-  const validationSecrets = buildStoredExecutionSecrets({
-    connectorContext: args.connectorContext,
-    modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
-    customConnectorContext: args.customConnectorContext,
-  });
-  const validation = validateCompose(
-    args.resolved.content,
-    args.body.vars,
-    validationSecrets.secrets,
-    {
-      validateEnvironmentReferences: args.validateEnvironmentReferences,
-      environmentSecretPlaceholders:
-        args.permissionManifest?.environmentSecretPlaceholders,
-      additionalEnvironment: args.modelProvider?.environment,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-      connectorVars: args.connectorContext.vars,
-    },
-  );
-
-  return isRouteError(validation) ? validation : null;
-}
-
-function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly skillsRoot: string;
-  readonly body: Pick<CreateRunBody, "additionalVolumes">;
-  readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-}): PreparedAdditionalVolumes {
-  const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const injectedSkillVolumes = buildInjectedSkillVolumes(
-    {
-      injectSkillVolumes: args.createArgs.injectSkillVolumes,
-      systemSkillStorageResolution: args.systemSkillStorageResolution,
-      allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
-      connectorCatalogSelection: args.connectorCatalogSelection,
-      officialWorkflowRun: args.officialWorkflowRun,
-    },
-    args.skillsRoot,
-  );
-  return mergeAdditionalVolumes({
-    prepend: [
-      ...buildCustomConnectorSkillVolumes(
-        args.customConnectorContext.skills,
-        args.skillsRoot,
-      ),
-      ...(injectedSkillVolumes ?? []),
-    ],
-    base: prepareAdditionalVolumesWithSource(
-      bodyAdditionalVolumes ?? args.resolved.additionalVolumes,
-      bodyAdditionalVolumes ? "request_additional_volume" : "unknown",
-    ),
-  });
-}
-
-export interface PreparedRunBodyContext {
-  readonly body: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly requestedFramework: SupportedFramework;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-export interface PreparedRuntimeContext {
-  readonly framework: SupportedFramework;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: string | undefined;
-  readonly modelUsageLongContextMinTotalInputTokens: number;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-}
-
 export function agentRunResolutionOptions(
   args: CreateAgentRunArgs,
 ): Pick<
@@ -5239,70 +3982,6 @@ function createRunPreparedConnectorObjects(
   );
   return { connectorContext$ };
 }
-
-export function prepareRunOutputMetadata(args: {
-  readonly createArgs: Pick<
-    CreateAgentRunArgs,
-    "injectSkillVolumes" | "pinnedMemoryVersionId"
-  >;
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly body: Pick<CreateRunBody, "additionalVolumes">;
-  readonly resolved: RunStorageExecution;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-}): {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly additionalVolumes:
-    | readonly AgentRunCreateAdditionalVolume[]
-    | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
-} {
-  const additionalVolumes = preparedRunAdditionalVolumes({
-    createArgs: args.createArgs,
-    systemSkillStorageResolution: args.systemSkillStorageResolution,
-    connectorScope: args.connectorScope,
-    connectorCatalogSelection: args.connectorCatalogSelection,
-    customConnectorContext: args.customConnectorContext,
-    skillsRoot: skillsRootForRun(args.framework, args.piSandbox),
-    body: args.body,
-    resolved: args.resolved,
-    officialWorkflowRun: args.officialWorkflowRun,
-  });
-  const artifacts = artifactsForRun({
-    resolved: args.resolved,
-    framework: args.framework,
-    piSandbox: args.piSandbox,
-    includeAutoMemory: true,
-    pinnedMemoryVersionId: args.createArgs.pinnedMemoryVersionId,
-  }).artifacts;
-  return {
-    additionalVolumes: additionalVolumes.volumes,
-    additionalVolumeSources: additionalVolumes.sources,
-    artifacts,
-  };
-}
-
-function isImageRecognitionAvailableForRun(args: {
-  readonly includeOkouTokenSecret: boolean | undefined;
-  readonly selectedModel: string | undefined;
-  readonly providerType: ModelProviderType | undefined;
-}): boolean {
-  return (
-    args.includeOkouTokenSecret === true &&
-    getModelImageInputSupport(args.selectedModel, args.providerType) ===
-      "unsupported"
-  );
-}
-
-export interface PrepareRunContextInput {
-  readonly db: ReadonlyDb;
-  readonly args: CreateAgentRunArgs;
-  readonly timing: ApiDispatchTimingCollector;
-}
 type RunContextInputObject = Computed<
   PrepareRunContextInput | Promise<PrepareRunContextInput>
 >;
@@ -5327,16 +4006,6 @@ export interface RunMemberSnapshot {
 
 type RunMemberReadInput = RunResourceScope;
 type RunDisabledPaidToolsReadInput = RunResourceScope;
-
-function resolveCompatibleDirectResumeSession(args: {
-  readonly resolved: ResolvedRunExecution;
-  readonly next: SessionExecutionIdentity;
-}): ResolvedRunExecution {
-  const previous = args.resolved.resumeSessionIdentity;
-  return previous && canReuseSession(previous, args.next)
-    ? args.resolved
-    : { ...args.resolved, resumeSession: undefined };
-}
 
 /** Construct the complete read graph once; each input invalidates its own snapshot. */
 function createRunIdentityObjects(
@@ -7656,34 +6325,6 @@ function createRunMemberSnapshotObject(input$: AsyncRead<RunMemberReadInput>) {
   });
 }
 
-export interface RunWorkflowReadInput {
-  readonly db: ReadonlyDb;
-  readonly args: Pick<
-    CreateAgentRunArgs,
-    | "catalog"
-    | "orgId"
-    | "userId"
-    | "injectSkillVolumes"
-    | "requiredOfficialWorkflowIds"
-    | "piExecution"
-    | "codexServiceTier"
-    | "agentRunMetadata"
-  >;
-}
-
-export type RunWorkflowModelState =
-  | {
-      readonly requestedFramework: SupportedFramework;
-      readonly modelProvider: ResolvedModelProviderEnvironment | null;
-    }
-  | CreateRunErrorResult
-  | undefined;
-
-export type PreparedOfficialWorkflow =
-  | OfficialWorkflowRunObservation
-  | CreateRunErrorResult
-  | undefined;
-
 function createRunWorkflowReadObject(
   input$: Computed<RunWorkflowReadInput | Promise<RunWorkflowReadInput>>,
   modelState$: Computed<Promise<RunWorkflowModelState>>,
@@ -7802,93 +6443,6 @@ function createRunDisabledPaidToolsSnapshotObject(
       }),
     };
   });
-}
-
-export function composePreparedRunContext({
-  args,
-  bodyContext,
-  runtimeContext,
-  userTimezone,
-  selectedImageModel,
-  officialWorkflowRun,
-  systemSkillStorageResolution,
-  disabledPaidTools,
-}: {
-  readonly args: CreateAgentRunArgs;
-  readonly bodyContext: PreparedRunBodyContext;
-  readonly runtimeContext: PreparedRuntimeContext;
-  readonly userTimezone: string | undefined;
-  readonly selectedImageModel: PreparedRunContext["selectedImageModel"];
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly disabledPaidTools: readonly string[];
-}): PreparedRunContext | CreateRunErrorResult {
-  const { body } = bodyContext;
-  const piSandbox = resolvePreparedPiModelConfig({
-    createArgs: args,
-    modelProvider: runtimeContext.modelProvider,
-  });
-  const resolved = resolveCompatibleDirectResumeSession({
-    resolved: bodyContext.resolved,
-    next: {
-      selectedModel: runtimeContext.modelProvider?.selectedModel ?? null,
-      cliAgentType: piSandbox ? "pi" : runtimeContext.framework,
-    },
-  });
-  const validation = validateRunEnvironmentReferences({
-    resolved,
-    body,
-    modelProvider: runtimeContext.modelProvider,
-    connectorContext: runtimeContext.connectorContext,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    permissionManifest: runtimeContext.permissionManifest,
-    validateEnvironmentReferences: args.validateEnvironmentReferences,
-  });
-  if (validation) {
-    return validation;
-  }
-  const metadata = prepareRunOutputMetadata({
-    createArgs: args,
-    systemSkillStorageResolution: systemSkillStorageResolution,
-    connectorScope: runtimeContext.connectorScope,
-    connectorCatalogSelection: runtimeContext.connectorCatalogSelection,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    framework: runtimeContext.framework,
-    piSandbox,
-    body,
-    resolved,
-    officialWorkflowRun,
-  });
-  return {
-    disabledPaidTools,
-    body,
-    resolved,
-    framework: runtimeContext.framework,
-    piSandbox,
-    modelProvider: runtimeContext.modelProvider,
-    connectorContext: runtimeContext.connectorContext,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    permissionManifest: runtimeContext.permissionManifest,
-    billableFirewalls: runtimeContext.billableFirewalls,
-    modelUsageProvider: runtimeContext.modelUsageProvider,
-    modelUsageLongContextMinTotalInputTokens:
-      runtimeContext.modelUsageLongContextMinTotalInputTokens,
-    connectorScope: runtimeContext.connectorScope,
-    ...metadata,
-    officialWorkflowRun,
-    userTimezone,
-    featureSwitchContext: bodyContext.featureSwitchContext,
-    selectedImageModel,
-    imageRecognitionAvailable: isImageRecognitionAvailableForRun({
-      includeOkouTokenSecret: args.includeOkouTokenSecret,
-      selectedModel:
-        runtimeContext.modelProvider?.selectedModel ??
-        args.selectedModelOverride,
-      providerType:
-        runtimeContext.modelProvider?.concreteType ??
-        runtimeContext.modelProvider?.type,
-    }),
-  };
 }
 
 function createRunContextObjects(
@@ -8279,14 +6833,6 @@ function createLaunchObjects(
   return { createAtomicLaunchRun$ };
 }
 
-interface PreparedAgentRun {
-  readonly args: CreateAgentRunArgs;
-  readonly context: PreparedRunContext;
-  readonly contextInput: PrepareRunContextInput;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly phaseTiming: ApiDispatchPhaseCollector;
-}
-
 interface PrepareAgentRunArgs {
   readonly args: CreateAgentRunArgs;
   readonly timing: ApiDispatchTimingCollector;
@@ -8297,38 +6843,6 @@ interface PrepareAgentRunArgs {
 interface CompleteAgentRunArgs {
   readonly prepared: PreparedAgentRun;
   readonly finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"];
-}
-
-export function finalizePreparedRunContext(
-  prepared: Omit<PreparedAgentRun, "phaseTiming">,
-  finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"],
-): FinalizedPreparedRunContext {
-  return {
-    ...prepared.context,
-    launchSnapshot: {
-      schemaVersion: 3,
-      framework:
-        prepared.context.piSandbox === undefined
-          ? prepared.context.framework
-          : "pi",
-      runnerProfile: runnerProfile(prepared.context.resolved.content),
-    },
-    body: withFinalRunAppendSystemPrompt({
-      body: {
-        ...prepared.context.body,
-        appendSystemPrompt: finalAppendSystemPrompt,
-      },
-      framework: prepared.context.framework,
-      chatThreadId: prepared.args.chatThreadId,
-      imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
-      mcpConnectorSlugs: [
-        ...prepared.context.connectorContext.mcpConnectorSlugs,
-        ...prepared.context.customConnectorContext.mcpConnectorSlugs,
-      ],
-      selectedImageModel: prepared.context.selectedImageModel,
-      cliAvailable: prepared.args.includeOkouTokenSecret === true,
-    }),
-  };
 }
 
 function createCheckUnavailableProviderCreditsCommand() {
@@ -8575,21 +7089,6 @@ export function createAgentRunExecutionObjects() {
   return { runContext$, prepareAgentRun$, completeAgentRun$ };
 }
 
-// Emitted as the agent_run_origin observability dimension. The values name what
-// started the run, so the fallback is "direct" (not started by an automation)
-// rather than a restatement that this is an agent run.
-type AgentRunOrigin = "direct" | "workflow_automation";
-
-const DISALLOWED_TOOLS = [
-  "CronCreate",
-  "CronList",
-  "CronDelete",
-  "ScheduleWakeup",
-  "AskUserQuestion",
-  "Skill(loop)",
-  "Skill(loop *)",
-] as const;
-
 function assertThreadBoundAgentRunHasQueueAssociation(
   args: AnyCreateAgentRunCommandArgs,
 ): void {
@@ -8606,194 +7105,6 @@ function assertThreadBoundAgentRunHasQueueAssociation(
       "Queue-first association must target the run's chat thread",
     );
   }
-}
-
-export function agentRunsCreateForbidden(
-  message: string,
-): ApiErrorResponse<403, "FORBIDDEN"> {
-  return {
-    status: 403 as const,
-    body: {
-      error: {
-        message,
-        code: "FORBIDDEN",
-      },
-    },
-  };
-}
-
-function buildExecutionTimeLimitPrompt(): string {
-  const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
-  const executionHourUnit = executionHours === 1 ? "hour" : "hours";
-  return [
-    "# Execution Time Limit",
-    "",
-    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}.`,
-    "Plan and prioritize the work so you can complete the most important in-scope tasks and provide a final response before the run ends.",
-  ].join("\n");
-}
-
-function buildCurrentUserPrompt(
-  userInfo: UserInfo,
-  triggerSource: TriggerSource,
-): string {
-  const lines = ["# Current User Info"];
-  if (userInfo.name) {
-    lines.push(`Name: ${userInfo.name}`);
-  }
-  if (userInfo.email) {
-    lines.push(`Email: ${userInfo.email}`);
-  }
-  lines.push(`Timezone: ${userInfo.timezone ?? "UTC"}`);
-  if (userInfo.slackDisplayName) {
-    lines.push(`Slack display name: ${userInfo.slackDisplayName}`);
-  }
-  if (userInfo.slackUserId) {
-    lines.push(`Slack user ID: ${userInfo.slackUserId}`);
-  }
-  if (triggerSource === "feishu" || triggerSource === "lark") {
-    const providerName = FEISHU_PLATFORMS[triggerSource].name;
-    if (userInfo.feishuDisplayName) {
-      lines.push(`${providerName} display name: ${userInfo.feishuDisplayName}`);
-    }
-    if (userInfo.feishuOpenId) {
-      lines.push(`${providerName} open ID: ${userInfo.feishuOpenId}`);
-    }
-  }
-  if (userInfo.teamsUserDisplayName) {
-    lines.push(`Teams display name: ${userInfo.teamsUserDisplayName}`);
-  }
-  if (userInfo.teamsUserPrincipalName) {
-    lines.push(`Teams user principal name: ${userInfo.teamsUserPrincipalName}`);
-  }
-  if (userInfo.teamsUserId) {
-    lines.push(`Teams user ID: ${userInfo.teamsUserId}`);
-  }
-  if (userInfo.telegramDisplayName) {
-    lines.push(`Telegram display name: ${userInfo.telegramDisplayName}`);
-  }
-  if (userInfo.telegramUsername) {
-    lines.push(`Telegram username: ${userInfo.telegramUsername}`);
-  }
-  if (userInfo.telegramUserId) {
-    lines.push(`Telegram user ID: ${userInfo.telegramUserId}`);
-  }
-  if (userInfo.telegramLanguage) {
-    lines.push(`Telegram language: ${userInfo.telegramLanguage}`);
-  }
-  if (userInfo.agentphoneHandle) {
-    lines.push(`Text message handle: ${userInfo.agentphoneHandle}`);
-  }
-  return lines.join("\n");
-}
-
-function buildAppendSystemPrompt(args: {
-  readonly stable: PiStableContextPromptProjection;
-  readonly userInfo: UserInfo;
-  readonly triggerSource: TriggerSource;
-}): string {
-  return [
-    args.stable.agentIdentity,
-    args.stable.executionLimit,
-    args.stable.tools,
-    buildCurrentUserPrompt(args.userInfo, args.triggerSource),
-  ]
-    .filter((part): part is string => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
-
-function buildStableAgentPrompt(args: {
-  readonly privateArtifactsEnabled: boolean;
-  readonly agent: AgentRunRecord;
-  readonly triggerSource: TriggerSource;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-  readonly customConnectorMcpEnabled: boolean;
-}): PiStableContextPromptProjection {
-  observeStableAgentPromptBuild();
-  return {
-    agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
-    executionLimit: buildExecutionTimeLimitPrompt(),
-    tools: buildAgentToolsPrompt({
-      privateArtifactsEnabled: args.privateArtifactsEnabled,
-      triggerSource: args.triggerSource,
-      cloudBrowserEnabled: args.cloudBrowserEnabled,
-      browserNativeInputEnabled: args.browserNativeInputEnabled,
-      bankingEnabled: args.bankingEnabled,
-      vncEnabled: args.vncEnabled,
-      larkEnabled: args.larkEnabled,
-      discordEnabled: args.discordEnabled,
-      deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
-      presentationConvertEnabled: args.presentationConvertEnabled,
-    }),
-  };
-}
-
-function buildAgentRunPlatformEnvironment(args: {
-  readonly agentId: string;
-  readonly triggerSource: TriggerSource;
-  readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
-  readonly reasoningEffort?: ReasoningEffort | null;
-}): Record<string, string> {
-  const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
-    web: "web",
-    agent: "web",
-    slack: "slack",
-    discord: "discord",
-    teams: "teams",
-    feishu: "feishu",
-    lark: "lark",
-    telegram: "telegram",
-    agentphone: "phone",
-    github: "github",
-  };
-  const currentIntegration = integrationByTriggerSource[args.triggerSource];
-  return {
-    OKOU_APP_URL: env("APP_URL"),
-    OKOU_AGENT_ID: args.agentId,
-    ...(currentIntegration
-      ? { OKOU_CURRENT_INTEGRATION: currentIntegration }
-      : {}),
-    ...(args.reasoningEffort !== null && args.reasoningEffort !== undefined
-      ? { OKOU_REASONING_EFFORT: args.reasoningEffort }
-      : {}),
-    // Chat-mode automation (and web) runs carry their thread id so the
-    // in-sandbox CLI can bind a newly created automation to it (the create
-    // flow reads $OKOU_CHAT_THREAD_ID when no thread is given).
-    ...(args.chatThreadId
-      ? {
-          OKOU_CHAT_THREAD_ID: args.chatThreadId,
-        }
-      : {}),
-    ...(args.codexServiceTier
-      ? {
-          OKOU_CODEX_SERVICE_TIER: args.codexServiceTier,
-        }
-      : {}),
-  };
-}
-
-function agentRunTimingDimensions(args: {
-  readonly origin: AgentRunOrigin;
-  readonly command: AnyCreateAgentRunCommandArgs;
-  readonly source?: AgentRunPreCreateSource;
-}): ApiDispatchTimingDimensions {
-  const apiStartSource =
-    "queueFirstAssociation" in args.command ? "queue_event" : "request";
-  return {
-    agent_run_origin: args.origin,
-    api_start_source: apiStartSource,
-    ...(args.source ? { agent_run_pre_create_source: args.source } : {}),
-  };
 }
 
 type BootstrapCountBucket = "0" | "1" | "2_4" | "5_8" | "9_16" | "17_plus";
@@ -8848,76 +7159,6 @@ export function bootstrapMaterializeTimingDimensions(
   };
 }
 
-function agentRunOrigin(args: {
-  readonly command: AnyCreateAgentRunCommandArgs;
-}): AgentRunOrigin {
-  if (args.command.agentRunMetadata?.workflowAutomationId) {
-    return "workflow_automation";
-  }
-  return "direct";
-}
-
-function createRunBody(args: {
-  readonly body: AgentRunCreateBody;
-  readonly agent: AgentRunRecord;
-  readonly userInfo: UserInfo;
-  readonly stablePrompt: PiStableContextPromptProjection;
-  readonly permissionPolicies: FirewallPolicies | null | undefined;
-  readonly triggerSource: TriggerSource | undefined;
-  readonly appendSystemPrompt: string | undefined;
-  readonly standaloneIntegrationNote: string;
-}) {
-  const triggerSource = args.triggerSource ?? "web";
-  const baseAppendSystemPrompt = buildAppendSystemPrompt({
-    stable: args.stablePrompt,
-    userInfo: args.userInfo,
-    triggerSource,
-  });
-  return {
-    prompt: args.body.prompt,
-    agentId: args.agent.id,
-    sessionId: args.body.sessionId,
-    conversationId: args.body.conversationId,
-    additionalVolumes: args.body.additionalVolumes,
-    realAgentInPreview: args.body.realAgentInPreview,
-    captureNetworkBodies: args.body.captureNetworkBodies,
-    tools: args.body.tools,
-    settings: args.body.settings,
-    permissionPolicies: args.permissionPolicies ?? undefined,
-    triggerSource,
-    appendSystemPrompt: [
-      baseAppendSystemPrompt,
-      args.appendSystemPrompt,
-      args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
-    ]
-      .filter((part): part is string => {
-        return Boolean(part);
-      })
-      .join("\n\n"),
-    disallowedTools: [...DISALLOWED_TOOLS],
-    vars: selectedAgentRunVariables(args.agent.id),
-  };
-}
-
-export function selectedAgentRunVariables(agentId: string) {
-  return { OKOU_AGENT_ID: agentId };
-}
-
-export function measureAgentRunPreCreate<T>(
-  timing: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  operation: () => T | Promise<T>,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): Promise<T> {
-  return measureApiDispatchTiming(
-    timing,
-    actionType,
-    "nested",
-    operation,
-    dimensions,
-  );
-}
-
 function serviceEntryTiming(args: {
   readonly apiStartTime: number;
   readonly timing?: ApiDispatchTimingCollector;
@@ -8932,272 +7173,6 @@ function serviceEntryTiming(args: {
   }
   return timing;
 }
-
-interface AgentRunAfterBootstrap extends RunBootstrapContext {
-  readonly agent: AgentRunRecord;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly command: AgentRunIdentityCommand;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
-}
-
-export interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-}
-
-interface BuildCreateAgentRunArgsInput {
-  /** One catalog snapshot per run, loaded by the entry point. */
-  readonly catalog: ModelCatalog;
-  readonly command: AnyCreateAgentRunCommandArgs;
-  readonly agent: AgentRunRecord;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
-  readonly userInfo: UserInfo;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly permissionValidityHorizon: string | null;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
-  readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
-  readonly timing: ApiDispatchTimingCollector;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
-}
-
-function emptyStablePrompt(): PiStableContextPromptProjection {
-  return {
-    agentIdentity: "",
-    executionLimit: "",
-    tools: "",
-  };
-}
-
-/**
- * A run launched straight through the runs API has no conversational surface,
- * so nothing renders `# Current Integration` for the note to follow. Its
- * delivery rules still apply, so they close the caller-supplied prompt
- * instead. A run whose surface supplied an integration prompt already carries
- * the note inside that block.
- */
-function standaloneIntegrationNote(args: BuildCreateAgentRunArgsInput): string {
-  if (args.command.appendSystemPrompt) {
-    return "";
-  }
-  return resolveIntegrationNotePrompt({
-    triggerSource: args.command.triggerSource ?? "web",
-    featureSwitchContext: args.featureSwitchContext,
-  });
-}
-
-function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
-  readonly userInfo: UserInfo;
-  readonly initialStablePrompt: PiStableContextPromptProjection;
-  readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
-} {
-  const promptInputs = buildAgentToolsPromptInputs({
-    featureSwitchContext: args.featureSwitchContext,
-    triggerSource: args.command.triggerSource ?? "web",
-    cloudBrowserEnabled: args.cloudBrowserEnabled,
-  });
-  const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
-  const connectorScope = {
-    allowedConnectorSlugs: args.allowedConnectorSlugs,
-    allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-    customConnectorGrants: args.customConnectorGrants,
-    customConnectorDefinitions: args.customConnectorDefinitions,
-    workflows: args.workflows,
-  };
-  let stablePrompt: PiStableContextPromptProjection | undefined;
-  const buildPrompt = () => {
-    stablePrompt ??= buildStableAgentPrompt({
-      ...promptInputs,
-      agent: args.agent,
-    });
-    return stablePrompt;
-  };
-  let cacheIdentity:
-    | ReturnType<
-        NonNullable<CreateAgentRunArgs["piStableContext"]>["buildCacheIdentity"]
-      >
-    | undefined;
-  const buildCacheIdentity = () => {
-    if (cacheIdentity) {
-      return cacheIdentity;
-    }
-    observeStableContextCacheIdentityBuild();
-    const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
-    cacheIdentity = {
-      owner: {
-        orgId: args.command.auth.orgId,
-        userId: args.command.auth.userId,
-        agentId: args.agent.id,
-        resourceOwner: {
-          orgId: args.agent.orgId,
-          userId: args.agent.owner,
-        },
-      },
-      variantDigest: piStableContextVariantDigest({
-        triggerSource: promptInputs.triggerSource,
-        cloudBrowserEnabled: promptInputs.cloudBrowserEnabled,
-        connectorSource: "stored_agent",
-      }),
-      semantic: { promptInputs, connectorScope },
-      source: {
-        catalogIdentity:
-          args.connectorCatalogSelection.kind === "scoped"
-            ? piStableContextVariantDigest(
-                args.connectorCatalogSelection.selection.catalogIdentity,
-              )
-            : null,
-        catalogSourceId:
-          args.connectorCatalogSelection.kind === "scoped"
-            ? args.connectorCatalogSelection.selection.catalogIdentity.sourceId
-            : null,
-        agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
-        featurePromptDigest: piStableContextVariantDigest(promptInputs),
-        permissionDigest: piStableContextVariantDigest(
-          args.runPermissionPolicies ?? null,
-        ),
-        connectorScopeDigest: piStableContextVariantDigest(connectorScope),
-        validityHorizon: args.permissionValidityHorizon,
-        promptSchemaVersion: 1,
-        runtimeSchemaVersion: 1,
-      },
-    };
-    return cacheIdentity;
-  };
-  return {
-    userInfo,
-    initialStablePrompt: args.command.piExecution
-      ? emptyStablePrompt()
-      : buildPrompt(),
-    piStableContext: {
-      buildPrompt,
-      buildCacheIdentity,
-      dynamicAppendSystemPrompt: [
-        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
-        args.command.appendSystemPrompt,
-        standaloneIntegrationNote(args),
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-    },
-  };
-}
-
-export function buildCreateAgentRunArgs(
-  args: BuildCreateAgentRunArgsInput,
-): CreateAgentRunArgs {
-  const command = args.command;
-  const { userInfo, initialStablePrompt, piStableContext } =
-    buildStableRunPromptContext(args);
-  const productAgentExecutionPlan = {
-    identity: "agent" as const,
-    content: buildAgentExecutionConfig(args.agent.name),
-  };
-  return {
-    ...selectedRunModelProviderArgs(
-      command,
-      args.agent,
-      args.capturedPersonalSubscriptionAccount,
-    ),
-    catalog: args.catalog,
-    body: createRunBody({
-      body: command.body,
-      agent: args.agent,
-      userInfo,
-      stablePrompt: initialStablePrompt,
-      permissionPolicies: args.runPermissionPolicies,
-      triggerSource: command.triggerSource,
-      appendSystemPrompt: command.appendSystemPrompt,
-      standaloneIntegrationNote: standaloneIntegrationNote(args),
-    }),
-    apiStartTime: command.apiStartTime,
-    piStableContext,
-    chatThreadId: command.chatThreadId,
-    ...(command.connectorSourceId
-      ? { connectorSourceId: command.connectorSourceId }
-      : {}),
-    ...(args.threadSessionResolution
-      ? { threadSessionResolution: args.threadSessionResolution }
-      : {}),
-    platformEnvironment: buildAgentRunPlatformEnvironment({
-      agentId: args.agent.id,
-      triggerSource: command.triggerSource ?? "web",
-      chatThreadId: command.chatThreadId,
-      codexServiceTier: command.codexServiceTier,
-      reasoningEffort: command.reasoningEffort,
-    }),
-    callbacks: command.callbacks,
-    includeOkouTokenSecret: true,
-    productAgentExecutionPlan,
-    ...(args.authorizedRequestObservation
-      ? {
-          preloadedAgentExecutionObservation: {
-            requestUserId: args.authorizedRequestObservation.userId,
-            requestOrgId: args.authorizedRequestObservation.orgId,
-            agentId: args.agent.id,
-            ownerUserId: args.agent.owner,
-            agentOrgId: args.agent.orgId,
-          },
-        }
-      : {}),
-    okouTokenComputerUseHostId: command.computerUseHostId,
-    okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
-    enforceBuiltInCredits: true,
-    injectSkillVolumes: { workflows: args.workflows },
-    requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
-    connectorScope: {
-      allowedConnectorSlugs: args.allowedConnectorSlugs,
-      allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-      customConnectorGrants: args.customConnectorGrants,
-      source: "stored_agent",
-    },
-    validateEnvironmentReferences: false,
-    agentRunMetadata: {
-      ...command.agentRunMetadata,
-      codexServiceTier: command.codexServiceTier,
-      reasoningEffort: command.reasoningEffort,
-    },
-    dispatchFailedCallbacks: command.dispatchFailedCallbacks,
-    persistProducerRunBinding: async (tx, run) => {
-      await command.persistProducerRunBinding?.(tx, run);
-      // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
-      if (run.status === "pending" && command.chatThreadId) {
-        await requestPiMemoryStage1DayForAdmittedRun(tx, run.runId);
-      }
-    },
-    ...(command.agentRunModelPin
-      ? { agentRunModelPin: command.agentRunModelPin }
-      : {}),
-    timing: args.timing,
-    timingDimensions: agentRunTimingDimensions({
-      origin: agentRunOrigin({
-        command,
-      }),
-      command,
-      source: command.agentRunPreCreateSource,
-    }),
-  };
-}
-
-const bootstrapMetadataRowKindSchema = z.enum([
-  "user_info",
-  "feature_switch",
-  "builtin_connector",
-  "custom_connector",
-  "permission_grant",
-]);
-
-type BootstrapMetadataRowKind = z.output<typeof bootstrapMetadataRowKindSchema>;
 
 export const bootstrapMetadataRowKindDecoder = zodEnumDriverValueDecoder(
   bootstrapMetadataRowKindSchema,
@@ -9236,33 +7211,6 @@ const nullableCustomConnectorPermissionNamesDecoder =
 const nullableCustomConnectorStorageVersionDecoder = nullableDriverValueDecoder(
   orgCustomConnectors.storageVersion,
 );
-
-export interface BootstrapMetadataQueryRow {
-  readonly kind: BootstrapMetadataRowKind;
-  readonly id: string | null;
-  readonly name: string | null;
-  readonly email: string | null;
-  readonly timezone: string | null;
-  readonly featureUserId: string | null;
-  readonly switches: Record<string, boolean> | null;
-  readonly detail: string | null;
-  readonly action: FirewallPermissionGrantAction | null;
-  readonly permissionNames: readonly string[] | null;
-  readonly permissionBundleRef: string | null;
-  readonly storageVersion: number | null;
-  readonly skillStorageVersionId: string | null;
-  readonly isMcp: boolean | null;
-  readonly expiresAt: Date | null;
-}
-
-export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
-  readonly userInfo: UserInfo;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly permissionGrants: readonly FirewallPermissionGrant[];
-  readonly permissionValidityHorizon: string | null;
-  readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
-}
 
 interface RunBootstrapSnapshotArgs {
   readonly userId: string;
@@ -9357,22 +7305,6 @@ function agentRunCustomConnectorMetadataQuery(
         eq(orgCustomConnectors.enabled, true),
       ),
     );
-}
-
-function permissionValidityHorizon(
-  rows: readonly BootstrapMetadataQueryRow[],
-): string | null {
-  let horizon: Date | null = null;
-  for (const row of rows) {
-    if (
-      row.kind === "permission_grant" &&
-      row.expiresAt !== null &&
-      (horizon === null || row.expiresAt.getTime() < horizon.getTime())
-    ) {
-      horizon = row.expiresAt;
-    }
-  }
-  return horizon?.toISOString() ?? null;
 }
 
 function requireCustomConnectorMcpFlag(value: boolean | null): boolean {
@@ -9525,15 +7457,6 @@ export function materializeRunBootstrapContext(
     connectorCatalogMetadataSlugs: [...connectorCatalogMetadataSlugs].sort(),
   };
 }
-export interface AgentRunIdentityInput {
-  readonly timing: ApiDispatchTimingCollector;
-  readonly auth: CreateAgentRunCommandArgs["auth"];
-  readonly agentId: string;
-  readonly apiStartTime: number;
-  readonly chatThreadId?: string;
-  readonly expectedThreadAgentId?: string;
-  readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
-}
 export interface AgentRunSelectionGraphInput {
   readonly command: AgentRunSelectionInput;
   readonly db: Db;
@@ -9553,29 +7476,6 @@ export interface SelectedAgentRunGraphSources {
   readonly storageBody$?: AsyncRead<
     Pick<CreateAgentRunCommandArgs["body"], "additionalVolumes">
   >;
-}
-export interface AgentRunGraphInput {
-  readonly command: AgentRunIdentityCommand;
-  readonly timing: ApiDispatchTimingCollector;
-}
-
-export function matchingAuthorizedRequestObservation(
-  args: AgentRunIdentityCommand,
-  agentId: string,
-): AuthorizedAgentRunRequestObservation | undefined {
-  const observation = args.authorizedRequestObservation;
-  if (
-    !observation ||
-    observation.userId !== args.auth.userId ||
-    observation.orgId !== args.auth.orgId ||
-    observation.agent.id !== agentId ||
-    observation.agent.orgId !== args.auth.orgId ||
-    observation.featureSwitchContext.userId !== args.auth.userId ||
-    observation.featureSwitchContext.orgId !== args.auth.orgId
-  ) {
-    return undefined;
-  }
-  return observation;
 }
 
 function createPreCreateInternalInput() {

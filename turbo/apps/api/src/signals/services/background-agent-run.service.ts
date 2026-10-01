@@ -8,9 +8,9 @@ import { activatePendingRun$ } from "./agent-run-activation.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
 import {
   createAgentRunExecutionObjects,
-  isRouteError,
   isQueueFirstRunClaimLost,
 } from "./agent-run-execution.service";
+import { isRouteError } from "./run-execution-body.service";
 import type {
   CreateAgentRunArgs,
   CreateRunRouteResult,

@@ -109,6 +109,18 @@ import {
 } from "./internal-chat-run-callback.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
+  composePreparedRunContext,
+  finalizePreparedRunContext,
+  officialWorkflowRunCandidates,
+  type PreparedOfficialWorkflow,
+  type PreparedRunBodyContext,
+  type PreparedRuntimeContext,
+  type PrepareRunContextInput,
+  prepareRunOutputMetadata,
+  type RunWorkflowModelState,
+  type RunWorkflowReadInput,
+} from "./run-execution-context.service";
+import {
   type AgentRunAfterPreCreate,
   type AgentRunGraphInput,
   type AgentRunIdentityInput,
@@ -116,30 +128,20 @@ import {
   buildCreateAgentRunArgs,
   buildMergedVariables,
   buildResolvedRunBody,
-  composePreparedRunContext,
   enforceCaptureNetworkBodiesGate,
-  finalizePreparedRunContext,
   initialRunBody,
   insufficientCredits,
   isRouteError,
   L,
   matchingAuthorizedRequestObservation,
   measureAgentRunPreCreate,
-  officialWorkflowRunCandidates,
   ORG_SENTINEL_USER_ID,
-  type PreparedOfficialWorkflow,
-  type PreparedRunBodyContext,
-  type PreparedRuntimeContext,
-  type PrepareRunContextInput,
-  prepareRunOutputMetadata,
   resolveProductAgentExecution,
   resolveRunBodyEnvironment,
   type RunBootstrapContext,
-  type RunWorkflowModelState,
-  type RunWorkflowReadInput,
   selectedAgentRunVariables,
   validateCompose,
-} from "./agent-run-execution.service";
+} from "./run-execution-body.service";
 import {
   type AtomicLaunchCommitCompletion,
   admissionAttemptOutcome,
