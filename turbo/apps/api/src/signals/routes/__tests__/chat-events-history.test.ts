@@ -11,7 +11,7 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
@@ -118,13 +118,11 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     await failChatRun(first.runId, firstClaim.sandboxHeaders, "boom one");
-    const firstBinding = await readThreadSessionBinding(
+    const establishedSession = await readCompletedRunSessionId(
       context,
-      first.threadId,
+      actor,
+      anchor.runId,
     );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the failed run to retain its session binding");
-    }
 
     const longPrompt = `second ${"x".repeat(4100)}`;
     const second = await sendChatRun(actor, {
@@ -134,25 +132,11 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     await failChatRun(second.runId, secondClaim.sandboxHeaders, "boom two");
-    await expect(
-      readThreadSessionBinding(context, first.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: second.runId,
-      run_session_id: firstBinding.agent_session_id,
-    });
 
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "retry after two failures",
-    });
-    await expect(
-      readThreadSessionBinding(context, first.threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: firstBinding.agent_session_id,
-      agent_session_run_id: third.runId,
-      run_session_id: firstBinding.agent_session_id,
     });
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
@@ -169,7 +153,10 @@ describe("CHAT-02: incomplete-round context", () => {
     expect(thirdClaim.claim.resumeSession?.sessionId).toBe(
       `bdd-cli-${anchor.runId}`,
     );
-    await cancelChatRun(actor, third.runId);
+    await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);
+    await expect(
+      readCompletedRunSessionId(context, actor, third.runId),
+    ).resolves.toBe(establishedSession);
   }, 90_000);
 });
 
