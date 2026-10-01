@@ -3052,7 +3052,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agentOne = await bdd.createAgent(actor, {
       displayName: "BDD logs agent one",
       description: "Primary logs agent.",
@@ -3068,31 +3068,44 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const testCompose = await createClaudeAgent(actor, "bdd-test-logs");
+    const testCompose = await bdd.createAgent(actor, {
+      displayName: "BDD historical test-source agent",
+      visibility: "private",
+    });
     const agentOneName = await readCanonicalAgentNameFixture(agentOne.agentId);
 
-    const webRun = await api.createRun(actor, {
+    const webRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "web run on agent one",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, webRun.runId, [200]);
-    const secondAgentRun = await api.createRun(actor, {
+    const secondAgentRun = await api.createThreadRun(actor, {
       agentId: agentTwo.agentId,
       prompt: "web run on agent two",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, secondAgentRun.runId, [200]);
-    const testRun = await api.createDirectRun(actor, {
-      agentId: testCompose.agentId,
-      prompt: "direct test run",
-    });
+    if (!actor.orgId) {
+      throw new Error("Run log fixtures require an org-scoped actor");
+    }
+    // A persisted historical direct run supplies the second log source.
+    const testRun = await store.set(
+      seedRun$,
+      {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        composeId: testCompose.agentId,
+        prompt: "direct test run",
+        status: "pending",
+        triggerSource: "test",
+      },
+      context.signal,
+    );
     await api.requestCancelRun(actor, testRun.runId, [200]);
 
-    const memberRun = await api.createRun(member, {
+    const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member run stays invisible",
-      modelProvider: "anthropic-api-key",
+      model: "claude-fable-5-1",
     });
     await api.requestCancelRun(member, memberRun.runId, [200]);
 
@@ -3150,7 +3163,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     expect(testEntry).toMatchObject({
       agentId: testCompose.agentId,
-      displayName: "Direct run fixture",
+      displayName: "BDD historical test-source agent",
       triggerSource: "test",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
