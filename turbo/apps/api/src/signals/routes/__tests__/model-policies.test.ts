@@ -887,10 +887,6 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-6-luna"]);
-    // Released CLIs resolve a thread without a selection to this field.
-    expect(response.body.workspaceDefaultModel).toBe(
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {

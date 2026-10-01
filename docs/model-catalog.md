@@ -21,12 +21,6 @@ protocol runs end to end.
 Remaining model-keyed code data is protocol or billing data, not product
 authority:
 
-- `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` (`@okouai/api-contracts`) is
-  no longer read by the API. It survives only as the generated Python map the
-  Runner mitm addon falls back to for claims from an API that predates the
-  catalog threshold (see
-  [Long-context classification](#long-context-classification)); a new model
-  never needs an entry.
 - `OKOU_MODEL_METADATA` is the OpenRouter preset protocol metadata for
   `okou-1.0`: the preset upstream (`@preset/...`) is opaque, so the Pi and
   Codex runtimes need its context window, output limit and modalities from
@@ -78,7 +72,7 @@ authority:
 `usage_pricing` remains the billing authority. Routes link to it by
 `(kind, provider)`; a foreign key is impossible because its key includes the
 category. Routes carry no names or ordering of their own. Personal
-subscription routes (formerly `subscription_model_catalog`) are
+subscription routes are
 `model_routes` rows with `subscription_type` set.
 
 ## Billing chain
@@ -163,13 +157,10 @@ together with the usage provider, and the Runner forwards it unchanged:
 | Runner `ExecutionContext` → registry | `model_usage_long_context_min_total_input_tokens` → sandbox `modelUsageLongContextMinTotalInputTokens` |
 | Addon flow metadata                  | `MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`                                                      |
 
-A new API always sends the field (`0` for a NULL route and for runs that are
-not platform-billed), and the addon then never consults its generated map, so
-an explicit single tier is not overridden by a map entry. Only when the field
-is absent (an API that predates the column) does the addon fall back to the
-generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map by provider. Like
-the pricing link, the captured value is frozen for the run: relinking or
-re-thresholding a route affects only runs created afterwards. Service-tier
+The API always sends the assigned route's value (`0` for a NULL route and
+for runs that are not platform-billed). Like the pricing link, the captured
+value is frozen for the run: relinking or re-thresholding a route affects
+only runs created afterwards. Service-tier
 suffixes come from the response's observed tier, not from a model-keyed
 table. Rollout order is in
 [deployment compatibility](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
@@ -257,7 +248,7 @@ to be single-hop; nothing in the schema or the loader depends on that:
 `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max` were seeded by migrations
 1191 and 1194 and lost their code support in #37363 and #37368. Migration 1298
 keeps their rows with their former labels (GPT 5.6 Terra, Okou 1.0 Pro, Okou
-1.0 Max), no routes and `allow_new_org_policy = false`, and retires them into
+1.0 Max), no routes, and retires them into
 the targets above (owner decision, 2026-10-01).
 
 Retiring X in favor of Y: if `Y.lineage_rank <= X.lineage_rank`, raise
@@ -407,8 +398,7 @@ takes the per-organization policy advisory locks in `org_id` order.
   enabled route of the same provider type. Incompatible retired policies are
   dropped rather than transplanted (the count is logged via `RAISE NOTICE`).
   One policy per organization and replacement survives: an existing
-  replacement policy wins, otherwise the retired default, then the oldest. The
-  legacy `is_default` flag moves to a surviving replacement policy.
+  replacement policy wins, otherwise the oldest.
 - `org_members_metadata.selected_model` and `model_settings` (effort copy as
   above; the retired key stays).
 - `agents.selected_model` and `model_providers.selected_model`. An agent
@@ -520,21 +510,3 @@ rows, so the API catalog loader (`model-catalog.service.ts`) validates them,
 together with "the default has a runtime adapter", re-checks replacement
 chains, and fails the request instead of choosing a default. The catalog is
 loaded per request so an operator change is visible to the next request.
-
-## Remaining compatibility removals
-
-Only physical deletions justified by rolling deploys remain. Each is removed
-in a later change once its condition holds:
-
-| Item                                            | Kept because                                                                                    | Delete when                                                                                  |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `org_model_policies.is_default` column          | API versions from before the catalog still read and write it during the rollout.                | No deployed API version reads or writes it (the release after this one is fully rolled out). |
-| `run_model_catalog.allow_new_org_policy` column | Older API versions gate adding a policy with it; the new API uses `replaced_by`.                | No deployed API version reads it.                                                            |
-| `subscription_model_catalog` table              | Older API versions list personal subscription models from it; the new API reads `model_routes`. | No deployed API version reads it.                                                            |
-
-The deprecated `GET /api/model-policies` response fields `isDefault`,
-`workspaceDefaultModel` and `workspaceDefaultPolicyId` are removed in this
-release rather than kept for released iOS builds. The owner accepted the iOS
-break: released iOS builds that decode `isDefault` as required fail to read the
-policy list until they upgrade. Current App, iOS and CLI read the system
-default from `GET /api/model-catalog`.

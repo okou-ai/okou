@@ -112,20 +112,9 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
-- `scripts/test-model-catalog-seed.ts` protects migration
-  `1298_global_model_catalog`: the seeded catalog and routes must match the
-  code model lists, route candidates, run options and
-  `subscription_model_catalog` they duplicate. Delete it when those code lists
-  and `subscription_model_catalog` are removed (see
-  [the model catalog design](../../../docs/model-catalog.md)). The replacement,
-  default and route constraints are permanent in
-  `scripts/test-model-catalog-permanent.ts`.
-
-- `scripts/test-model-catalog-stored-selections.ts` protects migration
-  `1299_model_catalog_stored_selections`: retired selections move along the
-  replacement chain, duplicate policies merge, cross-provider policies are
-  dropped rather than transplanted, efforts convert, history rows stay and a
-  second run is a no-op. Delete it together with the seed validator.
+- `scripts/test-model-catalog-seed.ts` validates the current catalog's
+  default, replacement, route, subscription and pricing invariants. Database
+  constraint scenarios live in `scripts/test-model-catalog-permanent.ts`.
 
 - `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
   `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
@@ -230,20 +219,12 @@ Keep shipped SQL, snapshots, journal and numbered external-data operation 014
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
 
-## Model catalog rollout compatibility
+## Model catalog
 
-Migrations 1297 to 1299 (#37416) keep the columns and tables that API versions
-from before the global model catalog still read:
-
-- `org_model_policies.is_default` stays with its existing values. 1297 copies
-  no per-organization default; the API projects the system default from
-  `run_model_catalog.is_system_default`. 1299 only moves the flag to a
-  surviving replacement policy when it merges a retired one. Drop the column
-  once no deployed API version reads or writes it.
-- `subscription_model_catalog` stays until no deployed API version reads it;
-  `model_routes` is authoritative for the new API.
-- `allow_new_org_policy` stays until no deployed API version reads it; the
-  new API uses `replaced_by` only.
+The API projects the system default from `run_model_catalog.is_system_default`.
+Model availability and replacement use `replaced_by`; subscription routes are
+stored in `model_routes`. The owner waived pre-catalog rollback. Apply schema
+contraction only after pre-catalog API instances have drained.
 
 Replacement chains: `replaced_by` may point at a retired row; the chain ends
 at the final active model. The self foreign key
@@ -260,14 +241,13 @@ Former Okou and Terra rows: `gpt-5.6-terra`, `okou-1.0-pro` and
 `okou-1.0-max` (seeded by 1191 and 1194, code support removed by #37363 and
 #37368) are in the 1298 seed as retired rows with their former labels (GPT
 5.6 Terra, Okou 1.0 Pro, Okou 1.0 Max), `lineage_rank = 0`, no
-`model_routes` and `allow_new_org_policy = false`, replaced by the
+`model_routes`, replaced by the
 owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0` (active, rank
 100). The rows are kept, not deleted, so history stays named; 1299 rewrites
 any mutable selection of them to their target (MaskDB shows zero
 references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
 `agents` and `model_providers`). 1298 still keeps any other row outside the
-seed with its ID as label, sorted last, `allow_new_org_policy = false` and no
-routes; none is known to exist.
+seed with its ID as label, sorted last and no routes; none is known to exist.
 
 1299 rewrites chat thread selections (`chat_threads.selected_model` and
 `model_settings`) and appends one `model_selection_updated` event per

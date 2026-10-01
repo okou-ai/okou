@@ -22,7 +22,7 @@ import { runModelCatalog } from "./run-model-catalog";
  *   routes list one row per candidate, tried in ascending `priority`; other
  *   routes serve themselves.
  * - `subscription_type` is set only for the Auto-mode personal subscription
- *   routes previously listed in `subscription_model_catalog`.
+ *   routes backed by a member's connected personal subscription.
  * - `service_tiers` lists optional tiers besides the implicit Standard tier.
  * - `pricing_kind`/`pricing_provider` link a Built-in route to its
  *   `usage_pricing` rows, which remain the billing authority. No foreign key is

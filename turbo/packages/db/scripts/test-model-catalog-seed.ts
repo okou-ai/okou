@@ -219,47 +219,6 @@ export async function validateModelCatalogSeed(
     );
     assertRoutes(catalog.rows, routes.rows);
 
-    // Subscription models mirror catalog names, order and routes.
-    const subscriptions = await client.query<{
-      subscription_type: string;
-      model: string;
-      display_name: string;
-    }>(
-      `SELECT subscription_type, model, display_name
-       FROM subscription_model_catalog ORDER BY sort_order, subscription_type, model`,
-    );
-    const order = catalog.rows.map((row) => {
-      return row.model;
-    });
-    assert.deepEqual(
-      subscriptions.rows.map((row) => {
-        return row.model;
-      }),
-      subscriptions.rows
-        .map((row) => {
-          return row.model;
-        })
-        .sort((left, right) => {
-          return order.indexOf(left) - order.indexOf(right);
-        }),
-    );
-    for (const subscription of subscriptions.rows) {
-      assert.equal(
-        subscription.display_name,
-        catalog.rows.find((row) => {
-          return row.model === subscription.model;
-        })?.display_name,
-      );
-      assert.ok(
-        routes.rows.some((route) => {
-          return (
-            route.model === subscription.model &&
-            route.subscription_type === subscription.subscription_type
-          );
-        }),
-        `${subscription.model}: subscription model without a route`,
-      );
-    }
     console.log("   ✅ Seeded model catalog and routes are consistent");
   } finally {
     await client.end();

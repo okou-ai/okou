@@ -37,7 +37,6 @@ describe("orgModelPolicies schema", () => {
   it("keeps the expected policy column names stable", () => {
     expect(orgModelPolicies.orgId.name).toBe("org_id");
     expect(orgModelPolicies.model.name).toBe("model");
-    expect(orgModelPolicies.isDefault.name).toBe("is_default");
     expect(orgModelPolicies.defaultProviderType.name).toBe(
       "default_provider_type",
     );

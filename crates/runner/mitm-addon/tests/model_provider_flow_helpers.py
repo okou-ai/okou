@@ -95,6 +95,7 @@ def set_model_provider_flow_metadata(
         flow.metadata[metadata_keys.CLI_AGENT_TYPE] = cli_agent_type
     if model_usage_provider is not None:
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = model_usage_provider
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 0
 
 
 def make_model_provider_flow(
@@ -183,6 +184,7 @@ def make_openai_responses_websocket_flow(
         cli_agent_type="codex",
         model_usage_provider="gpt-5.5",
     )
+    flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
     flow.request.headers = _openai_responses_websocket_request_headers()
     flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
     flow.response = tutils.tresp(
