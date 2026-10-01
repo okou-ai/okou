@@ -1001,10 +1001,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "turn this deck into a template",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -1026,10 +1025,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Okou CLI",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -1049,10 +1047,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PrivateArtifacts]: enabled,
       });
-      const created = await api.createRun(actor, {
+      const created = await api.createThreadRun(actor, {
         agentId,
         prompt: "share the report with my organization",
-        modelProvider: "anthropic-api-key",
       });
       const run = await api.readRun(actor, created.runId);
       const prompt = run.appendSystemPrompt ?? "";
@@ -1075,10 +1072,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("advertises current Run usage and grants its Run capability", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "inspect this Run's provider-token usage",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
@@ -1099,10 +1095,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const disabled = await api.createRun(actor, {
+    const disabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "send a message",
-      modelProvider: "anthropic-api-key",
     });
     const disabledRun = await api.readRun(actor, disabled.runId);
     expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
@@ -1114,10 +1109,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.LarkIntegration]: true,
     });
-    const enabled = await api.createRun(actor, {
+    const enabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "send a message",
-      modelProvider: "anthropic-api-key",
     });
     const enabledRun = await api.readRun(actor, enabled.runId);
     expect(enabledRun.appendSystemPrompt).toContain(
@@ -1136,10 +1130,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const apiCommitSha = "a".repeat(40);
     mockEnv("GIT_COMMIT_SHA", apiCommitSha);
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -2267,10 +2260,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       return true;
     });
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     expect(created.status).toBe("pending");
@@ -2295,10 +2287,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       datasets: [SANDBOX_OP_LOG_DATASET],
     });
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     expect(created.status).toBe("pending");
@@ -2475,10 +2466,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim concurrently",
-      modelProvider: "anthropic-api-key",
     });
 
     const candidates = [
@@ -2554,10 +2544,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("rejects an official runner claim without process identity", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim without rollout identity",
-      modelProvider: "anthropic-api-key",
     });
 
     const rejected = await api.requestRawClaimRunnerJob(
@@ -2587,10 +2576,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("rejects malformed runner attribution before the claim transition", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const hostnameRun = await api.createRun(actor, {
+    const hostnameRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "reject an oversized runner hostname",
-      modelProvider: "anthropic-api-key",
     });
     const invalidHostname = await api.requestRawClaimRunnerJob(
       true,
@@ -2610,10 +2598,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       status: "pending",
     });
 
-    const versionRun = await api.createRun(actor, {
+    const versionRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "reject an oversized runner version",
-      modelProvider: "anthropic-api-key",
     });
     const invalidVersion = await api.requestClaimRunnerJob(
       true,
@@ -2637,10 +2624,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const apiKey = await api.createCliToken(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim with untrusted identity",
-      modelProvider: "anthropic-api-key",
     });
 
     const claim = await api.requestClaimRunnerJobAs(
@@ -2679,10 +2665,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim previous profile context",
-      modelProvider: "anthropic-api-key",
     });
     await setRunnerJobContextProfileAsPreviousApi(
       context,
@@ -4252,10 +4237,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
     await flushWaitUntilForTest();
 
-    const olderGeneric = await api.createRun(actor, {
+    const olderGeneric = await api.createThreadRun(actor, {
       agentId,
       prompt: "older generic FIFO work",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(priorityBase + 1);
     const newerReusable = await sendChatRunMessage(actor, {
@@ -4390,10 +4374,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       ],
     });
 
-    const olderGeneric = await api.createRun(actor, {
+    const olderGeneric = await api.createThreadRun(actor, {
       agentId,
       prompt: "older workspace-priority FIFO work",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(priorityBase + 1);
     const newerWorkspace = await sendChatRunMessage(actor, {
@@ -4517,10 +4500,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     mockNow(requestStartedAt);
     advanceNowOnFirstGenerateDataKey(payloadPreparedAt);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "pending launch timestamp should reflect durable insert",
-      modelProvider: "anthropic-api-key",
     });
 
     expect(run.status).toBe("pending");
@@ -4550,10 +4532,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     mockNow(now() - 3 * 60 * 60 * 1000);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "runner ttl should use the database insertion clock",
-      modelProvider: "anthropic-api-key",
     });
 
     const poll = await api.requestPollRunner(
@@ -4581,15 +4562,13 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     mockNow(now());
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "same timestamp runner job one",
-      modelProvider: "anthropic-api-key",
     });
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: "same timestamp runner job two",
-      modelProvider: "anthropic-api-key",
     });
     const orderedRunIds = [first.runId, second.runId].sort();
 
@@ -4625,10 +4604,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before claim",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, run.runId, [200]);
 
@@ -4648,20 +4626,18 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const sessionRun = await api.createRun(actor, {
+    const sessionRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel with a Clerk session",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, sessionRun.runId, [200]);
     expect((await api.readRun(actor, sessionRun.runId)).status).toBe(
       "cancelled",
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel with accepted credential types",
-      modelProvider: "anthropic-api-key",
     });
 
     const sandboxDenied = await api.requestCancelRunAs(
@@ -4819,10 +4795,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       restrictedBuiltInModels: false,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "staff entitlement BYOK run",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5920,10 +5895,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       refreshToken: "x-bdd-unallowed-refresh",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run without enabled stored connectors",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5969,10 +5943,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       catalogVersion: `okou-scoped-runtime-run-${randomUUID()}`,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the x connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6230,10 +6203,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     );
     await api.enableAgentConnectors(actor, agentId, ["gitlab"]);
 
-    const withoutHost = await api.createRun(actor, {
+    const withoutHost = await api.createThreadRun(actor, {
       agentId,
       prompt: "use gitlab without the optional host",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const bareClaim = await api.claimRunnerJob(withoutHost.runId);
@@ -6257,10 +6229,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       undefined,
       { intent: "reconnect", connectionId: gitlabConnection.id },
     );
-    const withHost = await api.createRun(actor, {
+    const withHost = await api.createThreadRun(actor, {
       agentId,
       prompt: "use gitlab with the optional host",
-      modelProvider: "anthropic-api-key",
     });
     const hostClaim = await api.claimRunnerJob(withHost.runId);
     expect(hostClaim.environment?.GITLAB_TOKEN).toBe(
@@ -6324,10 +6295,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["figma"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use figma personal access token",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();
@@ -6418,10 +6388,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     );
     await api.enableAgentConnectors(actor, agentId, ["lark"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use lark before any cached access token exists",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6586,10 +6555,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     }
     expect(customGrantResponse.body.grants).toStrictEqual(customGrants);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "refresh lark through exact runtime projections",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6724,10 +6692,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["google-ads"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use google ads",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6945,10 +6912,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       value: "sk-plain-user-secret",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run without a connected axiom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6975,10 +6941,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async ({ config: piModelConfig }) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "read a future native context",
-        modelProvider: "anthropic-api-key",
       });
       await setRunnerJobPiContextAsVersionedWriter(
         context,
@@ -7011,10 +6976,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async (generation) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "claim a dialect-aware Pi route",
-        modelProvider: "anthropic-api-key",
       });
       const piModelConfig: PiModelConfig =
         generation === 1
@@ -7109,10 +7073,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async (route) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "claim only a supported exact Pi route",
-        modelProvider: "anthropic-api-key",
       });
       await setRunnerJobPiContextAsVersionedWriter(context, run.runId, {
         schemaVersion: route.schemaVersion,
@@ -7271,10 +7234,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       mcpConnector.id,
       automaticConnector.id,
     ]);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the no-auth HTTP and MCP connectors",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7371,10 +7333,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await connectors.setCustomConnectorValues(actor, custom.id, []);
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the explicitly connected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7422,10 +7383,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the custom connector instead of the built-in connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7491,10 +7451,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use custom auth for Figma files and built-in auth elsewhere",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7572,10 +7531,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8084,10 +8042,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       http.id,
     ]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the admitted MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8247,10 +8204,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       code: "CONNECTOR_NOT_CONFIGURED",
     });
 
-    const disconnectedRun = await api.createRun(actor, {
+    const disconnectedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not advertise a disconnected MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     const disconnectedClaim = await api.claimRunnerJob(disconnectedRun.runId);
     expect(
@@ -8464,10 +8420,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("keeps bounded MCP awareness identical across Claude and Codex", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const claude = await fixture.api.createRun(fixture.actor, {
+    const claude = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const claudeClaim = await fixture.api.claimRunnerJob(claude.runId);
@@ -8569,10 +8524,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { intent: "reconnect", connectionId: runtimeConnectionId },
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the seeded canonical connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8930,10 +8884,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       kind: "custom",
       customConnectorId: custom.id,
     });
-    const currentRun = await api.createRun(actor, {
+    const currentRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the current unrefreshable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const currentClaim = await api.claimRunnerJob(currentRun.runId);
@@ -8948,10 +8901,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connected: false,
       missingRequiredFields: ["oauth"],
     });
-    const expiredRun = await api.createRun(actor, {
+    const expiredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "try the expired unrefreshable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const expiredClaim = await api.claimRunnerJob(expiredRun.runId);
     expect(expiredClaim.connectorRuntimeTargets).toContainEqual(target);
@@ -9068,10 +9020,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       missingRequiredFields: ["oauth"],
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const expectedBasicAuthorization = `Basic ${Buffer.from(
       "runtime-client-id:runtime-client-secret",
@@ -9355,10 +9306,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     }
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const firstRun = await api.createRun(actor, {
+    const firstRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the revoked OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(
       provider.tokenBodies.map((body) => {
@@ -9419,10 +9369,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       missingRequiredFields: ["oauth"],
     });
 
-    const secondRun = await api.createRun(actor, {
+    const secondRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "retry the revoked OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(provider.tokenBodies).toHaveLength(2);
     const secondClaim = await api.claimRunnerJob(secondRun.runId);
@@ -9569,10 +9518,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [mcp.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the OAuth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9635,10 +9583,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           firewallAuth: resolution,
         });
       }
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `use builtin Automatic ${resolution}`,
-        modelProvider: "anthropic-api-key",
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
@@ -9775,10 +9722,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use builtin Automatic OAuth through catalog no-auth",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9888,10 +9834,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         ...catalog,
         issuer: provider.issuer,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "change the connected builtin MCP authentication method",
-        modelProvider: "anthropic-api-key",
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
@@ -10032,10 +9977,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "refresh builtin Automatic credentials",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10150,10 +10094,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use builtin Automatic without refresh token",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10238,10 +10181,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [mcp.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Automatic OAuth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10282,10 +10224,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       storageVersion: 1,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
-    const noAuthRun = await api.createRun(actor, {
+    const noAuthRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Automatic MCP connector without credentials",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const noAuthClaim = await api.claimRunnerJob(noAuthRun.runId);
@@ -10574,10 +10515,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       agentId,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the optional custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10722,10 +10662,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(updated.storageVersion).toBe(2);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not use the incompatible custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10804,10 +10743,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connectors.readCustomConnector(actor, saved.connector.id),
     ).resolves.toMatchObject({ connected: false });
 
-    const blockedRun = await api.createRun(actor, {
+    const blockedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not use the reconnect-required custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const blockedClaim = await api.claimRunnerJob(blockedRun.runId);
@@ -10848,10 +10786,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connectors.readCustomConnector(actor, saved.connector.id),
     ).resolves.toMatchObject({ connected: true });
 
-    const admittedRun = await api.createRun(actor, {
+    const admittedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the reconnected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const admittedClaim = await api.claimRunnerJob(admittedRun.runId);
     expect(
@@ -10914,10 +10851,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       saved.connector.id,
     );
 
-    const incompleteRun = await api.createRun(actor, {
+    const incompleteRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not admit an incomplete custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const incompleteClaim = await api.claimRunnerJob(incompleteRun.runId);
@@ -10972,10 +10908,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authMode: "manual",
     });
 
-    const unroutableRun = await api.createRun(actor, {
+    const unroutableRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not admit an unroutable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const unroutableClaim = await api.claimRunnerJob(unroutableRun.runId);
     expect(
@@ -11002,10 +10937,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
     );
 
-    const recoveredRun = await api.createRun(actor, {
+    const recoveredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the fully recovered custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const recoveredClaim = await api.claimRunnerJob(recoveredRun.runId);
     expect(recoveredClaim.connectorRuntimeTargets).toContainEqual({
@@ -11072,10 +11006,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     expect(saved.authorizedAgentId).toBe(agentId);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the optional-only custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -11183,10 +11116,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await connectors.setCustomConnectorSecret(actor, custom.id, "custom-bdd");
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "expand custom and connector bases",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -11270,10 +11202,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       action: "allow",
       expiresIn: "1h",
     });
-    const expiringRun = await api.createRun(actor, {
+    const expiringRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "expire a queued permission",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(now() + 2 * 3_600_000);
     const expiredClaim = await api.claimRunnerJob(expiringRun.runId);
@@ -11289,10 +11220,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       permission: "chat:write",
       action: "allow",
     });
-    const revokedRun = await api.createRun(actor, {
+    const revokedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "revoke a queued permission",
-      modelProvider: "anthropic-api-key",
     });
     await expect(
       api.replaceUserPermissionGrants(actor, {
@@ -11319,10 +11249,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "claim without built-in connectors",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -11745,10 +11674,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const { actor, agentId } = await entitledRunActor();
     const runnerKey = await api.createCliToken(actor);
     const createNonTerminalRun = async (prompt: string) => {
-      return await api.createRun(actor, {
+      return await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
     };
 
@@ -11888,10 +11816,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       readonly deny: readonly string[];
       readonly unknownPolicy?: string;
     }> {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -12038,10 +11965,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(directClaim.secretValues).toContain(directOkouToken);
     await api.requestCancelRun(actor, direct.runId, [200]);
 
-    const current = await api.createRun(actor, {
+    const current = await api.createThreadRun(actor, {
       agentId,
       prompt: "build a canonical product context",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const currentClaim = await api.claimRunnerJob(current.runId);
@@ -12331,10 +12257,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "summarize the safety policy",
-      modelProvider: "anthropic-api-key",
     });
     const stored = await api.readRun(actor, run.runId);
     const appendSystemPrompt = stored.appendSystemPrompt ?? "";
@@ -12507,10 +12432,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.Banking]: false,
     });
-    const gatedOff = await api.createRun(actor, {
+    const gatedOff = await api.createThreadRun(actor, {
       agentId,
       prompt: "review my recent banking activity",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const gatedOffClaim = await api.claimRunnerJob(gatedOff.runId);
@@ -12522,10 +12446,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.Banking]: true,
     });
-    const gatedOn = await api.createRun(actor, {
+    const gatedOn = await api.createThreadRun(actor, {
       agentId,
       prompt: "review my recent banking activity",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const gatedOnClaim = await api.claimRunnerJob(gatedOn.runId);
@@ -12554,10 +12477,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "inspect my SSH hosts",
-      modelProvider: "anthropic-api-key",
     });
     const prompt =
       (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
@@ -12596,10 +12518,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.VncAccess]: enabled,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "inspect my remote VNC desktop",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await api.heartbeatRunner(runnerGroup);
@@ -12647,10 +12568,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PresentationConvert]: enabled,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "make me a deck about our quarterly plan",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await api.heartbeatRunner(runnerGroup);
@@ -12754,10 +12674,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "continue the task",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12822,10 +12741,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel while running",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     await api.claimRunnerJob(run.runId);
@@ -12857,10 +12775,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
       }),
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel without redelivering ordinary callbacks",
-      modelProvider: "anthropic-api-key",
     });
     await callbackStore.set(
       seedAgentRunCallback$,
@@ -12891,10 +12808,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim while cancelling",
-      modelProvider: "anthropic-api-key",
     });
 
     const [claim, cancellation] = await Promise.all([
@@ -13015,10 +12931,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     const bearer = `Bearer ${apiKey.token}`;
     const firstPrompt = "user runner job one";
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: firstPrompt,
-      modelProvider: "anthropic-api-key",
     });
     const polled = await api.requestPollRunnerAs(
       bearer,
@@ -13058,10 +12973,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     expect(claimedRun.status).toBe("running");
 
     const secondPrompt = "user runner job two";
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: secondPrompt,
-      modelProvider: "anthropic-api-key",
     });
 
     const outsider = createBddApi(context).user();
@@ -13179,10 +13093,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "terminal before claim",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
 
@@ -13388,20 +13301,17 @@ describe("RUN-03: timed-out run webhook admission", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const completed = await api.createRun(actor, {
+    const completed = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
-    const failed = await api.createRun(actor, {
+    const failed = await api.createThreadRun(actor, {
       agentId,
       prompt: "fail before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
-    const cancelled = await api.createRun(actor, {
+    const cancelled = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
 
     await webhooks.requestAgentComplete(
@@ -13570,10 +13480,9 @@ describe("HOOK-02: event-consumer dispatch failures", () => {
       [FeatureSwitchKey.OkouDebug]: true,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "report events",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -15542,10 +15451,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "preserve a reasonless first failure",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -15583,10 +15491,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "preserve a future failure reason",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -15634,10 +15541,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const syntheticFailure = await api.createRun(actor, {
+    const syntheticFailure = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete successfully without a checkpoint",
-      modelProvider: "anthropic-api-key",
     });
     const syntheticClaim = await api.claimRunnerJob(syntheticFailure.runId);
     await webhooks.requestAgentComplete(
@@ -15656,10 +15562,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       readRunFailureReasonFixture(context, syntheticFailure.runId),
     ).resolves.toBeNull();
 
-    const cancelled = await api.createRun(actor, {
+    const cancelled = await api.createThreadRun(actor, {
       agentId,
       prompt: "ignore a late classified failure",
-      modelProvider: "anthropic-api-key",
     });
     const cancelledClaim = await api.claimRunnerJob(cancelled.runId);
     await api.requestCancelRun(actor, cancelled.runId, [200]);
@@ -15733,10 +15638,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "time out before combined completion",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const historyHash = createHash("sha256")
@@ -15791,10 +15695,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       clearMockNow();
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "time out after the runner execution budget",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const sandboxHeaders = {
@@ -15914,10 +15817,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete without a checkpoint",
-      modelProvider: "anthropic-api-key",
     });
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
@@ -15959,10 +15861,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before the completion report",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, run.runId, [200]);
 
