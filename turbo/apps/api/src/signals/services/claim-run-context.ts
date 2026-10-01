@@ -11967,7 +11967,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async (
-      { get, set },
+      { get },
       timing: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ) => {
@@ -11977,7 +11977,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return args;
       }
       return prepareRunnerStorageInput({
-        db: set(writeDb$),
         args: { ...args, timing },
         storageManifestStats: new StorageManifestBuildStats(),
       });
