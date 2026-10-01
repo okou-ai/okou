@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  runnersCancellationContract,
-  CANCELLATION_RECOVERY_STALE_AFTER_MS,
-} from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { runnersCancellationContract } from "@okouai/api-contracts/contracts/runners";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,7 +7,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnerCancellationRoutes } from "../runner-cancellation";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -24,7 +19,7 @@ function client() {
   );
 }
 
-async function fixture(threadless = false) {
+async function fixture() {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
@@ -34,29 +29,15 @@ async function fixture(threadless = false) {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
-  const agent = threadless
-    ? await runs.createDirectAgent(actor, {
-        version: "1",
-        agents: {
-          [`cancel-state-${randomUUID().slice(0, 8)}`]: {
-            framework: "claude-code",
-          },
-        },
-      })
-    : await bdd.createAgent(actor, {
-        displayName: "Cancellation state agent",
-        description: "Exercises cancellation reconciliation.",
-        visibility: "private",
-      });
-  const prompt = "exercise cancellation reconciliation";
-  const run = threadless
-    ? await runs.createDirectRun(actor, {
-        agentId: agent.agentId,
-        prompt,
-        modelProviderType: "anthropic-api-key",
-        triggerSource: "web",
-      })
-    : await runs.createThreadRun(actor, { agentId: agent.agentId, prompt });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Cancellation state agent",
+    description: "Exercises cancellation reconciliation.",
+    visibility: "private",
+  });
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "exercise cancellation reconciliation",
+  });
   onTestFinished(async () => {
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
     await flushWaitUntilForTest();
@@ -129,49 +110,6 @@ describe("Run cancellation reconciliation", () => {
       runId: f.runId,
       state: "gone",
     });
-  });
-
-  it("redrives threadless cleanup without escalating the user's cooperative stop", async () => {
-    const f = await fixture(true);
-    await f.runs.requestCancelRun(f.actor, f.runId, [200]);
-    await flushWaitUntilForTest();
-    await withMockNowForTest(
-      now() + CANCELLATION_RECOVERY_STALE_AFTER_MS,
-      async () => {
-        // The existing test endpoint restricts the real cron to this fixture's IDs.
-        const cleanup = await accept(
-          setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-            testCronCleanupSandboxesStateContract,
-          ).cleanup({
-            body: {
-              runIds: [f.runId],
-              chatThreadIds: [],
-              exportJobIds: [],
-            },
-          }),
-          [200],
-        );
-        expect(cleanup.body.threadlessRuns).toMatchObject({
-          deleted: 1,
-          failed: 0,
-        });
-      },
-    );
-    expect((await read(f)).body).toMatchObject({ state: "gone" });
-    const cancellations = context.mocks.ably.publish.mock.calls.filter(
-      ([channel, payload]) => {
-        return (
-          channel === "cancel" &&
-          typeof payload === "object" &&
-          payload !== null &&
-          "runId" in payload &&
-          payload.runId === f.runId
-        );
-      },
-    );
-    expect(cancellations).toStrictEqual([
-      ["cancel", { runId: f.runId, mode: "cooperative" }],
-    ]);
   });
 
   it("does not mistake a present row with another group or official claim for deletion", async () => {

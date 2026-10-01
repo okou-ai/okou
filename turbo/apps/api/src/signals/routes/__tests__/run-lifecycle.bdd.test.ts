@@ -5240,34 +5240,14 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
   it("does not add Codex image upload guidance outside web chat Codex runs", async () => {
     const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    await fw.seedOrgCodexProvider(actor, {
-      accessToken: "chatgpt-access-image-guidance",
-      refreshToken: "chatgpt-refresh-image-guidance",
-      accountId: "workspace-id-image-guidance",
-      idToken: "chatgpt-id-token-image-guidance",
-      expiresIn: 3600,
-    });
-
-    const codexWebRun = await api.createRun(actor, {
-      agentId,
-      prompt: "generate an image with codex without a chat thread",
-      modelProvider: "codex-oauth-token",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const codexWebClaim = await api.claimRunnerJob(codexWebRun.runId);
-    const codexWebPrompt = codexWebClaim.appendSystemPrompt ?? "";
-    expect(codexWebClaim.cliAgentType).toBe("codex");
-    expect(codexWebPrompt).not.toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
-    expect(codexWebPrompt).not.toContain("When running in Codex");
-    await api.requestCancelRun(actor, codexWebRun.runId, [200]);
-
-    const claudeWebRun = await api.createRun(actor, {
+    const claudeWebRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate an image with claude",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claudeWebClaim = await api.claimRunnerJob(claudeWebRun.runId);
@@ -5277,21 +5257,33 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     );
     await api.requestCancelRun(actor, claudeWebRun.runId, [200]);
 
-    const codexSlackRun = await api.createDirectRun(actor, {
-      agentId,
-      prompt: "generate an image from slack",
-      modelProviderType: "codex-oauth-token",
-      triggerSource: "slack",
-      vars: { OKOU_AGENT_ID: agentId },
-      secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
+    // A native Codex route (gpt-6-astra has no Pi route) for a scheduled run.
+    const openai = await api.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "bdd-codex-schedule-key",
     });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-astra",
+        preferred: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openai.providerId,
+      },
+    ]);
+    const scheduled = await createWorkflowsBddApi(
+      context,
+    ).startScheduledAutomationRun(actor, agentId);
     await api.heartbeatRunner(runnerGroup);
-    const codexSlackClaim = await api.claimRunnerJob(codexSlackRun.runId);
-    expect(codexSlackClaim.cliAgentType).toBe("codex");
-    expect(codexSlackClaim.appendSystemPrompt ?? "").not.toContain(
+    const scheduledClaim = await api.claimRunnerJob(scheduled.runId);
+    expect(scheduledClaim.cliAgentType).toBe("codex");
+    expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
       CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
     );
-    await api.requestCancelRun(actor, codexSlackRun.runId, [200]);
+    expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
+      "When running in Codex",
+    );
+    await api.requestCancelRun(actor, scheduled.runId, [200]);
   });
 
   it("runs thread-pinned member-scope providers and mounts codex workflows", async () => {
