@@ -86,7 +86,7 @@ for mode in RA2 RA2_256 RA2ne RA2ne_256; do
     start_server "$mode" "$require"
     if [ "$require" = 1 ]; then export RSA_AES_USER="$user"; else export RSA_AES_USER=''; fi
     echo "independent case mode=$mode credential_subtype=$((2-require)) require_username=$require"
-    "$binary" --ignored --exact independent_tigervnc_authenticates_and_captures_the_selected_mode --nocapture
+    env -u RSA_AES_NEGATIVE "$binary" --ignored --exact independent_tigervnc_authenticates_and_captures_the_selected_mode --nocapture
     RSA_AES_NEGATIVE=1 RSA_AES_PASSWORD='wrong-canary' "$binary" --ignored --exact independent_tigervnc_authenticates_and_captures_the_selected_mode --nocapture
     RSA_AES_NEGATIVE=1 RSA_AES_PIN=$(printf '%064d' 0) "$binary" --ignored --exact independent_tigervnc_authenticates_and_captures_the_selected_mode --nocapture
     stop_server

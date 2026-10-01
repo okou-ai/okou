@@ -35,7 +35,7 @@ bash crates/rfb-client/tests/fixtures/tigervnc_rsa_aes.sh \
 
 On an authorized lab with a separately transferred exact test binary/script, `RSA_AES_FIXTURE_ROOT` may name an isolated owned scratch parent. Do not transfer real credentials or use a production server. Record the binary SHA256 and exact source revision separately.
 
-The sequential matrix exercises each four modes × `RequireUsername=0/1`, actual authentication, ServerInit and fresh **640×480 PNG** through the engine Session. Each case also checks a wrong password and an independently wrong pin. Successful `ne` captures are a loopback lab condition, not production raw-network approval. All eight cases passed on experimental local-11 on 2026-10-01, with 7,967-byte blank-desktop PNGs; final source/binary/cleanup checkpoint belongs in the PR acceptance record, not an inference from executable help.
+The sequential matrix exercises each four modes × `RequireUsername=0/1`, actual authentication, ServerInit and fresh **640×480 PNG** through the engine Session. Positive invocations explicitly unset an inherited `RSA_AES_NEGATIVE`; each negative invocation sets that selector only for its own process, so ambient test configuration cannot change a positive capture into a rejection check. Each case also checks a wrong password and an independently wrong pin. Successful `ne` captures are a loopback lab condition, not production raw-network approval. All eight cases passed on experimental local-11 on 2026-10-01, with 7,967-byte blank-desktop PNGs; final source/binary/cleanup checkpoint belongs in the PR acceptance record, not an inference from executable help.
 
 ## Controlled boundary coverage
 
