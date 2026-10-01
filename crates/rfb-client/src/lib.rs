@@ -19,6 +19,7 @@ mod framebuffer;
 mod input;
 mod memory;
 mod pixels;
+mod qemu_sasl;
 mod session;
 mod transport;
 mod trust;
@@ -74,6 +75,8 @@ pub enum AuthenticationStage {
     VncAuthentication,
     /// Sending X509Plain credentials and completing the SecurityResult exchange.
     X509PlainAuthentication,
+    /// Completing pinned QEMU X509SASL/SCRAM and verifying the server proof.
+    QemuScramAuthentication,
     /// Completing Apple DH security type 30 and SecurityResult.
     AppleDhAuthentication,
     /// Completing Apple Direct SRP security type 36 and SecurityResult.
@@ -92,6 +95,7 @@ impl AuthenticationStage {
             Self::X509NoneAuthentication => "x509_none_authentication",
             Self::VncAuthentication => "vnc_authentication",
             Self::X509PlainAuthentication => "x509_plain_authentication",
+            Self::QemuScramAuthentication => "qemu_scram_authentication",
             Self::AppleDhAuthentication => "apple_dh_authentication",
             Self::AppleSrpAuthentication => "apple_srp_authentication",
             Self::AppleRsaSrpAuthentication => "apple_rsa_srp_authentication",
@@ -166,6 +170,45 @@ impl PlainCredentials {
 impl fmt::Debug for PlainCredentials {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("PlainCredentials([REDACTED])")
+    }
+}
+
+/// Credentials for QEMU's SCRAM-SHA-256 over verified X509 TLS.
+///
+/// Values are restricted to printable ASCII so the SASL library cannot silently
+/// change their bytes during SASLprep. Unlike classic VNC, the password is not
+/// truncated at eight bytes. Owned input is erased on drop; debug is redacted.
+pub struct QemuScramCredentials {
+    pub(crate) username: Zeroizing<String>,
+    pub(crate) password: Zeroizing<String>,
+}
+
+impl QemuScramCredentials {
+    pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let username = Zeroizing::new(username);
+        if !(1..=255).contains(&username.len())
+            || !username
+                .bytes()
+                .all(|b| b.is_ascii_graphic() && b != b'=' && b != b',')
+        {
+            return Err(Error::InvalidScramUsername);
+        }
+        if !(1..=1023).contains(&password.len())
+            || !password.bytes().all(|b| (0x20..=0x7e).contains(&b))
+        {
+            return Err(Error::InvalidScramPassword);
+        }
+        Ok(Self { username, password })
+    }
+}
+
+impl fmt::Debug for QemuScramCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("QemuScramCredentials([REDACTED])")
     }
 }
 
@@ -275,6 +318,9 @@ pub enum X509Authentication {
     VncPassword(VncPassword),
     /// X509Plain (subtype 262), with a username and password sent inside TLS.
     Plain(PlainCredentials),
+    /// QEMU 8.2.2 X509SASL (subtype 263) with SCRAM-SHA-256 inside verified TLS.
+    /// QEMU swaps the spec's 263/264 names; 264 is *not* accepted by this path.
+    QemuScramSha256(QemuScramCredentials),
 }
 
 impl X509Authentication {
@@ -283,6 +329,7 @@ impl X509Authentication {
             Self::None => 260,
             Self::VncPassword(_) => 261,
             Self::Plain(_) => 262,
+            Self::QemuScramSha256(_) => 263,
         }
     }
 
@@ -291,6 +338,7 @@ impl X509Authentication {
             Self::None => AuthenticationStage::X509NoneAuthentication,
             Self::VncPassword(_) => AuthenticationStage::VncAuthentication,
             Self::Plain(_) => AuthenticationStage::X509PlainAuthentication,
+            Self::QemuScramSha256(_) => AuthenticationStage::QemuScramAuthentication,
         }
     }
 }
@@ -301,6 +349,9 @@ impl fmt::Debug for X509Authentication {
             Self::None => f.write_str("X509Authentication::None"),
             Self::VncPassword(_) => f.write_str("X509Authentication::VncPassword([REDACTED])"),
             Self::Plain(_) => f.write_str("X509Authentication::Plain([REDACTED])"),
+            Self::QemuScramSha256(_) => {
+                f.write_str("X509Authentication::QemuScramSha256([REDACTED])")
+            }
         }
     }
 }
@@ -585,6 +636,14 @@ pub enum Error {
     InvalidPlainUsername,
     #[error("Plain password must contain 1-1023 UTF-8 bytes without NUL")]
     InvalidPlainPassword,
+    #[error("QEMU SCRAM username must contain 1-255 printable ASCII bytes without comma or equals")]
+    InvalidScramUsername,
+    #[error("QEMU SCRAM password must contain 1-1023 printable ASCII bytes")]
+    InvalidScramPassword,
+    #[error("QEMU SCRAM-SHA-256 was not offered")]
+    UnsupportedScramMechanism,
+    #[error("invalid or over-budget QEMU SCRAM exchange")]
+    InvalidScramExchange,
     #[error("Apple DH username must contain 1-63 UTF-8 bytes without NUL")]
     InvalidAppleDhUsername,
     #[error("Apple DH password must contain 1-63 UTF-8 bytes without NUL")]
@@ -644,4 +703,29 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("TLS provider configuration failed")]
     TlsConfiguration(#[source] rustls::Error),
+}
+
+#[cfg(test)]
+mod qemu_scram_credentials_tests {
+    use super::*;
+
+    #[test]
+    fn bounds_scram_credentials_without_classic_vnc_truncation() {
+        let valid =
+            QemuScramCredentials::new("owner@example.test".into(), "more-than-eight".into())
+                .unwrap();
+        assert_eq!(format!("{valid:?}"), "QemuScramCredentials([REDACTED])");
+        assert!(matches!(
+            QemuScramCredentials::new("a,b".into(), "password".into()),
+            Err(Error::InvalidScramUsername)
+        ));
+        assert!(matches!(
+            QemuScramCredentials::new("user".into(), "\0password".into()),
+            Err(Error::InvalidScramPassword)
+        ));
+        assert!(matches!(
+            QemuScramCredentials::new("user".into(), "x".repeat(1024)),
+            Err(Error::InvalidScramPassword)
+        ));
+    }
 }
