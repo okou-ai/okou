@@ -167,8 +167,10 @@ const reviewClaim$ = command(
           and(
             eq(getStartedClaims.id, claim.id),
             eq(getStartedClaims.leaseId, claim.leaseId),
+            eq(getStartedClaims.status, "reviewing"),
           ),
         );
+      signal.throwIfAborted();
     }
     const [run] = await db
       .select({ status: agentRuns.status })
@@ -206,46 +208,35 @@ export const processGetStartedClaims$ = command(
     for (let i = 0; i < 10; i++) {
       signal.throwIfAborted();
       const at = nowDate();
-      const claimed = await db.transaction(async (tx) => {
-        const [row] = await tx
-          .select()
-          .from(getStartedClaims)
-          .where(
-            and(
-              inArray(getStartedClaims.questKey, ["share", "workflow"]),
-              inArray(getStartedClaims.status, ["pending", "reviewing"]),
-              lte(getStartedClaims.nextAttemptAt, at),
-              or(
-                isNull(getStartedClaims.leaseExpiresAt),
-                lte(getStartedClaims.leaseExpiresAt, at),
-              ),
-              claimIds
-                ? inArray(getStartedClaims.id, [...claimIds])
-                : undefined,
-            ),
-          )
-          .orderBy(getStartedClaims.nextAttemptAt, getStartedClaims.id)
-          .for("update", { skipLocked: true })
-          .limit(1);
-        if (!row) {
-          return null;
-        }
-        const [leased] = await tx
-          .update(getStartedClaims)
-          .set({
-            status: "reviewing",
-            leaseId: randomUUID(),
-            leaseExpiresAt: new Date(at.getTime() + 60_000),
-            attempts: sql`${getStartedClaims.attempts} + 1`,
-            updatedAt: at,
-          })
-          .where(eq(getStartedClaims.id, row.id))
-          .returning();
-        if (!leased) {
-          throw new Error("Get started review lease was not persisted");
-        }
-        return leased;
-      });
+      const eligible = and(
+        inArray(getStartedClaims.questKey, ["share", "workflow"]),
+        inArray(getStartedClaims.status, ["pending", "reviewing"]),
+        lte(getStartedClaims.nextAttemptAt, at),
+        or(
+          isNull(getStartedClaims.leaseExpiresAt),
+          lte(getStartedClaims.leaseExpiresAt, at),
+        ),
+        claimIds ? inArray(getStartedClaims.id, [...claimIds]) : undefined,
+      );
+      // The candidate is advisory; eligibility is rechecked by UPDATE after a
+      // concurrent owner commits. A lost candidate is left to the next scan.
+      const candidate = db
+        .select({ id: getStartedClaims.id })
+        .from(getStartedClaims)
+        .where(eligible)
+        .orderBy(getStartedClaims.nextAttemptAt, getStartedClaims.id)
+        .limit(1);
+      const [claimed] = await db
+        .update(getStartedClaims)
+        .set({
+          status: "reviewing",
+          leaseId: randomUUID(),
+          leaseExpiresAt: new Date(at.getTime() + 60_000),
+          attempts: sql`${getStartedClaims.attempts} + 1`,
+          updatedAt: at,
+        })
+        .where(and(eq(getStartedClaims.id, candidate), eligible))
+        .returning();
       signal.throwIfAborted();
       if (!claimed) {
         break;
@@ -302,6 +293,7 @@ export const processGetStartedClaims$ = command(
           })
           .where(lease);
       }
+      signal.throwIfAborted();
       // Notify only after the result and any credit writes have committed.
       if (
         reviewed?.beneficiaryUserId &&
@@ -311,6 +303,7 @@ export const processGetStartedClaims$ = command(
           [reviewed.beneficiaryUserId],
           GET_STARTED_REWARDS_CHANGED_EVENT,
         );
+        signal.throwIfAborted();
       }
       processed++;
     }

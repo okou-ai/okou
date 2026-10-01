@@ -1,32 +1,26 @@
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { getRewardAvailabilityFromAwards } from "./get-started-rewards.service";
+import {
+  type GetStartedClaimRow,
+  getRewardAvailabilityFromAwards,
+} from "./get-started-rewards.service";
 import {
   getStartedMemberRewardSql,
   getStartedRewardAvailabilityQuery,
-  memberRewardWalletQuery,
   unresolvedClaimWhere,
 } from "./get-started-member-reward";
-import {
-  slackRewardIneligibleValues,
-  slackRewardWalletEntitlement,
-} from "./slack-installation-reward";
+import { slackRewardIneligibleValues } from "./slack-installation-reward";
+import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import {
   acceptedInvitationClaimQuery,
   acceptedInvitationPurchaseQuery,
   acceptedInvitationClaimValues,
   invitationClaimConflict,
   invitationAcceptanceValues,
-  InvitationClaimTransitionLost,
-  requireInvitationClaimTransition,
   requireInvitationRewardIdentity,
   type AcceptedGetStartedInvitation,
 } from "./get-started-invitation-acceptance";
@@ -38,7 +32,35 @@ export class InvitationRewardSlotConflict extends Error {
   }
 }
 
-/** Signed acceptance, its durable claim and bonus all commit under one wallet owner. */
+const publishAcceptedReward$ = command(
+  async (
+    { set },
+    plan: {
+      readonly claim: GetStartedClaimRow;
+      readonly rewardKey: string;
+      readonly slot: number | null;
+      readonly at: Date;
+      readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { rowCount } = await db.execute(
+      getStartedMemberRewardSql(
+        plan.claim,
+        plan.rewardKey,
+        plan.slot,
+        undefined,
+        plan.at,
+        plan.acceptance,
+      ),
+    );
+    signal.throwIfAborted();
+    return rowCount;
+  },
+);
+
+/** Signed acceptance and its bonus publish through one fenced claim transition. */
 export const acceptGetStartedInvitation$ = command(
   async (
     { set },
@@ -49,119 +71,101 @@ export const acceptGetStartedInvitation$ = command(
       return;
     }
     const db = set(writeDb$);
+    await set(ensureGetStartedRewardWallet$, args.orgId, signal);
+    let [claim] = await db.select().from(acceptedInvitationClaimQuery(args));
+    signal.throwIfAborted();
+    if (!claim) {
+      if (!args.purchaseId && !args.invitationId) {
+        return;
+      }
+      const [purchase] = await db
+        .select()
+        .from(acceptedInvitationPurchaseQuery(args));
+      signal.throwIfAborted();
+      if (!purchase) {
+        return;
+      }
+      const values = acceptedInvitationClaimValues(args, purchase, nowDate());
+      // An interrupted acceptance may leave a pending claim. Signed redelivery
+      // and existing membership recovery both rediscover this business identity.
+      [claim] = await db
+        .insert(getStartedClaims)
+        .values(values)
+        .onConflictDoUpdate(invitationClaimConflict(values.sourceKey))
+        .returning();
+      signal.throwIfAborted();
+    }
+    if (!claim) {
+      throw new Error("Invitation reward claim was not persisted");
+    }
+    if (["granted", "ineligible", "rejected"].includes(claim.status)) {
+      return;
+    }
+    requireInvitationRewardIdentity(args, claim);
+    const at = nowDate();
+    const acceptance = invitationAcceptanceValues(args, claim.invitationId, at);
+    if (claim.beneficiaryUserId === args.userId) {
+      await db
+        .update(getStartedClaims)
+        .set(slackRewardIneligibleValues("self_invitation", at))
+        .where(unresolvedClaimWhere(claim));
+      signal.throwIfAborted();
+      return;
+    }
+    const rewardKey = `invite:${args.userId}`;
+    const awards = await db
+      .select()
+      .from(getStartedRewardAvailabilityQuery(claim, rewardKey));
+    signal.throwIfAborted();
+    const availability = getRewardAvailabilityFromAwards(
+      claim,
+      rewardKey,
+      awards,
+    );
+    if (availability.kind === "ineligible") {
+      await db
+        .update(getStartedClaims)
+        .set({
+          ...slackRewardIneligibleValues(availability.reason, at),
+          ...acceptance,
+        })
+        .where(unresolvedClaimWhere(claim));
+      signal.throwIfAborted();
+      return;
+    }
+    const slot = availability.slots[0];
+    if (slot === undefined) {
+      throw new Error("Invitation reward has no available slot");
+    }
+    // Acceptance provenance belongs to the same UPDATE as the grant: a stale
+    // delivery never changes the attribution of another redeemer's result.
     const result = await settle(
-      db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(orgMetadataCanonicalWrites)
-          .values({ orgId: args.orgId })
-          .onConflictDoNothing()
-          .returning({ orgId: orgMetadata.orgId });
-        await tx.select().from(memberRewardWalletQuery(args.orgId));
-        if (inserted) {
-          await tx
-            .insert(orgPlanEntitlements)
-            .values(slackRewardWalletEntitlement(args.orgId))
-            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-        }
-        let [claim] = await tx
-          .select()
-          .from(acceptedInvitationClaimQuery(args));
-        if (!claim) {
-          if (!args.purchaseId && !args.invitationId) {
-            return;
-          }
-          const [purchase] = await tx
-            .select()
-            .from(acceptedInvitationPurchaseQuery(args));
-          if (!purchase) {
-            return;
-          }
-          const values = acceptedInvitationClaimValues(
-            args,
-            purchase,
-            nowDate(),
-          );
-          [claim] = await tx
-            .insert(getStartedClaims)
-            .values(values)
-            .onConflictDoUpdate(invitationClaimConflict(values.sourceKey))
-            .returning();
-        }
-        if (!claim) {
-          throw new Error("Invitation reward claim was not persisted");
-        }
-        if (["granted", "ineligible", "rejected"].includes(claim.status)) {
-          return;
-        }
-        requireInvitationRewardIdentity(args, claim);
-        const at = nowDate();
-        if (claim.beneficiaryUserId === args.userId) {
-          const ineligible = await tx
-            .update(getStartedClaims)
-            .set(slackRewardIneligibleValues("self_invitation", at))
-            .where(unresolvedClaimWhere(claim))
-            .returning({ id: getStartedClaims.id });
-          requireInvitationClaimTransition(claim.id, ineligible.length);
-          return;
-        }
-        const rewardKey = `invite:${args.userId}`;
-        const awards = await tx
-          .select()
-          .from(getStartedRewardAvailabilityQuery(claim, rewardKey));
-        const availability = getRewardAvailabilityFromAwards(
+      set(
+        publishAcceptedReward$,
+        {
           claim,
           rewardKey,
-          awards,
-        );
-        if (availability.kind === "ineligible") {
-          const ineligible = await tx
-            .update(getStartedClaims)
-            .set({
-              ...slackRewardIneligibleValues(availability.reason, at),
-              ...invitationAcceptanceValues(args, claim.invitationId, at),
-            })
-            .where(unresolvedClaimWhere(claim))
-            .returning({ id: getStartedClaims.id });
-          requireInvitationClaimTransition(claim.id, ineligible.length);
-          return;
-        }
-        const slot = availability.slots[0];
-        if (slot === undefined) {
-          throw new Error("Invitation reward has no available slot");
-        }
-        // Conditional on the unresolved claim and its observed lease; the
-        // grant row exists only if that transition happened.
-        requireInvitationClaimTransition(
-          claim.id,
-          (
-            await tx.execute(
-              getStartedMemberRewardSql(claim, rewardKey, slot, undefined, at),
-            )
-          ).rowCount,
-        );
-        // The claim is now owned by this transaction's own transition.
-        await tx
-          .update(getStartedClaims)
-          .set(invitationAcceptanceValues(args, claim.invitationId, at))
-          .where(eq(getStartedClaims.id, claim.id));
-        signal.throwIfAborted();
-      }),
+          slot,
+          at,
+          acceptance,
+        },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
-    if (result.ok || result.error instanceof InvitationClaimTransitionLost) {
-      // Another redeemer resolved or leased this claim after our read; its
-      // committed transition is the deterministic outcome.
+    if (result.ok) {
+      if (result.value !== 0 && result.value !== 1) {
+        throw new Error("Invitation reward grant was not committed");
+      }
       return;
     }
     if (
       isUniqueViolation(result.error, "uq_get_started_reward_key") ||
       isUniqueViolation(result.error, "uq_get_started_reward_slot")
     ) {
-      // A concurrent grant took this reward identity or inviter slot. The
-      // whole acceptance rolled back and the claim stays unresolved; report a
-      // deterministic conflict so the Clerk redelivery / membership recovery
-      // cycle decides again, never an in-place re-read.
+      // Only this grant statement rolled back. Signed redelivery and
+      // membership recovery rediscover the durable pending claim, as in R1.
       throw new InvitationRewardSlotConflict(args.orgId);
     }
     throw result.error;

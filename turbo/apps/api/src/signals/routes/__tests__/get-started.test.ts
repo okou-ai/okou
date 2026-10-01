@@ -16,6 +16,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { getStartedRoutes } from "../get-started";
+import { createDeferredPromise } from "../../utils";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
@@ -295,6 +296,60 @@ test("an interrupted review is reclaimed after its lease without duplicating a g
   await review([submitted.body.id]);
   expect((await status()).shareClaim).toStrictEqual(granted);
 });
+
+test.each([
+  {
+    olderText: "Okou helps",
+    currentText: "Unrelated post",
+    status: "rejected",
+    credits: 0,
+  },
+  {
+    olderText: "Unrelated post",
+    currentText: "Okou helps",
+    status: "granted",
+    credits: 2000,
+  },
+])(
+  "a late review cannot overwrite the replacement lease's $status result",
+  async ({ olderText, currentText, status: expectedStatus, credits }) => {
+    mockNow(new Date("2026-09-15T08:00:00.000Z"));
+    const id = postId();
+    const submitted = await accept(
+      client().submitShare({
+        headers,
+        body: { url: `https://x.com/example/status/${id}` },
+      }),
+      [202],
+    );
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const author = `https://x.com/${authorHandle()}`;
+    let first = true;
+    server.use(
+      http.get("https://api.socialkit.dev/twitter/tweet", async () => {
+        if (first) {
+          first = false;
+          entered.resolve();
+          await release.promise;
+          return postResponse(id, olderText, author);
+        }
+        return postResponse(id, currentText, author);
+      }),
+    );
+    const older = review([submitted.body.id]);
+    await entered.promise;
+    expect((await status()).shareClaim?.status).toBe("reviewing");
+    mockNow(new Date("2026-09-15T08:01:01.000Z"));
+    await review([submitted.body.id]);
+    const winner = (await status()).shareClaim;
+    expect(winner?.status).toBe(expectedStatus);
+    release.resolve();
+    await older;
+    expect((await status()).shareClaim).toStrictEqual(winner);
+    expect((await personalCredits()).bonusCredits).toBe(credits);
+  },
+);
 
 test("transient or mismatched provider evidence stays retryable, definite rejection allows another post", async () => {
   mockNow(new Date("2026-09-15T10:00:00.000Z"));
