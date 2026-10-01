@@ -376,42 +376,47 @@ export type PendingThreadSessionResolution = Pick<
   ChatThreadSessionResolution,
   "action" | "resetNativeSession" | "expected"
 >;
-export type PendingRunArguments = Pick<
-  CreateAgentRunArgs,
-  | "userId"
-  | "orgId"
-  | "body"
-  | "apiStartTime"
-  | "chatThreadId"
-  | "agentRunMetadata"
-  | "agentRunModelPin"
-  | "codexServiceTier"
-  | "queueFirstAssociation"
-  | "timingDimensions"
-  | "persistProducerRunBinding"
-> & { readonly threadSessionResolution?: PendingThreadSessionResolution };
+/** Explicit facts the atomic launch persists; owners assemble them privately. */
+export interface PendingRunArguments {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly body: CreateRunBody;
+  readonly apiStartTime: number;
+  readonly chatThreadId?: string;
+  readonly agentRunMetadata?: AgentRunMetadata;
+  readonly agentRunModelPin?: AgentRunModelPin;
+  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  readonly timingDimensions?: ApiDispatchTimingDimensions;
+  readonly persistProducerRunBinding?: PersistProducerRunBinding;
+  readonly threadSessionResolution?: PendingThreadSessionResolution;
+}
+
+/** Explicit run facts persisted with the launch rows. */
+export interface PendingRunContext {
+  readonly body: CreateRunBody;
+  readonly selectedImageModel: ImageModel;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
+  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
+  readonly resolved: {
+    readonly agentId: string | null;
+    readonly continuedFromAgentSessionId?: string;
+  };
+  readonly modelProvider: Pick<
+    ResolvedModelProviderEnvironment,
+    | "credentialOwner"
+    | "id"
+    | "type"
+    | "selectedModel"
+    | "builtInModelRuntimeRoute"
+  > | null;
+}
 
 export interface CommitPreparedLaunchArgs {
   readonly db: Db;
   readonly createArgs: PendingRunArguments;
   readonly enforceBuiltInCredits: boolean;
-  readonly context: Pick<
-    FinalizedPreparedRunContext,
-    "body" | "selectedImageModel" | "launchSnapshot" | "officialWorkflowRun"
-  > & {
-    readonly resolved: Pick<
-      ResolvedRunExecution,
-      "agentId" | "continuedFromAgentSessionId"
-    >;
-    readonly modelProvider: Pick<
-      ResolvedModelProviderEnvironment,
-      | "credentialOwner"
-      | "id"
-      | "type"
-      | "selectedModel"
-      | "builtInModelRuntimeRoute"
-    > | null;
-  };
+  readonly context: PendingRunContext;
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;

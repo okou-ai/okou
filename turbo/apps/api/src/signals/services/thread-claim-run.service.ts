@@ -1,3 +1,4 @@
+import type { RunCallback } from "./agent-run-contracts";
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 
@@ -261,11 +262,11 @@ import {
   committedAtomicLaunchResponse,
   type CommitPreparedLaunchArgs,
   prepareAtomicLaunchPersistence,
-  type CreateAgentRunArgs,
   type CreateRunErrorResult,
   type EffectiveConnectorScope,
   type PreparedRunContext,
   type ResolvedModelProviderEnvironment,
+  type PendingRunArguments,
 } from "./execution-launch-persistence.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import { executeRawRows } from "../../lib/db-raw-rows";
@@ -1875,7 +1876,7 @@ interface ThreadRunContext {
 }
 
 function claimCommitArguments(
-  args: CreateAgentRunArgs,
+  args: PendingRunArguments,
 ): ThreadRunContext["input"]["args"] {
   return {
     userId: args.userId,
@@ -7489,7 +7490,7 @@ export function createThreadClaimRunObjects(
     );
   });
   const callbackInputs$ = computed(
-    async (get): Promise<CreateAgentRunArgs["callbacks"]> => {
+    async (get): Promise<readonly RunCallback[] | undefined> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerCallbackInputs$)
         : get(promptExecutionResourcesCallbackInputs$);
