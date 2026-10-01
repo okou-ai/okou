@@ -166,13 +166,27 @@ function searchMatch(
   };
 }
 
+interface SearchHistoryFacts {
+  readonly principal: Principal;
+  readonly candidates: readonly McpSearchCandidate[];
+  readonly threadId: string;
+}
+
+interface SearchPageFacts {
+  readonly principal: Principal;
+  readonly input: McpSearchChatMessagesInput;
+  readonly query: {
+    readonly tsquery: string;
+    readonly cursor: Cursor | null;
+    readonly filters: string;
+  };
+}
+
 const searchHistory$ = command(
   async (
     { set },
+    { principal, candidates, threadId }: SearchHistoryFacts,
     budget: ReturnType<typeof createMcpChatHistoryBudget>,
-    principal: Principal,
-    candidates: readonly McpSearchCandidate[],
-    threadId: string,
     signal: AbortSignal,
   ): Promise<Map<number, Message>> => {
     const history = await set(
@@ -207,24 +221,15 @@ const searchHistory$ = command(
 const searchPage$ = command(
   async (
     { set },
+    { principal, input, query }: SearchPageFacts,
     budget: ReturnType<typeof createMcpChatHistoryBudget>,
-    principal: Principal,
-    input: McpSearchChatMessagesInput,
-    query: {
-      readonly tsquery: string;
-      readonly cursor: Cursor | null;
-      readonly filters: string;
-    },
     signal: AbortSignal,
   ): Promise<McpChatSearchResult> => {
     const { tsquery, cursor, filters } = query;
     budget.check();
     const candidates = await set(
       mcpChatSearchCandidates$,
-      principal,
-      input,
-      tsquery,
-      cursor,
+      { principal, input, tsquery, cursor },
       signal,
     );
     budget.check();
@@ -263,10 +268,8 @@ const searchPage$ = command(
       if (!messages) {
         messages = await set(
           searchHistory$,
+          { principal, candidates, threadId: candidate.threadId },
           budget,
-          principal,
-          candidates,
-          candidate.threadId,
           signal,
         );
         budget.check();
@@ -357,10 +360,8 @@ export const searchMcpChatMessages$ = command(
     const result = await settle(
       set(
         searchPage$,
+        { principal, input, query: { tsquery, cursor, filters } },
         budget,
-        principal,
-        input,
-        { tsquery, cursor, filters },
         operationSignal,
       ),
       signal,

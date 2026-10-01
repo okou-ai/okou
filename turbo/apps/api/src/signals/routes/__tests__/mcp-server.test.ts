@@ -668,7 +668,7 @@ describe("MCP Web parity", () => {
         .map((message) => {
           return message.text;
         }),
-    ).toEqual(["First ordinary MCP input", "Second ordinary MCP input"]);
+    ).toStrictEqual(["First ordinary MCP input", "Second ordinary MCP input"]);
     const web = await f.chat.listThreadEvents(f.actor, first.threadId);
     expect(JSON.stringify(web.events)).toContain("mcp_test_client");
     expect(first).not.toHaveProperty("inputRef");
@@ -716,7 +716,7 @@ describe("MCP Web parity", () => {
     const listed = mcpListChatThreadsOutputSchema.parse(
       (await callTool(f.token, "list_chat_threads")).structuredContent,
     );
-    expect(listed.threads).toEqual([]);
+    expect(listed.threads).toStrictEqual([]);
   });
 
   it("applies sparse metadata using the Web update and does not revert a newer update", async () => {
@@ -828,7 +828,7 @@ describe("MCP Web parity", () => {
       mcpListChatThreadsOutputSchema.parse(
         (await callTool(f.token, "list_chat_threads")).structuredContent,
       ).threads,
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("pages canonical messages and binds cursors to the same owner and filters", async () => {
@@ -906,7 +906,7 @@ describe("MCP Web parity", () => {
         .structuredContent,
     );
     const web = await runs.readRun(f.actor, run.runId);
-    expect(read).toEqual(web);
+    expect(read).toStrictEqual(web);
     const peer = f.auth.token({
       sub: `user_${randomUUID()}`,
       scope: defaultScopes,
@@ -919,8 +919,12 @@ describe("MCP Web parity", () => {
     expect(
       structuredToolError(
         await callTool(peer, "cancel_run", { runId: run.runId }),
-      ).retryable,
-    ).toBe(false);
+      ),
+    ).toStrictEqual({
+      code: "NOT_FOUND",
+      message: `No such run: '${run.runId}'`,
+      retryable: false,
+    });
     expect(
       structuredToolError(
         await callTool(f.token, "get_chat_status", {

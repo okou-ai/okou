@@ -5,7 +5,7 @@ import {
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -29,7 +29,6 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";

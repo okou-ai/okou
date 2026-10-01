@@ -20,62 +20,72 @@ interface McpSearchPosition {
   readonly seqId: number;
 }
 
+interface CandidateQueryFacts {
+  readonly principal: { readonly userId: string; readonly orgId: string };
+  readonly input: McpSearchChatMessagesInput;
+  readonly tsquery: string;
+  readonly cursor: McpSearchPosition | null;
+}
+
+const source = chatEventSearchMessages;
+const keywordColumns = Object.freeze({
+  threadId: source.chatThreadId,
+  seqId: source.seqId,
+  runId: source.runId,
+  agentId: source.agentId,
+  role: source.role,
+  sourceEventAt: source.createdAt,
+  text: source.text,
+});
+
+function candidateCondition({
+  principal,
+  input,
+  tsquery,
+  cursor,
+}: CandidateQueryFacts) {
+  return and(
+    eq(source.userId, principal.userId),
+    eq(source.orgId, principal.orgId),
+    sql`${source.tsv} @@ to_tsquery('simple', ${tsquery})`,
+    input.threadId === undefined
+      ? undefined
+      : eq(source.chatThreadId, input.threadId),
+    input.agentId === undefined ? undefined : eq(source.agentId, input.agentId),
+    input.role === undefined ? undefined : eq(source.role, input.role),
+    input.since === undefined
+      ? undefined
+      : gte(source.createdAt, sql`${input.since}::timestamp`),
+    input.before === undefined
+      ? undefined
+      : lt(source.createdAt, sql`${input.before}::timestamp`),
+    cursor === null
+      ? undefined
+      : sql`(${source.createdAt}, ${source.chatThreadId}, ${source.seqId}) < (${cursor.sourceEventAt}::timestamp, ${cursor.threadId}::uuid, ${cursor.seqId}::bigint)`,
+  );
+}
+
 /** SQL ownership/filtering precedes LIMIT; content hashing follows it. */
 export const mcpChatSearchCandidates$ = command(
   async (
     { set },
-    principal: { readonly userId: string; readonly orgId: string },
-    input: McpSearchChatMessagesInput,
-    tsquery: string,
-    cursor: McpSearchPosition | null,
+    facts: CandidateQueryFacts,
     signal: AbortSignal,
   ): Promise<McpSearchCandidate[]> => {
+    const { principal } = facts;
+    const condition = candidateCondition(facts);
     // SET LOCAL bounds the single candidate query. No helper receives this handle.
     const rows = await set(writeDb$).transaction(
       async (db) => {
         await db.execute(sql`SET LOCAL statement_timeout = '3s'`);
-        const source = chatEventSearchMessages;
-        const columns = {
-          threadId: source.chatThreadId,
-          seqId: source.seqId,
-          runId: source.runId,
-          agentId: source.agentId,
-          role: source.role,
-          sourceEventAt: source.createdAt,
-          text: source.text,
-        };
         const keywordQuery = db
-          .select(columns)
+          .select(keywordColumns)
           .from(source)
-          .where(
-            and(
-              eq(source.userId, principal.userId),
-              eq(source.orgId, principal.orgId),
-              sql`${source.tsv} @@ to_tsquery('simple', ${tsquery})`,
-              input.threadId === undefined
-                ? undefined
-                : eq(source.chatThreadId, input.threadId),
-              input.agentId === undefined
-                ? undefined
-                : eq(source.agentId, input.agentId),
-              input.role === undefined
-                ? undefined
-                : eq(source.role, input.role),
-              input.since === undefined
-                ? undefined
-                : gte(source.createdAt, sql`${input.since}::timestamp`),
-              input.before === undefined
-                ? undefined
-                : lt(source.createdAt, sql`${input.before}::timestamp`),
-              cursor === null
-                ? undefined
-                : sql`(${source.createdAt}, ${source.chatThreadId}, ${source.seqId}) < (${cursor.sourceEventAt}::timestamp, ${cursor.threadId}::uuid, ${cursor.seqId}::bigint)`,
-            ),
-          );
+          .where(condition);
         // Keep the Top-N sort outside the complete lexical match. Otherwise rare
         // terms can make an ordered recency plan walk the entire user's history.
         const keyword = db
-          .$with("mcp_search_keyword", columns)
+          .$with("mcp_search_keyword", keywordColumns)
           .as(sql`${keywordQuery} OFFSET 0`);
         const page = db
           .select({
