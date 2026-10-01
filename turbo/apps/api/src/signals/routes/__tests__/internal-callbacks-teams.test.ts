@@ -1120,8 +1120,6 @@ describe("Teams chat callbacks", () => {
           "Expected the original participant's completed session",
         );
       }
-      const firstRunOpenRouterRequestCount = summaryRequests.length;
-
       const secondFixture = await trackTeamsFixture(
         Promise.resolve(
           teamsConnectFixture({
@@ -1166,7 +1164,6 @@ describe("Teams chat callbacks", () => {
         cliAgentSessionId,
         secondFixture,
         summaryRequests,
-        firstRunOpenRouterRequestCount,
       };
     }
 
@@ -1197,9 +1194,9 @@ describe("Teams chat callbacks", () => {
     }
 
     it("delivers a reply naming the new participant with a fresh summary", async () => {
-      const { teamsApi, summaryRequests, firstRunOpenRouterRequestCount } =
-        prepared;
+      const { teamsApi, summaryRequests } = prepared;
       const { runId, claim } = await claimParticipantRun();
+      const summaryRequestCountBeforeCompletion = summaryRequests.length;
       dropLastTeamsIndicatorRequest(teamsApi);
       await completeSandboxRun({
         runId,
@@ -1210,9 +1207,22 @@ describe("Teams chat callbacks", () => {
       expect(teamsApi.postedActivities[1]?.text).toContain(
         "Reply to Grace Hopper",
       );
-      expect(summaryRequests.length).toBeGreaterThan(
-        firstRunOpenRouterRequestCount,
+      const participantSummaryRequests = summaryRequests.slice(
+        summaryRequestCountBeforeCompletion,
       );
+      expect(participantSummaryRequests.length).toBeGreaterThan(0);
+      for (const request of participantSummaryRequests) {
+        expect(request).toStrictEqual(
+          expect.objectContaining({
+            messages: expect.arrayContaining([
+              expect.objectContaining({
+                role: "user",
+                content: expect.stringContaining("finish the follow-up"),
+              }),
+            ]),
+          }),
+        );
+      }
     });
 
     it("starts a separate session for the new participant", async () => {
