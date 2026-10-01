@@ -125,6 +125,7 @@ import {
   setupConnectedDiscordActor,
 } from "./helpers/discord-fixture";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
@@ -1048,6 +1049,7 @@ async function assistantMessagesFixture(
     actor: actor.actor,
     chat: f.chat,
     threadId: sent.threadId,
+    runId: sent.runId,
   };
 }
 
@@ -4636,7 +4638,12 @@ describe("MCP canonical message reads", () => {
     ).toBe(23);
     for (const message of all) {
       const original = canonical.events.find((event) => {
-        return event.id === message.ref.eventId;
+        return (
+          (event.eventType === "input.prompt" ||
+            event.eventType === "output.message") &&
+          event.runId === f.runId &&
+          chatEventDisplayText(event) === message.text
+        );
       });
       expect(original).toBeDefined();
       expect(message.ref).toStrictEqual({
@@ -4667,7 +4674,10 @@ describe("MCP canonical message reads", () => {
     expect(older.messages[0]?.text).toBe("Message 0");
     for (const message of [...older.messages, ...latest.messages]) {
       const original = canonical.events.find((event) => {
-        return event.id === message.ref.eventId;
+        return (
+          event.eventType === "input.rejected" &&
+          chatEventDisplayText(event) === message.text
+        );
       });
       const initialInput = canonical.events.find((event) => {
         return (
