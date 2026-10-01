@@ -9,6 +9,7 @@ import {
 } from "./execution-connector-sources.service";
 import {
   createModelSourceSnapshot,
+  type ModelSourceIdentity,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
 import {
@@ -199,7 +200,6 @@ import {
   persistedStorageMountRequests,
   personalSubscriptionAccountCandidates,
   piConfigurationRouteError,
-  pinnedProviderSecretProjection,
   type PreparedConnectorContext,
   type PreparedOfficialWorkflow,
   type PreparedPiLaunchResources,
@@ -213,7 +213,6 @@ import {
   prepareRunnerStorageInput,
   prepareRunOutputMetadata,
   priorPiMemoryRecall,
-  regularProviderEnvironmentFromSnapshot,
   resolveProductAgentExecution,
   type ResolvedModelProviderEnvironment,
   type ResolveModelProviderEnvironmentArgs,
@@ -678,12 +677,8 @@ import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-function isMigratedRegisteredSource(
-  type: string | undefined,
-  scope: string | undefined,
-): boolean {
+function isMigratedRegisteredSource(type: string | undefined): boolean {
   return (
-    scope !== undefined &&
     type !== undefined &&
     [
       "anthropic-api-key",
@@ -699,11 +694,60 @@ function isMigratedRegisteredSource(
   );
 }
 
-function isMemberSubscriptionSource(
+/**
+ * A pin without a credential scope names one exact provider row owned by the
+ * member or the workspace; the owner decides which exact source is read.
+ */
+async function registeredProviderSourceIdentity(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly modelProviderId: string;
+    readonly modelProviderCredentialScope?: "member" | "org";
+  },
   type: string,
-  scope: string | undefined,
-): boolean {
-  return isPersonalSubscriptionProviderType(type) && scope !== "org";
+): Promise<ModelSourceIdentity | null> {
+  const owner =
+    args.modelProviderCredentialScope ??
+    (await unscopedRegisteredProviderOwner(db, args, type));
+  if (!owner) {
+    return null;
+  }
+  return {
+    kind: owner === "member" ? "member-provider" : "organization",
+    modelProviderId: args.modelProviderId,
+  };
+}
+
+async function unscopedRegisteredProviderOwner(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly modelProviderId: string;
+  },
+  type: string,
+): Promise<"member" | "org" | null> {
+  const [provider] = await db
+    .select({ userId: modelProviders.userId })
+    .from(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.id, args.modelProviderId),
+        eq(modelProviders.orgId, args.orgId),
+        eq(modelProviders.type, type),
+        or(
+          eq(modelProviders.userId, args.userId),
+          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+        ),
+      ),
+    )
+    .limit(1);
+  if (!provider) {
+    return null;
+  }
+  return provider.userId === ORG_SENTINEL_USER_ID ? "org" : "member";
 }
 
 function isMigratedAccountSource(
@@ -712,29 +756,6 @@ function isMigratedAccountSource(
   return (
     args.modelProviderType === "codex-oauth-token" ||
     args.modelProviderType === "claude-code-oauth-token"
-  );
-}
-
-function isMigratedOrgAccountSource(
-  args: ResolveModelProviderEnvironmentArgs | undefined,
-): boolean {
-  return (
-    args !== undefined &&
-    args.modelProviderCredentialScope === "org" &&
-    isMigratedAccountSource(args)
-  );
-}
-
-function isPreparedRegisteredSource(
-  args: ResolveModelProviderEnvironmentArgs | undefined,
-): boolean {
-  return (
-    args !== undefined &&
-    (isMigratedRegisteredSource(
-      args.modelProviderType,
-      args.modelProviderCredentialScope,
-    ) ||
-      isMigratedOrgAccountSource(args))
   );
 }
 
@@ -8882,20 +8903,21 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const type = args.modelProviderType;
-    if (isMigratedRegisteredSource(type, args.modelProviderCredentialScope)) {
-      return await get(
-        createModelSourceSnapshot({
-          orgId: args.orgId,
-          userId: args.userId,
-          source: {
-            kind:
-              args.modelProviderCredentialScope === "member"
-                ? "member-provider"
-                : "organization",
-            modelProviderId: args.modelProviderId,
-          },
-        }),
+    if (type !== undefined && isMigratedRegisteredSource(type)) {
+      const source = await registeredProviderSourceIdentity(
+        context.input.db,
+        { ...args, modelProviderId: args.modelProviderId },
+        type,
       );
+      return source
+        ? await get(
+            createModelSourceSnapshot({
+              orgId: args.orgId,
+              userId: args.userId,
+              source,
+            }),
+          )
+        : null;
     }
     return await get(
       createModelSourceSnapshot({
@@ -9268,89 +9290,6 @@ export function createThreadClaimRunObjects(
       ? await get(internalPreparedConfiguredEnvironment$)
       : null;
   });
-  const pinnedRegularProviderSnapshot$ = computed(async (get) => {
-    const [context, gatewayEnvironment] = await Promise.all([
-      get(pinnedContext$),
-      get(pinnedGatewayProviderEnvironment$),
-    ]);
-    const args = context?.environmentArgs;
-    const type = args?.modelProviderType;
-    if (isPreparedRegisteredSource(args)) {
-      return null;
-    }
-
-    if (
-      gatewayEnvironment ||
-      !context ||
-      !args?.modelProviderId ||
-      !type ||
-      !isModelProviderType(type) ||
-      isBuiltInModelProviderType(type) ||
-      isMemberSubscriptionSource(type, args.modelProviderCredentialScope)
-    ) {
-      return null;
-    }
-    const multiAuth = hasAuthMethods(type);
-    const hasFirewallAuth =
-      multiAuth && getModelProviderFirewall(type) !== undefined;
-    const rows = await context.input.db
-      .select({
-        provider: {
-          id: modelProviders.id,
-          type: modelProviders.type,
-          userId: modelProviders.userId,
-          isDefault: modelProviders.isDefault,
-          selectedModel: modelProviders.selectedModel,
-          authMethod: modelProviders.authMethod,
-        },
-        secret: {
-          name: secretsTable.name,
-          encryptedValue: pinnedProviderSecretProjection(
-            type,
-            hasFirewallAuth,
-            args.piExecution,
-          ),
-        },
-      })
-      .from(modelProviders)
-      .leftJoin(
-        secretsTable,
-        multiAuth
-          ? and(
-              eq(secretsTable.orgId, modelProviders.orgId),
-              eq(secretsTable.userId, modelProviders.userId),
-              eq(secretsTable.type, "model-provider"),
-            )
-          : eq(secretsTable.id, modelProviders.secretId),
-      )
-      .where(
-        and(
-          eq(modelProviders.id, args.modelProviderId),
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.type, type),
-          args.modelProviderCredentialScope === "org"
-            ? eq(modelProviders.userId, ORG_SENTINEL_USER_ID)
-            : args.modelProviderCredentialScope === "member"
-              ? eq(modelProviders.userId, args.userId)
-              : or(
-                  eq(modelProviders.userId, args.userId),
-                  eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-                ),
-        ),
-      );
-    const first = rows[0];
-    return first
-      ? {
-          provider: {
-            ...first.provider,
-            encryptedValue: first.secret?.encryptedValue ?? null,
-          },
-          secrets: rows.flatMap((row) => {
-            return row.secret ? [row.secret] : [];
-          }),
-        }
-      : null;
-  });
   const environment$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
       const context = await get(pinnedContext$);
@@ -9369,16 +9308,9 @@ export function createThreadClaimRunObjects(
         // Member subscription accounts use the exact selected account source.
         return await get(internalPreparedConfiguredEnvironment$);
       }
-      const [gateway, regular] = await Promise.all([
-        get(pinnedGatewayProviderEnvironment$),
-        get(pinnedRegularProviderSnapshot$),
-      ]);
-      return (
-        gateway ??
-        (regular
-          ? await regularProviderEnvironmentFromSnapshot(args, regular)
-          : null)
-      );
+      // Registered, organization-account and gateway sources are all prepared
+      // from their exact selected source snapshot.
+      return await get(pinnedGatewayProviderEnvironment$);
     },
   );
   const queuedModelRoute$ = computed(async (get) => {
