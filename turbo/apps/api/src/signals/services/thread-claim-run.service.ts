@@ -696,7 +696,6 @@ export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
-  /** App-clock time the pick claimed the thread; the run's API start. */
 }
 
 interface QueuedModelInput {
@@ -2967,7 +2966,7 @@ interface RejectedQueueHead {
   readonly contextId: string | null;
 }
 
-/** Private Runner adaptation; resource outputs carry no Thread context. */
+/** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;

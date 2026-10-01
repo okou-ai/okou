@@ -697,17 +697,11 @@ type PendingActivation = ReturnType<
   typeof committedAtomicLaunchResponse
 >["pendingActivation"];
 
-/**
- * Post-commit activation and the approved log-only presigned URL cache write.
- * The run already exists; failures here are not compensated.
- */
+/** Post-commit activation; the run already exists and is not compensated. */
 const activateMaintenanceRun$ = command(
   async (
     { set },
     activation: PendingActivation,
-    updatePresignedUrlCache$: ReturnType<
-      typeof createExecutionStorageObjects
-    >["updatePresignedUrlCache$"],
     signal: AbortSignal,
   ): Promise<void> => {
     if (activation) {
@@ -720,12 +714,6 @@ const activateMaintenanceRun$ = command(
         },
         signal,
       );
-    }
-    const cache = await settle(set(updatePresignedUrlCache$, signal), signal);
-    if (!cache.ok) {
-      log.warn("Pi maintenance presigned URL cache update failed", {
-        runId: activation?.runnerNotification.runId,
-      });
     }
   },
 );
@@ -955,12 +943,17 @@ export const startMaintenanceRun$ = command(
       apiStartTime,
     });
     signal.throwIfAborted();
-    await set(
-      activateMaintenanceRun$,
-      committed.pendingActivation,
-      storageObjects.updatePresignedUrlCache$,
+    await set(activateMaintenanceRun$, committed.pendingActivation, signal);
+    // The approved log-only presigned URL cache write.
+    const cache = await settle(
+      set(storageObjects.updatePresignedUrlCache$, signal),
       signal,
     );
+    if (!cache.ok) {
+      log.warn("Pi maintenance presigned URL cache update failed", {
+        runId: committed.runId,
+      });
+    }
     return committed.runId;
   },
 );
