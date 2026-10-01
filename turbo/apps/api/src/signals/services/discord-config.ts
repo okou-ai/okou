@@ -1,11 +1,10 @@
-import { computed } from "ccstate";
+import { command, computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { env } from "../../lib/env";
-import type { ReadonlyDb } from "../external/db";
 import {
-  loadUserFeatureSwitchContext,
+  loadUserFeatureSwitchContext$,
   userFeatureSwitchContext,
 } from "./feature-switches.service";
 
@@ -35,25 +34,32 @@ export function getDiscordAppConfig(): DiscordAppConfig | null {
   };
 }
 
-export async function discordIntegrationEnabledForOwnerInDb(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  return isFeatureEnabled(
-    FeatureSwitchKey.DiscordIntegration,
-    await loadUserFeatureSwitchContext(db, orgId, userId),
-  );
-}
+export const discordIntegrationEnabledForOwner$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      orgId,
+      userId,
+      signal,
+    );
+    return isFeatureEnabled(FeatureSwitchKey.DiscordIntegration, context);
+  },
+);
 
 export function discordIntegrationEnabledForOwner(
   orgId: string,
   userId: string,
 ) {
+  const context$ = userFeatureSwitchContext(orgId, userId);
   return computed(async (get) => {
     return isFeatureEnabled(
       FeatureSwitchKey.DiscordIntegration,
-      await get(userFeatureSwitchContext(orgId, userId)),
+      await get(context$),
     );
   });
 }
