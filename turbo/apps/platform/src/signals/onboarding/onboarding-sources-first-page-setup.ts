@@ -1,9 +1,7 @@
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
-import {
-  OnboardingSkillsPage,
-  OnboardingSlackPage,
-} from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import { OnboardingSkillsPage } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import { OnboardingSlackPage } from "../../views/onboarding-sources-first/onboarding-chat-channels-page.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
 import {
   OnboardingExperiencePage,
@@ -25,6 +23,11 @@ import {
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
+import {
+  startTelegramSettingsRealtime$,
+  telegramBots$,
+} from "../okou-page/telegram.ts";
+import { enterOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
 import { page$, updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
@@ -264,7 +267,7 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   enter: enterSkillImport$,
 });
 
-/** Keep the AgentPhone tile's link status current while this step is open. */
+/** Keep the inline phone connection current while this step is open. */
 const watchOnboardingAgentPhone$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     set(setAgentPhoneConnectDialogOpen$, false);
@@ -272,22 +275,32 @@ const watchOnboardingAgentPhone$ = command(
   },
 );
 
+const watchOnboardingTelegram$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    set(startTelegramSettingsRealtime$, signal);
+    await get(telegramBots$);
+    signal.throwIfAborted();
+  },
+);
+
 export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   step: "slack",
   title: () => {
     return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.slack;
+      return $.onboarding.sourcesFirst.chatChannels.title;
     });
   },
   Page: OnboardingSlackPage,
   // The install finishes in the provider's own tab, so the step only learns it
-  // happened from the realtime change these watchers subscribe to. AgentPhone
-  // is linked from a phone, which the step never sees either.
+  // happened from the realtime change these watchers subscribe to. The phone
+  // link also completes outside this tab; the inline QR does not claim success.
   watch: [
     watchSlackConnection$,
     watchTeamsConnection$,
     watchOnboardingAgentPhone$,
+    watchOnboardingTelegram$,
   ],
+  enter: enterOnboardingPhoneCode$,
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

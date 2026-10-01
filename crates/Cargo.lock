@@ -333,9 +333,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.150.0"
+version = "1.151.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fecaa77c862fa1e9d636d54fa06e0049a19a4f071b0d72ea1b9086887d09359"
+checksum = "c82d4b41fe41bfca3c9e1de55645d9a525868ef5ce5e14cee9499ccaf1fc7225"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -456,9 +456,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-http-client"
-version = "1.4.2"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bd25384a4e437aa8d8f339afad4b69e786b936a7cb10db668a7aaf66717b1a8"
+checksum = "51c89cc3f1f281d659a67a519a1b5c6d445b5ce09fa7e5aee40c2c2707e9509d"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-protocol-test",
@@ -537,9 +537,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "591e0024cdf2a8de8711860f7e1d5cfbca26b800ce13793a9aa2f4f5918e6d95"
+checksum = "d6e302ac1d88b99652489df31abdec6ac42a2ab2ac3982ad0ac49f64dfaf28ba"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -561,9 +561,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bb0deb40a69de59f7809251cfe1ab16de135f42c49d222d1202b4d0ce19720f"
+checksum = "c0730c16f91124c6a2abb4932c77e299288b3dd9f967ea2e9ec48cc6731e87a4"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api-macros",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.102.2"
+version = "0.103.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3139,9 +3139,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.18"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9746dbde176634f4f2f1faf2404e30a31b2bc1e9cafb5329c95d8177a18c9fc"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -3162,9 +3162,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.15"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -3392,7 +3392,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3530,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.218.4"
+version = "0.219.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3764,7 +3764,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -5817,9 +5817,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",

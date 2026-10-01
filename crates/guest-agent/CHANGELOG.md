@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.103.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.2...guest-agent-v0.103.0) (2026-10-01)
+
+
+### Features
+
+* **runner:** install embedded cli into rootfs ([#37422](https://github.com/okou-ai/okou/issues/37422)) ([aaae6c3](https://github.com/okou-ai/okou/commit/aaae6c3bb9c52be47911fd7244ae789a54419929))
+
 ## [0.102.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.1...guest-agent-v0.102.2) (2026-09-30)
 
 ## [0.102.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.0...guest-agent-v0.102.1) (2026-09-30)
