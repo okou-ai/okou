@@ -3296,10 +3296,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("returns pending and failed run-log detail residue", async () => {
     const { actor, agentOne } = await setupRunLogFixture();
-    const pendingRun = await api.createRun(actor, {
+    const pendingRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "pending detail run",
-      modelProvider: "anthropic-api-key",
     });
     const pendingDetail = await reads.requestReadLogById(
       actor,
@@ -3314,10 +3313,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
-    const failedRun = await api.createRun(actor, {
+    const failedRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "failed detail run",
-      modelProvider: "anthropic-api-key",
     });
     await webhooks.requestAgentComplete(
       { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
@@ -3338,10 +3336,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("reads run-log list and detail with a claimed run token", async () => {
     const { actor, agentOne, webRun } = await setupRunLogFixture();
-    const tokenRun = await api.createRun(actor, {
+    const tokenRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
-      modelProvider: "anthropic-api-key",
     });
     const tokenClaim = await api.claimRunnerJob(tokenRun.runId);
     const okouToken = tokenClaim.platformEnvironment.OKOU_TOKEN;
@@ -3375,10 +3372,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const beforeBoundaryRun = await withMockNowForTest(
       beforeBoundaryAt,
       async () => {
-        const run = await api.createRun(actor, {
+        const run = await api.createThreadRun(actor, {
           agentId: agentOne.agentId,
           prompt: "since boundary hidden run",
-          modelProvider: "anthropic-api-key",
         });
         await api.requestCancelRun(actor, run.runId, [200]);
         return run;
@@ -3388,10 +3384,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const sinceBoundaryRun = await withMockNowForTest(
       sinceBoundary,
       async () => {
-        const run = await api.createRun(actor, {
+        const run = await api.createThreadRun(actor, {
           agentId: agentOne.agentId,
           prompt: "since boundary visible run",
-          modelProvider: "anthropic-api-key",
         });
         await api.requestCancelRun(actor, run.runId, [200]);
         return run;
@@ -3413,12 +3408,26 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("preserves historical agent-source logs without provenance", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "historical-agent-log");
-    const historicalAgentRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "historical agent-source run",
-      triggerSource: "agent",
+    if (!actor.orgId) {
+      throw new Error("Historical logs require an org-scoped actor");
+    }
+    const agent = await bdd.createAgent(actor, {
+      displayName: "historical-agent-log",
+      visibility: "private",
     });
+    // A persisted historical agent-source run without launch provenance.
+    const historicalAgentRun = await store.set(
+      seedRun$,
+      {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        composeId: agent.agentId,
+        prompt: "historical agent-source run",
+        status: "pending",
+        triggerSource: "agent",
+      },
+      context.signal,
+    );
     await api.requestCancelRun(actor, historicalAgentRun.runId, [200]);
     await clearRunLaunchSnapshotFixture(historicalAgentRun.runId);
 
