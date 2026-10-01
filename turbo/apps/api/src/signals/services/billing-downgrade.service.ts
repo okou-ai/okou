@@ -508,16 +508,8 @@ async function scheduleDowngradeToPro(
 }
 
 interface DowngradeSnapshot {
-  readonly org: DowngradeOrg & {
-    readonly billingSnapshot: string;
-    readonly rowVersion: string;
-  };
-  readonly concurrency:
-    | (ConcurrencyChangeState & {
-        readonly billingSnapshot: string;
-        readonly rowVersion: string;
-      })
-    | null;
+  readonly org: DowngradeOrg;
+  readonly concurrency: ConcurrencyChangeState | null;
   readonly usagePack: {
     readonly subscriptionSnapshot: string;
     readonly subscriptionRowVersion: string;
@@ -543,8 +535,6 @@ const downgradeSnapshot$ = command(
           orgMetadata.pendingSubscriptionScheduleId,
         pendingSubscriptionTargetTier:
           orgMetadata.pendingSubscriptionTargetTier,
-        billingSnapshot: sql`${orgMetadata}::text`.mapWith(pgTextDecoder),
-        rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
       })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -559,12 +549,6 @@ const downgradeSnapshot$ = command(
         currentPeriodEnd: orgConcurrencySubscriptions.currentPeriodEnd,
         scheduledSlots: orgConcurrencySubscriptions.scheduledSlots,
         scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
-        billingSnapshot: sql`${orgConcurrencySubscriptions}::text`.mapWith(
-          pgTextDecoder,
-        ),
-        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
-          pgTextDecoder,
-        ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
@@ -650,7 +634,9 @@ const publishDowngrade$ = command(
     const at = nowDate();
     const publication = await settle(
       db.transaction(async (tx) => {
-        const [published] = await tx
+        // Stripe has applied the schedule; record it as main did. Debits and
+        // webhooks rewrite these rows, so no row-version guard applies here.
+        await tx
           .update(orgMetadata)
           .set({
             cancelAtPeriodEnd: prepared.cancelAtPeriodEnd,
@@ -660,19 +646,9 @@ const publishDowngrade$ = command(
             currentPeriodEnd: prepared.effectiveDate,
             updatedAt: at,
           })
-          .where(
-            and(
-              eq(orgMetadata.orgId, args.orgId),
-              sql`${orgMetadata}::text = ${org.billingSnapshot}`,
-              sql`${orgMetadata}.xmin::text = ${org.rowVersion}`,
-            ),
-          )
-          .returning({ orgId: orgMetadata.orgId });
-        if (!published) {
-          throw new DowngradePublicationConflict();
-        }
+          .where(eq(orgMetadata.orgId, args.orgId));
         if (concurrency && (superseded.cancel || superseded.scheduled)) {
-          const [cleared] = await tx
+          await tx
             .update(orgConcurrencySubscriptions)
             .set({
               ...(superseded.cancel ? { cancelAtPeriodEnd: false } : {}),
@@ -688,16 +664,8 @@ const publishDowngrade$ = command(
                   orgConcurrencySubscriptions.stripeSubscriptionId,
                   org.stripeSubscriptionId,
                 ),
-                sql`${orgConcurrencySubscriptions}::text = ${concurrency.billingSnapshot}`,
-                sql`${orgConcurrencySubscriptions}.xmin::text = ${concurrency.rowVersion}`,
               ),
-            )
-            .returning({
-              id: orgConcurrencySubscriptions.stripeSubscriptionId,
-            });
-          if (!cleared) {
-            throw new DowngradePublicationConflict();
-          }
+            );
         }
         if (removal && usagePack) {
           const [canceled] = await tx

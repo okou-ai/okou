@@ -16,8 +16,7 @@ import {
   usagePackAllocationChanges,
   usagePackSubscriptionChanges,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { and, eq, sql } from "drizzle-orm";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import { and, eq } from "drizzle-orm";
 
 import {
   getStripeClient,
@@ -146,13 +145,7 @@ const findActiveConcurrencySubscription$ = command(
     { set },
     args: ConcurrencySubscriptionArgs,
     signal: AbortSignal,
-  ): Promise<
-    | (ActiveConcurrencySubscription & {
-        readonly billingSnapshot: string;
-        readonly rowVersion: string;
-      })
-    | null
-  > => {
+  ): Promise<ActiveConcurrencySubscription | null> => {
     const db = set(writeDb$);
     const [subscription] = await db
       .select({
@@ -162,12 +155,6 @@ const findActiveConcurrencySubscription$ = command(
         cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
         scheduledQuantity: orgConcurrencySubscriptions.scheduledSlots,
         scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
-        billingSnapshot: sql`${orgConcurrencySubscriptions}::text`.mapWith(
-          pgTextDecoder,
-        ),
-        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
-          pgTextDecoder,
-        ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
@@ -2521,8 +2508,10 @@ export const restoreConcurrencySubscription$ = command(
     }
     signal.throwIfAborted();
 
+    // Stripe has applied the restore; record it as main did, without a
+    // row-version guard that a concurrent webhook rewrite would trip.
     const db = set(writeDb$);
-    const [published] = await db
+    await db
       .update(orgConcurrencySubscriptions)
       .set({
         cancelAtPeriodEnd: false,
@@ -2537,15 +2526,9 @@ export const restoreConcurrencySubscription$ = command(
             orgConcurrencySubscriptions.stripeSubscriptionId,
             args.subscriptionId,
           ),
-          sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
-          sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
         ),
-      )
-      .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
+      );
     signal.throwIfAborted();
-    if (!published) {
-      return { ok: false, reason: "billing_changed" };
-    }
 
     return {
       ok: true,

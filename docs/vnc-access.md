@@ -403,12 +403,10 @@ Current membership authorizes access to that owner's configuration. If the user 
 the configuration, it remains the same owner's data and is accessible again.
 Each saved connection retains its own identity across membership changes.
 
-Mutation transactions use shared cleanup-scope locks and an exclusive owner
-lock. Cleanup takes an exclusive scope lock and
-deletes hosts before credentials. These locks serialize overlapping transactions
-without retaining a VNC authority ledger or creation receipts. They do not cancel
-a request that passed membership admission before cleanup and only enters its
-write transaction afterward; such an in-flight request can still finish.
+Mutations and cleanup take no locks (see Advisory Lock Cleanup Release 1).
+Cleanup deletes hosts before credentials. A request that passed membership
+admission before cleanup and only enters its write transaction afterward can
+still finish; no VNC authority ledger or creation receipt prevents it.
 
 Current user, organization and member cleanup removes hosts before credentials.
 Member cleanup removes the organization's configuration for that user. It follows

@@ -1,11 +1,10 @@
 import { command } from "ccstate";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { usagePackAllocationChanges } from "@okouai/db/schema/usage-pack-subscription";
 
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { getStripeClient } from "../external/stripe-client";
 import {
@@ -62,8 +61,6 @@ export const restoreSubscription$ = command(
           orgMetadata.pendingSubscriptionScheduleId,
         pendingSubscriptionTargetTier:
           orgMetadata.pendingSubscriptionTargetTier,
-        billingSnapshot: sql`${orgMetadata}::text`.mapWith(pgTextDecoder),
-        rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
       })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -117,8 +114,10 @@ export const restoreSubscription$ = command(
 
     signal.throwIfAborted();
     const restoredAt = nowDate();
-    const published = await db.transaction(async (tx) => {
-      const [updated] = await tx
+    // Stripe has applied the restore; record it as main did, without a
+    // row-version guard that a concurrent debit or webhook rewrite would trip.
+    await db.transaction(async (tx) => {
+      await tx
         .update(orgMetadata)
         .set({
           cancelAtPeriodEnd: false,
@@ -127,17 +126,7 @@ export const restoreSubscription$ = command(
           pendingSubscriptionChangeAt: null,
           updatedAt: restoredAt,
         })
-        .where(
-          and(
-            eq(orgMetadata.orgId, args.orgId),
-            sql`${orgMetadata}::text = ${org.billingSnapshot}`,
-            sql`${orgMetadata}.xmin::text = ${org.rowVersion}`,
-          ),
-        )
-        .returning({ orgId: orgMetadata.orgId });
-      if (!updated) {
-        return false;
-      }
+        .where(eq(orgMetadata.orgId, args.orgId));
       if (pendingScheduleId) {
         await tx
           .update(usagePackAllocationChanges)
@@ -158,12 +147,8 @@ export const restoreSubscription$ = command(
             ),
           );
       }
-      return true;
     });
     signal.throwIfAborted();
-    if (!published) {
-      return { ok: false, reason: "billing_changed" };
-    }
 
     L.debug("scheduled subscription change restored", {
       orgId: args.orgId,
