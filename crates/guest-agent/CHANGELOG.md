@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.103.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.0...guest-agent-v0.103.1) (2026-10-01)
+
 ## [0.103.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.2...guest-agent-v0.103.0) (2026-10-01)
 
 

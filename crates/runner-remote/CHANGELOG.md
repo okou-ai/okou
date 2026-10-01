@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.8.3...runner-remote-v0.9.0) (2026-10-01)
+
+
+### Features
+
+* **vnc:** add owner-selected qemu scram profile ([#37486](https://github.com/okou-ai/okou/issues/37486)) ([8562a7a](https://github.com/okou-ai/okou/commit/8562a7a241033ae023a588e9ead5643e93990957))
+
 ## [0.8.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.8.2...runner-remote-v0.8.3) (2026-10-01)
 
 ## [0.8.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.8.1...runner-remote-v0.8.2) (2026-10-01)
