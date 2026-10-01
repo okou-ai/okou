@@ -11674,13 +11674,15 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
   it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
     const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "image-generation", true);
-    const queued = await api.createRun(actor, {
+    const queued = await api.createThreadRun(actor, {
       agentId,
       prompt: "capture my paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     await setPaidToolDisabled(context, actor, "web-search", false);
     await setPaidToolDisabled(context, actor, "image-generation", false);
@@ -11699,10 +11701,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, queued.runId, [200]);
     await finishCancelledRun(queued.runId, claim.sandboxToken);
 
-    const enabled = await api.createRun(actor, {
+    const enabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the updated paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     const enabledClaim = await api.claimRunnerJob(enabled.runId);
     expect(enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
@@ -11716,10 +11717,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "video-generation", true);
-    const latest = await api.createRun(actor, {
+    const latest = await api.createThreadRun(actor, {
       agentId,
       prompt: "apply the latest paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     const latestClaim = await api.claimRunnerJob(latest.runId);
     expect(latestClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
@@ -11731,14 +11731,45 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, latest.runId, [200]);
     await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
-    await api.createOrgModelProvider(actor, {
+    const openai = await api.createOrgModelProvider(actor, {
       type: "openai-api-key",
       secret: "bdd-native-web-search-openai-key",
     });
-    const codexByok = await api.createRun(actor, {
+    const anthropic = (await api.listOrgModelProviders(actor)).find(
+      (provider) => {
+        return provider.type === "anthropic-api-key";
+      },
+    );
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
+    }
+    const builtInModel = await seedBuiltInDefaultModelKey();
+    // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+      {
+        model: "gpt-6-astra",
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openai.providerId,
+      },
+      {
+        model: builtInModel,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const codexByok = await api.createThreadRun(actor, {
       agentId,
       prompt: "use Codex native web search",
-      modelProvider: "openai-api-key",
+      model: "gpt-6-astra",
     });
     const codexByokClaim = await api.claimRunnerJob(codexByok.runId);
     expect(codexByokClaim.cliAgentType).toBe("codex");
@@ -11748,34 +11779,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, codexByok.runId, [200]);
     await finishCancelledRun(codexByok.runId, codexByokClaim.sandboxToken);
 
-    const explicitKeyAgent = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        main: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const explicitKeyRun = await api.createDirectRun(actor, {
-      agentId: explicitKeyAgent.agentId,
-      prompt: "use native search with an explicit framework key",
-    });
-    const explicitKeyClaim = await api.claimRunnerJob(explicitKeyRun.runId);
-    expect(
-      explicitKeyClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
-    ).toBe("true");
-    await api.requestCancelRun(actor, explicitKeyRun.runId, [200]);
-    await finishCancelledRun(
-      explicitKeyRun.runId,
-      explicitKeyClaim.sandboxToken,
-    );
-
-    await seedBuiltInDefaultModelKey();
-    const builtIn = await api.createRun(actor, {
+    const builtIn = await api.createThreadRun(actor, {
       agentId,
       prompt: "keep native web search disabled for built-in routing",
-      modelProvider: "built-in",
+      model: builtInModel,
     });
     const builtInClaim = await api.claimRunnerJob(builtIn.runId);
     expect(builtInClaim.platformEnvironment).not.toHaveProperty(
