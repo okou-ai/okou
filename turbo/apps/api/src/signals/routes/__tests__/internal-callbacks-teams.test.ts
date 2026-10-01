@@ -17,6 +17,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -44,6 +45,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
 const trackTeamsFixture = createFixtureTracker<TeamsConnectFixture>(
   async (fixture) => {
@@ -328,8 +330,8 @@ async function runIdForPrompt(
   actor: ReturnType<typeof authOrgApi.user>,
   prompt: string,
 ): Promise<string> {
-  const list = await runsApi.listAgentRuns(actor, { limit: 20 });
-  const run = list.runs.find((item) => {
+  const list = await runReadsApi.requestListLogs(actor, { limit: 20 }, [200]);
+  const run = list.body.data.find((item) => {
     return item.prompt === prompt;
   });
   if (!run) {
@@ -679,14 +681,10 @@ describe("Teams chat callbacks", () => {
           runnerGroup: teams.runnerGroup,
           runId: queuedRunId,
         });
-        const queuedRun = (
-          await runsApi.listAgentRuns(teams.actor, { limit: 20 })
-        ).runs.find((run) => {
-          return run.id === queuedRunId;
-        });
-        expect(queuedClaim.prompt).toBe(queuedRun?.prompt);
+        const queuedRun = await runsApi.readRun(teams.actor, queuedRunId);
+        expect(queuedClaim.prompt).toBe(queuedRun.prompt);
         expect(queuedClaim.appendSystemPrompt).toBe(
-          queuedRun?.appendSystemPrompt,
+          queuedRun.appendSystemPrompt,
         );
         expect(queuedClaim.appendSystemPrompt).toContain(
           "You are currently running inside: Microsoft Teams",
@@ -793,12 +791,15 @@ describe("Teams chat callbacks", () => {
         text: expect.stringContaining("Add credits"),
       }),
     ]);
+    const listed = await runReadsApi.requestListLogs(
+      teams.actor,
+      { limit: 20 },
+      [200],
+    );
     expect(
-      (await runsApi.listAgentRuns(teams.actor, { limit: 20 })).runs.filter(
-        (run) => {
-          return run.prompt === queuedPrompt;
-        },
-      ),
+      listed.body.data.filter((run) => {
+        return run.prompt === queuedPrompt;
+      }),
     ).toHaveLength(0);
   });
 
