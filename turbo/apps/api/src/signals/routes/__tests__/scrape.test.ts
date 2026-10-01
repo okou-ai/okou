@@ -147,10 +147,9 @@ async function createAdmittedScrapeRun(actor: ApiTestUser): Promise<string> {
     displayName: "Admitted scrape agent",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Scrape after credit exhaustion",
-    modelProvider: "built-in",
   });
   return run.runId;
 }
