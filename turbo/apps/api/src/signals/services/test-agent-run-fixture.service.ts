@@ -6,8 +6,8 @@ import {
   createSelectedAgentRunObjects,
   isRouteError,
   isQueueFirstRunClaimLost,
-  type CreateAgentRunCommandArgs,
 } from "./agent-run-execution.service";
+import type { CreateAgentRunCommandArgs } from "./run-model-provider-environment.service";
 
 const { prepareSelectedAgentRun$, completeAgentRun$ } =
   createSelectedAgentRunObjects();
