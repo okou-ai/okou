@@ -23,7 +23,10 @@ import { loadRunAutonomyBudget } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import {
+  notifyRunningChatRunOfPendingInput,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
 import { waitUntil } from "../context/wait-until";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -297,6 +300,9 @@ const admitChatRunFinishedAutomation$ = command(
           signal,
         ),
       );
+      waitUntil(
+        notifyRunningChatRunOfPendingInput(set(writeDb$), chatThreadId),
+      );
     }
   },
 );
@@ -377,6 +383,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
               signal,
             ),
           );
+          waitUntil(notifyRunningChatRunOfPendingInput(db, row.chatThreadId));
         }
         continue;
       }
