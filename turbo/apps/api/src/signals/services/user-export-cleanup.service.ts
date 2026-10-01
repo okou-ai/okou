@@ -5,11 +5,21 @@ import {
   userExportParts,
 } from "@okouai/db/schema/user-export-entry";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  getTableColumns,
+} from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   abortMultipartS3Upload,
   deleteS3Objects,
@@ -48,63 +58,74 @@ function cleanupEligibility(cutoff: Date) {
   );
 }
 
-async function claimCleanupJob(
-  db: Db,
-  jobId: string,
-  signal: AbortSignal,
-): Promise<CleanupJob | null> {
-  signal.throwIfAborted();
-  return await db.transaction(async (tx) => {
+const claimCleanupJob$ = command(
+  async (
+    { set },
+    jobId: string,
+    signal: AbortSignal,
+  ): Promise<CleanupJob | null> => {
+    const db = set(writeDb$);
+    signal.throwIfAborted();
     const current = nowDate();
     const cutoff = new Date(current.getTime() - CLEANUP_GRACE_MS);
-    const [row] = await tx
-      .select({ job: backgroundJobs, owner: exportJobs })
-      .from(backgroundJobs)
-      .leftJoin(exportJobs, eq(exportJobs.id, backgroundJobs.id))
-      .where(and(eq(backgroundJobs.id, jobId), cleanupEligibility(cutoff)))
-      .limit(1)
-      .for("update", { of: backgroundJobs, skipLocked: true });
-    signal.throwIfAborted();
-    if (!row) {
-      return null;
-    }
-    let preserveArchive = false;
-    if (row.owner?.status === "completed") {
-      if (row.owner.expiresAt === null) {
-        throw new Error("Completed durable export is missing its expiry");
-      }
-      preserveArchive = row.owner.expiresAt > current;
-    }
-    const [claimed] = await tx
+    const candidate = db.$with("export_cleanup_candidate").as(
+      db
+        .select({
+          id: backgroundJobs.id,
+          ownerId: exportJobs.id,
+          ownerStatus: exportJobs.status,
+          ownerExpiresAt: exportJobs.expiresAt,
+        })
+        .from(backgroundJobs)
+        .leftJoin(exportJobs, eq(exportJobs.id, backgroundJobs.id))
+        .where(and(eq(backgroundJobs.id, jobId), cleanupEligibility(cutoff)))
+        .limit(1)
+        .for("update", { of: backgroundJobs, skipLocked: true }),
+    );
+    const [claimed] = await db
+      .with(candidate)
       .update(backgroundJobs)
       .set({
-        status: row.owner ? row.job.status : "cancelled",
+        status: sql`case when ${candidate.ownerId} is null then 'cancelled' else ${backgroundJobs.status} end`,
         leaseId: null,
         leaseExpiresAt: null,
-        completedAt: row.job.completedAt ?? current,
+        completedAt: sql`coalesce(${backgroundJobs.completedAt}, ${current})`,
         updatedAt: current,
       })
-      .where(eq(backgroundJobs.id, row.job.id))
-      .returning();
+      .from(candidate)
+      .where(eq(backgroundJobs.id, candidate.id))
+      .returning({
+        ...getTableColumns(backgroundJobs),
+        ownerStatus: candidate.ownerStatus,
+        ownerExpiresAt: candidate.ownerExpiresAt,
+      });
     signal.throwIfAborted();
     if (!claimed) {
       return null;
     }
+    const { ownerStatus, ownerExpiresAt, ...job } = claimed;
+    if (ownerStatus === "completed" && ownerExpiresAt === null) {
+      throw new Error("Completed durable export is missing its expiry");
+    }
     return {
-      job: claimed,
+      job,
       claimedAt: current,
-      preserveArchive,
+      preserveArchive:
+        ownerStatus === "completed" &&
+        ownerExpiresAt !== null &&
+        ownerExpiresAt > current,
     };
-  });
-}
+  },
+);
 
 const cleanupJobResources$ = command(
   async (
     { get, set },
-    args: { readonly db: Db; readonly cleanup: CleanupJob },
+    args: { readonly cleanup: CleanupJob },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { db, cleanup } = args;
+    const db = set(writeDb$);
+    const { cleanup } = args;
     const { job } = cleanup;
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const resultKey = `exports/${job.userId}/${job.id}.zip`;
@@ -158,32 +179,36 @@ const cleanupJobResources$ = command(
       await get(deleteS3Objects(bucket, [resultKey], signal));
       signal.throwIfAborted();
     }
-    await db.transaction(async (tx) => {
-      const [owned] = await tx
-        .select({ id: backgroundJobs.id })
-        .from(backgroundJobs)
-        .where(
-          and(
-            eq(backgroundJobs.id, job.id),
-            eq(backgroundJobs.updatedAt, cleanup.claimedAt),
-            inArray(backgroundJobs.status, terminalStatuses),
-          ),
-        )
-        .limit(1)
-        .for("update", { skipLocked: true });
-      signal.throwIfAborted();
-      if (!owned) {
-        return;
-      }
-      // Original snapshot and memory object keys are references, never cleanup
-      // targets. Removing this inventory releases their GC pins only now.
-      await tx
-        .delete(userExportEntries)
-        .where(eq(userExportEntries.jobId, job.id));
-      await tx.delete(userExportParts).where(eq(userExportParts.jobId, job.id));
-      await tx.delete(backgroundJobs).where(eq(backgroundJobs.id, job.id));
-      signal.throwIfAborted();
-    });
+    const owned = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(
+        and(
+          eq(backgroundJobs.id, job.id),
+          eq(backgroundJobs.updatedAt, cleanup.claimedAt),
+          inArray(backgroundJobs.status, terminalStatuses),
+        ),
+      )
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const admitted = sql`exists (select 1 from export_cleanup_owner)`;
+    // Original snapshot/memory keys are references, not deletion targets.
+    // Release their GC pins only after every external cleanup page succeeded.
+    const entries = db
+      .delete(userExportEntries)
+      .where(and(eq(userExportEntries.jobId, job.id), admitted))
+      .returning({ ordinal: userExportEntries.ordinal });
+    const parts = db
+      .delete(userExportParts)
+      .where(and(eq(userExportParts.jobId, job.id), admitted))
+      .returning({ partNumber: userExportParts.partNumber });
+    const removed = db
+      .delete(backgroundJobs)
+      .where(and(eq(backgroundJobs.id, job.id), admitted))
+      .returning({ id: backgroundJobs.id });
+    await db.execute(sql`with export_cleanup_owner as materialized (${owned}),
+      export_cleanup_entries as (${entries}), export_cleanup_parts as (${parts}) ${removed}`);
+    signal.throwIfAborted();
   },
 );
 
@@ -238,7 +263,7 @@ export const cleanupDurableUserExports$ = command(
       if (performance.now() - started >= CLEANUP_BUDGET_MS) {
         break;
       }
-      const cleanup = await claimCleanupJob(db, candidate.id, signal);
+      const cleanup = await set(claimCleanupJob$, candidate.id, signal);
       signal.throwIfAborted();
       if (!cleanup) {
         continue;
@@ -255,7 +280,7 @@ export const cleanupDurableUserExports$ = command(
       // A failed page remains durable; another invocation starts from its first
       // remaining object after the cleanup lease expires.
       await settleIncludingAbort(
-        set(cleanupJobResources$, { db, cleanup }, attemptSignal),
+        set(cleanupJobResources$, { cleanup }, attemptSignal),
       );
       signal.throwIfAborted();
       processed += 1;

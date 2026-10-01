@@ -1,3 +1,4 @@
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
@@ -57,7 +58,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
-  enqueueStorageObjectCleanup,
+  storageObjectCleanupJobValues,
   executeStorageObjectCleanupWork$,
 } from "./storage-object-cleanup.service";
 import {
@@ -648,18 +649,18 @@ async function deleteClerkStorageReferences(
       if (scope.kind === "user" && row.s3Prefix !== `${row.orgId}/${row.id}`) {
         continue;
       }
-      jobIds.push(
-        await enqueueStorageObjectCleanup(
-          tx,
-          {
-            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-            target: { kind: "prefix", value: row.s3Prefix },
-            userId: row.userId,
-            orgId: row.orgId,
-          },
-          signal,
-        ),
-      );
+      const receipt = storageObjectCleanupJobValues({
+        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+        target: { kind: "prefix", value: row.s3Prefix },
+        userId: row.userId,
+        orgId: row.orgId,
+      });
+      await tx
+        .insert(backgroundJobs)
+        .values(receipt)
+        .onConflictDoNothing({ target: backgroundJobs.id });
+      signal.throwIfAborted();
+      jobIds.push(receipt.id);
     }
     return jobIds;
   });
@@ -703,18 +704,18 @@ async function deleteClerkExportReferences(
       if (row.s3Key === null) {
         continue;
       }
-      jobIds.push(
-        await enqueueStorageObjectCleanup(
-          tx,
-          {
-            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-            target: { kind: "key", value: row.s3Key },
-            userId: row.userId,
-            orgId: row.orgId,
-          },
-          signal,
-        ),
-      );
+      const receipt = storageObjectCleanupJobValues({
+        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+        target: { kind: "key", value: row.s3Key },
+        userId: row.userId,
+        orgId: row.orgId,
+      });
+      await tx
+        .insert(backgroundJobs)
+        .values(receipt)
+        .onConflictDoNothing({ target: backgroundJobs.id });
+      signal.throwIfAborted();
+      jobIds.push(receipt.id);
     }
     return jobIds;
   });
