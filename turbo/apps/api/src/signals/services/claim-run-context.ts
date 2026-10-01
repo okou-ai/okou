@@ -9586,7 +9586,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Authorized selected run preparation is missing");
       }
       return {
-        db: get(db$),
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
@@ -9658,7 +9657,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (isRouteError(plan) || plan.names.size === 0) {
         return [];
       }
-      const { db } = plan.input;
+      const db = get(db$);
       const groups = storedConnectorCredentialReadGroups({
         bindingSets: plan.bindingSets,
         kind: "secret",
@@ -11701,7 +11700,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return null;
     }
     return {
-      db: get(db$),
       orgId: args.orgId,
       userId: args.userId,
       piMemoryEnabled: isFeatureEnabled(
@@ -11713,7 +11711,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
           ? args.resolved.resumeSession
           : undefined,
-      storagePlan: Promise.resolve(storage.resolved),
+      storagePlan: storage.resolved,
       previousRunStorageMounts: args.resolved.previousRunStorageMounts,
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
@@ -11725,7 +11723,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!args || args.piSandbox === undefined) {
       return { kind: "unavailable" as const };
     }
-    const { metadata } = await args.storagePlan;
+    const { metadata } = args.storagePlan;
     const currentMemoryMount = canonicalPiMemoryMount(metadata.storageMounts);
     const persistedMemoryMount = canonicalPiMemoryMount(
       metadata.persistedStorageMounts,
@@ -11760,7 +11758,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           kind: "projection" as const,
           identity,
           input: {
-            db: args.db,
             args: { orgId: args.orgId, userId: args.userId, ...identity },
           },
         }
@@ -11778,7 +11775,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!input) {
         return null;
       }
-      const { db, args } = input;
+      const { args } = input;
+      const db = get(db$);
       const [row] = await db
         .select({
           storageId: storages.id,
