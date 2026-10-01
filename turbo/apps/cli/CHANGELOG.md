@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.374.2](https://github.com/okou-ai/okou/compare/cli-v9.374.1...cli-v9.374.2) (2026-10-01)
+
+
+### Refactoring
+
+* remove model catalog rollout compatibility ([#37457](https://github.com/okou-ai/okou/issues/37457)) ([bfdefb5](https://github.com/okou-ai/okou/commit/bfdefb56cc71e50764957c7f168584df7398c7b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.532.2
+    * @okouai/core bumped to 8.725.2
+    * @okouai/pi-agent-runtime bumped to 1.45.2
+
 ## [9.374.1](https://github.com/okou-ai/okou/compare/cli-v9.374.0...cli-v9.374.1) (2026-10-01)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "runner-storage"
-version = "0.1.24"
+version = "0.1.25"
 edition.workspace = true
 description = "Runner storage planning, archive delivery, and host/R2 caches"
 
@@ -38,6 +38,7 @@ url = { workspace = true, features = ["std"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 
 [dev-dependencies]
+runner-host = { workspace = true, features = ["test-support"] }
 async-trait.workspace = true
 aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 aws-smithy-mocks.workspace = true

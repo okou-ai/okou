@@ -392,7 +392,7 @@ import {
 import {
   isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 import {
   type ConnectorCatalogRuntimeProjectionRowsRead,
   projectionIdentityReadHook,

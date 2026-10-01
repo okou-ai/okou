@@ -1576,6 +1576,13 @@
       "when": 1790788365534,
       "tag": "1302_model_route_long_context_threshold",
       "breakpoints": true
+    },
+    {
+      "idx": 1303,
+      "version": "7",
+      "when": 1790818909561,
+      "tag": "1303_remove_model_catalog_compatibility",
+      "breakpoints": true
     }
   ]
 }

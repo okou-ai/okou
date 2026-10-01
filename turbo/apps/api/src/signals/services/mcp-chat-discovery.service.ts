@@ -10,7 +10,7 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { loadMemberSubscriptionModels } from "./subscription-model-catalog.service";
+import { loadMemberSubscriptionModels } from "./member-subscription-models.service";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";

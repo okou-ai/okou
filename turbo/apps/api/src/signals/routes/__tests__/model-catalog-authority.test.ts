@@ -157,8 +157,6 @@ describe("model catalog authority", () => {
     signInAdmin();
     const { revision } = await listPolicies();
 
-    // Active in the catalog; the legacy `allow_new_org_policy` flag is false
-    // for this row and no longer decides admission.
     const added = await accept(
       policiesApi().update({
         headers: authHeaders(),

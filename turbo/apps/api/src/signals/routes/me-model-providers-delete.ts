@@ -6,7 +6,7 @@ import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { isNotFoundResponse } from "../../lib/error";
 import { deleteUserModelProvider$ } from "../services/model-provider.service";
-import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
+import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 

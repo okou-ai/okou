@@ -1193,7 +1193,6 @@ export const orgModelPolicySchema = z.object({
 
 export type OrgModelPolicy = z.infer<typeof orgModelPolicySchema>;
 
-// Released clients may still send `isDefault`; z.object strips it.
 export const updateOrgModelPolicySchema = z.object({
   model: runModelIdSchema,
   defaultProviderType: modelProviderWriteTypeSchema,
@@ -1213,15 +1212,6 @@ export const orgModelPoliciesResponseSchema = z.object({
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
   modelsAvailableToAdd: z.array(runModelIdSchema),
-  /**
-   * Compatibility only (docs/deployment-compatibility.md, #37442): released
-   * CLIs resolve a thread without a selected model to this value and fail
-   * when it is absent. Always the catalog system default; current clients
-   * read the default from `GET /api/model-catalog`. Remove once the CLI floor
-   * excludes builds that read it. Optional in this schema so current clients
-   * and their fixtures never depend on it; the API always sends it.
-   */
-  workspaceDefaultModel: runModelIdSchema.optional(),
 });
 
 export type OrgModelPoliciesResponse = z.infer<

@@ -1599,7 +1599,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await preparePiResourceHandoff(actor, agentId);
       await chat.updateUserModelPreference(actor, null);
 
-      // No thread pin or member preference: the fixed org default applies.
+      // No thread pin or member preference: the system default applies.
       const run = await sendChatRun(actor, {
         agentId,
         prompt: "capture the managed Okou Preset route",

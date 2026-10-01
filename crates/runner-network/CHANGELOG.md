@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/okou-ai/okou/compare/runner-network-v0.2.0...runner-network-v0.2.1) (2026-10-01)
+
+
+### Refactoring
+
+* remove model catalog rollout compatibility ([#37457](https://github.com/okou-ai/okou/issues/37457)) ([bfdefb5](https://github.com/okou-ai/okou/commit/bfdefb56cc71e50764957c7f168584df7398c7b4))
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/runner-network-v0.1.20...runner-network-v0.2.0) (2026-09-30)
 
 

@@ -219,7 +219,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("captures the fixed organization default when the stored model's provider is removed", async () => {
+  it("captures the system default when the stored model's provider is removed", async () => {
     const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const { providerId: openaiProviderId } = await api.createOrgModelProvider(
@@ -255,7 +255,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const fallback = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
-      prompt: "use the fixed organization default",
+      prompt: "use the system default",
     });
     expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
       SEEDED_SYSTEM_DEFAULT_MODEL,
