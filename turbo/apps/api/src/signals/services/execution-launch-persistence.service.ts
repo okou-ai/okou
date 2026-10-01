@@ -548,7 +548,7 @@ function runRecordFromLaunchIdentity(
   };
 }
 
-export interface LaunchRunRowsArgs {
+interface LaunchRunRowsArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
@@ -598,9 +598,7 @@ interface LaunchSessionValues {
   readonly conversationId: null;
 }
 
-export function launchSessionValues(
-  args: LaunchRunRowsArgs,
-): LaunchSessionValues {
+function launchSessionValues(args: LaunchRunRowsArgs): LaunchSessionValues {
   return {
     id: args.identity.sessionId,
     userId: args.userId,
@@ -613,7 +611,7 @@ export function launchSessionValues(
   };
 }
 
-export function launchRunValues(
+function launchRunValues(
   args: LaunchRunRowsArgs,
   createdAt: Date,
   metadata: RunMetadataValues,
@@ -689,9 +687,7 @@ function agentRunLaunchMetadataInput(metadata: AgentRunMetadata): {
   };
 }
 
-export function launchRunMetadataValues(
-  args: LaunchRunRowsArgs,
-): RunMetadataValues {
+function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   const metadata: AgentRunMetadata = args.agentRunMetadata ?? {};
   const modelPin =
     args.agentRunModelPin ?? agentRunModelProviderValues(args.modelProvider);

@@ -89,7 +89,7 @@ const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
 const IMAGE_RECOGNITION_PROMPT =
   '# Image Recognition Fallback\n\nThis run\'s selected model cannot inspect images directly. To inspect one local PNG, JPEG, or WebP image up to 20 MB, run `okou image-recognition --file <image-path> --prompt "<instruction>"`.';
 
-const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
+export const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
   "# Restricted Explicit Content",
   "",
   "Do not create, continue, rewrite, transform, or facilitate any of the following:",
@@ -141,7 +141,7 @@ function buildMcpConnectorPrompt(
   ].join("\n");
 }
 
-function builtInImageModelPrompt(model: ImageModel): string {
+export function builtInImageModelPrompt(model: ImageModel): string {
   const alias = IMAGE_MODEL_CONFIGS[model].alias;
   return [
     "# Built-in image model",

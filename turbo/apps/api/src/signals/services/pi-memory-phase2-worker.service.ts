@@ -1,20 +1,14 @@
-import { PiMemoryQuotaError } from "./pi-memory-quota.service";
-
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import {
-  createMaintenanceRunObjects,
-  PiMaintenanceDispositionError,
-} from "./pi-memory-maintenance-execution.service";
+import { startMaintenanceRun$ } from "./pi-memory-maintenance-execution.service";
 
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
-import { PiMemoryPhase2CredentialError } from "./pi-memory-phase2-credential.service";
 
 import {
   claimPiMemoryPhase2Job,
@@ -176,28 +170,6 @@ const recoverMaintenanceRun$ = command(
   },
 );
 
-// The claimed job is a write result; its maintenance graph is derived once
-// per claim, as the Thread pick derives its claim graph.
-const internalClaimedJob$ = state<ClaimedPiMemoryPhase2Job | null>(null);
-const claimedMaintenanceRunObjects$ = computed((get) => {
-  const claim = get(internalClaimedJob$);
-  return claim ? createMaintenanceRunObjects(claim) : null;
-});
-
-const dispatchClaim$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-  ): Promise<PiMemoryPhase2WorkerResult> => {
-    const objects = get(claimedMaintenanceRunObjects$);
-    if (!objects) {
-      throw new Error("Pi maintenance dispatch requires a claimed job");
-    }
-    const runId = await set(objects.startRun$, signal);
-    return { outcome: "dispatched", runId };
-  },
-);
-
 export const executePiMemoryPhase2Work$ = command(
   async (
     { set },
@@ -216,17 +188,14 @@ export const executePiMemoryPhase2Work$ = command(
     if (!claim) {
       return { outcome: "no_work" };
     }
-    set(internalClaimedJob$, claim);
-    const dispatched = await settle(set(dispatchClaim$, signal), signal);
+    const dispatched = await settle(
+      set(startMaintenanceRun$, claim, signal),
+      signal,
+    );
     if (dispatched.ok) {
-      return dispatched.value;
-    }
-    if (
-      dispatched.error instanceof PiMemoryPhase2CredentialError ||
-      dispatched.error instanceof PiMemoryQuotaError ||
-      dispatched.error instanceof PiMaintenanceDispositionError
-    ) {
-      return await failClaim(db, claim, nowDate(), dispatched.error.errorClass);
+      return typeof dispatched.value === "string"
+        ? { outcome: "dispatched", runId: dispatched.value }
+        : await failClaim(db, claim, nowDate(), dispatched.value.errorClass);
     }
     log.error("Pi memory maintenance run dispatch failed", {
       memoryStorageId: claim.memoryStorageId,

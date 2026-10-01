@@ -312,7 +312,7 @@ export function withoutLegacyAgentRunEnvironmentEntries<T>(
   return compactRecord(canonical);
 }
 
-function withoutOkouNamespaceEntries<T>(
+export function withoutOkouNamespaceEntries<T>(
   values: Readonly<Record<string, T>> | null,
 ): Record<string, T> | null {
   if (!values) {
@@ -947,7 +947,7 @@ function assertNativeCredentialOverrides(
   }
 }
 
-function capturedPiExecutionRoute(
+export function capturedPiExecutionRoute(
   provider: ResolvedModelProviderEnvironment | null,
 ): PiExecutionRoute | undefined {
   return provider?.piModelConfig
@@ -955,7 +955,7 @@ function capturedPiExecutionRoute(
     : undefined;
 }
 
-function assertNativeEnvironment(
+export function assertNativeEnvironment(
   provider: ResolvedModelProviderEnvironment | null,
   effectiveEnvironment: Record<string, string>,
 ): void {
@@ -1192,10 +1192,10 @@ function sanitizeEnvironment(
   return sanitized;
 }
 
-function buildRunContextSnapshot(args: {
+export function buildRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;
-  readonly body: CreateRunBody;
+  readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
   readonly builtContext: BuiltStoredExecutionContext;
 }): RunContextAxiomSnapshot {
   const storedContext = args.builtContext.context;
@@ -1290,7 +1290,7 @@ export function buildStoredExecutionSecrets(args: {
   };
 }
 
-function sessionStorageMountsForPersistence(args: {
+export function sessionStorageMountsForPersistence(args: {
   readonly resolvedMounts: readonly PersistedStorageMount[];
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
 }): readonly PersistedStorageMount[] {
@@ -1396,7 +1396,7 @@ const PI_INSTALLED_CLI_REQUIREMENT = {
   requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
 } as const satisfies PiInstalledCliRequirement;
 
-function storedExecutionContextWithPiResources(
+export function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
   launchFramework: AgentRunFullLaunchSnapshot["framework"],
@@ -1415,7 +1415,7 @@ function storedExecutionContextWithPiResources(
   };
 }
 
-export function preparedRunnerGroup(
+function preparedRunnerGroup(
   content: agentRunCreateAgentExecutionConfig,
 ): string {
   const group = runnerGroup(content) ?? optionalEnv("RUNNER_DEFAULT_GROUP");
@@ -1536,7 +1536,7 @@ function shouldEnableFrameworkWebSearch(
  * prepared storage, Pi launch resources, run-context snapshot, runner job
  * payload and persisted run/session storage mounts.
  */
-export function assembleRunnerLaunch(args: {
+function assembleRunnerLaunch(args: {
   readonly runId: string;
   readonly userId: string;
   readonly chatThreadId: string | undefined;
@@ -1623,6 +1623,20 @@ interface MaterializedRunnerStorage {
   readonly input: ReturnType<typeof prepareRunnerStorageInput>;
   readonly preparedStorage: MaterializedAgentRunStorage;
   readonly piResources: PreparedPiLaunchResources | undefined;
+}
+
+/** The model source's own firewall and network policy, with no connectors. */
+export async function modelProviderExecutionPermissionManifest(
+  modelProvider: ResolvedModelProviderEnvironment,
+  timing: ApiDispatchTimingCollector,
+): Promise<PermissionManifest | undefined> {
+  return await buildPermissionManifest({
+    connectorCatalogSelection: { kind: "empty" },
+    modelProvider,
+    permissionPolicies: undefined,
+    vars: undefined,
+    timing,
+  });
 }
 
 export async function buildPreparedPermissionManifest(args: {
