@@ -553,10 +553,6 @@ interface LaunchRunRowsArgs {
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
   readonly status: LaunchRunStatus;
-  readonly capturedRuntimeRoute?: {
-    readonly provider: string;
-    readonly model: string;
-  };
   readonly validatedAccountIdentity?: string | null;
   readonly resolved: Pick<
     ResolvedRunExecution,
@@ -704,12 +700,6 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...builtInModelLaunchMetadataValues(args.modelProvider),
-    ...(args.capturedRuntimeRoute
-      ? {
-          modelRuntimeProvider: args.capturedRuntimeRoute.provider,
-          modelRuntimeModel: args.capturedRuntimeRoute.model,
-        }
-      : {}),
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
     apiStartedAt: new Date(args.apiStartTime),
