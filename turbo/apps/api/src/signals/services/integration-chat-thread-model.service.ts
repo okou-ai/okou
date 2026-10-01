@@ -105,12 +105,6 @@ export const updateIntegrationChatThreadModel$ = command(
       case "response": {
         return { kind: "rejected" };
       }
-      case "conflict":
-      case "expired": {
-        throw new Error(
-          `Unexpected ${result.kind} for an unkeyed model update`,
-        );
-      }
     }
   },
 );

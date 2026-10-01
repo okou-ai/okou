@@ -25,6 +25,14 @@ Rolling back restores the prior advertised MCP tools and contracts, while normal
 Web chat data remains in its existing format. This approval does not waive other
 persisted-state, database or deployment-compatibility contracts.
 
+MCP send input is `{agentId, prompt, threadId?, model?}`. Status reads take
+`{runId}` and return the ordinary Web Run response. Old protocol arguments are
+rejected, not replayed or silently translated. The common metadata command no
+longer accepts the MCP-only mutation identity; Web metadata event IDs retain
+their existing behavior. Mixed MCP-serving versions can advertise different tool
+schemas during deployment; clients must use the serving version's schema rather
+than assume old request replay is available.
+
 ## Long-context threshold in the Runner payload (2026-10-01)
 
 The long-context pricing threshold is catalog data:

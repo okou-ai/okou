@@ -1,95 +1,74 @@
 import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { command } from "ccstate";
+import { db$ } from "../external/db";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 
-import type { Db } from "../external/db";
-import {
-  loadMemberModelRouteContext,
-  resolveEffectivePolicyRoute,
-} from "./effective-model-route.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { resolveCatalogRunModel } from "./model-catalog.service";
-import { loadOrgModelPolicyFacts } from "./model-policy.service";
-
-function modelProjection(
-  selectedModel: string | null,
-  finalModel: string | null,
-  resolved: ReadonlyMap<string, string | null>,
-  orgDefault: string | null,
-): McpChatThread["model"] {
-  const pinnedModel = finalModel ? (resolved.get(finalModel) ?? null) : null;
-  return {
-    selectedModel,
-    effectiveModel: pinnedModel ?? orgDefault,
-    source: pinnedModel ? "thread" : orgDefault ? "org_default" : null,
-    admission: "checked_on_send",
-  };
-}
-
-/** Project current policy without seeding policies, reconciling pins, or admission. */
-export async function mcpChatThreadModels(
-  db: Db,
-  principal: { readonly userId: string; readonly orgId: string },
-  selectedModels: readonly (string | null)[],
-): Promise<ReadonlyMap<string | null, McpChatThread["model"]>> {
-  const models = new Set(selectedModels);
-  const result = new Map<string | null, McpChatThread["model"]>();
-  if (models.size === 0) {
-    return result;
-  }
-
-  const { policies: projectedPolicies, catalog } =
-    await loadOrgModelPolicyFacts(db, principal.orgId);
-  // Stored pins resolve along the catalog replacement chain.
-  const finalModels = new Map<string, string | null>();
-  for (const model of models) {
-    if (model !== null) {
-      finalModels.set(model, resolveCatalogRunModel(catalog, model));
+/** Read the Web policy projection plus persisted replacement identities once. */
+export const mcpChatThreadModels$ = command(
+  async (
+    { get, set },
+    principal: { readonly userId: string; readonly orgId: string },
+    selectedModels: readonly (string | null)[],
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string | null, McpChatThread["model"]>> => {
+    if (selectedModels.length === 0) {
+      return new Map();
     }
-  }
-  const candidateModels = new Set<string>([
-    catalog.systemDefaultModel,
-    ...[...finalModels.values()].filter((model): model is string => {
-      return model !== null;
-    }),
-  ]);
-  const policies = projectedPolicies.filter((policy) => {
-    return candidateModels.has(policy.model);
-  });
-  const capabilities = await loadOrgPlanCapabilities(db, principal.orgId);
-  const member = await loadMemberModelRouteContext(
-    db,
-    principal.orgId,
-    principal.userId,
-  );
-  // Match model-selection.service's policy projection. Run admission independently
-  // checks plan status; this response never claims that a run can start.
-  const routeCapabilities =
-    capabilities?.status === "active"
-      ? {
-          restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-          supportByok: capabilities.supportByok,
-        }
-      : { restrictedBuiltInModels: false, supportByok: true };
-  const resolved = new Map<string, string | null>();
-  for (const policy of policies) {
-    const route = await resolveEffectivePolicyRoute({
-      db,
-      catalog,
-      orgId: principal.orgId,
-      member,
-      capabilities: routeCapabilities,
-      policy,
-    });
-    resolved.set(policy.model, route?.selectedModel ?? null);
-  }
-  const orgDefault = resolved.get(catalog.systemDefaultModel) ?? null;
-
-  for (const selectedModel of models) {
-    const finalModel =
-      selectedModel === null ? null : (finalModels.get(selectedModel) ?? null);
-    result.set(
-      selectedModel,
-      modelProjection(selectedModel, finalModel, resolved, orgDefault),
+    const [listing, replacements] = await Promise.all([
+      set(listOrgModelPoliciesWithSystemDefault$, principal, signal),
+      get(db$)
+        .select({
+          model: runModelCatalog.model,
+          replacedBy: runModelCatalog.replacedBy,
+        })
+        .from(runModelCatalog),
+    ]);
+    signal.throwIfAborted();
+    const byModel = new Map(
+      replacements.map((row) => {
+        return [row.model, row.replacedBy];
+      }),
     );
-  }
-  return result;
-}
+    const available = new Set(
+      listing.response.policies
+        .filter((policy) => {
+          return (
+            policy.routeStatus === "valid" &&
+            policy.memberEffective?.availability !== "unavailable"
+          );
+        })
+        .map((policy) => {
+          return policy.model;
+        }),
+    );
+    const defaultModel = available.has(listing.systemDefaultModel)
+      ? listing.systemDefaultModel
+      : null;
+    const result = new Map<string | null, McpChatThread["model"]>();
+    for (const selectedModel of new Set(selectedModels)) {
+      let finalModel = selectedModel;
+      const visited = new Set<string>();
+      while (finalModel !== null && byModel.has(finalModel)) {
+        if (visited.has(finalModel)) {
+          throw new Error("Model catalog replacement cycle");
+        }
+        visited.add(finalModel);
+        const replacement = byModel.get(finalModel);
+        if (!replacement) {
+          break;
+        }
+        finalModel = replacement;
+      }
+      const effectivePin =
+        finalModel !== null && available.has(finalModel) ? finalModel : null;
+      result.set(selectedModel, {
+        selectedModel,
+        effectiveModel: effectivePin ?? defaultModel,
+        source: effectivePin ? "thread" : defaultModel ? "org_default" : null,
+        admission: "checked_on_send",
+      });
+    }
+    return result;
+  },
+);
