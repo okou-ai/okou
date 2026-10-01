@@ -20,6 +20,25 @@ by `run_id`. This is a read-time API projection: stored `usage_event`,
 unchanged. An old App shows the new response values through its existing
 catalog mapping. No database migration is involved.
 
+## Agent instruction transaction-free preparation
+
+Instruction PUT reserves the existing same-key Pi token and canonical Storage
+generation in a short authorized transaction before archive/manifest IO. Its
+final transaction rechecks current Agent permission/name, Storage identity and
+that exact token before publishing. Failed or cancelled work settles only its
+own token. A superseded preparation returns the additive `409 CONFLICT` response;
+request and successful response shapes remain unchanged. Existing consumers
+already treat non-200 updates as failures and must not blindly retry a conflict.
+
+No schema or token format changes. Old transaction-held API writers share the
+same source locks and keyed publication fencing with new prepared writers; the
+old lock-held IO remains until those instances drain. Rollback restores the old
+transaction boundary. Readers keep following the last committed HEAD throughout
+preparation. Bootstrap already uses the shared preparation/DB-only publication
+helpers; with both callers migrated, the unused transaction wrapper is retired.
+This does not make R2 keys immutable or recover token/byte obligations from
+process termination; see [Storage version publication](storage-version-publication.md).
+
 ## Storage version reuse and reference-first Clerk cleanup
 
 Registered Storage versions are reused from their database metadata without an

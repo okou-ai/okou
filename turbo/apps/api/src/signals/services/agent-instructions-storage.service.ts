@@ -77,24 +77,30 @@ export const writeAgentInstructionsStorage$ = command(
   },
 );
 
-/** Prepare and upload instructions without holding a publication transaction. */
+/** Prepare and upload without borrowing a caller's transaction. */
 export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
-    args: WriteAgentInstructionsStorageArgs & {
+    args: Omit<
+      WriteAgentInstructionsStorageArgs,
+      "stableContextPublication"
+    > & {
       readonly storage?: ServerSideVolumeStorage;
     },
     signal: AbortSignal,
   ): Promise<PreparedServerSideVolume> => {
     return await set(
       prepareVolumeServerSide$,
-      { ...instructionVolumeInput(args), storage: args.storage },
+      {
+        ...instructionVolumeInput(args),
+        ...(args.storage ? { storage: args.storage } : {}),
+      },
       signal,
     );
   },
 );
 
-/** DB-only commit. The caller owns/revalidates the Agent and Storage parent. */
+/** DB-only publication; the caller revalidates source authority and Storage. */
 export async function commitPreparedAgentInstructionsStorageInTransaction(
   args: {
     readonly tx: Tx;
@@ -103,31 +109,26 @@ export async function commitPreparedAgentInstructionsStorageInTransaction(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  if (
-    args.stableContextPublication &&
-    !(await lockPiStableContextPublication(
-      args.tx,
-      args.stableContextPublication,
-    ))
-  ) {
-    throw new Error(
-      "Stable-context publication was superseded before Storage HEAD commit",
-    );
-  }
+  // Own the immutable Storage parent before generation/index lifecycle locks.
   await commitPreparedVolumeServerSide(
     { db: args.tx, volume: args.volume },
     signal,
   );
   if (args.stableContextPublication) {
+    if (
+      !(await lockPiStableContextPublication(
+        args.tx,
+        args.stableContextPublication,
+      ))
+    ) {
+      throw new Error(
+        "Stable-context publication was superseded before Storage HEAD commit",
+      );
+    }
     await refreshPiStableContextStorageDemands(
       args.tx,
       args.stableContextPublication,
-      {
-        storageId: args.volume.version.storageId,
-        versionId: args.volume.version.versionId,
-        archiveSize: args.volume.version.archiveSize,
-        fileCount: args.volume.version.fileCount,
-      },
+      args.volume.version,
     );
     signal.throwIfAborted();
     if (

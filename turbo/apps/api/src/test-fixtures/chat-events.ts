@@ -1,13 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
-import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
-import type {
-  ChatSlackMentionDisplayNames,
-  ChatSlackMessageAssets,
-  ChatSlackMessageFiles,
-} from "@okouai/db/jsonb-contracts/chat-slack-context";
-import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
-import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { pgTextDecoder } from "../lib/db-structured-result";
@@ -15,12 +7,8 @@ import { billingRunAttributionWrite } from "../signals/services/managed-usage-at
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 
-import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
@@ -70,188 +58,6 @@ type ChatThreadBlockedStatementKind =
   | "select_for_update"
   | "update"
   | "other";
-
-interface ChatEventContextFixture {
-  readonly id: string;
-  readonly revokesEventId: string | null;
-  readonly contextType: string | null;
-  readonly contextId: string | null;
-  readonly automationId: string | null;
-  readonly triggerBrief: string | null;
-  readonly workflowName: string | null;
-  readonly automationEventType: string | null;
-  readonly automationEventPayload: JsonObject | null;
-  readonly slackChannelId: string | null;
-  readonly slackMessageTs: string | null;
-  readonly slackBotUserId: string | null;
-  readonly slackConversationContext: string | null;
-  readonly slackMessageText: string | null;
-  readonly slackMessageFiles: ChatSlackMessageFiles | null;
-  readonly slackMessageAssets: ChatSlackMessageAssets | null;
-  readonly slackMentionDisplayNames: ChatSlackMentionDisplayNames | null;
-  readonly slackSenderDisplayName: string | null;
-  readonly slackSenderUserId: string | null;
-  readonly slackChannelType: "channel" | "dm" | "group_dm" | null;
-  readonly slackThreadTs: string | null;
-  readonly slackRouteThreadTs: string | null;
-  readonly feishuConversationHistory: string | null;
-  readonly feishuMessageText: string | null;
-  readonly feishuMessageFiles: ChatFeishuMessageFiles | null;
-  readonly feishuChatType: "group" | "p2p" | "topic_group" | null;
-  readonly feishuChatId: string | null;
-  readonly feishuMessageId: string | null;
-  readonly feishuThreadId: string | null;
-  readonly feishuReplyInThread: boolean | null;
-  readonly feishuReactionId: string | null;
-  readonly feishuSenderOpenId: string | null;
-  readonly feishuConnectionId: string | null;
-  readonly feishuInstallationId: string | null;
-  readonly teamsTenantId: string | null;
-  readonly teamsTeamId: string | null;
-  readonly teamsChannelId: string | null;
-  readonly teamsConversationId: string | null;
-  readonly teamsConversationType: string | null;
-  readonly teamsActivityId: string | null;
-  readonly teamsThreadContext: string | null;
-  readonly teamsMessageText: string | null;
-  readonly teamsMessageFiles: ChatTeamsMessageFiles | null;
-  readonly teamsTenantName: string | null;
-  readonly teamsTeamName: string | null;
-  readonly teamsThreadId: string | null;
-  readonly teamsServiceUrl: string | null;
-  readonly teamsAppId: string | null;
-  readonly teamsSenderUserId: string | null;
-  readonly teamsSenderDisplayName: string | null;
-  readonly teamsSenderPrincipalName: string | null;
-  readonly teamsConnectionId: string | null;
-  readonly agentphoneChatThreadId: string | null;
-  readonly agentphoneMessageText: string | null;
-  readonly agentphoneThreadContext: string | null;
-  readonly agentphoneMessageId: string | null;
-  readonly agentphoneRootMessageId: string | null;
-  readonly agentphoneConversationId: string | null;
-  readonly agentphoneGroupId: string | null;
-  readonly agentphoneChannel: "imessage" | "sms" | "mms" | null;
-  readonly agentphoneIsGroup: boolean | null;
-  readonly agentphonePhoneHandle: string | null;
-  readonly agentphoneFromNumber: string | null;
-  readonly agentphoneToNumber: string | null;
-  readonly agentphoneUserLinkId: string | null;
-  readonly agentphoneAgentId: string | null;
-  readonly telegramChatId: string | null;
-  readonly telegramMessageId: string | null;
-  readonly telegramMessageThreadId: number | null;
-  readonly telegramMessageText: string | null;
-  readonly telegramThreadContext: string | null;
-  readonly telegramRootMessageId: string | null;
-  readonly telegramThinkingMessageId: string | null;
-  readonly telegramUserLinkId: string | null;
-  readonly telegramUserLinkKind: "custom" | "official" | null;
-  readonly telegramChatType: string | null;
-  readonly telegramSenderUserId: string | null;
-  readonly telegramSenderDisplayName: string | null;
-  readonly telegramSenderUsername: string | null;
-  readonly telegramSenderLanguage: string | null;
-}
-
-export async function readChatEventContextFixture(
-  eventId: string,
-): Promise<ChatEventContextFixture | null> {
-  const contextId = sql`COALESCE(${chatEvents.contextId}, ${chatEvents.id})`;
-  const [event] = await db()
-    .select({
-      id: chatEvents.id,
-      revokesEventId: chatEvents.revokesEventId,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      automationId: chatAutomationContext.automationId,
-      triggerBrief: chatAutomationContext.triggerBrief,
-      workflowName: chatAutomationContext.workflowName,
-      automationEventType: chatAutomationContext.eventType,
-      automationEventPayload: chatAutomationContext.eventPayload,
-      slackChannelId: chatSlackContext.channelId,
-      slackMessageTs: chatSlackContext.messageTs,
-      slackBotUserId: chatSlackContext.botUserId,
-      slackConversationContext: chatSlackContext.conversationContext,
-      slackMessageText: chatSlackContext.messageText,
-      slackMessageFiles: chatSlackContext.messageFiles,
-      slackMessageAssets: chatSlackContext.messageAssets,
-      slackMentionDisplayNames: chatSlackContext.mentionDisplayNames,
-      slackSenderDisplayName: chatSlackContext.senderDisplayName,
-      slackSenderUserId: chatSlackContext.senderUserId,
-      slackChannelType: chatSlackContext.channelType,
-      slackThreadTs: chatSlackContext.threadTs,
-      slackRouteThreadTs: chatSlackContext.routeThreadTs,
-      feishuConversationHistory: chatFeishuContext.conversationHistory,
-      feishuMessageText: chatFeishuContext.messageText,
-      feishuMessageFiles: chatFeishuContext.messageFiles,
-      feishuChatType: chatFeishuContext.chatType,
-      feishuChatId: chatFeishuContext.chatId,
-      feishuMessageId: chatFeishuContext.messageId,
-      feishuThreadId: chatFeishuContext.threadId,
-      feishuReplyInThread: chatFeishuContext.replyInThread,
-      feishuReactionId: chatFeishuContext.reactionId,
-      feishuSenderOpenId: chatFeishuContext.senderOpenId,
-      feishuConnectionId: chatFeishuContext.connectionId,
-      feishuInstallationId: chatFeishuContext.installationId,
-      teamsTenantId: chatTeamsContext.tenantId,
-      teamsTeamId: chatTeamsContext.teamId,
-      teamsChannelId: chatTeamsContext.channelId,
-      teamsConversationId: chatTeamsContext.conversationId,
-      teamsConversationType: chatTeamsContext.conversationType,
-      teamsActivityId: chatTeamsContext.activityId,
-      teamsThreadContext: chatTeamsContext.threadContext,
-      teamsMessageText: chatTeamsContext.messageText,
-      teamsMessageFiles: chatTeamsContext.messageFiles,
-      teamsTenantName: chatTeamsContext.tenantName,
-      teamsTeamName: chatTeamsContext.teamName,
-      teamsThreadId: chatTeamsContext.threadId,
-      teamsServiceUrl: chatTeamsContext.serviceUrl,
-      teamsAppId: chatTeamsContext.teamsAppId,
-      teamsSenderUserId: chatTeamsContext.senderUserId,
-      teamsSenderDisplayName: chatTeamsContext.senderDisplayName,
-      teamsSenderPrincipalName: chatTeamsContext.senderPrincipalName,
-      teamsConnectionId: chatTeamsContext.connectionId,
-      agentphoneChatThreadId: chatAgentphoneContext.chatThreadId,
-      agentphoneMessageText: chatAgentphoneContext.messageText,
-      agentphoneThreadContext: chatAgentphoneContext.threadContext,
-      agentphoneMessageId: chatAgentphoneContext.messageId,
-      agentphoneRootMessageId: chatAgentphoneContext.rootMessageId,
-      agentphoneConversationId: chatAgentphoneContext.conversationId,
-      agentphoneGroupId: chatAgentphoneContext.groupId,
-      agentphoneChannel: chatAgentphoneContext.channel,
-      agentphoneIsGroup: chatAgentphoneContext.isGroup,
-      agentphonePhoneHandle: chatAgentphoneContext.phoneHandle,
-      agentphoneFromNumber: chatAgentphoneContext.fromNumber,
-      agentphoneToNumber: chatAgentphoneContext.toNumber,
-      agentphoneUserLinkId: chatAgentphoneContext.userLinkId,
-      agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
-      telegramChatId: chatTelegramContext.chatId,
-      telegramMessageId: chatTelegramContext.messageId,
-      telegramMessageThreadId: chatTelegramContext.messageThreadId,
-      telegramMessageText: chatTelegramContext.messageText,
-      telegramThreadContext: chatTelegramContext.threadContext,
-      telegramRootMessageId: chatTelegramContext.rootMessageId,
-      telegramThinkingMessageId: chatTelegramContext.thinkingMessageId,
-      telegramUserLinkId: chatTelegramContext.userLinkId,
-      telegramUserLinkKind: chatTelegramContext.userLinkKind,
-      telegramChatType: chatTelegramContext.chatType,
-      telegramSenderUserId: chatTelegramContext.senderUserId,
-      telegramSenderDisplayName: chatTelegramContext.senderDisplayName,
-      telegramSenderUsername: chatTelegramContext.senderUsername,
-      telegramSenderLanguage: chatTelegramContext.senderLanguage,
-    })
-    .from(chatEvents)
-    .leftJoin(chatAutomationContext, eq(chatAutomationContext.id, contextId))
-    .leftJoin(chatSlackContext, eq(chatSlackContext.id, contextId))
-    .leftJoin(chatFeishuContext, eq(chatFeishuContext.id, contextId))
-    .leftJoin(chatTeamsContext, eq(chatTeamsContext.id, contextId))
-    .leftJoin(chatAgentphoneContext, eq(chatAgentphoneContext.id, contextId))
-    .leftJoin(chatTelegramContext, eq(chatTelegramContext.id, contextId))
-    .where(eq(chatEvents.id, eventId))
-    .limit(1);
-  return event ?? null;
-}
 
 const annotationProjectionInputs = [
   {
