@@ -103,7 +103,8 @@ async function createThreadAgent(
   actor: ApiTestUser,
   prefix: string,
 ): Promise<{ readonly agentId: string }> {
-  await api.ensureOrgModelProvider(actor);
+  // The Claude Code route (no Pi route), matching completeRun's checkpoints.
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName: `${prefix}-${randomUUID().slice(0, 8)}`,
     description: "Exercises run reads.",
@@ -327,7 +328,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member active run",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     await bdd.readMe(actor);
     await bdd.readMe(member);
@@ -703,13 +704,13 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 describe("RUN-03: cancel through the run cancel route", () => {
   async function cancelFixture() {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-cancel");
+    const compose = await createThreadAgent(actor, "bdd-cancel");
     return { actor, compose };
   }
 
   it("cancels a running run idempotently", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "cancel a running run",
     });
@@ -731,7 +732,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
 
   it("rejects cancellation after a run completes", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
@@ -751,7 +752,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
 
   it("hides another organization's run from cancellation", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
