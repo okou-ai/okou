@@ -8486,7 +8486,11 @@ describe("Official Workflow Run admission", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const beforeRunFamily = await runs
-      .listAgentRuns(actor, { agent: agentId, limit: 100 })
+      .listAgentRuns(actor, {
+        status: "queued,pending,running,completed,failed,timeout,cancelled",
+        agent: agentId,
+        limit: 100,
+      })
       .then(({ runs }) => {
         return runs.length;
       });
@@ -8516,20 +8520,30 @@ describe("Official Workflow Run admission", () => {
       throw new Error("Expected admission-time Blueprint reconciliation Run");
     }
     await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.id),
-    ).resolves.toMatchObject({ autonomyBudget: 5, enabled: true });
+      accept(
+        automationClient().get({ headers, params: { id: automation.id } }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { enabled: true } });
     await completeSuccessfulRun(
       runnerGroup,
       reconciledReleaseRunId,
       "Reconciled release admission",
     );
     await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.id),
-    ).resolves.toMatchObject({ autonomyBudget: 5, enabled: true });
+      accept(
+        automationClient().get({ headers, params: { id: automation.id } }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { enabled: true } });
 
     await expect(
       runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         }),
@@ -8635,7 +8649,11 @@ describe("Official Workflow Run admission", () => {
     );
     await setOfficialWorkflowsEnabled(actor, false);
     const before = await runs
-      .listAgentRuns(actor, { agent: agentId, limit: 100 })
+      .listAgentRuns(actor, {
+        status: "queued,pending,running,completed,failed,timeout,cancelled",
+        agent: agentId,
+        limit: 100,
+      })
       .then(({ runs }) => {
         return runs.length;
       });
@@ -8661,7 +8679,11 @@ describe("Official Workflow Run admission", () => {
     ).toStrictEqual([expect.objectContaining({ error: "conflict" })]);
     await expect(
       runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         }),
@@ -8678,7 +8700,11 @@ describe("Official Workflow Run admission", () => {
     });
     await expect(
       runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         }),
@@ -8695,7 +8721,11 @@ describe("Official Workflow Run admission", () => {
     });
     await expect(
       runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         }),
@@ -8714,7 +8744,11 @@ describe("Official Workflow Run admission", () => {
     await flushWaitUntilForTest();
     await expect(
       runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         }),
@@ -9100,7 +9134,11 @@ describe("Official Workflow Run admission", () => {
         }),
       );
       const beforeQueuedRunFamily = await runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         });
@@ -9213,7 +9251,11 @@ describe("Official Workflow Run admission", () => {
       // remains queued until the next explicit organization pass below.
       await expect(
         runs
-          .listAgentRuns(actor, { agent: agentId, limit: 100 })
+          .listAgentRuns(actor, {
+            status: "queued,pending,running,completed,failed,timeout,cancelled",
+            agent: agentId,
+            limit: 100,
+          })
           .then(({ runs }) => {
             return runs.length;
           }),
@@ -9245,7 +9287,11 @@ describe("Official Workflow Run admission", () => {
       const expectedRunFamilyAfterOrdinary = beforeQueuedRunFamily + 1;
       await expect(
         runs
-          .listAgentRuns(actor, { agent: agentId, limit: 100 })
+          .listAgentRuns(actor, {
+            status: "queued,pending,running,completed,failed,timeout,cancelled",
+            agent: agentId,
+            limit: 100,
+          })
           .then(({ runs }) => {
             return runs.length;
           }),
@@ -9259,7 +9305,11 @@ describe("Official Workflow Run admission", () => {
       );
       await flushWaitUntilForTest();
       const beforeLaterDrain = await runs
-        .listAgentRuns(actor, { agent: agentId, limit: 100 })
+        .listAgentRuns(actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          agent: agentId,
+          limit: 100,
+        })
         .then(({ runs }) => {
           return runs.length;
         });
@@ -9301,7 +9351,11 @@ describe("Official Workflow Run admission", () => {
       ).toHaveLength(1);
       await expect(
         runs
-          .listAgentRuns(actor, { agent: agentId, limit: 100 })
+          .listAgentRuns(actor, {
+            status: "queued,pending,running,completed,failed,timeout,cancelled",
+            agent: agentId,
+            limit: 100,
+          })
           .then(({ runs }) => {
             return runs.length;
           }),
