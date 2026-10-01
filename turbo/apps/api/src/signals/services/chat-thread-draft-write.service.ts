@@ -5,7 +5,8 @@ import type {
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { and, eq, sql } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
 interface ChatThreadDraftWrite {
   readonly chatThreadId: string;
@@ -24,45 +25,53 @@ interface ChatThreadDraftWrite {
  * falls back to the retired `chat_threads` columns, so absence means "no
  * draft".
  */
-export async function persistChatThreadDraft(
-  db: Db,
-  draft: ChatThreadDraftWrite,
-): Promise<void> {
-  if (draft.draftUserMessage === null) {
+export const persistChatThreadDraft$ = command(
+  async (
+    { set },
+    draft: ChatThreadDraftWrite,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    if (draft.draftUserMessage === null) {
+      await db
+        .delete(chatThreadDrafts)
+        .where(
+          and(
+            eq(chatThreadDrafts.chatThreadId, draft.chatThreadId),
+            eq(chatThreadDrafts.userId, draft.userId),
+          ),
+        );
+      signal.throwIfAborted();
+      return;
+    }
     await db
-      .delete(chatThreadDrafts)
-      .where(
-        and(
-          eq(chatThreadDrafts.chatThreadId, draft.chatThreadId),
-          eq(chatThreadDrafts.userId, draft.userId),
-        ),
-      );
-    return;
-  }
-  await db
-    .insert(chatThreadDrafts)
-    .values({
-      chatThreadId: draft.chatThreadId,
-      userId: draft.userId,
-      draftUserMessage: draft.draftUserMessage,
-      draftAttachments: draft.draftAttachments,
-    })
-    .onConflictDoUpdate({
-      target: [chatThreadDrafts.chatThreadId, chatThreadDrafts.userId],
-      set: {
+      .insert(chatThreadDrafts)
+      .values({
+        chatThreadId: draft.chatThreadId,
+        userId: draft.userId,
         draftUserMessage: draft.draftUserMessage,
         draftAttachments: draft.draftAttachments,
-        updatedAt: sql`now()`,
-      },
-    });
-}
+      })
+      .onConflictDoUpdate({
+        target: [chatThreadDrafts.chatThreadId, chatThreadDrafts.userId],
+        set: {
+          draftUserMessage: draft.draftUserMessage,
+          draftAttachments: draft.draftAttachments,
+          updatedAt: sql`now()`,
+        },
+      });
+    signal.throwIfAborted();
+  },
+);
 
 /** Removes a thread's saved draft; a thread without one is a no-op. */
-export async function deleteChatThreadDraft(
-  db: Db,
-  chatThreadId: string,
-): Promise<void> {
-  await db
-    .delete(chatThreadDrafts)
-    .where(eq(chatThreadDrafts.chatThreadId, chatThreadId));
-}
+export const deleteChatThreadDraft$ = command(
+  async ({ set }, chatThreadId: string, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    await set(writeDb$)
+      .delete(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.chatThreadId, chatThreadId));
+    signal.throwIfAborted();
+  },
+);

@@ -26,7 +26,7 @@ import {
 import { canonicalChatEventError } from "./canonical-chat-event-read.service";
 import { publishFirstAssistantEventCreatedSafely } from "./chat-first-assistant-event-metric.service";
 import {
-  appendChatThreadEvent,
+  chatThreadEventInsertSql,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -172,27 +172,31 @@ export async function touchChatThreadLastMessageAtIndependently(
     unarchived = unarchive && updated.length > 0;
   });
   await attemptChatEventSideEffect("sort_touched", threadId, async () => {
-    await appendChatThreadEvent(tx, {
-      kind: "sort_touched",
-      userId: thread.userId,
-      orgId,
-      chatThreadId: threadId,
-      agentId,
-      eventId,
-      createdAt: touchedAt,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        kind: "sort_touched",
+        userId: thread.userId,
+        orgId,
+        chatThreadId: threadId,
+        agentId,
+        eventId,
+        createdAt: touchedAt,
+      }),
+    );
   });
   if (!unarchived) {
     return;
   }
   await attemptChatEventSideEffect("unarchived", threadId, async () => {
-    await appendChatThreadEvent(tx, {
-      kind: "unarchived",
-      userId: thread.userId,
-      orgId,
-      chatThreadId: threadId,
-      agentId,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        kind: "unarchived",
+        userId: thread.userId,
+        orgId,
+        chatThreadId: threadId,
+        agentId,
+      }),
+    );
   });
 }
 
@@ -220,16 +224,18 @@ export async function touchSentChatThreadSort(
       })
       .where(eq(chatThreads.id, args.threadId));
   });
-  await attemptChatEventSideEffect("sort_touched", args.threadId, () => {
-    return appendChatThreadEvent(db, {
-      kind: "sort_touched",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: args.threadId,
-      agentId: args.agentId,
-      eventId: args.eventId,
-      createdAt: args.touchedAt,
-    });
+  await attemptChatEventSideEffect("sort_touched", args.threadId, async () => {
+    await db.execute(
+      chatThreadEventInsertSql({
+        kind: "sort_touched",
+        userId: args.userId,
+        orgId: args.orgId,
+        chatThreadId: args.threadId,
+        agentId: args.agentId,
+        eventId: args.eventId,
+        createdAt: args.touchedAt,
+      }),
+    );
   });
 }
 
@@ -269,15 +275,17 @@ export async function touchChatThreadLastMessageAt(
     }
     return;
   }
-  await appendChatThreadEvent(tx, {
-    kind: "sort_touched",
-    userId: thread.userId,
-    ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
-    chatThreadId: thread.id,
-    agentId: thread.agentId,
-    eventId,
-    createdAt: thread.lastMessageAt,
-  });
+  await tx.execute(
+    chatThreadEventInsertSql({
+      kind: "sort_touched",
+      userId: thread.userId,
+      ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
+      eventId,
+      createdAt: thread.lastMessageAt,
+    }),
+  );
 }
 
 export function visibleChatEventCondition(

@@ -1,3 +1,4 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   userLocaleSchema,
   type UserLocale,
@@ -19,8 +20,9 @@ import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
+  chatThreadCreatedEventSql,
+  prepareChatThreadInsert,
+  createdChatThreadFromRow,
 } from "./chat-thread-create.service";
 import {
   chatThreadEventInsertSql,
@@ -189,54 +191,27 @@ export async function loadWorkflowUserAutomationThreadId(
  * The caller deletes the thread in the same transaction, so the binding still
  * identifies the affected workflows while this update runs.
  */
-export async function disableThreadBoundWorkflowAutomations(
-  db: ChatThreadEventTransaction,
-  args: {
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly currentTime: Date;
-  },
-): Promise<
-  readonly Pick<
-    typeof workflowAutomations.$inferSelect,
-    "orgId" | "ownerUserId" | "eventType" | "eventConfig" | "eventConnectorId"
-  >[]
-> {
-  const bindings = await db
-    .select({ workflowId: workflowUserAutomationThreads.workflowId })
-    .from(workflowUserAutomationThreads)
-    .where(
-      and(
-        eq(workflowUserAutomationThreads.userId, args.userId),
-        eq(workflowUserAutomationThreads.chatThreadId, args.chatThreadId),
-      ),
-    );
-  if (bindings.length === 0) {
-    return [];
-  }
-
-  return await db
-    .update(workflowAutomations)
-    .set({ enabled: false, nextRunAt: null, updatedAt: args.currentTime })
-    .where(
-      and(
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        inArray(
-          workflowAutomations.workflowId,
-          bindings.map((binding) => {
-            return binding.workflowId;
-          }),
+/** Pure predicate for the deletion owner's conditional automation UPDATE. */
+export function threadBoundWorkflowAutomationsPredicate(args: {
+  readonly userId: string;
+  readonly chatThreadId: string;
+}) {
+  return and(
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.enabled, true),
+    inArray(
+      workflowAutomations.workflowId,
+      new QueryBuilder()
+        .select({ workflowId: workflowUserAutomationThreads.workflowId })
+        .from(workflowUserAutomationThreads)
+        .where(
+          and(
+            eq(workflowUserAutomationThreads.userId, args.userId),
+            eq(workflowUserAutomationThreads.chatThreadId, args.chatThreadId),
+          ),
         ),
-      ),
-    )
-    .returning({
-      orgId: workflowAutomations.orgId,
-      ownerUserId: workflowAutomations.ownerUserId,
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    });
+    ),
+  );
 }
 
 async function createAutomationChatThread(
@@ -255,7 +230,7 @@ async function createAutomationChatThread(
     throw new Error("A model selection is required");
   }
   const pinColumns = chatThreadModelPinColumns(pin);
-  const thread = await insertChatThread(db, {
+  const threadPlan = prepareChatThreadInsert({
     orgId: args.orgId,
     userId: args.userId,
     agentId: args.agentId,
@@ -276,10 +251,29 @@ async function createAutomationChatThread(
     createdAt: args.currentTime,
     updatedAt: args.currentTime,
   });
+  const [threadRow] = await db
+    .with(threadPlan.defaults)
+    .insert(chatThreads)
+    .values(threadPlan.values)
+    .onConflictDoNothing()
+    .returning({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      modelSettings: chatThreads.modelSettings,
+      codexServiceTier: chatThreads.codexServiceTier,
+      computerUseHostId: chatThreads.computerUseHostId,
+      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      createdAt: chatThreads.createdAt,
+    });
+  const thread = threadRow
+    ? createdChatThreadFromRow(threadRow, threadPlan.values.agentId)
+    : undefined;
   if (!thread) {
     throw new Error("Failed to create workflow automation chat thread");
   }
-  await appendChatThreadCreatedEvent(db, { orgId: args.orgId, thread });
+  await db.execute(chatThreadCreatedEventSql({ orgId: args.orgId, thread }));
   return thread.id;
 }
 

@@ -70,12 +70,13 @@ import {
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
+  chatThreadCreatedEventSql,
+  prepareChatThreadInsert,
+  createdChatThreadFromRow,
 } from "./chat-thread-create.service";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  appendChatThreadEvent,
+  chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
@@ -921,7 +922,7 @@ function existingSendThreadUpdatePlan(
     return null;
   }
   const updatedAt = nowDate();
-  const events: Parameters<typeof appendChatThreadEvent>[1][] = [];
+  const events: Parameters<typeof chatThreadEventInsertSql>[0][] = [];
   const event = {
     userId: args.userId,
     orgId: args.orgId,
@@ -1210,7 +1211,7 @@ const appendNormalSendInput$ = command(
     const preferencePlan = userModelPreferencePlan(args, thread.runSettings);
     const inserted = await set(writeDb$).transaction(async (tx) => {
       if (thread.kind === "new") {
-        const created = await insertChatThread(tx, {
+        const createdPlan = prepareChatThreadInsert({
           orgId: args.orgId,
           id: thread.threadId,
           userId: args.userId,
@@ -1225,14 +1226,35 @@ const appendNormalSendInput$ = command(
           computerUseHostId: thread.computerAccess.computerUseHostId,
           cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
         });
-        if (!created) {
+        const [createdRow] = await tx
+          .with(createdPlan.defaults)
+          .insert(chatThreads)
+          .values(createdPlan.values)
+          .onConflictDoNothing()
+          .returning({
+            id: chatThreads.id,
+            userId: chatThreads.userId,
+            title: chatThreads.title,
+            selectedModel: chatThreads.selectedModel,
+            modelSettings: chatThreads.modelSettings,
+            codexServiceTier: chatThreads.codexServiceTier,
+            computerUseHostId: chatThreads.computerUseHostId,
+            cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+            createdAt: chatThreads.createdAt,
+          });
+        if (!createdRow) {
           throw new NewThreadSendCollision("thread");
         }
-        await appendChatThreadCreatedEvent(tx, {
-          orgId: args.orgId,
-          eventId: args.body.chatThreadEventId,
-          thread: created,
-        });
+        await tx.execute(
+          chatThreadCreatedEventSql({
+            orgId: args.orgId,
+            eventId: args.body.chatThreadEventId,
+            thread: createdChatThreadFromRow(
+              createdRow,
+              createdPlan.values.agentId,
+            ),
+          }),
+        );
       }
       await insertChatEventContext(tx, event);
       const inserted = args.body.revokesEventId
@@ -1255,7 +1277,7 @@ const appendNormalSendInput$ = command(
             ),
           );
         for (const event of existingPlan.events) {
-          await appendChatThreadEvent(tx, event);
+          await tx.execute(chatThreadEventInsertSql(event));
         }
       }
       if (args.body.captureNetworkBodies) {

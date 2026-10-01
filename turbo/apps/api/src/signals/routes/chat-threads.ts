@@ -13,7 +13,6 @@ import { z } from "zod";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
@@ -89,11 +88,12 @@ const getChatThreadInner$ = computed(async (get) => {
 
 const getChatThreadSnapshotInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const db = get(db$);
-  const snapshot = await getChatThreadSnapshot(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const snapshot = await get(
+    getChatThreadSnapshot({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    }),
+  );
 
   if (!snapshot) {
     // No snapshot row is a permanent state, not a rollout fallback: every App,
@@ -135,12 +135,13 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
 const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(chatThreadsContract.events));
-  const db = get(db$);
-  const result = await getChatThreadEventsSince(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    sinceSeqId: query.sinceSeqId,
-  });
+  const result = await get(
+    getChatThreadEventsSince({
+      userId: auth.userId,
+      orgId: auth.orgId,
+      sinceSeqId: query.sinceSeqId,
+    }),
+  );
 
   if (result.kind === "expired") {
     return {

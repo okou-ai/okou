@@ -2,11 +2,11 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, type SQL } from "drizzle-orm";
 
 import type { Db } from "../external/db";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 type ChatThreadEventFields = Omit<
-  Parameters<typeof appendChatThreadEvent>[1],
+  Parameters<typeof chatThreadEventInsertSql>[0],
   "userId" | "orgId" | "chatThreadId" | "agentId"
 >;
 
@@ -52,12 +52,14 @@ export async function updateOwnedChatThreadWithEvent(
     return false;
   }
   const updated = { ...thread, agentId: thread.agentId };
-  await appendChatThreadEvent(writeDb, {
-    ...args.event(updated),
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: updated.id,
-    agentId: updated.agentId,
-  });
+  await writeDb.execute(
+    chatThreadEventInsertSql({
+      ...args.event(updated),
+      userId: args.userId,
+      orgId: args.orgId,
+      chatThreadId: updated.id,
+      agentId: updated.agentId,
+    }),
+  );
   return true;
 }

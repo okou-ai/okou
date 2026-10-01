@@ -8,7 +8,7 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const BROWSER_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
 const BROWSER_AUTHORIZATION_URL_PREFIX = "vm0_browser_authorization_request";
@@ -254,16 +254,18 @@ export const applyBrowserAuthorizationRequest$ = command(
       if (!thread?.agentId) {
         return false;
       }
-      await appendChatThreadEvent(tx, {
-        kind: "computer_use_host_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-        createdAt: now,
-      });
+      await tx.execute(
+        chatThreadEventInsertSql({
+          kind: "computer_use_host_updated",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: thread.id,
+          agentId: thread.agentId,
+          computerUseHostId: null,
+          cloudBrowserEnabled: true,
+          createdAt: now,
+        }),
+      );
       await tx
         .update(browserAuthorizationRequests)
         .set({ completedAt: now, updatedAt: now })
