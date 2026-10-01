@@ -2293,12 +2293,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("resumes the Agent execution session for a continued run", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a checkpointed timing session",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(first.runId);
     const history = `bdd timing session history ${first.runId}`;
@@ -2319,12 +2318,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       { authorization: `Bearer ${claim.sandboxToken}` },
       [200],
     );
-    const resumed = await api.createRun(actor, {
-      sessionId: first.sessionId,
+    // Continuing the thread resumes its Agent session: the claim carries the
+    // first run's checkpointed CLI session.
+    const resumed = await api.createThreadRun(actor, {
+      agentId,
+      threadId: first.threadId,
       prompt: "continue checkpointed timing session",
-      modelProvider: "anthropic-api-key",
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toMatchObject({
       sessionId: `bdd-timing-cli-${first.runId}`,
@@ -8251,7 +8251,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -8348,10 +8351,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("bounds admitted MCP awareness for an initial Claude run", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const run = await fixture.api.createRun(fixture.actor, {
+    const run = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const claim = await fixture.api.claimRunnerJob(run.runId);
@@ -8362,10 +8364,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("preserves bounded MCP awareness across continuation", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const first = await fixture.api.createRun(fixture.actor, {
+    const first = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const firstClaim = await fixture.api.claimRunnerJob(first.runId);
@@ -8390,11 +8391,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { authorization: `Bearer ${firstClaim.sandboxToken}` },
       [200],
     );
-    const resumed = await fixture.api.createRun(fixture.actor, {
+    const resumed = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue with bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     const resumedClaim = await fixture.api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.appendSystemPrompt).toContain("# Agent Tools");
@@ -11690,7 +11690,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     await fw.seedTestConnector(actor, {
       connectorSlug: "slack",
@@ -11701,10 +11704,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.heartbeatRunner(runnerGroup);
 
     const firstPrompt = "start combined claim response timing";
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: firstPrompt,
-      modelProvider: "anthropic-api-key",
     });
     const firstClaim = await api.claimRunnerJob(first.runId);
     expect(firstClaim.networkPolicies?.slack).toBeDefined();
@@ -11731,11 +11733,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
     const resumedPrompt = "continue combined claim response timing";
     context.mocks.ably.publish.mockClear();
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: resumedPrompt,
-      modelProvider: "anthropic-api-key",
     });
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "job",
@@ -12866,12 +12867,11 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
   it("returns 500 when claim response construction fails", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const source = await api.createRun(actor, {
+    const source = await api.createThreadRun(actor, {
       agentId,
       prompt: "create history for a failed claim response",
-      modelProvider: "anthropic-api-key",
     });
     const sourceClaim = await api.claimRunnerJob(source.runId);
     const historyHash = createHash("sha256")
@@ -12892,11 +12892,10 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
       [200],
     );
 
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: source.sessionId,
+      threadId: source.threadId,
       prompt: "fail while constructing the claim response",
-      modelProvider: "anthropic-api-key",
     });
     context.mocks.s3.send.mockRejectedValueOnce(
       new Error("session history metadata unavailable"),
@@ -15543,11 +15542,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("preserves generic cancellation recovery in a combined request", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before combined recovery",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const history = `bdd cancellation recovery ${run.runId}`;
@@ -15575,11 +15573,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       status: "cancelled",
     });
 
-    const continued = await api.createRun(actor, {
+    const continued = await api.createThreadRun(actor, {
       agentId,
-      sessionId: run.sessionId,
+      threadId: run.threadId,
       prompt: "resume cancellation recovery",
-      modelProvider: "anthropic-api-key",
     });
     const continuedClaim = await api.claimRunnerJob(continued.runId);
     expect(continuedClaim.resumeSession).toMatchObject({
@@ -15706,12 +15703,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("continues from a recovery checkpoint posted after timeout completion", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const source = await api.createRun(actor, {
+    const source = await api.createThreadRun(actor, {
       agentId,
       prompt: "run until the execution deadline",
-      modelProvider: "anthropic-api-key",
     });
     const sourceClaim = await api.claimRunnerJob(source.runId);
     const history = `bdd timeout recovery history ${source.runId}`;
@@ -15748,11 +15744,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       [200],
     );
 
-    const continued = await api.createRun(actor, {
+    const continued = await api.createThreadRun(actor, {
       agentId,
-      sessionId: source.sessionId,
+      threadId: source.threadId,
       prompt: "continue after the execution deadline",
-      modelProvider: "anthropic-api-key",
     });
     const continuedClaim = await api.claimRunnerJob(continued.runId);
     expect(continuedClaim.resumeSession).toMatchObject({

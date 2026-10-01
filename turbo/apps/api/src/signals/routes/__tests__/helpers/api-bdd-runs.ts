@@ -323,6 +323,8 @@ export function createRunsApi(
       readonly prompt: string;
       /** A member selects the organization's model; the owner's preference is personal. */
       readonly model?: string;
+      /** Continue an existing thread, which resumes its Agent session. */
+      readonly threadId?: string;
     },
   ) {
     const chat = createChatFilesBddApi(context);
@@ -334,6 +336,7 @@ export function createRunsApi(
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
       },
       [201],
     );
