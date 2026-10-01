@@ -19,12 +19,12 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { listOrgModelPolicies$ } from "../services/model-policy.service";
 import {
-  loadModelCatalog,
   memberModelPolicyCatalog,
   type ModelCatalog,
   resolveCatalogRunModel,
+  modelCatalog$,
 } from "../services/model-catalog.service";
-import { db$ } from "../external/db";
+
 import {
   isCatalogFastServiceTierSupported,
   isCatalogRouteEffortSupported,
@@ -216,7 +216,7 @@ const updateUserModelPreferenceInner$ = command(
       return await set(persistUserModelPreference$, body.data, signal);
     }
 
-    const catalog = await loadModelCatalog(get(db$));
+    const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const data = resolveRequestedPreferenceModels(catalog, body.data);
     if ("status" in data) {

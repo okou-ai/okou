@@ -26,7 +26,7 @@ import {
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
@@ -65,7 +65,7 @@ import {
   type IntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
@@ -388,12 +388,15 @@ const persistCanonicalFeishuIngress$ = command(
     const route = await set(
       ensureFeishuChatThreadRoute$,
       {
-        initialModel: await resolveDefaultModelFirstPin(
-          set(writeDb$),
-          args.installation.orgId,
-          args.connection.userId,
-          undefined,
-          undefined,
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.installation.orgId,
+            userId: args.connection.userId,
+            defaultSource: undefined,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
         ),
         connectionId: args.connection.id,
         chatId: args.message.chatId,
@@ -440,11 +443,15 @@ const persistCanonicalFeishuIngress$ = command(
       id: args.ingress.ingressId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: route.chatThreadId,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.installation.orgId,
+          userId: args.connection.userId,
+        },
+        signal,
+      ),
       userMessage: feishuInboundUserMessage(args.message, chatOpenUrl, assets),
       runId: null,
       feishuContext: {

@@ -36,7 +36,7 @@ import {
   clearCanonicalSlackThreadStatusIfIdle,
 } from "./canonical-slack-thread-status.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
@@ -573,11 +573,15 @@ const enqueueCanonicalSlackMessage$ = command(
       id: args.ingress.ingressId,
       chatThreadId: args.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: args.chatThreadId,
-        orgId: args.orgId,
-        userId: args.ingress.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: args.chatThreadId,
+          orgId: args.orgId,
+          userId: args.ingress.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: args.displayContent,
         files: canonicalInputMessageFiles(args.canonicalAssets),

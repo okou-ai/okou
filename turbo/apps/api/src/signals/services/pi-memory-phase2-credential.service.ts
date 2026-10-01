@@ -21,7 +21,7 @@ import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   catalogHasProviderRoute,
-  loadModelCatalog,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
@@ -72,6 +72,7 @@ function credentialPin(source: CurrentCredential) {
 /** Historical run credentials are provenance only. Choose one current route
  * for the owner of the whole, already locked candidate selection. */
 async function selectCurrentCredential(
+  catalogSnapshot: ModelCatalog,
   db: ReadDb,
   claim: ClaimedPiMemoryPhase2Job,
 ): Promise<CurrentCredential> {
@@ -98,7 +99,7 @@ async function selectCurrentCredential(
       asc(modelProviders.type),
       asc(modelProviders.id),
     );
-  const catalog = await loadModelCatalog(db);
+  const catalog = await catalogSnapshot;
   for (const provider of providers) {
     if (provider.type === "codex-oauth-token") {
       if (provider.userId !== claim.userId || provider.needsReconnect) {
@@ -264,7 +265,11 @@ async function customCredentialSnapshot(
 
 /** Capture ownership and route references only. Canonical launch preparation
  * owns decryption, firewall credentials and atomic subscription refresh. */
-async function credentialSnapshot(db: ReadDb, source: CurrentCredential) {
+async function credentialSnapshot(
+  catalogSnapshot: ModelCatalog,
+  db: ReadDb,
+  source: CurrentCredential,
+) {
   if (source.type === "built-in") {
     return "built-in";
   }
@@ -306,7 +311,7 @@ async function credentialSnapshot(db: ReadDb, source: CurrentCredential) {
   if (
     !route?.endpoint ||
     !catalogHasProviderRoute(
-      await loadModelCatalog(db),
+      await catalogSnapshot,
       PI_MEMORY_PHASE2_BYOK_MODEL,
       route.productProviderType,
     )
@@ -454,6 +459,7 @@ async function prepareSubscription(
 /** Whole selections rebuild one evidence subtree. Historical source run IDs
  * stay in the digest/evidence, but never choose the current payer or route. */
 export async function resolvePiMemoryPhase2Credential(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   claim: ClaimedPiMemoryPhase2Job,
   signal: AbortSignal,
@@ -461,10 +467,10 @@ export async function resolvePiMemoryPhase2Credential(
   if (claim.selected.length === 0) {
     reject("source_credentials_missing");
   }
-  const selected = await selectCurrentCredential(db, claim);
+  const selected = await selectCurrentCredential(catalogSnapshot, db, claim);
   signal.throwIfAborted();
   const pin = credentialPin(selected);
-  const captured = await credentialSnapshot(db, selected);
+  const captured = await credentialSnapshot(catalogSnapshot, db, selected);
   signal.throwIfAborted();
   const subscription =
     typeof captured === "object" && "externalAccountId" in captured
@@ -489,6 +495,7 @@ export async function resolvePiMemoryPhase2Credential(
     );
     signal.throwIfAborted();
     route = await resolveBuiltInModelRuntimeRoute(
+      catalogSnapshot,
       db,
       PI_MEMORY_PHASE2_BUILT_IN_MODEL,
       featureSwitchContext,
@@ -522,8 +529,9 @@ export async function resolvePiMemoryPhase2Credential(
         reject("storage_binding_changed");
       }
       if (
-        JSON.stringify(await credentialSnapshot(tx, selected)) !==
-        JSON.stringify(captured)
+        JSON.stringify(
+          await credentialSnapshot(catalogSnapshot, tx, selected),
+        ) !== JSON.stringify(captured)
       ) {
         reject("credential_unavailable");
       }

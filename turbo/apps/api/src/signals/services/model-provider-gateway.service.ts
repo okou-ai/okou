@@ -30,9 +30,9 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   catalogBuiltInCandidates,
   isCatalogModelRunnable,
-  loadModelCatalog,
   resolveCatalogModel,
   type ModelCatalog,
+  modelCatalog$,
 } from "./model-catalog.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -389,7 +389,7 @@ export const modelProviderConnectionsForOrg = (orgId: string) => {
 
 export const createModelProviderConnection$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -398,7 +398,7 @@ export const createModelProviderConnection$ = command(
     signal: AbortSignal,
   ): Promise<ModelProviderConnectionResponse | BadRequestResponse> => {
     const validated = validateConnectionInput(
-      await loadModelCatalog(set(writeDb$)),
+      await get(modelCatalog$),
       args.input,
     );
     if (isBadRequest(validated)) {
@@ -467,7 +467,7 @@ export const createModelProviderConnection$ = command(
 
 export const updateModelProviderConnection$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly connectionId: string;
@@ -478,7 +478,7 @@ export const updateModelProviderConnection$ = command(
     ModelProviderConnectionResponse | BadRequestResponse | NotFoundResponse
   > => {
     const validated = validateConnectionInput(
-      await loadModelCatalog(set(writeDb$)),
+      await get(modelCatalog$),
       args.input,
     );
     if (isBadRequest(validated)) {

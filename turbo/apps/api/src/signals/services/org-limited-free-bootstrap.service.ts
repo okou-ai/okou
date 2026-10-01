@@ -46,7 +46,7 @@ import {
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import { onRejection, settleIncludingAbort } from "../utils";
-import { loadSystemDefaultRunModel } from "./model-catalog.service";
+import { modelCatalog$, type ModelCatalog } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -147,6 +147,7 @@ async function enqueueBootstrapPrefixCleanup(
 }
 
 async function publishBootstrap(
+  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: EnsureOrgLimitedFreeBootstrapArgs & {
     readonly agentId: string;
@@ -210,7 +211,7 @@ async function publishBootstrap(
     }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
-      : await finalizeBootstrap(tx, args);
+      : await finalizeBootstrap(catalogSnapshot, tx, args);
     signal.throwIfAborted();
     return { result, cleanupJobIds };
   }
@@ -244,7 +245,7 @@ async function publishBootstrap(
     { tx, volume: args.volume },
     signal,
   );
-  const result = await finalizeBootstrap(tx, args);
+  const result = await finalizeBootstrap(catalogSnapshot, tx, args);
   signal.throwIfAborted();
   return { result, cleanupJobIds };
 }
@@ -386,6 +387,7 @@ async function reserveBootstrapAgent(
 }
 
 async function finalizeBootstrap(
+  catalogSnapshot: ModelCatalog,
   tx: DbTransaction,
   args: {
     readonly orgId: string;
@@ -445,7 +447,7 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  const systemDefaultModel = await loadSystemDefaultRunModel(tx);
+  const systemDefaultModel = catalogSnapshot.systemDefaultModel;
   const hasConfiguredPolicies = exists(
     tx
       .select({ id: orgModelPolicies.id })
@@ -526,7 +528,7 @@ async function finalizeBootstrap(
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { set },
+    { get, set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
@@ -549,7 +551,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       {
         orgId: args.orgId,
         type: "built-in",
-        selectedModel: await loadSystemDefaultRunModel(writeDb),
+        selectedModel: (await get(modelCatalog$)).systemDefaultModel,
       },
       signal,
     );
@@ -573,6 +575,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       return await writeDb.transaction(
         async (tx) => {
           return await publishBootstrap(
+            await get(modelCatalog$),
             tx,
             { ...args, agentId: reservation.agentId, candidate, volume },
             signal,

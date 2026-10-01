@@ -255,8 +255,8 @@ import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.servi
 import {
   catalogBuiltInCandidates,
   catalogHasProviderRoute,
-  loadModelCatalog,
   type ModelCatalog,
+  createModelCatalog,
 } from "./model-catalog.service";
 import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import {
@@ -2581,7 +2581,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
   });
   const claimCatalog$ = computed((get) => {
-    return loadModelCatalog(get(db$));
+    return get(createModelCatalog());
   });
   const appendChatQueueHeadRejection$ = command(
     async (

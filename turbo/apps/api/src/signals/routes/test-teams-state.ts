@@ -31,7 +31,10 @@ import {
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
-import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
@@ -200,6 +203,7 @@ interface SeedDefaultAgentInput {
 }
 
 async function seedDefaultAgent(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   input: SeedDefaultAgentInput,
   signal: AbortSignal,
@@ -247,7 +251,7 @@ async function seedDefaultAgent(
     );
   });
 
-  await seedBuiltInModelKeys(db, agent.id);
+  await seedBuiltInModelKeys(catalogSnapshot, db, agent.id);
   signal.throwIfAborted();
   await ensureAgentInstructionsStorageFixture(
     db,
@@ -261,12 +265,19 @@ async function seedDefaultAgent(
   return { agentId: agent.id };
 }
 
-async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
+async function seedBuiltInModelKeys(
+  catalogSnapshot: ModelCatalog,
+  db: Db,
+  agentId: string,
+): Promise<void> {
   await db.delete(builtInModelKeys).where(eq(builtInModelKeys.label, agentId));
   await db
     .insert(builtInModelKeys)
     .values(
-      builtInModelKeyRows(agentId, await loadSystemDefaultBuiltInVendor(db)),
+      builtInModelKeyRows(
+        agentId,
+        await loadSystemDefaultBuiltInVendor(catalogSnapshot),
+      ),
     )
     .onConflictDoNothing({ target: builtInModelKeys.vendor });
 }
@@ -292,6 +303,7 @@ function builtInModelKeyRows(agentId: string, defaultVendor: string) {
 }
 
 async function deleteBuiltInModelKeysForSeededDefaultAgent(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
 ): Promise<void> {
@@ -306,7 +318,7 @@ async function deleteBuiltInModelKeysForSeededDefaultAgent(
 
   const apiKeys = builtInModelKeyRows(
     agent.id,
-    await loadSystemDefaultRunModel(db),
+    await catalogSnapshot.systemDefaultModel,
   ).map((row) => {
     return row.apiKey;
   });
@@ -680,6 +692,7 @@ async function maybeSeedTeamsConnectionForPost(
 }
 
 async function maybeSeedDefaultAgentForPost(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   body: TestTeamsStatePostBody,
   actor: { readonly orgId: string; readonly userId: string },
@@ -689,6 +702,7 @@ async function maybeSeedDefaultAgentForPost(
     return undefined;
   }
   return await seedDefaultAgent(
+    catalogSnapshot,
     db,
     {
       orgId: actor.orgId,
@@ -753,6 +767,7 @@ const postTeamsState$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   const defaultAgent = await maybeSeedDefaultAgentForPost(
+    await get(modelCatalog$),
     db,
     body,
     actor,
@@ -926,7 +941,11 @@ const deleteTeamsState$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const orgIds = orgIdsForTeamsStateDelete(installationRows, query.org_id);
   for (const orgId of orgIds) {
-    await deleteBuiltInModelKeysForSeededDefaultAgent(db, orgId);
+    await deleteBuiltInModelKeysForSeededDefaultAgent(
+      await get(modelCatalog$),
+      db,
+      orgId,
+    );
     signal.throwIfAborted();
   }
 

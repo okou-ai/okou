@@ -1,3 +1,4 @@
+import { modelCatalog$ } from "../services/model-catalog.service";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
@@ -190,8 +191,13 @@ const serveAuthorizedMcp$ = command(
         listAgents: (input, readSignal) => {
           return listMcpAgents(set(writeDb$), principal, input, readSignal);
         },
-        listModels: (readSignal) => {
-          return listMcpModels(set(writeDb$), principal, readSignal);
+        listModels: async (readSignal) => {
+          return listMcpModels(
+            await get(modelCatalog$),
+            set(writeDb$),
+            principal,
+            readSignal,
+          );
         },
         createThread: async (input, operationSignal) => {
           return await admitMutation((signal) => {

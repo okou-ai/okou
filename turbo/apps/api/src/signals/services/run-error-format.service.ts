@@ -19,7 +19,11 @@ import { eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { catalogDisplayName, loadModelCatalog } from "./model-catalog.service";
+import {
+  catalogDisplayName,
+  modelCatalog$,
+  type ModelCatalog,
+} from "./model-catalog.service";
 
 const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
@@ -164,10 +168,11 @@ function runErrorProviderContext(
  * shown verbatim.
  */
 async function resolveRunModelDisplayName(
+  catalogSnapshot: ModelCatalog,
   db: ReadonlyDb,
   selectedModel: string,
 ): Promise<string> {
-  const catalog = await loadModelCatalog(db);
+  const catalog = await catalogSnapshot;
   return catalogDisplayName(catalog, normalizeRunModelId(selectedModel.trim()));
 }
 
@@ -204,7 +209,11 @@ function formatRunErrorLikeWebMessage(
         ? params.selectedModel
         : providerContext?.selectedModel;
     const selectedModelLabel = selectedModel?.trim()
-      ? await resolveRunModelDisplayName(get(db$), selectedModel)
+      ? await resolveRunModelDisplayName(
+          await get(modelCatalog$),
+          get(db$),
+          selectedModel,
+        )
       : null;
     return formatRunErrorForExternalSurface({
       code: "INTERNAL_SERVER_ERROR",

@@ -1,3 +1,4 @@
+import { modelCatalog$ } from "./model-catalog.service";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import type {
   McpUpdateChatThreadInput,
@@ -36,7 +37,7 @@ function responseMessage(response: { readonly body: unknown }): string {
 
 export const updateMcpChatThread$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly principal: Principal;
       readonly input: McpUpdateChatThreadInput;
@@ -94,9 +95,12 @@ export const updateMcpChatThread$ = command(
       };
     }
 
-    const models = await mcpChatThreadModels(set(writeDb$), args.principal, [
-      update.state.selectedModel,
-    ]);
+    const models = await mcpChatThreadModels(
+      await get(modelCatalog$),
+      set(writeDb$),
+      args.principal,
+      [update.state.selectedModel],
+    );
     signal.throwIfAborted();
     const model = models.get(update.state.selectedModel);
     if (!model) {

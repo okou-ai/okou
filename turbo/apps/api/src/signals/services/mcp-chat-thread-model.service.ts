@@ -6,7 +6,10 @@ import {
   resolveEffectivePolicyRoute,
 } from "./effective-model-route.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { resolveCatalogRunModel } from "./model-catalog.service";
+import {
+  resolveCatalogRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import { loadOrgModelPolicyFacts } from "./model-policy.service";
 
 function modelProjection(
@@ -26,6 +29,7 @@ function modelProjection(
 
 /** Project current policy without seeding policies, reconciling pins, or admission. */
 export async function mcpChatThreadModels(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   principal: { readonly userId: string; readonly orgId: string },
   selectedModels: readonly (string | null)[],
@@ -37,7 +41,7 @@ export async function mcpChatThreadModels(
   }
 
   const { policies: projectedPolicies, catalog } =
-    await loadOrgModelPolicyFacts(db, principal.orgId);
+    await loadOrgModelPolicyFacts(catalogSnapshot, db, principal.orgId);
   // Stored pins resolve along the catalog replacement chain.
   const finalModels = new Map<string, string | null>();
   for (const model of models) {

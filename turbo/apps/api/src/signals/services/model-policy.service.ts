@@ -56,9 +56,9 @@ import {
   isCatalogModelAddable,
   isCatalogModelRunnable,
   catalogBuiltInCandidates,
-  loadModelCatalog,
   resolveCatalogModel,
   type ModelCatalog,
+  modelCatalog$,
 } from "./model-catalog.service";
 import {
   catalogModelAllowsCustomGateway,
@@ -488,6 +488,7 @@ export function orgModelPolicyFactsFromSnapshot(args: {
  * policies. The system default is projected, so reading policies never writes.
  */
 export async function loadOrgModelPolicyFacts(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   suppliedPlanCapabilities?: OrgPlanCapabilities | null,
@@ -498,7 +499,7 @@ export async function loadOrgModelPolicyFacts(
       ? loadOrgPlanCapabilities(db, orgId)
       : suppliedPlanCapabilities,
     loadRows(db, orgId),
-    suppliedCatalog ?? loadModelCatalog(db),
+    suppliedCatalog ?? catalogSnapshot,
   ]);
   return orgModelPolicyFactsFromSnapshot({
     catalog,
@@ -1031,6 +1032,7 @@ export interface OrgModelPolicyListing {
 }
 
 async function listOrgModelPolicies(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   userId: string,
@@ -1038,7 +1040,7 @@ async function listOrgModelPolicies(
 ): Promise<OrgModelPolicyListing> {
   const [persistedRows, catalog] = await Promise.all([
     loadRows(db, orgId),
-    loadModelCatalog(db),
+    catalogSnapshot,
   ]);
   const rows = projectPolicyRows(catalog, orgId, persistedRows);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
@@ -1299,6 +1301,7 @@ export const listOrgModelPolicies$ = command(
   ): Promise<OrgModelPoliciesResponse> => {
     const db = set(writeDb$);
     const { response } = await listOrgModelPolicies(
+      await get(modelCatalog$),
       db,
       params.orgId,
       params.userId,
@@ -1320,6 +1323,7 @@ export const listOrgModelPoliciesWithSystemDefault$ = command(
     signal: AbortSignal,
   ): Promise<OrgModelPolicyListing> => {
     const listing = await listOrgModelPolicies(
+      await get(modelCatalog$),
       set(writeDb$),
       params.orgId,
       params.userId,
@@ -1354,6 +1358,8 @@ export const updateOrgModelPolicies$ = command(
     if (!params.revision) {
       return refreshConflict();
     }
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
     const written = await db.transaction(async (tx) => {
       const [org] = await tx
         .select({ mode: orgMetadata.modelMode })
@@ -1366,10 +1372,7 @@ export const updateOrgModelPolicies$ = command(
         );
       }
       signal.throwIfAborted();
-      const [existing, catalog] = await Promise.all([
-        loadRows(tx, params.orgId),
-        loadModelCatalog(tx),
-      ]);
+      const existing = await loadRows(tx, params.orgId);
       if (
         params.revision !== undefined &&
         params.revision !== policyRevision(existing)
@@ -1417,6 +1420,7 @@ export const updateOrgModelPolicies$ = command(
     }
 
     const { response } = await listOrgModelPolicies(
+      await get(modelCatalog$),
       db,
       params.orgId,
       params.userId,

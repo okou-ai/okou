@@ -1,3 +1,4 @@
+import { modelCatalog$ } from "./model-catalog.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import type {
@@ -219,12 +220,13 @@ type ThreadRow = {
 
 const projectThreads$ = command(
   async (
-    { set },
+    { get, set },
     principal: Principal,
     rows: readonly ThreadRow[],
     signal?: AbortSignal,
   ): Promise<McpChatThread[]> => {
     const models = await mcpChatThreadModels(
+      await get(modelCatalog$),
       set(writeDb$),
       principal,
       rows.map((row) => {

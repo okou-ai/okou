@@ -1,3 +1,4 @@
+import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
@@ -13,7 +14,7 @@ import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { db } from "../lib/db";
 import {
   catalogBuiltInCandidates,
-  loadModelCatalog,
+  modelCatalog$,
 } from "../signals/services/model-catalog.service";
 
 /**
@@ -304,7 +305,7 @@ export async function insertBuiltInModelMirrorFixture(
   readonly model: string;
   readonly restore: () => Promise<void>;
 }> {
-  const catalog = await loadModelCatalog(db());
+  const catalog = await createStore().get(modelCatalog$);
   const base = catalog.byModel.get(baseModel);
   if (!base) {
     throw new Error(`Expected catalog model ${baseModel}`);
@@ -437,7 +438,7 @@ export async function setBuiltInRouteLongContextThresholdFixture(args: {
 export async function loadPiCatalogModelFixture(
   model: string,
 ): Promise<PiCatalogModel | null> {
-  return piCatalogModel(await loadModelCatalog(db()), model);
+  return piCatalogModel(await createStore().get(modelCatalog$), model);
 }
 
 /**

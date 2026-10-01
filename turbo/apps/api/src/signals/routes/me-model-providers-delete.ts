@@ -1,3 +1,4 @@
+import { modelCatalog$ } from "../services/model-catalog.service";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
@@ -25,7 +26,12 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result) {
     return result;
   }
-  await resetStaleAutoMemberSelection(set(writeDb$), auth.orgId, auth.userId);
+  await resetStaleAutoMemberSelection(
+    await get(modelCatalog$),
+    set(writeDb$),
+    auth.orgId,
+    auth.userId,
+  );
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });

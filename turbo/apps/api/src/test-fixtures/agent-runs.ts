@@ -25,7 +25,7 @@ import {
   normalizeSessionHistoryBlobEncoding,
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
-import { loadModelCatalog } from "../signals/services/model-catalog.service";
+import { modelCatalog$ } from "../signals/services/model-catalog.service";
 /**
  * Test fixtures for retired agent-run API capabilities.
  *
@@ -413,7 +413,7 @@ export async function createDirectRunFixture(args: {
   return await store.set(
     createAgentRun$,
     {
-      catalog: await loadModelCatalog(db()),
+      catalog: await createStore().get(modelCatalog$),
       userId: args.userId,
       orgId: args.orgId,
       apiStartTime: now(),

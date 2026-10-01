@@ -373,9 +373,17 @@ function describeModelAvailability(params: {
   return entry;
 }
 
-async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
+async function loadDiscoveryModelPolicies(
+  catalogSnapshot: ModelCatalog,
+  tx: Tx,
+  orgId: string,
+) {
   // The system default is projected, so every organization has a policy.
-  const { policies, catalog } = await loadOrgModelPolicyFacts(tx, orgId);
+  const { policies, catalog } = await loadOrgModelPolicyFacts(
+    catalogSnapshot,
+    tx,
+    orgId,
+  );
   return { policies, catalog };
 }
 
@@ -440,6 +448,7 @@ async function appendAutoMemberMcpModels({
 }
 
 export async function listMcpModels(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   principal: Principal,
   signal: AbortSignal,
@@ -457,6 +466,7 @@ export async function listMcpModels(
           : { restrictedBuiltInModels: false, supportByok: true };
       await budget.beforeQuery(tx);
       const { policies, catalog } = await loadDiscoveryModelPolicies(
+        catalogSnapshot,
         tx,
         principal.orgId,
       );
@@ -522,6 +532,7 @@ export async function listMcpModels(
         ) {
           await budget.beforeQuery(tx);
           const runtime = await resolveBuiltInModelRuntimeRoute(
+            catalogSnapshot,
             tx,
             model,
             featureSwitchContext,

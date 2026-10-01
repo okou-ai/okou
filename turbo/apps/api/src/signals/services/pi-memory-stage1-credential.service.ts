@@ -33,7 +33,6 @@ import {
   catalogBuiltInCandidates,
   catalogBuiltInRoute,
   catalogProviderUpstreamModel,
-  loadModelCatalog,
   type ModelCatalog,
   ModelCatalogInvariantError,
 } from "./model-catalog.service";
@@ -585,6 +584,7 @@ async function apiKeyCredential(
 
 /** Source identity is authority; defaults and foreground settings never participate. */
 export async function resolvePiMemoryStage1Credential(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   source: SourceIdentity,
   signal: AbortSignal,
@@ -606,7 +606,7 @@ export async function resolvePiMemoryStage1Credential(
     source.userId,
   );
   signal.throwIfAborted();
-  const catalog = await loadModelCatalog(db);
+  const catalog = await catalogSnapshot;
   signal.throwIfAborted();
   const args = {
     db,

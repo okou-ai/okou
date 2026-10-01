@@ -60,7 +60,7 @@ import {
 } from "./slack-chat-ingress.service";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { onRejection, safeJsonParse, tapError } from "../utils";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
 
@@ -734,12 +734,15 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     const route = await set(
       ensureCanonicalSlackChatThreadRoute$,
       {
-        initialModel: await resolveDefaultModelFirstPin(
-          set(writeDb$),
-          args.orgId,
-          args.connection.userId,
-          undefined,
-          undefined,
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          {
+            orgId: args.orgId,
+            userId: args.connection.userId,
+            defaultSource: undefined,
+            orgPlanCapabilities: undefined,
+          },
+          signal,
         ),
         ...routeKey,
         orgId: args.orgId,

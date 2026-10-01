@@ -1,4 +1,4 @@
-import { loadModelCatalog } from "./model-catalog.service";
+import { modelCatalog$ } from "./model-catalog.service";
 import type {
   McpCreateChatWithMessageInput,
   McpCreateChatThreadInput,
@@ -40,7 +40,7 @@ import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 import { submitMcpChatInput$ } from "./mcp-chat-send.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin,
+  resolveModelSelectionPin$,
   type ModelFirstPin,
 } from "./model-selection.service";
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -279,7 +279,7 @@ const readCreation$ = command(
 
 const prepareThreadModel$ = command(
   async (
-    { set },
+    { get, set },
     principal: Principal,
     input: McpCreateChatThreadInput,
     signal: AbortSignal,
@@ -301,15 +301,18 @@ const prepareThreadModel$ = command(
             ? "ultrafast"
             : null;
     } else {
-      const resolved = await resolveModelSelectionPin({
-        db: set(writeDb$),
-        orgId: principal.orgId,
-        userId: principal.userId,
-        modelSelection: {
-          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-          selectedModel: input.model,
+      const resolved = await set(
+        resolveModelSelectionPin$,
+        {
+          orgId: principal.orgId,
+          userId: principal.userId,
+          modelSelection: {
+            modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+            selectedModel: input.model,
+          },
         },
-      });
+        signal,
+      );
       signal.throwIfAborted();
       if ("status" in resolved) {
         return {
@@ -319,7 +322,7 @@ const prepareThreadModel$ = command(
       }
       pin = resolved;
     }
-    const catalog = await loadModelCatalog(set(writeDb$));
+    const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const defaults = await set(loadNewChatThreadDefaults$, principal, signal);
     signal.throwIfAborted();
@@ -452,7 +455,7 @@ const commitNewThread$ = command(
 
 const createChatThread$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly principal: Principal;
       readonly input: McpCreateChatThreadInput;
@@ -480,9 +483,12 @@ const createChatThread$ = command(
     if (thread.agentId !== agentId) {
       creationConflict();
     }
-    const models = await mcpChatThreadModels(set(writeDb$), principal, [
-      thread.selectedModel,
-    ]);
+    const models = await mcpChatThreadModels(
+      await get(modelCatalog$),
+      set(writeDb$),
+      principal,
+      [thread.selectedModel],
+    );
     signal.throwIfAborted();
     const model = models.get(thread.selectedModel);
     if (!model) {

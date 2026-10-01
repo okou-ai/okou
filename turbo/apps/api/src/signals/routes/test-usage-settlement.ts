@@ -14,7 +14,7 @@ import { checkBillableOperationCredits$ } from "../services/billable-operation-a
 import { createUsagePackCreditGrant } from "../services/usage-pack-credit.service";
 import { processOrgUsageEvents$ } from "../services/credit-usage.service";
 import { checkOrgCreditsForRunAdmission } from "../services/run-admission.service";
-import { loadModelCatalog } from "../services/model-catalog.service";
+import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -228,7 +228,7 @@ const checkUsageSettlementAdmission$ = command(
       bodyResult.data.kind === "run"
         ? (await checkOrgCreditsForRunAdmission({
             db: set(writeDb$),
-            catalog: await loadModelCatalog(set(writeDb$)),
+            catalog: await get(modelCatalog$),
             ...args,
             modelProviderType: "built-in",
           })) === undefined

@@ -61,8 +61,8 @@ import {
   type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import { resolveChatInputModelSelection } from "./chat-input-model.service";
-import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
+import { type ModelCatalog, modelCatalog$ } from "./model-catalog.service";
 
 import {
   catalogModelOffersUltrafast,
@@ -1299,6 +1299,7 @@ async function appendNormalSendInput(
  * own insert.
  */
 async function prepareNormalSend(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   args: NormalSendArgs,
   signal: AbortSignal,
@@ -1359,7 +1360,7 @@ async function prepareNormalSend(
   if (invalidTemplate) {
     return invalidTemplate;
   }
-  const catalog = await loadModelCatalog(db);
+  const catalog = await catalogSnapshot;
   signal.throwIfAborted();
   if (
     args.body.model !== undefined &&
@@ -1460,14 +1461,18 @@ const prepareNormalSendInput$ = command(
       },
       signal,
     );
-    const modelSelection = await resolveChatInputModelSelection(set(writeDb$), {
-      orgId: args.orgId,
-      userId: args.userId,
-      ...args.runSettings,
-      reasoningEffort: args.body.runOptions?.reasoningEffort,
-      orgPlanCapabilities: args.orgPlanCapabilities,
-      catalog: args.catalog,
-    });
+    const modelSelection = await set(
+      resolveChatInputModelSelection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        ...args.runSettings,
+        reasoningEffort: args.body.runOptions?.reasoningEffort,
+        orgPlanCapabilities: args.orgPlanCapabilities,
+        catalog: args.catalog,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if ("status" in modelSelection) {
       return modelSelection;
@@ -1550,7 +1555,12 @@ export const sendNormalEvent$ = command(
     const orgPlanCapabilities =
       args.orgPlanCapabilities$ && (await get(args.orgPlanCapabilities$));
     signal.throwIfAborted();
-    const prepared = await prepareNormalSend(db, args, signal);
+    const prepared = await prepareNormalSend(
+      await get(modelCatalog$),
+      db,
+      args,
+      signal,
+    );
     if ("status" in prepared) {
       return prepared;
     }

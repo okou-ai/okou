@@ -27,10 +27,10 @@ import {
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { type ModelCatalog, modelCatalog$ } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
 } from "./model-selection.service";
@@ -420,7 +420,7 @@ function metadataEvents(
 
 const prepareMetadataModel$ = command(
   async (
-    { set },
+    { get, set },
     args: ChatThreadMetadataUpdateArgs,
     signal: AbortSignal,
   ): Promise<PreparedPin> => {
@@ -448,26 +448,30 @@ const prepareMetadataModel$ = command(
     if (readMutation(args, existing)) {
       return null;
     }
-    return await resolveModelSelectionPin({
-      db: set(writeDb$),
-      ...args.principal,
-      modelSelection: {
-        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-        selectedModel: args.patch.model,
+    return await set(
+      resolveModelSelectionPin$,
+      {
+        ...args.principal,
+        catalog: await get(modelCatalog$),
+        modelSelection: {
+          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+          selectedModel: args.patch.model,
+        },
       },
-    });
+      signal,
+    );
   },
 );
 
 const commitMetadata$ = command(
   async (
-    { set },
+    { get, set },
     args: ChatThreadMetadataUpdateArgs,
     pin: PreparedPin,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
     const db = set(writeDb$);
-    const catalog = await loadModelCatalog(db);
+    const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       const [current] = await tx

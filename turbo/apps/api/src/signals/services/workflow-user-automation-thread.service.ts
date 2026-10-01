@@ -29,7 +29,7 @@ import {
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import {
-  resolveDefaultModelFirstPin,
+  resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
 } from "./model-selection.service";
 import {
@@ -126,12 +126,15 @@ export const prepareWorkflowUserAutomationThread$ = command(
         }
       }
     }
-    const initialModel = await resolveDefaultModelFirstPin(
-      set(writeDb$),
-      args.orgId,
-      args.userId,
-      undefined,
-      undefined,
+    const initialModel = await set(
+      resolveDefaultModelFirstPin$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        defaultSource: undefined,
+        orgPlanCapabilities: undefined,
+      },
+      signal,
     );
     signal.throwIfAborted();
     return {
