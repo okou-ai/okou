@@ -259,8 +259,9 @@ const cleanupBootstrapCandidate$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const jobId = await db.transaction(async (tx) => {
-      // Bound recovery SQL independently of the cancelled request. An old
-      // writer can still hold a parent across IO during mixed-version rollout.
+      // Bound recovery SQL independently of the cancelled request. Publication
+      // may still be settling for this exact candidate; a timeout is not proof
+      // that it rolled back.
       await tx.execute(sql`SELECT
         set_config('statement_timeout', '5000ms', true),
         set_config('lock_timeout', '1000ms', true)`);
@@ -468,8 +469,7 @@ async function finalizeBootstrap(
           onboardingComplete: false,
           // A policy can be configured before metadata exists. Preserve the
           // Custom policy contract on INSERT as well as on conflict. Unconfigured
-          // new organizations use Auto; the column default stays Custom for old
-          // API writers.
+          // new organizations use Auto; the schema's Custom default is unchanged.
           modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN 'custom' ELSE 'auto' END`,
           updatedAt: nowDate(),
         })

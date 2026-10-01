@@ -56,35 +56,28 @@ Custom instead of being switched to Auto. On conflict, configured policies retai
 the stored mode; an unconfigured new org still starts in Auto. The policy and
 catalog schemas and paid-tier behavior do not change.
 
-| Writers                                   | Supported behavior                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| new / new                                 | Private generations cannot overwrite one another. Canonical parent ownership and uniqueness select one default; losers enqueue only their disjoint prefixes.                                                                                                                                                                                                                                                                   |
-| new / prepared old (#37097, `405c214520`) | The old publication owns the canonical parent across its seed PUTs. New election waits for that transaction, then sees its default/HEAD freshly. If new publication wins, the old upsert owns that parent before its fresh default check and skips reseeding. Prepared old compensation captures only its own UUID/prefix and freshly checks default after ownership, so it cannot adopt a private/new replacement generation. |
-| new / pre-preparation old                 | Unsupported: old compensation can decide no default before waiting for the parent and then delete a newer publication. These writers and their in-flight work must drain before keyless activation and must not remain rollback targets.                                                                                                                                                                                       |
+At the owner's direction, mixed old/new bootstrap API writers are outside this
+change's acceptance scope. No runtime version dispatch or legacy bootstrap path
+is retained, and the earlier preparation-stage writer-drain/rollback gate is not
+an acceptance requirement for this PR. This is a scope decision, not a claim that
+serving builds were inspected. Other deployment and retirement contracts are
+unchanged.
 
-Rolling back to a prepared old API leaves ordinary canonical Storage/version/index
-rows readable and writable with the unchanged key layout. Older workers that do
-not understand cleanup v1 delay pending obligations rather than remove them; a
-compatible worker must return to complete them. Each failed new candidate's
-UUID/prefix remains disjoint from later old/new publications. No new writer
-state or migration needs rollback conversion.
-
-Release owners must verify that serving and supported rollback artifacts include
-#37097's parent-first publication and exact compensation preparation, with older
-in-flight bootstrap work drained. This source change does not certify that
-operational gate, change deployment/protection settings or authorize production
-activation. Existing broader rollback floors remain in force. The historical
-[preparation section](#custom-account-browser-and-bootstrap-owner-protocols-2026-09-27)
-describes why unprepared writers are unsafe.
+Concurrent attempts using this implementation keep disjoint UUIDs/prefixes.
+Canonical parent ownership and uniqueness select one default; losers enqueue
+only their own prefixes. Existing canonical Storage/version/index rows retain
+their shape and key layout, with no persisted-state conversion or migration.
+Published instructions and legitimate versionless empty reservations remain
+part of the data contract, independent of writer-version coexistence.
 
 Compensation fences an uncertain publication by probing the same candidate's
 primary key under a private probe name, then reads only that captured UUID/prefix.
 It removes only a newly inserted, unpublished probe; any live captured parent is
 retained. Recovery SQL has one-second lock and five-second statement timeouts,
 independent of request cancellation, without lock retries. Cleanup failure does
-not reinterpret a successful publication or replace the original failure. Process crashes before inventory and provider
-late PUTs still need #37402's grace sweep. No grace period or complete orphan-GC
-guarantee is introduced here. The
+not reinterpret a successful publication or replace the original failure.
+Process crashes before inventory and provider late PUTs still need #37402's grace
+sweep. No grace period or complete orphan-GC guarantee is introduced here. The
 [publication protocol](storage-version-publication.md#bootstrap-seed-publication)
 details canonical election, empty-parent recovery and bounded cleanup.
 

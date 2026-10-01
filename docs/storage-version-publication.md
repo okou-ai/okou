@@ -83,7 +83,7 @@ A crash before inventory persistence and a provider accepting a PUT after its
 cancelled response can still leave unreferenced bytes. Those require the wider
 parent's late-upload/grace-period sweep; this slice does not claim a complete
 physical-immutability or orphan-GC solution. See the
-[writer compatibility boundary](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
+[bootstrap scope and unchanged data contract](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
 
 ## Remove references before objects
 

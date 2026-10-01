@@ -24,12 +24,13 @@ inventory uses the existing bounded, lease-fenced cleanup worker, with no
 provider calls inside the publication or compensation transactions.
 
 This removes one literal acquisition site; the dated inventories below are
-historical snapshots, not updated production counts. Supported old writers must
-include #37097's parent-first/fresh-default and exact-generation compensation
-preparation. Pre-preparation writers require a serving/in-flight drain and
-rollback exclusion by the release owner. Source retirement is not evidence that
-this deployment gate passed. See the
-[compatibility matrix](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement)
+historical snapshots, not updated production counts. At the owner's direction,
+mixed old/new bootstrap writers are outside this retirement's acceptance scope;
+the older preparation-stage drain/rollback gate is not an acceptance requirement
+for this PR. Other advisory-retirement contracts are unchanged. Same-version
+concurrency, exact-generation compensation and existing stored data remain in
+scope. See the
+[bootstrap scope](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement)
 and [publication proof](storage-version-publication.md#bootstrap-seed-publication).
 
 ## Why we are removing them
