@@ -39,6 +39,55 @@ their current handler/checkpoint contract and can resume through the new code.
 See [Storage version publication](storage-version-publication.md) for the bounded
 cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
 
+## Bootstrap private-generation publication and advisory retirement
+
+Bootstrap seed IO now finishes before canonical parent publication. Each new
+attempt prepares a disjoint Storage UUID/prefix without registering a row. A
+short transaction arbitrates the canonical owner/name, takes its parent directly
+`FOR UPDATE`, checks default freshly and publishes only the elected generation.
+An incumbent HEAD is preserved; only a versionless empty container may be
+retired. Agent/metadata/credits/index references commit atomically. Exact failed
+or losing generations reuse handler-v1 storage-object-cleanup inventory; no
+schema, version identity, Runner reader or public API contract changes.
+
+The initial metadata insert now checks configured policies, like the existing
+conflict-update branch: policies configured before a metadata row exists retain
+Custom instead of being switched to Auto. On conflict, configured policies retain
+the stored mode; an unconfigured new org still starts in Auto. The policy and
+catalog schemas and paid-tier behavior do not change.
+
+| Writers                                   | Supported behavior                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| new / new                                 | Private generations cannot overwrite one another. Canonical parent ownership and uniqueness select one default; losers enqueue only their disjoint prefixes.                                                                                                                                                                                                                                                                   |
+| new / prepared old (#37097, `405c214520`) | The old publication owns the canonical parent across its seed PUTs. New election waits for that transaction, then sees its default/HEAD freshly. If new publication wins, the old upsert owns that parent before its fresh default check and skips reseeding. Prepared old compensation captures only its own UUID/prefix and freshly checks default after ownership, so it cannot adopt a private/new replacement generation. |
+| new / pre-preparation old                 | Unsupported: old compensation can decide no default before waiting for the parent and then delete a newer publication. These writers and their in-flight work must drain before keyless activation and must not remain rollback targets.                                                                                                                                                                                       |
+
+Rolling back to a prepared old API leaves ordinary canonical Storage/version/index
+rows readable and writable with the unchanged key layout. Older workers that do
+not understand cleanup v1 delay pending obligations rather than remove them; a
+compatible worker must return to complete them. Each failed new candidate's
+UUID/prefix remains disjoint from later old/new publications. No new writer
+state or migration needs rollback conversion.
+
+Release owners must verify that serving and supported rollback artifacts include
+#37097's parent-first publication and exact compensation preparation, with older
+in-flight bootstrap work drained. This source change does not certify that
+operational gate, change deployment/protection settings or authorize production
+activation. Existing broader rollback floors remain in force. The historical
+[preparation section](#custom-account-browser-and-bootstrap-owner-protocols-2026-09-27)
+describes why unprepared writers are unsafe.
+
+Compensation fences an uncertain publication by probing the same candidate's
+primary key under a private probe name, then reads only that captured UUID/prefix.
+It removes only a newly inserted, unpublished probe; any live captured parent is
+retained. Recovery SQL has one-second lock and five-second statement timeouts,
+independent of request cancellation, without lock retries. Cleanup failure does
+not reinterpret a successful publication or replace the original failure. Process crashes before inventory and provider
+late PUTs still need #37402's grace sweep. No grace period or complete orphan-GC
+guarantee is introduced here. The
+[publication protocol](storage-version-publication.md#bootstrap-seed-publication)
+details canonical election, empty-parent recovery and bounded cleanup.
+
 ## Astra Ultrafast temporarily disabled (2026-09-30)
 
 Ultrafast is no longer advertised in model run options. Both model pickers hide

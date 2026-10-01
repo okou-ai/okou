@@ -5,6 +5,33 @@ locks. Do not introduce new advisory locks. Existing call sites are temporary
 cleanup work; remove them as their business invariants move to database
 constraints, atomic SQL, or a smaller transaction over the affected rows.
 
+## Bootstrap seed IO and key retirement
+
+The bootstrap follow-up to #37415 removes the `org_bootstrap` SQL acquisition
+helper, its two publication/compensation entrances and its exemption. Its
+replacement is not a lock table or another lock held across IO: each attempt
+uploads a private unregistered Storage generation, then a short transaction
+arbitrates the canonical owner/name with its existing unique index and takes the
+actual parent directly `FOR UPDATE` before a fresh default-Agent decision.
+
+A peer's committed default or incumbent HEAD is preserved. Only an empty parent
+with no registered versions may be replaced under that ownership; an invalid
+retained-version/null-HEAD state fails closed. Candidate publication and
+Agent/metadata/entitlement/credit finalization commit together. Compensation
+arbitrates only its captured candidate identity after an uncertain commit and
+never deletes a live parent or adopts a replacement. Exact losing-prefix
+inventory uses the existing bounded, lease-fenced cleanup worker, with no
+provider calls inside the publication or compensation transactions.
+
+This removes one literal acquisition site; the dated inventories below are
+historical snapshots, not updated production counts. Supported old writers must
+include #37097's parent-first/fresh-default and exact-generation compensation
+preparation. Pre-preparation writers require a serving/in-flight drain and
+rollback exclusion by the release owner. Source retirement is not evidence that
+this deployment gate passed. See the
+[compatibility matrix](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement)
+and [publication proof](storage-version-publication.md#bootstrap-seed-publication).
+
 ## Why we are removing them
 
 Advisory locks have been overused for problems that a unique index or a simple

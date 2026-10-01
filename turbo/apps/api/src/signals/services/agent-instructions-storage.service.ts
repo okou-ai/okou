@@ -11,7 +11,10 @@ import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
   commitPreparedVolumeServerSide,
+  prepareVolumeServerSide$,
   prepareVolumeServerSideWithDb$,
+  type PreparedServerSideVolume,
+  type ServerSideVolumeStorageIdentity,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
@@ -75,6 +78,71 @@ export const writeAgentInstructionsStorage$ = command(
   },
 );
 
+/** Prepare and upload instructions without holding a publication transaction. */
+export const prepareAgentInstructionsStorage$ = command(
+  async (
+    { set },
+    args: WriteAgentInstructionsStorageArgs & {
+      readonly storageGeneration?: ServerSideVolumeStorageIdentity;
+    },
+    signal: AbortSignal,
+  ): Promise<PreparedServerSideVolume> => {
+    return await set(
+      prepareVolumeServerSide$,
+      { ...instructionVolumeInput(args), storage: args.storageGeneration },
+      signal,
+    );
+  },
+);
+
+/** DB-only commit. The caller owns/revalidates the Agent and Storage parent. */
+export async function commitPreparedAgentInstructionsStorage(
+  args: {
+    readonly tx: Tx;
+    readonly volume: PreparedServerSideVolume;
+    readonly stableContextPublication?: PiStableContextPublicationFence;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (
+    args.stableContextPublication &&
+    !(await lockPiStableContextPublication(
+      args.tx,
+      args.stableContextPublication,
+    ))
+  ) {
+    throw new Error(
+      "Stable-context publication was superseded before Storage HEAD commit",
+    );
+  }
+  await commitPreparedVolumeServerSide(
+    { db: args.tx, volume: args.volume },
+    signal,
+  );
+  if (args.stableContextPublication) {
+    await refreshPiStableContextStorageDemands(
+      args.tx,
+      args.stableContextPublication,
+      {
+        storageId: args.volume.version.storageId,
+        versionId: args.volume.version.versionId,
+        archiveSize: args.volume.version.archiveSize,
+        fileCount: args.volume.version.fileCount,
+      },
+    );
+    signal.throwIfAborted();
+    if (
+      !(await completePiStableContextPublication(
+        args.tx,
+        args.stableContextPublication,
+      ))
+    ) {
+      throw new Error("Stable-context publication fence changed while locked");
+    }
+  }
+  signal.throwIfAborted();
+}
+
 export const writeAgentInstructionsStorageInTransaction$ = command(
   async (
     { set },
@@ -86,42 +154,14 @@ export const writeAgentInstructionsStorageInTransaction$ = command(
       { db: args.tx, input: instructionVolumeInput(args) },
       signal,
     );
-    if (
-      args.stableContextPublication &&
-      !(await lockPiStableContextPublication(
-        args.tx,
-        args.stableContextPublication,
-      ))
-    ) {
-      throw new Error(
-        "Stable-context publication was superseded before Storage HEAD commit",
-      );
-    }
-    await commitPreparedVolumeServerSide({ db: args.tx, volume }, signal);
-    if (args.stableContextPublication) {
-      await refreshPiStableContextStorageDemands(
-        args.tx,
-        args.stableContextPublication,
-        {
-          storageId: volume.version.storageId,
-          versionId: volume.version.versionId,
-          archiveSize: volume.version.archiveSize,
-          fileCount: volume.version.fileCount,
-        },
-      );
-      signal.throwIfAborted();
-      if (
-        !(await completePiStableContextPublication(
-          args.tx,
-          args.stableContextPublication,
-        ))
-      ) {
-        throw new Error(
-          "Stable-context publication fence changed while locked",
-        );
-      }
-    }
-    signal.throwIfAborted();
+    await commitPreparedAgentInstructionsStorage(
+      {
+        tx: args.tx,
+        volume,
+        stableContextPublication: args.stableContextPublication,
+      },
+      signal,
+    );
   },
 );
 

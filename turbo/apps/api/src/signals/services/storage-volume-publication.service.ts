@@ -57,9 +57,17 @@ export interface PreparedServerSideVolume {
   };
 }
 
+export interface ServerSideVolumeStorageIdentity {
+  readonly id: string;
+  readonly s3Prefix: string;
+}
+
 interface PrepareVolumeServerSideWithDbInput {
   readonly db: Db;
   readonly input: PrepareVolumeServerSideInput;
+  /** A private, unregistered generation. The caller owns its later publication
+   * or cleanup; preparation must not resolve a different canonical parent. */
+  readonly storage?: ServerSideVolumeStorageIdentity;
 }
 
 interface S3StorageManifest {
@@ -330,7 +338,9 @@ export const prepareVolumeServerSideWithDb$ = command(
       };
     });
     const updatedAt = nowDate();
-    const storage = await resolveCanonicalVolumeStorage(writeDb, input, signal);
+    const storage =
+      args.storage ??
+      (await resolveCanonicalVolumeStorage(writeDb, input, signal));
 
     const versionId = computeContentHashFromHashes(storage.id, fileEntries);
     const s3Key = `${storage.s3Prefix}/${versionId}`;
@@ -396,13 +406,15 @@ export const prepareVolumeServerSideWithDb$ = command(
 export const prepareVolumeServerSide$ = command(
   async (
     { set },
-    args: PrepareVolumeServerSideInput,
+    args: PrepareVolumeServerSideInput & {
+      readonly storage?: ServerSideVolumeStorageIdentity;
+    },
     signal: AbortSignal,
   ): Promise<PreparedServerSideVolume> => {
     const writeDb = set(writeDb$);
     return await set(
       prepareVolumeServerSideWithDb$,
-      { db: writeDb, input: args },
+      { db: writeDb, input: args, storage: args.storage },
       signal,
     );
   },
