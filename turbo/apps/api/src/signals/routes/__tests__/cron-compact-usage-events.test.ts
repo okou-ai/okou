@@ -148,12 +148,12 @@ describe("usage event compaction cron", () => {
     });
   });
 
-  it("discovers the oldest eligible organization outside the lock and compacts only its grains", async () => {
+  it("selects the oldest eligible organization and expands only its complete grains from 500 seeds", async () => {
     const older = await seedFixture();
     const newer = await seedFixture();
     await seedZeroUsageEvents(older, {
       processedAt: new Date("2026-08-01T00:15:00.000Z"),
-      count: 2,
+      count: RAW_SEED_LIMIT + 1,
     });
     await seedZeroUsageEvents(newer, {
       processedAt: new Date("2026-08-02T00:15:00.000Z"),
@@ -167,8 +167,9 @@ describe("usage event compaction cron", () => {
     const first = await accept(client.compact({ body: { orgIds } }), [200]);
     expect(first.body).toMatchObject({
       success: true,
-      seededRawRows: 2,
-      rawRowsDeleted: 2,
+      seededRawRows: RAW_SEED_LIMIT,
+      selectedGrains: 1,
+      rawRowsDeleted: RAW_SEED_LIMIT + 1,
       hasMore: true,
     });
     await expect(readStorage(older)).resolves.toStrictEqual({
@@ -202,6 +203,51 @@ describe("usage event compaction cron", () => {
       rawRowsDeleted: 0,
       hasMore: false,
       lockWaitMs: 0,
+    });
+  });
+
+  it("discovers eligible work rather than the organization with the oldest held-error row", async () => {
+    const held = await seedFixture();
+    const eligible = await seedFixture();
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...held,
+        status: "processed",
+        billingError: "missing_pricing",
+        processedAt: new Date("2026-07-31T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    await seedZeroUsageEvents(eligible, {
+      processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      count: 1,
+    });
+    const client = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    const orgIds = [held.orgId, eligible.orgId];
+
+    const compacted = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(compacted.body).toMatchObject({ rawRowsDeleted: 1, hasMore: false });
+    await expect(readStorage(held)).resolves.toStrictEqual({
+      raw: 1,
+      processedRaw: 1,
+      hourly: 0,
+    });
+    await expect(readStorage(eligible)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
+    });
+
+    const heldOnly = await accept(client.compact({ body: { orgIds } }), [200]);
+    expect(heldOnly.body).toMatchObject({
+      rawRowsDeleted: 0,
+      probedRawRows: 1,
+      billingErrorHeldRows: 1,
+      lockWaitMs: 0,
+      hasMore: false,
     });
   });
 

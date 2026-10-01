@@ -58,6 +58,13 @@ interface UsageEventCompactionStats {
   readonly durationMs: number;
 }
 
+type UsageEventCompactionBatch = Omit<
+  UsageEventCompactionStats,
+  "durationMs"
+> & {
+  readonly maxGrainSourceRows: number;
+};
+
 const integerTextSchema = z.string().regex(/^-?\d+$/);
 const safeCountSchema = z
   .string()
@@ -626,9 +633,7 @@ function emptyCompactionBatch(
   cutoffDate: Date,
   rawSeedLimit: number,
   probe: z.output<typeof holdProbeRowSchema>,
-): Omit<UsageEventCompactionStats, "durationMs"> & {
-  readonly maxGrainSourceRows: number;
-} {
+): UsageEventCompactionBatch {
   return {
     cutoff: cutoffDate.toISOString(),
     rawSeedLimit,
@@ -653,24 +658,15 @@ function emptyCompactionBatch(
 
 async function compactUsageEventBatch(
   db: UsageEventCompactionDb,
-  orgId: string | undefined,
+  args: {
+    readonly orgId: string;
+    readonly hasMoreOrgId: string | undefined;
+    readonly allowedOrgIds: readonly string[] | undefined;
+  },
   signal: AbortSignal,
-): Promise<
-  Omit<UsageEventCompactionStats, "durationMs"> & {
-    readonly maxGrainSourceRows: number;
-  }
-> {
+): Promise<UsageEventCompactionBatch> {
+  const { orgId, hasMoreOrgId, allowedOrgIds } = args;
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
-  if (orgId !== undefined) {
-    // An empty scoped snapshot has no work to protect. A later event is
-    // eligible for the next Cron; hasMore describes this preflight snapshot.
-    const cutoffDate = await loadCompactionCutoff(db);
-    const cutoff = timestampWithoutTimeZone(cutoffDate);
-    const probe = await loadHoldProbe(db, cutoff, rawSeedLimit, orgId);
-    if (probe.probedRawRows === 0) {
-      return emptyCompactionBatch(cutoffDate, rawSeedLimit, probe);
-    }
-  }
   return await db.transaction(async (tx) => {
     const lockStartedAt = performance.now();
     // Keep the existing coordination protocol until its replacement and
@@ -681,8 +677,10 @@ async function compactUsageEventBatch(
     signal.throwIfAborted();
 
     const cutoffDate = await loadCompactionCutoff(tx);
+    signal.throwIfAborted();
     const cutoff = timestampWithoutTimeZone(cutoffDate);
     const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit, orgId);
+    signal.throwIfAborted();
     const rows = await executeRawRows(
       tx,
       compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
@@ -705,7 +703,14 @@ async function compactUsageEventBatch(
       throw new Error("Usage event compaction reconciliation failed");
     }
     signal.throwIfAborted();
-    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff, orgId);
+    // Remaining work is part of the receipt: a failed read must roll back the
+    // rewrite rather than fail the response after committing it.
+    const hasMoreRaw = await hasRemainingRawUsage(
+      tx,
+      cutoff,
+      hasMoreOrgId,
+      allowedOrgIds,
+    );
     signal.throwIfAborted();
 
     return {
@@ -738,67 +743,58 @@ export const compactUsageEvents$ = command(
     signal: AbortSignal,
   ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
+    signal.throwIfAborted();
     const db = set(writeDb$);
     // The org list exists only for explicitly owned test-route fixtures. The
     // configured Cron always discovers across all organizations.
     const allowedOrgIds = Array.isArray(input) ? input : undefined;
     const orgId = Array.isArray(input) ? undefined : input;
-    let selectedOrgId = orgId;
-    let emptyResult: ReturnType<typeof emptyCompactionBatch> | undefined;
-    if (orgId === undefined) {
-      // Read-only selection outside the financial transaction. The selected
-      // org is only a hint: the batch reselects complete grains under lock.
-      const cutoffDate = await loadCompactionCutoff(db);
-      signal.throwIfAborted();
-      const cutoff = timestampWithoutTimeZone(cutoffDate);
-      const [candidate] = await db
-        .select({ orgId: event.orgId })
-        .from(event)
-        .where(
-          and(
-            eligibleRawPredicate(cutoff),
-            allowedOrgIds === undefined
-              ? undefined
-              : inArray(event.orgId, allowedOrgIds),
-          ),
-        )
-        .orderBy(oldestProcessedEventOrder)
-        .limit(1);
-      signal.throwIfAborted();
-      if (candidate) {
-        selectedOrgId = candidate.orgId;
-      } else {
-        const probe = await loadHoldProbe(
-          db,
-          cutoff,
-          USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
-          undefined,
-          allowedOrgIds,
-        );
-        signal.throwIfAborted();
-        emptyResult = emptyCompactionBatch(
-          cutoffDate,
-          USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
-          probe,
-        );
-      }
-    }
-    const result =
-      emptyResult ?? (await compactUsageEventBatch(db, selectedOrgId, signal));
-    const hasMore =
-      orgId === undefined && !result.hasMore
-        ? await hasRemainingRawUsage(
-            db,
-            timestampWithoutTimeZone(new Date(result.cutoff)),
-            undefined,
-            allowedOrgIds,
-          )
-        : result.hasMore;
+    // Read-only selection outside the financial transaction. The selected
+    // org is only a hint: the batch reselects complete grains under lock.
+    const cutoffDate = await loadCompactionCutoff(db);
     signal.throwIfAborted();
+    const cutoff = timestampWithoutTimeZone(cutoffDate);
+    const [candidate] = await db
+      .select({ orgId: event.orgId })
+      .from(event)
+      .where(
+        and(
+          eligibleRawPredicate(cutoff, orgId),
+          allowedOrgIds === undefined
+            ? undefined
+            : inArray(event.orgId, allowedOrgIds),
+        ),
+      )
+      .orderBy(oldestProcessedEventOrder)
+      .limit(1);
+    signal.throwIfAborted();
+    let result: UsageEventCompactionBatch;
+    if (candidate) {
+      result = await compactUsageEventBatch(
+        db,
+        { orgId: candidate.orgId, hasMoreOrgId: orgId, allowedOrgIds },
+        signal,
+      );
+    } else {
+      const probe = await loadHoldProbe(
+        db,
+        cutoff,
+        USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
+        orgId,
+        allowedOrgIds,
+      );
+      signal.throwIfAborted();
+      // No eligible row was observed. Later rows belong to the next call;
+      // no mutation needs protection and hasMore describes this snapshot.
+      result = emptyCompactionBatch(
+        cutoffDate,
+        USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT,
+        probe,
+      );
+    }
     const { maxGrainSourceRows, ...batch } = result;
     const stats = {
       ...batch,
-      hasMore,
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;
