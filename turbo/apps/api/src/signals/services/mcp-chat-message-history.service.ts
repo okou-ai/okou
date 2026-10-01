@@ -143,14 +143,201 @@ function historyReadFailure(error: unknown): McpMessageHistoryError {
   );
 }
 
-/**
- * Snapshot pointer, byte preflight and tail must describe one read snapshot.
- * This short read-only transaction owns SET LOCAL and all SQL inline. Archive IO
- * happens only after it releases the client; no DB handle crosses a boundary.
- */
+interface HistoryQueryFacts {
+  readonly principal: { readonly userId: string; readonly orgId: string };
+  readonly threadId: string;
+}
+
+/** The owning command keeps all SQL in one authorized repeatable-read snapshot. */
+const readHistorySnapshot$ = command(
+  async (
+    { set },
+    { principal, threadId }: HistoryQueryFacts,
+    budget: HistoryBudget,
+    signal: AbortSignal,
+  ) => {
+    const selected = await awaitWithSignal(
+      set(writeDb$).transaction(
+        async (tx) => {
+          budget.check();
+          await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
+          const [owned] = await tx
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+            .where(
+              and(
+                eq(chatThreads.id, threadId),
+                eq(chatThreads.userId, principal.userId),
+                eq(agents.orgId, principal.orgId),
+              ),
+            )
+            .limit(1);
+          budget.check();
+          if (!owned) {
+            return null;
+          }
+          const [head] = await tx
+            .select({
+              lastSeqId: chatEventSnapshots.lastSeqId,
+              terminalSeqId: chatEventSnapshots.terminalSeqId,
+              terminalEventId: chatEventSnapshots.terminalEventId,
+              objectKey: chatEventSnapshots.objectKey,
+            })
+            .from(chatEventSnapshots)
+            .where(
+              and(
+                eq(chatEventSnapshots.chatThreadId, threadId),
+                eq(
+                  chatEventSnapshots.archiveSchemaVersion,
+                  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+                ),
+              ),
+            )
+            .limit(1);
+          budget.check();
+          // Measure JSON/text before requesting payloads. The fixed overhead covers
+          // identifiers, timestamps and keys; six is the maximal JSON escaping cost.
+          const metadata = await tx
+            .select({
+              seqId: chatEvents.seqId,
+              bytes:
+                sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
+                  pgInt8ToSafeIntegerDecoder,
+                ),
+            })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, threadId),
+                gt(chatEvents.seqId, head?.lastSeqId ?? 0),
+              ),
+            )
+            .orderBy(asc(chatEvents.seqId))
+            .limit(MAX_HISTORY_ROWS - budget.rows + 1);
+          for (const row of metadata) {
+            addHistorySize(budget, row.bytes, 1);
+          }
+          const tail = await tx
+            .select({
+              id: chatEvents.id,
+              chatThreadId: chatEvents.chatThreadId,
+              runId: chatEvents.runId,
+              revokesEventId: chatEvents.revokesEventId,
+              eventType: chatEvents.eventType,
+              payload: chatEvents.payload,
+              failureReason: chatEvents.failureReason,
+              contextType: chatEvents.contextType,
+              contextId: chatEvents.contextId,
+              runEventSequenceNumber: chatEvents.runEventSequenceNumber,
+              runEventId: chatEvents.runEventId,
+              seqId: chatEvents.seqId,
+              createdAt: chatEvents.createdAt,
+            })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, threadId),
+                gt(chatEvents.seqId, head?.lastSeqId ?? 0),
+              ),
+            )
+            .orderBy(asc(chatEvents.seqId))
+            .limit(metadata.length + 1);
+          budget.check();
+          if (tail.length !== metadata.length) {
+            throw new Error(
+              "Chat history tail changed inside its read snapshot",
+            );
+          }
+          return { head, tail: tail.map(chatEventRowFromDbRow) };
+        },
+        { isolationLevel: "repeatable read", accessMode: "read only" },
+      ),
+      signal,
+    );
+    budget.check();
+    return selected;
+  },
+);
+
+function historyArchiveDigest(head: SnapshotHead): string {
+  if (
+    !Number.isSafeInteger(head.lastSeqId) ||
+    head.lastSeqId <= 0 ||
+    head.terminalSeqId === null ||
+    !Number.isSafeInteger(head.terminalSeqId) ||
+    !(
+      (head.terminalSeqId === 0 && head.terminalEventId === null) ||
+      (head.terminalSeqId > 0 &&
+        head.terminalSeqId <= head.lastSeqId &&
+        head.terminalEventId !== null)
+    )
+  ) {
+    throw new Error("Chat history archive pointer is invalid");
+  }
+  const digest = /-([0-9a-f]{64})\.ndjson\.gz$/u.exec(head.objectKey)?.[1];
+  if (digest === undefined) {
+    throw new Error("Chat history archive object key is invalid");
+  }
+  return digest;
+}
+
+/** Archive IO is a separate finite read after the SQL snapshot releases its client. */
+const readHistoryArchive$ = command(
+  async (
+    { get },
+    {
+      head,
+      threadId,
+    }: { readonly head: SnapshotHead; readonly threadId: string },
+    budget: HistoryBudget,
+    signal: AbortSignal,
+  ): Promise<ChatEventRow[]> => {
+    const digest = historyArchiveDigest(head);
+    const compressed = await get(
+      downloadS3BufferWithMaxBytes(
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        head.objectKey,
+        MAX_COMPRESSED_BYTES,
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    budget.check();
+    if (createHash("sha256").update(compressed).digest("hex") !== digest) {
+      throw new Error("Chat history archive checksum is invalid");
+    }
+    const body = await gunzipAsync(compressed, {
+      maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
+    });
+    signal.throwIfAborted();
+    budget.check();
+    return decodeHistoryArchive(body, head, threadId, budget);
+  },
+);
+
+function projectHistory(
+  archive: readonly ChatEventRow[],
+  tail: readonly ChatEventRow[],
+  budget: HistoryBudget,
+): readonly ChatEventRow[] {
+  const history = [...archive, ...tail];
+  const eventIds = new Set<string>();
+  for (const event of history) {
+    budget.check();
+    chatEventFromRow(event);
+    if (eventIds.has(event.id)) {
+      throw new Error("Chat history event identity is ambiguous");
+    }
+    eventIds.add(event.id);
+  }
+  return history;
+}
+
+/** Snapshot pointer/preflight/tail stay atomic; archive IO runs outside SQL. */
 export const readMcpChatMessageHistory$ = command(
   async (
-    { get, set },
+    { set },
     principal: { readonly userId: string; readonly orgId: string },
     threadId: string,
     budget: HistoryBudget,
@@ -162,103 +349,10 @@ export const readMcpChatMessageHistory$ = command(
     ]);
     const result = await settleIncludingAbort(
       (async () => {
-        const selected = await awaitWithSignal(
-          set(writeDb$).transaction(
-            async (tx) => {
-              budget.check();
-              await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-              const [owned] = await tx
-                .select({ id: chatThreads.id })
-                .from(chatThreads)
-                .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-                .where(
-                  and(
-                    eq(chatThreads.id, threadId),
-                    eq(chatThreads.userId, principal.userId),
-                    eq(agents.orgId, principal.orgId),
-                  ),
-                )
-                .limit(1);
-              budget.check();
-              if (!owned) {
-                return null;
-              }
-              const [head] = await tx
-                .select({
-                  lastSeqId: chatEventSnapshots.lastSeqId,
-                  terminalSeqId: chatEventSnapshots.terminalSeqId,
-                  terminalEventId: chatEventSnapshots.terminalEventId,
-                  objectKey: chatEventSnapshots.objectKey,
-                })
-                .from(chatEventSnapshots)
-                .where(
-                  and(
-                    eq(chatEventSnapshots.chatThreadId, threadId),
-                    eq(
-                      chatEventSnapshots.archiveSchemaVersion,
-                      CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-                    ),
-                  ),
-                )
-                .limit(1);
-              budget.check();
-              // Measure JSON/text before requesting payloads. The fixed overhead covers
-              // identifiers, timestamps and keys; six is the maximal JSON escaping cost.
-              const metadata = await tx
-                .select({
-                  seqId: chatEvents.seqId,
-                  bytes:
-                    sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
-                      pgInt8ToSafeIntegerDecoder,
-                    ),
-                })
-                .from(chatEvents)
-                .where(
-                  and(
-                    eq(chatEvents.chatThreadId, threadId),
-                    gt(chatEvents.seqId, head?.lastSeqId ?? 0),
-                  ),
-                )
-                .orderBy(asc(chatEvents.seqId))
-                .limit(MAX_HISTORY_ROWS - budget.rows + 1);
-              for (const row of metadata) {
-                addHistorySize(budget, row.bytes, 1);
-              }
-              const tail = await tx
-                .select({
-                  id: chatEvents.id,
-                  chatThreadId: chatEvents.chatThreadId,
-                  runId: chatEvents.runId,
-                  revokesEventId: chatEvents.revokesEventId,
-                  eventType: chatEvents.eventType,
-                  payload: chatEvents.payload,
-                  failureReason: chatEvents.failureReason,
-                  contextType: chatEvents.contextType,
-                  contextId: chatEvents.contextId,
-                  runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-                  runEventId: chatEvents.runEventId,
-                  seqId: chatEvents.seqId,
-                  createdAt: chatEvents.createdAt,
-                })
-                .from(chatEvents)
-                .where(
-                  and(
-                    eq(chatEvents.chatThreadId, threadId),
-                    gt(chatEvents.seqId, head?.lastSeqId ?? 0),
-                  ),
-                )
-                .orderBy(asc(chatEvents.seqId))
-                .limit(metadata.length + 1);
-              budget.check();
-              if (tail.length !== metadata.length) {
-                throw new Error(
-                  "Chat history tail changed inside its read snapshot",
-                );
-              }
-              return { head, tail };
-            },
-            { isolationLevel: "repeatable read", accessMode: "read only" },
-          ),
+        const selected = await set(
+          readHistorySnapshot$,
+          { principal, threadId },
+          budget,
           operationSignal,
         );
         budget.check();
@@ -266,59 +360,15 @@ export const readMcpChatMessageHistory$ = command(
           return null;
         }
         const { head, tail } = selected;
-        let archive: ChatEventRow[] = [];
-        if (head) {
-          if (
-            !Number.isSafeInteger(head.lastSeqId) ||
-            head.lastSeqId <= 0 ||
-            head.terminalSeqId === null ||
-            !Number.isSafeInteger(head.terminalSeqId) ||
-            !(
-              (head.terminalSeqId === 0 && head.terminalEventId === null) ||
-              (head.terminalSeqId > 0 &&
-                head.terminalSeqId <= head.lastSeqId &&
-                head.terminalEventId !== null)
-            )
-          ) {
-            throw new Error("Chat history archive pointer is invalid");
-          }
-          const digest = /-([0-9a-f]{64})\.ndjson\.gz$/u.exec(
-            head.objectKey,
-          )?.[1];
-          if (digest === undefined) {
-            throw new Error("Chat history archive object key is invalid");
-          }
-          const compressed = await get(
-            downloadS3BufferWithMaxBytes(
-              env("R2_USER_STORAGES_BUCKET_NAME"),
-              head.objectKey,
-              MAX_COMPRESSED_BYTES,
+        const archive = head
+          ? await set(
+              readHistoryArchive$,
+              { head, threadId },
+              budget,
               operationSignal,
-            ),
-          );
-          budget.check();
-          if (
-            createHash("sha256").update(compressed).digest("hex") !== digest
-          ) {
-            throw new Error("Chat history archive checksum is invalid");
-          }
-          const body = await gunzipAsync(compressed, {
-            maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
-          });
-          budget.check();
-          archive = decodeHistoryArchive(body, head, threadId, budget);
-        }
-        const history = [...archive, ...tail.map(chatEventRowFromDbRow)];
-        const eventIds = new Set<string>();
-        for (const event of history) {
-          budget.check();
-          chatEventFromRow(event);
-          if (eventIds.has(event.id)) {
-            throw new Error("Chat history event identity is ambiguous");
-          }
-          eventIds.add(event.id);
-        }
-        return history;
+            )
+          : [];
+        return projectHistory(archive, tail, budget);
       })(),
     );
     signal.throwIfAborted();
