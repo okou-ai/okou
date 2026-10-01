@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   getBuiltInVendor,
@@ -783,18 +786,39 @@ async function seedRunningRunForAction(
   }
   const startedAt = nowDate();
   const metadata = normalizeRunMetadata({ triggerSource: "telegram" });
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId: required.user_id!,
-      orgId: required.org_id!,
-      sessionId,
-      status: "running",
-      prompt: "existing running telegram run",
-      startedAt,
-      ...metadata,
-    })
-    .returning({ id: agentRuns.id });
+  const run = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(agentRuns)
+      .values({
+        userId: required.user_id!,
+        orgId: required.org_id!,
+        sessionId,
+        status: "running",
+        prompt: "existing running telegram run",
+        startedAt,
+        ...metadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!created) {
+      return undefined;
+    }
+    const capture = billingRunAttributionWrite(created);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+    return created;
+  });
+  signal.throwIfAborted();
   if (!run) {
     return actionBadRequest("failed to seed running agent run");
   }

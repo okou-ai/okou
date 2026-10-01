@@ -83,9 +83,12 @@ before tests can run against a trigger-free schema.
   the insertion transaction using exact stored time/source/thread. Its existing
   Computer Use API file passes 26 tests against the same isolated trigger-free
   schema; authorization and ordinary behavior assertions are unchanged.
-- Other direct Run setup remains in `test-pi-memory-stage1-state.ts`,
-  `test-cron-monitor-chat-event-queue-state.ts`,
-  `test-ssh-connection-state.ts`, `test-telegram-state.ts`, and the
+- SSH, queue-monitor and Telegram fixture Run insertions now publish canonical
+  attribution in the same transaction, using exact stored time/source/thread.
+  Existing Runner SSH (43), queue-monitor (9) and Telegram integration (39) API
+  tests pass against the isolated six-trigger-free schema; ordinary assertions
+  are unchanged. They add no endpoint or sequencing gate.
+- Other direct Run setup remains in `test-pi-memory-stage1-state.ts` and the
   `test-fixtures/chat-event-retention.ts` / `chat-events.ts` seeders. Several
   service-local Pi fixtures also insert Runs directly. Their caller-specific
   billing expectations have not all been migrated by this inventory.

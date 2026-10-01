@@ -6,6 +6,9 @@ import {
   type TestCronMonitorChatEventQueueStateActionBody,
 } from "@okouai/api-contracts/contracts/test-cron-monitor-chat-event-queue-state";
 import { agents } from "@okouai/db/schema/agent";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -127,21 +130,37 @@ async function seedActiveRun(
     triggerSource: "web",
     chatThreadId: fixture.threadId,
   });
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      sessionId: session.id,
-      status: "pending",
-      prompt: "orphan monitor active run fixture",
-      ...metadata,
-    })
-    .returning({ id: agentRuns.id });
+  await db.transaction(async (tx) => {
+    const [run] = await tx
+      .insert(agentRuns)
+      .values({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        sessionId: session.id,
+        status: "pending",
+        prompt: "orphan monitor active run fixture",
+        ...metadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!run) {
+      throw new Error("Failed to seed orphan monitor run");
+    }
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+  });
   signal.throwIfAborted();
-  if (!run) {
-    throw new Error("Failed to seed orphan monitor run");
-  }
 }
 
 function recentStaleEventCreatedAt(): Date {
