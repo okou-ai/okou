@@ -170,28 +170,3 @@ export const readGoogleCalendarAutomationConnectorId$ = command(
     return account?.connectorId ?? null;
   },
 );
-
-/** SQL only; the caller executes this with its own local write. */
-export function googleCalendarSelectedAccountCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowId: string;
-  readonly connectorId: string;
-}) {
-  return sql`${args.connectorId}::uuid = (
-    SELECT CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
-      THEN ${chatThreadConnectorSelections.connectorId} ELSE ${connectors.id} END
-    FROM (VALUES (1)) AS owner_scope(unused)
-    LEFT JOIN ${workflowUserAutomationThreads}
-      ON ${workflowUserAutomationThreads.orgId} = ${args.orgId}
-      AND ${workflowUserAutomationThreads.userId} = ${args.userId}
-      AND ${workflowUserAutomationThreads.workflowId} = ${args.workflowId}
-    LEFT JOIN ${chatThreadConnectorSelections}
-      ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-      AND ${chatThreadConnectorSelections.connectorSlug} = 'google-calendar'
-    LEFT JOIN ${connectors}
-      ON ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
-      AND ${connectors.connectorSlug} = 'google-calendar' AND ${connectors.isDefault}
-    LIMIT 1
-  )`;
-}

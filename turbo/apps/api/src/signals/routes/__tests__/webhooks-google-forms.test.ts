@@ -598,147 +598,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     },
   );
 
-  it.each([
-    {
-      outcome: "delayed response",
-      status: 409,
-      deleteDuringPreparation: false,
-    },
-    {
-      outcome: "provider failure",
-      status: 400,
-      deleteDuringPreparation: false,
-    },
-    { outcome: "thread deletion", status: 409, deleteDuringPreparation: true },
-  ])(
-    "preserves the current lifecycle after an older $outcome",
-    async ({ outcome, status, deleteDuringPreparation }) => {
-      const { actor, automationId, chatThreadId, formsApi } =
-        await setupGoogleFormsAutomation();
-      await accept(
-        automationsClient().disable({
-          headers: authHeaders(),
-          params: { id: automationId },
-        }),
-        [200],
-      );
-      const resumedCursor = "2026-08-05T10:15:00.123456Z";
-      const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
-      let replacedInterval = false;
-      server.use(
-        http.get(
-          "https://forms.googleapis.com/v1/forms/:formId/responses",
-          async ({ request }) => {
-            const filter = new URL(request.url).searchParams.get("filter");
-            if (filter !== null) {
-              expect(filter).toBe(`timestamp > ${resumedCursor}`);
-              return HttpResponse.json({
-                responses: [
-                  {
-                    responseId: "response-after-newer-enable",
-                    createTime: resumedResponseTime,
-                    lastSubmittedTime: resumedResponseTime,
-                    respondentEmail: "newer-enable@example.test",
-                  },
-                ],
-              });
-            }
-            if (!replacedInterval) {
-              replacedInterval = true;
-              const preparing = await accept(
-                automationsClient().get({
-                  headers: authHeaders(),
-                  params: { id: automationId },
-                }),
-                [200],
-              );
-              expect(preparing.body.enabled).toBeFalsy();
-              // A real user changes the lifecycle while the provider request is in flight.
-              if (deleteDuringPreparation) {
-                await chat.deleteThread(actor, chatThreadId);
-                return HttpResponse.json({ responses: [] });
-              }
-              await accept(
-                automationsClient().disable({
-                  headers: authHeaders(),
-                  params: { id: automationId },
-                }),
-                [200],
-              );
-              await accept(
-                automationsClient().enable({
-                  headers: authHeaders(),
-                  params: { id: automationId },
-                }),
-                [200],
-              );
-              return outcome === "provider failure"
-                ? HttpResponse.json(
-                    { error: { message: "Provider unavailable" } },
-                    { status: 503 },
-                  )
-                : HttpResponse.json({
-                    responses: [
-                      {
-                        responseId: "old-interval",
-                        createTime: SEED_CURSOR,
-                        lastSubmittedTime: SEED_CURSOR,
-                      },
-                    ],
-                  });
-            }
-            return HttpResponse.json({
-              responses: [
-                {
-                  responseId: "during-disable",
-                  createTime: resumedCursor,
-                  lastSubmittedTime: resumedCursor,
-                },
-              ],
-            });
-          },
-        ),
-      );
-      const oldRequest = await automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: automationId },
-      });
-      expect(oldRequest.status).toBe(status);
-      const current = await accept(
-        automationsClient().get({
-          headers: authHeaders(),
-          params: { id: automationId },
-        }),
-        [200],
-      );
-      expect(current.body.enabled).toBe(!deleteDuringPreparation);
-      const watchId = formsApi.watchIds.at(-1);
-      if (!watchId) {
-        throw new Error("Expected the replacement watch");
-      }
-      if (deleteDuringPreparation) {
-        await expect(
-          postWebhook(formsPushBody("after-deleted-thread", watchId)),
-        ).resolves.toMatchObject({ status: 200, body: { dispatched: 0 } });
-        return;
-      }
-      await expect(
-        postWebhook(formsPushBody("after-newer-enable", watchId)),
-      ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
-      await flushWaitUntilForTest();
-      const events = await workflows.readThreadEvents(chatThreadId);
-      expect(
-        events
-          .filter((event) => {
-            return event.eventType === "input.automation";
-          })
-          .map(chatEventDisplayText),
-      ).toStrictEqual([
-        `A new response from newer-enable@example.test was submitted to Google Form "${FORM_TITLE}".`,
-      ]);
-    },
-  );
-
   it("does not enqueue a response after the automation is disabled during retrieval", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
@@ -1352,138 +1211,110 @@ describe("Google Forms Pub/Sub webhook", () => {
     ).toHaveLength(0);
   });
 
-  it.each(["superseded", "provider failure"])(
-    "keeps the current selected account usable after %s",
-    async (outcome) => {
-      const {
-        first,
-        firstConnector,
-        firstWatchId,
-        secondConnector,
-        secondWatchId,
-      } = await setupGoogleFormsMultiAccountAutomations();
-      const resumedCursor = "2026-08-05T10:15:00.123456Z";
-      const responseTime = "2026-08-05T10:16:00.123456Z";
-      const selectAccount = async (connectionId: string) => {
-        return await accept(
-          chatThreadConnectorSelectionsClient().update({
-            headers: authHeaders(),
-            params: { id: first.chatThreadId },
-            body: {
-              connectionId,
-              target: { kind: "builtin", connectorSlug: "google-forms" },
-            },
-          }),
-          [200],
-        );
-      };
-      let preparingReplacement = false;
-      server.use(
-        http.get(
-          "https://forms.googleapis.com/v1/forms/:formId/responses",
-          async ({ request }) => {
-            const filter = new URL(request.url).searchParams.get("filter");
-            if (filter !== null) {
-              expect([
-                `timestamp > ${resumedCursor}`,
-                `timestamp > ${SEED_CURSOR}`,
-              ]).toContain(filter);
-              return HttpResponse.json({
-                responses: [
-                  {
-                    responseId: "after-account-publication",
-                    createTime: responseTime,
-                    lastSubmittedTime: responseTime,
-                    respondentEmail: "selected-account@example.test",
-                  },
-                ],
-              });
-            }
-            if (!preparingReplacement) {
-              preparingReplacement = true;
-              // The selected source has changed but remote preparation is not
-              // complete. Even an outgoing watch must not fire the old account.
-              await expect(
-                postWebhook(
-                  formsPushBody("during-account-preparation", firstWatchId),
-                ),
-              ).resolves.toMatchObject({
-                status: 200,
-                body: { dispatched: 0 },
-              });
-              if (outcome === "provider failure") {
-                return HttpResponse.json(
-                  { error: { message: "Provider unavailable" } },
-                  { status: 503 },
-                );
-              }
-              await selectAccount(firstConnector.id);
-              return HttpResponse.json({
-                responses: [
-                  {
-                    responseId: "superseded-account-seed",
-                    createTime: SEED_CURSOR,
-                    lastSubmittedTime: SEED_CURSOR,
-                  },
-                ],
-              });
-            }
-            return HttpResponse.json({
-              responses: [
-                {
-                  responseId: "replacement-baseline",
-                  createTime: resumedCursor,
-                  lastSubmittedTime: resumedCursor,
-                },
-              ],
-            });
-          },
-        ),
-      );
-      await selectAccount(secondConnector.id);
-      if (outcome === "provider failure") {
-        // Repeating the same public choice repairs its missing watch/cursor;
-        // recovery does not require changing the account again.
-        await selectAccount(secondConnector.id);
-      }
-      const current = await accept(
-        automationsClient().get({
+  it("keeps the current selected account usable after a provider failure", async () => {
+    const { first, firstWatchId, secondConnector, secondWatchId } =
+      await setupGoogleFormsMultiAccountAutomations();
+    const resumedCursor = "2026-08-05T10:15:00.123456Z";
+    const responseTime = "2026-08-05T10:16:00.123456Z";
+    const selectAccount = async (connectionId: string) => {
+      return await accept(
+        chatThreadConnectorSelectionsClient().update({
           headers: authHeaders(),
-          params: { id: first.automationId },
+          params: { id: first.chatThreadId },
+          body: {
+            connectionId,
+            target: { kind: "builtin", connectorSlug: "google-forms" },
+          },
         }),
         [200],
       );
-      expect(current.body).toMatchObject({
-        enabled: true,
-        eventConfig: {
-          connectorId:
-            outcome === "superseded" ? firstConnector.id : secondConnector.id,
+    };
+    let preparingReplacement = false;
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        async ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter !== null) {
+            expect([
+              `timestamp > ${resumedCursor}`,
+              `timestamp > ${SEED_CURSOR}`,
+            ]).toContain(filter);
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "after-account-publication",
+                  createTime: responseTime,
+                  lastSubmittedTime: responseTime,
+                  respondentEmail: "selected-account@example.test",
+                },
+              ],
+            });
+          }
+          if (!preparingReplacement) {
+            preparingReplacement = true;
+            // The selected source has changed but remote preparation is not
+            // complete. Even an outgoing watch must not fire the old account.
+            await expect(
+              postWebhook(
+                formsPushBody("during-account-preparation", firstWatchId),
+              ),
+            ).resolves.toMatchObject({
+              status: 200,
+              body: { dispatched: 0 },
+            });
+            return HttpResponse.json(
+              { error: { message: "Provider unavailable" } },
+              { status: 503 },
+            );
+          }
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "replacement-baseline",
+                createTime: resumedCursor,
+                lastSubmittedTime: resumedCursor,
+              },
+            ],
+          });
         },
-      });
-      await expect(
-        postWebhook(
-          formsPushBody(
-            "after-account-publication",
-            outcome === "superseded" ? firstWatchId : secondWatchId,
-          ),
-        ),
-      ).resolves.toMatchObject({
-        status: 200,
-        body: { dispatched: outcome === "superseded" ? 1 : 2 },
-      });
-      await flushWaitUntilForTest();
-      const events = await workflows.readThreadEvents(first.chatThreadId);
-      expect(
-        events
-          .filter((event) => {
-            return event.eventType === "input.automation";
-          })
-          .map(chatEventDisplayText),
-      ).toStrictEqual([
-        `A new response from selected-account@example.test was submitted to Google Form "${FORM_TITLE}".`,
-      ]);
-    },
-  );
+      ),
+    );
+    await selectAccount(secondConnector.id);
+    // Repeating the same public choice repairs its missing watch/cursor;
+    // recovery does not require changing the account again.
+    await selectAccount(secondConnector.id);
+    const current = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: first.automationId },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      enabled: true,
+      eventConfig: {
+        connectorId: secondConnector.id,
+      },
+    });
+    await expect(
+      postWebhook(formsPushBody("after-account-publication", secondWatchId)),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { dispatched: 2 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(first.chatThreadId);
+    expect(
+      events
+        .filter((event) => {
+          return event.eventType === "input.automation";
+        })
+        .map(chatEventDisplayText),
+    ).toStrictEqual([
+      `A new response from selected-account@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
+  });
 
   it("routes the selected account with exact credentials", async () => {
     const { formsApi, first, second, secondConnector, secondWatchId } =

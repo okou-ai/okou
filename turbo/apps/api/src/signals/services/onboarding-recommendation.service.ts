@@ -249,11 +249,7 @@ const loadCollectorAccess$ = command(
         userId: args.userId,
       });
       signal.throwIfAborted();
-      if (
-        reloaded.kind !== "ok" ||
-        reloaded.connection.needsReconnect ||
-        reloaded.connection.stateRevision !== refreshed.stateRevision
-      ) {
+      if (reloaded.kind !== "ok" || reloaded.connection.needsReconnect) {
         throw new Error("Connector context account changed during refresh");
       }
       connection = reloaded.connection;

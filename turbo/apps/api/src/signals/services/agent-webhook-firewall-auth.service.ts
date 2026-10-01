@@ -80,15 +80,9 @@ import {
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
 
 import { command } from "ccstate";
-import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
-import {
-  pgInt8ToBigIntDecoder,
-  pgNullDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
+import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -144,7 +138,6 @@ import {
   runHasActiveCreditAdmission,
   type RunCreditAdmissionState,
 } from "./run-admission.service";
-import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
@@ -158,9 +151,6 @@ const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
-const databaseTimestampMicrosRowSchema = z.object({
-  now: pgInt8ToBigIntSchema,
-});
 
 function firewallAuthRefreshTimeoutMs(): number {
   const configured = optionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS");
@@ -273,7 +263,6 @@ interface PreparedNonCustomFirewallAuth {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
   readonly context: FirewallAuthResolutionContext;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface PreparedBuiltinConnectorAutomaticFirewallAuth {
@@ -569,7 +558,6 @@ interface RefreshAccessTokenArgs extends SecretTokenLookupArgs {
   readonly connectorSecrets: Record<string, string>;
   readonly accessEnvVars: readonly string[];
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 function requiredModelProviderMetadataKey(args: {
@@ -611,8 +599,6 @@ interface RefreshState {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
-  readonly rowVersion: string;
 }
 
 interface RefreshStateRow {
@@ -623,18 +609,11 @@ interface RefreshStateRow {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
-  readonly rowVersion: string;
 }
 
 interface ValidatedRefreshOutput {
   readonly target: RefreshOutputTarget;
   readonly value: string;
-}
-
-/** A validated output whose secret ciphertext was prepared before SQL. */
-interface EncryptedRefreshOutput extends ValidatedRefreshOutput {
-  readonly encryptedValue: string | null;
 }
 
 type RefreshOutputTarget =
@@ -742,7 +721,6 @@ interface RefreshExpiredTokensArgs {
     BuiltinConnectorAccessState
   >;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface RefreshBatchContext {
@@ -754,7 +732,6 @@ interface RefreshBatchContext {
   readonly userId: string;
   readonly secrets: Record<string, string>;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
   readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -1074,7 +1051,7 @@ function isExpiredAwsSigninRefreshState(
   prepared: PreparedRefreshTokenContext,
   state: RefreshState,
 ): boolean {
-  // Reconnect clears this reason with the credentials under the same lock.
+  // Reconnect clears this reason when it replaces the credentials.
   // Other needsReconnect states retain their existing refresh/recovery policy.
   return (
     prepared.sourceType === "connector" &&
@@ -1225,12 +1202,16 @@ async function upsertModelProviderSecretValue(
     readonly orgId: string;
     readonly userId: string;
     readonly name: string;
-    readonly encryptedValue: string;
+    readonly value: string;
     readonly sourceId?: string;
     readonly runId?: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<void> {
-  const encryptedValue = args.encryptedValue;
+  const encryptedValue = await encryptStoredSecretValue(
+    args.value,
+    args.featureSwitchContext,
+  );
   if (args.sourceId) {
     const [account] = await db
       .select({ id: modelProviderAccounts.id })
@@ -2028,30 +2009,6 @@ function nonNullRuntimeOutputValues(args: {
   return nonNullValues;
 }
 
-function sameStringRecord(
-  left: Readonly<Record<string, string | null>>,
-  right: Readonly<Record<string, string | null>>,
-): boolean {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  for (const key of keys) {
-    if (stringRecordValue(left, key) !== stringRecordValue(right, key)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function stringRecordValue(
-  record: Readonly<Record<string, string | null>>,
-  key: string,
-): string | null {
-  if (!Object.hasOwn(record, key)) {
-    return null;
-  }
-  const value = record[key];
-  return value === undefined ? null : value;
-}
-
 function refreshSourceStateFromRow(args: {
   readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
@@ -2064,24 +2021,9 @@ function refreshSourceStateFromRow(args: {
   };
 }
 
-async function currentDatabaseTimestampMicros(db: Db): Promise<bigint> {
-  const rows = await executeRawRows(
-    db,
-    sql`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS now`,
-    databaseTimestampMicrosRowSchema,
-  );
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Failed to read database timestamp");
-  }
-  return row.now;
-}
-
-function shouldUseLockedCurrentAccess(args: {
+function shouldUseCurrentAccess(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly context: RefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
   readonly state: RefreshState;
 }): boolean {
   if (
@@ -2099,6 +2041,8 @@ function shouldUseLockedCurrentAccess(args: {
     return true;
   }
 
+  // A forced refresh still serves the stored credential when the sandbox's
+  // snapshot is stale relative to it.
   const outputValues = runtimeOutputValues({
     context: args.context,
     state: args.state,
@@ -2109,122 +2053,7 @@ function shouldUseLockedCurrentAccess(args: {
       return true;
     }
   }
-
-  if (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  ) {
-    return true;
-  }
-
-  if (!args.initialState) {
-    return true;
-  }
-
-  if (
-    !sameStringRecord(
-      args.initialState.outputValues,
-      args.state.outputValues,
-    ) ||
-    !sameStringRecord(args.initialState.inputValues, args.state.inputValues)
-  ) {
-    return true;
-  }
-
-  const initialExpiresAt = args.initialState.tokenExpiresAt
-    ? Math.floor(args.initialState.tokenExpiresAt.getTime() / 1000)
-    : null;
-  const lockedExpiresAt = args.state.tokenExpiresAt
-    ? Math.floor(args.state.tokenExpiresAt.getTime() / 1000)
-    : null;
-  return (
-    initialExpiresAt !== lockedExpiresAt ||
-    args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-  );
-}
-
-function didLockedRefreshFailDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): boolean {
-  if (!args.state.needsReconnect) {
-    return lockedRefreshFailureReasonDuringRequest(args) !== undefined;
-  }
-  if (args.initialState) {
-    return (
-      !args.initialState.needsReconnect ||
-      args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-    );
-  }
-  return (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  );
-}
-
-function lockedRefreshFailureReasonDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): FirewallAuthFailureReason | undefined {
-  if (
-    args.requestStartedAtMicros === null ||
-    args.state.updatedAtMicros <= args.requestStartedAtMicros
-  ) {
-    return undefined;
-  }
-  if (
-    args.initialState &&
-    args.initialState.updatedAtMicros === args.state.updatedAtMicros
-  ) {
-    return undefined;
-  }
-
-  if (args.state.needsReconnect) {
-    return missingRefreshInputNames(args.state).length > 0 ||
-      isReconnectRequiredRefreshErrorCode(args.state.lastRefreshErrorCode)
-      ? "reconnect_required"
-      : undefined;
-  }
-
-  const tokenStateUnchanged = sameRefreshTokenState(
-    args.initialState,
-    args.state,
-  );
-  if (tokenExpiresAtNeedsRefresh(args.state.tokenExpiresAt)) {
-    return !args.initialState || tokenStateUnchanged
-      ? "upstream_provider"
-      : undefined;
-  }
-
-  if (tokenStateUnchanged) {
-    return "upstream_provider";
-  }
-  return undefined;
-}
-
-function sameRefreshTokenState(
-  initialState: RefreshState | null,
-  state: RefreshState,
-): boolean {
-  return (
-    initialState !== null &&
-    sameStringRecord(initialState.outputValues, state.outputValues) &&
-    sameStringRecord(initialState.inputValues, state.inputValues) &&
-    sameTokenExpiresAt(initialState.tokenExpiresAt, state.tokenExpiresAt)
-  );
-}
-
-function sameTokenExpiresAt(left: Date | null, right: Date | null): boolean {
-  return timestampMillisOrNull(left) === timestampMillisOrNull(right);
-}
-
-function timestampMillisOrNull(value: Date | null): number | null {
-  if (value === null) {
-    return null;
-  }
-  return value.getTime();
+  return false;
 }
 
 async function loadModelProviderRefreshStateRow(
@@ -2239,16 +2068,9 @@ async function loadModelProviderRefreshStateRow(
         connectorId: sql`NULL`.mapWith(pgNullDecoder),
         storageVersion: sql`NULL`.mapWith(pgNullDecoder),
         tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-        rowVersion: sql`${modelProviderAccounts}.xmin::text`.mapWith(
-          pgTextDecoder,
-        ),
         needsReconnect: modelProviderAccounts.needsReconnect,
         lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
         reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-        updatedAtMicros:
-          sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint`.mapWith(
-            pgInt8ToBigIntDecoder,
-          ),
       })
       .from(modelProviderAccounts)
       .where(
@@ -2275,14 +2097,9 @@ async function loadModelProviderRefreshStateRow(
       connectorId: sql`NULL`.mapWith(pgNullDecoder),
       storageVersion: sql`NULL`.mapWith(pgNullDecoder),
       tokenExpiresAt: modelProviders.tokenExpiresAt,
-      rowVersion: sql`${modelProviders}.xmin::text`.mapWith(pgTextDecoder),
       needsReconnect: modelProviders.needsReconnect,
       lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
       reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
     })
     .from(modelProviders)
     .where(
@@ -2318,14 +2135,9 @@ async function loadConnectorRefreshStateRow(
       connectorId: connectors.id,
       storageVersion: connectors.storageVersion,
       tokenExpiresAt: connectors.tokenExpiresAt,
-      rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
       needsReconnect: connectors.needsReconnect,
       lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
       reconnectReason: connectors.reconnectReason,
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
     })
     .from(connectors)
     .where(
@@ -2340,11 +2152,6 @@ async function loadConnectorRefreshStateRow(
   return rows[0] ?? null;
 }
 
-/**
- * Reads the owner row version, then its credential inputs/outputs without a
- * transaction. Publication compares the owner row version, so a concurrent
- * credential change after this read makes the later CAS lose.
- */
 async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
@@ -2413,8 +2220,6 @@ async function loadRefreshState(
     needsReconnect: row.needsReconnect,
     lastRefreshErrorCode: row.lastRefreshErrorCode,
     reconnectReason: row.reconnectReason,
-    updatedAtMicros: row.updatedAtMicros,
-    rowVersion: row.rowVersion,
   };
 }
 
@@ -2422,25 +2227,27 @@ async function persistRefreshOutputValues(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
   context: RefreshTokenContext,
-  outputs: readonly EncryptedRefreshOutput[],
+  outputs: readonly ValidatedRefreshOutput[],
 ): Promise<Map<string, string>> {
   const returnedSecretValues = new Map<string, string>();
-  for (const { target, value, encryptedValue } of outputs) {
+  for (const { target, value } of outputs) {
     switch (target.kind) {
       case "secret": {
-        if (encryptedValue === null) {
-          throw new Error(`Refresh secret ${target.name} was not encrypted`);
-        }
         if (prepared.sourceType === "model-provider") {
           await upsertModelProviderSecretValue(args.db, {
             orgId: args.orgId,
             userId: context.secretUserId,
             name: target.name,
-            encryptedValue,
+            value,
             sourceId: args.sourceId,
             runId: args.runId,
+            featureSwitchContext: args.featureSwitchContext,
           });
         } else {
+          const encryptedValue = await encryptStoredSecretValue(
+            value,
+            args.featureSwitchContext,
+          );
           await upsertConnectorOwnedSecret(args.db, {
             connectorId: prepared.connectorId,
             storage: prepared.runtimeMethod.method.storage,
@@ -2477,41 +2284,30 @@ async function persistRefreshOutputValues(
   return returnedSecretValues;
 }
 
-async function encryptRefreshOutputs(
-  outputs: readonly ValidatedRefreshOutput[],
-  featureSwitchContext: FeatureSwitchContext,
-): Promise<readonly EncryptedRefreshOutput[]> {
-  const encrypted: EncryptedRefreshOutput[] = [];
-  for (const output of outputs) {
-    encrypted.push({
-      ...output,
-      encryptedValue:
-        output.target.kind === "secret"
-          ? await encryptStoredSecretValue(output.value, featureSwitchContext)
-          : null,
-    });
-  }
-  return encrypted;
-}
-
 async function markRefreshSuccess(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
-  expected: RefreshState,
-  outputs: readonly EncryptedRefreshOutput[],
+  context: RefreshTokenContext,
+  outputs: readonly ValidatedRefreshOutput[],
   refresh: {
     readonly expiresIn?: number;
     readonly scopes?: readonly string[];
   },
-): Promise<Record<string, string> | null> {
-  const context = prepared.context;
+): Promise<Record<string, string>> {
+  const returnedSecretValues = await persistRefreshOutputValues(
+    args,
+    prepared,
+    context,
+    outputs,
+  );
+
   const expiresAt = new Date(
     nowDate().getTime() +
       (refresh.expiresIn ?? DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS) * 1000,
   );
   if (prepared.sourceType === "model-provider") {
     if (args.sourceId) {
-      const [claimed] = await args.db
+      await args.db
         .update(modelProviderAccounts)
         .set({
           tokenExpiresAt: expiresAt,
@@ -2524,86 +2320,60 @@ async function markRefreshSuccess(
             eq(modelProviderAccounts.id, args.sourceId),
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
-            sql`${modelProviderAccounts}.xmin::text = ${expected.rowVersion}`,
-            sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           ),
-        )
-        .returning({ id: modelProviderAccounts.id });
-      if (!claimed) {
-        return null;
-      }
-    } else {
-      const [claimed] = await args.db
-        .update(modelProviders)
-        .set({
-          tokenExpiresAt: expiresAt,
-          needsReconnect: false,
-          lastRefreshErrorCode: null,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(
-          and(
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, context.secretUserId),
-            eq(
-              modelProviders.type,
-              requiredModelProviderMetadataKey({
-                providerKey: args.accessSourceKey,
-                metadataKey: args.metadataKey,
-              }),
-            ),
-            sql`${modelProviders}.xmin::text = ${expected.rowVersion}`,
-            sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
-          ),
-        )
-        .returning({ id: modelProviders.id });
-      if (!claimed) {
-        return null;
-      }
+        );
+      return Object.fromEntries(returnedSecretValues);
     }
-  } else {
-    const [claimed] = await args.db
-      .update(connectors)
+    await args.db
+      .update(modelProviders)
       .set({
-        ...(refresh.scopes === undefined
-          ? {}
-          : { oauthGrantedScopes: JSON.stringify(refresh.scopes) }),
         tokenExpiresAt: expiresAt,
-        storageVersion: prepared.runtimeMethod.method.storage.version,
         needsReconnect: false,
-        reconnectReason: null,
+        lastRefreshErrorCode: null,
         updatedAt: sql`clock_timestamp()`,
       })
       .where(
         and(
-          eq(connectors.id, prepared.connectorId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, prepared.connectorSlug),
-          sql`${connectors}.xmin::text = ${expected.rowVersion}`,
-          sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
+          eq(modelProviders.orgId, args.orgId),
+          eq(modelProviders.userId, context.secretUserId),
+          eq(
+            modelProviders.type,
+            requiredModelProviderMetadataKey({
+              providerKey: args.accessSourceKey,
+              metadataKey: args.metadataKey,
+            }),
+          ),
         ),
-      )
-      .returning({ id: connectors.id });
-    if (!claimed) {
-      return null;
-    }
+      );
+    return Object.fromEntries(returnedSecretValues);
   }
-  // The exact owner row is the publication decision. All credential outputs
-  // commit in this same transaction only after its prior state still matches.
-  const returnedSecretValues = await persistRefreshOutputValues(
-    args,
-    prepared,
-    context,
-    outputs,
-  );
+
+  await args.db
+    .update(connectors)
+    .set({
+      ...(refresh.scopes === undefined
+        ? {}
+        : { oauthGrantedScopes: JSON.stringify(refresh.scopes) }),
+      tokenExpiresAt: expiresAt,
+      storageVersion: prepared.runtimeMethod.method.storage.version,
+      needsReconnect: false,
+      reconnectReason: null,
+      updatedAt: sql`clock_timestamp()`,
+    })
+    .where(
+      and(
+        eq(connectors.id, prepared.connectorId),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        eq(connectors.connectorSlug, prepared.connectorSlug),
+      ),
+    );
   return Object.fromEntries(returnedSecretValues);
 }
 
 async function markRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  expected: RefreshState,
   failure: {
     readonly errorCode: string | null;
     readonly failureReason: FirewallAuthFailureReason | undefined;
@@ -2611,8 +2381,7 @@ async function markRefreshFailure(
   },
 ): Promise<void> {
   const { errorCode, failureReason, connectorReconnectReason } = failure;
-  // A transient outage changed no credential or authority. Mutating the owner
-  // version here would reject a concurrent successful conditional publication.
+  // A transient outage changed no credential or authority.
   if (failureReason === "upstream_provider") {
     return;
   }
@@ -2631,8 +2400,6 @@ async function markRefreshFailure(
             eq(modelProviderAccounts.id, args.sourceId),
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
-            sql`${modelProviderAccounts}.xmin::text = ${expected.rowVersion}`,
-            sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           ),
         );
       return;
@@ -2644,8 +2411,6 @@ async function markRefreshFailure(
         and(
           eq(modelProviders.orgId, args.orgId),
           eq(modelProviders.userId, context.secretUserId),
-          sql`${modelProviders}.xmin::text = ${expected.rowVersion}`,
-          sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           eq(
             modelProviders.type,
             requiredModelProviderMetadataKey({
@@ -2677,8 +2442,6 @@ async function markRefreshFailure(
         eq(connectors.userId, args.userId),
         eq(connectors.id, connectorId),
         eq(connectors.connectorSlug, connectorSlug),
-        sql`${connectors}.xmin::text = ${expected.rowVersion}`,
-        sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
       ),
     );
 }
@@ -2686,9 +2449,8 @@ async function markRefreshFailure(
 async function markRefreshTokenMissing(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  expected: RefreshState,
 ): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, expected, {
+  await markRefreshFailure(args, context, {
     errorCode: null,
     failureReason: "reconnect_required",
     connectorReconnectReason: null,
@@ -2702,7 +2464,6 @@ async function markRefreshTokenMissing(
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  expected: RefreshState,
   retry: {
     readonly error: unknown;
     readonly attempted: boolean;
@@ -2720,7 +2481,7 @@ async function markAndReturnRefreshFailure(
     error.status === 401 &&
     error.providerErrorCode === "TOKEN_EXPIRED"
   ) {
-    await markRefreshFailure(args, context, expected, {
+    await markRefreshFailure(args, context, {
       errorCode: "invalid_grant",
       failureReason: "reconnect_required",
       connectorReconnectReason: "credential_expired",
@@ -2740,7 +2501,7 @@ async function markAndReturnRefreshFailure(
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
-  await markRefreshFailure(args, context, expected, {
+  await markRefreshFailure(args, context, {
     errorCode,
     failureReason,
     connectorReconnectReason: connectorReconnectReasonFromRefreshFailure(
@@ -2869,7 +2630,7 @@ function currentRefreshAccessResult(args: {
   };
 }
 
-function refreshInputsFromLockedState(args: {
+function refreshInputsFromState(args: {
   readonly accessSourceKey: string;
   readonly state: RefreshState;
 }): Record<string, string> {
@@ -2948,13 +2709,11 @@ function validateRefreshResultOutputs(args: {
   return { ok: true, outputs };
 }
 
-async function refreshLockedAccessToken(args: {
+async function refreshStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
 }): Promise<RefreshAccessTokenResult> {
-  const lockedState = currentPreparedRefreshState({
+  const state = currentPreparedRefreshState({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
     state: await loadRefreshState(
@@ -2963,103 +2722,53 @@ async function refreshLockedAccessToken(args: {
       args.prepared.context,
     ),
   });
-  if (!lockedState) {
+  if (!state) {
     return sourceMissingResult();
   }
 
   if (
-    isTerminalCodexRefreshState(args.prepared, lockedState) ||
-    isExpiredAwsSigninRefreshState(args.prepared, lockedState)
+    isTerminalCodexRefreshState(args.prepared, state) ||
+    isExpiredAwsSigninRefreshState(args.prepared, state)
   ) {
     return refreshFailedResult("reconnect_required");
   }
 
   if (
-    didLockedRefreshFailDuringRequest({
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
-    })
-  ) {
-    return refreshFailedResult(
-      lockedRefreshFailureReasonDuringRequest({
-        initialState: args.initialState,
-        requestStartedAtMicros: args.requestStartedAtMicros,
-        state: lockedState,
-      }),
-    );
-  }
-
-  if (
-    shouldUseLockedCurrentAccess({
+    shouldUseCurrentAccess({
       refreshArgs: args.refreshArgs,
       context: args.prepared.context,
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
+      state,
     })
   ) {
     return currentRefreshAccessResult({
       accessSourceKey: args.refreshArgs.accessSourceKey,
       context: args.prepared.context,
-      state: lockedState,
+      state,
     });
   }
 
-  if (missingRefreshInputNames(lockedState).length > 0) {
-    return markRefreshTokenMissing(
-      args.refreshArgs,
-      args.prepared.context,
-      lockedState,
-    );
+  if (missingRefreshInputNames(state).length > 0) {
+    return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
   }
 
-  return refreshPreparedLockedAccessToken({
+  return refreshPreparedStoredAccessToken({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
-    lockedState,
+    state,
   });
 }
 
-/**
- * A concurrent refresh or credential change won the owner-row CAS. Serve its
- * current credential when usable instead of the one this request prepared.
- */
-async function currentAfterLostRefreshPublication(
-  refreshArgs: RefreshAccessTokenArgs,
-  prepared: PreparedRefreshTokenContext,
-): Promise<RefreshAccessTokenResult> {
-  const current = currentPreparedRefreshState({
-    refreshArgs,
-    prepared,
-    state: await loadRefreshState(
-      refreshArgs.db,
-      refreshArgs,
-      prepared.context,
-    ),
-  });
-  return current &&
-    !current.needsReconnect &&
-    allRuntimeOutputsAvailable({ context: prepared.context, state: current })
-    ? currentRefreshAccessResult({
-        accessSourceKey: refreshArgs.accessSourceKey,
-        context: prepared.context,
-        state: current,
-      })
-    : sourceMissingResult();
-}
-
-async function refreshPreparedLockedAccessToken(args: {
+async function refreshPreparedStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly lockedState: RefreshState;
+  readonly state: RefreshState;
 }): Promise<RefreshAccessTokenResult> {
-  const { refreshArgs, prepared, lockedState } = args;
+  const { refreshArgs, prepared, state } = args;
 
   const refreshSignal = firewallAuthRefreshTimeoutSignal();
-  const inputs = refreshInputsFromLockedState({
+  const inputs = refreshInputsFromState({
     accessSourceKey: refreshArgs.accessSourceKey,
-    state: lockedState,
+    state,
   });
   let retryAttempted = false;
   let firstProviderStatus: number | null = null;
@@ -3092,7 +2801,6 @@ async function refreshPreparedLockedAccessToken(args: {
     return markAndReturnRefreshFailure(
       refreshArgs,
       prepared.context,
-      lockedState,
       {
         error: refreshResult.error,
         attempted: retryAttempted,
@@ -3118,7 +2826,7 @@ async function refreshPreparedLockedAccessToken(args: {
       providerStatus: null,
       retryAttempted,
     });
-    await markRefreshFailure(refreshArgs, prepared.context, lockedState, {
+    await markRefreshFailure(refreshArgs, prepared.context, {
       errorCode: null,
       failureReason: "upstream_provider",
       connectorReconnectReason: null,
@@ -3126,25 +2834,13 @@ async function refreshPreparedLockedAccessToken(args: {
     return refreshFailedResult("upstream_provider");
   }
 
-  const encryptedOutputs = await encryptRefreshOutputs(
+  const returnedSecretValues = await markRefreshSuccess(
+    refreshArgs,
+    prepared,
+    prepared.context,
     outputValidation.outputs,
-    refreshArgs.featureSwitchContext,
+    refreshResult.value,
   );
-  const returnedSecretValues = await refreshArgs.db.transaction(async (tx) => {
-    // The exact owner-row CAS decides this publication. Every credential
-    // replacement, deletion and refresh writer changes or row-locks that owner
-    // row, so a concurrent change fails the CAS instead of being overwritten.
-    return await markRefreshSuccess(
-      { ...refreshArgs, db: tx },
-      prepared,
-      lockedState,
-      encryptedOutputs,
-      refreshResult.value,
-    );
-  });
-  if (returnedSecretValues === null) {
-    return await currentAfterLostRefreshPublication(refreshArgs, prepared);
-  }
   if (retryAttempted) {
     L.info("gmail token refresh recovered", {
       accessSourceKey: "gmail",
@@ -3172,17 +2868,6 @@ async function refreshPreparedLockedAccessToken(args: {
   };
 }
 
-function refreshSourceKey(args: RefreshAccessTokenArgs): string {
-  return JSON.stringify([
-    args.sourceType,
-    args.orgId,
-    args.userId,
-    args.accessSourceKey,
-    args.sourceId ?? null,
-    args.metadataKey ?? null,
-  ]);
-}
-
 async function refreshAccessTokenForSource(
   args: RefreshAccessTokenArgs,
 ): Promise<RefreshAccessTokenResult> {
@@ -3193,24 +2878,12 @@ async function refreshAccessTokenForSource(
       : { ok: false, reason: preparation.reason };
   }
   const { prepared } = preparation;
-  const requestStartedAtMicros = args.forceRefresh
-    ? args.forceRefreshStartedAtMicros
-    : await currentDatabaseTimestampMicros(args.db);
-  const initialState = await loadRefreshState(args.db, args, prepared.context);
-  // Ordinary refresh: provider HTTP and KMS run outside any transaction and
-  // the result publishes through an exact owner-row CAS. A rare concurrent
-  // refresh may consume a one-use provider token; that risk is accepted.
-  const result = await runAfterSameProcessRefresh(
-    refreshSourceKey(args),
-    () => {
-      return refreshLockedAccessToken({
-        refreshArgs: args,
-        prepared,
-        initialState,
-        requestStartedAtMicros,
-      });
-    },
-  );
+  // Ordinary refresh with plain writes: concurrent refreshes resolve by
+  // last-writer-wins, and a lost one-use refresh token requires reconnect.
+  const result = await refreshStoredAccessToken({
+    refreshArgs: args,
+    prepared,
+  });
   // The reconnect projection is local metadata published after the refresh.
   if (
     prepared.sourceType === "model-provider" &&
@@ -3881,7 +3554,6 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     connectorSecrets: {},
     accessEnvVars: [args.key],
     forceRefresh: false,
-    forceRefreshStartedAtMicros: null,
     connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
     featureSwitchContext: args.featureSwitchContext,
   });
@@ -4951,7 +4623,6 @@ async function refreshSelectedTokens(
         connectorSecrets: context.secrets,
         accessEnvVars: context.envVarsByAccessSource.get(accessSourceKey) ?? [],
         forceRefresh: context.forceRefresh,
-        forceRefreshStartedAtMicros: context.forceRefreshStartedAtMicros,
         connectorAccessBySlug: context.connectorAccessBySlug,
         featureSwitchContext: context.featureSwitchContext,
       });
@@ -4971,8 +4642,8 @@ async function refreshSelectedTokens(
         };
       }
 
-      // "current" means a concurrent request rotated the credential while this
-      // one waited for the refresh lock, so a pre-lock bundle read is stale too.
+      // "current" means the stored credential differs from the request
+      // snapshot, so earlier bundle reads may be stale too.
       context.subscriptionBundles.clear();
       Object.assign(context.secrets, refreshResult.secrets);
       return { accessSourceKey, status: refreshResult.status };
@@ -5201,7 +4872,6 @@ async function refreshExpiredTokens(
     userId: args.auth.userId,
     secrets: args.secrets,
     forceRefresh: args.forceRefresh,
-    forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     metadataByAccessSource,
     connectorAccessBySlug: args.connectorAccessBySlug,
     envVarsByAccessSource,
@@ -5928,7 +5598,6 @@ async function prepareNonCustomFirewallAuth(args: {
   readonly body: FirewallAuthBody;
   readonly orgId: string;
   readonly referenced: ReferencedAuthKeys;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<
   FirewallAuthPreparation<
     | PreparedNonCustomFirewallAuth
@@ -6036,7 +5705,6 @@ async function prepareNonCustomFirewallAuth(args: {
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
       context: prepared.context,
-      forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     },
   };
 }
@@ -6119,7 +5787,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       orgId: args.auth.orgId,
       featureSwitchContext: args.prepared.featureSwitchContext,
       forceRefresh: args.body.forceRefresh ?? false,
-      forceRefreshStartedAtMicros: args.prepared.forceRefreshStartedAtMicros,
     });
     expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
     refreshedConnectors = result.refreshedConnectors;
@@ -6381,10 +6048,6 @@ async function prepareFirewallAuthRequest(
     return { ok: false, response: forbiddenTerminalRun() };
   }
   const orgId = run.orgId;
-  const forceRefreshStartedAtMicros =
-    customConnectorId === undefined && body.forceRefresh === true
-      ? await currentDatabaseTimestampMicros(db)
-      : null;
   const referenced = collectReferencedKeys(
     body.authHeaders,
     body.authBase,
@@ -6427,7 +6090,6 @@ async function prepareFirewallAuthRequest(
       body,
       orgId,
       referenced,
-      forceRefreshStartedAtMicros,
     });
   }
   if (!preparation.ok) {

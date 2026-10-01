@@ -17,28 +17,13 @@ import {
   sshCredentialFailure,
 } from "./ssh-credential.service";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import {
-  TransactionRollbackError,
-  and,
-  asc,
-  count,
-  eq,
-  lt,
-  notExists,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, eq, or, sql } from "drizzle-orm";
 
 import {
   SSH_ERROR_CODES,
   type SshErrorCode,
 } from "@okouai/api-contracts/contracts/ssh-errors";
-import {
-  isForeignKeyViolation,
-  safeSqlStateCode,
-  isUniqueViolation,
-} from "../../lib/pg-errors";
+import { safeSqlStateCode, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
@@ -421,38 +406,29 @@ const commitSshConnectionCreation$ = command(
         if (args.preparedAccess !== undefined && !createdAccess) {
           throw new Error("Cloudflare Access insert returned no row");
         }
-        const selectedAccess = {
-          id: createdAccess?.id ?? accessId,
-          created: createdAccess !== undefined,
-        };
         const [connection] = await tx
           .insert(sshConnections)
           .values(
-            sshConnectionCreationValues(args, credential.id, selectedAccess.id),
+            sshConnectionCreationValues(
+              args,
+              credential.id,
+              createdAccess?.id ?? accessId,
+            ),
           )
           .returning();
         if (!connection) {
           throw new Error("SSH connection insert returned no row");
         }
-        if (!(await accessStillVisible(tx, args, accessId))) {
-          return tx.rollback();
-        }
         return {
           ok: true as const,
           value: toSshConnectionResponse(connection, credential),
-          createdAccess: selectedAccess.created,
+          createdAccess: createdAccess !== undefined,
         };
       }),
     );
     if (!transaction.ok) {
       if (isSshCredentialReferenceViolation(transaction.error)) {
         return sshCredentialFailure("notFound");
-      }
-      if (
-        transaction.error instanceof TransactionRollbackError ||
-        isSshAccessReferenceViolation(transaction.error)
-      ) {
-        return cloudflareAccessFailure("notFound");
       }
       if (!isUniqueViolation(transaction.error, "ssh_connections_pkey")) {
         throw transaction.error;
@@ -516,7 +492,10 @@ export const createSshConnection$ = command(
 );
 
 interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
-  readonly canonicalHost: string | undefined;
+  readonly current: SshConnectionRow;
+  readonly host: string;
+  readonly port: number;
+  readonly accessId: string | null;
   readonly preparedAccess: Awaited<ReturnType<typeof prepareAccessCreation>>;
   readonly preparedCredential:
     | Awaited<ReturnType<typeof prepareSshCredentialSelection>>
@@ -529,44 +508,11 @@ const commitSshConnectionUpdate$ = command(
     args: PreparedSshConnectionUpdate,
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const rollback = { accessHidden: false };
     const committed = await settle(
       db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
         async (tx) => {
-          const [current] = await tx
-            .select()
-            .from(sshConnections)
-            .where(ownedSshConnection(args));
-          if (!current) {
-            return failure("notFound");
-          }
-          const accessId = requestedSshAccessId(
-            args.body,
-            current.cloudflareAccessId,
-          );
-          if (accessId !== null) {
-            const [config] = await tx
-              .select({ id: cloudflareAccessConfigs.id })
-              .from(cloudflareAccessConfigs)
-              .where(visibleSshAccessConfig(args, accessId));
-            if (!config) {
-              return cloudflareAccessFailure("notFound");
-            }
-          }
-          const host = args.canonicalHost ?? current.host;
-          const port = args.body.port ?? current.port;
-          const rejected = validateSshHostUpdate(current, {
-            body: args.body,
-            host,
-            port,
-            accessId,
-            creatingAccess: args.preparedAccess !== undefined,
-          });
-          if (rejected) {
-            return rejected;
-          }
           const selectedCredential = args.preparedCredential ?? {
-            id: current.credentialId,
+            id: args.current.credentialId,
           };
           const [credential] =
             selectedCredential.id !== undefined
@@ -600,31 +546,21 @@ const commitSshConnectionUpdate$ = command(
           if (args.preparedAccess !== undefined && !createdAccess) {
             throw new Error("Cloudflare Access insert returned no row");
           }
-          // Low-frequency edits are ordinary writes. The next connection
-          // resolves the stored host and credential, regardless of write order.
           const [updated] = await tx
             .update(sshConnections)
             .set(
-              sshHostUpdateValues(current, {
+              sshHostUpdateValues(args.current, {
                 body: args.body,
-                host,
-                port,
+                host: args.host,
+                port: args.port,
                 credentialId: credential.id,
-                accessId: createdAccess?.id ?? accessId,
+                accessId: createdAccess?.id ?? args.accessId,
               }),
             )
             .where(ownedSshConnection(args))
             .returning();
           if (!updated) {
-            // The host disappeared; discard this request's inline resources.
-            return tx.rollback();
-          }
-          if (
-            createdAccess === undefined &&
-            !(await accessStillVisible(tx, args, accessId))
-          ) {
-            rollback.accessHidden = true;
-            return tx.rollback();
+            throw new Error("SSH connection update returned no row");
           }
           return {
             ok: true,
@@ -634,34 +570,15 @@ const commitSshConnectionUpdate$ = command(
         },
       ),
     );
-    return committed.ok
-      ? committed.value
-      : await lostSshHostUpdateFailure(db, args, committed.error, rollback);
+    if (committed.ok) {
+      return committed.value;
+    }
+    if (isSshCredentialReferenceViolation(committed.error)) {
+      return sshCredentialFailure("notFound");
+    }
+    throw committed.error;
   },
 );
-
-async function lostSshHostUpdateFailure(
-  db: Pick<ReadonlyDb, "select">,
-  args: PreparedSshConnectionUpdate,
-  error: unknown,
-  rollback: { readonly accessHidden: boolean },
-) {
-  if (isSshCredentialReferenceViolation(error)) {
-    return sshCredentialFailure("notFound");
-  }
-  if (!(error instanceof TransactionRollbackError)) {
-    if (isSshAccessReferenceViolation(error)) {
-      return cloudflareAccessFailure("notFound");
-    }
-    throw error;
-  }
-  if (rollback.accessHidden) {
-    return cloudflareAccessFailure("notFound");
-  }
-  return (await findOwnerConnection(db, args))
-    ? failure("generationConflict")
-    : failure("notFound");
-}
 
 export const updateSshConnection$ = command(
   async (
@@ -676,15 +593,39 @@ export const updateSshConnection$ = command(
     if (canonicalHost !== undefined && !canonicalHost.ok) {
       return canonicalHost;
     }
-    const [preflight] = await db
+    const [current] = await db
       .select()
       .from(sshConnections)
       .where(ownedSshConnection(args));
-    if (!preflight) {
+    if (!current) {
       return failure("notFound");
     }
-    if (preflight.generation !== args.body.expectedGeneration) {
-      return failure("generationConflict");
+    const accessId = requestedSshAccessId(
+      args.body,
+      current.cloudflareAccessId,
+    );
+    if (accessId !== null) {
+      const [config] = await db
+        .select({ id: cloudflareAccessConfigs.id })
+        .from(cloudflareAccessConfigs)
+        .where(visibleSshAccessConfig(args, accessId));
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+    }
+    const host = canonicalHost?.value ?? current.host;
+    const port = args.body.port ?? current.port;
+    const rejected = validateSshHostUpdate(current, {
+      body: args.body,
+      host,
+      port,
+      accessId,
+      creatingAccess:
+        args.body.transport?.type === "cloudflare_access" &&
+        "create" in args.body.transport,
+    });
+    if (rejected) {
+      return rejected;
     }
     const preparedAccess = await prepareAccessCreation(
       args.body.transport,
@@ -700,7 +641,10 @@ export const updateSshConnection$ = command(
 
     const result = await set(commitSshConnectionUpdate$, {
       ...args,
-      canonicalHost: canonicalHost?.value,
+      current,
+      host,
+      port,
+      accessId,
       preparedAccess,
       preparedCredential,
     });
@@ -728,28 +672,11 @@ export const deleteSshConnection$ = command(
     },
   ): Promise<SshConnectionResult<undefined>> => {
     const db = set(writeDb$);
-    // NOT EXISTS returns connectionInUse for committed VNC references; the
-    // RESTRICT FK reports one committed while this DELETE waited.
+    // The RESTRICT VNC FK rejects deleting a host used by a VNC connection.
     const deletion = await settle(
       db
         .delete(sshConnections)
-        .where(
-          and(
-            ownedSshConnection(args),
-            notExists(
-              db
-                .select({ id: vncConnections.id })
-                .from(vncConnections)
-                .where(
-                  and(
-                    eq(vncConnections.sshConnectionId, sshConnections.id),
-                    eq(vncConnections.orgId, args.orgId),
-                    eq(vncConnections.userId, args.userId),
-                  ),
-                ),
-            ),
-          ),
-        )
+        .where(ownedSshConnection(args))
         .returning({ id: sshConnections.id }),
     );
     if (!deletion.ok) {
@@ -759,9 +686,7 @@ export const deleteSshConnection$ = command(
       throw deletion.error;
     }
     if (deletion.value.length === 0) {
-      return (await findOwnerConnection(db, args))
-        ? failure("connectionInUse")
-        : failure("notFound");
+      return failure("notFound");
     }
     await set(publishSshRuntimeInvalidation$, {
       orgId: args.orgId,
@@ -783,53 +708,42 @@ export const resetSshConnectionHostKey$ = command(
     },
   ): Promise<SshConnectionResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const result = await db.transaction<
-      SshConnectionResult<SshConnectionResponse>
-    >(async (tx) => {
-      const [updated] = await tx
-        .update(sshConnections)
-        .set({
-          learnedHostKeyAlgorithm: null,
-          learnedHostKeyFingerprint: null,
-          generation: sql`${sshConnections.generation} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            ownedSshConnection(args),
-            eq(sshConnections.generation, args.expectedGeneration),
-            lt(sshConnections.generation, MAX_SSH_GENERATION),
-          ),
-        )
-        .returning();
-      if (!updated) {
-        const current = await findOwnerConnection(tx, args);
-        if (!current) {
-          return failure("notFound");
-        }
-        return current.generation === args.expectedGeneration
-          ? sshCredentialFailure("exhausted")
-          : failure("generationConflict");
-      }
-      // The updated host row references its credential, so RESTRICT keeps
-      // this credential until the transaction ends.
-      const [credential] = await tx
-        .select(credentialSelection)
-        .from(sshCredentials)
-        .where(ownedSshCredential(args, updated.credentialId));
-      if (!credential) {
-        throw new Error("SSH connection credential is missing");
-      }
-      return { ok: true, value: toSshConnectionResponse(updated, credential) };
-    });
-    if (result.ok) {
-      await set(publishSshRuntimeInvalidation$, {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectionId: args.connectionId,
-      });
+    const current = await findOwnerConnection(db, args);
+    if (!current) {
+      return failure("notFound");
     }
-    return result;
+    if (current.generation !== args.expectedGeneration) {
+      return failure("generationConflict");
+    }
+    if (current.generation === MAX_SSH_GENERATION) {
+      return sshCredentialFailure("exhausted");
+    }
+    const [credential] = await db
+      .select(credentialSelection)
+      .from(sshCredentials)
+      .where(ownedSshCredential(args, current.credentialId));
+    if (!credential) {
+      throw new Error("SSH connection credential is missing");
+    }
+    const [updated] = await db
+      .update(sshConnections)
+      .set({
+        learnedHostKeyAlgorithm: null,
+        learnedHostKeyFingerprint: null,
+        generation: sql`${sshConnections.generation} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(ownedSshConnection(args))
+      .returning();
+    if (!updated) {
+      return failure("notFound");
+    }
+    await set(publishSshRuntimeInvalidation$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectionId: args.connectionId,
+    });
+    return { ok: true, value: toSshConnectionResponse(updated, credential) };
   },
 );
 
@@ -894,33 +808,6 @@ function visibleSshAccessConfig(
         eq(cloudflareAccessConfigs.userId, owner.userId),
       ),
     ),
-  );
-}
-async function accessStillVisible(
-  tx: Pick<ReadonlyDb, "select">,
-  owner: { readonly orgId: string; readonly userId: string },
-  accessId: string | null,
-): Promise<boolean> {
-  if (accessId === null) {
-    return true;
-  }
-  // Runs after the host write. A binding change took KEY SHARE through the FK,
-  // so a committed scope change or deletion is visible to this fresh statement;
-  // an unchanged binding is guarded by the generation check instead.
-  const [config] = await tx
-    .select({ id: cloudflareAccessConfigs.id })
-    .from(cloudflareAccessConfigs)
-    .where(visibleSshAccessConfig(owner, accessId));
-  return config !== undefined;
-}
-function isSshAccessReferenceViolation(error: unknown): boolean {
-  return (
-    isForeignKeyViolation(error) &&
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "constraint" in error.cause &&
-    error.cause.constraint === "ssh_connections_cloudflare_access_org_fk"
   );
 }
 function ownedSshConnection(owner: {

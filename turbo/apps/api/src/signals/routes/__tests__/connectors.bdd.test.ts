@@ -4243,64 +4243,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, connector.id);
   });
 
-  it("uses one published client for concurrent first Automatic DCR authorizations", async () => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "dcr",
-      uniqueDcrClients: true,
-    });
-    const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    const connector = await connectorsApi.createCustomConnector(admin, {
-      kind: "mcp",
-      displayName: "BDD Concurrent Automatic DCR",
-      endpoint: provider.endpoint,
-      transport: "streamable-http",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-      authMode: "automatic",
-    });
-
-    const authorizationUrls = await Promise.all([
-      connectorsApi.startCustomConnectorOAuth2(admin, connector.id),
-      connectorsApi.startCustomConnectorOAuth2(admin, connector.id),
-    ]);
-    expect(authorizationUrls).toHaveLength(2);
-    const clientId = new URL(authorizationUrls[0]!).searchParams.get(
-      "client_id",
-    );
-    expect(clientId).toMatch(/^automatic-dcr-client-\d+$/u);
-    expect(new URL(authorizationUrls[1]!).searchParams.get("client_id")).toBe(
-      clientId,
-    );
-    for (const [index, authorizationUrl] of authorizationUrls.entries()) {
-      await connectorsApi.completeCustomConnectorOAuth2Callback({
-        code: `concurrent-dcr-${index}`,
-        state: stateFromAuthorizationUrl(authorizationUrl),
-        iss: provider.issuer,
-      });
-    }
-    const connections = await connectorsApi.listCustomConnectorAccounts(
-      admin,
-      connector.id,
-    );
-    expect(connections.length).toBeGreaterThan(0);
-    expect(
-      connections.every((connection) => {
-        return connection.connectionStatus === "connected";
-      }),
-    ).toBeTruthy();
-    const reused = await connectorsApi.startCustomConnectorOAuth2(
-      admin,
-      connector.id,
-    );
-    expect(new URL(reused).searchParams.get("client_id")).toBe(clientId);
-
-    await connectorsApi.deleteCustomConnector(admin, connector.id);
-  });
-
   it("maps temporary Automatic OAuth discovery and DCR failures to 502", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");

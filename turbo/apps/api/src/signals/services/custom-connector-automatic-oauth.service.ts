@@ -12,10 +12,8 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { settle } from "../utils";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -30,7 +28,8 @@ import {
   type McpAutomaticOAuthAuthorization,
   type McpAutomaticOAuthContext,
   type McpAutomaticOAuthDcrClientStore,
-  type McpAutomaticOAuthDcrStore,
+  type McpAutomaticOAuthDcrRegistration,
+  type McpAutomaticOAuthDcrRegistrationInput,
 } from "./mcp-automatic-oauth.service";
 
 const oauthHttpsUrlSchema = z
@@ -395,248 +394,82 @@ function customDcrClientStore(args: {
   };
 }
 
-interface CustomDcrStoreArgs {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly customConnectorId: string;
-  readonly storageVersion: number;
-  readonly endpoint: string;
-  readonly featureContext: FeatureSwitchContext;
-}
-
-async function prepareCustomDcrRegistration(
-  args: Pick<
-    CustomDcrStoreArgs,
-    "orgId" | "customConnectorId" | "featureContext"
-  >,
-  registration: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0],
-  signal: AbortSignal,
-) {
-  const encryptedClientSecret = registration.clientSecret
-    ? await encryptStoredSecretValue(
-        registration.clientSecret,
-        args.featureContext,
-      )
-    : null;
-  signal.throwIfAborted();
-  return {
-    orgId: args.orgId,
-    customConnectorId: args.customConnectorId,
-    issuer: registration.issuer,
-    clientId: registration.clientId,
-    encryptedClientSecret,
-    tokenEndpointAuthMethod: registration.tokenEndpointAuthMethod,
-    registeredScopes: [...registration.registeredScopes],
-    redirectUri: registration.redirectUri,
-    issuedAt: registration.issuedAt,
-    expiresAt: registration.expiresAt,
-  };
-}
-
-function customDcrIssuerCondition(customConnectorId: string, issuer: string) {
-  return and(
-    eq(orgCustomConnectorDcrRegistrations.customConnectorId, customConnectorId),
-    eq(orgCustomConnectorDcrRegistrations.issuer, issuer),
-  );
-}
-
-/**
- * Retire the registration this publisher expected to replace. No row locks:
- * the DELETE claims it, and a binding linked after the read keeps its FK to
- * the registration so the DELETE fails as a registration conflict.
- */
-async function retireExpectedCustomDcrRegistration(
-  tx: Db,
-  args: {
-    readonly customConnectorId: string;
-    readonly registration: Pick<PersistedDcrRegistration, "id" | "expiresAt">;
-  },
-): Promise<void> {
-  const accounts = await tx
-    .select({
-      id: customConnectorAccountOauthBindings.connectorAccountId,
-    })
-    .from(customConnectorAccountOauthBindings)
-    .where(
-      eq(
-        customConnectorAccountOauthBindings.dcrRegistrationId,
-        args.registration.id,
-      ),
-    );
-  if (
-    accounts.length > 0 &&
-    (args.registration.expiresAt === null ||
-      args.registration.expiresAt > nowDate())
-  ) {
-    throw new McpAutomaticOAuthError(
-      { kind: "incompatible", reason: "registration-conflict" },
-      "Existing MCP OAuth registration acquired a linked account during preparation",
-    );
-  }
-  const accountIds = accounts.map((account) => {
-    return account.id;
-  });
-  if (accountIds.length > 0) {
-    // Only the observed bindings of an expired registration are
-    // retired. A binding linked after this read keeps its FK to the
-    // registration, so the DELETE below fails as a conflict instead.
-    const retired = await tx
-      .delete(customConnectorAccountOauthBindings)
-      .where(
-        and(
-          eq(
-            customConnectorAccountOauthBindings.dcrRegistrationId,
-            args.registration.id,
-          ),
-          inArray(
-            customConnectorAccountOauthBindings.connectorAccountId,
-            accountIds,
-          ),
-        ),
-      )
-      .returning({
-        id: customConnectorAccountOauthBindings.connectorAccountId,
-      });
-    if (retired.length > 0) {
-      await tx
-        .update(connectors)
-        .set({
-          needsReconnect: true,
-          reconnectReason: "authorization_expired_or_revoked",
-          updatedAt: nowDate(),
-        })
-        .where(
-          inArray(
-            connectors.id,
-            retired.map((account) => {
-              return account.id;
-            }),
-          ),
-        );
-    }
-  }
-  // Zero rows means a concurrent publisher already replaced it; the caller's
-  // issuer-unique insert then yields that winner.
-  await tx
-    .delete(orgCustomConnectorDcrRegistrations)
-    .where(
-      and(
-        eq(orgCustomConnectorDcrRegistrations.id, args.registration.id),
-        eq(
-          orgCustomConnectorDcrRegistrations.customConnectorId,
-          args.customConnectorId,
-        ),
-      ),
-    );
-}
-
-const publishCustomDcrRegistration$ = command(
-  async (
-    { set },
-    args: Omit<CustomDcrStoreArgs, "db"> & {
-      readonly registration: Parameters<
-        McpAutomaticOAuthDcrStore["publish"]
-      >[0];
-      readonly expectedRegistrationId: string | null;
-    },
-    signal: AbortSignal,
-  ): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> => {
+const retireCustomDcrRegistration$ = command(
+  async ({ set }, registrationId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const candidate = await prepareCustomDcrRegistration(
-      args,
-      args.registration,
-      signal,
-    );
-    const issuerCondition = customDcrIssuerCondition(
-      args.customConnectorId,
-      args.registration.issuer,
-    );
-    const definitionCondition = and(
-      eq(orgCustomConnectors.id, args.customConnectorId),
-      eq(orgCustomConnectors.orgId, args.orgId),
-      eq(orgCustomConnectors.authMode, "automatic"),
-      eq(orgCustomConnectors.storageVersion, args.storageVersion),
-      eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
-    );
-    const published = await settle(
-      db.transaction(async (tx) => {
-        // No row locks. The definition is checked at this read; an edit that
-        // commits concurrently may leave one unused registration row behind.
-        // The issuer-unique insert and the registration FK arbitrate the rest.
-        const [definition] = await tx
-          .select({ id: orgCustomConnectors.id })
-          .from(orgCustomConnectors)
-          .where(definitionCondition)
-          .limit(1);
-        if (!definition) {
-          throw new Error(
-            "Custom connector credential contract changed during Automatic OAuth registration",
-          );
-        }
-        const [current] = await tx
-          .select()
-          .from(orgCustomConnectorDcrRegistrations)
-          .where(issuerCondition)
-          .limit(1);
-        if (current && current.id !== args.expectedRegistrationId) {
-          return {
-            ...current,
-            hasClientSecret: current.encryptedClientSecret !== null,
-          };
-        }
-        if (current) {
-          await retireExpectedCustomDcrRegistration(tx, {
-            customConnectorId: args.customConnectorId,
-            registration: current,
-          });
-        }
-        const [inserted] = await tx
-          .insert(orgCustomConnectorDcrRegistrations)
-          .values(candidate)
-          .onConflictDoNothing()
-          .returning();
-        const [winner] = inserted
-          ? [inserted]
-          : await tx
-              .select()
-              .from(orgCustomConnectorDcrRegistrations)
-              .where(issuerCondition)
-              .limit(1);
-        if (!winner) {
-          throw new Error("Failed to persist MCP OAuth dynamic registration");
-        }
-        return {
-          ...winner,
-          hasClientSecret: winner.encryptedClientSecret !== null,
-        };
-      }),
-      signal,
-    );
-    if (published.ok) {
-      return published.value;
-    }
-    if (isCustomDcrRegistrationStillLinked(published.error)) {
-      throw new McpAutomaticOAuthError(
-        { kind: "incompatible", reason: "registration-conflict" },
-        "Existing MCP OAuth registration acquired a linked account during preparation",
-      );
-    }
-    throw published.error;
+    await db.transaction(async (tx) => {
+      await retireCustomConnectorDcrRegistration(tx, registrationId);
+    });
+    signal.throwIfAborted();
   },
 );
 
-/** A binding linked to the replaced registration after it was read. */
-function isCustomDcrRegistrationStillLinked(error: unknown): boolean {
-  return (
-    isForeignKeyViolation(error) &&
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "constraint" in error.cause &&
-    error.cause.constraint ===
-      "fk_custom_connector_account_oauth_bindings_dcr_registration"
-  );
-}
+const createCustomDcrRegistration$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly customConnectorId: string;
+      readonly storageVersion: number;
+      readonly endpoint: string;
+      readonly featureContext: FeatureSwitchContext;
+      readonly registration: McpAutomaticOAuthDcrRegistrationInput;
+    },
+    signal: AbortSignal,
+  ): Promise<McpAutomaticOAuthDcrRegistration> => {
+    const db = set(writeDb$);
+    const { registration } = args;
+    const encryptedClientSecret = registration.clientSecret
+      ? await encryptStoredSecretValue(
+          registration.clientSecret,
+          args.featureContext,
+        )
+      : null;
+    signal.throwIfAborted();
+    const [definition] = await db
+      .select({ id: orgCustomConnectors.id })
+      .from(orgCustomConnectors)
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.customConnectorId),
+          eq(orgCustomConnectors.orgId, args.orgId),
+          eq(orgCustomConnectors.authMode, "automatic"),
+          eq(orgCustomConnectors.storageVersion, args.storageVersion),
+          eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!definition) {
+      throw new Error(
+        "Custom connector credential contract changed during Automatic OAuth registration",
+      );
+    }
+    const [stored] = await db
+      .insert(orgCustomConnectorDcrRegistrations)
+      .values({
+        orgId: args.orgId,
+        customConnectorId: args.customConnectorId,
+        issuer: registration.issuer,
+        clientId: registration.clientId,
+        encryptedClientSecret,
+        tokenEndpointAuthMethod: registration.tokenEndpointAuthMethod,
+        registeredScopes: [...registration.registeredScopes],
+        redirectUri: registration.redirectUri,
+        issuedAt: registration.issuedAt,
+        expiresAt: registration.expiresAt,
+      })
+      .returning();
+    signal.throwIfAborted();
+    if (!stored) {
+      throw new Error("Failed to persist MCP OAuth dynamic registration");
+    }
+    return {
+      ...stored,
+      hasClientSecret: stored.encryptedClientSecret !== null,
+    };
+  },
+);
 
 export type CustomConnectorAutomaticOAuthStateContext =
   McpAutomaticOAuthContext & {
@@ -693,15 +526,14 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
               signal,
             );
           },
-          publish: async (
-            registration,
-            expectedRegistrationId,
-            publicationSignal,
-          ) => {
+          retire: async (registrationId) => {
+            await set(retireCustomDcrRegistration$, registrationId, signal);
+          },
+          create: async (registration, createSignal) => {
             return await set(
-              publishCustomDcrRegistration$,
-              { ...args, registration, expectedRegistrationId },
-              publicationSignal,
+              createCustomDcrRegistration$,
+              { ...args, registration },
+              createSignal,
             );
           },
         },

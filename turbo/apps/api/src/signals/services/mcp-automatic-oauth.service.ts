@@ -65,28 +65,29 @@ export interface McpAutomaticOAuthDcrClientStore {
   >;
 }
 
-/** Owner adapters publish prepared registrations against their existing identity. */
+export type McpAutomaticOAuthDcrRegistrationInput = Omit<
+  McpAutomaticOAuthDcrRegistration,
+  "id" | "hasClientSecret"
+> & {
+  readonly clientSecret: string | undefined;
+};
+
+/** Owner adapters enforce registration identity and encryption. */
 export interface McpAutomaticOAuthDcrStore extends McpAutomaticOAuthDcrClientStore {
   readByIssuer(
     issuer: string,
   ): Promise<McpAutomaticOAuthDcrRegistration | null>;
   hasLinkedAccounts(registrationId: string): Promise<boolean>;
   retire(registrationId: string): Promise<void>;
-  publish(
-    registration: Omit<
-      McpAutomaticOAuthDcrRegistration,
-      "id" | "hasClientSecret"
-    > & {
-      readonly clientSecret: string | undefined;
-    },
-    expectedRegistrationId: string | null,
+  create(
+    registration: McpAutomaticOAuthDcrRegistrationInput,
     signal: AbortSignal,
   ): Promise<McpAutomaticOAuthDcrRegistration>;
 }
 
-type McpAutomaticOAuthDcrPreparationStore = Pick<
+type McpAutomaticOAuthDcrPreparationStore = Omit<
   McpAutomaticOAuthDcrStore,
-  "readByIssuer" | "hasLinkedAccounts" | "publish"
+  "readBoundClient"
 >;
 
 export type McpAutomaticOAuthBinding = {
@@ -682,18 +683,16 @@ function dcrTokenAuthMethod(args: {
   return selected;
 }
 
-async function createDcrRegistration(
+async function registerDcrClient(
   args: {
-    readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly issuer: string;
-    readonly expectedRegistrationId: string | null;
     readonly redirectUri: string;
     readonly scope: string | undefined;
     readonly metadata: AuthorizationServerMetadata;
     readonly clientMetadata: OAuthClientMetadata;
   },
   signal: AbortSignal,
-): Promise<McpAutomaticOAuthDcrRegistration> {
+): Promise<McpAutomaticOAuthDcrRegistrationInput> {
   const client = await automaticOAuthRemote(
     "dynamic client registration",
     signal,
@@ -713,20 +712,16 @@ async function createDcrRegistration(
   });
   signal.throwIfAborted();
   const times = dcrRegistrationTimes(client);
-  return await args.dcrStore.publish(
-    {
-      issuer: args.issuer,
-      clientId: client.client_id,
-      clientSecret: client.client_secret,
-      tokenEndpointAuthMethod,
-      registeredScopes: [...scopeTokens(client.scope ?? args.scope)],
-      redirectUri: args.redirectUri,
-      issuedAt: times.issuedAt,
-      expiresAt: times.expiresAt,
-    },
-    args.expectedRegistrationId,
-    signal,
-  );
+  return {
+    issuer: args.issuer,
+    clientId: client.client_id,
+    clientSecret: client.client_secret,
+    tokenEndpointAuthMethod,
+    registeredScopes: [...scopeTokens(client.scope ?? args.scope)],
+    redirectUri: args.redirectUri,
+    issuedAt: times.issuedAt,
+    expiresAt: times.expiresAt,
+  };
 }
 
 async function resolveAutomaticOAuthClient(
@@ -779,30 +774,16 @@ async function resolveAutomaticOAuthClient(
       );
     }
   }
-  // Remote registration is independent preparation. The store conditionally
-  // publishes against the observed registration and returns the actual winner.
-  const published = await createDcrRegistration(
-    {
-      ...args,
-      expectedRegistrationId: existing?.id ?? null,
-      clientMetadata: args.dcrClientMetadata,
-    },
+  // Remote registration runs outside any DB transaction. A concurrent
+  // duplicate fails on the issuer unique constraint; a retry reuses it.
+  const client = await registerDcrClient(
+    { ...args, clientMetadata: args.dcrClientMetadata },
     signal,
   );
-  if (
-    !reusableDcrRegistration({
-      registration: published,
-      redirectUri: args.redirectUri,
-      scope: args.scope,
-      metadata: args.metadata,
-    })
-  ) {
-    throw new McpAutomaticOAuthError(
-      { kind: "incompatible", reason: "registration-conflict" },
-      "Concurrent MCP OAuth registration is not compatible with the requested scopes",
-    );
+  if (existing) {
+    await args.dcrStore.retire(existing.id);
   }
-  return dcrSelection(published);
+  return dcrSelection(await args.dcrStore.create(client, signal));
 }
 
 export type McpAutomaticOAuthContext = {

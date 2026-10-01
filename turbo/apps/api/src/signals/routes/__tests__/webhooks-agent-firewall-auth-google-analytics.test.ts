@@ -2,12 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -132,13 +131,6 @@ describe("Google Analytics quiet refresh recovery", () => {
       const analytics = await setupAnalyticsFirewall();
       const siblingCode = randomUUID();
       const sibling = await analytics.connect(siblingCode, { intent: "add" });
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
       let refreshCalls = 0;
       server.use(
         http.post(GOOGLE_TOKEN_URL, async ({ request }) => {
@@ -150,10 +142,6 @@ describe("Google Analytics quiet refresh recovery", () => {
             `analytics-refresh-${analytics.code}`,
           );
           refreshCalls += 1;
-          if (!started.settled()) {
-            started.resolve(undefined);
-          }
-          await release.promise;
           return HttpResponse.json(
             {
               error: "invalid_grant",
@@ -165,24 +153,8 @@ describe("Google Analytics quiet refresh recovery", () => {
       );
       context.mocks.sentry.captureException.mockClear();
 
-      const first = analytics.request(analytics.account.id, true);
-      await started.promise;
-      const concurrent = analytics.request(analytics.account.id, true);
-      release.resolve(undefined);
-      const [firstFailure, concurrentFailure] = await Promise.all([
-        first,
-        concurrent,
-      ]);
-      // Existing request coalescing can reuse the first failure without its reason.
-      expect(concurrentFailure.status).toBe(502);
-      expect(concurrentFailure.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          connectors: ["google-analytics"],
-        },
-      });
+      const responses = [await analytics.request(analytics.account.id, true)];
       const callsBeforeRetries = refreshCalls;
-      const responses = [firstFailure];
       await analytics.connectors.setDefaultBuiltinConnectorAccount(
         analytics.actor,
         "google-analytics",

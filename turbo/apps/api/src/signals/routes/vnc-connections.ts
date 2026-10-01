@@ -15,10 +15,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import {
-  admitVncOwner$,
-  hasCurrentVncMembership,
-} from "../services/vnc-owner-lifecycle.service";
+import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import {
   createVncCredential$,
   deleteVncCredential$,
@@ -53,7 +50,7 @@ const ownerAuth = {
   accept: ["session"],
 } as const;
 
-const vncContext$ = command(async ({ get, set }, signal: AbortSignal) => {
+const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
   const featureContext = await get(
@@ -63,30 +60,11 @@ const vncContext$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  return {
-    featureContext,
-    owner: { orgId: auth.orgId, userId: auth.userId },
-  };
-});
-
-const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncContext$, signal);
-  if (
-    !context ||
-    !(await hasCurrentVncMembership(get(clerk$), context.owner, signal))
-  ) {
+  const owner = { orgId: auth.orgId, userId: auth.userId };
+  if (!(await hasCurrentVncMembership(get(clerk$), owner, signal))) {
     return null;
   }
-  return context;
-});
-
-const vncWriteAdmission$ = command(async ({ set }, signal: AbortSignal) => {
-  const context = await set(vncContext$, signal);
-  if (!context) {
-    return null;
-  }
-  const membership = await set(admitVncOwner$, context.owner, signal);
-  return membership ? { ...context, ...membership } : null;
+  return { featureContext, owner };
 });
 
 function mapFailure(result: {
@@ -118,7 +96,7 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -146,7 +124,7 @@ const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -174,7 +152,7 @@ const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -222,7 +200,7 @@ const summary$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -246,7 +224,7 @@ const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -274,7 +252,7 @@ const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const deleteConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncWriteAdmission$, signal);
+  const context = await set(vncAdmission$, signal);
   if (!context) {
     return unavailable;
   }

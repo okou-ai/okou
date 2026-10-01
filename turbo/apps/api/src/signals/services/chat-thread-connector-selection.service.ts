@@ -8,8 +8,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -25,9 +24,8 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
+import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -267,10 +265,6 @@ export async function prepareChatThreadConnectorSelections(
   }
 
   const selections = [...byTarget.values()];
-  // No account row is locked here. The selection insert's FK checks on the
-  // thread and account arbitrate a concurrent deletion: the loser of that race
-  // receives a deterministic invalid/omitted result (see
-  // selectionParentMissing), never a stale selection.
   const scope = await loadAgentConnectorScope(db, args);
   const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
   for (const selection of byTarget.values()) {
@@ -334,18 +328,6 @@ export async function prepareChatThreadConnectorSelections(
     }
     const projected = projectedById.get(selection.connectionId);
     if (!projected) {
-      if (args.missingAccountPolicy === "omit") {
-        // Deletion can commit between the ownership read and the projection.
-        // Initial thread creation omits a deleted account at either boundary;
-        // an existing but unavailable account still receives the same error.
-        const current = await loadConnectorTargetOwnerships(db, {
-          connectorIds: [selection.connectionId],
-        });
-        if (!current.has(selection.connectionId)) {
-          byTarget.delete(key);
-          continue;
-        }
-      }
       return {
         kind: "invalid",
         message: "Connector account is unavailable for thread selection",
@@ -355,107 +337,64 @@ export async function prepareChatThreadConnectorSelections(
   return { kind: "ready", selections: [...byTarget.values()] };
 }
 
-/**
- * Insert only from an existing account. The ordinary foreign-key check either
- * protects that reference until commit or rejects a concurrent parent delete;
- * selectionParentMissing maps that rejection to an unavailable-account result.
- * No empty account UPDATE is used to serialize the two requests.
- */
-function selectionWriteSql(
-  tx: Tx,
-  chatThreadId: string,
-  selection: ConnectorAccountSelection,
-  onConflict: "update" | "none",
-) {
-  const account = tx
-    .$with("selected_connector_account")
-    .as(
-      tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(eq(connectors.id, selection.connectionId)),
-    );
-  const target = targetColumns(selection.target);
-  const insert = tx
-    .with(account)
-    .insert(chatThreadConnectorSelections)
-    .select(
-      sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
-    );
-  if (onConflict === "none") {
-    return insert.returning({
-      connectorId: chatThreadConnectorSelections.connectorId,
-    });
-  }
-  return (
-    selection.target.kind === "builtin"
-      ? insert.onConflictDoUpdate({
-          target: [
-            chatThreadConnectorSelections.chatThreadId,
-            chatThreadConnectorSelections.connectorSlug,
-          ],
-          targetWhere: isNotNull(chatThreadConnectorSelections.connectorSlug),
-          set: { connectorId: selection.connectionId },
-        })
-      : insert.onConflictDoUpdate({
-          target: [
-            chatThreadConnectorSelections.chatThreadId,
-            chatThreadConnectorSelections.customConnectorId,
-          ],
-          targetWhere: isNotNull(
-            chatThreadConnectorSelections.customConnectorId,
-          ),
-          set: { connectorId: selection.connectionId },
-        })
-  ).returning({ connectorId: chatThreadConnectorSelections.connectorId });
-}
-
-/** `undefined`: the account was deleted before this selection could reference it. */
-
 async function upsertSelection(
   tx: Tx,
   chatThreadId: string,
   selection: ConnectorAccountSelection,
-): Promise<ConnectorAccountSelection | undefined> {
-  const [row] = await selectionWriteSql(tx, chatThreadId, selection, "update");
-  return row ? selection : undefined;
+): Promise<ConnectorAccountSelection> {
+  const values = {
+    chatThreadId,
+    connectorId: selection.connectionId,
+    ...targetColumns(selection.target),
+  };
+  const [row] =
+    selection.target.kind === "builtin"
+      ? await tx
+          .insert(chatThreadConnectorSelections)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              chatThreadConnectorSelections.chatThreadId,
+              chatThreadConnectorSelections.connectorSlug,
+            ],
+            targetWhere: isNotNull(chatThreadConnectorSelections.connectorSlug),
+            set: { connectorId: selection.connectionId },
+          })
+          .returning({
+            connectorId: chatThreadConnectorSelections.connectorId,
+          })
+      : await tx
+          .insert(chatThreadConnectorSelections)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              chatThreadConnectorSelections.chatThreadId,
+              chatThreadConnectorSelections.customConnectorId,
+            ],
+            targetWhere: isNotNull(
+              chatThreadConnectorSelections.customConnectorId,
+            ),
+            set: { connectorId: selection.connectionId },
+          })
+          .returning({
+            connectorId: chatThreadConnectorSelections.connectorId,
+          });
+  if (!row) {
+    throw new Error("Failed to persist chat thread connector selection");
+  }
+  return selection;
 }
 
-function foreignKeyConstraint(error: unknown): string | undefined {
-  if (
-    !isForeignKeyViolation(error) ||
-    !(error instanceof Error) ||
-    typeof error.cause !== "object" ||
-    error.cause === null ||
-    !("constraint" in error.cause) ||
-    typeof error.cause.constraint !== "string"
-  ) {
-    return undefined;
-  }
-  return error.cause.constraint;
-}
-
-/**
- * A selection insert lost a race with deletion of its parent: the thread
- * (and its Agent, which cascades to the thread) or the selected account.
- * PostgreSQL's FK check waits for the deleting transaction and then rejects
- * the insert; callers map it to a deterministic result.
- */
-function selectionParentMissing(
-  error: unknown,
-): "thread" | "account" | undefined {
-  switch (foreignKeyConstraint(error)) {
-    case "fk_chat_thread_connector_selections_thread": {
-      return "thread";
-    }
-    case "fk_chat_thread_connector_selections_connector_slug":
-    case "fk_chat_thread_connector_selections_custom_connector": {
-      return "account";
-    }
-    default: {
-      return undefined;
-    }
-  }
+function isCustomSelectionAccountMissing(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint ===
+      "fk_chat_thread_connector_selections_custom_connector"
+  );
 }
 
 export async function updateChatThreadConnectorSelection(
@@ -471,9 +410,6 @@ export async function updateChatThreadConnectorSelection(
   const result = await settle(
     db.transaction(
       async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
-        // No parent row lock: the selection upsert's FK check on the thread
-        // (or the row lock on an existing selection) makes a concurrent Agent
-        // or thread deletion wait for this commit, or reject the upsert.
         const thread = await loadOwnedChatThread(tx, args);
         if (!thread) {
           return { kind: "not_found" };
@@ -492,12 +428,6 @@ export async function updateChatThreadConnectorSelection(
           throw new Error("Expected one prepared connector selection");
         }
         const updated = await upsertSelection(tx, args.chatThreadId, selection);
-        if (!updated) {
-          return {
-            kind: "invalid",
-            message: "Connector account does not match the requested target",
-          };
-        }
         await reprojectWorkflowAutomationsForOwner(
           tx,
           { ...args, target: selection.target },
@@ -519,21 +449,17 @@ export async function updateChatThreadConnectorSelection(
     return result.value;
   }
   // Wait for the whole transaction to roll back before reporting a lost
-  // parent, including its selection change and generation invalidation.
-  switch (selectionParentMissing(result.error)) {
-    case "thread": {
-      return { kind: "not_found" };
-    }
-    case "account": {
-      return {
-        kind: "invalid",
-        message: "Connector account does not match the requested target",
-      };
-    }
-    default: {
-      throw result.error;
-    }
+  // account, including its selection change and generation invalidation.
+  if (
+    args.selection.target.kind === "custom" &&
+    isCustomSelectionAccountMissing(result.error)
+  ) {
+    return {
+      kind: "invalid",
+      message: "Connector account does not match the requested target",
+    };
   }
+  throw result.error;
 }
 
 export async function clearChatThreadConnectorSelection(
@@ -551,12 +477,7 @@ export async function clearChatThreadConnectorSelection(
     if (!thread) {
       return { kind: "not_found" };
     }
-    // Only event sources also change the owner's automation projections.
-    // A deleted row stays locked until commit, so an Agent/thread cascade
-    // waits for the generation invalidation below. Clearing an absent
-    // selection leaves the generation alone (it may belong to a deleted
-    // Agent); the reprojection still recomputes from current rows.
-    const deleted = await tx
+    await tx
       .delete(chatThreadConnectorSelections)
       .where(
         and(
@@ -571,16 +492,13 @@ export async function clearChatThreadConnectorSelection(
                 args.target.customConnectorId,
               ),
         ),
-      )
-      .returning({ connectorId: chatThreadConnectorSelections.connectorId });
+      );
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    if (deleted.length > 0) {
-      await invalidatePiStableContext(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: thread.agentId,
-      });
-    }
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: thread.agentId,
+    });
     return { kind: "cleared" };
   });
 }
@@ -592,23 +510,39 @@ export async function insertInitialChatThreadConnectorSelections(
     readonly selections: readonly PreparedChatThreadConnectorSelection[];
   },
 ): Promise<void> {
-  // Stable insertion order for the finite prepared selection set.
-  const ordered = [...args.selections].sort((a, b) => {
-    return a.connectionId < b.connectionId
-      ? -1
-      : a.connectionId > b.connectionId
-        ? 1
-        : 0;
+  if (args.selections.length === 0) {
+    return;
+  }
+  const builtinSelections = args.selections.filter((selection) => {
+    return selection.target.kind === "builtin";
   });
-  for (const selection of ordered) {
-    // Losing an account between the source SELECT and FK check omits only
-    // this selection, not the thread or its other still-valid accounts.
-    const inserted = await settle(
-      tx.transaction(async (sp) => {
-        await selectionWriteSql(sp, args.chatThreadId, selection, "none");
+  if (builtinSelections.length > 0) {
+    await tx.insert(chatThreadConnectorSelections).values(
+      builtinSelections.map((selection) => {
+        return {
+          chatThreadId: args.chatThreadId,
+          connectorId: selection.connectionId,
+          ...targetColumns(selection.target),
+        };
       }),
     );
-    if (!inserted.ok && selectionParentMissing(inserted.error) !== "account") {
+  }
+  for (const selection of args.selections) {
+    if (selection.target.kind !== "custom") {
+      continue;
+    }
+    // Initial thread creation omits vanished accounts. A savepoint contains
+    // only this child insert, preserving the thread and its other selections.
+    const inserted = await settle(
+      tx.transaction(async (selectionTx) => {
+        await selectionTx.insert(chatThreadConnectorSelections).values({
+          chatThreadId: args.chatThreadId,
+          connectorId: selection.connectionId,
+          ...targetColumns(selection.target),
+        });
+      }),
+    );
+    if (!inserted.ok && !isCustomSelectionAccountMissing(inserted.error)) {
       throw inserted.error;
     }
   }

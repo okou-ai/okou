@@ -13,10 +13,10 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { command } from "ccstate";
-import { and, asc, eq, lt, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
@@ -273,20 +273,6 @@ function ownerHostsUsingCredential(owner: Owner, credentialId: string) {
     eq(sshConnections.userId, owner.userId),
   );
 }
-async function lostCredentialDeletionFailure(
-  db: Pick<ReadonlyDb, "select">,
-  owner: Owner,
-  credentialId: string,
-) {
-  const [current] = await db
-    .select({ revision: sshCredentials.revision })
-    .from(sshCredentials)
-    .where(ownedSshCredential(owner, credentialId));
-  if (!current) {
-    return sshCredentialFailure("notFound");
-  }
-  return sshCredentialFailure("inUse");
-}
 
 export const updateSshCredential$ = command(
   async (
@@ -307,6 +293,27 @@ export const updateSshCredential$ = command(
     if (initial.revision === MAX_SSH_REVISION) {
       return sshCredentialFailure("exhausted");
     }
+    const hosts = await db
+      .select({
+        id: sshConnections.id,
+        displayName: sshConnections.displayName,
+        generation: sshConnections.generation,
+      })
+      .from(sshConnections)
+      .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+      .orderBy(asc(sshConnections.id));
+    const effectiveChange =
+      args.body.authentication !== undefined ||
+      (args.body.username !== undefined &&
+        args.body.username !== initial.username);
+    if (
+      effectiveChange &&
+      hosts.some((host) => {
+        return host.generation === MAX_SSH_REVISION;
+      })
+    ) {
+      return sshCredentialFailure("exhausted");
+    }
     const encrypted =
       args.body.authentication === undefined
         ? undefined
@@ -314,89 +321,50 @@ export const updateSshCredential$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    // Low-frequency edits are ordinary writes; a late edit may win. Runtime
-    // invalidation resolves the current credential on the next connection.
-    const effectiveChange =
-      encrypted !== undefined ||
-      (args.body.username !== undefined &&
-        args.body.username !== initial.username);
-    const transaction = await settle(
-      db.transaction(async (tx) => {
-        const hosts = await tx
-          .select({
-            id: sshConnections.id,
-            displayName: sshConnections.displayName,
-            generation: sshConnections.generation,
-          })
-          .from(sshConnections)
-          .where(ownerHostsUsingCredential(args.owner, args.credentialId))
-          .orderBy(asc(sshConnections.id));
-        if (
-          effectiveChange &&
-          hosts.some((host) => {
-            return host.generation === MAX_SSH_REVISION;
-          })
-        ) {
-          return sshCredentialFailure("exhausted");
-        }
-        const invalidate = effectiveChange && hosts.length > 0;
-        // Write hosts before their credential: runner pinning reads a host
-        // and then its credential, so this order cannot deadlock with it.
-        if (invalidate) {
-          await tx
-            .update(sshConnections)
-            .set({
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                ownerHostsUsingCredential(args.owner, args.credentialId),
-                lt(sshConnections.generation, MAX_SSH_REVISION),
-              ),
-            );
-        }
-        const [updated] = await tx
-          .update(sshCredentials)
+    const invalidate = effectiveChange && hosts.length > 0;
+    const updated = await db.transaction(async (tx) => {
+      if (invalidate) {
+        await tx
+          .update(sshConnections)
           .set({
-            name: args.body.name,
-            username: args.body.username,
-            ...encrypted,
-            revision: sql`${sshCredentials.revision} + 1`,
+            generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })
-          .where(ownedSshCredential(args.owner, args.credentialId))
-          .returning(sshCredentialMetadata);
-        if (!updated) {
-          return sshCredentialFailure("notFound");
-        }
-        return {
-          ok: true as const,
-          value: response(
-            updated,
-            hosts.map(({ id, displayName }) => {
-              return { id, displayName };
-            }),
-          ),
-          invalidate,
-        };
-      }),
-    );
-    if (!transaction.ok) {
-      throw transaction.error;
-    }
-    const result = transaction.value;
-    if (result.ok) {
-      if (result.invalidate) {
-        await set(publishSshRuntimeInvalidation$, {
-          ...args.owner,
-          connectionId: null,
-        });
-      } else {
-        await publishSshClientInvalidation(args.owner);
+          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
       }
+      const [row] = await tx
+        .update(sshCredentials)
+        .set({
+          name: args.body.name,
+          username: args.body.username,
+          ...encrypted,
+          revision: sql`${sshCredentials.revision} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .returning(sshCredentialMetadata);
+      return row;
+    });
+    if (!updated) {
+      return sshCredentialFailure("notFound");
     }
-    return result;
+    if (invalidate) {
+      await set(publishSshRuntimeInvalidation$, {
+        ...args.owner,
+        connectionId: null,
+      });
+    } else {
+      await publishSshClientInvalidation(args.owner);
+    }
+    return {
+      ok: true,
+      value: response(
+        updated,
+        hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      ),
+    };
   },
 );
 export const deleteSshCredential$ = command(
@@ -409,36 +377,27 @@ export const deleteSshCredential$ = command(
     },
   ): Promise<SshResult<undefined>> => {
     const db = set(writeDb$);
-    // NOT EXISTS returns inUse for committed hosts; the RESTRICT FK reports a host
-    // attached by a transaction that committed while this DELETE waited.
+    const [current] = await db
+      .select({ revision: sshCredentials.revision })
+      .from(sshCredentials)
+      .where(ownedSshCredential(args.owner, args.credentialId));
+    if (!current) {
+      return sshCredentialFailure("notFound");
+    }
+    if (current.revision !== args.expectedRevision) {
+      return sshCredentialFailure("conflict");
+    }
+    // The RESTRICT credential FK rejects deleting a credential used by a host.
     const deletion = await settle(
       db
         .delete(sshCredentials)
-        .where(
-          and(
-            ownedSshCredential(args.owner, args.credentialId),
-            notExists(
-              db
-                .select({ id: sshConnections.id })
-                .from(sshConnections)
-                .where(eq(sshConnections.credentialId, sshCredentials.id)),
-            ),
-          ),
-        )
-        .returning({ id: sshCredentials.id }),
+        .where(ownedSshCredential(args.owner, args.credentialId)),
     );
     if (!deletion.ok) {
       if (isSshCredentialReferenceViolation(deletion.error)) {
         return sshCredentialFailure("inUse");
       }
       throw deletion.error;
-    }
-    if (deletion.value.length === 0) {
-      return await lostCredentialDeletionFailure(
-        db,
-        args.owner,
-        args.credentialId,
-      );
     }
     await publishSshClientInvalidation(args.owner);
     return { ok: true, value: undefined };

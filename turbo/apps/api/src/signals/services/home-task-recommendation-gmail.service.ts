@@ -166,10 +166,7 @@ const gmailAccessToken$ = command(
     scope: HomeTaskGmailScope,
     connectorId: string,
     signal: AbortSignal,
-  ): Promise<{
-    readonly accessToken: string;
-    readonly stateRevision: string;
-  } | null> => {
+  ): Promise<string | null> => {
     const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
@@ -204,10 +201,7 @@ const gmailAccessToken$ = command(
       return null;
     }
     if (!tokenNeedsRefresh(connection.tokenExpiresAt)) {
-      return {
-        accessToken: storedToken,
-        stateRevision: connection.stateRevision,
-      };
+      return storedToken;
     }
     const refreshed = await set(
       refreshBuiltinConnectorCredentialAccess$,
@@ -221,12 +215,7 @@ const gmailAccessToken$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return refreshed.kind === "ok"
-      ? {
-          accessToken: refreshed.accessToken,
-          stateRevision: refreshed.stateRevision,
-        }
-      : null;
+    return refreshed.kind === "ok" ? refreshed.accessToken : null;
   },
 );
 
@@ -285,10 +274,7 @@ const gmailConnectionIsUsable$ = command(
   async (
     { set },
     scope: HomeTaskGmailScope,
-    observation: {
-      readonly connectorId: string;
-      readonly stateRevision?: string;
-    },
+    connectorId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
@@ -297,14 +283,12 @@ const gmailConnectionIsUsable$ = command(
       snapshot,
       ...scope,
       connectorSlug: "gmail",
-      connectorId: observation.connectorId,
+      connectorId,
     });
     signal.throwIfAborted();
     return (
       loaded.kind === "ok" &&
       !loaded.connection.needsReconnect &&
-      (observation.stateRevision === undefined ||
-        loaded.connection.stateRevision === observation.stateRevision) &&
       builtinConnectorCredentialRuntimeValueRef(
         loaded.connection,
         GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
@@ -318,10 +302,7 @@ const gmailAuthorityIsCurrent$ = command(
   async (
     { set },
     scope: HomeTaskGmailScope,
-    observation: {
-      readonly connectorId: string;
-      readonly stateRevision?: string;
-    },
+    connectorId: string,
     urls: readonly string[],
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -333,8 +314,8 @@ const gmailAuthorityIsCurrent$ = command(
     const currentConnectorId = await set(defaultGmailConnectorId$, scope);
     signal.throwIfAborted();
     return (
-      currentConnectorId === observation.connectorId &&
-      (await set(gmailConnectionIsUsable$, scope, observation, signal))
+      currentConnectorId === connectorId &&
+      (await set(gmailConnectionIsUsable$, scope, connectorId, signal))
     );
   },
 );
@@ -364,7 +345,7 @@ export const homeTaskGmailCacheAuthorized$ = command(
           : await set(
               gmailAuthorityIsCurrent$,
               scope,
-              { connectorId },
+              connectorId,
               [gmailListUrl(), gmailMessageUrl("permission-probe")],
               signal,
             );
@@ -402,19 +383,22 @@ const collectAuthorizedGmailEvidence$ = command(
     if (connectorId === null) {
       return [];
     }
-    const credential = await set(gmailAccessToken$, scope, connectorId, signal);
-    if (credential === null) {
+    const accessToken = await set(
+      gmailAccessToken$,
+      scope,
+      connectorId,
+      signal,
+    );
+    if (accessToken === null) {
       return [];
     }
-    const { accessToken, stateRevision } = credential;
-    const observation = { connectorId, stateRevision };
     // Credential preparation may refresh remotely. Recheck the account and
     // endpoint immediately before using the resulting token.
     if (
       !(await set(
         gmailAuthorityIsCurrent$,
         scope,
-        observation,
+        connectorId,
         [listUrl],
         signal,
       ))
@@ -440,7 +424,7 @@ const collectAuthorizedGmailEvidence$ = command(
       !(await set(
         gmailAuthorityIsCurrent$,
         scope,
-        observation,
+        connectorId,
         [listUrl, firstDetailUrl],
         signal,
       ))
@@ -467,7 +451,7 @@ const collectAuthorizedGmailEvidence$ = command(
       !(await set(
         gmailAuthorityIsCurrent$,
         scope,
-        observation,
+        connectorId,
         [listUrl, firstDetailUrl],
         signal,
       ))

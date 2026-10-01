@@ -33,7 +33,6 @@ import {
   lt,
   lte,
   ne,
-  notExists,
   or,
   sql,
   type SQL,
@@ -962,18 +961,8 @@ function connectorAccountOwnerCondition(args: {
   ) as SQL;
 }
 
-/** Rolls back a default change whose target was deleted concurrently. */
+/** Rolls back a default change whose target no longer exists. */
 class DefaultConnectorAccountMissing extends Error {}
-
-/**
- * Default change without row locks: clear the other default, then set the
- * target only while no other default is committed. Both are ordinary UPDATEs;
- * their implicit row locks and the partial default unique index order
- * concurrent default writers. Zero rows on the second statement means either
- * the target was deleted (rolled back as not found) or a concurrent default
- * change committed after the first statement's snapshot; the latter is
- * reported as applied and then superseded, leaving that change in place.
- */
 
 function clearOtherDefaultsSql(
   owner: ReturnType<typeof connectorAccountOwnerCondition>,
@@ -987,9 +976,8 @@ function clearOtherDefaultsSql(
 }
 
 /**
- * Move the default once with ordinary writes. A natural partial-unique-index
- * conflict rolls back this transaction and asks the user to save again; no
- * savepoint or second attempt coordinates concurrent settings.
+ * Move the default with ordinary writes. A concurrent default change that
+ * trips the partial unique index rolls back and is reported as a conflict.
  */
 async function changeDefaultConnectorAccount(
   tx: Tx,
@@ -1001,23 +989,19 @@ async function changeDefaultConnectorAccount(
   },
 ): Promise<Date> {
   const owner = connectorAccountOwnerCondition(args);
-  const moveDefault = async (): Promise<Date | null> => {
-    await tx
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(clearOtherDefaultsSql(owner, args.connectionId));
-    const [updated] = await tx
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(and(owner, eq(connectors.id, args.connectionId)))
-      .returning({ updatedAt: connectors.updatedAt });
-    return updated?.updatedAt ?? null;
-  };
-  const updatedAt = await moveDefault();
-  if (updatedAt === null) {
+  await tx
+    .update(connectors)
+    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+    .where(clearOtherDefaultsSql(owner, args.connectionId));
+  const [updated] = await tx
+    .update(connectors)
+    .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+    .where(and(owner, eq(connectors.id, args.connectionId)))
+    .returning({ updatedAt: connectors.updatedAt });
+  if (!updated) {
     throw new DefaultConnectorAccountMissing();
   }
-  return updatedAt;
+  return updated.updatedAt;
 }
 
 function isDefaultIndexViolation(error: unknown): boolean {
@@ -1041,8 +1025,6 @@ async function settleDefaultChange(
     isDefaultIndexViolation(settled.error) ||
     safeSqlStateCode(settled.error) === "40P01"
   ) {
-    // This nonfinancial operation failed and rolled back. Ask for another
-    // save; do not retry, acquire a lock or serialize the competing settings.
     return "conflict";
   }
   throw settled.error;
@@ -1160,14 +1142,7 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-/**
- * Claims the account with an exact-identity UPDATE (its implicit row lock is
- * held until commit; zero rows = deleted concurrently) and clears its default
- * flag, then promotes the oldest remaining sibling only while no other
- * default exists. The caller deletes the claimed row in the same transaction.
- * Custom deletion additionally holds its definition's credential-contract row
- * in a READ COMMITTED transaction.
- */
+/** Plain reads and writes; a concurrent change resolves as last writer wins. */
 export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
   args: {
@@ -1179,62 +1154,35 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
   const owner = connectorAccountOwnerCondition(args);
-  const [claimed] = await db
-    .update(connectors)
-    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+  const [account] = await db
+    .select({ isDefault: connectors.isDefault })
+    .from(connectors)
     .where(and(owner, eq(connectors.id, args.connectionId)))
-    .returning({ id: connectors.id });
-  if (!claimed) {
+    .limit(1);
+  if (!account) {
     return { kind: "missing" };
   }
-  // A fresh statement sees any default committed after the claim. A default
-  // still in flight wins through the partial unique index: the savepoint
-  // turns that conflict into "not promoted" instead of an error.
-  const promotion = await settle(
-    db.transaction(async (savepoint) => {
-      return await savepoint
+  let promotedDefaultConnectionId: string | null = null;
+  if (account.isDefault) {
+    const [sibling] = await db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(and(owner, ne(connectors.id, args.connectionId)))
+      .orderBy(asc(connectors.createdAt), asc(connectors.id))
+      .limit(1);
+    if (sibling) {
+      await db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(eq(connectors.id, args.connectionId));
+      await db
         .update(connectors)
         .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-        .where(
-          and(
-            owner,
-            eq(
-              connectors.id,
-              db
-                .select({ id: connectors.id })
-                .from(connectors)
-                .where(and(owner, ne(connectors.id, args.connectionId)))
-                .orderBy(asc(connectors.createdAt), asc(connectors.id))
-                .limit(1),
-            ),
-            notExists(
-              db
-                .select({ id: connectors.id })
-                .from(connectors)
-                .where(
-                  and(
-                    owner,
-                    eq(connectors.isDefault, true),
-                    ne(connectors.id, args.connectionId),
-                  ),
-                ),
-            ),
-          ),
-        )
-        .returning({ id: connectors.id });
-    }),
-  );
-  if (!promotion.ok && !isDefaultIndexViolation(promotion.error)) {
-    throw promotion.error;
+        .where(eq(connectors.id, sibling.id));
+      promotedDefaultConnectionId = sibling.id;
+    }
   }
-  const promotedDefaultConnectionId = promotion.ok
-    ? (promotion.value[0]?.id ?? null)
-    : null;
 
-  // Selections are resolved after every account-row write (claim, then
-  // promotion). Selection writers write their account row before the selection
-  // row (chat-thread-connector-selection.service), so both sides take account
-  // rows before selection rows and cannot wait on each other in a cycle.
   const resolvedSelectionCount =
     (
       await db

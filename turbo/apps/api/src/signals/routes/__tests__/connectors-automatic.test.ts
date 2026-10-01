@@ -316,35 +316,6 @@ describe("builtin MCP automatic authentication", () => {
     });
   });
 
-  it("uses one published DCR client for concurrent authorization requests", async () => {
-    const f = await fixture();
-    const provider = mockAutomaticMcpOAuthProvider(context, {
-      registration: "dcr",
-      uniqueDcrClients: true,
-    });
-    const [first, second] = await Promise.all([beginOAuth(f), beginOAuth(f)]);
-    const clientId = first.url.searchParams.get("client_id");
-    expect(clientId).toMatch(/^automatic-dcr-client-\d+$/u);
-    expect(second.url.searchParams.get("client_id")).toBe(clientId);
-    for (const started of [first, second]) {
-      expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "success",
-      );
-      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
-      const account = await accept(
-        accounts().connection({
-          headers,
-          params: { connectionId: completed.body.connectionId },
-          query: f.target,
-        }),
-        [200],
-      );
-      expect(account.body.connectionStatus).toBe("connected");
-    }
-    const reused = await beginOAuth(f);
-    expect(reused.url.searchParams.get("client_id")).toBe(clientId);
-  });
-
   it("keeps DCR clients bound and rejects an OAuth issuer mismatch", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {

@@ -73,17 +73,7 @@ import {
   type WorkflowScheduleType,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  gt,
-  isNotNull,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -115,7 +105,6 @@ import {
 import {
   resolveGoogleCalendarAutomationConnectorId,
   readGoogleCalendarAutomationConnectorId$,
-  googleCalendarSelectedAccountCondition,
 } from "./google-calendar-automation-account.service";
 import {
   ensureGoogleCalendarWatchForUser$,
@@ -198,12 +187,6 @@ import {
   mintWorkflowWebhookToken,
   revealWorkflowWebhookSecretFields,
 } from "./workflow-webhook-automation.service";
-
-import {
-  workflowAutomationSnapshot,
-  workflowAutomationSnapshotCondition,
-  type WorkflowAutomationSnapshot,
-} from "./workflow-automation-snapshot";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 type WorkflowRow = typeof workflows.$inferSelect;
@@ -1828,11 +1811,10 @@ function workflowThreadCreatedEventValues(
 
 interface CreatedEventAutomation {
   readonly summary: WorkflowAutomationSummary;
-  readonly snapshot: WorkflowAutomationSnapshot;
 }
 
 function createdEventAutomationReceipt(
-  row: AutomationRow & WorkflowAutomationSnapshot,
+  row: AutomationRow,
   chatThreadId: string,
   warning: GoogleCalendarWatchActionRequiredReason | undefined,
 ): CreatedEventAutomation {
@@ -1842,13 +1824,7 @@ function createdEventAutomationReceipt(
   if (!summary) {
     throw new Error("Unsupported created workflow automation event");
   }
-  return {
-    summary,
-    snapshot: {
-      observedUpdatedAt: row.observedUpdatedAt,
-      observedXmin: row.observedXmin,
-    },
-  };
+  return { summary };
 }
 
 function requireCreatedEventAutomation(
@@ -1873,23 +1849,6 @@ function eventAutomationThreadOwner(args: InsertEventAutomationArgs) {
   };
 }
 
-/**
- * The automation's account projection still equals `connectorId` in the
- * statement's snapshot: the workflow thread's selection, else the member's
- * default account. Publishing statements use it as their expected state.
- */
-function automationAccountSelectedCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowId: string;
-  readonly connectorSlug: string;
-  readonly connectorId: string | null;
-}) {
-  return sql`${args.connectorId}::uuid IS NOT DISTINCT FROM (${workflowAutomationConnectorSelectionSql(
-    args,
-  )})`;
-}
-
 /** An account write lost the race with deletion of the referenced account. */
 function isAutomationEventConnectorMissing(error: unknown): boolean {
   return (
@@ -1903,12 +1862,6 @@ function isAutomationEventConnectorMissing(error: unknown): boolean {
   );
 }
 
-/**
- * No account row lock: the automation is published with the account current
- * at this read. A selection/default change committing concurrently converges
- * through its own reprojection or the projection repair paths; a concurrently
- * deleted account rejects the insert's FK check (a changed account).
- */
 async function readEventAutomationAccount(
   tx: Db,
   owner: ReturnType<typeof eventAutomationThreadOwner>,
@@ -1947,11 +1900,6 @@ const insertEventAutomation$ = command(
         ) {
           return null;
         }
-        // No explicit row locks. The unique owner key arbitrates the first
-        // binding, and this ordinary upsert write records the join; its
-        // implicit row lock orders destination creation and thread deletion
-        // until the automation INSERT commits. Parent existence is enforced by
-        // the binding, thread and automation FK checks.
         const [binding] = await tx
           .insert(workflowUserAutomationThreads)
           .values({
@@ -2874,22 +2822,11 @@ function googleFormsSummaryWithWarning(
   return warning === undefined ? summary : { ...summary, warning };
 }
 const deleteUnpublishedGoogleFormsAutomation$ = command(
-  async (
-    { set },
-    args: {
-      readonly automationId: string;
-      readonly snapshot: WorkflowAutomationSnapshot;
-    },
-  ): Promise<void> => {
+  async ({ set }, args: { readonly automationId: string }): Promise<void> => {
     const db = set(writeDb$);
     await db
       .delete(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.id, args.automationId),
-          workflowAutomationSnapshotCondition(args.snapshot),
-        ),
-      );
+      .where(eq(workflowAutomations.id, args.automationId));
   },
 );
 const cleanFailedGoogleFormsAutomation$ = command(
@@ -2897,7 +2834,6 @@ const cleanFailedGoogleFormsAutomation$ = command(
     { set },
     args: {
       readonly automationId: string;
-      readonly snapshot: WorkflowAutomationSnapshot;
       readonly hadConsumer: boolean;
       readonly orgId: string;
       readonly userId: string;
@@ -3007,7 +2943,7 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       }
       throw inserted.error;
     }
-    const { summary, snapshot } = requireCreatedEventAutomation(inserted.value);
+    const { summary } = requireCreatedEventAutomation(inserted.value);
     const resultSummary = googleFormsSummaryWithWarning(
       summary,
       prepared.warning,
@@ -3024,7 +2960,6 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
           formId: prepared.eventConfig.form.id,
           connectorId: prepared.eventConfig.connectorId,
           resetAutomationId: summary.id,
-          automationSnapshot: snapshot,
           seedCursor: prepared.seedCursor,
         },
         signal,
@@ -3032,7 +2967,6 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       async () => {
         await set(deleteUnpublishedGoogleFormsAutomation$, {
           automationId: summary.id,
-          snapshot,
         });
       },
     );
@@ -3047,7 +2981,6 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       cleanFailedGoogleFormsAutomation$,
       {
         automationId: summary.id,
-        snapshot,
         hadConsumer,
         orgId: args.input.orgId,
         userId: args.input.member.userId,
@@ -3365,9 +3298,6 @@ const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
     const currentTime = nowDate();
     const settled = await settle(
       db.transaction(async (tx) => {
-        // No account row lock: the binding read below is published as-is; a
-        // concurrent account change converges through its own reprojection or
-        // Stripe projection repair, and a deleted account rejects the insert.
         const chatThreadId = await ensureWorkflowUserAutomationThread(tx, {
           orgId: args.input.orgId,
           userId: args.input.member.userId,
@@ -4965,9 +4895,6 @@ type GoogleCalendarReconfigurationPersistenceResult =
       readonly kind: "account-changed";
     }
   | {
-      readonly kind: "watch-changed";
-    }
-  | {
       readonly kind: "automation-changed";
     };
 
@@ -4989,7 +4916,6 @@ type GoogleCalendarReconfigurationPreparationResult =
       readonly kind: "ok";
       readonly eventConnectorId: string;
       readonly eventConfig: GoogleCalendarAutomationEventConfig;
-      readonly requestedCalendarId: string;
       readonly previousTarget: StagedGoogleCalendarWatchTarget | null;
       readonly targetChanged: boolean;
     }
@@ -4998,44 +4924,6 @@ type GoogleCalendarReconfigurationPreparationResult =
       readonly message: string;
     };
 
-function googleCalendarAutomationMatchesReconfigurationSource(
-  current: AutomationRow,
-  source: AutomationRow & {
-    readonly eventType: GoogleCalendarAutomationEventType;
-  },
-): boolean {
-  return (
-    current.orgId === source.orgId &&
-    current.workflowId === source.workflowId &&
-    current.ownerUserId === source.ownerUserId &&
-    current.kind === "event" &&
-    current.eventType === source.eventType &&
-    current.enabled === source.enabled &&
-    current.eventConnectorId === source.eventConnectorId &&
-    current.officialBlueprintKey === null &&
-    isDeepStrictEqual(current.eventConfig, source.eventConfig)
-  );
-}
-/** SQL form of googleCalendarAutomationMatchesReconfigurationSource. */
-function googleCalendarReconfigurationSourceCondition(
-  source: AutomationRow & {
-    readonly eventType: GoogleCalendarAutomationEventType;
-  },
-) {
-  return and(
-    eq(workflowAutomations.orgId, source.orgId),
-    eq(workflowAutomations.workflowId, source.workflowId),
-    eq(workflowAutomations.ownerUserId, source.ownerUserId),
-    eq(workflowAutomations.kind, "event"),
-    eq(workflowAutomations.eventType, source.eventType),
-    eq(workflowAutomations.enabled, source.enabled),
-    source.eventConnectorId === null
-      ? isNull(workflowAutomations.eventConnectorId)
-      : eq(workflowAutomations.eventConnectorId, source.eventConnectorId),
-    isNull(workflowAutomations.officialBlueprintKey),
-    sql`${workflowAutomations.eventConfig} = ${JSON.stringify(source.eventConfig)}::jsonb`,
-  );
-}
 const readCommittedGoogleCalendarSummary$ = command(
   async (
     { set },
@@ -5084,89 +4972,10 @@ const readCommittedGoogleCalendarSummary$ = command(
 
 type GoogleCalendarReconfigurationPersistenceArgs = {
   readonly orgId: string;
-  readonly member: WorkflowMember;
-  readonly source: AutomationRow & {
-    readonly eventType: GoogleCalendarAutomationEventType;
-  };
+  readonly source: AutomationRow;
   readonly eventConnectorId: string;
   readonly eventConfig: GoogleCalendarAutomationEventConfig;
-  readonly requestedCalendarId: string;
-  readonly requireReadyWatch: boolean;
 };
-
-function googleCalendarReconfigurationAccountCondition(
-  args: GoogleCalendarReconfigurationPersistenceArgs,
-) {
-  return and(
-    eq(connectors.id, args.eventConnectorId),
-    eq(connectors.orgId, args.orgId),
-    eq(connectors.userId, args.member.userId),
-    eq(connectors.connectorSlug, "google-calendar"),
-    eq(connectors.needsReconnect, false),
-    googleCalendarSelectedAccountCondition({
-      orgId: args.orgId,
-      userId: args.member.userId,
-      workflowId: args.source.workflowId,
-      connectorId: args.eventConnectorId,
-    }),
-  );
-}
-
-function googleCalendarReconfigurationWatchCondition(
-  args: GoogleCalendarReconfigurationPersistenceArgs,
-) {
-  return and(
-    eq(googleCalendarWatchStates.orgId, args.orgId),
-    eq(googleCalendarWatchStates.userId, args.member.userId),
-    eq(googleCalendarWatchStates.connectorId, args.eventConnectorId),
-    eq(googleCalendarWatchStates.calendarId, args.eventConfig.calendarId),
-    eq(googleCalendarWatchStates.needsRewatch, false),
-    isNotNull(googleCalendarWatchStates.syncToken),
-    isNull(googleCalendarWatchStates.actionRequiredReason),
-    gt(googleCalendarWatchStates.watchExpirationAt, nowDate()),
-  );
-}
-
-/** Classify a lost conditional publication with plain reads, in check order. */
-async function classifyGoogleCalendarReconfigurationMiss(
-  db: ReadonlyDb,
-  args: GoogleCalendarReconfigurationPersistenceArgs,
-  signal: AbortSignal,
-): Promise<GoogleCalendarReconfigurationPersistenceResult> {
-  const [account] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(googleCalendarReconfigurationAccountCondition(args))
-    .limit(1);
-  if (!account) {
-    return { kind: "account-changed" };
-  }
-  if (args.requireReadyWatch) {
-    const [watch] = await db
-      .select({ id: googleCalendarWatchStates.id })
-      .from(googleCalendarWatchStates)
-      .where(googleCalendarReconfigurationWatchCondition(args))
-      .limit(1);
-    if (!watch) {
-      return { kind: "watch-changed" };
-    }
-  }
-  const [current] = await db
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.id, args.source.id),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return current &&
-    googleCalendarAutomationMatchesReconfigurationSource(current, args.source)
-    ? { kind: "account-changed" }
-    : { kind: "automation-changed" };
-}
 
 const persistGoogleCalendarAutomationReconfiguration$ = command(
   async (
@@ -5175,76 +4984,36 @@ const persistGoogleCalendarAutomationReconfiguration$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarReconfigurationPersistenceResult> => {
     const db = set(writeDb$);
-    const selectedAccount = googleCalendarReconfigurationAccountCondition(args);
-    const readyWatch = googleCalendarReconfigurationWatchCondition(args);
-    const [account] = await db
-      .select({ email: connectors.externalEmail })
-      .from(connectors)
-      .where(selectedAccount)
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      !account ||
-      normalizeGoogleCalendarId(args.requestedCalendarId, account.email) !==
-        args.eventConfig.calendarId
-    ) {
-      return { kind: "account-changed" };
-    }
-    // One conditional statement publishes the target only while the source
-    // automation, the selected account (and the email used to normalize the
-    // calendar) and, when required, the ready watch are all still current.
-    // No row is locked; a change committing afterward converges through its
-    // own reprojection or watch repair.
     const settled = await settle(
-      db.transaction(async (tx) => {
-        const [row] = await tx
-          .update(workflowAutomations)
-          .set({
-            eventConfig: args.eventConfig,
-            eventConnectorId: args.eventConnectorId,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(workflowAutomations.orgId, args.orgId),
-              eq(workflowAutomations.id, args.source.id),
-              googleCalendarReconfigurationSourceCondition(args.source),
-              exists(
-                tx
-                  .select({ id: connectors.id })
-                  .from(connectors)
-                  .where(
-                    and(
-                      selectedAccount,
-                      sql`${connectors.externalEmail} IS NOT DISTINCT FROM ${account.email}`,
-                    ),
-                  ),
-              ),
-              args.requireReadyWatch
-                ? exists(
-                    tx
-                      .select({ id: googleCalendarWatchStates.id })
-                      .from(googleCalendarWatchStates)
-                      .where(readyWatch),
-                  )
-                : undefined,
-            ),
-          )
-          .returning(workflowAutomationColumns());
-        return row ?? null;
-      }),
+      db
+        .update(workflowAutomations)
+        .set({
+          eventConfig: args.eventConfig,
+          eventConnectorId: args.eventConnectorId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.id, args.source.id),
+          ),
+        )
+        .returning(workflowAutomationColumns()),
     );
     signal.throwIfAborted();
-    if (!settled.ok && !isAutomationEventConnectorMissing(settled.error)) {
+    if (!settled.ok) {
+      if (isAutomationEventConnectorMissing(settled.error)) {
+        return { kind: "account-changed" };
+      }
       throw settled.error;
     }
-    const committedRow = settled.ok ? settled.value : null;
-    if (!committedRow) {
-      return await classifyGoogleCalendarReconfigurationMiss(db, args, signal);
+    const [row] = settled.value;
+    if (!row) {
+      return { kind: "automation-changed" };
     }
     const summary = await set(
       readCommittedGoogleCalendarSummary$,
-      { row: committedRow },
+      { row },
       signal,
     );
     return { kind: "ok", summary };
@@ -5310,7 +5079,6 @@ const prepareGoogleCalendarAutomationReconfiguration$ = command(
       kind: "ok",
       eventConnectorId,
       eventConfig,
-      requestedCalendarId: parsedConfig.calendarId,
       previousTarget,
       targetChanged:
         previousTarget === null ||
@@ -5379,12 +5147,9 @@ const updateGoogleCalendarEventAutomationForWorkflow$ = command(
       persistGoogleCalendarAutomationReconfiguration$,
       {
         orgId: args.orgId,
-        member: args.member,
         source: args.automation,
         eventConnectorId: prepared.eventConnectorId,
         eventConfig: prepared.eventConfig,
-        requestedCalendarId: prepared.requestedCalendarId,
-        requireReadyWatch: args.automation.enabled && prepared.targetChanged,
       },
       signal,
     );
@@ -5400,9 +5165,7 @@ const updateGoogleCalendarEventAutomationForWorkflow$ = command(
         message:
           persisted.kind === "account-changed"
             ? "Google Calendar account selection changed; retry the update"
-            : persisted.kind === "watch-changed"
-              ? "Google Calendar watch target changed; retry the update"
-              : "Google Calendar automation changed; retry the update",
+            : "Google Calendar automation changed; retry the update",
       };
     }
     if (prepared.targetChanged && prepared.previousTarget !== null) {
@@ -5946,7 +5709,6 @@ const ensureEnabledAutomationEventWatch$ = command(
           formId: config.form.id,
           connectorId: config.connectorId,
           resetAutomationId: args.automation.id,
-          automationSnapshot: workflowAutomationSnapshot(args.automation),
         },
         signal,
       );
@@ -5988,54 +5750,14 @@ const ensureEnabledAutomationEventWatch$ = command(
   },
 );
 
-function orphanedEnableCompensationCondition(
-  previous: AutomationRow,
-  enabled: AutomationRow,
-) {
-  const observation = workflowAutomationSnapshot(enabled);
-  if (
-    previous.enabled ||
-    previous.officialBlueprintKey !== null ||
-    enabled.eventConnectorId === null ||
-    enabled.eventType === null ||
-    observation === undefined
-  ) {
-    return sql`false`;
-  }
-  // Connector deletion changes xmin through FK SET NULL, without publishing a
-  // new automation intent. A failed first enable must still return this exact
-  // orphaned source to disabled. A rebound account or changed source is excluded.
-  return and(
-    eq(workflowAutomations.id, enabled.id),
-    eq(workflowAutomations.orgId, enabled.orgId),
-    eq(workflowAutomations.ownerUserId, enabled.ownerUserId),
-    eq(workflowAutomations.workflowId, enabled.workflowId),
-    eq(workflowAutomations.kind, "event"),
-    eq(workflowAutomations.eventType, enabled.eventType),
-    eq(workflowAutomations.enabled, true),
-    isNull(workflowAutomations.officialBlueprintKey),
-    isNull(workflowAutomations.eventConnectorId),
-    sql`${workflowAutomations.updatedAt} = ${observation.observedUpdatedAt}::timestamptz`,
-    sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${enabled.eventConfig === null ? null : JSON.stringify(enabled.eventConfig)}::jsonb`,
-    sql`NOT EXISTS (SELECT 1 FROM ${connectors} WHERE ${connectors.id} = ${enabled.eventConnectorId}::uuid)`,
-  );
-}
-
 const restoreDisabledWorkflowAutomation$ = command(
   async (
     { set },
     args: {
       readonly previousAutomation: AutomationRow;
-      readonly enabledAutomation: AutomationRow;
     },
   ): Promise<void> => {
-    const { previousAutomation, enabledAutomation } = args;
-    const snapshot = workflowAutomationSnapshot(enabledAutomation);
-    if (snapshot === undefined) {
-      throw new Error(
-        "Automation enable compensation requires its committed snapshot",
-      );
-    }
+    const { previousAutomation } = args;
     const officialReconciliationStatus =
       previousAutomation.officialBlueprintKey === null
         ? null
@@ -6062,18 +5784,7 @@ const restoreDisabledWorkflowAutomation$ = command(
               }),
           updatedAt: nowDate(),
         })
-        .where(
-          and(
-            eq(workflowAutomations.id, previousAutomation.id),
-            or(
-              workflowAutomationSnapshotCondition(snapshot),
-              orphanedEnableCompensationCondition(
-                previousAutomation,
-                enabledAutomation,
-              ),
-            ),
-          ),
-        )
+        .where(eq(workflowAutomations.id, previousAutomation.id))
         .returning({ id: workflowAutomations.id });
       if (
         restored &&
@@ -6126,9 +5837,6 @@ async function finalizeEnabledOfficialAutomation(
       and(
         eq(workflowAutomations.id, enabledAutomation.id),
         eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-        workflowAutomationSnapshotCondition(
-          workflowAutomationSnapshot(enabledAutomation),
-        ),
       ),
     )
     .returning(workflowAutomationColumns());
@@ -6157,7 +5865,6 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
         (async () => {
           await set(restoreDisabledWorkflowAutomation$, {
             previousAutomation: args.previousAutomation,
-            enabledAutomation: args.enabledAutomation,
           });
           await set(
             reconcileAutomationEventWatches$,
@@ -6181,9 +5888,6 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
               and(
                 eq(workflowAutomations.id, args.previousAutomation.id),
                 isNotNull(workflowAutomations.officialBlueprintKey),
-                workflowAutomationSnapshotCondition(
-                  workflowAutomationSnapshot(args.enabledAutomation),
-                ),
               ),
             );
         },
@@ -6541,22 +6245,7 @@ async function persistEnabledWorkflowAutomation(
                 ? {}
                 : { autonomyBudget: args.inheritedAutonomyBudget }),
           })
-          .where(
-            and(
-              officialAutomationLifecycleCondition(args.automation),
-              // Publish the projected account only while it is still the
-              // workflow's selection/default in this statement's snapshot.
-              accountProjection.required
-                ? automationAccountSelectedCondition({
-                    orgId: args.automation.orgId,
-                    userId: args.automation.ownerUserId,
-                    workflowId: args.automation.workflowId,
-                    connectorSlug: accountProjection.connectorSlug,
-                    connectorId: accountProjection.eventConnectorId,
-                  })
-                : undefined,
-            ),
-          )
+          .where(officialAutomationLifecycleCondition(args.automation))
           .returning(workflowAutomationColumns());
         if (
           enabledRow &&
@@ -6573,9 +6262,7 @@ async function persistEnabledWorkflowAutomation(
         if (!enabledRow && args.automation.officialBlueprintKey !== null) {
           return { status: "conflict" as const };
         }
-        return !enabledRow && accountProjection.required
-          ? { status: "account-changed" }
-          : { status: "ok", row: enabledRow };
+        return { status: "ok", row: enabledRow };
       },
     ),
   );
@@ -6785,7 +6472,6 @@ const activateInactiveGoogleFormsAutomation$ = command(
         formId: eventConfig.form.id,
         connectorId: eventConfig.connectorId,
         resetAutomationId: args.previousAutomation.id,
-        automationSnapshot: workflowAutomationSnapshot(args.previousAutomation),
         activation: {
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
@@ -6879,7 +6565,6 @@ const refreshEnabledGoogleFormsAutomation$ = command(
         connectorId,
         formId: eventConfig.form.id,
         resetAutomationId: current.id,
-        automationSnapshot: workflowAutomationSnapshot(current),
       },
       signal,
     );

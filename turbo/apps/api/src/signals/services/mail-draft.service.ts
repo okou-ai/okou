@@ -193,7 +193,6 @@ interface StoredMailDraftRow {
 }
 
 interface MailAccessTokenSuccess {
-  readonly connection: MailConnection;
   readonly kind: "ok";
   readonly accessToken: string;
 }
@@ -531,7 +530,7 @@ const resolveMailAccessToken$ = command(
       (expiresAt === 0 ||
         expiresAt > nowDate().getTime() + TOKEN_REFRESH_SKEW_MS)
     ) {
-      return { kind: "ok", accessToken, connection: args.connection };
+      return { kind: "ok", accessToken };
     }
     const refreshed = await set(
       refreshBuiltinConnectorCredentialAccess$,
@@ -550,15 +549,7 @@ const resolveMailAccessToken$ = command(
       return { kind: "error", message: "Gmail OAuth is not configured" };
     }
     return refreshed.kind === "ok"
-      ? {
-          kind: "ok",
-          accessToken: refreshed.accessToken,
-          connection: {
-            ...args.connection,
-            stateRevision: refreshed.stateRevision,
-            tokenExpiresAt: refreshed.tokenExpiresAt,
-          },
-        }
+      ? { kind: "ok", accessToken: refreshed.accessToken }
       : { kind: "error", message: "Reconnect Gmail before continuing" };
   },
 );
@@ -1067,16 +1058,7 @@ const markGmailNeedsReconnect$ = command(
         needsReconnect: true,
         updatedAt: sql`clock_timestamp()`,
       })
-      .where(
-        and(
-          eq(connectors.id, args.connection.connectorId),
-          eq(connectors.orgId, args.connection.access.orgId),
-          eq(connectors.userId, args.connection.access.userId),
-          eq(connectors.connectorSlug, "gmail"),
-          eq(connectors.authMethod, args.connection.runtimeMethod.authMethodId),
-          eq(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
-        ),
-      );
+      .where(eq(connectors.id, args.connection.connectorId));
   },
 );
 
@@ -1180,7 +1162,7 @@ const accessForRow$ = command(
       signal,
     );
     return access.kind === "ok"
-      ? access
+      ? { ...access, connection }
       : {
           kind: "conflict",
           message: access.message,
@@ -1682,7 +1664,7 @@ export const linkMailDraft$ = command(
     );
     signal.throwIfAborted();
     if (gmailResult.kind === "reconnect") {
-      await set(markGmailNeedsReconnect$, { connection: access.connection });
+      await set(markGmailNeedsReconnect$, { connection });
       signal.throwIfAborted();
       return reconnectMailError;
     }

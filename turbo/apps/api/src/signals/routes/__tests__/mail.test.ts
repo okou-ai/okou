@@ -1305,78 +1305,7 @@ describe("POST /api/mail/drafts/link", () => {
     expect(gmail.draftReadCount).toBe(gmailReadsAfterUnauthorized);
   });
 
-  it("rejects an old Gmail operation without disconnecting a replacement authorization", async () => {
-    const fixture = await seedGmailMailCardFixture();
-    mockGmailDraftApi();
-    const linked = await linkDraft(fixture);
-    server.use(
-      http.get(`${GMAIL_API_BASE}/drafts/:draftId`, async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(
-          "Bearer gmail-mail-card-token",
-        );
-        mockGmailConnectorOAuth({
-          accessToken: "replacement-mail-token",
-          email: "sender@example.com",
-        });
-        const start = await connectors.startOauth(
-          fixture.actor,
-          "gmail",
-          "oauth",
-          undefined,
-          {
-            intent: "reconnect",
-            connectionId: fixture.gmail.id,
-          },
-        );
-        const state = new URL(start.authorizationUrl).searchParams.get("state");
-        if (!state) {
-          throw new Error("Expected reconnect state");
-        }
-        await connectors.completeOauthCallback("gmail", {
-          code: "replace-before-rejection",
-          state,
-        });
-        mockGmailDraftApi({ accessToken: "replacement-mail-token" });
-        return HttpResponse.json(
-          { error: { message: "Invalid Credentials" } },
-          { status: 401 },
-        );
-      }),
-    );
-
-    const rejected = await accept(
-      client().getDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(rejected.body.mailDraft).toMatchObject({
-      accessStatus: "reconnect",
-      detailAvailable: false,
-    });
-    await expect(
-      connectors.readConnectorBySlug(fixture.actor, "gmail"),
-    ).resolves.toMatchObject({
-      id: fixture.gmail.id,
-      connectionStatus: "connected",
-      reconnectReason: null,
-    });
-    const current = await accept(
-      client().getDraft({
-        headers: authHeaders(),
-        params: { mailDraftId: linked.body.mailDraftId },
-      }),
-      [200],
-    );
-    expect(current.body.mailDraft).toMatchObject({
-      accessStatus: "ready",
-      detailAvailable: true,
-      subject: "Attachment review",
-    });
-  });
-
-  it("records Gmail rejection against the revision published by a successful refresh", async () => {
+  it("marks Gmail for reconnect when a refreshed token is rejected", async () => {
     const fixture = await seedGmailMailCardFixture();
     mockGmailDraftApi();
     const linked = await linkDraft(fixture);

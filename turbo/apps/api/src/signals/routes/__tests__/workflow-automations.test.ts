@@ -713,48 +713,6 @@ describe("okou workflow automations", () => {
     return connector.id;
   }
 
-  async function addGoogleCalendarAccount(
-    scenario: AutomationScenario,
-    options: {
-      readonly accessToken: string;
-      readonly email: string;
-      readonly subject: string;
-    },
-  ): Promise<string> {
-    mockGoogleCalendarConnectorOAuth(options);
-    const started = await connectorsApi.startOauth(
-      scenario.actor,
-      "google-calendar",
-      "oauth",
-      scenario.agentId,
-      { intent: "add", displayName: options.email },
-    );
-    const state = new URL(started.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected Google Calendar OAuth state");
-    }
-    await connectorsApi.completeOauthCallback("google-calendar", {
-      code: "google-calendar-add-account-code",
-      state,
-    });
-    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
-      scenario.actor,
-      "google-calendar",
-    );
-    const account = accounts.find((candidate) => {
-      return candidate.externalEmail === options.email;
-    });
-    if (!account) {
-      throw new Error("Expected the added Google Calendar account");
-    }
-    mocks.clerk.session(
-      scenario.fixture.userId,
-      scenario.fixture.orgId,
-      "org:member",
-    );
-    return account.id;
-  }
-
   async function connectGoogleForms(
     scenario: AutomationScenario,
   ): Promise<string> {
@@ -3358,209 +3316,6 @@ describe("okou workflow automations", () => {
     expect(stop.calls).toBe(0);
   });
 
-  it("rejects a Calendar reconfiguration superseded during watch registration", async () => {
-    const scenario = await setupFixture();
-    await connectGoogleCalendar(scenario);
-    const originalTarget = "race-original@example.com";
-    const supersededTarget = "race-superseded@example.com";
-    const winningTarget = "race-winning@example.com";
-    const race: {
-      automationId?: string;
-      competingUpdateCompleted: boolean;
-    } = { competingUpdateCompleted: false };
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: [originalTarget, supersededTarget, winningTarget],
-      onWatchRegistered: async ({ calendarId }) => {
-        if (
-          calendarId !== supersededTarget ||
-          race.competingUpdateCompleted ||
-          race.automationId === undefined
-        ) {
-          return;
-        }
-        const competing = await accept(
-          automationsClient().update({
-            headers: authHeaders(),
-            params: { id: race.automationId },
-            body: {
-              eventConfig: {
-                provider: "google-calendar",
-                event: "event_created",
-                calendarId: winningTarget,
-              },
-            },
-          }),
-          [200],
-        );
-        expect(competing.body).toMatchObject({
-          id: race.automationId,
-          eventConfig: { calendarId: winningTarget },
-        });
-        race.competingUpdateCompleted = true;
-      },
-    });
-    const stop = configureGoogleCalendarStopMock();
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: originalTarget,
-          },
-        },
-      }),
-      [201],
-    );
-    race.automationId = automation.body.id;
-
-    const superseded = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: automation.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_created",
-            calendarId: supersededTarget,
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(race.competingUpdateCompleted).toBeTruthy();
-    expect(superseded.body.error.message).toBe(
-      "Google Calendar automation changed; retry the update",
-    );
-    await expect(wf.readAutomation(automation.body.id)).resolves.toMatchObject({
-      id: automation.body.id,
-      enabled: true,
-      eventConfig: { calendarId: winningTarget },
-    });
-    expect(watch.watchCalls).toBe(3);
-    expect(watch.baselineCalls).toBe(3);
-    expect(
-      stop.requests.map((request) => {
-        return request.resourceId;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining(["calendar-resource-1", "calendar-resource-2"]),
-    );
-    expect(stop.requests).toHaveLength(2);
-  });
-
-  it("fails closed when Calendar account selection changes during staging", async () => {
-    const scenario = await setupFixture();
-    const firstAccessToken = "calendar-race-first-token";
-    const secondAccessToken = "calendar-race-second-token";
-    const firstEmail = "calendar-race-first@example.com";
-    const secondEmail = "calendar-race-second@example.com";
-    await connectGoogleCalendar(scenario, {
-      accessToken: firstAccessToken,
-      email: firstEmail,
-      subject: "calendar-race-first-subject",
-    });
-    const secondAccountId = await addGoogleCalendarAccount(scenario, {
-      accessToken: secondAccessToken,
-      email: secondEmail,
-      subject: "calendar-race-second-subject",
-    });
-    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
-      scenario.actor,
-      "google-calendar",
-    );
-    const firstAccount = accounts.find((account) => {
-      return account.externalEmail === firstEmail;
-    });
-    if (!firstAccount) {
-      throw new Error("Expected the first Calendar account");
-    }
-    await connectorsApi.setDefaultBuiltinConnectorAccount(
-      scenario.actor,
-      "google-calendar",
-      firstAccount.id,
-    );
-
-    const stagedTarget = "account-race-target@example.com";
-    let switchAccount = true;
-    const watch = configureGoogleCalendarWatchMock({
-      calendarIds: ["primary", stagedTarget],
-      accessTokens: [firstAccessToken, secondAccessToken],
-      onWatchRegistered: async ({ calendarId }) => {
-        if (calendarId !== stagedTarget || !switchAccount) {
-          return;
-        }
-        switchAccount = false;
-        await connectorsApi.setDefaultBuiltinConnectorAccount(
-          scenario.actor,
-          "google-calendar",
-          secondAccountId,
-        );
-      },
-    });
-    const stop = configureGoogleCalendarStopMock(
-      [204],
-      [firstAccessToken, secondAccessToken],
-    );
-    const automation = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-updated",
-        },
-      }),
-      [201],
-    );
-
-    const rejected = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: automation.body.id },
-        body: {
-          eventConfig: {
-            provider: "google-calendar",
-            event: "event_updated",
-            calendarId: stagedTarget,
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toMatch(
-      /Google Calendar (account selection|watch target or connection) changed/,
-    );
-    await expect(wf.readAutomation(automation.body.id)).resolves.toMatchObject({
-      id: automation.body.id,
-      enabled: true,
-      eventConfig: { calendarId: "primary" },
-    });
-    const finalAccounts = await connectorsApi.listBuiltinConnectorAccounts(
-      scenario.actor,
-      "google-calendar",
-    );
-    expect(
-      finalAccounts.find((account) => {
-        return account.id === secondAccountId;
-      }),
-    ).toMatchObject({ isDefault: true });
-    expect(watch.watchCalls).toBeGreaterThanOrEqual(2);
-    expect(
-      stop.requests.map((request) => {
-        return request.resourceId;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining(["calendar-resource-1", "calendar-resource-2"]),
-    );
-  });
-
   it("keeps a shared Gmail watch until the last consumer and refreshes it for label re-enable", async () => {
     const scenario = await setupFixture();
     await connectGmail(
@@ -3848,7 +3603,7 @@ describe("okou workflow automations", () => {
     expect(watch.baselineCalls).toBe(2);
   });
 
-  it("keeps a concurrent Calendar disable authoritative during registration", async () => {
+  it("leaves a Calendar automation recoverable after a disable during registration", async () => {
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
     const registrationStarted = createDeferredPromise<void>(context.signal);
@@ -3864,7 +3619,7 @@ describe("okou workflow automations", () => {
         await releaseRegistration.promise;
       },
     });
-    const stop = configureGoogleCalendarStopMock();
+    configureGoogleCalendarStopMock();
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -3896,14 +3651,7 @@ describe("okou workflow automations", () => {
     releaseRegistration.resolve(undefined);
 
     expect(disabled.body.enabled).toBeFalsy();
-    const supersededEnable = await enabling;
-    expect(supersededEnable.status).toBe(400);
-    expect(stop.requests).toStrictEqual([
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-    ]);
-    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
-      enabled: false,
-    });
+    await enabling;
 
     const enabled = await accept(
       automationsClient().enable({
@@ -3953,7 +3701,7 @@ describe("okou workflow automations", () => {
       method: "POST",
       headers: authHeaders(),
     });
-    expect(failedEnable.status).toBe(400);
+    expect(failedEnable.ok).toBeFalsy();
     expect(stop.requests).toStrictEqual([
       { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
     ]);

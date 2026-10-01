@@ -37,8 +37,8 @@ import {
 } from "./builtin-connector-automatic-connection.service";
 import {
   builtinConnectorAutomaticDcrStore,
+  createBuiltinDcrRegistration$,
   hasBuiltinDcrLinkedAccounts$,
-  publishBuiltinDcrRegistration$,
   readBuiltinDcrBoundClient$,
   readBuiltinDcrRegistrationByIssuer$,
   retireBuiltinDcrRegistration$,
@@ -376,16 +376,22 @@ const prepareBuiltinAutomaticAuthorization$ = command(
               signal,
             );
           },
-          publish: async (value, expectedRegistrationId, publicationSignal) => {
+          retire: async (id) => {
+            await set(
+              retireBuiltinDcrRegistration$,
+              { owner: contractOwner(args.orgId, contract), id },
+              signal,
+            );
+          },
+          create: async (value, createSignal) => {
             return await set(
-              publishBuiltinDcrRegistration$,
+              createBuiltinDcrRegistration$,
               {
                 owner: contractOwner(args.orgId, contract),
                 catalogIdentity: contract.catalogIdentity,
                 value,
-                expectedRegistrationId,
               },
-              publicationSignal,
+              createSignal,
             );
           },
         },

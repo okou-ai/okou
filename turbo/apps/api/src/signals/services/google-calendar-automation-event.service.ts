@@ -4,39 +4,22 @@ import {
   googleCalendarEventUpdatedEventConfigSchema,
   type GoogleCalendarWatchActionRequiredReason,
 } from "@okouai/api-contracts/contracts/workflows";
-import { connectors } from "@okouai/db/schema/connector";
 import {
   googleCalendarEventSnapshots,
   googleCalendarProcessedEvents,
   googleCalendarWatchStates,
 } from "@okouai/db/schema/google-calendar-event";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import {
   workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  exists,
-  getTableColumns,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  notExists,
-  sql,
-} from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$ } from "../external/db";
@@ -46,10 +29,7 @@ import {
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  type BuiltinConnectorCredentialConnection,
-} from "./builtin-connector-credential-runtime.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -68,14 +48,10 @@ import type { WorkflowAutomationContext } from "./workflow-automation-context.se
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 import {
-  builtinConnectorCredentialSecretReadCondition,
-  builtinConnectorCredentialVariableReadCondition,
-} from "./builtin-connector-credential-access.service";
-import {
   loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
-import { decryptStoredSecretValue } from "./crypto.utils";
 
 const log = logger("api:google-calendar-automation-event");
 
@@ -91,14 +67,6 @@ interface GoogleCalendarAccess {
   readonly connectorId: string;
   readonly emailAddress: string | null;
   readonly accessToken: string;
-  readonly credential: GoogleCalendarCredentialObservation;
-}
-
-interface GoogleCalendarCredentialObservation {
-  readonly connection: BuiltinConnectorCredentialConnection;
-  readonly kind: "secret" | "variable";
-  readonly name: string;
-  readonly storedValue: string;
 }
 
 type GoogleCalendarAccessResult =
@@ -224,9 +192,6 @@ const calendarEventsListResponseSchema = z.object({
 type GoogleCalendarEvent = z.infer<typeof calendarEventSchema>;
 type GoogleCalendarWatchStateRow =
   typeof googleCalendarWatchStates.$inferSelect;
-type ObservedGoogleCalendarWatchState = GoogleCalendarWatchStateRow & {
-  readonly observedState: string;
-};
 type GoogleCalendarEventSnapshotRow =
   typeof googleCalendarEventSnapshots.$inferSelect;
 type GoogleCalendarChangeType = "created" | "updated" | "cancelled";
@@ -366,142 +331,6 @@ export const normalizeGoogleCalendarIdForConnector$ = command(
     );
   },
 );
-const loadGoogleCalendarCredentialObservation$ = command(
-  async (
-    { set },
-    args: {
-      readonly connection: BuiltinConnectorCredentialConnection;
-      readonly valueRef: string;
-    },
-  ): Promise<GoogleCalendarCredentialObservation | null> => {
-    const db = set(writeDb$);
-    const { connection } = args;
-    const currentState = googleCalendarConnectionCondition(connection);
-    if (args.valueRef.startsWith("$secrets.")) {
-      const name = args.valueRef.slice("$secrets.".length);
-      const [row] = await db
-        .select({ storedValue: secrets.encryptedValue })
-        .from(secrets)
-        .innerJoin(connectors, eq(connectors.id, secrets.connectorId))
-        .where(
-          and(
-            currentState,
-            builtinConnectorCredentialSecretReadCondition({
-              groups: [{ access: connection.access, names: [name] }],
-            }),
-          ),
-        )
-        .limit(1);
-      return row ? { ...row, connection, kind: "secret", name } : null;
-    }
-    if (args.valueRef.startsWith("$vars.")) {
-      const name = args.valueRef.slice("$vars.".length);
-      const [row] = await db
-        .select({ storedValue: variables.value })
-        .from(variables)
-        .innerJoin(connectors, eq(connectors.id, variables.connectorId))
-        .where(
-          and(
-            currentState,
-            builtinConnectorCredentialVariableReadCondition({
-              groups: [{ access: connection.access, names: [name] }],
-            }),
-          ),
-        )
-        .limit(1);
-      return row ? { ...row, connection, kind: "variable", name } : null;
-    }
-    throw new Error("Invalid Google Calendar credential reference");
-  },
-);
-function googleCalendarConnectionCondition(
-  connection: BuiltinConnectorCredentialConnection,
-) {
-  return and(
-    eq(connectors.id, connection.connectorId),
-    eq(connectors.orgId, connection.access.orgId),
-    eq(connectors.userId, connection.access.userId),
-    eq(connectors.connectorSlug, "google-calendar"),
-    eq(connectors.authMethod, connection.runtimeMethod.authMethodId),
-    eq(connectors.storageVersion, connection.storageVersion),
-    eq(connectors.needsReconnect, false),
-    eq(sql`${connectors.updatedAt}::text`, connection.stateRevision),
-    connection.externalId === null
-      ? isNull(connectors.externalId)
-      : eq(connectors.externalId, connection.externalId),
-    connection.externalEmail === null
-      ? isNull(connectors.externalEmail)
-      : eq(connectors.externalEmail, connection.externalEmail),
-  );
-}
-const loadGoogleCalendarObservedAccess$ = command(
-  async (
-    { set },
-    args: {
-      readonly connection: BuiltinConnectorCredentialConnection;
-      readonly valueRef: string;
-      readonly expectedAccessToken?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<GoogleCalendarAccessResult> => {
-    const credential = await set(
-      loadGoogleCalendarCredentialObservation$,
-      args,
-    );
-    signal.throwIfAborted();
-    const accessToken =
-      credential === null
-        ? null
-        : credential.kind === "secret"
-          ? await decryptStoredSecretValue(credential.storedValue)
-          : credential.storedValue;
-    signal.throwIfAborted();
-    if (
-      !accessToken ||
-      !credential ||
-      (args.expectedAccessToken !== undefined &&
-        args.expectedAccessToken !== accessToken)
-    ) {
-      return {
-        kind: "bad_request",
-        message:
-          "Reconnect Google Calendar before using Google Calendar event automations",
-      };
-    }
-
-    return {
-      kind: "ok",
-      access: {
-        connectorId: args.connection.connectorId,
-        emailAddress: args.connection.externalEmail,
-        accessToken,
-        credential,
-      },
-    };
-  },
-);
-function googleCalendarCredentialCondition(access: GoogleCalendarAccess) {
-  const { connection, kind, name, storedValue } = access.credential;
-  const credential =
-    kind === "secret"
-      ? sql`EXISTS (
-          SELECT 1 FROM ${secrets}
-          WHERE ${secrets.connectorId} = ${connection.connectorId}
-            AND ${secrets.name} = ${name}
-            AND ${secrets.encryptedValue} = ${storedValue}
-            AND ${secrets.orgId} = ${connection.access.orgId}
-            AND ${secrets.userId} = ${connection.access.userId}
-        )`
-      : sql`EXISTS (
-          SELECT 1 FROM ${variables}
-          WHERE ${variables.connectorId} = ${connection.connectorId}
-            AND ${variables.name} = ${name}
-            AND ${variables.value} = ${storedValue}
-            AND ${variables.orgId} = ${connection.access.orgId}
-            AND ${variables.userId} = ${connection.access.userId}
-        )`;
-  return and(googleCalendarConnectionCondition(connection), credential);
-}
 const resolveGoogleCalendarAccess$ = command(
   async (
     { set },
@@ -551,15 +380,32 @@ const resolveGoogleCalendarAccess$ = command(
       };
     }
 
+    const values = await set(
+      loadBuiltinConnectorCredentialValues$,
+      { connection, valueRefs: [accessTokenValueRef] },
+      signal,
+    );
+    signal.throwIfAborted();
+    const accessToken = values.get(accessTokenValueRef);
+    if (!accessToken) {
+      return {
+        kind: "bad_request",
+        message:
+          "Reconnect Google Calendar before using Google Calendar event automations",
+      };
+    }
     if (
       !tokenNeedsRefresh(connection.tokenExpiresAt, currentTime) ||
       args.refreshExpiredToken === false
     ) {
-      return await set(
-        loadGoogleCalendarObservedAccess$,
-        { connection, valueRef: accessTokenValueRef },
-        signal,
-      );
+      return {
+        kind: "ok",
+        access: {
+          connectorId: connection.connectorId,
+          emailAddress: connection.externalEmail,
+          accessToken,
+        },
+      };
     }
     const refreshed = await set(
       refreshBuiltinConnectorCredentialAccess$,
@@ -585,21 +431,14 @@ const resolveGoogleCalendarAccess$ = command(
           "Reconnect Google Calendar before using Google Calendar event automations",
       };
     }
-    // Keep the original principal and authority. A replacement authorization
-    // after refresh must not lend its revision or credential to this request.
-    return await set(
-      loadGoogleCalendarObservedAccess$,
-      {
-        connection: {
-          ...connection,
-          stateRevision: refreshed.stateRevision,
-          tokenExpiresAt: refreshed.tokenExpiresAt,
-        },
-        valueRef: accessTokenValueRef,
-        expectedAccessToken: refreshed.accessToken,
+    return {
+      kind: "ok",
+      access: {
+        connectorId: connection.connectorId,
+        emailAddress: connection.externalEmail,
+        accessToken: refreshed.accessToken,
       },
-      signal,
-    );
+    };
   },
 );
 function calendarApiUrl(path: string): string {
@@ -1180,7 +1019,6 @@ const CALENDAR_SNAPSHOT_BATCH_SIZE = 250;
 
 interface CalendarSnapshotBatch {
   readonly watchStateId: string;
-  readonly channelId: string;
   readonly events: readonly GoogleCalendarEvent[];
   readonly currentTime: Date;
 }
@@ -1197,60 +1035,36 @@ const upsertCalendarEventSnapshotBatch$ = command(
     if (args.events.length > CALENDAR_SNAPSHOT_BATCH_SIZE) {
       throw new Error("Calendar snapshot batch is too large");
     }
-    const db = set(writeDb$);
-    // No row lock: the channel check is a plain read and the snapshot FK is
-    // the implicit protection against a concurrent watch removal. A channel
-    // replacement racing this batch may leave baseline rows that the next
-    // sync overwrites (accepted Calendar notification gap).
-    const [state] = await db
-      .select({ id: googleCalendarWatchStates.id })
-      .from(googleCalendarWatchStates)
-      .where(
-        and(
-          eq(googleCalendarWatchStates.id, args.watchStateId),
-          eq(googleCalendarWatchStates.channelId, args.channelId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!state) {
-      return;
-    }
-    const upserted = await settle(
-      db
-        .insert(googleCalendarEventSnapshots)
-        .values(
-          args.events.map((event) => {
-            return eventSnapshotRow({
-              watchStateId: args.watchStateId,
-              event,
-              currentTime: args.currentTime,
-            });
-          }),
-        )
-        .onConflictDoUpdate({
-          target: [
-            googleCalendarEventSnapshots.watchStateId,
-            googleCalendarEventSnapshots.calendarEventId,
-          ],
-          set: {
-            etag: sql`excluded.etag`,
-            status: sql`excluded.status`,
-            eventType: sql`excluded.event_type`,
-            summary: sql`excluded.summary`,
-            startAt: sql`excluded.start_at`,
-            endAt: sql`excluded.end_at`,
-            eventCreatedAt: sql`excluded.event_created_at`,
-            eventUpdatedAt: sql`excluded.event_updated_at`,
-            snapshot: sql`excluded.snapshot`,
-            updatedAt: args.currentTime,
-          },
+    await set(writeDb$)
+      .insert(googleCalendarEventSnapshots)
+      .values(
+        args.events.map((event) => {
+          return eventSnapshotRow({
+            watchStateId: args.watchStateId,
+            event,
+            currentTime: args.currentTime,
+          });
         }),
-      signal,
-    );
-    if (!upserted.ok && !isForeignKeyViolation(upserted.error)) {
-      throw upserted.error;
-    }
+      )
+      .onConflictDoUpdate({
+        target: [
+          googleCalendarEventSnapshots.watchStateId,
+          googleCalendarEventSnapshots.calendarEventId,
+        ],
+        set: {
+          etag: sql`excluded.etag`,
+          status: sql`excluded.status`,
+          eventType: sql`excluded.event_type`,
+          summary: sql`excluded.summary`,
+          startAt: sql`excluded.start_at`,
+          endAt: sql`excluded.end_at`,
+          eventCreatedAt: sql`excluded.event_created_at`,
+          eventUpdatedAt: sql`excluded.event_updated_at`,
+          snapshot: sql`excluded.snapshot`,
+          updatedAt: args.currentTime,
+        },
+      });
+    signal.throwIfAborted();
   },
 );
 
@@ -1301,7 +1115,6 @@ const publishCalendarBaselineCursor$ = command(
       .where(
         and(
           eq(googleCalendarWatchStates.id, args.state.id),
-          eq(googleCalendarWatchStates.channelId, args.state.channelId),
           isNull(googleCalendarWatchStates.actionRequiredReason),
         ),
       );
@@ -1342,7 +1155,6 @@ const baselineCalendarWatchState$ = command(
       upsertCalendarEventSnapshots$,
       {
         watchStateId: args.state.id,
-        channelId: args.state.channelId,
         events: baseline.events,
         currentTime,
       },
@@ -1358,7 +1170,6 @@ const baselineCalendarWatchState$ = command(
       .where(
         and(
           eq(googleCalendarWatchStates.id, args.state.id),
-          eq(googleCalendarWatchStates.channelId, args.state.channelId),
           isNull(googleCalendarWatchStates.actionRequiredReason),
           isNull(googleCalendarWatchStates.actionRequiredAt),
         ),
@@ -1375,16 +1186,10 @@ const loadCalendarWatchState$ = command(
       readonly calendarId: string;
     },
     signal: AbortSignal,
-  ): Promise<ObservedGoogleCalendarWatchState | null> => {
+  ): Promise<GoogleCalendarWatchStateRow | null> => {
     const db = set(writeDb$);
     const [state] = await db
-      .select({
-        ...getTableColumns(googleCalendarWatchStates),
-        observedState:
-          sql`to_jsonb(${googleCalendarWatchStates})::text`.mapWith(
-            pgTextDecoder,
-          ),
-      })
+      .select()
       .from(googleCalendarWatchStates)
       .where(
         and(
@@ -1514,18 +1319,7 @@ const transitionCalendarWatchToActionRequired$ = command(
         needsRewatch: true,
         updatedAt: currentTime,
       })
-      .where(
-        and(
-          eq(googleCalendarWatchStates.id, args.state.id),
-          eq(googleCalendarWatchStates.channelId, args.state.channelId),
-          exists(
-            db
-              .select({ id: workflowAutomations.id })
-              .from(workflowAutomations)
-              .where(calendarConsumerCondition(args.state)),
-          ),
-        ),
-      );
+      .where(eq(googleCalendarWatchStates.id, args.state.id));
     signal.throwIfAborted();
   },
 );
@@ -1576,112 +1370,56 @@ const publishGoogleCalendarWatch$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly access: GoogleCalendarAccess;
+      readonly connectorId: string;
       readonly calendarId: string;
-      readonly observed: ObservedGoogleCalendarWatchState | null;
       readonly channelId: string;
       readonly channelToken: string;
       readonly watch: z.infer<typeof calendarWatchResponseSchema>;
-      readonly allowStagedTarget: boolean;
     },
     signal: AbortSignal,
-  ): Promise<GoogleCalendarWatchStateRow | null> => {
+  ): Promise<GoogleCalendarWatchStateRow> => {
     const db = set(writeDb$);
-    // No row locks: the watch-state CAS update or unique insert publishes
-    // only while the exact credential is current and (unless staged) a
-    // consumer is enabled. A disable racing this statement can still publish
-    // one watch; consumer-less removal cleans it up.
-    const consumerGate = args.allowStagedTarget
-      ? sql`TRUE`
-      : exists(
-          db
-            .select({ id: workflowAutomations.id })
-            .from(workflowAutomations)
-            .where(
-              calendarConsumerCondition({
-                ...args,
-                connectorId: args.access.connectorId,
-              }),
-            ),
-        );
-    const publicationGate = and(
-      exists(
-        db
-          .select({ id: connectors.id })
-          .from(connectors)
-          .where(googleCalendarCredentialCondition(args.access)),
-      ),
-      consumerGate,
-    );
     const currentTime = nowDate();
-    const watchExpirationAt = watchExpirationDate(
-      args.watch.expiration,
-      currentTime,
-    );
+    const watchState = {
+      orgId: args.orgId,
+      userId: args.userId,
+      channelId: args.channelId,
+      channelToken: args.channelToken,
+      resourceId: args.watch.resourceId,
+      resourceUri: args.watch.resourceUri,
+      previousChannelId: null,
+      previousChannelToken: null,
+      previousResourceId: null,
+      syncToken: null,
+      watchExpirationAt: watchExpirationDate(
+        args.watch.expiration,
+        currentTime,
+      ),
+      lastWatchRenewedAt: currentTime,
+      needsRewatch: false,
+      actionRequiredReason: null,
+      actionRequiredAt: null,
+      updatedAt: currentTime,
+    };
     return await db.transaction(async (tx) => {
-      let state: GoogleCalendarWatchStateRow | undefined;
-      if (args.observed) {
-        [state] = await tx
-          .update(googleCalendarWatchStates)
-          .set({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorId: args.access.connectorId,
-            calendarId: args.calendarId,
-            channelId: args.channelId,
-            channelToken: args.channelToken,
-            resourceId: args.watch.resourceId,
-            resourceUri: args.watch.resourceUri,
-            previousChannelId: null,
-            previousChannelToken: null,
-            previousResourceId: null,
-            syncToken: null,
-            watchExpirationAt,
-            lastWatchRenewedAt: currentTime,
-            needsRewatch: false,
-            actionRequiredReason: null,
-            actionRequiredAt: null,
-            updatedAt: currentTime,
-          })
-          .where(
-            and(
-              eq(googleCalendarWatchStates.id, args.observed.id),
-              eq(
-                sql`to_jsonb(${googleCalendarWatchStates})::text`,
-                args.observed.observedState,
-              ),
-              publicationGate,
-            ),
-          )
-          .returning();
-      } else {
-        const timestamp = sql`${currentTime.toISOString()}::timestamp`;
-        const [inserted] = parseRawRows(
-          z.object({ id: z.string() }),
-          await tx.execute(sql`INSERT INTO ${googleCalendarWatchStates} (
-              org_id, user_id, connector_id, calendar_id, channel_id,
-              channel_token, resource_id, resource_uri, watch_expiration_at,
-              last_watch_renewed_at, needs_rewatch, created_at, updated_at
-            )
-            SELECT ${args.orgId}, ${args.userId}, ${args.access.connectorId}::uuid,
-              ${args.calendarId}, ${args.channelId}::uuid, ${args.channelToken},
-              ${args.watch.resourceId}, ${args.watch.resourceUri},
-              ${watchExpirationAt.toISOString()}::timestamp, ${timestamp}, false,
-              ${timestamp}, ${timestamp}
-            WHERE ${publicationGate}
-            ON CONFLICT DO NOTHING
-            RETURNING id`),
-        );
-        if (inserted) {
-          [state] = await tx
-            .select()
-            .from(googleCalendarWatchStates)
-            .where(eq(googleCalendarWatchStates.id, inserted.id))
-            .limit(1);
-        }
-      }
+      const [state] = await tx
+        .insert(googleCalendarWatchStates)
+        .values({
+          ...watchState,
+          connectorId: args.connectorId,
+          calendarId: args.calendarId,
+          createdAt: currentTime,
+        })
+        .onConflictDoUpdate({
+          target: [
+            googleCalendarWatchStates.connectorId,
+            googleCalendarWatchStates.calendarId,
+          ],
+          set: watchState,
+        })
+        .returning();
       if (!state) {
-        return null;
+        throw new Error("Failed to persist Google Calendar watch state");
       }
       await tx
         .delete(googleCalendarEventSnapshots)
@@ -1822,13 +1560,11 @@ const ensureGoogleCalendarWatchForUserInternal$ = command(
         {
           orgId: args.orgId,
           userId: args.userId,
-          access: accessResult.access,
+          connectorId: accessResult.access.connectorId,
           calendarId,
-          observed,
           channelId,
           channelToken,
           watch,
-          allowStagedTarget: args.allowStagedTarget === true,
         },
         signal,
       ),
@@ -1837,20 +1573,10 @@ const ensureGoogleCalendarWatchForUserInternal$ = command(
       },
     );
     signal.throwIfAborted();
-    if (!state) {
-      await set(cleanupUnpublishedCalendarWatch$, cleanup);
-      signal.throwIfAborted();
-      return {
-        kind: "bad_request",
-        message:
-          "Google Calendar watch target or connection changed during setup",
-      };
-    }
     await set(
       upsertCalendarEventSnapshots$,
       {
         watchStateId: state.id,
-        channelId: state.channelId,
         events: baseline.events,
         currentTime: nowDate(),
       },
@@ -1935,10 +1661,6 @@ const persistLegacyPrimaryCalendarMigration$ = command(
       calendarId: args.legacyCalendarId,
     });
     return await db.transaction(async (tx) => {
-      // No row locks: plain reads choose the candidate pair, then the consumer
-      // retarget is conditional on the credential and the verified primary
-      // watch still being current, and the legacy state delete returns the
-      // row actually removed. Zero rows at either step is a no-op.
       const states = await tx
         .select()
         .from(googleCalendarWatchStates)
@@ -1974,42 +1696,13 @@ const persistLegacyPrimaryCalendarMigration$ = command(
       ) {
         return null;
       }
-      const primaryStillVerified = and(
-        eq(googleCalendarWatchStates.id, primary.id),
-        eq(googleCalendarWatchStates.channelId, primary.channelId),
-        eq(googleCalendarWatchStates.resourceId, legacy.resourceId),
-        isNotNull(googleCalendarWatchStates.syncToken),
-        eq(googleCalendarWatchStates.needsRewatch, false),
-        isNull(googleCalendarWatchStates.actionRequiredReason),
-        gt(googleCalendarWatchStates.watchExpirationAt, currentTime),
-      );
-      const migrated = await tx
+      await tx
         .update(workflowAutomations)
         .set({
           eventConfig: sql`jsonb_set(${workflowAutomations.eventConfig}, '{calendarId}', to_jsonb(${GOOGLE_CALENDAR_PRIMARY_ID}::text))`,
           updatedAt: currentTime,
         })
-        .where(
-          and(
-            legacyConsumerCondition,
-            exists(
-              db
-                .select({ id: connectors.id })
-                .from(connectors)
-                .where(googleCalendarCredentialCondition(args.access)),
-            ),
-            exists(
-              db
-                .select({ id: googleCalendarWatchStates.id })
-                .from(googleCalendarWatchStates)
-                .where(primaryStillVerified),
-            ),
-          ),
-        )
-        .returning({ id: workflowAutomations.id });
-      if (migrated.length === 0) {
-        return null;
-      }
+        .where(legacyConsumerCondition);
       const [removed] = await tx
         .delete(googleCalendarWatchStates)
         .where(eq(googleCalendarWatchStates.id, legacy.id))
@@ -2069,31 +1762,14 @@ const deleteInactiveCalendarWatch$ = command(
   async (
     { set },
     args: {
-      readonly state: ObservedGoogleCalendarWatchState;
-      readonly forceStop?: boolean;
+      readonly state: GoogleCalendarWatchStateRow;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
     const [deleted] = await db
       .delete(googleCalendarWatchStates)
-      .where(
-        and(
-          eq(googleCalendarWatchStates.id, args.state.id),
-          eq(
-            sql`to_jsonb(${googleCalendarWatchStates})::text`,
-            args.state.observedState,
-          ),
-          args.forceStop
-            ? undefined
-            : notExists(
-                db
-                  .select({ id: workflowAutomations.id })
-                  .from(workflowAutomations)
-                  .where(calendarConsumerCondition(args.state)),
-              ),
-        ),
-      )
+      .where(eq(googleCalendarWatchStates.id, args.state.id))
       .returning({ id: googleCalendarWatchStates.id });
     signal.throwIfAborted();
     return deleted !== undefined;
@@ -2271,7 +1947,7 @@ const reconcileGoogleCalendarWatchState$ = command(
       );
       const deleted = await set(
         deleteInactiveCalendarWatch$,
-        { state, forceStop: args.forceStop },
+        { state },
         signal,
       );
       if (!deleted) {
@@ -3286,7 +2962,6 @@ const dispatchGoogleCalendarChanges$ = command(
       upsertCalendarEventSnapshots$,
       {
         watchStateId: args.state.id,
-        channelId: args.state.channelId,
         events: args.changes.events,
         currentTime,
       },
@@ -3302,7 +2977,6 @@ const dispatchGoogleCalendarChanges$ = command(
       .where(
         and(
           eq(googleCalendarWatchStates.id, args.state.id),
-          eq(googleCalendarWatchStates.channelId, args.state.channelId),
           isNull(googleCalendarWatchStates.actionRequiredReason),
           isNull(googleCalendarWatchStates.actionRequiredAt),
         ),
@@ -3420,12 +3094,7 @@ const dispatchGoogleCalendarWatchState$ = command(
       await db
         .update(googleCalendarWatchStates)
         .set({ needsRewatch: true, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(googleCalendarWatchStates.id, args.state.id),
-            eq(googleCalendarWatchStates.channelId, args.state.channelId),
-          ),
-        );
+        .where(eq(googleCalendarWatchStates.id, args.state.id));
       signal.throwIfAborted();
       return { kind: "ok", dispatched: 0, duplicates: 0 };
     }

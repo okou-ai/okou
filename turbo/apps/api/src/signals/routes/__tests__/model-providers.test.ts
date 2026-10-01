@@ -974,55 +974,48 @@ describe("POST /api/model-providers", () => {
     );
   });
 
-  it("applies concurrent first saves with different auth methods one after another", async () => {
+  it("recovers after concurrent first saves with different auth methods", async () => {
     const fixture = uniqueOrgUser("zmp-concurrent-bedrock");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: modelProvidersRoutes })(
       modelProvidersMainContract,
     );
+    const accessKeysBody = {
+      type: "aws-bedrock",
+      authMethod: "access-keys",
+      secrets: {
+        AWS_ACCESS_KEY_ID: "test-access-key",
+        AWS_SECRET_ACCESS_KEY: "test-secret-key",
+        AWS_REGION: "us-east-1",
+      },
+    } as const;
 
-    const responses = await Promise.all([
-      accept(
-        client.upsert({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            type: "aws-bedrock",
-            authMethod: "access-keys",
-            secrets: {
-              AWS_ACCESS_KEY_ID: "test-access-key",
-              AWS_SECRET_ACCESS_KEY: "test-secret-key",
-              AWS_REGION: "us-east-1",
-            },
+    // Either request may lose the race; only the follow-up outcome matters.
+    await Promise.allSettled([
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: accessKeysBody,
+      }),
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          type: "aws-bedrock",
+          authMethod: "api-key",
+          secrets: {
+            AWS_BEARER_TOKEN_BEDROCK: "test-bearer-token",
+            AWS_REGION: "us-west-2",
           },
-        }),
-        [200, 201],
-      ),
-      accept(
-        client.upsert({
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            type: "aws-bedrock",
-            authMethod: "api-key",
-            secrets: {
-              AWS_BEARER_TOKEN_BEDROCK: "test-bearer-token",
-              AWS_REGION: "us-west-2",
-            },
-          },
-        }),
-        [200, 201],
-      ),
+        },
+      }),
     ]);
 
-    expect(
-      responses
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 201]);
-    const lastApplied = responses.find((response) => {
-      return response.status === 200;
-    });
+    await accept(
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: accessKeysBody,
+      }),
+      [200, 201],
+    );
     const list = await accept(
       client.list({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
@@ -1033,11 +1026,7 @@ describe("POST /api/model-providers", () => {
       },
     );
     expect(providers).toHaveLength(1);
-    // The listed secret names describe the applied auth method; the upsert
-    // response lists only the submitted secrets, so compare the method.
-    expect(providers[0]?.authMethod).toBe(
-      lastApplied?.body.provider.authMethod,
-    );
+    expect(providers[0]?.authMethod).toBe("access-keys");
   });
 
   it("rejects secrets outside the selected provider auth method", async () => {

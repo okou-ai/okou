@@ -481,13 +481,20 @@ describe("reusable SSH credential owner routes", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([saved.body]);
-    await accept(
+    const staleDeletion = await accept(
       credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
+      [409],
+    );
+    expect(staleDeletion.body.error.code).toBe(
+      "SSH_CREDENTIAL_REVISION_CONFLICT",
+    );
+    await accept(
+      credentials().delete({ headers, params, body: { expectedRevision: 3 } }),
       [204],
     );
   });
 
-  it("leaves no credential after deletion overlaps an edit", async () => {
+  it("leaves a recoverable credential state after deletion overlaps an edit", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -513,59 +520,24 @@ describe("reusable SSH credential owner routes", () => {
           params,
           body: { expectedRevision: 1 },
         }),
-        [204],
+        [204, 409],
       ),
     ]);
-    expect(deleted.status).toBe(204);
-    if (updated.status === 200) {
-      expect(updated.body).toMatchObject({
-        name: "Concurrent edit",
-        revision: 2,
-      });
-    } else {
-      expect(updated.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
-    }
     const remaining = await accept(credentials().list({ headers }), [200]);
-    expect(remaining.body.credentials).toStrictEqual([]);
-  });
-
-  it("reports a missing credential to the losing concurrent deletion", async () => {
-    useSecretKmsProbe();
-    owner();
-    const created = await accept(
-      credentials().create({
+    if (deleted.status === 204) {
+      expect(remaining.body.credentials).toStrictEqual([]);
+      return;
+    }
+    expect(updated.status).toBe(200);
+    expect(remaining.body.credentials).toStrictEqual([updated.body]);
+    await accept(
+      credentials().delete({
         headers,
-        body: { id: randomUUID(), ...passwordBody },
+        params,
+        body: { expectedRevision: remaining.body.credentials[0]?.revision ?? 0 },
       }),
-      [201],
+      [204],
     );
-    const params = { credentialId: created.body.id };
-    const results = await Promise.all(
-      [1, 2].map(() => {
-        return accept(
-          credentials().delete({
-            headers,
-            params,
-            body: { expectedRevision: 1 },
-          }),
-          [204, 404],
-        );
-      }),
-    );
-    expect(
-      results
-        .map(({ status }) => {
-          return status;
-        })
-        .sort(),
-    ).toStrictEqual([204, 404]);
-    for (const result of results) {
-      if (result.status === 404) {
-        expect(result.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
-      }
-    }
-    const remaining = await accept(credentials().list({ headers }), [200]);
-    expect(remaining.body.credentials).toStrictEqual([]);
   });
 
   it("preserves one valid outcome when creating a host races credential deletion", async () => {

@@ -2,14 +2,13 @@ import {
   userLocaleSchema,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import {
   modelSettingsSchema,
@@ -187,8 +186,8 @@ export async function loadWorkflowUserAutomationThreadId(
 
 /**
  * Pause every enabled automation that shares a workflow-user chat thread.
- * The caller deletes the thread in the same transaction; the bindings are
- * deleted here and their returned workflows identify the affected automations.
+ * The caller deletes the thread in the same transaction, so the binding still
+ * identifies the affected workflows while this update runs.
  */
 export async function disableThreadBoundWorkflowAutomations(
   db: ChatThreadEventTransaction,
@@ -203,32 +202,26 @@ export async function disableThreadBoundWorkflowAutomations(
     "orgId" | "ownerUserId" | "eventType" | "eventConfig" | "eventConnectorId"
   >[]
 > {
-  // Detach by deleting the bindings with a conditional DELETE. Creation and
-  // reuse both write the binding row through its unique owner key before they
-  // insert an automation, so this DELETE either waits for that commit and then
-  // disables the automation it added, or commits first and a later creator
-  // inserts a fresh binding with a new destination thread.
   const bindings = await db
-    .delete(workflowUserAutomationThreads)
+    .select({ workflowId: workflowUserAutomationThreads.workflowId })
+    .from(workflowUserAutomationThreads)
     .where(
       and(
         eq(workflowUserAutomationThreads.userId, args.userId),
         eq(workflowUserAutomationThreads.chatThreadId, args.chatThreadId),
       ),
-    )
-    .returning({ workflowId: workflowUserAutomationThreads.workflowId });
+    );
   if (bindings.length === 0) {
     return [];
   }
 
-  // A disabled Forms automation may be preparing a new interval remotely.
-  // Invalidate that observation too before the bound thread is deleted.
-  const disabled = await db
+  return await db
     .update(workflowAutomations)
     .set({ enabled: false, nextRunAt: null, updatedAt: args.currentTime })
     .where(
       and(
         eq(workflowAutomations.ownerUserId, args.userId),
+        eq(workflowAutomations.enabled, true),
         inArray(
           workflowAutomations.workflowId,
           bindings.map((binding) => {
@@ -238,40 +231,12 @@ export async function disableThreadBoundWorkflowAutomations(
       ),
     )
     .returning({
-      id: workflowAutomations.id,
-      officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-      officialIntendedEnabled: workflowAutomations.officialIntendedEnabled,
       orgId: workflowAutomations.orgId,
       ownerUserId: workflowAutomations.ownerUserId,
       eventType: workflowAutomations.eventType,
       eventConfig: workflowAutomations.eventConfig,
       eventConnectorId: workflowAutomations.eventConnectorId,
     });
-  const resetForms = disabled
-    .filter((row) => {
-      return (
-        row.eventType === "google-forms-response-submitted" &&
-        (row.officialBlueprintKey === null ||
-          row.officialIntendedEnabled === false)
-      );
-    })
-    .map((row) => {
-      return row.id;
-    });
-  if (resetForms.length > 0) {
-    await db
-      .delete(googleFormsAutomationCursors)
-      .where(inArray(googleFormsAutomationCursors.automationId, resetForms));
-  }
-  return disabled.map((row) => {
-    return {
-      orgId: row.orgId,
-      ownerUserId: row.ownerUserId,
-      eventType: row.eventType,
-      eventConfig: row.eventConfig,
-      eventConnectorId: row.eventConnectorId,
-    };
-  });
 }
 
 async function createAutomationChatThread(
@@ -318,20 +283,12 @@ async function createAutomationChatThread(
   return thread.id;
 }
 
-/**
- * Upsert this owner's binding through its unique key and return it.
- *
- * `ON CONFLICT DO UPDATE` writes the existing row (a no-op assignment), so the
- * binding is this transaction's until it commits: a concurrent creator waits
- * and then observes the committed destination, and thread deletion's
- * conditional DELETE cannot detach it between this read and the caller's
- * automation INSERT. A binding deleted concurrently is simply inserted anew.
- */
-async function claimWorkflowUserAutomationThreadBinding(
+/** Insert this owner's binding if missing and return its destination. */
+async function upsertWorkflowUserAutomationThreadBinding(
   db: ChatThreadEventTransaction,
   args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
 ): Promise<{ readonly chatThreadId: string | null }> {
-  const [binding] = await db
+  await db
     .insert(workflowUserAutomationThreads)
     .values({
       orgId: args.orgId,
@@ -340,43 +297,27 @@ async function claimWorkflowUserAutomationThreadBinding(
       createdAt: args.currentTime,
       updatedAt: args.currentTime,
     })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [
         workflowUserAutomationThreads.orgId,
         workflowUserAutomationThreads.userId,
         workflowUserAutomationThreads.workflowId,
       ],
-      set: {
-        chatThreadId: sql`${workflowUserAutomationThreads.chatThreadId}`,
-      },
-    })
-    .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
-  if (!binding) {
-    throw new Error("Failed to claim workflow automation thread binding");
-  }
-  return binding;
+    });
+  const binding = await readWorkflowUserAutomationThreadBinding(db, args);
+  return { chatThreadId: binding?.chatThreadId ?? null };
 }
 
-/** Publish a new destination only into a binding that still has none. */
 async function bindWorkflowUserAutomationThread(
   db: ChatThreadEventTransaction,
   args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
   chatThreadId: string,
 ): Promise<string> {
-  const [updated] = await db
+  await db
     .update(workflowUserAutomationThreads)
     .set({ chatThreadId, updatedAt: args.currentTime })
-    .where(
-      and(
-        workflowUserAutomationThreadOwnerCondition(args),
-        isNull(workflowUserAutomationThreads.chatThreadId),
-      ),
-    )
-    .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
-  if (!updated?.chatThreadId) {
-    throw new Error("Failed to persist workflow automation chat thread");
-  }
-  return updated.chatThreadId;
+    .where(workflowUserAutomationThreadOwnerCondition(args));
+  return chatThreadId;
 }
 
 export async function ensureWorkflowUserAutomationThread(
@@ -391,7 +332,7 @@ export async function ensureWorkflowUserAutomationThread(
     readonly preparation: WorkflowThreadPreparation;
   },
 ): Promise<string> {
-  const binding = await claimWorkflowUserAutomationThreadBinding(db, args);
+  const binding = await upsertWorkflowUserAutomationThreadBinding(db, args);
   if (binding.chatThreadId) {
     return binding.chatThreadId;
   }
@@ -457,7 +398,7 @@ export const ensureWorkflowUserAutomationThread$ = command(
     );
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      const binding = await claimWorkflowUserAutomationThreadBinding(tx, args);
+      const binding = await upsertWorkflowUserAutomationThreadBinding(tx, args);
       if (binding.chatThreadId) {
         return binding.chatThreadId;
       }

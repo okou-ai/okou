@@ -14,6 +14,7 @@ import {
 import {
   McpAutomaticOAuthError,
   type McpAutomaticOAuthDcrRegistration,
+  type McpAutomaticOAuthDcrRegistrationInput,
   type McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
@@ -148,122 +149,63 @@ export function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
   );
 }
 
-async function prepareBuiltinDcrRegistration(
-  owner: BuiltinConnectorAutomaticContractOwner,
-  value: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0],
-  signal: AbortSignal,
-) {
-  const encryptedClientSecret =
-    value.clientSecret === undefined
-      ? null
-      : await encryptStoredSecretValue(value.clientSecret);
-  signal.throwIfAborted();
-  return {
-    ...owner,
-    issuer: value.issuer,
-    clientId: value.clientId,
-    encryptedClientSecret,
-    tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
-    registeredScopes: [...value.registeredScopes],
-    redirectUri: value.redirectUri,
-    issuedAt: value.issuedAt,
-    expiresAt: value.expiresAt,
-  };
-}
-
-export const publishBuiltinDcrRegistration$ = command(
+export const createBuiltinDcrRegistration$ = command(
   async (
     { set },
     args: {
       readonly owner: BuiltinConnectorAutomaticContractOwner;
       readonly catalogIdentity: ExternalCatalogIdentity;
-      readonly value: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0];
-      readonly expectedRegistrationId: string | null;
+      readonly value: McpAutomaticOAuthDcrRegistrationInput;
     },
     signal: AbortSignal,
-  ): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> => {
+  ): Promise<McpAutomaticOAuthDcrRegistration> => {
     const db = set(writeDb$);
-    const { owner, value, expectedRegistrationId } = args;
-    const candidate = await prepareBuiltinDcrRegistration(owner, value, signal);
-    const issuerCondition = and(
-      ownerCondition(owner),
-      eq(builtinConnectorDcrRegistrations.issuer, value.issuer),
-    );
-    return await db.transaction(async (tx) => {
-      // Admission check: a registration is published only for the current
-      // catalog. This is a plain read; the callback publication rechecks it.
-      const [catalog] = await tx
-        .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
-        .from(connectorCatalogActiveSnapshot)
-        .where(builtinDcrCatalogCondition(args.catalogIdentity))
-        .limit(1);
-      if (!catalog) {
-        throw new McpAutomaticOAuthError(
-          { kind: "binding-drift", reason: "binding-drift" },
-          "Builtin MCP credential catalog changed during client registration",
-        );
-      }
-      const [current] = await tx
-        .select()
-        .from(builtinConnectorDcrRegistrations)
-        .where(issuerCondition)
-        .limit(1);
-      if (current && current.id !== expectedRegistrationId) {
-        return registration(current);
-      }
-      if (current) {
-        const [linked] = await tx
-          .select({
-            id: builtinConnectorAccountOauthBindings.connectorAccountId,
-          })
-          .from(builtinConnectorAccountOauthBindings)
-          .where(
-            eq(
-              builtinConnectorAccountOauthBindings.dcrRegistrationId,
-              current.id,
-            ),
-          )
-          .limit(1);
-        if (
-          linked &&
-          (current.expiresAt === null || current.expiresAt > nowDate())
-        ) {
-          throw new McpAutomaticOAuthError(
-            { kind: "incompatible", reason: "registration-conflict" },
-            "Existing MCP OAuth registration acquired a linked account during preparation",
-          );
-        }
-        // Replace the observed registration exactly; if another writer already
-        // retired it, the conditional statements change nothing.
-        await retireRegistration(tx, owner, current.id);
-      }
-      const [inserted] = await tx
-        .insert(builtinConnectorDcrRegistrations)
-        .values(candidate)
-        .onConflictDoNothing()
-        .returning();
-      const [winner] = inserted
-        ? [inserted]
-        : await tx
-            .select()
-            .from(builtinConnectorDcrRegistrations)
-            .where(issuerCondition)
-            .limit(1);
-      if (!winner) {
-        // The conflicting winner was retired before this read.
-        throw new McpAutomaticOAuthError(
-          { kind: "incompatible", reason: "registration-conflict" },
-          "Concurrent MCP OAuth registration was retired during publication",
-        );
-      }
-      return registration(winner);
-    });
+    const { owner, value } = args;
+    const encryptedClientSecret =
+      value.clientSecret === undefined
+        ? null
+        : await encryptStoredSecretValue(value.clientSecret);
+    signal.throwIfAborted();
+    // A registration is created only for the current catalog.
+    const [catalog] = await db
+      .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
+      .from(connectorCatalogActiveSnapshot)
+      .where(builtinDcrCatalogCondition(args.catalogIdentity))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!catalog) {
+      throw new McpAutomaticOAuthError(
+        { kind: "binding-drift", reason: "binding-drift" },
+        "Builtin MCP credential catalog changed during client registration",
+      );
+    }
+    const [row] = await db
+      .insert(builtinConnectorDcrRegistrations)
+      .values({
+        ...owner,
+        issuer: value.issuer,
+        clientId: value.clientId,
+        encryptedClientSecret,
+        tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
+        registeredScopes: [...value.registeredScopes],
+        redirectUri: value.redirectUri,
+        issuedAt: value.issuedAt,
+        expiresAt: value.expiresAt,
+      })
+      .returning();
+    signal.throwIfAborted();
+    if (!row) {
+      throw new Error(
+        "Failed to persist builtin MCP OAuth client registration",
+      );
+    }
+    return registration(row);
   },
 );
 
 export function builtinConnectorAutomaticDcrStore(
   args: BuiltinDcrStoreArgs,
-): Omit<McpAutomaticOAuthDcrStore, "publish"> {
+): Omit<McpAutomaticOAuthDcrStore, "create"> {
   const { db, owner } = args;
   return {
     async readByIssuer(issuer) {

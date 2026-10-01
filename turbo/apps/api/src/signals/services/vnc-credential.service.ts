@@ -8,20 +8,11 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  notExists,
-  sql,
-  TransactionRollbackError,
-} from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle, safeSync } from "../utils";
 import { parseVncClientIdentity } from "./vnc-client-identity.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -34,10 +25,7 @@ import {
   inspectVncCreationId$,
   resolveVncCreationConflict$,
 } from "./vnc-creation.service";
-import {
-  vncMemberIdentityWhere,
-  type VncOwner,
-} from "./vnc-owner-lifecycle.service";
+import type { VncOwner } from "./vnc-owner-lifecycle.service";
 
 const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
@@ -224,18 +212,6 @@ export async function prepareVncCredentialSelection(
     : { create: await prepareCredential(selection.create, featureContext) };
 }
 
-function memberStillCurrent(
-  db: Pick<ReadonlyDb, "select">,
-  args: { readonly owner: VncOwner; readonly memberCreatedAt: string },
-) {
-  return exists(
-    db
-      .select({ userId: orgMembersMetadata.userId })
-      .from(orgMembersMetadata)
-      .where(vncMemberIdentityWhere(args)),
-  );
-}
-
 function isCredentialReferenceViolation(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -252,37 +228,10 @@ function isCredentialReferenceViolation(error: unknown): boolean {
   );
 }
 
-/** Classify a conditional credential update that matched no row. */
-async function explainMissedCredentialUpdate(
-  db: Pick<ReadonlyDb, "select">,
-  args: {
-    readonly memberCreatedAt: string;
-    readonly owner: VncOwner;
-    readonly credentialId: string;
-  },
-  signal: AbortSignal,
-): Promise<"membershipRevoked" | "credentialNotFound" | "credentialConflict"> {
-  const [member] = await db
-    .select({ userId: orgMembersMetadata.userId })
-    .from(orgMembersMetadata)
-    .where(vncMemberIdentityWhere(args));
-  signal.throwIfAborted();
-  if (!member) {
-    return "membershipRevoked";
-  }
-  const [current] = await db
-    .select({ id: vncCredentials.id })
-    .from(vncCredentials)
-    .where(ownedCredential(args.owner, args.credentialId));
-  signal.throwIfAborted();
-  return current ? "credentialConflict" : "credentialNotFound";
-}
-
 export const createVncCredential$ = command(
   async (
     { set },
     args: {
-      readonly memberCreatedAt: string;
       readonly owner: VncOwner;
       readonly body: CreateVncCredentialRequest;
       readonly id: string;
@@ -310,16 +259,6 @@ export const createVncCredential$ = command(
     }
     const prepared = await prepareCredential(args.body, args.featureContext);
     signal.throwIfAborted();
-    const [member] = await db
-      .select({ userId: orgMembersMetadata.userId })
-      .from(orgMembersMetadata)
-      .where(vncMemberIdentityWhere(args));
-    signal.throwIfAborted();
-    if (!member) {
-      return vncFailure("membershipRevoked");
-    }
-    // The primary key arbitrates racing creations with the same ID; the
-    // conflict resolver turns a same-owner replay into a no-op.
     const inserted = await settle(
       db
         .insert(vncCredentials)
@@ -379,7 +318,6 @@ export const updateVncCredential$ = command(
   async (
     { set },
     args: {
-      readonly memberCreatedAt: string;
       readonly owner: VncOwner;
       readonly credentialId: string;
       readonly body: UpdateVncCredentialRequest;
@@ -389,7 +327,6 @@ export const updateVncCredential$ = command(
   ): Promise<VncResult<VncCredentialResponse>> => {
     const db = set(writeDb$);
     const owner = args.owner;
-    const expectedRevision = args.body.expectedRevision;
     const [initial] = await db
       .select(vncCredentialMetadata)
       .from(vncCredentials)
@@ -398,7 +335,7 @@ export const updateVncCredential$ = command(
     if (!initial) {
       return vncFailure("credentialNotFound");
     }
-    if (initial.revision !== expectedRevision) {
+    if (initial.revision !== args.body.expectedRevision) {
       return vncFailure("credentialConflict");
     }
     if (
@@ -407,14 +344,6 @@ export const updateVncCredential$ = command(
     ) {
       return vncFailure("invalidClientIdentity");
     }
-    const encrypted =
-      args.body.authentication === undefined
-        ? undefined
-        : await encryptAuthentication(
-            args.body.authentication,
-            args.featureContext,
-          );
-    signal.throwIfAborted();
     const hosts = await db
       .select({
         id: vncConnections.id,
@@ -427,85 +356,65 @@ export const updateVncCredential$ = command(
       .orderBy(asc(vncConnections.id));
     signal.throwIfAborted();
     const rejected = rejectCredentialUpdate(
-      expectedRevision,
-      encrypted?.authMethod,
+      initial.revision,
+      args.body.authentication?.method,
       hosts,
     );
     if (rejected) {
       return vncFailure(rejected);
     }
-    const currentRevision = and(
-      ownedCredential(owner, args.credentialId),
-      eq(vncCredentials.revision, expectedRevision),
-    );
-    // No explicit row locks. Connections are written before the credential,
-    // matching owner erasure's delete order. The credential compare-and-set
-    // decides the single winner; a loser rolls back its host generation bump.
-    // A host bound or rebound after the read above is caught by the profile
-    // foreign key, which pins the credential's auth method.
+    const encrypted =
+      args.body.authentication === undefined
+        ? undefined
+        : await encryptAuthentication(
+            args.body.authentication,
+            args.featureContext,
+          );
+    signal.throwIfAborted();
+    // The profile FK pins each bound host to its credential's auth method.
     const written = await settle(
       db.transaction(async (tx) => {
-        const bumped =
-          encrypted === undefined
-            ? undefined
-            : await tx
-                .update(vncConnections)
-                .set({
-                  generation: sql`${vncConnections.generation} + 1`,
-                  updatedAt: nowDate(),
-                })
-                .where(
-                  and(
-                    referencingConnections(owner, args.credentialId),
-                    exists(
-                      tx
-                        .select({ id: vncCredentials.id })
-                        .from(vncCredentials)
-                        .where(currentRevision),
-                    ),
-                  ),
-                )
-                .returning({
-                  id: vncConnections.id,
-                  displayName: vncConnections.displayName,
-                });
-        const [updated] = await tx
+        if (encrypted !== undefined && hosts.length > 0) {
+          await tx
+            .update(vncConnections)
+            .set({
+              generation: sql`${vncConnections.generation} + 1`,
+              updatedAt: nowDate(),
+            })
+            .where(referencingConnections(owner, args.credentialId));
+        }
+        const [row] = await tx
           .update(vncCredentials)
           .set({
             name: args.body.name,
             ...encrypted,
-            revision: expectedRevision + 1,
+            revision: sql`${vncCredentials.revision} + 1`,
             updatedAt: nowDate(),
           })
-          .where(and(currentRevision, memberStillCurrent(tx, args)))
+          .where(ownedCredential(owner, args.credentialId))
           .returning(vncCredentialMetadata);
-        if (!updated) {
-          return tx.rollback();
-        }
-        return { updated, bumped };
+        return row;
       }),
       signal,
     );
     if (!written.ok) {
-      if (written.error instanceof TransactionRollbackError) {
-        return vncFailure(
-          await explainMissedCredentialUpdate(db, args, signal),
-        );
-      }
       if (isCredentialReferenceViolation(written.error)) {
         return vncFailure("profileMismatch");
       }
       throw written.error;
     }
-    const { updated, bumped } = written.value;
-    const responseHosts = (bumped ?? hosts)
-      .map(({ id, displayName }) => {
-        return { id, displayName };
-      })
-      .sort((left, right) => {
-        return left.id.localeCompare(right.id);
-      });
-    return { ok: true, value: response(updated, responseHosts) };
+    if (!written.value) {
+      return vncFailure("credentialNotFound");
+    }
+    return {
+      ok: true,
+      value: response(
+        written.value,
+        hosts.map(({ id, displayName }) => {
+          return { id, displayName };
+        }),
+      ),
+    };
   },
 );
 
@@ -513,7 +422,6 @@ export const deleteVncCredential$ = command(
   async (
     { set },
     args: {
-      readonly memberCreatedAt: string;
       readonly owner: VncOwner;
       readonly credentialId: string;
       readonly expectedRevision: number;
@@ -521,26 +429,22 @@ export const deleteVncCredential$ = command(
     signal: AbortSignal,
   ): Promise<VncResult<undefined>> => {
     const db = set(writeDb$);
-    const owner = args.owner;
-    // One conditional statement, no explicit row locks. A host bound
-    // concurrently is caught by the RESTRICT credential foreign key.
+    const [current] = await db
+      .select({ revision: vncCredentials.revision })
+      .from(vncCredentials)
+      .where(ownedCredential(args.owner, args.credentialId));
+    signal.throwIfAborted();
+    if (!current) {
+      return vncFailure("credentialNotFound");
+    }
+    if (current.revision !== args.expectedRevision) {
+      return vncFailure("credentialConflict");
+    }
+    // The RESTRICT credential FK rejects deleting a credential used by a host.
     const deleted = await settle(
       db
         .delete(vncCredentials)
-        .where(
-          and(
-            ownedCredential(owner, args.credentialId),
-            eq(vncCredentials.revision, args.expectedRevision),
-            memberStillCurrent(db, args),
-            notExists(
-              db
-                .select({ id: vncConnections.id })
-                .from(vncConnections)
-                .where(referencingConnections(owner, args.credentialId)),
-            ),
-          ),
-        )
-        .returning({ id: vncCredentials.id }),
+        .where(ownedCredential(args.owner, args.credentialId)),
       signal,
     );
     if (!deleted.ok) {
@@ -549,34 +453,6 @@ export const deleteVncCredential$ = command(
       }
       throw deleted.error;
     }
-    if (deleted.value.length > 0) {
-      return { ok: true, value: undefined };
-    }
-    const [member] = await db
-      .select({ userId: orgMembersMetadata.userId })
-      .from(orgMembersMetadata)
-      .where(vncMemberIdentityWhere(args));
-    signal.throwIfAborted();
-    if (!member) {
-      return vncFailure("membershipRevoked");
-    }
-    const [current] = await db
-      .select({ revision: vncCredentials.revision })
-      .from(vncCredentials)
-      .where(ownedCredential(owner, args.credentialId));
-    signal.throwIfAborted();
-    if (!current) {
-      return vncFailure("credentialNotFound");
-    }
-    if (current.revision !== args.expectedRevision) {
-      return vncFailure("credentialConflict");
-    }
-    const [host] = await db
-      .select({ id: vncConnections.id })
-      .from(vncConnections)
-      .where(referencingConnections(owner, args.credentialId))
-      .limit(1);
-    signal.throwIfAborted();
-    return vncFailure(host ? "credentialInUse" : "credentialConflict");
+    return { ok: true, value: undefined };
   },
 );
