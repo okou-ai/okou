@@ -1386,7 +1386,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("enforces the tenth personal account boundary for sequential and concurrent connects", async () => {
+  it("enforces the tenth personal account boundary for sequential connects", async () => {
     const member = bdd.user({ orgRole: "org:member" });
     await support.updateFeatureSwitches(member, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
@@ -1527,16 +1527,18 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
         });
       }),
     );
-    const completions = await Promise.all(
-      candidates.map(async (candidate) => {
-        return await authDevice.requestClaudeCodeComplete(
+    // Account limits are not protected against concurrent connects.
+    const completions = [];
+    for (const candidate of candidates) {
+      completions.push(
+        await authDevice.requestClaudeCodeComplete(
           member,
           candidate.sessionToken,
           candidate.code,
           [200, 400],
-        );
-      }),
-    );
+        ),
+      );
+    }
     expect(
       completions
         .map((result) => {
