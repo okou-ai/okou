@@ -13,12 +13,10 @@ import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
 import {
   completeRunWithoutCallbacksFixture,
-  readChatEventContextFixture,
   setQueuedUserMessageCreatedAtFixture,
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
 import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
-import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
@@ -31,6 +29,7 @@ import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automati
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -63,6 +62,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 
@@ -323,31 +323,30 @@ async function pendingAutomationEvents(threadId: string) {
   );
 }
 
-async function pendingWorkflowAutomationIds(
+/** Visible trigger text of each pending automation event, oldest first. */
+async function pendingAutomationDisplayTexts(
   threadId: string,
-): Promise<readonly string[]> {
-  return await Promise.all(
-    (await pendingAutomationEvents(threadId)).map(async (event) => {
-      const eventContext = await readChatEventContextFixture(event.id);
-      if (!eventContext?.automationId) {
-        throw new Error("Expected pending workflow automation context");
-      }
-      return eventContext.automationId;
-    }),
-  );
+): Promise<readonly (string | null)[]> {
+  return (await pendingAutomationEvents(threadId)).map((event) => {
+    return chatEventDisplayText(event);
+  });
 }
 
-async function pendingAutomationEventForAutomation(
-  threadId: string,
-  automationId: string,
-) {
-  for (const event of await pendingAutomationEvents(threadId)) {
-    const eventContext = await readChatEventContextFixture(event.id);
-    if (eventContext?.automationId === automationId) {
-      return event;
-    }
-  }
-  return undefined;
+/**
+ * The drained Run's agent prompt carries the automation event that launched
+ * it, including the owning automation id from the admitted event data.
+ */
+async function expectAutomationRunPrompt(
+  scenario: Scenario,
+  runId: string,
+  event: { readonly eventType: string; readonly automationId: string },
+): Promise<string> {
+  const { prompt } = await runsApi.readRun(scenario.actor, runId);
+  expect(prompt).toContain(
+    `/${WORKFLOW_NAME}\n\nAutomation event\nType: ${event.eventType}\n`,
+  );
+  expect(prompt).toContain(`"automationId": "${event.automationId}"`);
+  return prompt;
 }
 
 async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
@@ -924,10 +923,11 @@ describe("workflow queue", () => {
     const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
     mockNow(firedAt);
     await executeDueWorkflowAutomations(created.body.id);
-    const pendingTick = await pendingAutomationEventForAutomation(
+    const pendingTicks = await pendingAutomationEvents(
       webhookAutomation.threadId,
-      created.body.id,
     );
+    expect(pendingTicks).toHaveLength(1);
+    const pendingTick = pendingTicks[0];
     if (!pendingTick?.userMessage) {
       throw new Error("Expected the schedule tick to remain pending");
     }
@@ -936,24 +936,16 @@ describe("workflow queue", () => {
     if (admittedTriggerBrief === undefined) {
       throw new Error("Expected the admitted schedule tick trigger brief");
     }
+    expect(chatEventAutomationPart(pendingTick)).toStrictEqual({
+      type: "automation",
+      workflowName: WORKFLOW_NAME,
+      workflowId: scenario.workflowId,
+      automationBrief: admittedTriggerBrief,
+    });
     const firedAtIso = new Date(firedAt).toISOString();
     const admittedDisplayPrompt = "This workflow started on schedule.";
     const admittedAgentPromptSummary = `Summary: schedule fired at ${firedAtIso} (cron "0 9 * * *" in UTC).`;
     expect(chatEventDisplayText(pendingTick)).toBe(admittedDisplayPrompt);
-    const pendingContext = await readChatEventContextFixture(pendingTick.id);
-    expect(pendingContext).toMatchObject({
-      contextType: "automation",
-      contextId: expect.any(String),
-      automationId: created.body.id,
-      triggerBrief: admittedTriggerBrief,
-      workflowName: WORKFLOW_NAME,
-      automationEventType: "schedule",
-      automationEventPayload: expect.objectContaining({
-        automationId: created.body.id,
-        trigger: "schedule",
-        firedAt: firedAtIso,
-      }),
-    });
 
     // A later, unrelated drain pass launches the tick. Its agent context must
     // still report the fire time, not this drain time.
@@ -962,17 +954,25 @@ describe("workflow queue", () => {
     await completeRunThroughSandbox(scenario, busyRunId);
     const runIds = await workflowRunIds(webhookAutomation.threadId);
     expect(runIds).toHaveLength(2);
-    await expect(readWorkflowRunTriggerSourceFixture(runIds[1]!)).resolves.toBe(
-      "automation-schedule",
+    const tickRunId = runIds[1];
+    if (!tickRunId) {
+      throw new Error("Expected the schedule tick to launch a run");
+    }
+    const tickLog = await runReadsApi.requestReadLogById(
+      scenario.actor,
+      tickRunId,
+      [200],
     );
+    expect(tickLog.body.triggerSource).toBe("automation-schedule");
     const claimedTick = (
       await wf.readThreadEvents(webhookAutomation.threadId)
     ).find((event) => {
-      return event.eventType === "input.prompt" && event.runId === runIds[1];
+      return event.eventType === "input.prompt" && event.runId === tickRunId;
     });
     if (claimedTick?.eventType !== "input.prompt") {
       throw new Error("Expected the schedule tick to be claimed");
     }
+    expect(claimedTick.revokesEventId).toBe(pendingTick.id);
     expect(claimedTick.userMessage).toStrictEqual({
       version: 1,
       parts: [
@@ -984,20 +984,14 @@ describe("workflow queue", () => {
     expect(chatEventAutomationPart(claimedTick)?.automationBrief).toBe(
       admittedTriggerBrief,
     );
-    await expect(
-      readChatEventContextFixture(claimedTick.id),
-    ).resolves.toMatchObject({
-      contextType: "automation",
-      contextId: pendingContext?.contextId,
-      automationId: created.body.id,
-      triggerBrief: admittedTriggerBrief,
-    });
 
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runIds[1]!);
+    const claim = await runsApi.claimRunnerJob(tickRunId);
     expect(claim.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: schedule\n${admittedAgentPromptSummary}`,
     );
+    expect(claim.prompt).toContain(`"automationId": "${created.body.id}"`);
+    expect(claim.prompt).toContain(`"trigger": "schedule"`);
     expect(claim.prompt).toContain(`"firedAt": "${firedAtIso}"`);
     expect(claim.prompt).not.toContain(new Date(drainedAt).toISOString());
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
@@ -1107,30 +1101,58 @@ describe("workflow queue", () => {
     );
     const manual = await runAutomationNow(created.body.id);
     expect(manual.body.runId).toBeNull();
-    const manualEvent = await pendingAutomationEventForAutomation(
+    const [manualEvent] = await pendingAutomationEvents(
       webhookAutomation.threadId,
-      created.body.id,
     );
     if (!manualEvent) {
       throw new Error("Expected the manual run to queue");
     }
 
-    mockNow(Date.parse(created.body.nextRunAt) + 60_000);
+    const tickAt = Date.parse(created.body.nextRunAt) + 60_000;
+    mockNow(tickAt);
     await executeDueWorkflowAutomations(created.body.id);
 
     const pending = await pendingAutomationEvents(webhookAutomation.threadId);
     expect(pending).toHaveLength(2);
     expect(pending[0]?.id).toBe(manualEvent.id);
     await expect(
-      pendingWorkflowAutomationIds(webhookAutomation.threadId),
-    ).resolves.toStrictEqual([created.body.id, created.body.id]);
+      pendingAutomationDisplayTexts(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([
+      "A manual run of this workflow was requested.",
+      "This workflow started on schedule.",
+    ]);
     await completeRunThroughSandbox(scenario, busyRunId);
+    const afterBusy = await workflowRunIds(webhookAutomation.threadId);
+    expect(afterBusy).toHaveLength(2);
+    const manualRunId = afterBusy[1];
+    if (!manualRunId) {
+      throw new Error("Expected the pending manual run to drain first");
+    }
+    await expectAutomationRunPrompt(scenario, manualRunId, {
+      eventType: "manual",
+      automationId: created.body.id,
+    });
+
+    // The schedule tick kept its own place behind the manual request.
+    await completeRunThroughSandbox(scenario, manualRunId);
+    const afterManual = await workflowRunIds(webhookAutomation.threadId);
+    expect(afterManual).toHaveLength(3);
+    const tickRunId = afterManual[2];
+    if (!tickRunId) {
+      throw new Error("Expected the pending schedule tick to drain next");
+    }
     await expect(
-      workflowRunIds(webhookAutomation.threadId),
-    ).resolves.toHaveLength(2);
+      expectAutomationRunPrompt(scenario, tickRunId, {
+        eventType: "schedule",
+        automationId: created.body.id,
+      }),
+    ).resolves.toContain(`"firedAt": "${new Date(tickAt).toISOString()}"`);
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([]);
   });
 
-  it("keeps claimed automation context after the automation is deleted", async () => {
+  it("keeps a claimed automation run's public context after the automation is deleted", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
     const runId = await expectAcceptedRunId(
@@ -1145,14 +1167,16 @@ describe("workflow queue", () => {
     if (!claimedEvent) {
       throw new Error("Expected the automation event to be claimed");
     }
-    const contextBeforeDelete = await readChatEventContextFixture(
-      claimedEvent.id,
-    );
-    expect(contextBeforeDelete).toMatchObject({
-      contextType: "automation",
-      contextId: expect.any(String),
-      automationId: automation.automationId,
+    expect(chatEventAutomationPart(claimedEvent)).toStrictEqual({
+      type: "automation",
+      workflowName: WORKFLOW_NAME,
+      workflowId: scenario.workflowId,
     });
+    const promptBeforeDelete = await expectAutomationRunPrompt(
+      scenario,
+      runId,
+      { eventType: "webhook-received", automationId: automation.automationId },
+    );
 
     await accept(
       automationsClient().delete({
@@ -1162,9 +1186,22 @@ describe("workflow queue", () => {
       [204],
     );
 
+    // The claimed turn and the Runner's launch context keep the deleted
+    // automation's provenance.
     await expect(
-      readChatEventContextFixture(claimedEvent.id),
-    ).resolves.toStrictEqual(contextBeforeDelete);
+      wf.readThreadEvents(automation.threadId),
+    ).resolves.toContainEqual(claimedEvent);
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(runId);
+    expect(claim.prompt).toContain(
+      `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\n`,
+    );
+    expect(claim.prompt).toContain(
+      `"automationId": "${automation.automationId}"`,
+    );
+    await expect(runsApi.readRun(scenario.actor, runId)).resolves.toMatchObject(
+      { prompt: promptBeforeDelete },
+    );
     await runsApi.requestCancelRun(scenario.actor, runId, [200]);
   });
 
@@ -1187,6 +1224,9 @@ describe("workflow queue", () => {
 
     const scheduleAutomation = await createScheduleAutomation(scenario);
     expect(scheduleAutomation.threadId).toBe(webhookAutomation.threadId);
+    // Freeze the clock so the manual request time is known to the caller.
+    mockNow(now());
+    const requestedAt = new Date(now()).toISOString();
     const manual = await runAutomationNow(scheduleAutomation.automationId);
     expect(manual.body).toStrictEqual({
       runId: null,
@@ -1208,23 +1248,10 @@ describe("workflow queue", () => {
     expect(scheduleDisplayPrompt).toBe(
       "A manual run of this workflow was requested.",
     );
-    const scheduleContext = await readChatEventContextFixture(scheduleEvent.id);
-    if (scheduleContext === null) {
-      throw new Error("Expected the manual schedule event context");
-    }
-    expect(scheduleContext).toMatchObject({
+    expect(chatEventAutomationPart(scheduleEvent)).toMatchObject({
       workflowName: WORKFLOW_NAME,
-      automationEventType: "manual",
-      automationEventPayload: expect.objectContaining({
-        automationId: scheduleAutomation.automationId,
-        trigger: "manual",
-        requestedAt: expect.any(String),
-      }),
+      workflowId: scenario.workflowId,
     });
-    const requestedAt = scheduleContext.automationEventPayload?.requestedAt;
-    if (typeof requestedAt !== "string") {
-      throw new Error("Expected the manual schedule event request time");
-    }
 
     await accept(
       automationsClient().delete({
@@ -1364,16 +1391,6 @@ describe("workflow queue", () => {
     if (admittedEvent?.eventType !== "input.automation") {
       throw new Error("Expected the rejected event's admitted queue input");
     }
-    await expect(
-      readChatEventContextFixture(admittedEvent.id),
-    ).resolves.toMatchObject({
-      workflowName: WORKFLOW_NAME,
-      automationEventType: "webhook-received",
-      automationEventPayload: expect.objectContaining({
-        receivedAt: "2026-07-25T12:00:00.000Z",
-        deliveryId: expect.any(String),
-      }),
-    });
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
     // Reconnect the thread's model so the next trigger can launch.
@@ -1395,6 +1412,14 @@ describe("workflow queue", () => {
       busyRunId,
       runId,
     ]);
+    await expect(
+      expectAutomationRunPrompt(scenario, runId, {
+        eventType: "webhook-received",
+        automationId: automation.automationId,
+      }),
+    ).resolves.toContain(
+      "Summary: signed workflow webhook received an HTTP POST at 2026-07-25T12:00:00.000Z (delivery ",
+    );
   });
 
   it("re-arms a recurring schedule after its launch fast-fails", async () => {
@@ -1598,13 +1623,17 @@ describe("workflow queue", () => {
     expect(claimed.enabled).toBeTruthy();
     expect(claimed.nextRunAt).toBeNull();
 
-    const queuedEvent = await pendingAutomationEventForAutomation(
+    const pendingOnce = await pendingAutomationEvents(
       created.body.chatThreadId,
-      created.body.id,
     );
+    expect(pendingOnce).toHaveLength(1);
+    const queuedEvent = pendingOnce[0];
     if (!queuedEvent) {
       throw new Error("Expected the claimed one-time event to remain queued");
     }
+    expect(chatEventDisplayText(queuedEvent)).toBe(
+      "The one-time scheduled run started.",
+    );
     await completeRunThroughSandbox(scenario, busyRunId);
     const runIds = await workflowRunIds(created.body.chatThreadId);
     expect(runIds).toHaveLength(2);
@@ -1612,9 +1641,24 @@ describe("workflow queue", () => {
     if (!drainedRunId) {
       throw new Error("Expected the queued one-time event to drain");
     }
+    await expect(
+      wf.readThreadEvents(created.body.chatThreadId),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        revokesEventId: queuedEvent.id,
+        runId: drainedRunId,
+      }),
+    );
     const drainedClaim = await completeRunThroughSandbox(
       scenario,
       drainedRunId,
+    );
+    expect(drainedClaim.prompt).toContain(
+      `/${WORKFLOW_NAME}\n\nAutomation event\nType: schedule\n`,
+    );
+    expect(drainedClaim.prompt).toContain(
+      `"automationId": "${created.body.id}"`,
     );
     expect(drainedClaim.resumeSession?.sessionId).toBe(
       `workflow-queue-cli-${busyRunId}`,
@@ -1789,14 +1833,39 @@ describe("workflow queue", () => {
       chatThreadId: webhookAutomation.threadId,
     });
     await expect(
-      pendingWorkflowAutomationIds(webhookAutomation.threadId),
+      pendingAutomationDisplayTexts(webhookAutomation.threadId),
     ).resolves.toStrictEqual([
-      webhookAutomation.automationId,
-      scheduleAutomation.automationId,
+      "A signed webhook request was received.",
+      "A manual run of this workflow was requested.",
     ]);
     await expect(
       workflowRunIds(webhookAutomation.threadId),
     ).resolves.toStrictEqual([runningRunId]);
+
+    // The backlog drains first, then the manual request of the other
+    // automation.
+    await completeRunThroughSandbox(scenario, runningRunId);
+    const afterRunning = await workflowRunIds(webhookAutomation.threadId);
+    expect(afterRunning).toHaveLength(2);
+    const backlogRunId = afterRunning[1];
+    if (!backlogRunId) {
+      throw new Error("Expected the existing backlog to drain first");
+    }
+    await expectAutomationRunPrompt(scenario, backlogRunId, {
+      eventType: "webhook-received",
+      automationId: webhookAutomation.automationId,
+    });
+    await completeRunThroughSandbox(scenario, backlogRunId);
+    const afterBacklog = await workflowRunIds(webhookAutomation.threadId);
+    expect(afterBacklog).toHaveLength(3);
+    const manualRunId = afterBacklog[2];
+    if (!manualRunId) {
+      throw new Error("Expected the manual Run now to drain after the backlog");
+    }
+    await expectAutomationRunPrompt(scenario, manualRunId, {
+      eventType: "manual",
+      automationId: scheduleAutomation.automationId,
+    });
   });
 
   it("keeps manual Run now behind the user message launched by the cancellation pick", async () => {
@@ -1847,9 +1916,9 @@ describe("workflow queue", () => {
       chatThreadId: threadId,
     });
 
-    await expect(pendingWorkflowAutomationIds(threadId)).resolves.toStrictEqual(
-      [automation.automationId],
-    );
+    await expect(
+      pendingAutomationDisplayTexts(threadId),
+    ).resolves.toStrictEqual(["A manual run of this workflow was requested."]);
     const messages = await wf.readThreadEvents(threadId);
     const claimedUserMessages = messages.filter((message) => {
       return (
@@ -1899,6 +1968,10 @@ describe("workflow queue", () => {
           : [];
       }),
     ).toStrictEqual([firstRunId, userRunId, manualRunId]);
+    await expectAutomationRunPrompt(scenario, manualRunId, {
+      eventType: "manual",
+      automationId: automation.automationId,
+    });
     await runsApi.requestCancelRun(scenario.actor, manualRunId, [200]);
     await clearAllDetached();
   });
