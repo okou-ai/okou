@@ -437,8 +437,13 @@ and Codex protocol assembly. Non-Pi Codex subscription-account/org auth-json exe
 same source/effect/pure-conversion boundary. Account-source IDs remain distinct
 from member-provider IDs; required fields and server-only refresh/ID-token policy
 are selected from the existing auth-method registry. Thread retains deferred
-source IDs and real nonsecret Codex routing identity. Cloud multi-auth, Claude
-subscription and Pi Codex account conversion remain unfinished. Builtin paths now consume the approved managed-key
+source IDs and real nonsecret Codex routing identity. Non-Pi Claude OAuth and
+Pi Codex account/org execution also consume the owned source/runtime boundary.
+Explicit cloud deployments/profiles now use stored `configuredModel` facts:
+Bedrock bearer/SigV4 and Azure projections validate required auth fields through
+the existing registry; the owner retains Pi cloud mapping checks before pure
+conversion. Specialized DeepSeek and full legacy retirement remain unfinished.
+No missing cloud profile is replaced with a guessed model. Builtin paths now consume the approved managed-key
 credential variant: source reads nonsecret exact-key facts/reference, an effect
 explicitly resolves that same key, and the converter checks source/route/vendor/key
 binding without I/O. No ciphertext is fabricated, no default key is selected and

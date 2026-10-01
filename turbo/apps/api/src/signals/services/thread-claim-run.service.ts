@@ -1,3 +1,5 @@
+import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
+import { PiNativeConfigurationError } from "./pi-native-model-config";
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
@@ -6,7 +8,10 @@ import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
-import { compileModelRuntime } from "./execution-model-runtime";
+import {
+  compileModelRuntime,
+  type ModelCredentialValues,
+} from "./execution-model-runtime";
 import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
@@ -542,6 +547,7 @@ import {
   getSecretsForAuthMethod,
   getModelProviderFirewall,
   hasAuthMethods,
+  type ModelProviderType,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -685,6 +691,8 @@ function isMigratedRegisteredSource(
       "openrouter-codex",
       "vercel-ai-gateway",
       "vercel-ai-gateway-codex",
+      "aws-bedrock",
+      "azure-foundry",
     ].includes(type)
   );
 }
@@ -2477,6 +2485,58 @@ type RunnerInputResult =
   | ReturnType<typeof prepareRunnerStorageInput>
   | CreateRunErrorResult
   | null;
+
+function modelCredentialsAreUsable(
+  source: ModelSourceSnapshot,
+  type: ModelProviderType,
+  credentials: ModelCredentialValues,
+): boolean {
+  if (hasAuthMethods(type)) {
+    const method =
+      source.configuration.kind === "registered-provider"
+        ? source.configuration.authMethod
+        : null;
+    const rules = method ? getSecretsForAuthMethod(type, method) : undefined;
+    return (
+      rules !== undefined &&
+      Object.entries(rules).every(([name, rule]) => {
+        return !rule.required || !!credentials[name];
+      })
+    );
+  }
+  const name = getSecretNameForType(type);
+  return name !== undefined && name !== null && !!credentials[name]?.trim();
+}
+
+function selectedSourceUpstream(
+  catalog: ModelCatalog,
+  source: ModelSourceSnapshot,
+  type: ModelProviderType,
+  logicalModel: string,
+  piExecution: boolean | undefined,
+): string | null {
+  const cloud = type === "aws-bedrock" || type === "azure-foundry";
+  const upstream =
+    cloud && source.configuration.kind === "registered-provider"
+      ? source.configuration.configuredModel
+      : catalogProviderUpstreamModel(catalog, logicalModel, type);
+  if (
+    cloud &&
+    piExecution &&
+    !isCloudModelMappingValid(
+      type,
+      logicalModel,
+      upstream,
+      catalogHasProviderRoute(catalog, logicalModel, type),
+      catalog.byModel,
+    )
+  ) {
+    throw new PiNativeConfigurationError(
+      "Cloud provider requires its explicitly configured deployment or profile",
+    );
+  }
+  return upstream;
+}
 
 function capturesPiProviderSecret(
   catalog: ModelCatalog,
@@ -8769,6 +8829,8 @@ export function createThreadClaimRunObjects(
         "openrouter-codex",
         "vercel-ai-gateway",
         "vercel-ai-gateway-codex",
+        "aws-bedrock",
+        "azure-foundry",
       ].includes(type);
     if (registered && args.modelProviderCredentialScope !== undefined) {
       return await get(
@@ -8861,32 +8923,17 @@ export function createThreadClaimRunObjects(
       if (!credentials) {
         return null;
       }
-      const credentialName = getSecretNameForType(type);
-      if (type === "codex-oauth-token") {
-        const authMethod =
-          source.configuration.kind === "registered-provider"
-            ? source.configuration.authMethod
-            : null;
-        const rules = authMethod
-          ? getSecretsForAuthMethod(type, authMethod)
-          : undefined;
-        if (
-          !rules ||
-          Object.entries(rules).some(([name, rule]) => {
-            return rule.required && !credentials[name];
-          })
-        ) {
-          return null;
-        }
-      } else if (!credentialName || !credentials[credentialName]?.trim()) {
+      if (!modelCredentialsAreUsable(source, type, credentials)) {
         return null;
       }
-      const upstreamModel = catalogProviderUpstreamModel(
+      const upstreamModel = selectedSourceUpstream(
         catalog,
-        selectedModel,
+        source,
         type,
+        selectedModel,
+        piExecution,
       );
-      if (upstreamModel === null) {
+      if (!upstreamModel) {
         return null;
       }
       const compiled = compileModelRuntime({

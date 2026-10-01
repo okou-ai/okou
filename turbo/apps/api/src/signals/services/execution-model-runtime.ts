@@ -6,6 +6,7 @@ import {
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   getSecretNameForType,
   getSecretsForAuthMethod,
+  hasAuthMethods,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
@@ -70,21 +71,26 @@ export interface CompiledModelRuntime {
   readonly secrets: Readonly<Record<string, string>>;
 }
 
-function compileAccountRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
+function compileMultiAuthRuntime(
+  input: ModelRuntimeInput,
+): CompiledModelRuntime {
   const { source, selection, credentials } = input;
   if (
     selection.kind !== "configured" ||
-    source.configuration.kind !== "registered-provider" ||
-    source.configuration.providerType !== "codex-oauth-token"
+    source.configuration.kind !== "registered-provider"
   ) {
-    throw new Error("Account runtime requires its selected Codex source");
+    throw new Error("Multi-auth runtime requires a selected registered source");
+  }
+  const type = modelProviderTypeSchema.parse(source.configuration.providerType);
+  if (!hasAuthMethods(type)) {
+    throw new Error("Selected provider is not multi-auth");
   }
   const authMethod = source.configuration.authMethod;
   const required = authMethod
-    ? getSecretsForAuthMethod("codex-oauth-token", authMethod)
+    ? getSecretsForAuthMethod(type, authMethod)
     : undefined;
   if (!required) {
-    throw new Error("Codex account authentication method is unavailable");
+    throw new Error("Multi-auth authentication method is unavailable");
   }
   const forwardable: Record<string, string> = {};
   for (const [name, rule] of Object.entries(required)) {
@@ -100,9 +106,9 @@ function compileAccountRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
     }
   }
   const upstreamModel = selection.upstreamModel;
-  const bindings = getModelProviderEnvBindings("codex-oauth-token");
+  const bindings = getModelProviderEnvBindings(type);
   if (!bindings) {
-    throw new Error("Codex account runtime bindings are unavailable");
+    throw new Error("Multi-auth runtime bindings are unavailable");
   }
   const environment = Object.fromEntries(
     Object.entries(bindings).flatMap(([name, value]) => {
@@ -112,34 +118,77 @@ function compileAccountRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
       if (value.startsWith("$secrets.")) {
         const secretName = value.slice("$secrets.".length);
         return forwardable[secretName]
-          ? [[name, `\${{ secrets.${secretName} }}`]]
+          ? [
+              [
+                name,
+                getModelProviderFirewall(type)
+                  ? `\${{ secrets.${secretName} }}`
+                  : forwardable[secretName],
+              ],
+            ]
           : [];
       }
       return [[name, value]];
     }),
   );
-  // This identifier is routing evidence, not a bearer/refresh credential.
-  const accountId = credentials.CHATGPT_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("Codex account routing identity is missing");
-  }
-  environment.CODEX_OAUTH_ACCOUNT_ID = accountId;
-  return {
-    selectedModel: selection.selectedModel,
-    upstreamModel,
-    providerType: "codex-oauth-token",
-    credentialOwner: source.credentialOwner,
-    transport: {
+  let transport: ModelTransport;
+  let authentication: ModelAuthentication;
+  if (type === "codex-oauth-token") {
+    const accountId = credentials.CHATGPT_ACCOUNT_ID;
+    if (!accountId) {
+      throw new Error("Codex account routing identity is missing");
+    }
+    environment.CODEX_OAUTH_ACCOUNT_ID = accountId;
+    transport = {
       kind: "http",
       protocol: "openai-responses",
       baseUrl: "https://chatgpt.com/backend-api/codex",
-    },
-    authentication: {
+    };
+    authentication = {
       kind: "header",
       headerName: "Authorization",
       valueTemplate: "Bearer {{secret}}",
       secretName: "CHATGPT_ACCESS_TOKEN",
-    },
+    };
+  } else if (type === "aws-bedrock") {
+    const region = forwardable.AWS_REGION;
+    if (!region) {
+      throw new Error("Bedrock region is missing");
+    }
+    transport = { kind: "bedrock", region };
+    authentication =
+      authMethod === "api-key"
+        ? { kind: "aws-bearer", secretName: "AWS_BEARER_TOKEN_BEDROCK" }
+        : {
+            kind: "aws-sigv4",
+            accessKeyIdSecretName: "AWS_ACCESS_KEY_ID",
+            secretAccessKeySecretName: "AWS_SECRET_ACCESS_KEY",
+            sessionTokenSecretName: forwardable.AWS_SESSION_TOKEN
+              ? "AWS_SESSION_TOKEN"
+              : null,
+          };
+  } else if (type === "azure-foundry") {
+    transport = {
+      kind: "http",
+      protocol: "anthropic-messages",
+      baseUrl: `https://${forwardable.ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com/anthropic`,
+    };
+    authentication = {
+      kind: "header",
+      headerName: "api-key",
+      valueTemplate: "{{secret}}",
+      secretName: "ANTHROPIC_FOUNDRY_API_KEY",
+    };
+  } else {
+    throw new Error("Unsupported multi-auth runtime protocol");
+  }
+  return {
+    selectedModel: selection.selectedModel,
+    upstreamModel,
+    providerType: type,
+    credentialOwner: source.credentialOwner,
+    transport,
+    authentication,
     environment,
     secrets: forwardable,
   };
@@ -321,8 +370,8 @@ export function compileModelRuntime(
     return compileManagedRuntime(input);
   }
   if (config.kind === "registered-provider") {
-    return config.providerType === "codex-oauth-token"
-      ? compileAccountRuntime(input)
+    return hasAuthMethods(modelProviderTypeSchema.parse(config.providerType))
+      ? compileMultiAuthRuntime(input)
       : compileRegisteredRuntime(input);
   }
   if (

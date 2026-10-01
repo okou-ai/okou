@@ -55,6 +55,7 @@ export interface RegisteredProviderConfiguration {
   readonly providerType: string;
   readonly authMethod: string | null;
   readonly managedVendor?: string;
+  readonly configuredModel: string | null;
 }
 export interface GatewayProviderConfiguration {
   readonly kind: "gateway";
@@ -169,6 +170,7 @@ async function loadManagedSource(
       providerType: "built-in",
       authMethod: null,
       managedVendor: key.vendor,
+      configuredModel: null,
     },
     credentials: [{ kind: "managed-key", name, modelKeyId: key.id }],
     accountIdentity: null,
@@ -189,12 +191,17 @@ export function createModelSourceSnapshot(
       const rows = await db
         .select({
           account: modelProviderAccounts,
+          configuredModel: modelProviders.selectedModel,
           secret: {
             name: modelProviderAccountSecrets.name,
             encryptedValue: modelProviderAccountSecrets.encryptedValue,
           },
         })
         .from(modelProviderAccounts)
+        .innerJoin(
+          modelProviders,
+          eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+        )
         .leftJoin(
           modelProviderAccountSecrets,
           eq(
@@ -221,6 +228,7 @@ export function createModelSourceSnapshot(
           kind: "registered-provider",
           providerType: first.account.type,
           authMethod: first.account.authMethod,
+          configuredModel: first.configuredModel,
         },
         credentials: rows.flatMap((row) => {
           return row.secret
@@ -238,6 +246,7 @@ export function createModelSourceSnapshot(
           type: modelProviders.type,
           authMethod: modelProviders.authMethod,
           secretId: modelProviders.secretId,
+          configuredModel: modelProviders.selectedModel,
         })
         .from(modelProviders)
         .where(
@@ -274,6 +283,7 @@ export function createModelSourceSnapshot(
           kind: "registered-provider",
           providerType: provider.type,
           authMethod: provider.authMethod,
+          configuredModel: provider.configuredModel,
         },
         credentials: credentials.map((credential) => {
           return {
