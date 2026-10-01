@@ -13,7 +13,7 @@ import {
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { db$, type Db, type ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
@@ -978,7 +978,6 @@ function storageManifestExceedsObjectKeyLowerBound(
 }
 
 interface StorageManifestPresignedUrlCacheReadInput {
-  readonly db: ReadonlyDb;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
   readonly groups: readonly RunStoragePresignedUrlsArgs["requests"][];
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
@@ -1063,12 +1062,9 @@ export function planStorageManifestMixedLookup(
 }
 
 function createMixedStorageManifestPresignedUrlCacheRows(
-  input$: Computed<
-    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
-  >,
+  args: StorageManifestPresignedUrlCacheReadInput | undefined,
 ) {
   return computed(async (get) => {
-    const args = await get(input$);
     if (!args) {
       return undefined;
     }
@@ -1090,7 +1086,7 @@ function createMixedStorageManifestPresignedUrlCacheRows(
       "nested",
       async () => {
         const lookup = async () => {
-          return await args.db
+          return await get(db$)
             .select({
               scope: systemStoragePresignedUrlCache.scope,
               cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -1177,13 +1173,11 @@ function createMixedStorageManifestPresignedUrlCacheRows(
 
 /** Construct cache readers once; later storage initialization only changes input. */
 export function createStorageManifestPresignedUrlCacheRows(
-  input$: Computed<
-    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
-  >,
+  args: StorageManifestPresignedUrlCacheReadInput | undefined,
 ): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
-  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(input$);
+  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(args);
   return computed(async (get) => {
-    const [args, mixedRows] = await Promise.all([get(input$), get(mixedRows$)]);
+    const mixedRows = await get(mixedRows$);
     if (!args || mixedRows) {
       return mixedRows;
     }
@@ -1217,7 +1211,7 @@ export function createStorageManifestPresignedUrlCacheRows(
         const rows =
           cacheKeys.length === 0
             ? []
-            : await args.db
+            : await get(db$)
                 .select({
                   cacheKey: systemStoragePresignedUrlCache.cacheKey,
                   presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
@@ -1490,6 +1484,104 @@ async function prepareStoragePresignedUrls<TRequest extends object>(args: {
   });
 }
 
+/** Classify an already captured cache snapshot; this plan cannot read SQL. */
+function prepareCapturedStoragePresignedUrls<TRequest extends object>(args: {
+  readonly scope: StorageManifestPresignedUrlCacheScope;
+  readonly requests: readonly TRequest[];
+  readonly ttlSeconds: number;
+  readonly cacheKey: (request: TRequest) => string;
+  readonly normalize: (request: TRequest) => StoragePresignedUrlRequest;
+  readonly issuedAt?: Date;
+  readonly minimumRemainingMs?: number;
+  readonly observation?: StorageManifestCacheObservationContext;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
+}): PreparedStoragePresignedUrlRequests {
+  if (args.requests.length === 0) {
+    return {
+      results: new Map(),
+      needsFresh: [],
+      issuedAt: args.issuedAt ?? nowDate(),
+      ttlSeconds: args.ttlSeconds,
+      timing: undefined,
+    };
+  }
+
+  const stats: StorageManifestCacheObservationStats = {
+    requestedCount: args.requests.length,
+    uniqueKeyCount: 0,
+    hitCount: 0,
+    hardExpiredCount: 0,
+    missingCount: 0,
+    freshCount: 0,
+  };
+  const timing = args.observation
+    ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
+    : undefined;
+
+  const resolve = () => {
+    const prepareRequests = () => {
+      return prepareStoragePresignedUrlRequests({
+        requests: args.requests,
+        scope: args.scope,
+        cacheKey: args.cacheKey,
+        normalize: args.normalize,
+        stats,
+        prefetchedRows: args.prefetchedRows,
+      });
+    };
+    const requestsByCacheKey = timing
+      ? timing.measureSync(
+          "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
+          prepareRequests,
+        )
+      : prepareRequests();
+
+    const cacheKeys = [...requestsByCacheKey.keys()];
+    const rowsByCacheKey = args.prefetchedRows.rowsByScope.get(args.scope);
+    const rows = cacheKeys.flatMap((cacheKey) => {
+      const row = rowsByCacheKey?.get(cacheKey);
+      return row ? [row] : [];
+    });
+
+    const issuedAt = args.issuedAt ?? nowDate();
+    const results = new Map<string, StoragePresignedUrlResult>();
+    const needsFresh: StoragePresignedUrlFreshRequest[] = [];
+    const classify = () => {
+      classifyStoragePresignedUrlCacheRows({
+        requestsByCacheKey,
+        rows,
+        issuedAt,
+        minimumRemainingMs: args.minimumRemainingMs ?? 0,
+        results,
+        needsFresh,
+        stats,
+      });
+    };
+    if (timing) {
+      timing.measureSync(
+        "api_dispatch_prepare_storage_manifest_cache_classify",
+        classify,
+      );
+    } else {
+      classify();
+    }
+
+    return {
+      results,
+      needsFresh,
+      issuedAt,
+      ttlSeconds: args.ttlSeconds,
+      timing,
+    };
+  };
+  const result = safeSync(resolve);
+  if ("error" in result) {
+    timing?.flush();
+    throw result.error;
+  }
+  return result.ok;
+}
+
 async function signPreparedStoragePresignedUrls(
   prepared: PreparedStoragePresignedUrlRequests,
   signingRequests: readonly StoragePresignedUrlSigningRequest[],
@@ -1655,7 +1747,6 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
 }
 
 interface RunStoragePresignedUrlsArgs {
-  readonly db: ReadonlyDb;
   readonly requests:
     | {
         readonly kind: "system";
@@ -1677,7 +1768,7 @@ function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
   const { requests, ...common } = args;
   switch (requests.kind) {
     case "system": {
-      return prepareStoragePresignedUrls({
+      return prepareCapturedStoragePresignedUrls({
         ...common,
         requests: requests.values,
         scope: "system_storage",
@@ -1687,7 +1778,7 @@ function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
       });
     }
     case "workflow": {
-      return prepareStoragePresignedUrls({
+      return prepareCapturedStoragePresignedUrls({
         ...common,
         requests: requests.values,
         scope: "workflow_skill_storage",
@@ -1697,7 +1788,7 @@ function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
       });
     }
     case "readonly": {
-      return prepareStoragePresignedUrls({
+      return prepareCapturedStoragePresignedUrls({
         ...common,
         requests: requests.values,
         scope: "readonly_storage",

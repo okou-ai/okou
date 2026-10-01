@@ -2082,6 +2082,8 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     "nested",
     apiStartTime,
   );
+  const orgPlanCapabilities = await get(organizationPlanCapabilities$);
+  signal.throwIfAborted();
   const result = await set(
     sendNormalEvent$,
     {
@@ -2090,7 +2092,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       orgId: auth.orgId,
       preloadedAgent: agent,
-      orgPlanCapabilities$: organizationPlanCapabilities$,
+      orgPlanCapabilities,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
       ...(workflow.officialDefinitionName === null

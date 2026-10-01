@@ -186,7 +186,10 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     createRunAdmissionCreditBalanceObject(readInput$),
     createRunAdmissionUsagePackObject(readInput$),
   );
-  const { resolveAvailability$ } = createUsageAllowanceObjects(readInput$);
+  const allowanceObjects$ = computed(async (get) => {
+    const input = await get(readInput$);
+    return createUsageAllowanceObjects(input.orgId);
+  });
   const personalSubscription$ = computed(async (get) => {
     const input = await get(readInput$);
     return await isPersonalSubscriptionRoute({
@@ -239,7 +242,9 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     ) {
       return null;
     }
-    const allowance = await set(resolveAvailability$, signal);
+    const allowanceObjects = await get(allowanceObjects$);
+    signal.throwIfAborted();
+    const allowance = await set(allowanceObjects.resolveAvailability$, signal);
     signal.throwIfAborted();
     return allowance && allowance.remainingUnits > 0
       ? null

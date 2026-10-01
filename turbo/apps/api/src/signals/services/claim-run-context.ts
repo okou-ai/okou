@@ -443,9 +443,9 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  prepareUsageAllowanceRefresh,
+  createUsageAllowanceRefreshObject,
   remainingUnits,
-  resolveAvailabilityInTransaction,
+  refreshUsageAllowanceAvailability$,
   type PreparedUsageAllowanceRefresh,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
@@ -2578,7 +2578,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   // Stripe entitlement refresh for an allowance window runs outside the
   // admission and pending transactions, in the same parallel preparation.
   const preparedAllowanceRefresh$ = computed(async (get) => {
-    return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
+    return await get(createUsageAllowanceRefreshObject(claim.orgId));
   });
   const claimCatalog$ = computed((get) => {
     return loadModelCatalog(get(db$));
@@ -3364,16 +3364,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
-        const db = set(writeDb$);
-        availability = await db.transaction(async (tx) => {
-          const refreshed = await resolveAvailabilityInTransaction(
-            tx,
-            input.orgId,
-            refresh,
-          );
-          signal.throwIfAborted();
-          return refreshed;
-        });
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId: input.orgId, refresh },
+          signal,
+        );
         signal.throwIfAborted();
       }
       safeSync(() => {
@@ -6255,16 +6250,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
-        const db = set(writeDb$);
-        availability = await db.transaction(async (tx) => {
-          const refreshed = await resolveAvailabilityInTransaction(
-            tx,
-            input.orgId,
-            refresh,
-          );
-          signal.throwIfAborted();
-          return refreshed;
-        });
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId: input.orgId, refresh },
+          signal,
+        );
         signal.throwIfAborted();
       }
       safeSync(() => {
@@ -10105,7 +10095,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         kind: "requested",
         args: {
-          db: get(db$),
           content: resolved.content,
           vars: withoutLegacyAgentRunEnvironmentEntries(
             buildMergedVariables({
@@ -10187,7 +10176,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const capturedStorageBaseIndex$ = computed(async (get) => {
     const selection = await get(storageSelection$);
-    const input = { db: selection.args.db, requests: selection.requests };
+    const input = { requests: selection.requests };
     const index = await (async () => {
       const uniqueRequests = uniqueStorageIndexRequests(input.requests);
       if (uniqueRequests.length === 0) {
@@ -10205,7 +10194,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const exactVersionIds = uniqueRequests.map((request) => {
         return request.exactVersionId;
       });
-      const rows: StorageIndexRow[] = await input.db
+      const rows: StorageIndexRow[] = await get(db$)
         .select({
           orgId: storages.orgId,
           userId: storages.userId,
@@ -10260,7 +10249,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const { selection, input, index } = await get(capturedStorageBaseIndex$);
     const requests = storagePrefixVersionRequests(input.requests, index);
     const queries = requests.map((request) => {
-      return input.db
+      return get(db$)
         .select({
           storageId: storageVersions.storageId,
           id: storageVersions.id,
@@ -10339,7 +10328,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           selection.canonicalWritebackMounts.length === 0
             ? undefined
             : resolveSessionWritebackStorageMounts({
-                db: selection.args.db,
                 bucket: selection.bucket,
                 storageIndex,
                 mounts: selection.canonicalWritebackMounts,
@@ -10402,7 +10390,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!requests) {
       return undefined;
     }
-    const { entries } = requests;
     const { composeRequests, additionalRequests, artifactRequests } = requests;
     const groups = [
       { kind: "system" as const, values: composeRequests.systemRequests },
@@ -10425,7 +10412,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return group.values.length > 0;
     });
     return {
-      db: entries.input.db,
       input: {
         systemRequests: [
           ...composeRequests.systemRequests,
@@ -10458,7 +10444,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const condition = storageManifestCacheLookupCondition(pairs);
     const rows = await (async () => {
       const lookup = async () => {
-        return await args.db
+        return await get(db$)
           .select({
             scope: systemStoragePresignedUrlCache.scope,
             cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -10524,7 +10510,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         const rows =
           cacheKeys.length === 0
             ? []
-            : await args.db
+            : await get(db$)
                 .select({
                   cacheKey: systemStoragePresignedUrlCache.cacheKey,
                   presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
@@ -10604,7 +10590,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!requests) {
       return undefined;
     }
-    const { entries } = requests;
     const { composeRequests, additionalRequests, artifactRequests } = requests;
     const groups = [
       { kind: "system" as const, values: composeRequests.systemRequests },
@@ -10627,7 +10612,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return group.values.length > 0;
     });
     return {
-      db: entries.input.db,
       input: {
         systemRequests: [
           ...composeRequests.systemRequests,
@@ -10661,7 +10645,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const condition = storageManifestCacheLookupCondition(pairs);
       const rows = await (async () => {
         const lookup = async () => {
-          return await args.db
+          return await get(db$)
             .select({
               scope: systemStoragePresignedUrlCache.scope,
               cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -10727,7 +10711,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           const rows =
             cacheKeys.length === 0
               ? []
-              : await args.db
+              : await get(db$)
                   .select({
                     cacheKey: systemStoragePresignedUrlCache.cacheKey,
                     presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
@@ -11492,16 +11476,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
-        const db = set(writeDb$);
-        availability = await db.transaction(async (tx) => {
-          const refreshed = await resolveAvailabilityInTransaction(
-            tx,
-            input.orgId,
-            refresh,
-          );
-          signal.throwIfAborted();
-          return refreshed;
-        });
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId: input.orgId, refresh },
+          signal,
+        );
         signal.throwIfAborted();
       }
       safeSync(() => {
