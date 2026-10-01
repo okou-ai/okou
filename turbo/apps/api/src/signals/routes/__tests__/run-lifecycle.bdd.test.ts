@@ -15161,9 +15161,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
           ? await seedBuiltInDefaultModelKey()
           : "claude-sonnet-5";
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      if (modelProvider === "built-in") {
-        await api.updateOrgModelMode(actor, "auto");
-      }
       const run = await chat.sendAndLaunch(actor, {
         agentId,
         model: selectedModel,
@@ -15205,22 +15202,31 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       });
       expect(rawFailures).toHaveLength(1);
       expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
+      return { failures, rawFailures };
     }
 
     it.each(terminalFailureReasons)(
       "publishes %s as the terminal failure reason",
       async (failureReason) => {
-        await completePublicFailure({ failureReason });
+        const { failures, rawFailures } = await completePublicFailure({
+          failureReason,
+        });
+        expect(failures[0]?.failureReason).toBe(failureReason);
+        expect(rawFailures[0]?.failureReason).toBe(failureReason);
       },
     );
 
     it.each(["anthropic-api-key", "built-in"] as const)(
       "preserves failed completion when sandbox root storage fills on %s",
       async (modelProvider) => {
-        await completePublicFailure({
+        const { failures, rawFailures } = await completePublicFailure({
           modelProvider,
           failureReason: "guest_root_filesystem_full",
         });
+        expect(failures[0]?.failureReason).toBe("guest_root_filesystem_full");
+        expect(rawFailures[0]?.failureReason).toBe(
+          "guest_root_filesystem_full",
+        );
       },
     );
 
