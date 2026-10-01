@@ -193,6 +193,51 @@ export function getRewardAvailabilityFromAwards(
   };
 }
 
+function getStartedQuests(
+  groups: readonly {
+    readonly questKey: GetStartedClaimRow["questKey"];
+    readonly status: GetStartedClaimRow["status"];
+    readonly total: number;
+  }[],
+  isAdmin: boolean,
+  claimedToday: boolean,
+): GetStartedStatus["quests"] {
+  return getStartedQuestKeySchema.options
+    .filter((key) => {
+      return isAdmin || (key !== "slack" && key !== "invite");
+    })
+    .map((key) => {
+      const reward = GET_STARTED_REWARDS[key];
+      const claimedCount =
+        groups.find((group) => {
+          return group.questKey === key && group.status === "granted";
+        })?.total ?? 0;
+      const pendingCount = groups
+        .filter((group) => {
+          return (
+            group.questKey === key &&
+            (group.status === "pending" || group.status === "reviewing")
+          );
+        })
+        .reduce((total, group) => {
+          return total + group.total;
+        }, 0);
+      return {
+        key,
+        rewardAmount: reward.amount,
+        rewardTarget: reward.target,
+        claimedCount,
+        limit: reward.limit,
+        earnedCredits: claimedCount * reward.amount,
+        pendingCount,
+        canEarnMore:
+          key === "checkin"
+            ? !claimedToday
+            : reward.limit === null || claimedCount < reward.limit,
+      };
+    });
+}
+
 export const getStartedStatus$ = command(
   async (
     { get },
@@ -274,40 +319,7 @@ export const getStartedStatus$ = command(
         .limit(20),
     ]);
     signal.throwIfAborted();
-    const quests = getStartedQuestKeySchema.options
-      .filter((key) => {
-        return args.isAdmin || (key !== "slack" && key !== "invite");
-      })
-      .map((key) => {
-        const reward = GET_STARTED_REWARDS[key];
-        const claimedCount =
-          groups.find((group) => {
-            return group.questKey === key && group.status === "granted";
-          })?.total ?? 0;
-        const pendingCount = groups
-          .filter((group) => {
-            return (
-              group.questKey === key &&
-              (group.status === "pending" || group.status === "reviewing")
-            );
-          })
-          .reduce((total, group) => {
-            return total + group.total;
-          }, 0);
-        return {
-          key,
-          rewardAmount: reward.amount,
-          rewardTarget: reward.target,
-          claimedCount,
-          limit: reward.limit,
-          earnedCredits: claimedCount * reward.amount,
-          pendingCount,
-          canEarnMore:
-            key === "checkin"
-              ? !today
-              : reward.limit === null || claimedCount < reward.limit,
-        };
-      });
+    const quests = getStartedQuests(groups, args.isAdmin, Boolean(today));
     return {
       serverNow: at.toISOString(),
       nextResetAt: new Date(
