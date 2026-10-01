@@ -76,6 +76,10 @@ interface ImageRecognitionActor extends ApiTestUser {
   readonly runId: string;
 }
 
+interface ThreadImageRecognitionActor extends ImageRecognitionActor {
+  readonly threadId: string;
+}
+
 interface StoredObject {
   readonly userId: string;
   readonly id: string;
@@ -94,7 +98,7 @@ function okouToken(
   );
 }
 
-async function seedImageRecognitionActor(): Promise<ImageRecognitionActor> {
+async function seedImageRecognitionActor(): Promise<ThreadImageRecognitionActor> {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Image recognition tests require an organization");
@@ -104,19 +108,18 @@ async function seedImageRecognitionActor(): Promise<ImageRecognitionActor> {
     tier: "pro",
     credits: STARTING_CREDITS,
   });
+  const bdd = createBddApi(context);
   const api = createRunsApi(context);
-  const name = `image-recognition-${randomUUID().slice(0, 8)}`;
-  const compose = await api.createDirectAgent(actor, {
-    version: "1.0",
-    agents: {
-      [name]: {
-        framework: "claude-code",
-        environment: { ANTHROPIC_API_KEY: "recognition-test-key" },
-      },
-    },
+  bdd.acceptAgentStorageWrites();
+  api.configureRunnerGroup();
+  await bdd.completeOnboarding(actor);
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Image recognition agent",
+    visibility: "private",
   });
-  const run = await api.createDirectRun(actor, {
-    agentId: compose.agentId,
+  const run = await api.createThreadRun(actor, {
+    agentId: agent.agentId,
     prompt: "Recognize an uploaded image",
   });
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
@@ -128,7 +131,12 @@ async function seedImageRecognitionActor(): Promise<ImageRecognitionActor> {
       },
     ],
   });
-  return { ...actor, orgId: actor.orgId, runId: run.runId };
+  return {
+    ...actor,
+    orgId: actor.orgId,
+    runId: run.runId,
+    threadId: run.threadId,
+  };
 }
 
 async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActor> {
@@ -148,10 +156,9 @@ async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActo
     displayName: "Admitted recognition agent",
     visibility: "private",
   });
-  const run = await api.createRun(actor, {
+  const run = await api.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Recognize after credit exhaustion",
-    modelProvider: "built-in",
   });
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
     data: [
@@ -813,8 +820,8 @@ describe("POST /api/image-recognition", () => {
     expect(calls).toBe(1);
     await expect(readUsageRecord(actor)).resolves.toStrictEqual([
       expect.objectContaining({
-        title: "Unavailable thread",
-        threadId: null,
+        title: null,
+        threadId: actor.threadId,
         tokens: 4000,
         credits: EXPECTED_CHARGE,
       }),
@@ -945,6 +952,8 @@ describe("POST /api/image-recognition", () => {
   it("recognizes one owned image and settles each real invocation", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     const requestBodies: unknown[] = [];
+    // The Thread send may call the provider itself; seed it first.
+    const actor = await seedImageRecognitionActor();
     server.use(
       http.post(OPENROUTER_URL, async ({ request }) => {
         const body = await request.json();
@@ -970,7 +979,6 @@ describe("POST /api/image-recognition", () => {
         });
       }),
     );
-    const actor = await seedImageRecognitionActor();
     const pricing = await seedImageRecognitionBilling(actor);
     const fileId = randomUUID();
     setStoredObjects([
@@ -1026,8 +1034,8 @@ describe("POST /api/image-recognition", () => {
     ).resolves.toStrictEqual({ raw: 6, hourly: 0 });
     await expect(readUsageRecord(actor)).resolves.toStrictEqual([
       expect.objectContaining({
-        title: "Unavailable thread",
-        threadId: null,
+        title: null,
+        threadId: actor.threadId,
         tokens: 8000,
         credits: EXPECTED_CHARGE * 2,
       }),
@@ -1166,6 +1174,8 @@ describe("POST /api/image-recognition", () => {
 
   it("enforces agent-only capability authorization before object access", async () => {
     const actor = await seedImageRecognitionActor();
+    // Starting the actor's run reads storage; only recognition is asserted.
+    context.mocks.s3.send.mockClear();
     const fileId = randomUUID();
 
     const unauthenticated = await requestImageRecognition({ fileId });
@@ -1232,13 +1242,14 @@ describe("POST /api/image-recognition", () => {
   it("fails before the provider when credits or pricing are unavailable", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     let providerCalled = false;
+    // The Thread send may call the provider itself; seed it first.
+    const actor = await seedImageRecognitionActor();
     server.use(
       http.post(OPENROUTER_URL, () => {
         providerCalled = true;
         return HttpResponse.json({});
       }),
     );
-    const actor = await seedImageRecognitionActor();
     const configuredPricing = await createConfiguredImageRecognitionPricing();
     const fileId = randomUUID();
     setStoredObjects([
@@ -1272,6 +1283,8 @@ describe("POST /api/image-recognition", () => {
   it("maps provider image errors without exposing raw provider text", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     let providerCall = 0;
+    // The Thread send may call the provider itself; seed it first.
+    const actor = await seedImageRecognitionActor();
     server.use(
       http.post(OPENROUTER_URL, () => {
         providerCall += 1;
@@ -1291,7 +1304,6 @@ describe("POST /api/image-recognition", () => {
         );
       }),
     );
-    const actor = await seedImageRecognitionActor();
     const pricing = await seedImageRecognitionBilling(actor);
     const fileId = randomUUID();
     setStoredObjects([
@@ -1362,6 +1374,8 @@ describe("POST /api/image-recognition", () => {
   it("rejects incomplete or empty provider output without recording usage", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     let providerCall = 0;
+    // The Thread send may call the provider itself; seed it first.
+    const actor = await seedImageRecognitionActor();
     server.use(
       http.post(OPENROUTER_URL, () => {
         providerCall += 1;
@@ -1387,7 +1401,6 @@ describe("POST /api/image-recognition", () => {
         });
       }),
     );
-    const actor = await seedImageRecognitionActor();
     const pricing = await seedImageRecognitionBilling(actor);
     const fileId = randomUUID();
     setStoredObjects([
