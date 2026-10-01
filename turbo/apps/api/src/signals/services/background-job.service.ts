@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import type { BackgroundJobData } from "@okouai/db/jsonb-contracts/background-job";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
-import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
@@ -17,6 +17,8 @@ export type ClaimedBackgroundJob = BackgroundJob & {
 };
 
 type JobDatabase = ApiDb | Tx;
+
+const ENQUEUE_BATCH_SIZE = 100;
 
 interface EnqueueBackgroundJobArgs {
   readonly id: string;
@@ -58,17 +60,115 @@ export async function enqueueBackgroundJob(
     .where(eq(backgroundJobs.id, args.id))
     .limit(1);
   signal.throwIfAborted();
-  if (
-    !existing ||
-    existing.kind !== args.kind ||
-    existing.handlerVersion !== args.handlerVersion ||
-    existing.userId !== args.userId ||
-    existing.orgId !== args.orgId ||
-    !isDeepStrictEqual(existing.input, args.input)
-  ) {
+  if (!existing || !sameJobIdentity(existing, args)) {
     throw new Error("Background job identity conflicts with its durable input");
   }
   return existing;
+}
+
+function sameJobIdentity(
+  existing: EnqueueBackgroundJobArgs,
+  args: EnqueueBackgroundJobArgs,
+): boolean {
+  return (
+    existing.kind === args.kind &&
+    existing.handlerVersion === args.handlerVersion &&
+    existing.userId === args.userId &&
+    existing.orgId === args.orgId &&
+    isDeepStrictEqual(existing.input, args.input)
+  );
+}
+
+/**
+ * Admit bounded batches atomically with the caller's source mutations. Exact
+ * duplicates coalesce; contradictory IDs reject before any insert. Replays
+ * verify immutable identity without resetting progress, even across batches.
+ */
+export async function enqueueBackgroundJobs(
+  tx: Tx,
+  rows: readonly EnqueueBackgroundJobArgs[],
+  signal: AbortSignal,
+): Promise<BackgroundJob[]> {
+  signal.throwIfAborted();
+  const unique = new Map<string, EnqueueBackgroundJobArgs>();
+  for (const row of rows) {
+    // PostgreSQL UUID identity is case-insensitive, including conflict reads.
+    const args = { ...row, id: row.id.toLowerCase() };
+    const previous = unique.get(args.id);
+    if (previous && !sameJobIdentity(previous, args)) {
+      throw new Error(
+        "Background job identity conflicts with its durable input",
+      );
+    }
+    if (!previous) {
+      unique.set(args.id, args);
+    }
+  }
+  // All admissions take unique-index locks in the same order, not merely
+  // within each batch, when concurrent callers have overlapping inventories.
+  const ordered = [...unique.values()].sort((a, b) => {
+    return a.id.localeCompare(b.id);
+  });
+  const jobs = new Map<string, BackgroundJob>();
+  for (let offset = 0; offset < ordered.length; offset += ENQUEUE_BATCH_SIZE) {
+    signal.throwIfAborted();
+    const batch = ordered.slice(offset, offset + ENQUEUE_BATCH_SIZE);
+    const inserted = await tx
+      .insert(backgroundJobs)
+      .values(
+        batch.map((args) => {
+          return {
+            ...args,
+            availableAt: databaseNow,
+            createdAt: databaseNow,
+            updatedAt: databaseNow,
+          };
+        }),
+      )
+      .onConflictDoNothing({ target: backgroundJobs.id })
+      .returning();
+    signal.throwIfAborted();
+    for (const job of inserted) {
+      jobs.set(job.id, job);
+    }
+    const conflicts = batch.filter((args) => {
+      return !jobs.has(args.id);
+    });
+    if (conflicts.length > 0) {
+      const existing = await tx
+        .select()
+        .from(backgroundJobs)
+        .where(
+          inArray(
+            backgroundJobs.id,
+            conflicts.map((args) => {
+              return args.id;
+            }),
+          ),
+        );
+      signal.throwIfAborted();
+      for (const job of existing) {
+        jobs.set(job.id, job);
+      }
+      for (const args of conflicts) {
+        const job = jobs.get(args.id);
+        if (!job || !sameJobIdentity(job, args)) {
+          throw new Error(
+            "Background job identity conflicts with its durable input",
+          );
+        }
+      }
+    }
+  }
+  return [...unique.keys()].map((id) => {
+    const job = jobs.get(id);
+    if (!job) {
+      throw new Error(
+        "Background job admission did not retain its durable row",
+      );
+    }
+    return job;
+  });
 }
 
 interface ClaimBackgroundJobArgs {

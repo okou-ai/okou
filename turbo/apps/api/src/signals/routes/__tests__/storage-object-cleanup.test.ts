@@ -274,6 +274,83 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     await deleteOwner(peer, "user");
   });
 
+  it.each(["user", "organization"] as const)(
+    "drains a multi-batch %s export inventory exactly once and preserves peer outputs",
+    async (kind) => {
+      const actor = bdd.user();
+      const peer = bdd.user();
+      if (!actor.orgId || !peer.orgId) {
+        throw new Error("Expected organization-scoped export owners");
+      }
+      const s3 = objectStore();
+      const keys = Array.from({ length: 103 }, () => {
+        return `exports/${randomUUID()}.zip`;
+      });
+      // Current production export APIs cannot construct completed legacy
+      // one-call outputs, including historical rows sharing one output key.
+      // Only that historical setup crosses the uniquely owned fixture boundary;
+      // deletion/replay and retry still enter through the actual Clerk API.
+      for (const key of keys) {
+        await seedLegacyExportCleanupReferenceFixture(
+          {
+            userId: actor.userId,
+            orgId: actor.orgId,
+            s3Key: key,
+          },
+          context.signal,
+        );
+        s3.objects.set(key, Buffer.from("legacy output"));
+      }
+      const sharedKey = keys[0];
+      if (!sharedKey) {
+        throw new Error("Expected a repeated output key");
+      }
+      await seedLegacyExportCleanupReferenceFixture(
+        {
+          userId: actor.userId,
+          orgId: actor.orgId,
+          s3Key: sharedKey,
+        },
+        context.signal,
+      );
+      const peerKey = `exports/${randomUUID()}.zip`;
+      await seedLegacyExportCleanupReferenceFixture(
+        {
+          userId: peer.userId,
+          orgId: peer.orgId,
+          s3Key: peerKey,
+        },
+        context.signal,
+      );
+      s3.objects.set(peerKey, Buffer.from("peer output"));
+      s3.failNext("delete");
+      await deleteOwner(actor, kind);
+      const remaining = () => {
+        return keys.filter((key) => {
+          return s3.objects.has(key);
+        });
+      };
+      // The first bounded worker call attempts eight unique targets: one
+      // retryable failure and seven completed deletes. No target is lost when
+      // reference removal and admission span more than one database batch.
+      expect(remaining()).toHaveLength(96);
+      await deleteOwner(actor, kind);
+      expect(remaining()).toHaveLength(96);
+      let processed = 0;
+      for (let index = 0; index < 13; index++) {
+        const result = await retry(actor, kind);
+        processed += result.body.processed;
+      }
+      expect(processed).toBe(96);
+      expect(remaining()).toHaveLength(0);
+      expect(s3.objects.has(peerKey)).toBeTruthy();
+      await expect(retry(actor, kind)).resolves.toMatchObject({
+        body: { processed: 0 },
+      });
+      await deleteOwner(peer, "user");
+    },
+  );
+
   it("retries only the remaining objects after a partial DeleteObjects response", async () => {
     const actor = bdd.user();
     const s3 = objectStore();

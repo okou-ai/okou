@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { backgroundJobs } from "@okouai/db/schema/background-job";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -12,6 +12,7 @@ import {
   claimBackgroundJob,
   completeBackgroundJob,
   enqueueBackgroundJob,
+  enqueueBackgroundJobs,
   failBackgroundJob,
   retryBackgroundJob,
   yieldBackgroundJob,
@@ -60,6 +61,47 @@ async function claimJob(job: {
   return claimed;
 }
 
+function jobInputs(count: number) {
+  const owner = {
+    kind: `test-${randomUUID()}`,
+    handlerVersion: 1,
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  const rows = Array.from({ length: count }, () => {
+    const id = randomUUID();
+    return { ...owner, id, input: { objectPrefix: `jobs/${id}` } };
+  });
+  onTestFinished(async () => {
+    await db()
+      .delete(backgroundJobs)
+      .where(
+        inArray(
+          backgroundJobs.id,
+          rows.map((row) => {
+            return row.id;
+          }),
+        ),
+      );
+  });
+  return rows;
+}
+
+async function readJobs(rows: readonly { readonly id: string }[]) {
+  return await db()
+    .select()
+    .from(backgroundJobs)
+    .where(
+      inArray(
+        backgroundJobs.id,
+        rows.map((row) => {
+          return row.id;
+        }),
+      ),
+    )
+    .orderBy(backgroundJobs.id);
+}
+
 async function readJob(id: string) {
   const [job] = await db()
     .select()
@@ -100,6 +142,190 @@ async function expectFenceRejected(job: ClaimedBackgroundJob) {
     failBackgroundJob(db(), { job, error: "stale" }, context.signal),
   ).resolves.toBeFalsy();
 }
+
+describe("atomic bulk background job admission", () => {
+  // Production APIs cannot submit arbitrary durable IDs/handler versions or
+  // contradictory immutable input. These exercise the real kernel/database;
+  // Clerk webhook tests cover its constructible source-deletion behavior.
+  it("coalesces exact duplicates across batches and preserves every replay's progress", async () => {
+    const rows = jobInputs(205);
+    const [pending, completed, running] = rows.slice(100, 103);
+    if (!pending || !completed || !running) {
+      throw new Error("Expected three existing inventory targets");
+    }
+    for (const args of [pending, completed, running]) {
+      await enqueueBackgroundJob(db(), args, context.signal);
+    }
+    const pendingClaim = await claimJob(pending);
+    await checkpointBackgroundJob(
+      db(),
+      { job: pendingClaim, checkpoint: { page: 17 } },
+      context.signal,
+    );
+    await retryBackgroundJob(
+      db(),
+      {
+        job: pendingClaim,
+        error: "lost provider receipt",
+        availableAt: new Date("2999-01-01T00:00:00Z"),
+      },
+      context.signal,
+    );
+    await completeBackgroundJob(
+      db(),
+      { job: await claimJob(completed) },
+      context.signal,
+    );
+    await claimJob(running);
+    const before = await readJobs([pending, completed, running]);
+    const first = rows[0];
+    if (!first) {
+      throw new Error("Expected a fresh inventory target");
+    }
+    const admitted = await db().transaction(async (tx) => {
+      return await enqueueBackgroundJobs(
+        tx,
+        [...rows, { ...first, id: first.id.toUpperCase() }, pending],
+        context.signal,
+      );
+    });
+    expect(
+      admitted.map((job) => {
+        return job.id;
+      }),
+    ).toStrictEqual(
+      rows.map((args) => {
+        return args.id;
+      }),
+    );
+    await expect(readJobs(rows)).resolves.toHaveLength(205);
+    for (const previous of before) {
+      await expect(readJob(previous.id)).resolves.toStrictEqual(previous);
+    }
+    await db().transaction(async (tx) => {
+      await expect(
+        enqueueBackgroundJobs(tx, [], context.signal),
+      ).resolves.toStrictEqual([]);
+    });
+  });
+
+  it.each([
+    { field: "kind", change: { kind: "different-handler" } },
+    { field: "handler version", change: { handlerVersion: 2 } },
+    { field: "user", change: { userId: "different-user" } },
+    { field: "organization", change: { orgId: "different-org" } },
+    { field: "input", change: { input: { objectPrefix: "different-target" } } },
+  ])(
+    "rejects a conflicting $field without admitting any fresh targets",
+    async ({ change }) => {
+      const rows = jobInputs(2);
+      const [first, fresh] = rows;
+      if (!first || !fresh) {
+        throw new Error("Expected existing and fresh inventory targets");
+      }
+      const previous = await enqueueBackgroundJob(db(), first, context.signal);
+      await expect(
+        db().transaction(async (tx) => {
+          await enqueueBackgroundJobs(
+            tx,
+            [fresh, { ...first, ...change }],
+            context.signal,
+          );
+        }),
+      ).rejects.toThrow("identity conflicts");
+      await expect(readJobs(rows)).resolves.toStrictEqual([previous]);
+    },
+  );
+
+  it("rejects contradictory duplicates spanning batches before creating any inventory", async () => {
+    const rows = jobInputs(205);
+    const first = rows[0];
+    if (!first) {
+      throw new Error("Expected a duplicate inventory target");
+    }
+    await expect(
+      db().transaction(async (tx) => {
+        await enqueueBackgroundJobs(
+          tx,
+          [
+            ...rows,
+            {
+              ...first,
+              id: first.id.toUpperCase(),
+              input: { objectPrefix: "contradiction" },
+            },
+          ],
+          context.signal,
+        );
+      }),
+    ).rejects.toThrow("identity conflicts");
+    await expect(readJobs(rows)).resolves.toStrictEqual([]);
+  });
+
+  it("rolls back earlier batches when the final batch finds an identity conflict", async () => {
+    const rows = jobInputs(205).sort((a, b) => {
+      return a.id.localeCompare(b.id);
+    });
+    const last = rows.at(-1);
+    if (!last) {
+      throw new Error("Expected a last-batch inventory target");
+    }
+    const previous = await enqueueBackgroundJob(
+      db(),
+      { ...last, handlerVersion: 2 },
+      context.signal,
+    );
+    await expect(
+      db().transaction(async (tx) => {
+        await enqueueBackgroundJobs(tx, rows, context.signal);
+      }),
+    ).rejects.toThrow("identity conflicts");
+    await expect(readJobs(rows)).resolves.toStrictEqual([previous]);
+  });
+
+  it("accepts competing overlapping inventories in different input orders exactly once", async () => {
+    const rows = jobInputs(205);
+    const admitted = await Promise.all([
+      db().transaction(async (tx) => {
+        return await enqueueBackgroundJobs(
+          tx,
+          rows.slice(0, 151),
+          context.signal,
+        );
+      }),
+      db().transaction(async (tx) => {
+        return await enqueueBackgroundJobs(
+          tx,
+          rows.slice(50).reverse(),
+          context.signal,
+        );
+      }),
+    ]);
+    expect(
+      admitted.map((jobs) => {
+        return jobs.length;
+      }),
+    ).toStrictEqual([151, 155]);
+    const before = await readJobs(rows);
+    expect(before).toHaveLength(205);
+    await db().transaction(async (tx) => {
+      await enqueueBackgroundJobs(tx, [...rows].reverse(), context.signal);
+    });
+    await expect(readJobs(rows)).resolves.toStrictEqual(before);
+  });
+
+  it("rejects an already-aborted admission without leaving targets behind", async () => {
+    const rows = jobInputs(2);
+    const controller = new AbortController();
+    controller.abort(new Error("Admission cancelled"));
+    await expect(
+      db().transaction(async (tx) => {
+        await enqueueBackgroundJobs(tx, rows, controller.signal);
+      }),
+    ).rejects.toThrow("Admission cancelled");
+    await expect(readJobs(rows)).resolves.toStrictEqual([]);
+  });
+});
 
 describe("durable background job ownership", () => {
   it("claims a job once under competing invocations", async () => {

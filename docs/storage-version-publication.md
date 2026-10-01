@@ -115,10 +115,27 @@ remaining caller and is retired.
 ## Remove references before objects
 
 Clerk organization/user cleanup locks the owned Storage parents in UUID order.
-Deleting their versions through the parent cascade and enqueueing their R2
-cleanup inventory commit together. Export output keys are likewise captured in
-the same transaction that deletes their export references. No R2 call occurs in
-these transactions.
+It passes those exact captured IDs to `deleteLockedStoragesWithPiMemoryCandidates`
+without re-reading/re-locking the parents. That helper requires the caller's
+existing `FOR UPDATE` locks on every parent; standalone Storage and candidate
+deletion entry points still acquire their own ordered parent locks. Candidate
+removal releases only the returned source-history references, including shared
+hash multiplicities, and rejects accounting underflow before deleting parents.
+
+Deleting versions through the parent cascade and enqueueing their R2 cleanup
+inventory commit together. Export output keys are likewise captured in the same
+transaction that deletes their export references. No R2 call occurs in these
+transactions.
+
+Cleanup admission uses batches of at most 100 jobs in that caller-owned
+transaction, with globally ordered IDs and a bounded read for conflicts only.
+The unchanged deterministic ID binds bucket, target kind/value and user/org;
+every conflict also verifies the full handler kind/version, owner and input.
+Exact duplicate targets coalesce without resetting durable progress;
+contradictory IDs fail closed. A late conflict or observed cancellation rolls
+back all batches and the corresponding source deletion. The single-target
+`enqueueStorageObjectCleanup` interface remains compatible with ordinary
+lifecycle callers.
 
 The inventory uses handler version 1 of `storage-object-cleanup` in the existing
 `background_jobs` table. It has no owner foreign key, so deleting a user or
@@ -170,7 +187,9 @@ over a newer reservation. Old instances continue holding locks through their IO
 until they drain; rolling back restores that locking behavior, not physical R2
 immutability. Existing readers continue following the last committed HEAD.
 
-Cleanup is additive control data, with no schema migration. The cleanup input has
+Cleanup is additive control data, with no schema migration. Batching and explicit
+parent-lock reuse change neither persisted data nor worker ownership: serial and
+bulk writers use the same IDs, input and handler version. The cleanup input has
 an explicit handler version and captures bucket plus exact prefix/key. Older API
 workers ignore the new job kind; queued obligations remain pending until a
 compatible worker serves them. Older Clerk cleanup instances still use their

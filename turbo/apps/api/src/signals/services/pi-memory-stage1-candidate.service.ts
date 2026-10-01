@@ -136,6 +136,17 @@ export async function deletePiMemoryStage1Candidates(
     .where(inArray(storages.id, [...storageIds]))
     .orderBy(asc(storages.id))
     .for("no key update");
+  return await deleteCandidateRows(tx, storageIds);
+}
+
+/** The transaction already owns the candidate Storage parents. */
+async function deleteCandidateRows(
+  tx: Tx,
+  storageIds: readonly string[],
+): Promise<number> {
+  if (storageIds.length === 0) {
+    return 0;
+  }
   const deleted = await tx
     .delete(piMemoryStage1Candidates)
     .where(inArray(piMemoryStage1Candidates.memoryStorageId, [...storageIds]))
@@ -160,16 +171,30 @@ export async function deleteStoragesWithPiMemoryCandidates(
     .where(condition)
     .orderBy(asc(storages.id))
     .for("update");
-  const ids = parents.map((row) => {
-    return row.id;
-  });
-  if (ids.length === 0) {
+  return await deleteLockedStoragesWithPiMemoryCandidates(
+    tx,
+    parents.map((row) => {
+      return row.id;
+    }),
+  );
+}
+
+/**
+ * Every existing parent in storageIds must already be locked FOR UPDATE in
+ * UUID order by this transaction. Clerk reuses its captured parent rows here;
+ * standalone callers must use deleteStoragesWithPiMemoryCandidates instead.
+ */
+export async function deleteLockedStoragesWithPiMemoryCandidates(
+  tx: Tx,
+  storageIds: readonly string[],
+): Promise<number> {
+  if (storageIds.length === 0) {
     return 0;
   }
-  await deletePiMemoryStage1Candidates(tx, ids);
+  await deleteCandidateRows(tx, storageIds);
   const deleted = await tx
     .delete(storages)
-    .where(inArray(storages.id, ids))
+    .where(inArray(storages.id, [...storageIds]))
     .returning({ id: storages.id });
   return deleted.length;
 }

@@ -13,7 +13,7 @@ import { settleIncludingAbort } from "../utils";
 import {
   claimBackgroundJob,
   completeBackgroundJob,
-  enqueueBackgroundJob,
+  enqueueBackgroundJobs,
   retryBackgroundJob,
   yieldBackgroundJob,
   type ClaimedBackgroundJob,
@@ -32,32 +32,56 @@ const inputSchema = z.object({
   ]),
 });
 type CleanupInput = z.infer<typeof inputSchema>;
+type CleanupTarget = CleanupInput & {
+  readonly userId: string;
+  readonly orgId: string;
+};
 
 /** The caller deletes the corresponding DB references in this same transaction.
  * The inventory has no owner FK, so removing the owner cannot lose R2 work. */
 export async function enqueueStorageObjectCleanup(
   tx: Tx,
-  args: CleanupInput & { readonly userId: string; readonly orgId: string },
+  args: CleanupTarget,
   signal: AbortSignal,
 ): Promise<string> {
-  const input = inputSchema.parse({ bucket: args.bucket, target: args.target });
-  const id = uuidv5(
-    `${input.bucket}\0${input.target.kind}\0${input.target.value}\0${args.userId}\0${args.orgId}`,
-    JOB_NAMESPACE,
-  );
-  await enqueueBackgroundJob(
+  const [id] = await enqueueStorageObjectCleanups(tx, [args], signal);
+  if (!id) {
+    throw new Error("Storage cleanup admission did not retain its job ID");
+  }
+  return id;
+}
+
+/** All targets commit with source deletion in the caller's transaction. */
+export async function enqueueStorageObjectCleanups(
+  tx: Tx,
+  targets: readonly CleanupTarget[],
+  signal: AbortSignal,
+): Promise<string[]> {
+  signal.throwIfAborted();
+  const jobs = await enqueueBackgroundJobs(
     tx,
-    {
-      id,
-      kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
-      handlerVersion: HANDLER_VERSION,
-      userId: args.userId,
-      orgId: args.orgId,
-      input,
-    },
+    targets.map((args) => {
+      const input = inputSchema.parse({
+        bucket: args.bucket,
+        target: args.target,
+      });
+      return {
+        id: uuidv5(
+          `${input.bucket}\0${input.target.kind}\0${input.target.value}\0${args.userId}\0${args.orgId}`,
+          JOB_NAMESPACE,
+        ),
+        kind: STORAGE_OBJECT_CLEANUP_JOB_KIND,
+        handlerVersion: HANDLER_VERSION,
+        userId: args.userId,
+        orgId: args.orgId,
+        input,
+      };
+    }),
     signal,
   );
-  return id;
+  return jobs.map((job) => {
+    return job.id;
+  });
 }
 
 async function assertUnreferenced(

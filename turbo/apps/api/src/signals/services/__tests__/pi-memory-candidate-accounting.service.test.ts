@@ -16,6 +16,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -44,9 +45,15 @@ import {
   admitPiMemoryStage1Candidate,
   commitPiMemoryStage1Candidate,
   deletePiMemoryStage1Candidates,
+  deleteLockedStoragesWithPiMemoryCandidates,
   deleteStoragesWithPiMemoryCandidates,
   insertPiMemoryStage1Candidates,
 } from "../pi-memory-stage1-candidate.service";
+
+import {
+  enqueueStorageObjectCleanup,
+  enqueueStorageObjectCleanups,
+} from "../storage-object-cleanup.service";
 
 // Infrastructure-only exception: HTTP cannot choose the physical trigger,
 // interleave DDL/transaction snapshots, or construct a corrupt reference ledger.
@@ -468,39 +475,171 @@ describe("API C with the migrated schema", () => {
     },
   );
 
-  it("rolls back all child releases and parents on an insufficient bulk count", async () => {
+  it("reuses captured parent IDs, accounts shared hashes once, and preserves peers on replay", async () => {
     const h = await harness(false);
-    const parent = await owner(h.db);
+    const first = await owner(h.db);
+    const second = await owner(h.db, randomUUID(), first.userId);
+    const other = await owner(h.db);
     await blob(h.db);
-    await blob(h.db, newHash);
+    await h.db.transaction(async (tx) => {
+      await insertPiMemoryStage1Candidates(tx, [
+        candidate(first),
+        candidate(first),
+        candidate(second),
+        candidate(other),
+      ]);
+    });
+    await h.db.transaction(async (tx) => {
+      const parents = await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(eq(storages.userId, first.userId))
+        .orderBy(asc(storages.id))
+        .for("update");
+      const ids = parents.map((row) => {
+        return row.id;
+      });
+      await expect(
+        deleteLockedStoragesWithPiMemoryCandidates(tx, ids),
+      ).resolves.toBe(2);
+      await expect(
+        deleteLockedStoragesWithPiMemoryCandidates(tx, ids),
+      ).resolves.toBe(0);
+      await expect(
+        deleteLockedStoragesWithPiMemoryCandidates(tx, []),
+      ).resolves.toBe(0);
+    });
+    await expect(refs(h.db)).resolves.toStrictEqual([
+      { hash: oldHash, count: 2 },
+    ]);
+    await expect(
+      h.db.select({ id: storages.id }).from(storages),
+    ).resolves.toStrictEqual([{ id: other.id }]);
+    await expect(
+      h.db
+        .select({ id: piMemoryStage1Candidates.memoryStorageId })
+        .from(piMemoryStage1Candidates),
+    ).resolves.toStrictEqual([{ id: other.id }]);
+  });
+
+  it("rolls back locked parent deletion and blob releases with conflicting cleanup inventory", async () => {
+    // Neither corrupt durable handler identity nor an accounting transaction
+    // rollback is an HTTP input. Keep the jobs in this test's private schema.
+    const h = await harness(false);
+    await h.db.execute(
+      sql`CREATE TABLE background_jobs (LIKE public.background_jobs INCLUDING ALL)`,
+    );
+    const parent = await owner(h.db);
+    const peer = await owner(h.db);
+    await blob(h.db);
     await h.db.transaction(async (tx) => {
       await insertPiMemoryStage1Candidates(tx, [
         candidate(parent),
-        candidate(parent, newHash),
-        candidate(parent, newHash),
+        candidate(parent),
+        candidate(peer),
       ]);
     });
+    const target = {
+      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      target: { kind: "prefix" as const, value: parent.s3Prefix },
+      userId: parent.userId,
+      orgId: parent.orgId,
+    };
+    const id = await h.db.transaction(async (tx) => {
+      return await enqueueStorageObjectCleanup(tx, target, context.signal);
+    });
     await h.db
-      .update(blobs)
-      .set({ refCount: 1 })
-      .where(eq(blobs.hash, newHash));
-    await expect(
-      h.db.transaction(async (tx) => {
-        await deleteStoragesWithPiMemoryCandidates(
-          tx,
-          eq(storages.id, parent.id),
-        );
-      }),
-    ).rejects.toThrow(/no retained reference/u);
+      .update(backgroundJobs)
+      .set({ handlerVersion: 2 })
+      .where(eq(backgroundJobs.id, id));
+    const remove = async (tx: Tx) => {
+      const parents = await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(eq(storages.id, parent.id))
+        .orderBy(asc(storages.id))
+        .for("update");
+      await deleteLockedStoragesWithPiMemoryCandidates(
+        tx,
+        parents.map((row) => {
+          return row.id;
+        }),
+      );
+      return await enqueueStorageObjectCleanups(
+        tx,
+        [target, target],
+        context.signal,
+      );
+    };
+    await expect(h.db.transaction(remove)).rejects.toThrow(
+      "identity conflicts",
+    );
     await expect(refs(h.db)).resolves.toStrictEqual([
-      { hash: oldHash, count: 2 },
-      { hash: newHash, count: 1 },
+      { hash: oldHash, count: 4 },
     ]);
     await expect(
       h.db.select().from(piMemoryStage1Candidates),
     ).resolves.toHaveLength(3);
-    await expect(h.db.select().from(storages)).resolves.toHaveLength(1);
+    await expect(h.db.select().from(storages)).resolves.toHaveLength(2);
+    await expect(h.db.select().from(backgroundJobs)).resolves.toMatchObject([
+      { id, handlerVersion: 2 },
+    ]);
+    await h.db.delete(backgroundJobs).where(eq(backgroundJobs.id, id));
+    await expect(h.db.transaction(remove)).resolves.toStrictEqual([id]);
+    await expect(refs(h.db)).resolves.toStrictEqual([
+      { hash: oldHash, count: 2 },
+    ]);
+    await expect(
+      h.db.select({ id: storages.id }).from(storages),
+    ).resolves.toStrictEqual([{ id: peer.id }]);
   });
+
+  it.each(["standalone", "already-locked"])(
+    "rolls back %s child releases and parents on an insufficient bulk count",
+    async (path) => {
+      const h = await harness(false);
+      const parent = await owner(h.db);
+      await blob(h.db);
+      await blob(h.db, newHash);
+      await h.db.transaction(async (tx) => {
+        await insertPiMemoryStage1Candidates(tx, [
+          candidate(parent),
+          candidate(parent, newHash),
+          candidate(parent, newHash),
+        ]);
+      });
+      await h.db
+        .update(blobs)
+        .set({ refCount: 1 })
+        .where(eq(blobs.hash, newHash));
+      await expect(
+        h.db.transaction(async (tx) => {
+          if (path === "already-locked") {
+            await tx
+              .select({ id: storages.id })
+              .from(storages)
+              .where(eq(storages.id, parent.id))
+              .orderBy(asc(storages.id))
+              .for("update");
+            await deleteLockedStoragesWithPiMemoryCandidates(tx, [parent.id]);
+          } else {
+            await deleteStoragesWithPiMemoryCandidates(
+              tx,
+              eq(storages.id, parent.id),
+            );
+          }
+        }),
+      ).rejects.toThrow(/no retained reference/u);
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 2 },
+        { hash: newHash, count: 1 },
+      ]);
+      await expect(
+        h.db.select().from(piMemoryStage1Candidates),
+      ).resolves.toHaveLength(3);
+      await expect(h.db.select().from(storages)).resolves.toHaveLength(1);
+    },
+  );
 
   it("serializes first-storage creation and competing admission without double retain", async () => {
     const h = await harness(false);

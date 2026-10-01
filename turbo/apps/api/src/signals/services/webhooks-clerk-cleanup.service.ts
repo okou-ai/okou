@@ -57,7 +57,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
-  enqueueStorageObjectCleanup,
+  enqueueStorageObjectCleanups,
   executeStorageObjectCleanupWork$,
 } from "./storage-object-cleanup.service";
 import {
@@ -91,7 +91,7 @@ import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-cl
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
-import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
+import { deleteLockedStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
@@ -626,42 +626,43 @@ async function deleteClerkStorageReferences(
           ? eq(storages.orgId, scope.orgId)
           : eq(storages.userId, scope.userId),
       )
-      .orderBy(asc(storages.id));
+      // Move the existing deletion helper's required parent lock to this exact
+      // capture, so the already-locked path can reuse it without a second read.
+      .orderBy(asc(storages.id))
+      .for("update");
     signal.throwIfAborted();
     if (rows.length === 0) {
       return [];
     }
-    await deleteStoragesWithPiMemoryCandidates(
+    await deleteLockedStoragesWithPiMemoryCandidates(
       tx,
-      inArray(
-        storages.id,
-        rows.map((row) => {
-          return row.id;
-        }),
-      ),
+      rows.map((row) => {
+        return row.id;
+      }),
     );
     signal.throwIfAborted();
-    const jobIds: string[] = [];
-    for (const row of rows) {
-      // Preserve the existing user-deletion boundary: legacy prefixes may be
-      // shared. Org-owned instruction Storage belongs to retained Agents.
-      if (scope.kind === "user" && row.s3Prefix !== `${row.orgId}/${row.id}`) {
-        continue;
-      }
-      jobIds.push(
-        await enqueueStorageObjectCleanup(
-          tx,
+    return await enqueueStorageObjectCleanups(
+      tx,
+      rows.flatMap((row) => {
+        // Preserve the existing user-deletion boundary: legacy prefixes may be
+        // shared. Org-owned instruction Storage belongs to retained Agents.
+        if (
+          scope.kind === "user" &&
+          row.s3Prefix !== `${row.orgId}/${row.id}`
+        ) {
+          return [];
+        }
+        return [
           {
             bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-            target: { kind: "prefix", value: row.s3Prefix },
+            target: { kind: "prefix" as const, value: row.s3Prefix },
             userId: row.userId,
             orgId: row.orgId,
           },
-          signal,
-        ),
-      );
-    }
-    return jobIds;
+        ];
+      }),
+      signal,
+    );
   });
 }
 
@@ -698,25 +699,23 @@ async function deleteClerkExportReferences(
       ),
     );
     signal.throwIfAborted();
-    const jobIds: string[] = [];
-    for (const row of rows) {
-      if (row.s3Key === null) {
-        continue;
-      }
-      jobIds.push(
-        await enqueueStorageObjectCleanup(
-          tx,
+    return await enqueueStorageObjectCleanups(
+      tx,
+      rows.flatMap((row) => {
+        if (row.s3Key === null) {
+          return [];
+        }
+        return [
           {
             bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-            target: { kind: "key", value: row.s3Key },
+            target: { kind: "key" as const, value: row.s3Key },
             userId: row.userId,
             orgId: row.orgId,
           },
-          signal,
-        ),
-      );
-    }
-    return jobIds;
+        ];
+      }),
+      signal,
+    );
   });
 }
 
