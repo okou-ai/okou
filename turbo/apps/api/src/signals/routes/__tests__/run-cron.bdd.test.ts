@@ -12,6 +12,7 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createEmailApi } from "./helpers/api-bdd-email";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /**
@@ -138,19 +139,26 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const actor = bdd.user();
     const { agentId } = await createAgentWithModelProvider(actor);
 
-    const denied = await api.requestCreateRun(
+    const chat = createChatFilesBddApi(context);
+    const denied = await chat.requestSendEvent(
       actor,
-      {
-        agentId,
-        prompt: "Produce a concise status report.",
-        modelProvider: "anthropic-api-key",
-        tools: ["Bash"],
-        settings: "{}",
-      },
-      [402],
+      { agentId, prompt: "Produce a concise status report." },
+      [201],
     );
-    expectApiError(denied.body);
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    if (denied.status !== 201) {
+      throw new Error("Expected the no-credit send to be accepted");
+    }
+    expect(denied.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const deniedEvents = await chat.listThreadEvents(
+      actor,
+      denied.body.threadId,
+    );
+    expect(
+      deniedEvents.events.filter((event) => {
+        return "error" in event && event.error === "insufficient_credits";
+      }),
+    ).not.toHaveLength(0);
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(0);
