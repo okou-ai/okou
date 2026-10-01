@@ -769,6 +769,8 @@ describe("PUT /api/agents/:id/instructions", () => {
       "First complete operating notes.",
       "Second complete operating notes.",
     ];
+    // A publication whose prepared reservation was superseded is rejected
+    // with 409 and may be retried; at least one complete archive publishes.
     const updates = await Promise.all(
       contents.map((content) => {
         return accept(
@@ -777,11 +779,15 @@ describe("PUT /api/agents/:id/instructions", () => {
             headers: authHeaders(),
             body: { content },
           }),
-          [200],
+          [200, 409],
         );
       }),
     );
-    for (const update of updates) {
+    const published = updates.filter((update) => {
+      return update.status === 200;
+    });
+    expect(published.length).toBeGreaterThanOrEqual(1);
+    for (const update of published) {
       expect(update.body).toMatchObject({
         agentId: agent.agentId,
         ownerId: user.userId,
