@@ -10,6 +10,7 @@ import type {
   TestTelegramStateActionBody,
   TestTelegramStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-telegram-state";
+import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -380,10 +381,16 @@ async function runForPrompt(fixture: TelegramPostFixture, text: string) {
   });
 }
 
-/** The poster's chat thread that holds the input which launched the run. */
-async function threadIdForRun(
+/** The number of runs the poster can list. */
+async function runCountFor(fixture: TelegramPostFixture): Promise<number> {
+  return (await runsApi.listAgentRuns(actorForFixture(fixture), { limit: 100 }))
+    .runs.length;
+}
+
+/** The poster's single chat thread whose public events satisfy `matches`. */
+async function threadIdWhere(
   fixture: TelegramPostFixture,
-  runId: string,
+  matches: (event: ChatEvent) => boolean,
 ): Promise<string> {
   const actor = actorForFixture(fixture);
   const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
@@ -399,23 +406,83 @@ async function threadIdForRun(
       actor,
       event.chatThreadId,
     );
-    if (
-      events.some((threadEvent) => {
-        return (
-          threadEvent.eventType === "input.prompt" &&
-          threadEvent.runId === runId
-        );
-      })
-    ) {
+    if (events.some(matches)) {
       matched.push(event.chatThreadId);
     }
   }
   expect(matched).toHaveLength(1);
   const [threadId] = matched;
   if (!threadId) {
-    throw new Error("Expected the Telegram run's chat thread");
+    throw new Error("Expected exactly one matching Telegram chat thread");
   }
   return threadId;
+}
+
+/**
+ * Posts a group reply to a bot message and returns the chat thread that
+ * admitted it, as the public thread events show.
+ */
+async function replyToBotMessageThread(
+  fixture: TelegramPostFixture,
+  args: {
+    readonly chatId: number;
+    readonly messageThreadId: number;
+    readonly messageId: number;
+    readonly botMessageId: number;
+    readonly text: string;
+  },
+): Promise<string> {
+  expect(
+    (
+      await postWebhook({
+        telegramBotId: fixture.telegramBotId,
+        secret: fixture.webhookSecret,
+        body: {
+          update_id: args.messageId,
+          message: {
+            message_id: args.messageId,
+            message_thread_id: args.messageThreadId,
+            chat: { id: args.chatId, type: "supergroup" },
+            from: {
+              id: Number(fixture.telegramUserId),
+              username: "alice",
+              first_name: "Alice",
+            },
+            text: args.text,
+            reply_to_message: {
+              message_id: args.botMessageId,
+              chat: { id: args.chatId, type: "supergroup" },
+              from: {
+                id: 987_654,
+                is_bot: true,
+                username: "provider_renamed_bot",
+              },
+              text: "Task completed successfully.",
+            },
+          },
+        },
+      })
+    ).status,
+  ).toBe(200);
+  await flushWaitUntilForTest();
+  return await threadIdWhere(fixture, (event) => {
+    return (
+      event.eventType === "input.prompt" &&
+      event.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text.includes(args.text);
+      })
+    );
+  });
+}
+
+/** The poster's chat thread that holds the input which launched the run. */
+async function threadIdForRun(
+  fixture: TelegramPostFixture,
+  runId: string,
+): Promise<string> {
+  return await threadIdWhere(fixture, (event) => {
+    return event.eventType === "input.prompt" && event.runId === runId;
+  });
 }
 
 beforeEach(() => {
@@ -646,12 +713,6 @@ async function completeCanonicalChatRun(args: {
   return cliAgentSessionId;
 }
 
-async function latestRunForFixture(
-  fixture: TelegramPostFixture,
-): Promise<TelegramRunSnapshot | null> {
-  return (await telegramPostRunState(fixture)).run;
-}
-
 async function readTelegramSourcePart(
   fixture: TelegramPostFixture,
   prompt: string,
@@ -685,34 +746,6 @@ async function readTelegramSourcePart(
 
 function mentionEntity(username: string) {
   return { type: "mention", offset: 0, length: username.length + 1 };
-}
-
-async function officialLinkIdFor(
-  fixture: TelegramPostFixture,
-): Promise<string> {
-  const response = await postTelegramStateAction({
-    action: "get-telegram-link-id",
-    org_id: fixture.orgId,
-    user_id: fixture.userId,
-  });
-  if (typeof response.link_id !== "string") {
-    throw new Error("Expected an official Telegram user link");
-  }
-  return response.link_id;
-}
-
-async function findTelegramChatThreadRoute(args: {
-  readonly userLinkId: string;
-  readonly chatId: string;
-  readonly rootMessageId: string;
-}): Promise<Record<string, unknown> | null> {
-  const response = await postTelegramStateAction({
-    action: "find-chat-thread-route",
-    user_link_id: args.userLinkId,
-    chat_id: args.chatId,
-    root_message_id: args.rootMessageId,
-  });
-  return stateRecord(response.route);
 }
 
 async function seedModelPolicies(args: {
@@ -1293,11 +1326,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     phase: "callback" | "reply-chain" | "fresh-chain",
   ) {
     const runnerGroup = configureCanonicalTelegramRunner();
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
-    await seedNativeFablePolicies(fixture);
-    const officialLinkId = await officialLinkIdFor(fixture);
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    await useNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
     const chatId = -77_201;
@@ -1330,11 +1360,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toBe(200);
     await flushWaitUntilForTest();
 
-    const firstState = await telegramPostRunState(fixture, firstPrompt);
-    expect(firstState.agentRun?.chatThreadId).toStrictEqual(expect.any(String));
-    expect(firstState.run?.prompt).toBe(firstPrompt);
+    const firstRun = await runForPrompt(fixture, firstPrompt);
+    if (!firstRun) {
+      throw new Error("Expected the first Telegram forum run");
+    }
+    const firstThreadId = await threadIdForRun(fixture, firstRun.id);
+    expect(firstRun.prompt).toBe(firstPrompt);
     expectExactSystemPromptFragment(
-      firstState.run?.appendSystemPrompt,
+      firstRun.appendSystemPrompt,
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
@@ -1346,48 +1379,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         `Message thread ID: ${messageThreadId}`,
       ].join("\n"),
     );
-    await expect(
-      findTelegramChatThreadRoute({
-        userLinkId: officialLinkId,
-        chatId: String(chatId),
-        rootMessageId: "700",
-      }),
-    ).resolves.toBeNull();
-    const firstClaim = await claimTelegramRun(firstState.run!.id, runnerGroup);
+    const firstClaim = await claimTelegramRun(firstRun.id, runnerGroup);
     const cliAgentSessionId = await completeCanonicalChatRun({
-      runId: firstState.run!.id,
+      runId: firstRun.id,
       sandboxToken: firstClaim.sandboxToken,
     });
 
-    const completedFirstState = await telegramPostRunState(
-      fixture,
-      firstPrompt,
-    );
-    expect(
-      completedFirstState.callbacks.find((callback) => {
-        return callback.internalKind === "telegram:chat";
-      }),
-    ).toMatchObject({ internalKind: "telegram:chat" });
     expect(telegramMocks.sentMessages).toHaveLength(1);
     expect(telegramMocks.sentMessages[0]).toMatchObject({
       chat_id: String(chatId),
       message_thread_id: messageThreadId,
       reply_parameters: { message_id: 2201 },
     });
-    await expect(
-      findTelegramChatThreadRoute({
-        userLinkId: officialLinkId,
-        chatId: String(chatId),
-        rootMessageId: "700",
-      }),
-    ).resolves.toMatchObject({
-      chatId: String(chatId),
-      rootMessageId: "700",
-      chatThreadId: firstState.agentRun?.chatThreadId,
-    });
     await webhooksApi.requestAgentComplete(
       {
-        runId: firstState.run!.id,
+        runId: firstRun.id,
         exitCode: 1,
         error: "late duplicate completion",
       },
@@ -1443,10 +1449,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       followUpPrompt,
     ].join("\n");
 
-    const followUpState = await telegramPostRunState(fixture);
-    expect(followUpState.run?.prompt).toBe(followUpAgentPrompt);
+    const followUpRun = await runForPrompt(fixture, followUpAgentPrompt);
+    if (!followUpRun) {
+      throw new Error("Expected the Telegram forum follow-up run");
+    }
+    expect(followUpRun.prompt).toBe(followUpAgentPrompt);
     const followUpThreadContext = renderedThreadContextAfter(
-      followUpState.run?.appendSystemPrompt,
+      followUpRun.appendSystemPrompt,
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
@@ -1461,19 +1470,18 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
     // The follow-up launches with the chain it continues.
     expect(followUpThreadContext).toContain(firstPrompt);
-    expect(followUpState.agentRun?.chatThreadId).toBe(
-      firstState.agentRun?.chatThreadId,
+    // The reply to the bot's answer (root 700) continues the first thread.
+    await expect(threadIdForRun(fixture, followUpRun.id)).resolves.toBe(
+      firstThreadId,
     );
-    const followUpClaim = await claimTelegramRun(
-      followUpState.run!.id,
-      runnerGroup,
-    );
+    const followUpClaim = await claimTelegramRun(followUpRun.id, runnerGroup);
     expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
     await completeCanonicalChatRun({
-      runId: followUpState.run!.id,
+      runId: followUpRun.id,
       sandboxToken: followUpClaim.sandboxToken,
     });
     expect(telegramMocks.sentMessages).toHaveLength(2);
+    const runsBeforeDuplicate = await runCountFor(fixture);
 
     expect(
       (
@@ -1485,25 +1493,31 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       ).status,
     ).toBe(200);
     await flushWaitUntilForTest();
-    await expect(
-      findTelegramChatThreadRoute({
-        userLinkId: officialLinkId,
-        chatId: String(chatId),
-        rootMessageId: "701",
-      }),
-    ).resolves.toMatchObject({
-      chatId: String(chatId),
-      rootMessageId: "701",
-      chatThreadId: firstState.agentRun?.chatThreadId,
-    });
-    await expect(
-      findTelegramChatThreadRoute({
-        userLinkId: officialLinkId,
-        chatId: String(chatId),
-        rootMessageId: "700",
-      }),
-    ).resolves.toBeNull();
+    // The duplicate update launches nothing new and sends no extra reply.
+    await expect(runCountFor(fixture)).resolves.toBe(runsBeforeDuplicate);
+    expect(telegramMocks.sentMessages).toHaveLength(2);
     if (phase === "reply-chain") {
+      // The chain moved to the bot's latest answer (701): replying to it
+      // continues the first thread, while the retired root 700 no longer
+      // routes there and starts a separate thread.
+      await expect(
+        replyToBotMessageThread(fixture, {
+          chatId,
+          messageThreadId,
+          messageId: 2204,
+          botMessageId: 701,
+          text: "reply to the latest canonical answer",
+        }),
+      ).resolves.toBe(firstThreadId);
+      await expect(
+        replyToBotMessageThread(fixture, {
+          chatId,
+          messageThreadId,
+          messageId: 2205,
+          botMessageId: 700,
+          text: "reply to the retired canonical answer",
+        }),
+      ).resolves.not.toBe(firstThreadId);
       return;
     }
 
@@ -1533,20 +1547,23 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toBe(200);
     await flushWaitUntilForTest();
 
-    const freshState = await telegramPostRunState(fixture, freshPrompt);
-    expect(freshState.agentRun?.chatThreadId).toStrictEqual(expect.any(String));
-    expect(freshState.agentRun?.chatThreadId).not.toBe(
-      firstState.agentRun?.chatThreadId,
+    const freshRun = await runForPrompt(fixture, freshPrompt);
+    if (!freshRun) {
+      throw new Error("Expected the fresh Telegram chain run");
+    }
+    await expect(threadIdForRun(fixture, freshRun.id)).resolves.not.toBe(
+      firstThreadId,
     );
+    // The fresh chain does not take over the first chain's latest root.
     await expect(
-      findTelegramChatThreadRoute({
-        userLinkId: officialLinkId,
-        chatId: String(chatId),
-        rootMessageId: "701",
+      replyToBotMessageThread(fixture, {
+        chatId,
+        messageThreadId,
+        messageId: 2204,
+        botMessageId: 701,
+        text: "reply to the first chain after a fresh chain",
       }),
-    ).resolves.toMatchObject({
-      chatThreadId: firstState.agentRun?.chatThreadId,
-    });
+    ).resolves.toBe(firstThreadId);
   }
 
   it("preserves Telegram forum delivery and ignores duplicate completion callbacks", async () => {
@@ -1813,6 +1830,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("creates an agent run for a linked official-bot private message", async () => {
+    // The log detail resolves the run framework from the Axiom run-context
+    // dataset; mock that external query like the Runner-backed cases do.
+    runsApi.acceptTelemetryIngest();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     await useNativeFablePolicies(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
@@ -1875,22 +1895,20 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!run) {
       throw new Error("Expected the official-bot Telegram run");
     }
-    const telegramLogs = await runReadsApi.requestListLogs(
+    const log = await runReadsApi.requestReadLogById(
       actorForFixture(fixture),
-      { triggerSource: "telegram", limit: 100 },
+      run.id,
       [200],
     );
-    expect(telegramLogs.body.data).toContainEqual(
-      expect.objectContaining({ id: run.id, triggerSource: "telegram" }),
-    );
+    expect(log.body.triggerSource).toBe("telegram");
   });
 
   it("keeps an official-bot group mention routable after an overlapping model-key fixture releases", async () => {
-    configureOfficialBotEnv();
     const overlappingModelKey = await seedBuiltInDefaultModelKey(context);
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    // The poster's own operator key for the default model outlives the
+    // overlapping key fixture.
+    await seedBuiltInDefaultModelKey(context);
     await overlappingModelKey.release();
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
@@ -1903,7 +1921,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           message_id: 52,
           chat: { id: -10_099_003, type: "group" },
           from: {
-            id: 99_002,
+            id: Number(fixture.telegramUserId),
             username: "bob",
             first_name: "Bob",
           },
@@ -1916,7 +1934,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(response.status).toBe(200);
     await flushWaitUntilForTest();
 
-    const run = await latestRunForFixture(fixture);
+    const run = await runForPrompt(
+      fixture,
+      `@${OFFICIAL_BOT_USERNAME} help from a group`,
+    );
     expect(run?.prompt).toBe(`@${OFFICIAL_BOT_USERNAME} help from a group`);
     expect(run?.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
