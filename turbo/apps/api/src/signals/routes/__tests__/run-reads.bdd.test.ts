@@ -98,6 +98,20 @@ async function createClaudeAgent(
   });
 }
 
+/** A product Agent whose runs start through the Thread entry. */
+async function createThreadAgent(
+  actor: ApiTestUser,
+  prefix: string,
+): Promise<{ readonly agentId: string }> {
+  await api.ensureOrgModelProvider(actor);
+  const agent = await bdd.createAgent(actor, {
+    displayName: `${prefix}-${randomUUID().slice(0, 8)}`,
+    description: "Exercises run reads.",
+    visibility: "private",
+  });
+  return { agentId: agent.agentId };
+}
+
 type ChatInputOutcome =
   | { readonly kind: "launched"; readonly runId: string }
   | { readonly kind: "queued" }
@@ -964,7 +978,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
   it("rejects identity repair for a missing compressed session history blob", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-gzip-repair");
+    const compose = await createThreadAgent(actor, "bdd-gzip-repair");
     const history = `{"type":"init"}\n{"type":"human","text":"repair-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedKey = `blobs/${historyHash}.blob.gz`;
@@ -975,7 +989,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create missing compressed blob metadata",
     });
@@ -1050,7 +1064,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
   it("rejects identity repair for a missing zstd session history blob", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-zstd-repair");
+    const compose = await createThreadAgent(actor, "bdd-zstd-repair");
     const history = `{"type":"init"}\n{"type":"human","text":"repair-zstd-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedHistory = zstdCompressSync(Buffer.from(history, "utf8"));
@@ -1066,7 +1080,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create missing zstd blob metadata",
     });
@@ -1432,18 +1446,18 @@ describe("RUN-01: direct run admission boundaries", () => {
   it("enforces chat pick concurrency until the cap is disabled", async () => {
     const customerId = `cus_${randomUUID()}`;
     const actor = await entitledActor(customerId);
-    const compose = await createClaudeAgent(actor, "bdd-admission");
+    const compose = await createThreadAgent(actor, "bdd-admission");
     const agentId = await createChatAgent(actor);
 
-    const first = await api.createDirectRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "first concurrent run",
     });
-    const second = await api.createDirectRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "second concurrent run",
     });
-    const third = await api.createDirectRun(actor, {
+    const third = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "third concurrent run",
     });
@@ -1470,17 +1484,17 @@ describe("RUN-01: direct run admission boundaries", () => {
 
   it("rejects a foreign agent before admitting a direct run", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-admission");
-    const first = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-admission");
+    const first = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "first concurrent run",
     });
-    const second = await api.createDirectRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "second concurrent run",
     });
     const outsider = bdd.user();
-    const foreignCompose = await createClaudeAgent(outsider, "bdd-foreign");
+    const foreignCompose = await createThreadAgent(outsider, "bdd-foreign");
     const crossOrgCompose = await reads.requestCreateDirectRun(
       actor,
       {
@@ -1887,8 +1901,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("hardens network log rows in the agent read API", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-network-hardening");
-    const agentRun = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-network-hardening");
+    const agentRun = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "zero network hardening",
     });
@@ -1970,8 +1984,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("keeps same-timestamp network rows reachable across time cursor pages", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-time-cursor-ties");
-    const run = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-time-cursor-ties");
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "emit tied network telemetry",
     });
@@ -2202,8 +2216,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("fails visibly when a network page cannot advance its cursor", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-unpageable");
-    const run = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-unpageable");
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "emit an unpageable network boundary",
     });
