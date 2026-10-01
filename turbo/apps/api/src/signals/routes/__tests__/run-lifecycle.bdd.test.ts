@@ -2682,7 +2682,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("filters runner polls by supported profiles without widening malformed polls", async () => {
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const missingSupport = await api.requestRawPollRunner(
       true,
@@ -2697,19 +2700,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expectApiError(emptySupport.body);
 
-    const composeName = `bdd-runner-profile-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          experimental_profile: "vm0/large",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    // Product Agents run on the default Runner profile.
+    const created = await api.createThreadRun(actor, {
+      agentId,
       prompt: "poll with explicit support list",
     });
     expect(created.status).toBe("pending");
@@ -2718,7 +2711,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       true,
       {
         group: runnerGroup,
-        supportedProfiles: ["vm0/default"],
+        supportedProfiles: ["vm0/large"],
       },
       [200],
     );
@@ -2733,7 +2726,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       true,
       {
         group: runnerGroup,
-        supportedProfiles: ["vm0/large"],
+        supportedProfiles: ["vm0/default"],
       },
       [200],
     );
@@ -2743,7 +2736,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       );
     }
     expect(compatiblePoll.body.job?.runId).toBe(created.runId);
-    expect(compatiblePoll.body.job?.experimentalProfile).toBe("vm0/large");
+    expect(compatiblePoll.body.job?.experimentalProfile).toBe("vm0/default");
     const claim = await api.claimRunnerJob(created.runId);
     expect(claim.cliAgentType).toBe("claude-code");
     await api.requestCancelRun(actor, created.runId, [200]);
@@ -8392,22 +8385,54 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       fixture,
     );
     await fixture.api.requestCancelRun(fixture.actor, claude.runId, [200]);
-    await fixture.fw.seedOrgCodexProvider(fixture.actor, {
-      accessToken: "mcp-awareness-codex-access",
-      refreshToken: "mcp-awareness-codex-refresh",
-      accountId: "mcp-awareness-codex-account",
-      idToken: "mcp-awareness-codex-id",
-      expiresIn: 3600,
+    // A member-scoped native Codex route (gpt-6-astra has no Pi route) through
+    // the caller's personal Codex provider.
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      fixture.actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
+      },
+      [200, 201],
+    );
+    const anthropic = (
+      await fixture.api.listOrgModelProviders(fixture.actor)
+    ).find((provider) => {
+      return provider.type === "anthropic-api-key";
     });
-    const codex = await fixture.api.createRun(fixture.actor, {
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
+    }
+    await fixture.api.updateOrgModelPolicies(fixture.actor, [
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+      {
+        model: "gpt-6-astra",
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const codex = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect MCP awareness with Codex",
-      modelProvider: "codex-oauth-token",
+      model: "gpt-6-astra",
     });
     const codexClaim = await fixture.api.claimRunnerJob(codex.runId);
     expect(codexClaim.cliAgentType).toBe("codex");
-    expect(mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "")).toBe(
-      claudePrompt,
+    // Web chat Codex runs append their image-upload guidance after the
+    // identical MCP section, without a heading of its own.
+    const codexSection =
+      mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "") ?? "";
+    expect(codexSection.slice(0, claudePrompt.length)).toBe(claudePrompt);
+    expect(codexSection.slice(claudePrompt.length)).toMatch(
+      /^\n\nIf you use the built-in image generation tool and it saves generated output image file\(s\) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>`/,
     );
     await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
   });
