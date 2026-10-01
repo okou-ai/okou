@@ -3606,18 +3606,17 @@ describe("connector catalog valid lifecycle", () => {
     );
 
     const createSkillRun = async () => {
-      return await runs.createRun(actor, {
+      return await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the connector skill",
-        modelProvider: "anthropic-api-key",
       });
     };
+    // As on main's chat path, a Thread launch failure creates no run and
+    // surfaces from the pick.
     const expectRegistrationFailure = async () => {
-      const failed = await createSkillRun();
-      expect(failed).toMatchObject({
-        status: "failed",
-        error: "Connector skill registration is unavailable",
-      });
+      await expect(createSkillRun()).rejects.toThrow(
+        "Connector skill registration is unavailable",
+      );
     };
 
     await seedOwnedVolumeStorageVersion({
@@ -3642,13 +3641,13 @@ describe("connector catalog valid lifecycle", () => {
         claim.storageManifest,
       )?.storageMounts.filter((storage) => {
         return (
-          storage.mountPath === `/home/user/.claude/skills/${connectorSlug}`
+          storage.mountPath === `/home/user/.pi/agent/skills/${connectorSlug}`
         );
       }) ?? [];
     expect(mountedSkills).toHaveLength(1);
     expect(mountedSkills[0]).toMatchObject({
       name: storageName,
-      mountPath: `/home/user/.claude/skills/${connectorSlug}`,
+      mountPath: `/home/user/.pi/agent/skills/${connectorSlug}`,
       versionId: selectedVersionId,
       archiveSize: 321,
       archiveUrl: expect.any(String),
