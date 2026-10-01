@@ -33,7 +33,7 @@ async function runActor() {
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName: "Builtin MCP Agent",
   });
@@ -79,10 +79,9 @@ describe("builtin MCP Run admission", () => {
     if (!admittedAccount) {
       throw new Error("Expected the admitted manual MCP account");
     }
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId,
       prompt: "Use the admitted builtin MCP tools",
-      modelProvider: "anthropic-api-key",
     });
 
     await connectors.connectManualGrant(

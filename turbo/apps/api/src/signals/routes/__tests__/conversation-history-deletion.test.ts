@@ -18,14 +18,13 @@ async function checkpointedRun(actor: ApiTestUser, agentId?: string) {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const targetAgentId =
     agentId ??
     (await bdd.createAgent(actor, { displayName: "History deletion" })).agentId;
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: targetAgentId,
     prompt: "retain history",
-    modelProvider: "anthropic-api-key",
   });
   const hash = createHash("sha256")
     .update(`bdd session history ${run.runId}`)
