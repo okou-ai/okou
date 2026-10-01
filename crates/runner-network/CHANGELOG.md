@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-network-v0.1.20...runner-network-v0.2.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+
 ## [0.1.20](https://github.com/okou-ai/okou/compare/runner-network-v0.1.19...runner-network-v0.1.20) (2026-09-30)
 
 ## [0.1.19](https://github.com/okou-ai/okou/compare/runner-network-v0.1.18...runner-network-v0.1.19) (2026-09-30)

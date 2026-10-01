@@ -62,7 +62,7 @@ async function entitledChatActor() {
   await api.updateOrgModelPolicies(result.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: result.providerId,
@@ -201,8 +201,11 @@ describe("CHAT-02: on-demand member memory initialization", () => {
       displayName: "Member memory agent",
       visibility: "private",
     });
+    // The owner's preferred model is the owner's own; the member selects the
+    // organization's configured model explicitly.
     const launched = await sendChatRun(member, {
       agentId: agent.agentId,
+      model: "claude-fable-5-1",
       prompt: "run after on-demand memory initialization",
     });
     expect(launched.runId).toStrictEqual(expect.any(String));
@@ -891,7 +894,7 @@ describe("CHAT-02: admission without spendable credits", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

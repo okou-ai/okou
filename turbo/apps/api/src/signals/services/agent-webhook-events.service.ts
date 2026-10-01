@@ -12,7 +12,7 @@ import { isForeignKeyViolation, isLockNotAvailable } from "../../lib/pg-errors";
 import { now } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { refreshAgentPhoneTypingEvents$ } from "./agent-event-consumer-agentphone-typing.service";
-import { ingestAxiomEvents } from "./agent-event-consumer-axiom.service";
+import { ingestAxiomEvents$ } from "./agent-event-consumer-axiom.service";
 import {
   materializeRunOutputEvents$,
   publishMaterializedChatProjection,
@@ -136,13 +136,16 @@ export const dispatchOptionalAgentEventConsumers$ = command(
   ): Promise<void> => {
     const startedAt = now();
     const { payload } = accepted;
-    const axiomTrace = tapError(ingestAxiomEvents(payload, signal), (error) => {
-      L.error("Optional Axiom trace delivery failed", {
-        runId: payload.runId,
-        ...eventRange(payload.events),
-        error,
-      });
-    });
+    const axiomTrace = tapError(
+      set(ingestAxiomEvents$, payload, signal),
+      (error) => {
+        L.error("Optional Axiom trace delivery failed", {
+          runId: payload.runId,
+          ...eventRange(payload.events),
+          error,
+        });
+      },
+    );
 
     if (accepted.chatProjection) {
       await tapError(

@@ -758,6 +758,41 @@ describe("PUT /api/agents/:id/instructions", () => {
     expect(paths).toStrictEqual(["CLAUDE.md", "AGENTS.md"]);
   });
 
+  it("reuses registered instruction Storage after A to B to A without uploading", async () => {
+    const user = newOrgUser();
+    const agent = await createAgentAs(user, {
+      displayName: "Reused Instructions",
+    });
+    context.mocks.s3.send.mockResolvedValue({});
+    for (const content of ["Version A", "Version B"]) {
+      await accept(
+        instructionsClient().update({
+          params: { id: agent.agentId },
+          headers: authHeaders(),
+          body: { content },
+        }),
+        [200],
+      );
+    }
+
+    context.mocks.s3.send.mockClear();
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
+    await accept(
+      instructionsClient().update({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+        body: { content: "Version A" },
+      }),
+      [200],
+    );
+
+    const commands = context.mocks.s3.send.mock.calls.map(([command]) => {
+      return command instanceof Object ? command.constructor.name : "";
+    });
+    expect(commands).not.toContain("HeadObjectCommand");
+    expect(commands).not.toContain("PutObjectCommand");
+  });
+
   it("allows an owner CLI token to update instructions", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {

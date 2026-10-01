@@ -12,7 +12,6 @@ import {
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -29,6 +28,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
+import {
+  readRunModelRuntimeRouteFixture,
+  setRunModelRuntimeRouteFixture,
+} from "../../../test-fixtures/agent-runs";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   holdAgentRowLockFixture,
@@ -171,14 +174,13 @@ async function configureClaudeCodeSubscriptionProvider(
   await api.updateOrgModelPolicies(fixture.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: fixture.providerId,
     },
     {
       model: "claude-opus-5",
-      isDefault: false,
       defaultProviderType: "claude-code-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -193,7 +195,7 @@ async function startChatRun(
     readonly prompt: string;
     readonly clientEventId?: string;
     readonly threadId?: string;
-    readonly selectedModel?: SupportedRunModel;
+    readonly selectedModel?: string;
     readonly userMessage?: UserMessageInputDocument;
     readonly revokesEventId?: string;
   },
@@ -206,7 +208,7 @@ async function startChatRun(
   readonly messageId: string;
 }> {
   const messageId = body.clientEventId ?? randomUUID();
-  const selectedModel: SupportedRunModel | undefined =
+  const selectedModel: string | undefined =
     body.selectedModel ??
     (body.threadId === undefined ? "claude-fable-5-1" : undefined);
   const requestBody = {
@@ -3840,7 +3842,7 @@ describe("CHAT-02: drain-time admission failure", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -3956,14 +3958,13 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
           model: "gpt-6-astra",
-          isDefault: false,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -3996,14 +3997,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: scenario.builtIn,
+          preferred: scenario.builtIn,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
         {
           model: "gpt-6-astra",
-          isDefault: !scenario.builtIn,
+          preferred: !scenario.builtIn,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -4073,7 +4074,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: builtIn ? "built-in" : "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: builtIn ? null : providerId,
@@ -4395,7 +4396,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -4449,14 +4450,13 @@ describe("CHAT-02: failed chat callbacks", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -4479,7 +4479,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly error: string;
       readonly expectedError?: string;
       readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: SupportedRunModel;
+      readonly selectedModel?: string;
     }[] = [
       { prompt: "round one", error: actionableError },
       {
@@ -4794,6 +4794,46 @@ describe("CHAT-02: failed chat callbacks", () => {
     expect(rawRun.error).toBe(rawOverloadError);
   }, 90_000);
 
+  it("names a historical run's retired model by its own catalog display name", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const rawOverloadError =
+      "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment.";
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "trigger overload on a historical retired model",
+      selectedModel: "claude-fable-5-1",
+    });
+    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
+    // A run admitted before claude-opus-4-8 was retired keeps that model;
+    // current admission cannot construct it, so rewrite the persisted row.
+    const route = await readRunModelRuntimeRouteFixture(run.runId);
+    await setRunModelRuntimeRouteFixture({
+      runId: run.runId,
+      selectedModel: "claude-opus-4-8",
+      modelRuntimeProvider: route.modelRuntimeProvider,
+      modelRuntimeModel: route.modelRuntimeModel,
+    });
+    await failChatRun(run.runId, sandboxHeaders, rawOverloadError);
+
+    const page = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (messages) => {
+        return lifecycleMarkers(messages, run.runId, "failed").some(
+          (message) => {
+            return message.error?.includes("is overloaded") ?? false;
+          },
+        );
+      },
+    );
+    const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
+    expect(marker?.error).toBe(
+      "Claude Opus 4.8 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+    );
+  }, 90_000);
+
   it("shows Claude Code credential recovery guidance for upstream auth 401s", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -4808,7 +4848,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly prompt: string;
       readonly errorMessage?: string;
       readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: SupportedRunModel;
+      readonly selectedModel?: string;
       readonly orgRole?: TestOrgRole;
       readonly configureProvider?: (
         fixture: EntitledChatActor,
@@ -5984,7 +6024,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

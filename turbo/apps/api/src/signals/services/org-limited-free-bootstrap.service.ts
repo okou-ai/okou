@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
-import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
   getInstructionsStorageName,
@@ -12,6 +11,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { storages } from "@okouai/db/schema/storage";
 import { and, eq, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
@@ -39,6 +39,7 @@ import {
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import { onRejection } from "../utils";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 
@@ -248,6 +249,9 @@ async function finalizeBootstrap(
           tier: "limited-free-1",
           onboardingPaymentPending: false,
           onboardingComplete: false,
+          // New organizations use Auto. The column default stays Custom so
+          // older API writers keep creating Custom organizations.
+          modelMode: "auto",
           updatedAt: nowDate(),
         })
         .onConflictDoUpdate({
@@ -256,6 +260,14 @@ async function finalizeBootstrap(
             defaultAgentId: agentRow.id,
             tier: "limited-free-1",
             onboardingPaymentPending: false,
+            // Another writer may have created the row first. Only an org whose
+            // policies are at most the fixed default (which any policy read
+            // inserts) becomes Auto; configured models keep the stored mode.
+            modelMode: sql`CASE WHEN EXISTS (
+              SELECT 1 FROM ${orgModelPolicies}
+              WHERE ${orgModelPolicies.orgId} = ${args.orgId}
+                AND ${orgModelPolicies.model} <> ${await loadSystemDefaultRunModel(tx)}
+            ) THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
         })
@@ -307,7 +319,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       {
         orgId: args.orgId,
         type: "built-in",
-        selectedModel: LIMITED_FREE1_DEFAULT_RUN_MODEL,
+        selectedModel: await loadSystemDefaultRunModel(writeDb),
       },
       signal,
     );

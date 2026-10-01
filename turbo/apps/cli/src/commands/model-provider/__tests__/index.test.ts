@@ -9,14 +9,11 @@ import {
 } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-5",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000001",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000001",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -29,7 +26,6 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000002",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
@@ -42,12 +38,23 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000003",
       model: "gpt-5.6-sol",
       modelLabel: "GPT 5.6 Sol",
-      isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
       routeStatus: "missing_provider",
       routeStatusReason: "No personal subscription connected",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000009",
+      model: "okou-1.0",
+      modelLabel: "Auto",
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      routeStatus: "valid",
+      routeStatusReason: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
@@ -99,6 +106,8 @@ describe("okou model-provider command", () => {
     expect(logCalls).toContain("GPT 5.6 Sol");
     expect(logCalls).toContain("provider: subscription");
     expect(logCalls).toContain("No personal subscription connected");
+    expect(logCalls).toContain("Auto (okou-1.0) (default)");
+    expect(logCalls).toContain("Claude Sonnet 5 (claude-sonnet-5)\n");
   });
 
   it("shows reconnect guidance for the personal route instead of the admin API", async () => {

@@ -9,7 +9,6 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Field } from "@base-ui/react/field";
 import {
   AlertTriangle,
   EllipsisVertical,
@@ -46,16 +45,12 @@ import {
 } from "@okouai/ui";
 import {
   MODEL_PROVIDER_TYPES,
-  ACTIVE_RUN_MODELS,
-  getCanonicalModelDisplayName,
-  getProvidersForModel,
   getSelectableProviderTypes,
   isBuiltInModelProviderType,
   type ModelProviderResponse,
   type ModelProviderType,
   type OrgModelPolicy,
   type OrgModelPoliciesResponse,
-  type SupportedRunModel,
   type UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -67,6 +62,10 @@ import {
   orgModelPolicies$,
   updateOrgModelPolicies$,
 } from "../../../../signals/external/org-model-policies.ts";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../../../signals/external/model-catalog.ts";
 import { modelProviderConnections$ } from "../../../../signals/external/model-provider-connections.ts";
 import { orgConfiguredProviders$ } from "../../../../signals/okou-page/settings/org-model-providers.ts";
 import {
@@ -93,6 +92,7 @@ import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
   modelPlanCapabilities$,
+  memberSubscriptionRouteAllowed,
   modelPolicyAllowedForPlan,
   type ModelPlanCapabilities,
 } from "../../../../signals/okou-page/model-plan-capabilities.ts";
@@ -106,7 +106,7 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import {
   getModelBrandIconType as getModelIconType,
   getUILabel,
-  getBuiltInModelPriceTier,
+  getCatalogModelPriceTier,
   getBuiltInModelPriceTierLabel,
   type ModelPriceTier,
 } from "../settings/provider-ui-config.ts";
@@ -122,24 +122,49 @@ function isByokProviderType(type: ModelProviderType): boolean {
   return !isBuiltInModelProviderType(type) && !isOAuthMemberType(type);
 }
 
-function isAddableBuiltInModel(model: SupportedRunModel): boolean {
-  const providerType = getModelIconType(model);
-  return (
-    providerType === "openai-api-key" ||
-    providerType === "built-in" ||
-    providerType === "anthropic-api-key" ||
-    providerType === "deepseek"
-  );
+function isModelProviderType(type: string): type is ModelProviderType {
+  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }
 
-function getApiProviderTypes(model: SupportedRunModel): ModelProviderType[] {
-  return getProvidersForModel(model).filter((type) => {
+/** Selectable provider routes of a model, from the catalog's enabled routes. */
+function getCatalogProviderTypes(
+  catalog: ModelCatalog,
+  model: string,
+): ModelProviderType[] {
+  return catalog.providerTypes(model).filter(isModelProviderType);
+}
+
+/**
+ * The server decides admission (`modelsAvailableToAdd`); the catalog only
+ * orders them and drops models it no longer lists as active.
+ */
+function getAddableCatalogModels(
+  catalog: ModelCatalog,
+  modelsAvailableToAdd: readonly string[],
+): string[] {
+  return modelsAvailableToAdd
+    .filter((model) => {
+      return catalog.isActive(model);
+    })
+    .sort((left, right) => {
+      return catalog.compare(left, right);
+    });
+}
+
+function getApiProviderTypes(
+  catalog: ModelCatalog,
+  model: string,
+): ModelProviderType[] {
+  return getCatalogProviderTypes(catalog, model).filter((type) => {
     return isByokProviderType(type);
   });
 }
 
-function getOAuthProviderTypes(model: SupportedRunModel): ModelProviderType[] {
-  return getProvidersForModel(model).filter((type) => {
+function getOAuthProviderTypes(
+  catalog: ModelCatalog,
+  model: string,
+): ModelProviderType[] {
+  return getCatalogProviderTypes(catalog, model).filter((type) => {
     return isOAuthMemberType(type);
   });
 }
@@ -180,7 +205,6 @@ function findProviderByType(
 function toUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   return {
     model: policy.model,
-    isDefault: policy.isDefault,
     defaultProviderType: isBuiltInModelProviderType(policy.defaultProviderType)
       ? "built-in"
       : policy.defaultProviderType,
@@ -190,13 +214,9 @@ function toUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   };
 }
 
-function makeDefaultPolicy(
-  model: SupportedRunModel,
-  isDefault: boolean,
-): UpdateOrgModelPolicy {
+function makeBuiltInPolicy(model: string): UpdateOrgModelPolicy {
   return {
     model,
-    isDefault,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -204,85 +224,60 @@ function makeDefaultPolicy(
   };
 }
 
+/**
+ * The system default row is a server projection, not an org row: it is never
+ * part of the org's PUT body.
+ */
+function orgConfiguredPolicies(
+  policies: OrgModelPolicy[],
+  systemDefaultModel: string,
+): OrgModelPolicy[] {
+  return policies.filter((policy) => {
+    return policy.model !== systemDefaultModel;
+  });
+}
+
 function upsertPolicy(
   policies: OrgModelPolicy[],
   update: UpdateOrgModelPolicy,
+  systemDefaultModel: string,
 ): UpdateOrgModelPolicy[] {
   let found = false;
-  const updates = policies.map((policy) => {
-    if (policy.model !== update.model) {
-      return toUpdate(policy);
-    }
-    found = true;
-    return update;
-  });
-  if (!found) {
+  const updates = orgConfiguredPolicies(policies, systemDefaultModel).map(
+    (policy) => {
+      if (policy.model !== update.model) {
+        return toUpdate(policy);
+      }
+      found = true;
+      return update;
+    },
+  );
+  if (!found && update.model !== systemDefaultModel) {
     updates.push(update);
   }
   return updates;
 }
 
+// The catalog system default is projected by the server for every org and
+// cannot be removed or edited.
 function canDeletePolicy(
   policies: OrgModelPolicy[],
   policy: OrgModelPolicy,
-  modelCapabilities: ModelPlanCapabilities,
+  systemDefaultModel: string,
 ): boolean {
-  return (
-    policies.length > 1 &&
-    (!policy.isDefault ||
-      policies.some((candidate) => {
-        return (
-          candidate.model !== policy.model &&
-          modelPolicyAllowedForPlan(candidate, modelCapabilities)
-        );
-      }))
-  );
+  return policies.length > 1 && policy.model !== systemDefaultModel;
 }
 
 function removePolicy(
   policies: OrgModelPolicy[],
-  model: SupportedRunModel,
-  modelCapabilities: ModelPlanCapabilities,
+  model: string,
+  systemDefaultModel: string,
 ): UpdateOrgModelPolicy[] {
-  const removed = policies.find((policy) => {
-    return policy.model === model;
-  });
-  const updates = policies.flatMap((policy) => {
-    return policy.model === model ? [] : [toUpdate(policy)];
-  });
-  if (
-    removed?.isDefault &&
-    !updates.some((policy) => {
-      return policy.isDefault;
-    }) &&
-    updates[0]
-  ) {
-    const fallback = updates.find((policy) => {
-      return modelPolicyAllowedForPlan(policy, modelCapabilities);
-    });
-    return updates.map((policy) => {
-      return { ...policy, isDefault: policy.model === fallback?.model };
-    });
-  }
-  return updates;
-}
-
-function makePolicyDefault(
-  policies: OrgModelPolicy[],
-  model: SupportedRunModel,
-): UpdateOrgModelPolicy[] {
-  const selected = policies.find((policy) => {
-    return policy.model === model;
-  });
-  if (!selected) {
-    return policies.map(toUpdate);
-  }
-  return policies.map((policy) => {
-    return {
-      ...toUpdate(policy),
-      isDefault: policy.model === model,
-    };
-  });
+  return orgConfiguredPolicies(policies, systemDefaultModel).flatMap(
+    (policy) => {
+      return policy.model === model ? [] : [toUpdate(policy)];
+    },
+  );
 }
 
 function filterPolicyUpdatesForPlan(
@@ -295,134 +290,9 @@ function filterPolicyUpdatesForPlan(
   ) {
     return policies;
   }
-
-  const allowed = policies.filter((policy) => {
+  return policies.filter((policy) => {
     return modelPolicyAllowedForPlan(policy, modelCapabilities);
   });
-  if (
-    allowed.some((policy) => {
-      return policy.isDefault;
-    })
-  ) {
-    return allowed;
-  }
-  return allowed.map((policy, index) => {
-    return { ...policy, isDefault: index === 0 };
-  });
-}
-
-function DefaultModelRow({
-  policies,
-  workspaceDefaultModel,
-  disabled,
-  modelCapabilities,
-  onChange,
-  onUpgrade,
-}: {
-  policies: OrgModelPolicy[];
-  workspaceDefaultModel: SupportedRunModel | null;
-  disabled: boolean;
-  modelCapabilities: ModelPlanCapabilities;
-  onChange: (model: SupportedRunModel) => void;
-  onUpgrade: () => void;
-}) {
-  const { t } = useTranslation();
-  const selectItems = policies
-    .filter((policy) => {
-      return policy.routeStatus === "valid";
-    })
-    .map((policy) => {
-      const iconType = getModelIconType(policy.model);
-      const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
-      return {
-        ...policy,
-        value: policy.model,
-        label: (
-          <div className="flex w-full min-w-0 items-center gap-2">
-            {iconType && <ProviderIcon type={iconType} size={16} />}
-            <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
-            {restricted && <ProBadge />}
-          </div>
-        ),
-      };
-    });
-  const currentDefault = selectItems.some((policy) => {
-    return policy.model === workspaceDefaultModel;
-  })
-    ? (workspaceDefaultModel ?? "")
-    : "";
-
-  return (
-    <Field.Root
-      data-testid="default-model-row"
-      className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between border border-surface-border"
-    >
-      <div className="min-w-0">
-        <Field.Label
-          render={<p />}
-          nativeLabel={false}
-          className="text-sm font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.settings.models.policies.defaultModel;
-          })}
-        </Field.Label>
-        <p className="mt-0.5 text-[13px] text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.policies.defaultModelDescription;
-          })}
-        </p>
-      </div>
-      {selectItems.length === 0 ? (
-        <span className="shrink-0 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.policies.noAvailableModels;
-          })}
-        </span>
-      ) : (
-        <Select
-          items={selectItems}
-          value={currentDefault}
-          onValueChange={(value, details) => {
-            const policy = selectItems.find((item) => {
-              return item.model === value;
-            });
-            if (!policy) {
-              details.cancel();
-              return;
-            }
-            if (policy.model === workspaceDefaultModel) {
-              return;
-            }
-            if (!modelPolicyAllowedForPlan(policy, modelCapabilities)) {
-              details.cancel();
-              onUpgrade();
-              return;
-            }
-            onChange(policy.model);
-          }}
-          disabled={disabled}
-        >
-          <SelectTrigger className="h-9 w-full shrink-0 rounded-lg bg-card sm:w-[280px] border border-surface-border">
-            <SelectValue
-              placeholder={t(($) => {
-                return $.settings.models.policies.selectDefaultModel;
-              })}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {selectItems.map((item) => {
-              return (
-                <SelectItem key={item.id} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      )}
-    </Field.Root>
-  );
 }
 
 function getPolicyDetail(policy: OrgModelPolicy): string | null {
@@ -487,7 +357,7 @@ function findGatewayConnection(
 
 function gatewaySurfacesForModel(
   connections: ModelProviderConnectionResponse[],
-  model: SupportedRunModel,
+  model: string,
 ) {
   return connections.flatMap((connection) => {
     return connection.surfaces.flatMap((surface) => {
@@ -563,6 +433,7 @@ function PolicyActionsMenu({
   onDelete: (policy: OrgModelPolicy) => void;
 }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -579,7 +450,7 @@ function PolicyActionsMenu({
                 return $.settings.models.policies.actionsFor;
               },
               {
-                model: policy.modelLabel,
+                model: catalog?.displayName(policy.model) ?? policy.model,
               },
             )}
           />
@@ -609,7 +480,9 @@ function PolicyActionsMenu({
         >
           <Trash size={14} />
           {t(($) => {
-            return $.settings.models.actions.deleteModel;
+            return policy.model === catalog?.systemDefaultModel
+              ? $.settings.models.policies.orgDefaultModelLocked
+              : $.settings.models.actions.deleteModel;
           })}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -677,11 +550,14 @@ function PolicyRow({
       return $.settings.models.policies.builtIn;
     }),
   );
-  const modelIconType = getModelIconType(policy.model);
+  const catalog = useLastResolved(modelCatalog$);
+  const modelIconType = getModelIconType(policy.model, catalog);
+  const modelLabel = catalog?.displayName(policy.model) ?? policy.model;
+  const isSystemDefault = policy.model === catalog?.systemDefaultModel;
   const builtInPriceTier = isBuiltInModelProviderType(
     policy.defaultProviderType,
   )
-    ? getBuiltInModelPriceTier(policy.model)
+    ? getCatalogModelPriceTier(catalog, policy.model)
     : undefined;
 
   return (
@@ -697,7 +573,7 @@ function PolicyRow({
             </span>
           )}
           <p className="min-w-0 truncate text-sm font-medium text-foreground">
-            {policy.modelLabel}
+            {modelLabel}
           </p>
           {policy.routeStatus !== "valid" && (
             <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
@@ -719,7 +595,7 @@ function PolicyRow({
         )}
       </div>
       <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
-        {canEdit ? (
+        {canEdit && !isSystemDefault ? (
           <PolicyActionsMenu
             policy={policy}
             disabled={disabled}
@@ -733,9 +609,15 @@ function PolicyRow({
             type="button"
             className="shrink-0 text-muted-foreground hover:text-destructive"
             disabled={disabled || !canDelete}
-            aria-label={`${t(($) => {
-              return $.settings.models.actions.deleteModel;
-            })} ${policy.modelLabel}`}
+            aria-label={
+              isSystemDefault
+                ? t(($) => {
+                    return $.settings.models.policies.orgDefaultModelLocked;
+                  })
+                : `${t(($) => {
+                    return $.settings.models.actions.deleteModel;
+                  })} ${modelLabel}`
+            }
             onClick={() => {
               onDelete(policy);
             }}
@@ -984,7 +866,7 @@ function GatewayProviderSection({
   surfaceId,
   onChange,
 }: {
-  model: SupportedRunModel;
+  model: string;
   connections: ModelProviderConnectionResponse[];
   surfaceId: string | null;
   onChange: (surfaceId: string, providerType: ModelProviderType) => void;
@@ -1050,7 +932,7 @@ function GatewayProviderSection({
 
 function buildPolicyUpdate(params: {
   policies: OrgModelPolicy[];
-  model: SupportedRunModel;
+  model: string;
   routeKind: ModelPolicyRouteKind;
   providerType: ModelProviderType | null;
   provider: ModelProviderResponse | null;
@@ -1059,9 +941,7 @@ function buildPolicyUpdate(params: {
   const existing = params.policies.find((policy) => {
     return policy.model === params.model;
   });
-  const base = existing
-    ? toUpdate(existing)
-    : makeDefaultPolicy(params.model, params.policies.length === 0);
+  const base = existing ? toUpdate(existing) : makeBuiltInPolicy(params.model);
 
   if (params.routeKind === "built-in") {
     return {
@@ -1120,16 +1000,35 @@ function buildPolicyUpdate(params: {
 }
 
 function modelRouteRequiresProUpgrade(params: {
-  model: SupportedRunModel | null;
+  model: string | null;
   routeKind: ModelPolicyRouteKind;
   modelCapabilities: ModelPlanCapabilities;
 }): boolean {
   if (params.model === null) {
     return false;
   }
-  return params.routeKind === "built-in"
-    ? !modelAllowedForPlan(params.model, params.modelCapabilities)
-    : !params.modelCapabilities.supportByok;
+  if (params.routeKind === "built-in") {
+    return !modelAllowedForPlan(params.model, params.modelCapabilities);
+  }
+  return (
+    !params.modelCapabilities.supportByok &&
+    !(
+      params.routeKind === "oauth" &&
+      oauthSubscriptionRouteAllowed(params.model, params.modelCapabilities)
+    )
+  );
+}
+
+/** Any plan may route a model to members' own subscriptions. */
+function oauthSubscriptionRouteAllowed(
+  model: string,
+  modelCapabilities: ModelPlanCapabilities,
+): boolean {
+  return (["claude-code-oauth-token", "codex-oauth-token"] as const).some(
+    (type) => {
+      return memberSubscriptionRouteAllowed(model, type, modelCapabilities);
+    },
+  );
 }
 
 function getDialogPrimaryLabel(params: {
@@ -1146,7 +1045,7 @@ function getDialogPrimaryLabel(params: {
 }
 
 function isSubmitDisabled(params: {
-  selectedModel: SupportedRunModel | null;
+  selectedModel: string | null;
   saving: boolean;
   inlineSaving: boolean;
   checkoutLoading: boolean;
@@ -1229,14 +1128,15 @@ function ModelSelectionField({
   disabled,
   onChange,
 }: {
-  selectedModel: SupportedRunModel | null;
-  addableModels: SupportedRunModel[];
+  selectedModel: string | null;
+  addableModels: string[];
   disabled: boolean;
-  onChange: (model: SupportedRunModel) => void;
+  onChange: (model: string) => void;
 }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   const selectedModelIcon = selectedModel
-    ? getModelIconType(selectedModel)
+    ? getModelIconType(selectedModel, catalog)
     : null;
   return (
     <div className="flex flex-col gap-2">
@@ -1267,20 +1167,22 @@ function ModelSelectionField({
                 {selectedModelIcon && (
                   <ProviderIcon type={selectedModelIcon} size={16} />
                 )}
-                <span>{getCanonicalModelDisplayName(selectedModel)}</span>
+                <span>
+                  {catalog?.displayName(selectedModel) ?? selectedModel}
+                </span>
               </div>
             )}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {addableModels.map((model) => {
-            const iconType = getModelIconType(model);
+            const iconType = getModelIconType(model, catalog);
             return (
               <SelectItem key={model} value={model}>
                 <div className="flex w-full min-w-0 items-center gap-2">
                   {iconType && <ProviderIcon type={iconType} size={16} />}
                   <span className="min-w-0 flex-1 truncate">
-                    {getCanonicalModelDisplayName(model)}
+                    {catalog?.displayName(model) ?? model}
                   </span>
                 </div>
               </SelectItem>
@@ -1298,6 +1200,7 @@ function ProviderRouteChoices({
   oauthTypes,
   gatewayCount,
   supportByok,
+  oauthRequiresPro,
   builtInRequiresPro,
   onChoose,
 }: {
@@ -1306,6 +1209,7 @@ function ProviderRouteChoices({
   oauthTypes: ModelProviderType[];
   gatewayCount: number;
   supportByok: boolean;
+  oauthRequiresPro: boolean;
   builtInRequiresPro: boolean;
   onChoose: (routeKind: ModelPolicyRouteKind) => void;
 }) {
@@ -1371,8 +1275,8 @@ function ProviderRouteChoices({
         {oauthTypes.length > 0 && (
           <RouteChoiceButton
             active={routeKind === "oauth"}
-            pro={!supportByok}
-            upgrade={!supportByok}
+            pro={oauthRequiresPro}
+            upgrade={oauthRequiresPro}
             title={
               oauthRouteKind === "codex"
                 ? t(($) => {
@@ -1420,7 +1324,7 @@ function ProviderRouteConfiguration({
   onGatewayChange,
 }: {
   routeKind: ModelPolicyRouteKind;
-  selectedModel: SupportedRunModel | null;
+  selectedModel: string | null;
   selectedProviderType: ModelProviderType | null;
   apiTypes: ModelProviderType[];
   routeProvider: ModelProviderResponse | null;
@@ -1462,7 +1366,26 @@ function ProviderRouteConfiguration({
   return null;
 }
 
+/** Which route choices the selected model needs a Pro upgrade for. */
+function getRoutePlanRequirements(
+  selectedModel: string | null,
+  modelCapabilities: ModelPlanCapabilities,
+): { oauthRequiresPro: boolean; builtInRequiresPro: boolean } {
+  return {
+    oauthRequiresPro:
+      !modelCapabilities.supportByok &&
+      !(
+        selectedModel !== null &&
+        oauthSubscriptionRouteAllowed(selectedModel, modelCapabilities)
+      ),
+    builtInRequiresPro:
+      selectedModel !== null &&
+      !modelAllowedForPlan(selectedModel, modelCapabilities),
+  };
+}
+
 function ModelPolicyRouteDialog({
+  catalog,
   policies,
   addableModels,
   providers,
@@ -1472,8 +1395,9 @@ function ModelPolicyRouteDialog({
   onUpgrade,
   onSubmit,
 }: {
+  catalog: ModelCatalog;
   policies: OrgModelPolicy[];
-  addableModels: SupportedRunModel[];
+  addableModels: string[];
   providers: ModelProviderResponse[];
   connections: ModelProviderConnectionResponse[];
   saving: boolean;
@@ -1507,8 +1431,12 @@ function ModelPolicyRouteDialog({
     routeKind: dialog.routeKind,
     modelCapabilities,
   });
-  const apiTypes = selectedModel ? getApiProviderTypes(selectedModel) : [];
-  const oauthTypes = selectedModel ? getOAuthProviderTypes(selectedModel) : [];
+  const apiTypes = selectedModel
+    ? getApiProviderTypes(catalog, selectedModel)
+    : [];
+  const oauthTypes = selectedModel
+    ? getOAuthProviderTypes(catalog, selectedModel)
+    : [];
   const gatewayOptions = selectedModel
     ? gatewaySurfacesForModel(connections, selectedModel)
     : [];
@@ -1565,7 +1493,7 @@ function ModelPolicyRouteDialog({
     }
   };
 
-  const handleModelChange = (model: SupportedRunModel) => {
+  const handleModelChange = (model: string) => {
     setModel(model);
   };
 
@@ -1622,7 +1550,7 @@ function ModelPolicyRouteDialog({
     if (!update) {
       return;
     }
-    onSubmit(upsertPolicy(policies, update));
+    onSubmit(upsertPolicy(policies, update, catalog.systemDefaultModel));
     close();
   };
 
@@ -1649,6 +1577,10 @@ function ModelPolicyRouteDialog({
     selectedProviderType,
     surfaceId: selectedSurfaceId,
   });
+  const routePlanRequirements = getRoutePlanRequirements(
+    selectedModel,
+    modelCapabilities,
+  );
 
   return (
     <Dialog
@@ -1700,10 +1632,8 @@ function ModelPolicyRouteDialog({
             oauthTypes={oauthTypes}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
-            builtInRequiresPro={
-              selectedModel !== null &&
-              !modelAllowedForPlan(selectedModel, modelCapabilities)
-            }
+            oauthRequiresPro={routePlanRequirements.oauthRequiresPro}
+            builtInRequiresPro={routePlanRequirements.builtInRequiresPro}
             onChoose={chooseRoute}
           />
           <ProviderRouteConfiguration
@@ -1812,6 +1742,8 @@ export function OrgModelPoliciesSection() {
   const lastConnections = useLastResolved(modelProviderConnections$);
   const modelCapabilitiesLoadable = useLoadable(modelPlanCapabilities$);
   const lastModelCapabilities = useLastResolved(modelPlanCapabilities$);
+  const catalogLoadable = useLoadable(modelCatalog$);
+  const catalog = useLastResolved(modelCatalog$);
   const pageSignal = useGet(pageSignal$);
   const openAddModelDialog = useSet(openAddModelPolicyDialog$);
   const openEditModelDialog = useSet(openEditModelPolicyDialog$);
@@ -1834,13 +1766,17 @@ export function OrgModelPoliciesSection() {
       lastModelCapabilities,
     });
 
-  if (showSkeleton) {
+  if (
+    showSkeleton ||
+    (catalog === undefined && catalogLoadable.state === "loading")
+  ) {
     return <ModelPoliciesSkeleton />;
   }
 
-  if (!data) {
+  if (!data || !catalog) {
     return null;
   }
+  const { systemDefaultModel } = catalog;
 
   const policies = data.policies;
   const canManageModelPolicies =
@@ -1848,12 +1784,17 @@ export function OrgModelPoliciesSection() {
     policies.some((policy) => {
       return isByokProviderType(policy.defaultProviderType);
     });
-  const visiblePolicies = policies.filter((policy) => {
-    return ACTIVE_RUN_MODELS.includes(policy.model);
-  });
-  const addableModels = data.modelsAvailableToAdd.filter((model) => {
-    return isAddableBuiltInModel(model);
-  });
+  const visiblePolicies = policies
+    .filter((policy) => {
+      return catalog.isActive(policy.model);
+    })
+    .sort((left, right) => {
+      return catalog.compare(left.model, right.model);
+    });
+  const addableModels = getAddableCatalogModels(
+    catalog,
+    data.modelsAvailableToAdd,
+  );
 
   const submit = (
     next: UpdateOrgModelPolicy[],
@@ -1879,12 +1820,6 @@ export function OrgModelPoliciesSection() {
   const openComparePlans = () => {
     openSettingsBillingPlans();
   };
-  const handleDefaultModelChange = (model: SupportedRunModel) => {
-    if (saving || model === data.workspaceDefaultModel) {
-      return;
-    }
-    submit(makePolicyDefault(policies, model));
-  };
   const handleOpenAddModel = () => {
     if (saving || !canManageModelPolicies) {
       return;
@@ -1898,24 +1833,16 @@ export function OrgModelPoliciesSection() {
     openEditModelDialog(policy);
   };
   const handleDeletePolicy = (policy: OrgModelPolicy) => {
-    if (saving || !canDeletePolicy(policies, policy, modelCapabilities)) {
+    if (saving || !canDeletePolicy(policies, policy, systemDefaultModel)) {
       return;
     }
     // Unchanged existing routes remain valid on a restricted plan. Do not
     // drop other models when deleting just this policy.
-    submit(removePolicy(policies, policy.model, modelCapabilities), true);
+    submit(removePolicy(policies, policy.model, systemDefaultModel), true);
   };
 
   return (
     <section className="flex flex-col gap-6">
-      <DefaultModelRow
-        policies={visiblePolicies}
-        workspaceDefaultModel={data.workspaceDefaultModel}
-        disabled={saving}
-        modelCapabilities={modelCapabilities}
-        onChange={handleDefaultModelChange}
-        onUpgrade={openComparePlans}
-      />
       <div className="flex flex-col gap-3">
         <SettingsSectionHeading
           title={t(($) => {
@@ -1965,7 +1892,7 @@ export function OrgModelPoliciesSection() {
                   canDelete={canDeletePolicy(
                     policies,
                     policy,
-                    modelCapabilities,
+                    systemDefaultModel,
                   )}
                   canEdit={canManageModelPolicies}
                   onEdit={handleEditPolicy}
@@ -1977,6 +1904,7 @@ export function OrgModelPoliciesSection() {
         </div>
       </div>
       <ModelPolicyRouteDialog
+        catalog={catalog}
         policies={policies}
         addableModels={addableModels}
         providers={providers}

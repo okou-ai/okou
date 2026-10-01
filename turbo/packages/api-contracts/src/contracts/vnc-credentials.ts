@@ -8,6 +8,9 @@ export const VNC_USERNAME_MAX_BYTES = 255;
 export const VNC_USERNAME_PASSWORD_MAX_BYTES = 1_023;
 export const APPLE_DH_FIELD_MAX_BYTES = 63;
 export const APPLE_RSA_SRP_USERNAME_MAX_BYTES = 234;
+// PEM encodings are bounded separately from the DER limits enforced at the API and Runner.
+export const VNC_CLIENT_CHAIN_PEM_MAX_LENGTH = 96_000;
+export const VNC_CLIENT_KEY_PEM_MAX_LENGTH = 24_000;
 
 const nameSchema = z.string().trim().min(1).max(VNC_DISPLAY_NAME_MAX_LENGTH);
 function boundedUtf8String(maxBytes: number, label: string) {
@@ -85,12 +88,31 @@ export const vncAppleRsaSrpAuthenticationSchema = z
   })
   .strict();
 
-export const vncAuthenticationSchema = z.discriminatedUnion("method", [
+const clientIdentityInput = {
+  certificateChain: z.string().min(1).max(VNC_CLIENT_CHAIN_PEM_MAX_LENGTH),
+  privateKey: z.string().min(1).max(VNC_CLIENT_KEY_PEM_MAX_LENGTH),
+} as const;
+
+export const vncLegacyAuthenticationSchema = z.discriminatedUnion("method", [
   vncPasswordAuthenticationVariantSchema,
   vncUsernamePasswordAuthenticationSchema,
   vncAppleDhAuthenticationSchema,
   vncAppleSrpAuthenticationSchema,
   vncAppleRsaSrpAuthenticationSchema,
+]);
+
+export const vncAuthenticationSchema = z.discriminatedUnion("method", [
+  ...vncLegacyAuthenticationSchema.options,
+  z
+    .object({ method: z.literal("client_certificate"), ...clientIdentityInput })
+    .strict(),
+  z
+    .object({
+      method: z.literal("client_certificate_vnc_password"),
+      ...clientIdentityInput,
+      password: vncPasswordAuthenticationVariantSchema.shape.password,
+    })
+    .strict(),
 ]);
 const revisionSchema = z.int().positive().max(2_147_483_647);
 
@@ -127,6 +149,18 @@ const vncCredentialResponseBase = {
 } as const;
 
 export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("client_certificate"),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("client_certificate_vnc_password"),
+    })
+    .strict(),
   z
     .object({
       ...vncCredentialResponseBase,

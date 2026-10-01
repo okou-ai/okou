@@ -2,10 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   testTeamsStateContract,
   type TestTeamsStatePostBody,
 } from "@okouai/api-contracts/contracts/test-teams-state";
@@ -35,6 +31,8 @@ import {
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
+import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_TENANT_NAME = "E2E Test Tenant";
@@ -267,14 +265,16 @@ async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
   await db.delete(builtInModelKeys).where(eq(builtInModelKeys.label, agentId));
   await db
     .insert(builtInModelKeys)
-    .values(builtInModelKeyRows(agentId))
+    .values(
+      builtInModelKeyRows(agentId, await loadSystemDefaultBuiltInVendor(db)),
+    )
     .onConflictDoNothing({ target: builtInModelKeys.vendor });
 }
 
-function builtInModelKeyRows(agentId: string) {
+function builtInModelKeyRows(agentId: string, defaultVendor: string) {
   return [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: defaultVendor,
       apiKey: `built-in-key-default-${agentId}`,
       label: agentId,
     },
@@ -304,7 +304,10 @@ async function deleteBuiltInModelKeysForSeededDefaultAgent(
     return;
   }
 
-  const apiKeys = builtInModelKeyRows(agent.id).map((row) => {
+  const apiKeys = builtInModelKeyRows(
+    agent.id,
+    await loadSystemDefaultRunModel(db),
+  ).map((row) => {
     return row.apiKey;
   });
   await db

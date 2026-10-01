@@ -1,11 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
@@ -51,7 +46,10 @@ import {
   readIntegrationChatThreadModel,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import {
+  listOrgModelPolicies$,
+  listOrgModelPoliciesWithSystemDefault$,
+} from "./model-policy.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
   admitCanonicalSlackChatEvent,
@@ -838,15 +836,14 @@ const slackModelPickerState$ = command(
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly {
-      readonly model: SupportedRunModel;
+      readonly model: string;
       readonly label: string;
       readonly isDefault: boolean;
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -854,17 +851,13 @@ const slackModelPickerState$ = command(
     return {
       enabled: true,
       options: policies.policies.flatMap((policy) => {
-        if (
-          !isSupportedRunModel(policy.model) ||
-          !visibleModels.has(policy.model) ||
-          policy.routeStatus !== "valid"
-        ) {
+        if (policy.routeStatus !== "valid") {
           return [];
         }
         return {
           model: policy.model,
           label: policy.modelLabel,
-          isDefault: policy.isDefault,
+          isDefault: policy.model === systemDefaultModel,
         };
       }),
       currentSelectedModel,
@@ -888,11 +881,7 @@ const isModelCommandAvailable$ = command(
       signal,
     );
     return policies.policies.some((policy) => {
-      return (
-        isSupportedRunModel(policy.model) &&
-        getBuiltInVisibleModels().includes(policy.model) &&
-        policy.routeStatus === "valid"
-      );
+      return policy.routeStatus === "valid";
     });
   },
 );

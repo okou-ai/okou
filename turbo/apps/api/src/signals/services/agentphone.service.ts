@@ -6,13 +6,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {
-  getCanonicalModelDisplayName,
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -62,7 +56,7 @@ import {
   scheduleEnqueuedChatThreadPick$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
@@ -1074,7 +1068,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1088,23 +1082,20 @@ function findModelOption(
     compactLookupKey(normalizedInput),
   ]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [option.model, normalizeRunModelId(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatAgentPhoneModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1122,7 +1113,9 @@ function formatAgentPhoneModelOptionsMessage(
   });
 
   const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
+    ? (options.find((option) => {
+        return option.model === currentSelectedModel;
+      })?.label ?? currentSelectedModel)
     : "workspace default";
   return [
     "Available models",
@@ -1146,7 +1139,6 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const chatThreadId = await findAgentPhoneRoutedChatThreadId(args.db, {
       agentphoneUserLinkId: args.userLinkId,
       rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
@@ -1166,25 +1158,21 @@ const handleModelCommand$ = command(
       );
       return;
     }
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
 
     const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        !visibleModels.has(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
+      if (policy.routeStatus !== "valid") {
         return [];
       }
       return {
         model: policy.model,
         label: policy.modelLabel,
-        isDefault: policy.isDefault,
+        isDefault: policy.model === systemDefaultModel,
       };
     });
 

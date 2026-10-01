@@ -30,9 +30,10 @@ import {
 import { sendChatEvent } from "./chat-event-api.ts";
 import {
   isCodexFastModeAvailableForSelection,
-  resolveModelFirstUserDefaultSelection,
+  resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";
@@ -215,34 +216,40 @@ function resolveNewThreadModelSelection(
   args: {
     readonly policies: OrgModelPoliciesResponse | null | undefined;
     readonly userPreference: UserModelPreferenceResponse | null | undefined;
+    readonly catalog: ModelCatalog;
   },
 ): ModelProviderSelection | null {
   if (modelSelection) {
     return modelSelection.codexServiceTier === "fast" &&
       !isCodexFastModeAvailableForSelection({
         policies: args.policies,
+        catalog: args.catalog,
         selectedModel: modelSelection.selectedModel,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
   }
-  return resolveModelFirstUserDefaultSelection({
+  return resolveDefaultModelSelection({
     userPreference: args.userPreference,
     policies: args.policies,
+    catalog: args.catalog,
   });
 }
 
 const resolveCurrentNewThreadModelSelection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const [modelSelection, policies, userPreference] = await Promise.all([
-      get(chatPageModelSelection$),
-      get(orgModelPolicies$),
-      get(userModelPreference$),
-    ]);
+    const [modelSelection, policies, userPreference, catalog] =
+      await Promise.all([
+        get(chatPageModelSelection$),
+        get(orgModelPolicies$),
+        get(userModelPreference$),
+        get(modelCatalog$),
+      ]);
     signal.throwIfAborted();
     const resolved = resolveNewThreadModelSelection(modelSelection, {
       policies,
       userPreference,
+      catalog,
     });
     if (
       resolved &&
@@ -410,9 +417,12 @@ const startNewChatThreadCreate$ = command(
     signal.throwIfAborted();
     const userPreference = await get(userModelPreference$);
     signal.throwIfAborted();
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
     const modelSelection = resolveNewThreadModelSelection(null, {
       policies,
       userPreference,
+      catalog,
     });
     if (!modelSelection) {
       throw new Error("A model selection is required");

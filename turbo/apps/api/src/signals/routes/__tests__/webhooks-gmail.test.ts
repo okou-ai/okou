@@ -434,28 +434,15 @@ async function configureWorkspaceModelProvider(
   // gained a Pi route, so keep this fixture on its intended execution path.
 
   await configureBuiltInModelKey();
-  const policies = await miscApi.listModelPolicies(actor);
-  const workspacePolicy = policies.policies.find((policy) => {
-    return policy.model === GMAIL_WORKSPACE_MODEL;
-  });
-  if (!workspacePolicy) {
-    throw new Error(
-      `Expected ${GMAIL_WORKSPACE_MODEL} model policy to be available`,
-    );
-  }
-  await miscApi.updateModelPolicies(
-    actor,
-    [
-      {
-        ...workspacePolicy,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ],
-    [200],
-  );
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: GMAIL_WORKSPACE_MODEL,
+      preferred: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
   const updated = await miscApi.listModelPolicies(actor);
   expect(
     updated.policies.find((policy) => {

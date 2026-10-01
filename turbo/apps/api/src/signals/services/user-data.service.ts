@@ -16,7 +16,10 @@ import type {
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isCatalogModelRunnable,
+  loadModelCatalog,
+} from "./model-catalog.service";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
   modelSettingsSchema,
@@ -199,11 +202,17 @@ export function userModelPreference({
       )
       .limit(1);
 
-    const selectedModel = isActiveRunModel(row?.selectedModel)
-      ? row.selectedModel
-      : null;
+    // Only an active catalog model with a route is a current selection.
+    const catalog = await loadModelCatalog(db);
+    const selectedModel =
+      row?.selectedModel && isCatalogModelRunnable(catalog, row.selectedModel)
+        ? row.selectedModel
+        : null;
     const serviceTier: ChatThreadServiceTier | null =
-      selectedModel && row?.serviceTier === "priority" ? row.serviceTier : null;
+      selectedModel &&
+      (row?.serviceTier === "priority" || row?.serviceTier === "ultrafast")
+        ? row.serviceTier
+        : null;
     // A model retired from the catalog reads as unset rather than throwing:
     // the column is not re-validated when the catalog changes.
     const selectedImageModel = isImageModelId(row?.selectedImageModel)

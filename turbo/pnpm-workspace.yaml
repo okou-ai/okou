@@ -43,6 +43,9 @@ overrides:
   "@langfuse/tracing": 5.10.0
   "esbuild@>=0.27.3 <0.28.1": ">=0.28.1"
   "jayson>uuid": 11.1.1
+  # Slack SDK 7.x still permits vulnerable axios releases. Remove when upstream
+  # requires axios >=1.20.0, which fixes the data-URL parser ReDoS.
+  "@slack/web-api>axios": 1.20.0
   # AJV and express-rate-limit still permit vulnerable transitive releases.
   # Remove these floors when upstream requires the patched versions.
   "ajv>fast-uri": ^3.1.7

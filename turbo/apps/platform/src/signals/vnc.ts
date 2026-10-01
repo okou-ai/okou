@@ -140,13 +140,22 @@ export interface VncDialogState {
   readonly credential: VncCredentialResponse | null;
 }
 const dialog$ = state<VncDialogState | null>(null);
-export type VncProfile = VncSecurity["type"];
+export type VncProfile =
+  | VncSecurity["type"]
+  | "client_certificate_none"
+  | "client_certificate_vnc";
 export type VncAuthMethod = VncCredentialResponse["authMethod"] | "none";
 
 export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
   switch (profile) {
     case "x509_none": {
       return "none";
+    }
+    case "client_certificate_none": {
+      return "client_certificate";
+    }
+    case "client_certificate_vnc": {
+      return "client_certificate_vnc_password";
     }
     case "x509_vnc":
     case "apple_vnc_password": {
@@ -173,6 +182,12 @@ function vncProfileForAuthMethod(
   method: VncCredentialResponse["authMethod"],
 ): VncProfile {
   switch (method) {
+    case "client_certificate": {
+      return "client_certificate_none";
+    }
+    case "client_certificate_vnc_password": {
+      return "client_certificate_vnc";
+    }
     case "vnc_password": {
       return "x509_vnc";
     }
@@ -225,6 +240,14 @@ function initialVncProfile(
   credential: VncCredentialResponse | null,
 ): VncProfile {
   if (connection) {
+    if (
+      "clientCertificateAuthentication" in connection &&
+      connection.clientCertificateAuthentication
+    ) {
+      return connection.clientCertificateAuthentication === "client_certificate"
+        ? "client_certificate_none"
+        : "client_certificate_vnc";
+    }
     return connection.security.type;
   }
   return credential
@@ -292,6 +315,8 @@ export const chooseVncProfile$ = command(
       !get(editorLocked$) &&
       (profile === "x509_none" ||
         profile === "x509_vnc" ||
+        profile === "client_certificate_none" ||
+        profile === "client_certificate_vnc" ||
         profile === "x509_plain" ||
         profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
@@ -437,6 +462,18 @@ export const mountVncSecret$ = onRef(
   }),
 );
 
+export const mountVncCertificateSecret$ = onRef(
+  command((_context, input: HTMLTextAreaElement, signal: AbortSignal) => {
+    signal.addEventListener(
+      "abort",
+      () => {
+        input.value = "";
+      },
+      { once: true },
+    );
+  }),
+);
+
 function initialVncEditor(
   kind: VncDialogState["kind"],
   connection: VncConnectionResponse | null,
@@ -544,7 +581,28 @@ function credentialFields(form: HTMLFormElement, profile: VncProfile) {
   const name = textField(form, "credentialName");
   switch (profile) {
     case "x509_none": {
-      throw new Error("X509None has no credential to create");
+      throw new Error("Certificate-free X509None has no credential to create");
+    }
+    case "client_certificate_none": {
+      return {
+        name,
+        authentication: {
+          method: "client_certificate" as const,
+          certificateChain: textField(form, "certificateChain"),
+          privateKey: textField(form, "privateKey"),
+        },
+      };
+    }
+    case "client_certificate_vnc": {
+      return {
+        name,
+        authentication: {
+          method: "client_certificate_vnc_password" as const,
+          certificateChain: textField(form, "certificateChain"),
+          privateKey: textField(form, "privateKey"),
+          password: textField(form, "password"),
+        },
+      };
     }
     case "x509_vnc":
     case "apple_vnc_password": {
@@ -647,7 +705,12 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
     security: isAppleVncProfile(editor.profile)
       ? { type: editor.profile }
       : {
-          type: editor.profile,
+          type:
+            editor.profile === "client_certificate_none"
+              ? ("x509_none" as const)
+              : editor.profile === "client_certificate_vnc"
+                ? ("x509_vnc" as const)
+                : editor.profile,
           ...(serverName ? { serverName } : {}),
           trust:
             editor.trust === "system"

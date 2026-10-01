@@ -11,6 +11,7 @@ import {
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import {
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -881,6 +882,8 @@ async function recordObservedUsage(
     sourceHistoryHash: prepared.work.sourceHistoryHash,
     model: prepared.credential.selectedModel,
     billing: prepared.credential.billing,
+    longContextMinTotalInputTokens:
+      prepared.credential.longContextMinTotalInputTokens,
     responseSourceId: observedResult.responseId ?? `request:${requestId}`,
     usage: observedResult.usage,
   };
@@ -918,6 +921,7 @@ async function processPreparedWork(
         beforeRequest: async (requestSignal) => {
           const admission = await checkOrgCreditsForRunAdmission({
             db: args.db,
+            catalog: await loadModelCatalog(args.db),
             ...args.prepared.credential.billing,
             modelProviderType: args.prepared.credential.modelProviderType,
             selectedModel: args.prepared.credential.selectedModel,

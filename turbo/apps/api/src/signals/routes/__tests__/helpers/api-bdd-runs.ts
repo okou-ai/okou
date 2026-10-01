@@ -19,6 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -80,6 +81,12 @@ import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { modelPoliciesRoutes } from "../../model-policies";
+import { userModelPreferenceRoutes } from "../../user-model-preference";
+import {
+  ensureCustomModelModeForTest,
+  orgModelPolicyWrite,
+  type TestOrgModelPolicy,
+} from "./org-model-policy-write";
 import { modelProvidersRoutes } from "../../model-providers";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
@@ -185,6 +192,7 @@ const runRoutes = [
   ...runsCancelRoutes,
   ...agentsRoutes,
   ...userPermissionGrantsRoutes,
+  ...userModelPreferenceRoutes,
 ] as const;
 
 function runApp(
@@ -305,6 +313,37 @@ export function createRunsApi(
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
+  };
+  const replaceOrgModelPolicies = async (
+    actor: ApiTestUser,
+    policies: readonly TestOrgModelPolicy[],
+  ): Promise<void> => {
+    const write = orgModelPolicyWrite(policies);
+    await ensureCustomModelModeForTest(context, actor, () => {
+      return authenticate(context, actor);
+    });
+    const snapshot = await accept(
+      runApp(context)(modelPoliciesMainContract).list({
+        headers: authenticate(context, actor),
+      }),
+      [200],
+    );
+    await accept(
+      runApp(context)(modelPoliciesMainContract).update({
+        headers: authenticate(context, actor),
+        body: { policies: write.policies, revision: snapshot.body.revision },
+      }),
+      [200],
+    );
+    if (write.preferredModel) {
+      await accept(
+        runApp(context)(userModelPreferenceContract).update({
+          headers: authenticate(context, actor),
+          body: { selectedModel: write.preferredModel, serviceTier: null },
+        }),
+        [200],
+      );
+    }
   };
   const applyUserPermissionGrantRequestBody = (
     body: {
@@ -1022,6 +1061,9 @@ export function createRunsApi(
       actor: ApiTestUser,
       body: OrgModelProviderUpsertRequest,
     ): Promise<{ readonly providerId: string }> {
+      await ensureCustomModelModeForTest(context, actor, () => {
+        return authenticate(context, actor);
+      });
       const response = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
           headers: authenticate(context, actor),
@@ -1033,23 +1075,26 @@ export function createRunsApi(
     },
 
     /**
-     * Replaces the org model-first policies with the given request-shaped
-     * list (the PUT is a wholesale replace of supported-run-model rows).
+     * Replaces the org model-first policies with the given list (the PUT is a
+     * wholesale replace of supported-run-model rows) and stores a `preferred`
+     * policy as the actor's model preference.
      */
     async updateOrgModelPolicies(
       actor: ApiTestUser,
-      policies: OrgModelPolicyRequest["policies"],
+      policies: readonly TestOrgModelPolicy[],
     ): Promise<void> {
-      const snapshot = await accept(
-        runApp(context)(modelPoliciesMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
+      await replaceOrgModelPolicies(actor, policies);
+    },
+
+    /** Stores the member's model preference, used when a run names no model. */
+    async updateUserModelPreference(
+      actor: ApiTestUser,
+      selectedModel: OrgPolicyModel,
+    ): Promise<void> {
       await accept(
-        runApp(context)(modelPoliciesMainContract).update({
+        runApp(context)(userModelPreferenceContract).update({
           headers: authenticate(context, actor),
-          body: { policies, revision: snapshot.body.revision },
+          body: { selectedModel, serviceTier: null },
         }),
         [200],
       );
@@ -1080,6 +1125,9 @@ export function createRunsApi(
         readonly model?: OrgPolicyModel;
       } = {},
     ): Promise<{ readonly providerId: string }> {
+      await ensureCustomModelModeForTest(context, actor, () => {
+        return authenticate(context, actor);
+      });
       const providerResponse = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
           headers: authenticate(context, actor),
@@ -1092,29 +1140,15 @@ export function createRunsApi(
       );
 
       const providerId = providerResponse.body.provider.id;
-      const policies: OrgModelPolicyRequest["policies"] = [
+      await replaceOrgModelPolicies(actor, [
         {
           model: options.model ?? "claude-sonnet-5",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
         },
-      ];
-
-      const snapshot = await accept(
-        runApp(context)(modelPoliciesMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      await accept(
-        runApp(context)(modelPoliciesMainContract).update({
-          headers: authenticate(context, actor),
-          body: { policies, revision: snapshot.body.revision },
-        }),
-        [200],
-      );
+      ]);
 
       return { providerId };
     },

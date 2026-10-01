@@ -12,7 +12,7 @@ import { VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { create } from "tar";
 
 import { env } from "../../lib/env";
@@ -23,12 +23,7 @@ import {
   publishPiResourceVersionIndex,
 } from "./pi-resource-version-index.service";
 import { writeDb$, type Db } from "../external/db";
-import {
-  putS3Object,
-  s3ObjectExists,
-  s3ObjectHead,
-  verifyS3FilesExist,
-} from "../external/s3";
+import { putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
@@ -78,10 +73,6 @@ interface S3StorageManifest {
 interface MaterializedVolumeFile extends FileEntryWithHash {
   readonly content: Buffer;
 }
-
-type RegisteredVolumeObjects =
-  | { readonly kind: "missing" }
-  | { readonly kind: "available"; readonly archiveSize: number };
 
 async function bufferFromStream(
   stream: AsyncIterable<Uint8Array>,
@@ -204,7 +195,7 @@ async function createVolumeArchive(
   return archiveBuffer;
 }
 
-const uploadAndVerifyVolumeObjects$ = command(
+const uploadVolumeObjects$ = command(
   async (
     { get },
     args: {
@@ -212,8 +203,6 @@ const uploadAndVerifyVolumeObjects$ = command(
       readonly s3Key: string;
       readonly archiveBuffer: Buffer;
       readonly manifest: S3StorageManifest;
-      readonly fileCount: number;
-      readonly storageName: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -243,52 +232,6 @@ const uploadAndVerifyVolumeObjects$ = command(
         throw uploadResult.reason;
       }
     }
-
-    const uploadVerified = await get(
-      verifyS3FilesExist(args.bucketName, args.s3Key, args.fileCount),
-    );
-    signal.throwIfAborted();
-    if (!uploadVerified) {
-      throw new Error(
-        `Uploaded volume files are not available for ${args.storageName}`,
-      );
-    }
-  },
-);
-
-const registeredVolumeObjects$ = command(
-  async (
-    { get },
-    args: {
-      readonly bucketName: string;
-      readonly s3Key: string;
-      readonly fileCount: number;
-      readonly storedArchiveSize: number;
-    },
-    signal: AbortSignal,
-  ): Promise<RegisteredVolumeObjects> => {
-    const [manifestExists, archiveHead] = await Promise.all([
-      get(s3ObjectExists(args.bucketName, `${args.s3Key}/manifest.json`)),
-      args.fileCount > 0
-        ? get(s3ObjectHead(args.bucketName, `${args.s3Key}/archive.tar.gz`))
-        : Promise.resolve(null),
-    ]);
-    signal.throwIfAborted();
-    if (!manifestExists) {
-      return { kind: "missing" };
-    }
-    if (archiveHead === null) {
-      return { kind: "available", archiveSize: args.storedArchiveSize };
-    }
-    if (
-      archiveHead.kind === "missing" ||
-      archiveHead.contentLength === undefined ||
-      !Number.isSafeInteger(archiveHead.contentLength) ||
-      archiveHead.contentLength <= 0
-    ) {
-      return { kind: "missing" };
-    }
-    return { kind: "available", archiveSize: archiveHead.contentLength };
   },
 );
 
@@ -327,63 +270,6 @@ function assertServerSideVersionIdentity(
   ) {
     throw new StorageVersionIdentityConflictError(expected.versionId);
   }
-}
-
-async function reconcileArchiveSize(
-  db: Db,
-  expected: Omit<PreparedStorageVersion, "archiveSize">,
-  archiveSize: number,
-  signal: AbortSignal,
-): Promise<PreparedStorageVersion | undefined> {
-  return await db.transaction(async (tx) => {
-    // Preparation may finish without publishing HEAD. Reconcile the source and
-    // invalidate old work together, following the ordinary writer's lock order.
-    await tx
-      .select({ id: storages.id })
-      .from(storages)
-      .where(eq(storages.id, expected.storageId))
-      .for("update");
-    signal.throwIfAborted();
-    const [updated] = await tx
-      .update(storageVersions)
-      .set({ archiveSize })
-      .where(
-        and(
-          eq(storageVersions.id, expected.versionId),
-          eq(storageVersions.storageId, expected.storageId),
-          eq(storageVersions.s3Key, expected.s3Key),
-          eq(storageVersions.size, expected.size),
-          eq(storageVersions.fileCount, expected.fileCount),
-          isNull(storageVersions.message),
-          eq(storageVersions.createdBy, expected.createdBy),
-        ),
-      )
-      .returning({
-        storageId: storageVersions.storageId,
-        versionId: storageVersions.id,
-        s3Key: storageVersions.s3Key,
-        size: storageVersions.size,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
-        message: storageVersions.message,
-        createdBy: storageVersions.createdBy,
-      });
-    signal.throwIfAborted();
-    if (updated) {
-      await enqueuePiResourceVersionIndexes(tx, [expected.versionId], signal);
-      return updated;
-    }
-
-    const current = await readStorageVersion(tx, expected.versionId, signal);
-    if (!current) {
-      return undefined;
-    }
-    const prepared = { ...expected, archiveSize };
-    if (!storageVersionMatches(current, prepared)) {
-      throw new StorageVersionIdentityConflictError(expected.versionId);
-    }
-    return current;
-  });
 }
 
 async function resolveCanonicalVolumeStorage(
@@ -470,36 +356,12 @@ export const prepareVolumeServerSideWithDb$ = command(
     const existing = await readStorageVersion(writeDb, versionId, signal);
     if (existing) {
       assertServerSideVersionIdentity(existing, expectedVersion);
-      const objects = await set(
-        registeredVolumeObjects$,
-        {
-          bucketName,
-          s3Key,
-          fileCount: files.length,
-          storedArchiveSize: existing.archiveSize,
-        },
-        signal,
-      );
-      if (objects.kind === "available") {
-        const version =
-          objects.archiveSize === existing.archiveSize
-            ? existing
-            : await reconcileArchiveSize(
-                writeDb,
-                expectedVersion,
-                objects.archiveSize,
-                signal,
-              );
-        return {
-          storageName: input.storageName,
-          version: version ?? {
-            ...expectedVersion,
-            archiveSize: objects.archiveSize,
-          },
-          updatedAt,
-          piResourceIndex,
-        };
-      }
+      return {
+        storageName: input.storageName,
+        version: existing,
+        updatedAt,
+        piResourceIndex,
+      };
     }
 
     const archiveBuffer =
@@ -512,33 +374,19 @@ export const prepareVolumeServerSideWithDb$ = command(
       files: fileEntries,
     };
     await set(
-      uploadAndVerifyVolumeObjects$,
+      uploadVolumeObjects$,
       {
         bucketName,
         s3Key,
         archiveBuffer,
         manifest,
-        fileCount: files.length,
-        storageName: input.storageName,
       },
       signal,
     );
 
-    const uploadedVersion = {
-      ...expectedVersion,
-      archiveSize: archiveBuffer.length,
-    };
-    const version = existing
-      ? await reconcileArchiveSize(
-          writeDb,
-          expectedVersion,
-          archiveBuffer.length,
-          signal,
-        )
-      : undefined;
     return {
       storageName: input.storageName,
-      version: version ?? uploadedVersion,
+      version: { ...expectedVersion, archiveSize: archiveBuffer.length },
       updatedAt,
       piResourceIndex,
     };

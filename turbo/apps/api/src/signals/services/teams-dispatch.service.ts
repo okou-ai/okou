@@ -5,11 +5,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
@@ -58,7 +53,7 @@ import {
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
   ensureTeamsChatThreadRoute,
   findTeamsRoutedChatThreadId,
@@ -157,7 +152,7 @@ interface TeamsAgent {
 }
 
 interface TeamsModelPickerOption {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -799,9 +794,8 @@ const teamsModelPickerState$ = command(
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -811,17 +805,13 @@ const teamsModelPickerState$ = command(
       enabled: true,
       options: policies.policies
         .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            !visibleModels.has(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
+          if (policy.routeStatus !== "valid") {
             return [];
           }
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            isDefault: policy.model === systemDefaultModel,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),

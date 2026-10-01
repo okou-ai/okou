@@ -46,6 +46,7 @@ import {
   safeUsageIntegerSum,
   usageBreakdownKindExpr,
   usageCreditsExpr,
+  usageDisplayProviderExpr,
   type UsageBreakdownSqlRow,
 } from "./usage-reporting-breakdown";
 import { resolveEmails } from "./usage.service";
@@ -335,9 +336,7 @@ async function queryUsageRecordBreakdown(
         userId: usage.userId,
         kind: usageBreakdownKindExpr(usage).as("kind"),
         usageKind: sql`${usage.kind}`.mapWith(pgTextDecoder).as("usage_kind"),
-        provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`
-          .mapWith(pgTextDecoder)
-          .as("provider"),
+        provider: usageDisplayProviderExpr(usage).as("provider"),
         credits: usageCreditsExpr(usage).as("credits"),
       })
       .from(usage)

@@ -189,6 +189,12 @@ export const recoveryFields: readonly Field[] = [
     optional: true,
   },
   {
+    table: "vnc_credentials",
+    primaryKey: "id",
+    column: "encrypted_client_identity",
+    optional: true,
+  },
+  {
     table: "connector_dcr_registrations",
     primaryKey: "id",
     column: "encrypted_client_secret",

@@ -2,10 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   testSlackStateContract,
   type TestSlackStatePostBody,
 } from "@okouai/api-contracts/contracts/test-slack-state";
@@ -46,6 +42,7 @@ import {
 } from "./preview-endpoint-access";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_WORKSPACE_NAME = "E2E Test Workspace";
@@ -226,14 +223,14 @@ async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
   await acquireBuiltInModelKeyFixture(
     db,
     agentId,
-    builtInModelKeyRows(agentId),
+    builtInModelKeyRows(agentId, await loadSystemDefaultBuiltInVendor(db)),
   );
 }
 
-function builtInModelKeyRows(agentId: string) {
+function builtInModelKeyRows(agentId: string, defaultVendor: string) {
   return [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: defaultVendor,
       apiKey: `built-in-key-default-${agentId}`,
       label: agentId,
     },

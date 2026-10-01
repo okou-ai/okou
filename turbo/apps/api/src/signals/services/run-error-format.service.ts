@@ -6,6 +6,7 @@ import {
 import {
   getFrameworkForType,
   modelProviderCredentialScopeSchema,
+  normalizeRunModelId,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderType,
@@ -16,8 +17,9 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { db$ } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { catalogDisplayName, loadModelCatalog } from "./model-catalog.service";
 
 const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
@@ -155,6 +157,20 @@ function runErrorProviderContext(
   });
 }
 
+/**
+ * User-facing name of a run's model: the catalog display name of the model
+ * the run actually used. Retired catalog rows keep their own display name, so
+ * history never shows a replacement's name. Models outside the catalog are
+ * shown verbatim.
+ */
+async function resolveRunModelDisplayName(
+  db: ReadonlyDb,
+  selectedModel: string,
+): Promise<string> {
+  const catalog = await loadModelCatalog(db);
+  return catalogDisplayName(catalog, normalizeRunModelId(selectedModel.trim()));
+}
+
 function formatRunErrorLikeWebMessage(
   params: FormatRunErrorLikeWebMessageParams,
 ): Computed<Promise<string>> {
@@ -187,12 +203,15 @@ function formatRunErrorLikeWebMessage(
       params.selectedModel !== undefined
         ? params.selectedModel
         : providerContext?.selectedModel;
+    const selectedModelLabel = selectedModel?.trim()
+      ? await resolveRunModelDisplayName(get(db$), selectedModel)
+      : null;
     return formatRunErrorForExternalSurface({
       code: "INTERNAL_SERVER_ERROR",
       message: errorMessage,
       failureReason: params.failureReason,
       framework: params.framework,
-      selectedModel,
+      selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: {
         modelProviderType,

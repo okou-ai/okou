@@ -2,17 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import chalk from "chalk";
 import { server } from "../../../mocks/server";
+import { MODEL_CATALOG_RESPONSE } from "../../../mocks/handlers/model-catalog";
 import { switchCommand, modelCommand } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-5",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000001",
   policies: [
     {
       id: "00000000-0000-4000-8000-000000000001",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -25,10 +23,21 @@ const MODEL_POLICIES_RESPONSE = {
       id: "00000000-0000-4000-8000-000000000002",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
+      routeStatus: "valid",
+      routeStatusReason: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000009",
+      model: "okou-1.0",
+      modelLabel: "Auto",
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
       routeStatus: "valid",
       routeStatusReason: null,
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -81,6 +90,8 @@ describe("okou model command", () => {
     expect(logCalls).toContain("provider: api key");
     expect(logCalls).not.toContain("price tier: $$$");
     expect(logCalls).toContain("okou model-provider set --help");
+    expect(logCalls).toContain("Auto (okou-1.0) (default)");
+    expect(logCalls).toContain("Claude Sonnet 5 (claude-sonnet-5)\n");
   });
 
   it("lists the effective subscription without organization API prices", async () => {
@@ -116,6 +127,48 @@ describe("okou model command", () => {
     expect(output).not.toContain("price tier:");
     expect(output).not.toContain("provider: built-in");
     expect(output).not.toContain("provider: api key");
+  });
+
+  it("takes names, order, default, and retirement from the model catalog", async () => {
+    const retiredPolicy = {
+      ...MODEL_POLICIES_RESPONSE.policies[0]!,
+      id: "00000000-0000-4000-8000-000000000003",
+      model: "claude-opus-4-8",
+      modelLabel: "Claude Opus 4.8",
+    };
+    server.use(
+      http.get("http://localhost:3000/api/model-policies", () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [...MODEL_POLICIES_RESPONSE.policies, retiredPolicy],
+        });
+      }),
+      http.get("http://localhost:3000/api/model-catalog", () => {
+        return HttpResponse.json({
+          ...MODEL_CATALOG_RESPONSE,
+          systemDefaultModel: "claude-sonnet-5",
+          models: MODEL_CATALOG_RESPONSE.models.map((entry) => {
+            return entry.model === "claude-sonnet-5"
+              ? { ...entry, displayName: "Sonnet Five", priceTier: "$$$$" }
+              : { ...entry, isSystemDefault: false };
+          }),
+        });
+      }),
+    );
+
+    await modelCommand.parseAsync(["node", "cli", "ls"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("price tier: $$$$");
+    // Exactly the active catalog models, in catalog order.
+    const modelLines = mockConsoleLog.mock.calls.flat().filter((line) => {
+      return String(line).startsWith("  - ");
+    });
+    expect(modelLines).toStrictEqual([
+      "  - Auto (okou-1.0)",
+      "  - Sonnet Five (claude-sonnet-5) (default)",
+      "  - GPT 5.6 Luna (gpt-5.6-luna)",
+    ]);
   });
 
   it("should show Web switching guidance", async () => {

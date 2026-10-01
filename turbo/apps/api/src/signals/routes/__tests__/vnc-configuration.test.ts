@@ -1,4 +1,4 @@
-import { randomUUID, X509Certificate } from "node:crypto";
+import { generateKeyPairSync, randomUUID, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { rootCertificates } from "node:tls";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -16,6 +17,7 @@ import { inlineSshKey } from "./helpers/ssh-credential";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
+import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -216,6 +218,204 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
+  });
+
+  it("stores two exact client-certificate pairs without changing certificate-free X509None", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const certificateOnly = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU client identity",
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [201],
+    );
+    expect(certificateOnly.body).toMatchObject({
+      authMethod: "client_certificate",
+      revision: 1,
+    });
+    const created = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU X509None mTLS",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { id: certificateOnly.body.id },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      credentialId: certificateOnly.body.id,
+      clientCertificateAuthentication: "client_certificate",
+      security: { type: "x509_none" },
+      generation: 1,
+    });
+    expect(created.body).not.toHaveProperty("credential");
+    const certificateAndPassword = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "QEMU VNC mTLS",
+          authentication: {
+            method: "client_certificate_vnc_password",
+            certificateChain,
+            privateKey,
+            password: " secret ",
+          },
+        },
+      }),
+      [201],
+    );
+    const second = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU X509Vnc mTLS",
+          host: "qemuvnc.example.com",
+          security: { type: "x509_vnc", trust: { mode: "system" } },
+          credential: { id: certificateAndPassword.body.id },
+        },
+      }),
+      [201],
+    );
+    expect(second.body).toMatchObject({
+      clientCertificateAuthentication: "client_certificate_vnc_password",
+      security: { type: "x509_vnc" },
+    });
+    for (const value of [
+      certificateOnly.body,
+      certificateAndPassword.body,
+      created.body,
+      second.body,
+      (await accept(credentials().list({ headers }), [200])).body,
+      (await accept(connections().list({ headers }), [200])).body,
+    ]) {
+      const output = JSON.stringify(value);
+      for (const secret of [
+        privateKey,
+        "privateKey",
+        "encryptedClientIdentity",
+        " secret ",
+      ]) {
+        expect(output).not.toContain(secret);
+      }
+    }
+    expect(kms.generateDataKeyCalls).toBe(3);
+    expect(
+      (
+        await rawRequest("/api/vnc/connections", {
+          id: randomUUID(),
+          displayName: "Do not downgrade",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { id: certificateAndPassword.body.id },
+        })
+      ).status,
+    ).toBe(400);
+    const rotated = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: certificateOnly.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections[0]
+        ?.generation,
+    ).toBe(2);
+  });
+
+  it("rejects a malformed or mismatched client identity before KMS", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    const otherKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ format: "pem", type: "pkcs8" })
+      .toString();
+    for (const method of [
+      "client_certificate",
+      "client_certificate_vnc_password",
+    ] as const) {
+      for (const [chain, key] of [
+        [certificateChain, "not a key"],
+        [certificateChain, otherKey],
+        [certificateChain + "\nGARBAGE", privateKey],
+        [certificateChain + certificateChain.repeat(8), privateKey],
+        [certificateChain, privateKey + "\n" + privateKey],
+        [
+          certificateChain,
+          "-----BEGIN ENCRYPTED PRIVATE KEY-----\nAA==\n-----END ENCRYPTED PRIVATE KEY-----",
+        ],
+      ] as const) {
+        const response = await rawRequest("/api/vnc/credentials", {
+          id: randomUUID(),
+          name: "Rejected",
+          authentication: {
+            method,
+            certificateChain: chain,
+            privateKey: key,
+            ...(method === "client_certificate_vnc_password"
+              ? { password: "secret" }
+              : {}),
+          },
+        });
+        expect(response.status).toBe(400);
+        expect(JSON.stringify(response.body)).not.toContain(otherKey);
+      }
+    }
+    mockNow(new Date("2037-01-01T00:00:00Z"));
+    const expired = await rawRequest("/api/vnc/credentials", {
+      id: randomUUID(),
+      name: "Expired",
+      authentication: {
+        method: "client_certificate",
+        certificateChain,
+        privateKey,
+      },
+    });
+    expect(expired.status).toBe(400);
+    const inline = await rawRequest("/api/vnc/connections", {
+      id: randomUUID(),
+      displayName: "Rejected inline identity",
+      host: "qemu.example.com",
+      security: { type: "x509_none", trust: { mode: "system" } },
+      credential: {
+        create: {
+          name: "Rejected identity",
+          authentication: {
+            method: "client_certificate",
+            certificateChain,
+            privateKey: "not a key",
+          },
+        },
+      },
+    });
+    expect(inline.status).toBe(400);
+    expect(inline.body).toMatchObject({
+      error: { code: "VNC_INVALID_CLIENT_IDENTITY" },
+    });
+    expect(kms.generateDataKeyCalls).toBe(0);
   });
 
   it("persists explicitly selected X509None without a credential and requires explicit rebinds", async () => {

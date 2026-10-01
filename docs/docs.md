@@ -25,6 +25,9 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Global model catalog](./model-catalog.md): the database model catalog and
+  routes, replacement and default constraints, and the phased migration from
+  code model lists.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and credential
   storage/locking.
@@ -74,6 +77,8 @@ surface; the index does not replace their detailed rules.
   and the consumer/data/rollback gates before schema contraction.
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
+- [Storage version publication](./storage-version-publication.md): R2-first
+  version registration, DB-only reuse, and durable reference-first Clerk cleanup.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

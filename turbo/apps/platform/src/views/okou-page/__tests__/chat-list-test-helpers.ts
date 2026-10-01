@@ -187,10 +187,7 @@ export function installChatListAgent(
   });
 }
 
-export function installChatListModelPolicies(
-  context: TestContext,
-  defaultModel: OrgModelPolicy["model"] = "deepseek-v4-flash",
-): void {
+export function installChatListModelPolicies(context: TestContext): void {
   const models = [
     ["claude-sonnet-5", "Claude Sonnet 5"],
     ["deepseek-v4-flash", "DeepSeek V4 Flash"],
@@ -206,7 +203,6 @@ export function installChatListModelPolicies(
           .padStart(12, "0")}`,
         model,
         modelLabel,
-        isDefault: model === defaultModel,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

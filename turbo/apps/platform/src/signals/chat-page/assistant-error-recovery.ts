@@ -10,7 +10,6 @@ import type { ModelProviderFramework } from "@okouai/api-contracts/contracts/mod
 import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getFrameworkForType,
-  isSupportedRunModel,
   type ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -19,6 +18,7 @@ import {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -852,9 +852,14 @@ export function createAssistantErrorRecoverySignals(deps: {
       if (!userMessage) {
         throw new Error("Failed to serialize continue message");
       }
-      const modelSelection = isSupportedRunModel(meta.selectedModel)
+      // A pin of a retired model continues on its catalog replacement.
+      const resolvedModel = (await get(modelCatalog$)).resolve(
+        meta.selectedModel,
+      );
+      signal.throwIfAborted();
+      const modelSelection = resolvedModel
         ? {
-            selectedModel: meta.selectedModel,
+            selectedModel: resolvedModel,
             ...(meta.serviceTier === "priority"
               ? { codexServiceTier: "fast" as const }
               : {}),

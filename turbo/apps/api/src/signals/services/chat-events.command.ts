@@ -16,7 +16,6 @@ import {
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEvents,
@@ -37,6 +36,8 @@ import {
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { resolveRunSelectionModel } from "./model-selection.service";
 import type { Tx } from "../../lib/db-types";
 import type { AuthContext } from "../../types/auth";
 import type {
@@ -62,7 +63,10 @@ import {
   shouldDispatchCancelSideEffects,
   type CancelRunResult,
 } from "./run-cancel.service";
-import { isCodexFastServiceTierSupported } from "./model-selection.service";
+import {
+  catalogModelOffersUltrafast,
+  isCatalogFastServiceTierSupported,
+} from "./model-route-capabilities.service";
 import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
 import {
   appendChatThreadCreatedEvent,
@@ -122,7 +126,7 @@ interface NormalSendBody {
   readonly chatThreadEventId?: string;
   readonly chatThreadSortEventId?: string;
   readonly sourceRunId?: string;
-  readonly model?: SupportedRunModel;
+  readonly model?: string;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
     readonly reasoningEffort?: ReasoningEffort;
@@ -669,6 +673,7 @@ interface ThreadComputerAccess {
 }
 
 function requestedThreadRunSettings(
+  catalog: ModelCatalog,
   body: NormalSendBody,
   current: {
     readonly selectedModel: string | null;
@@ -678,6 +683,7 @@ function requestedThreadRunSettings(
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   const selectedModel = body.model ?? current.selectedModel;
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel,
     modelSettings: current.modelSettings,
     requested: body.runOptions?.reasoningEffort,
@@ -688,7 +694,7 @@ function requestedThreadRunSettings(
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
     requestedTier === "fast" &&
-    !isCodexFastServiceTierSupported({ selectedModel })
+    !isCatalogFastServiceTierSupported(catalog, selectedModel)
   ) {
     return badRequestMessage(
       "Codex fast mode is only available for GPT 5.6 runs",
@@ -703,8 +709,13 @@ function requestedThreadRunSettings(
   const codexServiceTier = keepsStoredTier
     ? current.codexServiceTier
     : (requestedTier ?? null);
-  if (codexServiceTier === "ultrafast") {
-    return badRequestMessage("Astra Ultrafast is temporarily disabled");
+  // The catalog route capabilities decide Ultrafast availability, including
+  // a stored thread tier kept by this send.
+  if (
+    codexServiceTier === "ultrafast" &&
+    !catalogModelOffersUltrafast(catalog, selectedModel)
+  ) {
+    return badRequestMessage("Ultrafast is unavailable for this model route");
   }
   return {
     selectedModel,
@@ -794,6 +805,7 @@ type SendThread = ExistingSendThread | NewSendThread;
 
 async function resolveExistingSendThread(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   thread: ExistingSendThreadRow,
   agentId: string,
@@ -806,7 +818,7 @@ async function resolveExistingSendThread(
     computerUseHostId: thread.computerUseHostId,
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
   };
-  const runSettings = requestedThreadRunSettings(args.body, current);
+  const runSettings = requestedThreadRunSettings(catalog, args.body, current);
   if ("status" in runSettings) {
     return runSettings;
   }
@@ -832,6 +844,7 @@ async function resolveExistingSendThread(
 
 async function resolveNewSendThread(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
 ): Promise<NewSendThread | NormalSendFailure> {
@@ -848,7 +861,7 @@ async function resolveNewSendThread(
         )
       : null;
   const defaults = await loadNewChatThreadDefaults(db, member);
-  const runSettings = requestedThreadRunSettings(args.body, {
+  const runSettings = requestedThreadRunSettings(catalog, args.body, {
     selectedModel: initialModel?.selectedModel ?? null,
     modelSettings: defaults.modelSettings,
     codexServiceTier:
@@ -1061,6 +1074,36 @@ function assertOfficialSourceClaim(
   }
 }
 
+/**
+ * The stored prompt: an agent-sourced send carries its source Run annotation;
+ * an MCP send carries its source part.
+ */
+function normalSendUserMessage(
+  args: NormalSendArgs,
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+): UserMessageDocument {
+  if (agentRunSource !== null) {
+    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
+  }
+  return args.mcpSource === undefined
+    ? args.body.userMessage
+    : {
+        ...args.body.userMessage,
+        parts: [...args.body.userMessage.parts, args.mcpSource],
+      };
+}
+
+/**
+ * A conflict on the insert is accepted as a duplicate without a lookup. Only
+ * a follow-up with a server-generated id cannot have collided on its id, so
+ * its conflict is the revoke edge taken concurrently.
+ */
+function conflictingSendResponse(args: NormalSendArgs, threadId: string) {
+  return args.body.revokesEventId && args.body.clientEventId === undefined
+    ? conflict("Recommended follow-up has already been used")
+    : acceptedSendResponse(threadId, nowDate(), true);
+}
+
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
   readonly id: string;
@@ -1246,6 +1289,7 @@ async function appendNormalSendInput(
  */
 async function prepareNormalSend(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
   signal: AbortSignal,
@@ -1307,11 +1351,12 @@ async function prepareNormalSend(
     "thread" in authorized
       ? await resolveExistingSendThread(
           db,
+          catalog,
           args,
           authorized.thread,
           authorized.agent.id,
         )
-      : await resolveNewSendThread(db, args, orgPlanCapabilities);
+      : await resolveNewSendThread(db, catalog, args, orgPlanCapabilities);
   signal.throwIfAborted();
   if ("status" in thread) {
     return thread;
@@ -1421,8 +1466,22 @@ export const sendNormalEvent$ = command(
         ? undefined
         : await get(args.orgPlanCapabilities$);
     signal.throwIfAborted();
+    // One catalog snapshot for the whole send. An explicit model the catalog
+    // cannot resolve is an error, never a silent switch to the system
+    // default; stored thread selections keep their existing fallback. The
+    // pick resolves the captured model with the same function
+    // (`resolveRunSelectionModel`) against the catalog current at the pick.
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
+    if (
+      args.body.model !== undefined &&
+      resolveRunSelectionModel(catalog, args.body.model) === null
+    ) {
+      return badRequestMessage(`Unknown model "${args.body.model}"`);
+    }
     const prepared = await prepareNormalSend(
       db,
+      catalog,
       args,
       orgPlanCapabilities,
       signal,
@@ -1446,6 +1505,7 @@ export const sendNormalEvent$ = command(
       ...thread.runSettings,
       reasoningEffort: args.body.runOptions?.reasoningEffort,
       orgPlanCapabilities,
+      catalog,
     });
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -1455,15 +1515,7 @@ export const sendNormalEvent$ = command(
       modelSelection,
       id: args.body.clientEventId ?? randomUUID(),
       threadId: thread.threadId,
-      userMessage:
-        agentRunSource !== null
-          ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
-          : args.mcpSource === undefined
-            ? args.body.userMessage
-            : {
-                ...args.body.userMessage,
-                parts: [...args.body.userMessage.parts, args.mcpSource],
-              },
+      userMessage: normalSendUserMessage(args, agentRunSource),
       triggerSource: normalSendTriggerSource(args.auth),
       agentRunSource,
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
@@ -1533,13 +1585,7 @@ export const sendNormalEvent$ = command(
       throw enqueued.error;
     }
     if (enqueued.value === null) {
-      // A conflict on the insert is accepted as a duplicate without a
-      // lookup. Only a follow-up with a server-generated id cannot have
-      // collided on its id, so its conflict is the revoke edge taken
-      // concurrently.
-      return args.body.revokesEventId && args.body.clientEventId === undefined
-        ? conflict("Recommended follow-up has already been used")
-        : acceptedSendResponse(thread.threadId, nowDate(), true);
+      return conflictingSendResponse(args, thread.threadId);
     }
     return acceptedSendResponse(thread.threadId, enqueued.value, false);
   },

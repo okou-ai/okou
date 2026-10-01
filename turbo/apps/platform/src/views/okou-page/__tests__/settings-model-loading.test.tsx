@@ -32,7 +32,6 @@ function policyResponse(mode: OrgModelMode): OrgModelPoliciesResponse {
     id: POLICY_ID,
     model,
     modelLabel: mode === "auto" ? "Auto" : "GPT 5.6 Sol",
-    isDefault: true,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -47,8 +46,6 @@ function policyResponse(mode: OrgModelMode): OrgModelPoliciesResponse {
     writePreconditionRequired: false,
     modelsAvailableToAdd: [],
     policies: [policy],
-    workspaceDefaultModel: model,
-    workspaceDefaultPolicyId: POLICY_ID,
   };
 }
 

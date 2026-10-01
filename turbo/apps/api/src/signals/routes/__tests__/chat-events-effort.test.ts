@@ -34,14 +34,13 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -117,14 +116,13 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -221,7 +219,7 @@ describe("CHAT effort: thread configuration", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: providerType,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -312,7 +310,7 @@ describe("CHAT effort: thread configuration", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: "claude-fable-5-1",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -321,7 +319,6 @@ describe("CHAT effort: thread configuration", () => {
           ? [
               {
                 model: "gpt-5.6-sol" as const,
-                isDefault: false,
                 defaultProviderType: "openai-api-key" as const,
                 credentialScope: "org" as const,
                 modelProviderId: targetProviderId,
@@ -455,7 +452,7 @@ describe("CHAT effort: thread configuration", () => {
     90_000,
   );
 
-  it("rejects Astra Ultrafast selection and sends on the direct OpenAI API-key route", async () => {
+  it("offers Fast but not Ultrafast on the direct OpenAI Astra route", async () => {
     const { actor, agentId } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openai-api-key",
@@ -464,7 +461,7 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -483,7 +480,7 @@ describe("CHAT effort: thread configuration", () => {
       { codexServiceTier: "ultrafast" },
     );
     expect(selection.body).toMatchObject({
-      error: { message: "Astra Ultrafast is temporarily disabled" },
+      error: { message: "Ultrafast is unavailable for this model route" },
     });
     const sent = await requestSendEventRaw(actor, {
       agentId,
@@ -498,7 +495,20 @@ describe("CHAT effort: thread configuration", () => {
     });
     expect(sent.status).toBe(400);
     expect(sent.body).toMatchObject({
-      error: { message: "Astra Ultrafast is temporarily disabled" },
+      error: { message: "Ultrafast is unavailable for this model route" },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ serviceTier: null });
+    // The same route still offers Fast, and switching back to Standard clears it.
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: "fast",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ serviceTier: "priority" });
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: null,
     });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
@@ -514,7 +524,7 @@ describe("CHAT effort: thread configuration", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: providerId,

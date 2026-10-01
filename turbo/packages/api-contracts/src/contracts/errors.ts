@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
-import {
-  getCanonicalModelDisplayName,
-  normalizeRunModelId,
-  type ModelProviderCredentialScope,
-  type ModelProviderType,
+import type {
+  ModelProviderCredentialScope,
+  ModelProviderType,
 } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
@@ -415,25 +413,27 @@ function isClaudeProviderOverloadedErrorMessage(message: string): boolean {
   return false;
 }
 
+/**
+ * The label is the catalog display name the caller resolved for the run's
+ * model; this module has no catalog access and never derives names itself.
+ */
 function formatClaudeProviderOverloadedMessage(
-  selectedModel: string | null | undefined,
+  selectedModelLabel: string | null | undefined,
 ): string {
-  const trimmedModel = selectedModel?.trim();
-  const modelLabel = trimmedModel
-    ? getCanonicalModelDisplayName(normalizeRunModelId(trimmedModel))
-    : CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL;
+  const modelLabel =
+    selectedModelLabel?.trim() || CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL;
   return `${modelLabel} ${CLAUDE_PROVIDER_OVERLOADED_GUIDANCE}`;
 }
 
 export function formatClaudeProviderOverloadedRunError(params: {
   readonly message: string;
-  readonly selectedModel?: string | null;
+  readonly selectedModelLabel?: string | null;
 }): string | undefined {
   const errorMessage = params.message.trim();
   if (!isClaudeProviderOverloadedErrorMessage(errorMessage)) {
     return undefined;
   }
-  return formatClaudeProviderOverloadedMessage(params.selectedModel);
+  return formatClaudeProviderOverloadedMessage(params.selectedModelLabel);
 }
 
 function isJsonWhitespace(char: string | undefined): boolean {
@@ -769,10 +769,10 @@ function formatReconnectRunError(
 
 function formatOverloadedRunError(
   framework: ModelProviderFramework | null | undefined,
-  selectedModel: string | null | undefined,
+  selectedModelLabel: string | null | undefined,
 ): string {
   if (framework === "claude-code") {
-    return formatClaudeProviderOverloadedMessage(selectedModel);
+    return formatClaudeProviderOverloadedMessage(selectedModelLabel);
   }
   if (framework === "codex") {
     return CODEX_PROVIDER_OVERLOADED_MESSAGE;
@@ -784,7 +784,7 @@ function formatStructuredRunError(params: {
   readonly failureReason: RunFailureReasonToken;
   readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
-  readonly selectedModel?: string | null;
+  readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
 }): string {
@@ -837,7 +837,10 @@ function formatStructuredRunError(params: {
       );
     }
     case "overloaded": {
-      return formatOverloadedRunError(params.framework, params.selectedModel);
+      return formatOverloadedRunError(
+        params.framework,
+        params.selectedModelLabel,
+      );
     }
     case "usage-limit": {
       return isActionableRunError(params.errorMessage)
@@ -865,7 +868,8 @@ export function formatRunErrorForExternalSurface(params: {
   readonly message: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
-  readonly selectedModel?: string | null;
+  /** Catalog display name of the run's model, resolved by the caller. */
+  readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
   readonly insufficientCredits?:
@@ -887,7 +891,7 @@ export function formatRunErrorForExternalSurface(params: {
       failureReason: params.failureReason,
       errorMessage,
       framework: params.framework,
-      selectedModel: params.selectedModel,
+      selectedModelLabel: params.selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
@@ -899,7 +903,7 @@ export function formatRunErrorForExternalSurface(params: {
 
   const claudeOverloadedMessage = formatClaudeProviderOverloadedRunError({
     message: errorMessage,
-    selectedModel: params.selectedModel,
+    selectedModelLabel: params.selectedModelLabel,
   });
   if (claudeOverloadedMessage !== undefined) {
     return claudeOverloadedMessage;

@@ -6,15 +6,13 @@ import {
   getChatThread,
   getChatThreadAgentId,
 } from "../../lib/api/domains/chat";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { formatCatalogThreadModel } from "../../lib/domain/model-catalog-display";
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
-import {
-  formatChatEffort,
-  parseChatEffort,
-  printChatUsageError,
-} from "./shared";
+import { parseChatEffort, printChatUsageError } from "./shared";
 
 interface CreateOptions {
   readonly agent?: string;
@@ -90,10 +88,8 @@ Examples:
 Notes:
   - Creates an empty thread and does not start a run; send its first self-contained message with okou chat send
   - Defaults --agent to the agent of OKOU_CHAT_THREAD_ID
-  - Defaults --model to your model preference, then the workspace default
+  - Defaults --model to your model preference, then the system default model
   - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
-  - GPT 6 Sol: low, medium, high, xhigh, max, ultra
-  - Claude Opus 5.5: low, medium, high, extra, max, ultracode
   - See okou chat model --help for the effort levels supported by each model
   - Pass --model to choose a different model for the new thread
   - Defaults priority to your initial model preference
@@ -113,7 +109,12 @@ Notes:
       const reasoningEffort =
         options.effort === undefined
           ? undefined
-          : parseChatEffort(options.effort, options.model);
+          : parseChatEffort(
+              options.effort,
+              options.model === undefined
+                ? undefined
+                : { catalog: await getModelCatalog(), model: options.model },
+            );
       const agentId = await resolveAgentId(options.agent);
       let thread;
       try {
@@ -156,10 +157,13 @@ Notes:
       console.log(chalk.green("✓ Chat thread created"));
       console.log(chalk.dim(`  Thread: ${thread.threadId}`));
       console.log(chalk.dim(`  Title:  ${title}`));
-      const metadata = await getChatThread({ threadId: thread.threadId });
+      const [metadata, catalog] = await Promise.all([
+        getChatThread({ threadId: thread.threadId }),
+        getModelCatalog(),
+      ]);
       console.log(
         chalk.dim(
-          `  Model:  ${metadata.selectedModel ?? "(default)"}${formatChatEffort(metadata.selectedModel, metadata.modelSettings)}`,
+          `  Model:  ${formatCatalogThreadModel(catalog, metadata.selectedModel, metadata.modelSettings)}`,
         ),
       );
       const priority =

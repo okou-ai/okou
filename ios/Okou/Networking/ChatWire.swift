@@ -185,12 +185,28 @@ struct ModelPreference: Decodable, Sendable {
 }
 
 struct ModelPolicies: Decodable, Sendable {
-  let workspaceDefaultModel: String?
   let policies: [Policy]
   struct Policy: Decodable, Sendable {
     let model: String
-    let isDefault: Bool
     let routeStatus: String
+  }
+}
+
+/// Global run model catalog: the product authority for the system default and for
+/// retired models. Only the fields the app uses are decoded; routes are ignored.
+struct ModelCatalog: Decodable, Sendable {
+  let systemDefaultModel: String
+  let models: [Model]
+
+  struct Model: Decodable, Sendable {
+    let model: String
+    /// The active model a stored selection of this model resolves to.
+    let resolvedModel: String
+  }
+
+  /// Maps a stored (possibly retired) selection to the active model it resolves to.
+  func resolve(_ model: String) -> String {
+    models.first(where: { $0.model == model })?.resolvedModel ?? model
   }
 }
 

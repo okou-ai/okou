@@ -85,6 +85,7 @@
   },
   "billableFirewalls": ["model-provider:fixture"],
   "modelUsageProvider": "fixture-model",
+  "modelUsageLongContextMinTotalInputTokens": 272001,
   "codexRuntimeConfig": {
     "providerId": "fixture_provider",
     "name": "Fixture Provider",

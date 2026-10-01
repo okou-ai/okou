@@ -27,6 +27,7 @@ import {
   modelProviderSecretPlaceholder,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -62,7 +63,7 @@ async function entitledNativeChatActor(): Promise<
   await api.updateOrgModelPolicies(fixture.actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: fixture.providerId,
@@ -140,14 +141,13 @@ describe("CHAT-02: run-level model overrides", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -279,14 +279,13 @@ describe("CHAT-02: run-level model overrides", () => {
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-opus-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
       },
       {
         model: "claude-sonnet-5",
-        isDefault: false,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -453,14 +452,13 @@ describe("CHAT-02: run-level model overrides", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: from,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
         },
         {
           model: to,
-          isDefault: false,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -603,14 +601,13 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: codexProviderId,
@@ -870,7 +867,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -927,7 +924,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openrouter-api-key",
         credentialScope: "org",
         modelProviderId: openRouterProviderId,
@@ -1010,10 +1007,10 @@ describe("CHAT-02: run-level model overrides", () => {
       [400],
     );
     expectApiError(invalidModel.body);
-    expect(invalidModel.body.error.message).toBe("Invalid input");
+    expect(invalidModel.body.error.message).toBe('Unknown model "codex"');
     await chat.requestReadThread(actor, invalidModelThreadId, [404]);
 
-    // Removed sentinel models fail contract validation.
+    // Models outside the catalog are rejected.
     for (const selectedModel of [
       "claude-haiku-4-5",
       "anthropic/claude-haiku-4.5",
@@ -1032,7 +1029,7 @@ describe("CHAT-02: run-level model overrides", () => {
       expectApiError(removed.body);
       expect(removed.body.error).toMatchObject({
         code: "BAD_REQUEST",
-        message: "Invalid input",
+        message: `Unknown model "${selectedModel}"`,
       });
       await chat.requestReadThread(actor, removedThreadId, [404]);
     }
@@ -1045,9 +1042,10 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("captures the organization default when an explicit model is outside workspace policy", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+  it("captures the fixed organization default when an explicit model is outside workspace policy", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     const fallback = await sendChatRun(actor, {
       agentId,
       prompt: "use a supported model outside workspace policy",
@@ -1059,10 +1057,9 @@ describe("CHAT-02: run-level model overrides", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-luna",
     });
-    const claimed = await claimChatRun(runnerGroup, fallback.runId);
-    expect(claimEnvironment(claimed.claim).ANTHROPIC_MODEL).toBe(
-      "claude-fable-5-1",
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
     );
-    await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, fallback.runId);
   }, 60_000);
 });

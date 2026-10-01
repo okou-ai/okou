@@ -2249,7 +2249,7 @@ export function registerFeishuIntegrationTests(
         ]);
       });
 
-      it("keeps the managed connector and skill HEAD active when repair publication fails", async () => {
+      it("reuses the managed connector skill HEAD during repair without accessing R2", async () => {
         const actor = authOrgApi.user({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -2302,31 +2302,34 @@ export function registerFeishuIntegrationTests(
           name: storageName,
           owner: "organization",
         });
+        context.mocks.s3.send.mockClear();
         context.mocks.s3.send.mockRejectedValue(
-          new Error("Managed connector repair skill upload failed"),
+          new Error("Registered managed connector skill must not access R2"),
         );
 
-        const failedRepair = await requestFeishuConfigurationFailure({
-          method: "PATCH",
-          path: connectContract.updateInstallation.path.replace(
-            ":installationId",
-            installationId,
-          ),
-          body: { setupCompleted: true },
-        });
+        await accept(
+          client.updateInstallation({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { installationId },
+            body: { setupCompleted: true },
+          }),
+          [200],
+        );
 
-        expect(failedRepair.status).toBe(500);
+        expect(context.mocks.s3.send).not.toHaveBeenCalled();
         context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-        const connectorAfterFailure = await accept(
+        const connectorAfterRepair = await accept(
           customConnectorClient.list({
             headers: { authorization: "Bearer clerk-session" },
           }),
           [200],
         );
-        expect(connectorAfterFailure.body.connectors).toMatchObject([
+        // Successful repair learns the bot name; the registered skill
+        // content and Storage version are still reused without an R2 write.
+        expect(connectorAfterRepair.body.connectors).toMatchObject([
           {
             id: initialConnector.id,
-            displayName: initialConnector.displayName,
+            displayName: `${provider.name}-Okou Feishu`,
             skillMarkdown: initialConnector.skillMarkdown,
           },
         ]);
@@ -5865,6 +5868,11 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        // Runs without a thread pin use the member preference, then Auto.
+        await runsApi.updateUserModelPreference(
+          secondActor,
+          "claude-fable-5-1",
+        );
         await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
           visibility: "public",
         });
@@ -6299,6 +6307,10 @@ export function registerFeishuIntegrationTests(
           [FeatureSwitchKey.OkouDebug]: true,
         });
         await connectFixtureUser(fixture, secondActor, secondOpenId);
+        await runsApi.updateUserModelPreference(
+          secondActor,
+          "claude-fable-5-1",
+        );
         await postEvent(
           callbackUrl,
           groupMessage(appId, "handle this group task as another user", {
@@ -6414,7 +6426,7 @@ export function registerSharedFeishuConversationTests(): void {
       await runsApi.updateOrgModelPolicies(actor, [
         {
           model: "gpt-6-astra",
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6482,7 +6494,6 @@ export function registerSharedFeishuConversationTests(): void {
       await runsApi.updateOrgModelPolicies(actor, [
         {
           model: "gpt-6-astra",
-          isDefault: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6522,6 +6533,7 @@ export function registerSharedFeishuConversationTests(): void {
       const { actor, appId, callbackUrl, defaultAgentId } = fixture;
       await startFeishuDmSession(fixture);
       await allowFeishuGptModel(actor);
+      const memberModel = await readFeishuMemberModel(actor);
       const thread = requireValue(
         (await readFeishuThreadEvents(actor)).find((event) => {
           return event.kind === "created" && event.agentId === defaultAgentId;
@@ -6539,7 +6551,7 @@ export function registerSharedFeishuConversationTests(): void {
           return messageContent(message).includes("Model switched");
         }),
       ).toBeTruthy();
-      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
+      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
       await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
@@ -6555,13 +6567,14 @@ export function registerSharedFeishuConversationTests(): void {
       const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
       await allowFeishuGptModel(actor);
+      const memberModel = await readFeishuMemberModel(actor);
 
       await postEvent(callbackUrl, directMessage(appId, "/model gpt-6-astra"), {
         encrypted: true,
       });
       await flushWaitUntilForTest();
 
-      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
+      await expect(readFeishuMemberModel(actor)).resolves.toBe(memberModel);
       expect(
         fixtureState.outboundMessages.some((message) => {
           return messageContent(message).includes("existing Okou conversation");

@@ -1,5 +1,43 @@
 # Changelog
 
+## [9.374.1](https://github.com/okou-ai/okou/compare/cli-v9.374.0...cli-v9.374.1) (2026-10-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.532.1
+    * @okouai/core bumped to 8.725.1
+    * @okouai/pi-agent-runtime bumped to 1.45.1
+
+## [9.374.0](https://github.com/okou-ai/okou/compare/cli-v9.373.14...cli-v9.374.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.532.0
+    * @okouai/core bumped to 8.725.0
+    * @okouai/pi-agent-runtime bumped to 1.45.0
+
+## [9.373.14](https://github.com/okou-ai/okou/compare/cli-v9.373.13...cli-v9.373.14) (2026-09-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.531.4
+    * @okouai/core bumped to 8.724.4
+    * @okouai/pi-agent-runtime bumped to 1.44.5
+
 ## [9.373.13](https://github.com/okou-ai/okou/compare/cli-v9.373.12...cli-v9.373.13) (2026-09-30)
 
 

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,6 +11,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const store = createStore();
@@ -101,7 +101,7 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       id: fixture.threadId,
       agentId: fixture.agentId,
       title: "Launch plan",
-      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       modelSettings: {},
       serviceTier: null,
       pinnedAt: null,

@@ -3,7 +3,6 @@ import {
   modelProviderTypeSchema,
   getModelProviderEnvBindings,
   getModelProviderFirewall,
-  getProviderRuntimeModel,
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   getSecretNameForType,
   getSecretsForAuthMethod,
@@ -23,7 +22,11 @@ export type ModelRuntimeSelection =
       readonly upstreamModel: string;
       readonly modelKeyId: string;
     }
-  | { readonly kind: "configured"; readonly selectedModel: string };
+  | {
+      readonly kind: "configured";
+      readonly selectedModel: string;
+      readonly upstreamModel: string;
+    };
 export interface ModelRuntimeInput {
   readonly selection: ModelRuntimeSelection;
   readonly source: ModelSourceSnapshot;
@@ -96,10 +99,7 @@ function compileAccountRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
       forwardable[name] = value;
     }
   }
-  const upstreamModel = getProviderRuntimeModel(
-    "codex-oauth-token",
-    selection.selectedModel,
-  );
+  const upstreamModel = selection.upstreamModel;
   const bindings = getModelProviderEnvBindings("codex-oauth-token");
   if (!bindings) {
     throw new Error("Codex account runtime bindings are unavailable");
@@ -172,7 +172,7 @@ function compileRegisteredRuntime(
   if (!key?.trim()) {
     throw new Error(`Model credential ${secretName} is missing`);
   }
-  const upstreamModel = getProviderRuntimeModel(type, selection.selectedModel);
+  const upstreamModel = selection.upstreamModel;
   const reference = getModelProviderFirewall(type)
     ? `\${{ secrets.${secretName} }}`
     : key;
@@ -312,6 +312,11 @@ export function compileModelRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
+  if (!selection.selectedModel || !selection.upstreamModel) {
+    throw new Error(
+      "Model runtime requires its selected logical and upstream facts",
+    );
+  }
   const config = source.configuration;
   if (selection.kind === "built-in") {
     return compileManagedRuntime(input);
@@ -331,7 +336,7 @@ export function compileModelRuntime(
     );
   }
   const upstreamModel = config.modelMappings[selection.selectedModel];
-  if (!upstreamModel) {
+  if (!upstreamModel || upstreamModel !== selection.upstreamModel) {
     throw new Error("Selected model has no gateway mapping");
   }
   const apiKey = credentials[GATEWAY_RUNTIME_SECRET_NAME];

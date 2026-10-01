@@ -50,9 +50,11 @@ import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
+  seedBuiltInModelCandidateKeys,
 } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
 helper gap:
@@ -300,7 +302,7 @@ async function configureFastCodexPreference(
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "gpt-6-astra",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
@@ -629,14 +631,13 @@ async function configureCanonicalSlackPiActor(
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: anthropicProviderId,
     },
     {
       model: selectedModel,
-      isDefault: false,
       defaultProviderType: "openai-api-key",
       credentialScope: "org",
       modelProviderId: openaiProviderId,
@@ -3606,9 +3607,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
           text: "Switched to *GPT 6 Astra* for this conversation.",
         }),
       );
+      // The picker leaves the member preference the fixture configured.
       await expect(
         integrations.readUserModelPreference(actor),
-      ).resolves.toMatchObject({ selectedModel: null });
+      ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
       expect(
         (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
       ).toBe("gpt-6-astra");
@@ -4257,7 +4259,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("captures the organization default for a NULL Slack thread without changing its pin", async () => {
+  it("captures the fixed organization default for a NULL Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4311,6 +4313,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
+    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4323,14 +4326,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
+    // An existing thread without a pin uses the fixed org default, not the
+    // member preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
-    const resolvedClaim = await runs.claimRunnerJob(resolvedRunId);
-    expect(resolvedClaim.cliAgentType).toBe("claude-code");
-    expect(resolvedClaim.environment).toMatchObject({
-      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
-      ANTHROPIC_MODEL: "claude-fable-5-1",
-    });
-    expect(resolvedClaim.environment).not.toHaveProperty("OPENAI_API_KEY");
+    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4347,11 +4348,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }),
     );
 
-    await completeSlackTriggeredRun({
-      runId: resolvedRunId,
-      sandboxToken: resolvedClaim.sandboxToken,
-      cliAgentType: resolvedClaim.cliAgentType,
-    });
+    await runs.requestCancelRun(actor, resolvedRunId, [200]);
   }, 90_000);
 
   it("prompts disconnected Slack users and filters non-actionable messages", async () => {
@@ -4612,7 +4609,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    await integrations.updateUserModelPreference(actor, "gpt-6-luna");
+    await integrations.updateUserModelPreference(
+      actor,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,
@@ -5054,7 +5054,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await runs.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -5279,6 +5279,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       workspaceId: teamId,
       slackUserId: slackUser2,
     });
+    // A member's new thread starts from their own preference.
+    await integrations.updateUserModelPreference(actor2, "claude-fable-5-1");
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUser2,

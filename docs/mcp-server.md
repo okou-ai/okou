@@ -105,7 +105,9 @@ initializing or repairing them. Each model includes `id`, `name`, `selectable`,
 the configuration; a selectable model can still require a connection or plan
 change before execution. `available` is a metadata observation, not a credential
 probe or admission guarantee. `defaultModel` chooses a valid member preference,
-then the organization default, or returns null model/source. Provider account
+then the organization default, or returns null model/source. The organization
+default is the global model catalog's system default (currently `okou-1.0`,
+Auto) and cannot be changed per organization. Provider account
 identifiers, credentials and configuration are excluded. Missing policies or
 defaults awaiting canonical repair after a plan change return a setup error.
 Open model settings to synchronize the policies, then retry discovery. Discovery
@@ -136,7 +138,7 @@ In either mode, optional `agentId`, `title`, and `model` select explicit values.
 An omitted Agent resolves to the currently visible organization default and is
 stored concretely on the thread. An omitted title stays null until the first
 text run triggers automatic title generation. An omitted model resolves the
-current member default, then the organization default, and stores that choice
+current member default, then the catalog system default (currently `okou-1.0`), and stores that choice
 when the thread is created. Later default changes do not affect the thread. The response exposes the selected/effective model and `source`. `message`
 uses the same nonblank, 32,000 UTF-16-unit limit as `send_chat_message` and
 preserves its exact accepted text.
@@ -261,8 +263,8 @@ Model metadata is a read-only view of current policy. A null `effectiveModel`
 means no usable policy route was resolved; it does not invent a default or
 repair stored settings. `admission: "checked_on_send"` means credentials, quota,
 policy and other execution checks still apply when a future message is sent.
-When the stored selection is null, `source` reports `org_default` if a usable
-organization default exists. Enqueue captures that model for the input without
+When the stored selection is null, `source` reports `org_default` if the
+catalog system default (currently `okou-1.0`, Auto) has a usable route. Enqueue captures that model for the input without
 rewriting the thread selection. A model selected after enqueue does not change
 that input or an already-running execution.
 

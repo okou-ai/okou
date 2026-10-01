@@ -11,6 +11,47 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.989.1](https://github.com/okou-ai/okou/compare/app-v0.989.0...app-v0.989.1) (2026-10-01)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#37439](https://github.com/okou-ai/okou/issues/37439)) ([bc8e82f](https://github.com/okou-ai/okou/commit/bc8e82f9151022ce93cff17e29b4273752d61a1f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.532.1
+    * @okouai/core bumped to 8.725.1
+
+## [0.989.0](https://github.com/okou-ai/okou/compare/app-v0.988.5...app-v0.989.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+* **vnc:** add owner-selected qemu client certificate profiles ([#37408](https://github.com/okou-ai/okou/issues/37408)) ([56ca824](https://github.com/okou-ai/okou/commit/56ca824a5ee3673a06c8fb122fadac0fe6a0b83b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.532.0
+    * @okouai/core bumped to 8.725.0
+
+## [0.988.5](https://github.com/okou-ai/okou/compare/app-v0.988.4...app-v0.988.5) (2026-09-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.4
+    * @okouai/core bumped to 8.724.4
+
 ## [0.988.4](https://github.com/okou-ai/okou/compare/app-v0.988.3...app-v0.988.4) (2026-09-30)
 
 

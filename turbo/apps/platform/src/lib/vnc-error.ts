@@ -43,6 +43,11 @@ export function localizedVncError(code: string): string | undefined {
         return $.vnc.errors.invalidHost;
       });
     }
+    case VNC_ERROR_CODES.INVALID_CLIENT_IDENTITY: {
+      return i18n.t(($) => {
+        return $.vnc.errors.invalidInput;
+      });
+    }
     case VNC_ERROR_CODES.INVALID_TRUST: {
       return i18n.t(($) => {
         return $.vnc.errors.invalidTrust;

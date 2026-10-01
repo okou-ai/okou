@@ -50,8 +50,7 @@ async function main(): Promise<void> {
   }
 
   const accounts = runnerTestAccounts();
-  // Paid upgrades dominate each fixed batch. Pair them first so the shorter
-  // free credential owns the singleton batch without raising provider load.
+  // Paid upgrades dominate each fixed batch; every runner account is paid.
   const targets: readonly RunnerCredentialTarget[] = [
     {
       email: accounts.codex,
@@ -89,7 +88,9 @@ async function main(): Promise<void> {
       email: accounts.runner,
       fileName: "e2e-api-credentials-runner.json",
       organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
-      upgradeToPro: false,
+      // Free plans run only okou-1.0 on Built-in; the deterministic runner
+      // policy pins DeepSeek and Luna Built-in routes, which need a paid plan.
+      upgradeToPro: true,
     },
   ];
   const vercelAutomationBypassSecret =

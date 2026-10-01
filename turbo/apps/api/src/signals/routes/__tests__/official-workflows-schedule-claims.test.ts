@@ -104,7 +104,7 @@ async function selectBuiltInDefaultModel(
   await runs.updateOrgModelPolicies(actor, [
     {
       model,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,

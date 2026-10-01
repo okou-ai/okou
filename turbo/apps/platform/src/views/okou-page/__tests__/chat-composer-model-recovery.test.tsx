@@ -18,7 +18,6 @@ import type {
   ModelProviderResponse,
   ModelProviderType,
   OrgModelPolicy,
-  SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -58,8 +57,7 @@ type PersonalProviderType = Extract<
 >;
 
 function policy(args: {
-  readonly isDefault?: boolean;
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId: string | null;
@@ -68,7 +66,6 @@ function policy(args: {
     id: crypto.randomUUID(),
     model: args.model,
     modelLabel: args.modelLabel,
-    isDefault: args.isDefault ?? true,
     defaultProviderType: args.providerType,
     credentialScope: "member",
     modelProviderId: args.modelProviderId,
@@ -80,16 +77,11 @@ function policy(args: {
   };
 }
 
-function builtInPolicy(
-  model: SupportedRunModel,
-  modelLabel: string,
-  isDefault: boolean,
-): OrgModelPolicy {
+function builtInPolicy(model: string, modelLabel: string): OrgModelPolicy {
   return {
     id: crypto.randomUUID(),
     model,
     modelLabel,
-    isDefault,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -129,7 +121,7 @@ function billingStatus(args: {
 }
 
 function configurePersonalRoute(args: {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId?: string | null;
@@ -476,8 +468,8 @@ test("A billing upgrade unlocks Pro-gated built-in models", async () => {
   const billing: { upgraded: boolean } = { upgraded: false };
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
-    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
-    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5", false),
+    builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna"),
+    builtInPolicy("claude-opus-5-5", "Claude Opus 5.5"),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     if (billing.upgraded) {

@@ -46,7 +46,7 @@ describe("CHAT-02: model-first provider policies", () => {
       GPT_PI_BDD_MODELS.map((model) => {
         return {
           model,
-          isDefault: model === "gpt-6-luna",
+          preferred: model === "gpt-6-luna",
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -109,14 +109,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: piModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
       {
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,

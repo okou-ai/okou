@@ -5,10 +5,10 @@ import {
   type ModelProviderType,
   type ModelProviderWriteType,
   type OrgModelPolicy,
-  type SupportedRunModel,
   type UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { createOrgModelProvider$ } from "../../external/org-model-providers.ts";
+import { modelCatalog$ } from "../../external/model-catalog.ts";
 import {
   refreshOrgModelPolicies$,
   updateOrgModelPolicies$,
@@ -20,7 +20,7 @@ export type ModelPolicyRouteKind = "built-in" | "api-key" | "gateway" | "oauth";
 interface ModelPolicyDialogState {
   open: boolean;
   mode: ModelPolicyDialogMode;
-  model: SupportedRunModel | null;
+  model: string | null;
   routeKind: ModelPolicyRouteKind;
   providerType: ModelProviderType | null;
   surfaceId: string | null;
@@ -87,7 +87,6 @@ function getPolicyRouteKind(policy: OrgModelPolicy): ModelPolicyRouteKind {
 function toOrgModelPolicyUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   return {
     model: policy.model,
-    isDefault: policy.isDefault,
     defaultProviderType: isBuiltInModelProviderType(policy.defaultProviderType)
       ? "built-in"
       : policy.defaultProviderType,
@@ -97,11 +96,16 @@ function toOrgModelPolicyUpdate(policy: OrgModelPolicy): UpdateOrgModelPolicy {
   };
 }
 
+/** The server-projected system default row is never sent in the org's PUT. */
 function applyProviderRouteToPolicies(
-  policies: OrgModelPolicy[],
-  model: SupportedRunModel,
+  projectedPolicies: OrgModelPolicy[],
+  model: string,
   provider: ModelProviderResponse,
+  systemDefaultModel: string,
 ): UpdateOrgModelPolicy[] {
+  const policies = projectedPolicies.filter((policy) => {
+    return policy.model !== systemDefaultModel;
+  });
   let found = false;
   const providerType: ModelProviderWriteType = isBuiltInModelProviderType(
     provider.type,
@@ -123,10 +127,9 @@ function applyProviderRouteToPolicies(
     };
   });
 
-  if (!found) {
+  if (!found && model !== systemDefaultModel) {
     updates.push({
       model,
-      isDefault: updates.length === 0,
       defaultProviderType: providerType,
       credentialScope: "org",
       modelProviderId: provider.id,
@@ -142,7 +145,7 @@ export const modelPolicyDialogState$ = computed((get) => {
 });
 
 export const openAddModelPolicyDialog$ = command(
-  ({ set }, model: SupportedRunModel | null) => {
+  ({ set }, model: string | null) => {
     set(internalModelPolicyDialogState$, {
       open: true,
       mode: "add",
@@ -191,9 +194,9 @@ export const completeModelPolicyDialogClose$ = command(({ get, set }) => {
 
 export const submitModelPolicyApiKeyRoute$ = command(
   async (
-    { set },
+    { get, set },
     params: {
-      model: SupportedRunModel;
+      model: string;
       providerType: ModelProviderWriteType;
       apiKey: string;
     },
@@ -206,7 +209,10 @@ export const submitModelPolicyApiKeyRoute$ = command(
     );
     signal.throwIfAborted();
 
-    const latest = await set(refreshOrgModelPolicies$, signal);
+    const [latest, catalog] = await Promise.all([
+      set(refreshOrgModelPolicies$, signal),
+      get(modelCatalog$),
+    ]);
     signal.throwIfAborted();
 
     await set(
@@ -217,6 +223,7 @@ export const submitModelPolicyApiKeyRoute$ = command(
           latest.policies,
           params.model,
           result.provider,
+          catalog.systemDefaultModel,
         ),
       },
       signal,
@@ -227,7 +234,7 @@ export const submitModelPolicyApiKeyRoute$ = command(
 );
 
 export const updateModelPolicyDialogModel$ = command(
-  ({ get, set }, model: SupportedRunModel) => {
+  ({ get, set }, model: string) => {
     if (get(internalModelPolicyDialogState$).model === model) {
       return;
     }
