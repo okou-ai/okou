@@ -52,6 +52,7 @@ import {
 } from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
 import {
   createPhase2TestScope,
@@ -1500,6 +1501,19 @@ test.each([false, true])(
           `Expected subscription launch: ${JSON.stringify(result)}`,
         );
       }
+      // The exact subscription account is recorded on the run, as on main.
+      const [run] = await db()
+        .select({ identity: agentRuns.modelProviderAccountIdentity })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, result.runId));
+      expect(run?.identity).toBe(
+        personalSubscriptionAccountIdentity({
+          type: "codex-oauth-token",
+          externalAccountId: account,
+          accountEmail: null,
+          workspaceName: null,
+        }),
+      );
       const actual = await executePhase2Runtime(testContext(), result.runId);
       expect(actual.requests).toHaveLength(3);
       for (const request of actual.requests) {

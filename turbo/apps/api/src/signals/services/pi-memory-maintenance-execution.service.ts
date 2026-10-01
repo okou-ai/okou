@@ -62,6 +62,7 @@ import {
   committedAtomicLaunchResponse,
   persistPendingAtomicLaunch,
   prepareAtomicLaunchPersistence,
+  validateCapturedSubscriptionAccount,
   launchRunMetadataValues,
   launchRunValues,
   launchSessionValues,
@@ -410,6 +411,15 @@ async function commitMaintenanceRun(db: Db, args: MaintenanceCommit) {
     prepared.admissionTiming.admissionStarted();
     // Pi memory's ownership/version/credential fence, before any write.
     await args.credential.validate(tx);
+    // A member subscription account is re-validated and its identity is
+    // persisted on the run, as on every other run-creation path.
+    const subscription = await validateCapturedSubscriptionAccount(
+      tx,
+      prepared,
+    );
+    if (subscription && !("identity" in subscription)) {
+      throw new PiMaintenanceDispositionError("credential_unavailable");
+    }
     const capabilities = enforceBuiltInCredits
       ? await loadOrgPlanCapabilities(tx, job.orgId, { forUpdate: true })
       : null;
@@ -421,7 +431,7 @@ async function commitMaintenanceRun(db: Db, args: MaintenanceCommit) {
       commit: prepared,
       payload: prepared.persistence.payload,
       validatedThreadSession: undefined,
-      validatedAccountIdentity: null,
+      validatedAccountIdentity: subscription?.identity ?? null,
     };
     const persisted = await persistPendingAtomicLaunch(
       rows,
