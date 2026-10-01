@@ -641,7 +641,10 @@ const settleSocialDataJob$ = command(
     const db = set(writeDb$);
     const resolution = get(usagePricingResolution$);
     const effects = await db.transaction(async (tx) => {
-      await lockUsageEventCompaction(tx, "shared");
+      await lockUsageEventCompaction(tx, {
+        orgId: claim.job.orgId,
+        mode: "shared",
+      });
       signal.throwIfAborted();
       const [job] = await tx
         .select()

@@ -71,6 +71,8 @@ surface; the index does not replace their detailed rules.
   capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
+- [Usage maintenance preparation](./database/usage-maintenance-preparation.md):
+  retained legacy coordination, staged native activation and the compaction Cron pause.
 - [X resource observations](./x-resource-observations.md): atomic daily
   deduplication, two-date cleanup, transient remainder and activation gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API

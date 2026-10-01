@@ -21,24 +21,30 @@ export async function withUsageEventCompactionLockScopeForTest<T>(
 
 export async function lockUsageEventCompaction(
   db: UsageEventCompactionLockDb,
-  mode: "shared" | "exclusive" = "exclusive",
+  owner?: {
+    readonly orgId: string;
+    readonly mode: "shared" | "exclusive";
+  },
 ): Promise<void> {
+  const mode = owner?.mode ?? "exclusive";
   const scope = scopedUsageEventCompactionLock.peek()?.getStore();
   const lockKey =
     scope === undefined
       ? "usage_event_compaction"
       : `usage_event_compaction:test:${scope}`;
+  // The legacy key and modes are unchanged; only the existing entrance moves
+  // to its callable SQL boundary. Keep this await separate and first so a call
+  // queued behind PR2's activation barrier resolves the new native body after
+  // the barrier commits, rather than entering an old body before it waits.
   await db.execute(
-    mode === "shared"
-      ? // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock_shared(
-      hashtext('vm0'),
-      hashtext(${lockKey})
-    )`
-      : // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(
-      hashtext('vm0'),
-      hashtext(${lockKey})
+    sql`SELECT acquire_usage_event_legacy(${lockKey}, ${mode === "shared"})`,
+  );
+  // The entry is deliberately inactive in PR1. PR2 activates it only after
+  // this prepared serving/rollback floor and the older request drain pass.
+  await db.execute(
+    sql`SELECT acquire_usage_event_maintenance(
+      ${owner?.orgId ?? null},
+      ${mode === "exclusive"}
     )`,
   );
 }

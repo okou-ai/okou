@@ -15,6 +15,7 @@ import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
   deleteUsageStateFixture$,
+  deleteUsageData$,
   deleteRun$,
   insertUsageEvent$,
   materializeHourlyUsage$,
@@ -313,6 +314,105 @@ describe("usage event compaction cron", () => {
       hourly: 1,
     });
     await expect(readStorage(foreign)).resolves.toStrictEqual({
+      raw: 1,
+      processedRaw: 1,
+      hourly: 0,
+    });
+  });
+
+  it("compacts finalized zero-charge data without requiring existing org metadata", async () => {
+    // Old finalized data is not constructible with current wall-clock APIs;
+    // the scoped infrastructure route also represents a valid absent owner.
+    const fixture = {
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+    };
+    onTestFinished(async () => {
+      await store.set(deleteUsageStateFixture$, fixture, context.signal);
+    });
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        status: "processed",
+        quantity: 3,
+        creditsCharged: 0,
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    const response = await compactOwnedUsage(fixture);
+    expect(response.body).toMatchObject({
+      rawRowsDeleted: 1,
+      hourlyRowsInserted: 1,
+      quantity: "3",
+      creditsCharged: "0",
+      reconciled: true,
+      hasMore: false,
+    });
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 1,
+    });
+  });
+
+  it("preserves other users when user-wide cleanup overlaps scoped compaction", async () => {
+    const first = await seedFixture();
+    const second = await seedFixture();
+    const processedAt = new Date("2026-08-01T00:15:00.000Z");
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...first,
+        status: "processed",
+        processedAt,
+      },
+      context.signal,
+    );
+    await store.set(
+      insertUsageEvent$,
+      {
+        orgId: second.orgId,
+        userId: first.userId,
+        status: "processed",
+        processedAt,
+      },
+      context.signal,
+    );
+    await store.set(
+      materializeHourlyUsage$,
+      {
+        orgId: second.orgId,
+        userId: first.userId,
+        runId: null,
+      },
+      context.signal,
+    );
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...second,
+        status: "processed",
+        processedAt,
+      },
+      context.signal,
+    );
+
+    await Promise.all([
+      store.set(
+        deleteUsageData$,
+        { scope: "user", id: first.userId },
+        context.signal,
+      ),
+      compactOwnedUsage(first),
+    ]);
+    await expect(readStorage(first)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 0,
+    });
+    await expect(readStorage(second)).resolves.toStrictEqual({
       raw: 1,
       processedRaw: 1,
       hourly: 0,

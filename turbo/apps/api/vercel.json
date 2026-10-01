@@ -62,10 +62,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/compact-usage-events",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/telegram-cleanup",
       "schedule": "0 1 * * *"
     },

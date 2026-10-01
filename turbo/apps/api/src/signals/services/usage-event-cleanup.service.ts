@@ -9,7 +9,7 @@ import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service"
 
 export async function deleteOrgUsageData(db: Db, orgId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await lockUsageEventCompaction(tx);
+    await lockUsageEventCompaction(tx, { orgId, mode: "exclusive" });
     await tx.delete(socialDataJobs).where(eq(socialDataJobs.orgId, orgId));
     await tx
       .delete(usageEventHourlyRollup)
@@ -26,6 +26,8 @@ export async function deleteUserUsageData(
   userId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // User cleanup spans orgs. Retain legacy global exclusion first, then
+    // native relation protection; do not guess a stable owner set from IDs.
     await lockUsageEventCompaction(tx);
     await tx.delete(socialDataJobs).where(eq(socialDataJobs.userId, userId));
     await tx

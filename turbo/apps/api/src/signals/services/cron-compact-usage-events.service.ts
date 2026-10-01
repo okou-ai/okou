@@ -621,7 +621,10 @@ async function compactUsageEventBatch(
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
   return await db.transaction(async (tx) => {
     const lockStartedAt = performance.now();
-    await lockUsageEventCompaction(tx);
+    await lockUsageEventCompaction(
+      tx,
+      orgId === undefined ? undefined : { orgId, mode: "exclusive" },
+    );
     const lockWaitMs = Math.round(performance.now() - lockStartedAt);
     signal.throwIfAborted();
 

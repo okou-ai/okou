@@ -246,9 +246,13 @@ try {
       try {
         await timeout();
         await client.query(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
+          "SELECT acquire_usage_event_legacy('usage_event_compaction', false)",
         );
+        // Resolve the staged entry only after legacy admission. PR1 installs
+        // it inactive; PR2 activates it under this same legacy boundary.
+        await client.query("SELECT acquire_usage_event_maintenance($1, true)", [
+          scope[0],
+        ]);
         await client.query(
           `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
           VALUES ($5, $1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,

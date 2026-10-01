@@ -29,6 +29,7 @@ import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
  */
 
 import { execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -1294,6 +1295,20 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
   {
+    bodyHash: "180e7d054ec4948860d128663b905ffa",
+    functionName: "acquire_usage_event_legacy",
+    identityArguments: "lock_key text, shared_mode boolean",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "43d55005c53b72cd0e909ea45efe0380",
+    functionName: "acquire_usage_event_maintenance",
+    identityArguments: "billed_org text, exclusive_mode boolean",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
     bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
     functionName: "billing_usage_source",
     identityArguments: "trigger_source text",
@@ -1351,7 +1366,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "9d5c181a9f7d32a4a02430ee95af739c",
+    bodyHash: "cc1ad4abee4bd6017ff65a29c6578e4d",
     functionName: "purge_quiescent_provisional_billing_attribution",
     identityArguments:
       "billed_org text, billed_user text, quiescent_run_ids uuid[]",
@@ -3015,6 +3030,59 @@ async function validatePermanentUsagePackPendingSnapshotState(
   }
 }
 
+async function validatePreparedUsageEventMaintenanceState(
+  databaseUrl: string,
+): Promise<void> {
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  const orgId = `maintenance-${randomUUID()}`;
+  const absentOrgId = `maintenance-absent-${randomUUID()}`;
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "INSERT INTO org_metadata (org_id, credits) VALUES ($1, 100)",
+      [orgId],
+    );
+    await client.query("SELECT acquire_usage_event_maintenance($1, false)", [
+      orgId,
+    ]);
+    const debited = await client.query(
+      `INSERT INTO org_metadata (org_id, credits) VALUES ($1, -7)
+       ON CONFLICT (org_id) DO UPDATE
+       SET credits = org_metadata.credits + EXCLUDED.credits
+       RETURNING credits::text AS credits`,
+      [orgId],
+    );
+    assert.equal(debited.rows[0]?.credits, "93");
+    await client.query("SELECT acquire_usage_event_maintenance($1, true)", [
+      orgId,
+    ]);
+    await client.query("SELECT acquire_usage_event_maintenance($1, false)", [
+      absentOrgId,
+    ]);
+    const absent = await client.query(
+      "SELECT COUNT(*)::int AS rows FROM org_metadata WHERE org_id = $1",
+      [absentOrgId],
+    );
+    assert.equal(absent.rows[0]?.rows, 0);
+    await client.query("SELECT acquire_usage_event_maintenance(NULL, true)");
+    for (const query of [
+      "SELECT acquire_usage_event_maintenance(NULL, false)",
+      "SELECT acquire_usage_event_maintenance(NULL, NULL)",
+    ]) {
+      await client.query("SAVEPOINT invalid_maintenance_scope");
+      await expectDatabaseError(client, { code: "22023", query });
+      await client.query("ROLLBACK TO SAVEPOINT invalid_maintenance_scope");
+    }
+    console.log(
+      "   ✅ Staged maintenance preserves debit and absent-owner contracts; invalid broad shared scope rejected\n",
+    );
+  } finally {
+    await client.query("ROLLBACK");
+    await client.end();
+  }
+}
+
 async function main(): Promise<void> {
   console.log("🧪 Testing Migration Consistency (Schema Comparison)\n");
 
@@ -3047,6 +3115,7 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validatePreparedUsageEventMaintenanceState(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);

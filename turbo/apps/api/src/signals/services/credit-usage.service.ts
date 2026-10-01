@@ -482,7 +482,7 @@ async function acquireSettlementLocksWithObservation(
   orgId: string,
 ): Promise<SettlementLockObservation> {
   const startedAt = performance.now();
-  await lockUsageEventCompaction(tx, "shared");
+  await lockUsageEventCompaction(tx, { orgId, mode: "shared" });
   const compactionLockAcquiredAt = performance.now();
   await lockOrgCredits(tx, orgId);
   const orgLockAcquiredAt = performance.now();

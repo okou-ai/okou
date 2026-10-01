@@ -208,7 +208,10 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   );
   // Maintenance can retain ledger rows before locking Runs. Join admission
   // before parent locks so our Run-delete FK cannot reverse that order.
-  await lockUsageEventCompaction(tx, "shared");
+  await lockUsageEventCompaction(tx, {
+    orgId: args.orgId,
+    mode: "shared",
+  });
 
   // Read authorization without a row lock, then fence every native owner before
   // taking the Agent lifecycle lock. The lifecycle reader below revalidates the

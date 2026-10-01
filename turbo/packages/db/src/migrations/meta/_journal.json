@@ -1590,6 +1590,13 @@
       "when": 1790833645553,
       "tag": "1304_bright_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 1305,
+      "version": "7",
+      "when": 1790852288042,
+      "tag": "1305_prepare_usage_event_maintenance",
+      "breakpoints": true
     }
   ]
 }

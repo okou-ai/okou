@@ -152,8 +152,10 @@ export async function ensureOrgMetadataPlanEntitlement(
 /**
  * Preserve the INSERT-only bootstrap effect for metadata upserts. Lock an
  * existing row before the write so an ordinary update cannot silently repair a
- * missing entitlement or race a deletion. Concurrent creators still converge
- * on the organization-key constraints.
+ * missing entitlement or race a deletion. NO KEY UPDATE excludes both deletion
+ * and competing writers while remaining compatible with prepared KEY SHARE
+ * coordination; this check does not change the organization's primary key.
+ * Concurrent creators still converge on the organization-key constraints.
  */
 export async function writeOrgMetadataWithDefaultPlanEntitlement<
   Row extends { readonly orgId: string; readonly tier: string },
@@ -166,7 +168,7 @@ export async function writeOrgMetadataWithDefaultPlanEntitlement<
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
-    .for("update");
+    .for("no key update");
   const rows = await writeOrgMetadata(tx);
   if (!existing) {
     for (const row of rows) {
