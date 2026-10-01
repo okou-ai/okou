@@ -461,19 +461,14 @@ when a firewall matches (`MODEL_USAGE_PROVIDER`,
 `MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`) and clears both for
 passthrough flows. Billing classifies a source as long-context when its total
 input (`tokens.input` + `tokens.cache_read` + `tokens.cache_creation`) reaches
-the threshold. For the registry's usage provider the field is authoritative
-whenever it is present:
+the threshold. The API captures this value from the assigned catalog route:
 
-| Registry value                  | Classification                                                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| positive integer                | Long-context at or above it, whether or not the provider is in the map.                                                              |
-| `0`                             | Explicit single tier; the generated map is not consulted.                                                                            |
-| absent (or not an integer >= 0) | Compatibility fallback: the generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` map keyed by provider; no entry means single tier. |
+| Registry value   | Classification                          |
+| ---------------- | --------------------------------------- |
+| Positive integer | Long-context at or above the threshold. |
+| `0`              | Single-tier pricing.                    |
 
-Only an API that predates catalog thresholds omits the field; the fallback and
-the generated map are deleted together once no such API is serving or a
-rollback target (see
-[deployment compatibility](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01)).
+See [deployment requirements](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
 The `.fast` and `.ultrafast` suffixes follow the observed service tier.
 See [model catalog](model-catalog.md#long-context-classification).
 

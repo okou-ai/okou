@@ -4259,7 +4259,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("captures the fixed organization default for a NULL Slack thread without changing its pin", async () => {
+  it("captures the system default for a NULL Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4326,7 +4326,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    // An existing thread without a pin uses the fixed org default, not the
+    // An existing thread without a pin uses the system default, not the
     // member preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
     expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(

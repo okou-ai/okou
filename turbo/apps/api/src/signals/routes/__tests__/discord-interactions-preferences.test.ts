@@ -700,7 +700,7 @@ describe("Discord account preferences through private controls", () => {
     );
 
     expect(rejected.content).toContain("no longer have access to that model");
-    // The thread's removed model resolves to the fixed org default.
+    // The thread's removed model resolves to the system default.
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);

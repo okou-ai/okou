@@ -1042,7 +1042,7 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("captures the fixed organization default when an explicit model is outside workspace policy", async () => {
+  it("captures the system default when an explicit model is outside workspace policy", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);

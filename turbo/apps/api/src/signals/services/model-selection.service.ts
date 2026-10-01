@@ -21,7 +21,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 import { and, eq, or } from "drizzle-orm";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";

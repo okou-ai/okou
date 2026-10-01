@@ -363,7 +363,7 @@ route's `service_tiers` (`isCatalogFastServiceTierSupported`,
 `isCatalogUltrafastServiceTierSupported` in `model-selection.service.ts`).
 
 Remaining reads outside the snapshot: `loadMemberSubscriptionModels`
-(`subscription-model-catalog.service.ts`) still reads subscription routes
+(`member-subscription-models.service.ts`) still reads subscription routes
 from `model_routes` separately during the pick.
 
 ## Queued inputs and history

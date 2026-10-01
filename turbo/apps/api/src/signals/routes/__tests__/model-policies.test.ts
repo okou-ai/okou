@@ -475,7 +475,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual(["okou-1.0"]);
   });
 
-  it("returns an Auto member to the org default after disconnecting the subscription", async () => {
+  it("returns an Auto member to the system default after disconnecting the subscription", async () => {
     const fixture = seedFixture();
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await switchModelMode(fixture, "auto");

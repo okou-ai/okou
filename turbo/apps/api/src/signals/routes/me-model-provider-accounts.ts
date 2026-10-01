@@ -10,7 +10,7 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
-import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
+import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 import {
   activatePersonalModelProviderAccount,
   deletePersonalModelProviderAccount,

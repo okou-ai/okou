@@ -150,7 +150,7 @@ export async function isPersonalSubscriptionRoute(args: {
 
 /**
  * A disconnected subscription stops backing an Auto member's selection. Return
- * that member to the org default when no policy or remaining subscription
+ * that member to the system default when no policy or remaining subscription
  * still offers the saved model.
  */
 export async function resetStaleAutoMemberSelection(

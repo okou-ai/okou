@@ -342,7 +342,7 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(modelPoliciesMainContract);
   }
 
-  /** The member preference, else the fixed org default, as a client sends it. */
+  /** The member preference, else the system default, as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
   ): Promise<string> {

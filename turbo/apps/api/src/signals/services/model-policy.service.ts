@@ -47,7 +47,7 @@ import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
-} from "./subscription-model-catalog.service";
+} from "./member-subscription-models.service";
 import {
   catalogActiveModels,
   catalogDisplayName,

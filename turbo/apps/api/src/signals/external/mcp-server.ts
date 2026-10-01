@@ -559,7 +559,7 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model stores the current member or organization default at creation; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, run admission follows acceptance; use get_chat_status: acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
+        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model stores the member preference or system default at creation; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, run admission follows acceptance; use get_chat_status: acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
@@ -593,7 +593,7 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Update title/model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock. model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Use one UUID requestId per patch. For 24 hours, retry identical threadId and patch until retryUntil. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without reverting settings.",
+        "Update title/model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock. model:null clears the pin; future inputs capture the system default at enqueue without changing the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Use one UUID requestId per patch. For 24 hours, retry identical threadId and patch until retryUntil. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without reverting settings.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
@@ -773,7 +773,7 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "List the current model catalog and member/workspace default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
+        "List model catalog, member preference and system default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
       annotations: { ...readAnnotations, title: "List Models" },
