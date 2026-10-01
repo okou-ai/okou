@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
-import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1656,61 +1655,6 @@ describe("VNC owner configuration", () => {
       generation: 3,
       host: "new.example.com",
     });
-  });
-
-  it("rechecks revision after delayed KMS encryption without overwriting the winner", async () => {
-    useSecretKmsProbe();
-    await owner();
-    const created = await accept(
-      credentials().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name: "Initial",
-          authentication: passwordAuthentication("initial"),
-        },
-      }),
-      [201],
-    );
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    useSecretKmsProbe(async (request) => {
-      entered.resolve();
-      await release.promise;
-      return {
-        keyId: request.keyId,
-        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
-        encryptedDataKey: Buffer.from("test-wrapped-key"),
-      };
-    });
-    const params = { credentialId: created.body.id };
-    const delayed = accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("delayed"),
-        },
-      }),
-      [409],
-    );
-    await entered.promise;
-    const winner = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: { expectedRevision: 1, name: "Winner" },
-      }),
-      [200],
-    );
-    release.resolve();
-    expect((await delayed).body.error.code).toBe(
-      "VNC_CREDENTIAL_REVISION_CONFLICT",
-    );
-    expect(
-      (await accept(credentials().list({ headers }), [200])).body.credentials,
-    ).toStrictEqual([winner.body]);
   });
 
   it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {

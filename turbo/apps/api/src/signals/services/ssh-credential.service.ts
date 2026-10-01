@@ -60,14 +60,16 @@ const failures = {
 export function sshCredentialFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
 }
+/** The RESTRICT credential FK reports 23001; a NO ACTION check reports 23503. */
 export function isSshCredentialReferenceViolation(error: unknown): boolean {
   return (
-    isForeignKeyViolation(error) &&
     error instanceof Error &&
     typeof error.cause === "object" &&
     error.cause !== null &&
     "constraint" in error.cause &&
-    error.cause.constraint === "ssh_connections_credential_owner_fk"
+    error.cause.constraint === "ssh_connections_credential_owner_fk" &&
+    (isForeignKeyViolation(error) ||
+      ("code" in error.cause && error.cause.code === "23001"))
   );
 }
 const sshCredentialMetadata = Object.freeze({
