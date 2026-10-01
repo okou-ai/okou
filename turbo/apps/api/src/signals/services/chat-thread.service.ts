@@ -1,3 +1,4 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -776,6 +777,32 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
   });
 }
 
+function initialThreadWritePlan(
+  args: CreateChatThreadArgs,
+  thread: ReturnType<typeof createdChatThreadFromRow>,
+  selections: readonly PreparedChatThreadConnectorSelection[],
+) {
+  return {
+    connectors: initialChatThreadConnectorSelectionStatements({
+      chatThreadId: thread.id,
+      selections,
+    }),
+    remote: initialRemoteAccessValues(
+      thread.id,
+      args.initialRemoteAccessOverrides ?? [],
+    ),
+    created: chatThreadCreatedEventSql({
+      orgId: args.orgId,
+      eventId: args.eventId,
+      thread,
+    }),
+    welcome:
+      args.initialAssistantMessage === undefined
+        ? null
+        : welcomeSeedStatement(thread.id, args.initialAssistantMessage),
+  };
+}
+
 function createdThreadResult(thread: {
   readonly id: string;
   readonly createdAt: Date;
@@ -832,6 +859,7 @@ export const createChatThread$ = command(
               })
               .from(sql`(SELECT 1) AS initial_remote_ownership`)
           : [{ owned: true }];
+      signal.throwIfAborted();
       if (!remoteOwnership) {
         throw new Error("Initial remote access ownership result is missing");
       }
@@ -844,6 +872,7 @@ export const createChatThread$ = command(
             .from(chatThreads)
             .where(existingClientThreadCondition(args))
             .limit(1);
+          signal.throwIfAborted();
           if (replay) {
             return { kind: "existing" as const, ...replay };
           }
@@ -870,6 +899,7 @@ export const createChatThread$ = command(
           cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
           createdAt: chatThreads.createdAt,
         });
+      signal.throwIfAborted();
       const createdThread = createdThreadRow
         ? createdChatThreadFromRow(
             createdThreadRow,
@@ -883,21 +913,26 @@ export const createChatThread$ = command(
             .from(chatThreads)
             .where(existingClientThreadCondition(args))
             .limit(1);
+          signal.throwIfAborted();
           if (existing) {
             return { kind: "existing" as const, ...existing };
           }
         }
         return { kind: "client_thread_conflict" as const };
       }
-      for (const statement of initialChatThreadConnectorSelectionStatements({
-        chatThreadId: createdThread.id,
-        selections: preparedConnectorSelections.selections,
-      })) {
+      const initialWrites = initialThreadWritePlan(
+        args,
+        createdThread,
+        preparedConnectorSelections.selections,
+      );
+      for (const statement of initialWrites.connectors) {
         const inserted = await settle(
           tx.transaction(async (sp) => {
             await sp.execute(statement);
+            signal.throwIfAborted();
           }),
         );
+        signal.throwIfAborted();
         if (
           !inserted.ok &&
           selectionParentMissing(inserted.error) !== "account"
@@ -905,27 +940,20 @@ export const createChatThread$ = command(
           throw inserted.error;
         }
       }
-      const remoteValues = initialRemoteAccessValues(
-        createdThread.id,
-        initialRemoteAccessOverrides,
-      );
+      const remoteValues = initialWrites.remote;
       if (remoteValues.ssh.length) {
         await tx.insert(chatThreadSshAccessOverrides).values(remoteValues.ssh);
+        signal.throwIfAborted();
       }
       if (remoteValues.vnc.length) {
         await tx.insert(chatThreadVncAccessOverrides).values(remoteValues.vnc);
+        signal.throwIfAborted();
       }
-      await tx.execute(
-        chatThreadCreatedEventSql({
-          orgId: args.orgId,
-          eventId: args.eventId,
-          thread: createdThread,
-        }),
-      );
-      if (args.initialAssistantMessage !== undefined) {
-        await tx.execute(
-          welcomeSeedStatement(createdThread.id, args.initialAssistantMessage),
-        );
+      await tx.execute(initialWrites.created);
+      signal.throwIfAborted();
+      if (initialWrites.welcome !== null) {
+        await tx.execute(initialWrites.welcome);
+        signal.throwIfAborted();
       }
       return createdThreadResult(createdThread);
     });
@@ -946,6 +974,17 @@ interface DeleteChatThreadArgs {
   readonly eventId?: string;
 }
 
+/** Pure child-lock statement, reused before and after the parent attach fence. */
+function attachedRunFenceSql(threadId: string) {
+  return new QueryBuilder()
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(eq(agentRuns.chatThreadId, threadId))
+    .orderBy(asc(agentRuns.id))
+    .for("no key update")
+    .getSQL();
+}
+
 const disabledAutomationSelection = Object.freeze({
   orgId: workflowAutomations.orgId,
   ownerUserId: workflowAutomations.ownerUserId,
@@ -959,9 +998,9 @@ const deleteChatThreadContent$ = command(
   async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
     const result = await set(writeDb$).transaction(async (tx) => {
-      // Native authority is always fenced before the destination row. A
-      // delivery that already owns the schedule lock therefore commits first;
-      // this delete then bumps the epoch before the thread cascade is allowed.
+      // Fence only this destination's current native epoch before its cascade.
+      // The same statement suppresses its pending occurrence obligations; no
+      // advisory lock or separate native schedule read is required.
       await tx.execute(
         revokeMorningBriefNativeThreadAuthoritySql(
           {
@@ -972,6 +1011,7 @@ const deleteChatThreadContent$ = command(
           nowDate(),
         ),
       );
+      signal.throwIfAborted();
 
       const ownedThreadCondition = and(
         eq(chatThreads.id, args.threadId),
@@ -982,6 +1022,7 @@ const deleteChatThreadContent$ = command(
         .select({ id: chatThreads.id })
         .from(chatThreads)
         .where(ownedThreadCondition);
+      signal.throwIfAborted();
       if (!authorizedThread) {
         return {
           deleted: false,
@@ -994,17 +1035,14 @@ const deleteChatThreadContent$ = command(
       // the sequence before checking the thread FK. Take both children first so
       // cascading deletion cannot invert either order. Lock every attached run:
       // ON DELETE SET NULL also updates terminal runs.
-      await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(eq(agentRuns.chatThreadId, args.threadId))
-        .orderBy(asc(agentRuns.id))
-        .for("no key update");
+      await tx.execute(attachedRunFenceSql(args.threadId));
+      signal.throwIfAborted();
       await tx
         .select({ id: chatEventSequences.chatThreadId })
         .from(chatEventSequences)
         .where(eq(chatEventSequences.chatThreadId, args.threadId))
         .for("update");
+      signal.throwIfAborted();
 
       // Deletion waits for a writer that already owns the thread. A writer that
       // then waits on a locked run or sequence forms a cycle that PostgreSQL's
@@ -1014,6 +1052,7 @@ const deleteChatThreadContent$ = command(
         .from(chatThreads)
         .where(ownedThreadCondition)
         .for("update");
+      signal.throwIfAborted();
       if (!ownedThread?.agentId) {
         return {
           deleted: false,
@@ -1024,12 +1063,8 @@ const deleteChatThreadContent$ = command(
 
       // Include an attachment committed between discovery and the strong fence;
       // the thread lock above waited for any uncommitted attachment.
-      await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(eq(agentRuns.chatThreadId, ownedThread.id))
-        .orderBy(asc(agentRuns.id))
-        .for("no key update");
+      await tx.execute(attachedRunFenceSql(ownedThread.id));
+      signal.throwIfAborted();
 
       // Capture related active runs while the thread row blocks new FK attaches.
       // Terminal runs (completed/failed/cancelled) are left untouched; only
@@ -1045,6 +1080,7 @@ const deleteChatThreadContent$ = command(
             isNotNull(agentRuns.triggerSource),
           ),
         );
+      signal.throwIfAborted();
 
       const disabledAutomations = await tx
         .update(workflowAutomations)
@@ -1056,6 +1092,7 @@ const deleteChatThreadContent$ = command(
           }),
         )
         .returning(disabledAutomationSelection);
+      signal.throwIfAborted();
 
       // Search rows are an eventually consistent derived projection without a
       // parent FK. Remove the normal-path rows synchronously; the projection
@@ -1067,14 +1104,17 @@ const deleteChatThreadContent$ = command(
         .where(
           eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id),
         );
+      signal.throwIfAborted();
       await tx
         .delete(chatEventSearchMessages)
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
+      signal.throwIfAborted();
 
       // A native Morning Brief delivery cascades away with this thread, and it
       // is the only association to its still-unsent mail. Remove both here, so
       // the cascade cannot orphan content-bearing email.
       await tx.execute(revokeMorningBriefThreadDeliverySql(ownedThread.id));
+      signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.
       // Captured active runs lose their canonical chatThreadId, while any retained legacy
@@ -1083,6 +1123,7 @@ const deleteChatThreadContent$ = command(
         .delete(chatThreads)
         .where(eq(chatThreads.id, ownedThread.id))
         .returning({ id: chatThreads.id });
+      signal.throwIfAborted();
 
       if (deletedThread) {
         // Acquire the user/org event sequence only after all cleanup and
@@ -1100,6 +1141,7 @@ const deleteChatThreadContent$ = command(
             eventId: args.eventId,
           }),
         );
+        signal.throwIfAborted();
       }
 
       return {

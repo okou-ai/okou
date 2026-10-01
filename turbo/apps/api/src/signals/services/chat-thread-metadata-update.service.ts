@@ -1,3 +1,8 @@
+import { z } from "zod";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -31,6 +36,7 @@ import {
 } from "./model-selection.service";
 import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
+import { settle } from "../utils";
 
 interface Principal {
   readonly userId: string;
@@ -268,27 +274,31 @@ function metadataEvents(
   ];
 }
 
+interface PreparedMetadataModel {
+  readonly catalog: ModelCatalog | null;
+  readonly pin: PreparedPin;
+}
+
+type PreparedMetadataOutcome =
+  | { readonly ok: true; readonly value: PreparedMetadataModel }
+  | { readonly ok: false; readonly error: unknown };
+
+/** Capture one catalog snapshot and resolve routing before the SQL write. */
 const prepareMetadataModel$ = command(
   async (
     { set },
     args: ChatThreadMetadataUpdateArgs,
-    catalog: ModelCatalog,
     signal: AbortSignal,
-  ): Promise<PreparedPin> => {
-    if (!hasModel(args.patch) || args.patch.model === null) {
-      return null;
+  ): Promise<PreparedMetadataModel> => {
+    if (!hasModel(args.patch)) {
+      return { catalog: null, pin: null };
     }
-    const db = set(writeDb$);
-    const [thread] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(threadCondition(args))
-      .limit(1);
+    const catalog = await set(loadModelCatalog$, signal);
     signal.throwIfAborted();
-    if (!thread) {
-      return null;
+    if (args.patch.model === null) {
+      return { catalog, pin: null };
     }
-    return await set(
+    const pin = await set(
       resolveModelSelectionPin$,
       {
         ...args.principal,
@@ -300,19 +310,49 @@ const prepareMetadataModel$ = command(
       },
       signal,
     );
+    return { catalog, pin };
   },
 );
+
+function metadataPreparationDisposition(prepared: PreparedMetadataOutcome) {
+  if (!prepared.ok) {
+    return { kind: "error" as const, error: prepared.error };
+  }
+  const pin = prepared.value.pin;
+  if (pin !== null && "status" in pin) {
+    return { kind: "response" as const, response: pin };
+  }
+  return { kind: "ready" as const, value: prepared.value };
+}
 
 const commitMetadata$ = command(
   async (
     { set },
     args: ChatThreadMetadataUpdateArgs,
-    pin: PreparedPin,
-    catalog: ModelCatalog,
+    prepared: PreparedMetadataOutcome,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
-    const db = set(writeDb$);
     signal.throwIfAborted();
+    const db = set(writeDb$);
+    const proposal = metadataPreparationDisposition(prepared);
+    if (proposal.kind !== "ready") {
+      const [owned] = await db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(threadCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!owned) {
+        return { kind: "not_found" };
+      }
+      if (proposal.kind === "error") {
+        throw proposal.error;
+      }
+      return proposal;
+    }
+    // Preserve the current model settings and service tier while applying the
+    // model change and its ordered events. This is the only metadata write
+    // that needs a read/write snapshot; renames use one gated statement.
     return await db.transaction(async (tx) => {
       const [current] = await tx
         .select(currentSelection)
@@ -324,12 +364,16 @@ const commitMetadata$ = command(
       if (!current?.agentId) {
         return { kind: "not_found" };
       }
+      const { catalog, pin } = proposal.value;
+      if (catalog === null) {
+        throw new Error("Prepared model catalog is missing");
+      }
       const model = resolveModelColumns(catalog, args, current, pin);
       if (model.kind === "response") {
         return model;
       }
       const updatedAt = nowDate();
-      await tx
+      const [state] = await tx
         .update(chatThreads)
         .set({
           updatedAt,
@@ -338,7 +382,8 @@ const commitMetadata$ = command(
             : {}),
           ...model.columns,
         })
-        .where(eq(chatThreads.id, args.threadId));
+        .where(eq(chatThreads.id, args.threadId))
+        .returning(currentSelection);
       signal.throwIfAborted();
       for (const event of metadataEvents(
         args,
@@ -349,17 +394,82 @@ const commitMetadata$ = command(
         await tx.execute(chatThreadEventInsertSql(event));
         signal.throwIfAborted();
       }
-      const [state] = await tx
-        .select(currentSelection)
-        .from(chatThreads)
-        .where(threadCondition(args))
-        .limit(1);
-      signal.throwIfAborted();
       if (!state) {
         throw new Error("Updated chat thread state is missing");
       }
       return metadataResult(state);
     });
+  },
+);
+
+const titleMetadataStateSchema = z.object({
+  threadId: z.string().uuid(),
+  title: z.string().nullable(),
+  titleTruncated: z.boolean(),
+  selectedModel: z.string().nullable(),
+  codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
+  updatedAt: pgTimestampWithoutTimezoneToDateSchema,
+});
+
+/** One statement owns a manual rename and its ordered list event. */
+const commitTitleMetadata$ = command(
+  async (
+    { set },
+    args: ChatThreadMetadataUpdateArgs,
+    signal: AbortSignal,
+  ): Promise<ChatThreadMetadataUpdateResult> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const update = db
+      .update(chatThreads)
+      .set({
+        updatedAt,
+        ...(hasTitle(args.patch)
+          ? { title: args.patch.title, renamedAt: updatedAt }
+          : {}),
+      })
+      .where(threadCondition(args));
+    if (!hasTitle(args.patch)) {
+      const [state] = await update.returning(currentSelection);
+      signal.throwIfAborted();
+      return state ? metadataResult(state) : { kind: "not_found" };
+    }
+    const updated = update.returning({
+      id: chatThreads.id,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      codexServiceTier: chatThreads.codexServiceTier,
+      updatedAt: chatThreads.updatedAt,
+      agentId: chatThreads.agentId,
+    });
+    const [state] = parseRawRows(
+      titleMetadataStateSchema,
+      await db.execute(
+        chatThreadEventInsertSql(
+          {
+            kind: "renamed",
+            userId: args.principal.userId,
+            orgId: args.principal.orgId,
+            chatThreadId: args.threadId,
+            title: args.patch.title,
+            eventId: args.eventIds?.title,
+            createdAt: updatedAt,
+          },
+          {
+            cte: sql`updated AS (${updated.getSQL()})`,
+            gate: sql`EXISTS (SELECT 1 FROM updated)`,
+            agentId: sql`(SELECT agent_id FROM updated)`,
+            result: sql`SELECT id AS "threadId", left(title, 500) AS title,
+        COALESCE(length(title) > 500, false) AS "titleTruncated",
+        selected_model AS "selectedModel", codex_service_tier AS "codexServiceTier",
+        updated_at::text AS "updatedAt" FROM updated`,
+          },
+        ),
+      ),
+    );
+    signal.throwIfAborted();
+    return state ? metadataResult(state) : { kind: "not_found" };
   },
 );
 
@@ -369,8 +479,17 @@ export const updateChatThreadMetadata$ = command(
     args: ChatThreadMetadataUpdateArgs,
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
-    const catalog = await set(loadModelCatalog$, signal);
-    const pin = await set(prepareMetadataModel$, args, catalog, signal);
-    return await set(commitMetadata$, args, pin, catalog, signal);
+    signal.throwIfAborted();
+    if (!hasModel(args.patch)) {
+      return await set(commitTitleMetadata$, args, signal);
+    }
+    // Ownership remains the first returned refusal even if independent model
+    // preparation fails. No preparation error enters the write transaction.
+    const prepared = await settle(
+      set(prepareMetadataModel$, args, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    return await set(commitMetadata$, args, prepared, signal);
   },
 );
