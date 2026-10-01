@@ -77,11 +77,12 @@ export const requestOnboardingPhoneCode$ = command(
 
 /** Start the non-blocking route-owned generation; the view observes its loadable. */
 export const enterOnboardingPhoneCode$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+  ({ set }, signal: AbortSignal): Promise<void> => {
     detach(
       set(requestOnboardingPhoneCode$, signal),
       Reason.Daemon,
       "onboarding phone code creation",
     );
+    return Promise.resolve();
   },
 );
