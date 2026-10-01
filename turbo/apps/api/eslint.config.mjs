@@ -245,13 +245,23 @@ const threadRunPrivatePatterns = [
   {
     group: [
       "**/run-connector-context.service",
+      "**/run-connector-context.service.ts",
+      "**/run-connector-context.service.js",
       "**/run-execution-body.service",
+      "**/run-execution-body.service.ts",
+      "**/run-execution-body.service.js",
       "**/execution-launch-admission.service",
+      "**/execution-launch-admission.service.ts",
+      "**/execution-launch-admission.service.js",
     ],
     message: threadRunPrivateMessage,
   },
   {
-    group: ["**/execution-storage-manifest.service"],
+    group: [
+      "**/execution-storage-manifest.service",
+      "**/execution-storage-manifest.service.ts",
+      "**/execution-storage-manifest.service.js",
+    ],
     allowImportNames: [
       "AUTO_MEMORY_ARTIFACT_NAME",
       "finalizePreparedStorage",
@@ -261,7 +271,11 @@ const threadRunPrivatePatterns = [
     message: threadRunPrivateMessage,
   },
   {
-    group: ["**/execution-launch-persistence.service"],
+    group: [
+      "**/execution-launch-persistence.service",
+      "**/execution-launch-persistence.service.ts",
+      "**/execution-launch-persistence.service.js",
+    ],
     allowImportNames: [
       "PermissionManifest",
       "ResolvedModelProviderEnvironment",
@@ -270,7 +284,11 @@ const threadRunPrivatePatterns = [
     message: threadRunPrivateMessage,
   },
   {
-    group: ["**/run-model-provider-environment.service"],
+    group: [
+      "**/run-model-provider-environment.service",
+      "**/run-model-provider-environment.service.ts",
+      "**/run-model-provider-environment.service.js",
+    ],
     allowImportNames: [
       "frameworkForProviderSelection",
       "loadRunRoutePricing",
@@ -282,7 +300,11 @@ const threadRunPrivatePatterns = [
     message: threadRunPrivateMessage,
   },
   {
-    group: ["**/execution-runner-payload.service"],
+    group: [
+      "**/execution-runner-payload.service",
+      "**/execution-runner-payload.service.ts",
+      "**/execution-runner-payload.service.js",
+    ],
     allowImportNames: [
       "assertNativeEnvironment",
       "buildRunContextSnapshot",
@@ -295,7 +317,11 @@ const threadRunPrivatePatterns = [
     message: threadRunPrivateMessage,
   },
   {
-    group: ["**/run-execution-context.service"],
+    group: [
+      "**/run-execution-context.service",
+      "**/run-execution-context.service.ts",
+      "**/run-execution-context.service.js",
+    ],
     allowImportNames: [
       "RESTRICTED_EXPLICIT_CONTENT_PROMPT",
       "builtInImageModelPrompt",
@@ -308,7 +334,11 @@ const piMaintenanceEntryFile =
   "src/signals/services/pi-memory-maintenance-execution.service.ts";
 const piMaintenancePrivatePatterns = [
   {
-    group: ["**/pi-memory-maintenance-launch"],
+    group: [
+      "**/pi-memory-maintenance-launch",
+      "**/pi-memory-maintenance-launch.ts",
+      "**/pi-memory-maintenance-launch.js",
+    ],
     message: "Pi maintenance's launch assembly is private to its entrypoint.",
   },
 ];

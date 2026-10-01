@@ -606,6 +606,7 @@ describe("system storage presigned URL cache", () => {
         .map((mount) => {
           return {
             name: mount.name,
+            mountPath: mount.mountPath,
             versionId: mount.versionId,
             archiveUrl: mount.archiveUrl,
           };
@@ -639,6 +640,18 @@ describe("system storage presigned URL cache", () => {
       };
     });
     expect(warmed).toStrictEqual(expected);
+    // Workflow skills mount at their slug, the connector skill and the seed
+    // system skill at their skill directories.
+    for (const mount of warmed) {
+      expect(mount.mountPath).toMatch(
+        /^\/home\/user\/\.[a-z]+\/(agent\/)?skills\/[^/]+$/,
+      );
+    }
+    expect(
+      warmed.find((mount) => {
+        return mount.name === fixture.storageName;
+      })?.mountPath,
+    ).toBe(SYSTEM_SKILL_MOUNT_PATH);
     expect(
       objectKeys.map((objectKey) => {
         return signedCount(objectKey);

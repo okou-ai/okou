@@ -77,7 +77,6 @@ import {
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import type { WebChatSessionPromptContext } from "./web-chat-session-prompt.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   type AgentRunMetadata,
@@ -788,7 +787,6 @@ export interface ThreadRunCommand {
   readonly threadSessionRoute?: ChatThreadSessionRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
   readonly expectedThreadAgentId?: string;
-  readonly webChatSessionPromptContext?: WebChatSessionPromptContext;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
