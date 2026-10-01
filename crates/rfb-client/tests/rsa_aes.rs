@@ -122,12 +122,15 @@ impl Peer {
         Ok(self.io.read(&mut [0]).await? == 0)
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Fault {
     None,
     Proof,
     Mac,
     Subtype,
+    AlternateSubtype,
+    CiphertextLength,
+    RandomLength,
     Extra,
     Password,
 }
@@ -167,14 +170,28 @@ async fn peer(
     let client_random = private.decrypt(Pkcs1v15Encrypt, &ciphertext)?;
     let amount = if wide { 32 } else { 16 };
     assert_eq!(client_random.len(), amount);
-    let random = vec![0x65; amount];
+    let random = vec![
+        0x65;
+        if matches!(fault, Fault::RandomLength) {
+            amount + 1
+        } else {
+            amount
+        }
+    ];
     let encrypted = pubkey.encrypt(
         &mut StdRng::try_from_rng(&mut SysRng)?,
         Pkcs1v15Encrypt,
         &random,
     )?;
+    if matches!(fault, Fault::CiphertextLength) {
+        io.write_u16(255).await?;
+        return Ok(io.read(&mut [0]).await? == 0);
+    }
     io.write_u16(256).await?;
     io.write_all(&encrypted).await?;
+    if matches!(fault, Fault::RandomLength) {
+        return Ok(io.read(&mut [0]).await? == 0);
+    }
     let mut read_key = hash(wide, &random, &client_random);
     read_key.truncate(amount);
     let mut write_key = hash(wide, &client_random, &random);
@@ -194,6 +211,8 @@ async fn peer(
     // Proof and subtype share a record: record != RFB message.
     proof.push(if matches!(fault, Fault::Subtype) {
         3
+    } else if matches!(fault, Fault::AlternateSubtype) {
+        if user { 2 } else { 1 }
     } else if user {
         1
     } else {
@@ -203,7 +222,10 @@ async fn peer(
         proof.push(9);
     }
     p.send(&proof, matches!(fault, Fault::Mac)).await?;
-    if matches!(fault, Fault::Proof | Fault::Mac | Fault::Subtype) {
+    if matches!(
+        fault,
+        Fault::Proof | Fault::Mac | Fault::Subtype | Fault::AlternateSubtype
+    ) {
         return p.closed().await;
     }
     let creds = p.recv().await?;
@@ -286,31 +308,44 @@ async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return
 -> TestResult {
     let private = key()?;
     let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
-    for fault in [
-        Fault::Proof,
-        Fault::Mac,
-        Fault::Subtype,
-        Fault::Extra,
-        Fault::Password,
+    // Keep related negative exchanges in one matrix: separate concurrently
+    // running crypto-heavy tests must not compete for the engine's two-job limit.
+    for (mode, user, fault) in [
+        (RsaAesSecurity::Ra2ne, false, Fault::Proof),
+        (RsaAesSecurity::Ra2ne, false, Fault::Mac),
+        (RsaAesSecurity::Ra2ne, false, Fault::Subtype),
+        (RsaAesSecurity::Ra2ne, false, Fault::AlternateSubtype),
+        (RsaAesSecurity::Ra2ne, false, Fault::CiphertextLength),
+        (RsaAesSecurity::Ra2ne, false, Fault::RandomLength),
+        (RsaAesSecurity::Ra2ne, false, Fault::Extra),
+        (RsaAesSecurity::Ra2ne, false, Fault::Password),
+        (RsaAesSecurity::Ra2_256, false, Fault::AlternateSubtype),
+        (RsaAesSecurity::Ra2_256, true, Fault::AlternateSubtype),
     ] {
         let (a, b) = tokio::io::duplex(512);
-        let server = tokio::spawn(peer(
-            b,
-            private.clone(),
-            RsaAesSecurity::Ra2ne,
-            false,
-            fault,
-        ));
+        let server = tokio::spawn(peer(b, private.clone(), mode, user, fault));
+        let result = authenticate_rsa_aes(
+            a,
+            mode,
+            credential(user)?,
+            pin,
+            Instant::now() + Duration::from_secs(30),
+        )
+        .await;
+        let rejected = match fault {
+            Fault::Subtype | Fault::AlternateSubtype => {
+                matches!(result, Err(Error::InvalidRsaAesCredential))
+            }
+            Fault::Mac => matches!(result, Err(Error::Io(_))),
+            Fault::Password => matches!(result, Err(Error::AuthenticationFailed)),
+            Fault::Proof | Fault::CiphertextLength | Fault::RandomLength | Fault::Extra => {
+                matches!(result, Err(Error::InvalidRsaAesExchange))
+            }
+            Fault::None => false,
+        };
         assert!(
-            authenticate_rsa_aes(
-                a,
-                RsaAesSecurity::Ra2ne,
-                credential(false)?,
-                pin,
-                Instant::now() + Duration::from_secs(30)
-            )
-            .await
-            .is_err()
+            rejected,
+            "expected exact rejection for {mode:?}/{user}/{fault:?}"
         );
         assert!(server.await??);
     }
@@ -393,6 +428,46 @@ async fn peer_key_size_is_rejected_before_body_or_crypto_and_deadlines_drop_the_
     assert_eq!(b.read(&mut [0]).await?, 0);
     Ok(())
 }
+#[tokio::test]
+async fn pinned_but_invalid_rsa_modulus_or_exponent_close_before_client_exchange() -> TestResult {
+    let raw = wire(&key()?.to_public_key());
+    let mut missing_top_bit = raw.clone();
+    *missing_top_bit.get_mut(4).ok_or("modulus required")? &= 0x7f;
+    let mut even_modulus = raw.clone();
+    *even_modulus.get_mut(259).ok_or("modulus required")? &= 0xfe;
+    let mut wrong_exponent = raw.clone();
+    wrong_exponent
+        .get_mut(260..)
+        .ok_or("exponent required")?
+        .fill(0);
+    *wrong_exponent.last_mut().ok_or("exponent required")? = 3;
+    for raw in [missing_top_bit, even_modulus, wrong_exponent] {
+        // A matching independently supplied pin does not waive RSA parameter policy.
+        let pin = RsaServerKeyPin::new(Sha256::digest(&raw).into());
+        let (a, mut b) = tokio::io::duplex(2048);
+        let server = tokio::spawn(async move {
+            prefix(&mut b, 5).await?;
+            assert_eq!(b.read_u8().await?, 5);
+            b.write_all(&raw).await?;
+            assert_eq!(b.read(&mut [0]).await?, 0);
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        });
+        assert!(matches!(
+            authenticate_rsa_aes(
+                a,
+                RsaAesSecurity::Ra2,
+                credential(false)?,
+                pin,
+                Instant::now() + Duration::from_secs(30)
+            )
+            .await,
+            Err(Error::InvalidRsaAesExchange)
+        ));
+        server.await??;
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn cancelling_pending_key_negotiation_drops_the_owned_stream() -> TestResult {
     let (a, mut b) = tokio::io::duplex(64);

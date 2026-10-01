@@ -303,7 +303,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for Records<S> {
         match this.drain(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Ready(Ok(())) => Pin::new(&mut this.inner).poll_flush(cx),
+            Poll::Ready(Ok(())) => match Pin::new(&mut this.inner).poll_flush(cx) {
+                Poll::Ready(Err(error)) => {
+                    this.failed = true;
+                    Poll::Ready(Err(error))
+                }
+                result => result,
+            },
         }
     }
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -314,7 +320,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for Records<S> {
         match this.drain(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Ready(Ok(())) => Pin::new(&mut this.inner).poll_shutdown(cx),
+            Poll::Ready(Ok(())) => match Pin::new(&mut this.inner).poll_shutdown(cx) {
+                Poll::Ready(Err(error)) => {
+                    this.failed = true;
+                    Poll::Ready(Err(error))
+                }
+                result => result,
+            },
         }
     }
 }
@@ -397,6 +409,69 @@ mod tests {
         drop(b);
         assert!(writer.flush().await.is_err());
         assert!(writer.write_all(b"new").await.is_err());
+    }
+
+    struct CompletionFails<S>(S, bool);
+
+    impl<S: AsyncRead + Unpin> AsyncRead for CompletionFails<S> {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            out: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().0).poll_read(cx, out)
+        }
+    }
+
+    impl<S: AsyncWrite + Unpin> AsyncWrite for CompletionFails<S> {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.get_mut().0).poll_write(cx, input)
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            if this.1 {
+                Poll::Ready(Err(io::Error::other("synthetic transport flush failure")))
+            } else {
+                Pin::new(&mut this.0).poll_flush(cx)
+            }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            if this.1 {
+                Pin::new(&mut this.0).poll_shutdown(cx)
+            } else {
+                Poll::Ready(Err(io::Error::other(
+                    "synthetic transport shutdown failure",
+                )))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_transport_completion_rejects_further_records_and_raw_transition() {
+        for flush in [true, false] {
+            let (a, _peer) = tokio::io::duplex(128);
+            let mut writer = Records::new(
+                CompletionFails(a, flush),
+                Zeroizing::new(vec![3; 16]),
+                Zeroizing::new(vec![3; 16]),
+            );
+            writer.write_all(b"payload").await.unwrap();
+            let completed = if flush {
+                writer.flush().await
+            } else {
+                writer.shutdown().await
+            };
+            assert!(completed.is_err());
+            assert!(writer.write_all(b"new").await.is_err());
+            assert!(writer.into_raw().is_err());
+        }
     }
 
     #[test]
