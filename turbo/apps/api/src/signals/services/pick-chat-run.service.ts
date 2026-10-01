@@ -365,7 +365,19 @@ export function createPickObjects(
       ]);
       signal.throwIfAborted();
       if (!hasCapacity) {
-        await set(releaseClaim$, claim, signal);
+        if (await set(releaseClaim$, claim, signal)) {
+          // A slot released while this lease was held saw the thread as
+          // claimed and skipped it; re-read capacity after releasing so that
+          // wakeup is not lost.
+          set(internalReloadPick$, (revision) => {
+            return revision + 1;
+          });
+          const freed = await get(orgHasCapacity$);
+          signal.throwIfAborted();
+          if (freed) {
+            set(scheduleThreadPick$, signal);
+          }
+        }
         return { kind: "org-full" };
       }
       if (!hasInput) {
