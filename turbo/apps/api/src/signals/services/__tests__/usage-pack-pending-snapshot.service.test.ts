@@ -5,21 +5,34 @@ import {
   usagePackPendingSnapshotGuards,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import type { ApiDb } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/database-transaction-barrier";
 import { settle } from "../../utils";
 import {
   repairUsagePackPendingSnapshotGuards,
+  UsagePackPendingSnapshotConflict,
   writeUsagePackPendingSnapshots,
 } from "../usage-pack-pending-snapshot.service";
 
-testContext();
+const context = testContext();
 
 // HTTP callers cannot select installed triggers, grandfathered/corrupt guard
 // state, org movement or database lock interleavings. Each case owns its current schema. Historical 0954 trigger and mixed-version
@@ -167,6 +180,87 @@ describe("pending snapshots on the current schema", () => {
       harness.db.select().from(usagePackSubscriptions),
     ).resolves.toHaveLength(1);
   });
+
+  // HTTP cannot schedule a commit between a database read and its delivery.
+  // This infrastructure regression keeps real queries and isolated schemas;
+  // the checkout route's existing concurrent-confirmation case covers HTTP.
+  it.each(["write", "repair"] as const)(
+    "reads a consistent pending count when a transition commits during %s",
+    async (operation) => {
+      const row = values(`org_${randomUUID()}`);
+      await insert(harness.db, row);
+
+      await withDatabaseTransactionBarrierFixture(
+        {
+          select(queryArgs) {
+            const text = barrierQueryText(queryArgs);
+            return (
+              text.startsWith("select ") &&
+              text.includes('from "usage_pack_pending_snapshot_guards"') &&
+              barrierQueryBinds(queryArgs, row.orgId)
+            );
+          },
+          stopAt(_queryArgs, selectingStatement) {
+            return selectingStatement;
+          },
+          pauseAfter: true,
+          async work(barrier) {
+            // Keep the real read result, then commit another writer before
+            // delivering it. Separate guard/root reads would see two snapshots.
+            const pending = settle(
+              operation === "repair"
+                ? repairUsagePackPendingSnapshotGuards(harness.db, [row.orgId])
+                : writeUsagePackPendingSnapshots(
+                    harness.db,
+                    [row.orgId],
+                    async (tx) => {
+                      await tx
+                        .update(usagePackSubscriptions)
+                        .set({ subscriptionStatus: "canceled" })
+                        .where(
+                          and(
+                            eq(usagePackSubscriptions.id, row.id),
+                            eq(usagePackSubscriptions.orgId, row.orgId),
+                            eq(
+                              usagePackSubscriptions.subscriptionStatus,
+                              "purchase_pending",
+                            ),
+                          ),
+                        );
+                    },
+                  ),
+            );
+            onTestFinished(async () => {
+              await pending;
+            });
+            await barrier.entered;
+            await transition(harness.db, row.orgId, row.id, "active");
+            barrier.release();
+            const outcome = await pending;
+            if (operation === "repair") {
+              expect(outcome).toStrictEqual({ ok: true, value: undefined });
+            } else {
+              expect(outcome).toMatchObject({
+                ok: false,
+                error: expect.any(UsagePackPendingSnapshotConflict),
+              });
+            }
+          },
+        },
+        context.signal,
+      );
+
+      await expect(guard(harness.db, row.orgId)).resolves.toBe(0);
+      await expect(
+        harness.db
+          .select({ status: usagePackSubscriptions.subscriptionStatus })
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.id, row.id)),
+      ).resolves.toStrictEqual([{ status: "active" }]);
+      await insert(harness.db, values(row.orgId));
+      await expect(guard(harness.db, row.orgId)).resolves.toBe(1);
+    },
+  );
 
   it("keeps repeated pending-to-pending transitions idempotent", async () => {
     const row = values(`org_${randomUUID()}`);
