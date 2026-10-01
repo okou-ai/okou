@@ -3611,12 +3611,18 @@ describe("connector catalog valid lifecycle", () => {
         prompt: "Use the connector skill",
       });
     };
-    // As on main's chat path, a Thread launch failure creates no run and
-    // surfaces from the pick.
+    // As on main's chat path, a Thread launch failure creates no run and the
+    // thread rejects the input.
     const expectRegistrationFailure = async () => {
-      await expect(createSkillRun()).rejects.toThrow(
-        "Connector skill registration is unavailable",
-      );
+      await expect(
+        runs.readThreadLaunchFailure(actor, {
+          agentId: agent.agentId,
+          prompt: "Use the connector skill",
+        }),
+      ).resolves.toStrictEqual({
+        pickError: "Connector skill registration is unavailable",
+        inputError: "internal_error",
+      });
     };
 
     await seedOwnedVolumeStorageVersion({

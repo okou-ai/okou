@@ -410,6 +410,57 @@ export function createRunsApi(
     return "error" in rejection ? rejection.error : undefined;
   }
 
+  /**
+   * A Thread send whose pick fails before creating a run: returns the pick's
+   * error message and the error the thread records on the rejected input.
+   */
+  async function readThreadLaunchFailure(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      readonly model?: string;
+    },
+  ): Promise<{
+    readonly pickError: string;
+    readonly inputError: string | undefined;
+  }> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    const pickError = await flushWaitUntilForTest().then(
+      () => {
+        throw new Error("Expected the Thread pick to fail");
+      },
+      (error: unknown) => {
+        return error instanceof Error ? error.message : String(error);
+      },
+    );
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the failed pick to reject the input");
+    }
+    return {
+      pickError,
+      inputError: "error" in rejection ? rejection.error : undefined,
+    };
+  }
+
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
@@ -618,6 +669,7 @@ export function createRunsApi(
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
     createThreadRun,
     readThreadRunRejection,
+    readThreadLaunchFailure,
 
     async claimRunnerJob(
       runId: string,

@@ -1314,8 +1314,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const rejectedPrompt = "invalid projection compatibility rejection";
 
     await expect(
-      api.createThreadRun(actor, { agentId, prompt: rejectedPrompt }),
-    ).rejects.toThrow("Accepted external connector catalog is unavailable");
+      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
+    ).resolves.toStrictEqual({
+      pickError: "Accepted external connector catalog is unavailable",
+      inputError: "internal_error",
+    });
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -8104,13 +8107,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }),
       [200],
     );
-    // A Thread launch failure creates no run and surfaces from the pick.
-    await expect(
-      api.createThreadRun(actor, {
-        agentId,
-        prompt: "reject the wrong custom skill storage owner",
-      }),
-    ).rejects.toThrow("Custom connector skill registration is unavailable");
+    // A Thread launch failure creates no run; the thread rejects the input.
+    const failure = await api.readThreadLaunchFailure(actor, {
+      agentId,
+      prompt: "reject the wrong custom skill storage owner",
+    });
+    expect(failure).toStrictEqual({
+      pickError: "Custom connector skill registration is unavailable",
+      inputError: "internal_error",
+    });
   });
 
   it("fails expired custom OAuth without a refresh token at matched auth", async () => {
