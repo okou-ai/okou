@@ -135,10 +135,9 @@ async function createEventWebhookRun(prompt: string) {
     displayName: `BDD Event Consumer ${randomUUID()}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt,
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,
@@ -191,10 +190,9 @@ async function sandboxStorageWriteFixture(label: string) {
     displayName: `BDD sandbox storage ${label}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: `write ${label} from the sandbox`,
-    modelProvider: "anthropic-api-key",
   });
   const claim = await runs.claimRunnerJob(run.runId);
   const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -1315,10 +1313,9 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       displayName: "BDD Axiom Event Consumer Agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "emit events to Axiom",
-      modelProvider: "anthropic-api-key",
     });
     const headers = {
       authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
@@ -2508,10 +2505,9 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
       displayName: "BDD sandbox storage agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "write artifacts from the sandbox",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await runs.claimRunnerJob(run.runId);
     const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -4380,20 +4376,17 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       visibility: "private",
     });
 
-    const first = await runs.createRun(actor, {
+    const first = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run one",
-      modelProvider: "anthropic-api-key",
     });
-    const second = await runs.createRun(actor, {
+    const second = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run two",
-      modelProvider: "anthropic-api-key",
     });
-    const third = await runs.createRun(actor, {
+    const third = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run three",
-      modelProvider: "anthropic-api-key",
     });
     const queuedThreadId = await sendChatInputAtCapacity(
       actor,
@@ -4924,20 +4917,17 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       visibility: "private",
     });
 
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run one",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run two",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run three",
-      modelProvider: "anthropic-api-key",
     });
     const queuedThreadIds = [
       await sendChatInputAtCapacity(
@@ -6391,10 +6381,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agent.agentId,
       ),
     );
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "survive until teardown",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
     const usageProvider = `org-teardown-${randomUUID().slice(0, 8)}`;
@@ -7180,10 +7169,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       visibility: "private",
     });
 
-    const run = await runs.createRun(banned, {
+    const run = await runs.createThreadRun(banned, {
       agentId: agent.agentId,
       prompt: "banned user cleanup run",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
 
