@@ -136,6 +136,94 @@ describe("POST /api/chat-threads/:id/rename", () => {
     });
   });
 
+  it("keeps the metadata title aligned with concurrent ordered rename events", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Concurrent renames",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: "Original title",
+    });
+    const eventIds = [randomUUID(), randomUUID()];
+    await Promise.all(
+      eventIds.map(async (eventId, index) => {
+        await chat.requestRenameThread(
+          actor,
+          thread.id,
+          `Title ${index}`,
+          [204],
+          eventId,
+        );
+      }),
+    );
+    const listed = await accept(
+      chat.requestThreadEvents(actor, {}, [200]),
+      [200],
+    );
+    const renames = listed.body.events
+      .filter((event) => {
+        return event.chatThreadId === thread.id && event.kind === "renamed";
+      })
+      .sort((left, right) => {
+        return left.seqId - right.seqId;
+      });
+    expect(
+      renames
+        .map((event) => {
+          return event.id;
+        })
+        .sort(),
+    ).toStrictEqual([...eventIds].sort());
+    const metadata = await accept(
+      chat.requestReadThreadMetadata(actor, thread.id, [200]),
+      [200],
+    );
+    expect(metadata.body.title).toBe(renames.at(-1)?.title);
+  });
+
+  it("retains a caller's event identity when the same rename is delivered twice", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Rename delivery identity",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: "Original title",
+    });
+    const eventId = randomUUID();
+    await chat.requestRenameThread(
+      actor,
+      thread.id,
+      "Member title",
+      [204],
+      eventId,
+    );
+    await chat.requestRenameThread(
+      actor,
+      thread.id,
+      "Member title",
+      [204],
+      eventId,
+    );
+    const listed = await accept(
+      chat.requestThreadEvents(actor, {}, [200]),
+      [200],
+    );
+    const renames = listed.body.events.filter((event) => {
+      return event.chatThreadId === thread.id && event.kind === "renamed";
+    });
+    expect(renames).toHaveLength(1);
+    expect(renames[0]).toMatchObject({ id: eventId, title: "Member title" });
+    const metadata = await accept(
+      chat.requestReadThreadMetadata(actor, thread.id, [200]),
+      [200],
+    );
+    expect(metadata.body.title).toBe("Member title");
+  });
+
   it("rejects an Okou run token without chat-thread:write", async () => {
     const fixture = await seedChatThread("Original title");
     const token = okouToken({

@@ -74,7 +74,12 @@ export function chatThreadEventInsertSql(
   args: Omit<ChatThreadEventAppend, "agentId"> & {
     readonly agentId?: string;
   },
-  source?: { readonly cte: SQL; readonly gate: SQL; readonly agentId: SQL },
+  source?: {
+    readonly cte: SQL;
+    readonly gate: SQL;
+    readonly agentId: SQL;
+    readonly result?: SQL;
+  },
 ) {
   let agentId: SQL;
   if (source) {
@@ -95,14 +100,14 @@ export function chatThreadEventInsertSql(
   const reservationInput = source
     ? sql`SELECT ${args.userId}, ${orgId}, 1 WHERE ${source.gate}`
     : sql`VALUES (${args.userId}, ${orgId}, 1)`;
-  return sql`WITH ${beforeReservation} reserved AS (
+  const reservation = sql`reserved AS (
       INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
       ${reservationInput}
       ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
       RETURNING last_seq_id
-    )
-    INSERT INTO ${chatThreadEvents} (
+    )`;
+  const insertion = sql`INSERT INTO ${chatThreadEvents} (
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       reassigned_agent_id, title,
       pin_order, selected_model, model_settings, model_settings_patch,
@@ -121,6 +126,10 @@ export function chatThreadEventInsertSql(
     FROM reserved
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
+  if (source?.result !== undefined) {
+    return sql`WITH ${beforeReservation} ${reservation}, inserted AS (${insertion}) ${source.result}`;
+  }
+  return sql`WITH ${beforeReservation} ${reservation} ${insertion}`;
 }
 
 /**
