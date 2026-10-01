@@ -132,7 +132,7 @@ Direct production caller families still needing migration:
 
 ## Remaining feature-context legacy callers
 
-The adapter retains `db: Pick<ReadonlyDb, "select">`. The following 25 call
+The adapter retains `db: Pick<ReadonlyDb, "select">`. The following 20 call
 sites remain under `src/signals/services/`; these services' unrelated DB and
 transaction lifecycles were not silently rewritten:
 
@@ -141,7 +141,6 @@ transaction lifecycles were not silently rewritten:
 | `pi-memory-stage1-schedule.service.ts`                              | 118, 377, 469, 610            |
 | `pi-memory-phase2-credential.service.ts`                            | 375, 485, 531                 |
 | `github-oauth.service.ts`                                           | 840                           |
-| `social-data.service.ts`                                            | 146                           |
 | `mcp-chat-discovery.service.ts`                                     | 481                           |
 | `connector-runtime-sync.service.ts`                                 | 281                           |
 | `pi-memory-stage1-credential.service.ts`                            | 603                           |
@@ -151,10 +150,32 @@ transaction lifecycles were not silently rewritten:
 | `stripe-invoice-paid-workflow-automation-feature-switch.service.ts` | 19                            |
 | `agent-webhook-firewall-auth.service.ts`                            | 4550, 5403                    |
 | `internal-slack-chat-run-callback.service.ts`                       | 221, 388                      |
-| `runner-vnc-authority.service.ts`                                   | 109                           |
-| `model-policy.service.ts`                                           | 1045                          |
 | `feishu-config.ts`                                                  | 164                           |
-| `canonical-slack-thread-status.service.ts`                          | 264, 306                      |
+
+## Continuation: context ownership increments
+
+The continuation removes the adapter from Social Data gating, model-policy
+listing, Runner VNC authority and Canonical Slack status. Model-policy sources
+are loaded independently in parallel; the member policy projection is pure.
+Runner VNC check/resolve are commands with no DB or Clerk client arguments,
+and the authority command still rechecks feature configuration after decrypting
+credentials before returning the handoff.
+
+Canonical Slack status exposes only target/read, refresh and clear commands.
+All six prior DB-handle functions in that module are removed. Its single
+repeatable-read transaction retains the actual invariant: ingress-to-queue and
+queue-to-run commit atomically, so status must not combine opposite sides of a
+commit into an idle state that never existed. All snapshot SQL is inline in
+that owning command's callback. Physical-thread matching remains pure. Status
+cleanup uses plain payload facts and preserves the original preparation error
+when cleanup fails or aborts; the existing detached owner remains unchanged.
+
+This continuation does not migrate the 22 general Pi generation parameters.
+In particular, moving the instruction publication check into an independent
+read command would be incorrect: a newer same-key reservation could commit
+between that check and the old Storage HEAD write. The final source writer must
+check and fence in its own publication statement/short transaction. No such
+unsafe split was pushed.
 
 ## Verification boundary
 

@@ -3,12 +3,10 @@ import { command } from "ccstate";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  checkRunnerVnc,
-  resolveRunnerVnc,
+  checkRunnerVnc$,
+  resolveRunnerVnc$,
 } from "../services/runner-vnc.service";
 
 const authorizeVncRunner$ = command(
@@ -51,12 +49,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerVncContract.resolve));
-  const result = await resolveRunnerVnc(
-    set(writeDb$),
-    get(clerk$),
-    { runId, ...body.data },
-    signal,
-  );
+  const result = await set(resolveRunnerVnc$, { runId, ...body.data }, signal);
   return { status: 200 as const, body: result };
 });
 
@@ -71,12 +64,7 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerVncContract.check));
-  const result = await checkRunnerVnc(
-    set(writeDb$),
-    get(clerk$),
-    { runId, ...body.data },
-    signal,
-  );
+  const result = await set(checkRunnerVnc$, { runId, ...body.data }, signal);
   return { status: 200 as const, body: result };
 });
 

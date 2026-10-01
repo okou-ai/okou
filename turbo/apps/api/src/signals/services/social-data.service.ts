@@ -31,7 +31,7 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
@@ -138,25 +138,28 @@ function publicJob(job: Job): SocialDataJobResponse {
   });
 }
 
-async function requireEnabled(
-  db: Db,
-  auth: Actor,
-  signal: AbortSignal,
-): Promise<ErrorResponse | null> {
-  const context = await loadUserFeatureSwitchContext(
-    db,
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
-    ? null
-    : errorResponse(
-        403,
-        "FEATURE_NOT_AVAILABLE",
-        "Social data jobs are not enabled for this account.",
-      );
-}
+const requireEnabled$ = command(
+  async (
+    { set },
+    auth: Actor,
+    signal: AbortSignal,
+  ): Promise<ErrorResponse | null> => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
+      ? null
+      : errorResponse(
+          403,
+          "FEATURE_NOT_AVAILABLE",
+          "Social data jobs are not enabled for this account.",
+        );
+  },
+);
 
 function ownerWhere(auth: Pick<Actor, "orgId" | "userId">, jobId: string) {
   return and(
@@ -240,7 +243,7 @@ export const quoteSocialData$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
+    const disabled = await set(requireEnabled$, args.auth, signal);
     if (disabled) {
       return disabled;
     }
@@ -427,7 +430,7 @@ export const createSocialDataJob$ = command(
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
+    const disabled = await set(requireEnabled$, args.auth, signal);
     if (disabled) {
       return disabled;
     }

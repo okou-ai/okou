@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   builtInModelKeyIdsByVendor$,
   resolveBuiltInModelRuntimeRouteWithKeys,
@@ -1030,131 +1030,180 @@ export interface OrgModelPolicyListing {
   readonly systemDefaultModel: string;
 }
 
-async function listOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-): Promise<OrgModelPolicyListing> {
-  const [persistedRows, catalog] = await Promise.all([
-    loadRows(db, orgId),
-    loadModelCatalog(db),
-  ]);
-  const rows = projectPolicyRows(catalog, orgId, persistedRows);
-  const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    orgId,
-    userId,
-  );
-  const capabilities = await loadOrgPlanCapabilities(db, orgId);
-  const providers = await listOrgProviderRoutes(db, orgId);
-  const surfaces = await listOrgSurfaceRoutes(db, orgId);
-  const providersById = new Map(
-    providers.map((provider) => {
-      return [provider.id, provider];
+function projectMemberPolicy(args: {
+  readonly policy: OrgModelPolicy;
+  readonly administrative: OrgModelPolicy;
+  readonly effective: ResolvedModelFirstPolicyRoute | null;
+  readonly catalog: ModelCatalog;
+  readonly capabilities: OrgPlanCapabilities | null;
+  readonly member: MemberModelRouteContext;
+  readonly runtimeRoute: Awaited<
+    ReturnType<typeof resolveBuiltInModelRuntimeRouteWithKeys>
+  >;
+}): OrgModelPolicy {
+  const {
+    policy,
+    administrative,
+    effective,
+    catalog,
+    capabilities,
+    member,
+    runtimeRoute,
+  } = args;
+  const providerType =
+    effective?.modelProviderType ?? policy.defaultProviderType;
+  const credentialScope =
+    effective?.modelProviderCredentialScope ?? policy.credentialScope;
+  const planDenied = checkOrgPlanRunAdmission({
+    catalog,
+    capabilities,
+    modelProviderType: providerType,
+    selectedModel: policy.model,
+    personalSubscription: isMemberSubscriptionRoute({
+      catalog,
+      member,
+      model: policy.model,
+      providerType,
+      credentialScope,
     }),
-  );
-  const surfacesById = new Map(
-    surfaces.map((surface) => {
-      return [surface.id, surface];
-    }),
-  );
-  const policies = await Promise.all(
-    rows.map(async (row) => {
-      const policy = serializePolicy(catalog, row, providersById, surfacesById);
-      const runtimeRoute = isBuiltInModelProviderType(
-        policy.defaultProviderType,
-      )
-        ? await resolveBuiltInModelRuntimeRouteWithKeys(
+  });
+  const availability = memberRouteAvailability({
+    planDenied: !!planDenied,
+    effective,
+    orgRouteAvailable:
+      policy.routeStatus === "valid" &&
+      (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
+  });
+  return {
+    ...administrative,
+    memberEffective: {
+      providerType,
+      runtimeProviderType: isBuiltInModelProviderType(providerType)
+        ? (runtimeRoute?.providerType ?? null)
+        : providerType,
+      credentialScope,
+      availability,
+      accountSelection:
+        credentialScope === "member" ? "capture_required" : "not_applicable",
+    },
+  } satisfies OrgModelPolicy;
+}
+
+const listOrgModelPoliciesInner$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    keyIdsByVendor: BuiltInModelKeyIdsByVendor,
+    signal: AbortSignal,
+  ): Promise<OrgModelPolicyListing> => {
+    const db = set(writeDb$);
+    const [
+      persistedRows,
+      catalog,
+      member,
+      featureSwitchContext,
+      capabilities,
+      providers,
+      surfaces,
+      modelMode,
+    ] = await Promise.all([
+      loadRows(db, orgId),
+      loadModelCatalog(db),
+      loadMemberModelRouteContext(db, orgId, userId),
+      set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+      loadOrgPlanCapabilities(db, orgId),
+      listOrgProviderRoutes(db, orgId),
+      listOrgSurfaceRoutes(db, orgId),
+      loadOrgModelMode(db, orgId),
+    ]);
+    signal.throwIfAborted();
+    const rows = projectPolicyRows(catalog, orgId, persistedRows);
+    const providersById = new Map(
+      providers.map((provider) => {
+        return [provider.id, provider];
+      }),
+    );
+    const surfacesById = new Map(
+      surfaces.map((surface) => {
+        return [surface.id, surface];
+      }),
+    );
+    const policies = await Promise.all(
+      rows.map(async (row) => {
+        const policy = serializePolicy(
+          catalog,
+          row,
+          providersById,
+          surfacesById,
+        );
+        const runtimeRoute = isBuiltInModelProviderType(
+          policy.defaultProviderType,
+        )
+          ? await resolveBuiltInModelRuntimeRouteWithKeys(
+              db,
+              catalog,
+              policy.model,
+              featureSwitchContext,
+              keyIdsByVendor,
+            )
+          : null;
+        const administrative: OrgModelPolicy = isBuiltInModelProviderType(
+          policy.defaultProviderType,
+        )
+          ? {
+              ...policy,
+              runtimeProviderType: runtimeRoute?.providerType ?? null,
+            }
+          : policy;
+        const effective = await resolveEffectivePolicyRoute({
+          catalog,
+          db,
+          orgId,
+          policy: row,
+          member,
+          capabilities:
+            capabilities?.status === "active"
+              ? capabilities
+              : { restrictedBuiltInModels: false, supportByok: true },
+        });
+        return projectMemberPolicy({
+          policy,
+          administrative,
+          effective,
+          catalog,
+          capabilities,
+          member,
+          runtimeRoute,
+        });
+      }),
+    );
+    signal.throwIfAborted();
+    const memberPolicies =
+      modelMode === "auto"
+        ? await loadAutoMemberPolicies(
             db,
             catalog,
-            policy.model,
-            featureSwitchContext,
-            keyIdsByVendor,
+            member,
+            capabilities,
+            policies,
           )
-        : null;
-      const administrative: OrgModelPolicy = isBuiltInModelProviderType(
-        policy.defaultProviderType,
-      )
-        ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
-        : policy;
-      const effective = await resolveEffectivePolicyRoute({
-        catalog,
-        db,
-        orgId,
-        policy: row,
-        member,
-        capabilities:
-          capabilities?.status === "active"
-            ? capabilities
-            : { restrictedBuiltInModels: false, supportByok: true },
-      });
-      const providerType =
-        effective?.modelProviderType ?? policy.defaultProviderType;
-      const credentialScope =
-        effective?.modelProviderCredentialScope ?? policy.credentialScope;
-      const planDenied = checkOrgPlanRunAdmission({
-        catalog,
-        capabilities,
-        modelProviderType: providerType,
-        selectedModel: policy.model,
-        personalSubscription: isMemberSubscriptionRoute({
-          catalog,
-          member,
-          model: policy.model,
-          providerType,
-          credentialScope,
-        }),
-      });
-      const availability = memberRouteAvailability({
-        planDenied: !!planDenied,
-        effective,
-        orgRouteAvailable:
-          policy.routeStatus === "valid" &&
-          (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
-      });
-      return {
-        ...administrative,
-        memberEffective: {
-          providerType,
-          runtimeProviderType: isBuiltInModelProviderType(providerType)
-            ? (runtimeRoute?.providerType ?? null)
-            : providerType,
-          credentialScope,
-          availability,
-          accountSelection:
-            credentialScope === "member"
-              ? "capture_required"
-              : "not_applicable",
-        },
-      } satisfies OrgModelPolicy;
-    }),
-  );
-  const modelMode = await loadOrgModelMode(db, orgId);
-  const memberPolicies =
-    modelMode === "auto"
-      ? await loadAutoMemberPolicies(
-          db,
-          catalog,
-          member,
-          capabilities,
-          policies,
-        )
-      : [];
+        : [];
 
-  const response: OrgModelPoliciesResponse = {
-    modelMode,
-    policies: [...policies, ...memberPolicies],
-    revision: policyRevision(persistedRows),
-    // Permanent since the personal subscription priority rollout completed.
-    // Removing the field needs its own client-compatibility window.
-    writePreconditionRequired: true,
-    modelsAvailableToAdd:
-      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
-  };
-  return { response, systemDefaultModel: catalog.systemDefaultModel };
-}
+    signal.throwIfAborted();
+    const response: OrgModelPoliciesResponse = {
+      modelMode,
+      policies: [...policies, ...memberPolicies],
+      revision: policyRevision(persistedRows),
+      // Permanent since the personal subscription priority rollout completed.
+      // Removing the field needs its own client-compatibility window.
+      writePreconditionRequired: true,
+      modelsAvailableToAdd:
+        modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
+    };
+    return { response, systemDefaultModel: catalog.systemDefaultModel };
+  },
+);
 
 async function persistOrgModelPolicyUpdates(params: {
   readonly db: Db;
@@ -1297,12 +1346,12 @@ export const listOrgModelPolicies$ = command(
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
-    const db = set(writeDb$);
-    const { response } = await listOrgModelPolicies(
-      db,
+    const { response } = await set(
+      listOrgModelPoliciesInner$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
+      signal,
     );
     signal.throwIfAborted();
     return response;
@@ -1319,11 +1368,12 @@ export const listOrgModelPoliciesWithSystemDefault$ = command(
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<OrgModelPolicyListing> => {
-    const listing = await listOrgModelPolicies(
-      set(writeDb$),
+    const listing = await set(
+      listOrgModelPoliciesInner$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
+      signal,
     );
     signal.throwIfAborted();
     return listing;
@@ -1416,11 +1466,12 @@ export const updateOrgModelPolicies$ = command(
       return written;
     }
 
-    const { response } = await listOrgModelPolicies(
-      db,
+    const { response } = await set(
+      listOrgModelPoliciesInner$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
+      signal,
     );
     signal.throwIfAborted();
     return ok(response);
