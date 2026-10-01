@@ -126,10 +126,7 @@ import {
   type RunContextResponse,
   runCreateBodySchema,
 } from "@okouai/api-contracts/contracts/run-routes";
-import {
-  createMemorySummaryProjectionObjects,
-  type MemorySummaryProjectionReadInput,
-} from "./memory-summary-projection.service";
+import { readMemorySummaryProjectionObservation$ } from "./memory-summary-projection.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
   AgentRunFullLaunchSnapshot,
@@ -4754,7 +4751,6 @@ interface PersistedRunEnvironmentSnapshot {
 }
 
 interface RunResourceScope {
-  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
 }
@@ -6674,13 +6670,14 @@ function createRunEnvironmentObject(
       return content;
     }
     return {
-      db: input.db,
       orgId: input.args.orgId,
       userId: input.args.userId,
       secretNames: runEnvironmentSecretNames(content),
     };
   });
-  return createRunEnvironmentSnapshotObject(readInput$);
+  return computed(async (get) => {
+    return await get(createRunEnvironmentSnapshotObject(await get(readInput$)));
+  });
 }
 
 export function runEnvironmentSecretNames(
@@ -6699,17 +6696,14 @@ export function runEnvironmentSecretNames(
 }
 
 function createRunEnvironmentSnapshotObject(
-  input$: Computed<
-    | RunEnvironmentReadInput
-    | Promise<RunEnvironmentReadInput | CreateRunErrorResult>
-  >,
+  args: RunEnvironmentReadInput | CreateRunErrorResult,
 ) {
   return computed(async (get) => {
-    const args = await get(input$);
     if (isRouteError(args)) {
       return args;
     }
-    const { db, secretNames: secretNamesToLoad } = args;
+    const { secretNames: secretNamesToLoad } = args;
+    const db = get(db$);
     const variableQuery = db
       .select({
         kind: sql`'variable'`
@@ -9755,106 +9749,91 @@ export function priorPiMemoryRecall(args: {
   };
 }
 
-function createPiMemoryRecallSelectionObject(
-  input$: Computed<PreparePiLaunchResourcesArgs>,
-) {
-  return computed(async (get) => {
-    const args = get(input$);
-    const { metadata } = await args.storagePlan;
-    const currentMemoryMount = canonicalPiMemoryMount(metadata.storageMounts);
-    const persistedMemoryMount = canonicalPiMemoryMount(
-      metadata.persistedStorageMounts,
-    );
-    if (
-      args.chatThreadId === undefined ||
-      currentMemoryMount === undefined ||
-      persistedMemoryMount === undefined ||
-      persistedMemoryMount.storageId !== currentMemoryMount.storageId ||
-      persistedMemoryMount.version !== currentMemoryMount.versionId
-    ) {
-      return { kind: "unavailable" as const };
-    }
-    const identity = {
-      memoryStorageId: currentMemoryMount.storageId,
-      storageVersionId: currentMemoryMount.versionId,
+function piMemoryRecallSelection(args: PreparePiLaunchResourcesArgs) {
+  const { metadata } = args.storagePlan;
+  const currentMemoryMount = canonicalPiMemoryMount(metadata.storageMounts);
+  const persistedMemoryMount = canonicalPiMemoryMount(
+    metadata.persistedStorageMounts,
+  );
+  if (
+    args.chatThreadId === undefined ||
+    currentMemoryMount === undefined ||
+    persistedMemoryMount === undefined ||
+    persistedMemoryMount.storageId !== currentMemoryMount.storageId ||
+    persistedMemoryMount.version !== currentMemoryMount.versionId
+  ) {
+    return { kind: "unavailable" as const };
+  }
+  const identity = {
+    memoryStorageId: currentMemoryMount.storageId,
+    storageVersionId: currentMemoryMount.versionId,
+  };
+  if (!args.piMemoryEnabled) {
+    return {
+      kind: "captured" as const,
+      recall: noContentPiMemoryRecall(identity),
+      mismatchReason: undefined,
     };
-    if (!args.piMemoryEnabled) {
-      return {
-        kind: "captured" as const,
-        recall: noContentPiMemoryRecall(identity),
-        mismatchReason: undefined,
-      };
-    }
-    const prior = priorPiMemoryRecall({
-      currentMemoryMount,
-      previousRunStorageMounts: args.previousRunStorageMounts,
-      persistedStorageMounts: metadata.persistedStorageMounts,
-    });
-    return prior === undefined
-      ? {
-          kind: "projection" as const,
-          identity,
-          input: {
-            db: args.db,
-            args: { orgId: args.orgId, userId: args.userId, ...identity },
-          },
-        }
-      : { kind: "captured" as const, ...prior };
+  }
+  const prior = priorPiMemoryRecall({
+    currentMemoryMount,
+    previousRunStorageMounts: args.previousRunStorageMounts,
+    persistedStorageMounts: metadata.persistedStorageMounts,
   });
+  return prior === undefined
+    ? {
+        kind: "projection" as const,
+        identity,
+        input: {
+          args: { orgId: args.orgId, userId: args.userId, ...identity },
+        },
+      }
+    : { kind: "captured" as const, ...prior };
 }
 
-function createPiMemoryRecallObjects(
-  input$: Computed<PreparePiLaunchResourcesArgs>,
-) {
-  const selection$ = createPiMemoryRecallSelectionObject(input$);
-  const projectionInput$ = computed(
-    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
-      const selection = await get(selection$);
-      return selection.kind === "projection" ? selection.input : undefined;
-    },
-  );
-  const { projection$ } =
-    createMemorySummaryProjectionObjects(projectionInput$);
-  const resolvePiMemoryRecall$ = command(
-    async (
-      { get },
-      signal: AbortSignal,
-    ): Promise<PiMemoryRecallSelection | undefined> => {
-      const selection = await get(selection$);
-      signal.throwIfAborted();
-      if (selection.kind === "unavailable") {
-        return undefined;
-      }
-      if (selection.kind === "captured") {
-        if (selection.mismatchReason) {
-          L.error("Pi memory recall epoch did not match the pinned mount", {
-            memoryStorageId: selection.recall.memoryStorageId,
-            storageVersionId: selection.recall.storageVersionId,
-            reason: selection.mismatchReason,
-          });
-        }
-        return selection.recall;
-      }
-      const projection = await get(projection$);
-      signal.throwIfAborted();
-      if (projection?.unavailableReason) {
-        L.warn("Pi memory summary projection is not ready", {
-          ...selection.identity,
-          reason: projection.unavailableReason,
+const resolvePiMemoryRecall$ = command(
+  async (
+    { set },
+    args: PreparePiLaunchResourcesArgs,
+    signal: AbortSignal,
+  ): Promise<PiMemoryRecallSelection | undefined> => {
+    const selection = piMemoryRecallSelection(args);
+    signal.throwIfAborted();
+    if (selection.kind === "unavailable") {
+      return undefined;
+    }
+    if (selection.kind === "captured") {
+      if (selection.mismatchReason) {
+        L.error("Pi memory recall epoch did not match the pinned mount", {
+          memoryStorageId: selection.recall.memoryStorageId,
+          storageVersionId: selection.recall.storageVersionId,
+          reason: selection.mismatchReason,
         });
       }
-      const ready = projection?.ready;
-      return ready
-        ? piMemoryRecallSelectionSchema.parse({
-            status: "ready",
-            ...selection.identity,
-            ...ready,
-          })
-        : noContentPiMemoryRecall(selection.identity);
-    },
-  );
-  return { resolvePiMemoryRecall$ };
-}
+      return selection.recall;
+    }
+    const projection = await set(
+      readMemorySummaryProjectionObservation$,
+      selection.input.args,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (projection?.unavailableReason) {
+      L.warn("Pi memory summary projection is not ready", {
+        ...selection.identity,
+        reason: projection.unavailableReason,
+      });
+    }
+    const ready = projection?.ready;
+    return ready
+      ? piMemoryRecallSelectionSchema.parse({
+          status: "ready",
+          ...selection.identity,
+          ...ready,
+        })
+      : noContentPiMemoryRecall(selection.identity);
+  },
+);
 
 function withPiMemoryRecallEpoch(
   mounts: readonly PersistedStorageMount[],
@@ -9927,13 +9906,12 @@ export function assemblePiLaunchResources(args: {
 }
 
 export interface PreparePiLaunchResourcesArgs {
-  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
   readonly piMemoryEnabled: boolean;
   readonly runId: string;
   readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
-  readonly storagePlan: Promise<ResolvedAgentRunStorage>;
+  readonly storagePlan: ResolvedAgentRunStorage;
   readonly previousRunStorageMounts:
     | readonly PersistedStorageMount[]
     | undefined;
@@ -9943,102 +9921,90 @@ export interface PreparePiLaunchResourcesArgs {
   readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
 }
 
-function createPreparePiLaunchResourcesCommand() {
-  const internalInput$ = state<PreparePiLaunchResourcesArgs | null>(null);
-  const input$ = computed((get) => {
-    const input = get(internalInput$);
-    if (!input) {
-      throw new Error("Pi launch resources have no captured input");
+const preparePiLaunchResources$ = command(
+  async (
+    { set },
+    args: PreparePiLaunchResourcesArgs,
+    signal: AbortSignal,
+  ): Promise<PreparedPiLaunchResources | undefined> => {
+    if (args.piSandbox === undefined) {
+      return undefined;
     }
-    return input;
-  });
-  const { resolvePiMemoryRecall$ } = createPiMemoryRecallObjects(input$);
-  return command(
-    async (
-      { set },
-      args: PreparePiLaunchResourcesArgs,
-      signal: AbortSignal,
-    ): Promise<PreparedPiLaunchResources | undefined> => {
-      if (args.piSandbox === undefined) {
-        return undefined;
-      }
-      set(internalInput$, args);
-      const piSandbox = args.piSandbox;
-      const threadless = args.chatThreadId === undefined;
-      const sessionId = args.chatThreadId ?? args.runId;
-      const observe = piPreparationObserver(args.runId);
-      const finish = startPiPreparationObservation(observe, "launch", signal);
-      const result = await onRejection(
-        measureApiDispatchTiming(
-          args.timing,
-          "api_dispatch_prepare_pi_launch_resources",
-          "nested",
-          async () => {
-            const resumeSessionPromise = threadless
-              ? Promise.resolve(undefined)
-              : measureApiDispatchTiming(
-                  args.timing,
-                  "api_dispatch_prepare_pi_launch_resume_session",
-                  "nested",
-                  async () => {
-                    return await measurePiPreparation(
-                      observe,
-                      "launch_resume",
-                      () => {
-                        return Promise.resolve(args.resumeSession);
-                      },
-                      signal,
-                    );
-                  },
-                );
-            const memoryPromise = (async () => {
-              // Both request and canonical session writeback ownership/version and
-              // overlay order are final before recall can observe this attempt.
-              await args.storagePlan;
-              signal.throwIfAborted();
-              const memoryRecall = threadless
-                ? undefined
-                : await measurePiPreparation(
+    const piSandbox = args.piSandbox;
+    const threadless = args.chatThreadId === undefined;
+    const sessionId = args.chatThreadId ?? args.runId;
+    const observe = piPreparationObserver(args.runId);
+    const finish = startPiPreparationObservation(observe, "launch", signal);
+    const result = await onRejection(
+      measureApiDispatchTiming(
+        args.timing,
+        "api_dispatch_prepare_pi_launch_resources",
+        "nested",
+        async () => {
+          const resumeSessionPromise = threadless
+            ? Promise.resolve(undefined)
+            : measureApiDispatchTiming(
+                args.timing,
+                "api_dispatch_prepare_pi_launch_resume_session",
+                "nested",
+                async () => {
+                  return await measurePiPreparation(
                     observe,
-                    "launch_memory",
+                    "launch_resume",
                     () => {
-                      return set(resolvePiMemoryRecall$, signal);
+                      return Promise.resolve(args.resumeSession);
                     },
                     signal,
                   );
-              return { memoryRecall };
-            })();
-            const [resumeSession, { memoryRecall }] = await Promise.all([
-              resumeSessionPromise,
-              memoryPromise,
-            ]);
+                },
+              );
+          const memoryPromise = (async () => {
+            // Both request and canonical session writeback ownership/version and
+            // overlay order are final before recall can observe this attempt.
+            await args.storagePlan;
             signal.throwIfAborted();
-            return measurePiPreparationSync(
-              observe,
-              "launch_identity",
-              () => {
-                return assemblePiLaunchResources({
-                  modelConfig: piSandbox,
-                  piLaunchConfig: args.piLaunchConfig,
-                  memoryRecall,
-                  resumeSession,
-                  sessionId,
-                });
-              },
-              signal,
-            );
-          },
-        ),
-        () => {
-          finish("error");
+            const memoryRecall = threadless
+              ? undefined
+              : await measurePiPreparation(
+                  observe,
+                  "launch_memory",
+                  () => {
+                    return set(resolvePiMemoryRecall$, args, signal);
+                  },
+                  signal,
+                );
+            return { memoryRecall };
+          })();
+          const [resumeSession, { memoryRecall }] = await Promise.all([
+            resumeSessionPromise,
+            memoryPromise,
+          ]);
+          signal.throwIfAborted();
+          return measurePiPreparationSync(
+            observe,
+            "launch_identity",
+            () => {
+              return assemblePiLaunchResources({
+                modelConfig: piSandbox,
+                piLaunchConfig: args.piLaunchConfig,
+                memoryRecall,
+                resumeSession,
+                sessionId,
+              });
+            },
+            signal,
+          );
         },
-      );
-      signal.throwIfAborted();
-      finish("success");
-      return result;
-    },
-  );
-}
+      ),
+      () => {
+        finish("error");
+      },
+    );
+    signal.throwIfAborted();
+    finish("success");
+    return result;
+  },
+);
 
 function preparedRunnerGroup(
   content: agentRunCreateAgentExecutionConfig,
@@ -10374,7 +10340,6 @@ function createMaterializeStorageCommand(
     typeof createAgentRunStorageObjects
   >["materializeAgentRunStorage$"],
 ) {
-  const preparePiLaunchResources$ = createPreparePiLaunchResourcesCommand();
   return command(
     async (
       { get, set },
@@ -10386,7 +10351,7 @@ function createMaterializeStorageCommand(
         get(storagePlan$),
       ]);
       signal.throwIfAborted();
-      const { db, args } = input;
+      const { args } = input;
       const storageManifestStats =
         plan.requested.input.stats ?? input.storageManifestStats;
       const preparedStorage = await measureApiDispatchTiming(
@@ -10406,7 +10371,6 @@ function createMaterializeStorageCommand(
         (await set(
           preparePiLaunchResources$,
           {
-            db,
             orgId: args.orgId,
             userId: args.userId,
             piMemoryEnabled: isFeatureEnabled(
@@ -10418,7 +10382,7 @@ function createMaterializeStorageCommand(
               args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
                 ? args.resolved.resumeSession
                 : undefined,
-            storagePlan: Promise.resolve(preparedStorage.resolved),
+            storagePlan: preparedStorage.resolved,
             previousRunStorageMounts: args.resolved.previousRunStorageMounts,
             piSandbox: args.piSandbox,
             chatThreadId: args.chatThreadId,
@@ -11973,7 +11937,6 @@ export function piConfigurationRouteError(
 }
 
 export interface RunPreparedConnectorInputs {
-  readonly db: ReadonlyDb;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
@@ -11986,109 +11949,18 @@ export interface RunPreparedConnectorInputs {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-type RunPreparedConnectorInputsObject = Computed<
-  Promise<RunPreparedConnectorInputs | CreateRunErrorResult>
->;
+class PreparedRunConnectorOwner {
+  constructor(
+    private readonly input: RunPreparedConnectorInputs | CreateRunErrorResult,
+  ) {}
 
-function createRunConnectorEagerSecretPlanObject(
-  inputs$: RunPreparedConnectorInputsObject,
-) {
-  const permissionManifest$ = computed(async (get) => {
-    const input = await get(inputs$);
-    return isRouteError(input)
-      ? input
-      : await input.timing.measure(
-          "api_dispatch_prepare_context_build_permission_manifest",
-          "nested",
-          async () => {
-            return await buildPreparedPermissionManifest(input);
-          },
-        );
-  });
-  return computed(async (get) => {
-    const [input, permissionManifest] = await Promise.all([
-      get(inputs$),
-      get(permissionManifest$),
+  private readonly plan$ = this.createPlan();
+  private readonly encryptedRows$ = this.createEncryptedRows();
+  private readonly decryptedSecrets$ = computed(async (get) => {
+    const [plan, rows] = await Promise.all([
+      get(this.plan$),
+      get(this.encryptedRows$),
     ]);
-    if (isRouteError(input)) {
-      return input;
-    }
-    if (isRouteError(permissionManifest)) {
-      return permissionManifest;
-    }
-    const snapshot = input.storedConnectorSnapshot;
-    const connectorContext =
-      storedConnectorExecutionContextFromSnapshot(snapshot);
-    const eagerInputs = eagerStoredConnectorSecretInputs({
-      content: input.content,
-      modelProvider: input.modelProvider,
-      connectorContext,
-    });
-    const names = snapshot
-      ? eagerStoredConnectorSecretNames({
-          snapshot,
-          referencedEnvironmentSecretAliases:
-            eagerInputs.referencedEnvironmentSecretAliases,
-          storedEnvironment: eagerInputs.eagerStoredEnvironment,
-          environmentSecretPlaceholders:
-            permissionManifest?.environmentSecretPlaceholders,
-          overriddenSecretAliases: overriddenRuntimeSecretAliases([
-            input.modelProvider?.secrets,
-            input.modelProvider?.secretConnectorMap,
-            input.body.secrets,
-          ]),
-        })
-      : new Set<string>();
-    return {
-      input,
-      connectorContext,
-      permissionManifest,
-      names,
-      bindingSets:
-        snapshot?.bindingSets.filter((bindingSet) => {
-          return !bindingSet.isMcp;
-        }) ?? [],
-      timingDimensions: storedConnectorTimingDimensions({
-        scopeSource: input.connectorScope.source,
-        connectorCount: snapshot?.allowedConnectorRows.length ?? 0,
-      }),
-    };
-  });
-}
-
-function createRunConnectorEncryptedRowsObject(
-  plan$: ReturnType<typeof createRunConnectorEagerSecretPlanObject>,
-) {
-  return computed(
-    async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
-      const plan = await get(plan$);
-      if (isRouteError(plan) || plan.names.size === 0) {
-        return [];
-      }
-      const { db } = plan.input;
-      const groups = storedConnectorCredentialReadGroups({
-        bindingSets: plan.bindingSets,
-        kind: "secret",
-        names: plan.names,
-      });
-      return await db
-        .select({
-          name: secretsTable.name,
-          encryptedValue: secretsTable.encryptedValue,
-        })
-        .from(secretsTable)
-        .where(builtinConnectorCredentialSecretReadCondition({ groups }));
-    },
-  );
-}
-
-function createRunPreparedConnectorObjects(
-  inputs$: RunPreparedConnectorInputsObject,
-) {
-  const plan$ = createRunConnectorEagerSecretPlanObject(inputs$);
-  const encryptedRows$ = createRunConnectorEncryptedRowsObject(plan$);
-  const decryptedSecrets$ = computed(async (get) => {
-    const [plan, rows] = await Promise.all([get(plan$), get(encryptedRows$)]);
     return isRouteError(plan)
       ? {}
       : await decryptStoredConnectorSecretRows(
@@ -12100,11 +11972,11 @@ function createRunPreparedConnectorObjects(
           plan.input.timing,
         );
   });
-  const connectorContext$ = computed(
+  readonly connectorContext$ = computed(
     async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
       const [plan, secrets] = await Promise.all([
-        get(plan$),
-        get(decryptedSecrets$),
+        get(this.plan$),
+        get(this.decryptedSecrets$),
       ]);
       if (isRouteError(plan)) {
         return plan;
@@ -12121,7 +11993,99 @@ function createRunPreparedConnectorObjects(
       };
     },
   );
-  return { connectorContext$ };
+
+  private createPlan() {
+    const permissionManifest$ = computed(async () => {
+      const input = this.input;
+      return isRouteError(input)
+        ? input
+        : await input.timing.measure(
+            "api_dispatch_prepare_context_build_permission_manifest",
+            "nested",
+            async () => {
+              return await buildPreparedPermissionManifest(input);
+            },
+          );
+    });
+    return computed(async (get) => {
+      const [input, permissionManifest] = await Promise.all([
+        this.input,
+        get(permissionManifest$),
+      ]);
+      if (isRouteError(input)) {
+        return input;
+      }
+      if (isRouteError(permissionManifest)) {
+        return permissionManifest;
+      }
+      const snapshot = input.storedConnectorSnapshot;
+      const connectorContext =
+        storedConnectorExecutionContextFromSnapshot(snapshot);
+      const eagerInputs = eagerStoredConnectorSecretInputs({
+        content: input.content,
+        modelProvider: input.modelProvider,
+        connectorContext,
+      });
+      const names = snapshot
+        ? eagerStoredConnectorSecretNames({
+            snapshot,
+            referencedEnvironmentSecretAliases:
+              eagerInputs.referencedEnvironmentSecretAliases,
+            storedEnvironment: eagerInputs.eagerStoredEnvironment,
+            environmentSecretPlaceholders:
+              permissionManifest?.environmentSecretPlaceholders,
+            overriddenSecretAliases: overriddenRuntimeSecretAliases([
+              input.modelProvider?.secrets,
+              input.modelProvider?.secretConnectorMap,
+              input.body.secrets,
+            ]),
+          })
+        : new Set<string>();
+      return {
+        input,
+        connectorContext,
+        permissionManifest,
+        names,
+        bindingSets:
+          snapshot?.bindingSets.filter((bindingSet) => {
+            return !bindingSet.isMcp;
+          }) ?? [],
+        timingDimensions: storedConnectorTimingDimensions({
+          scopeSource: input.connectorScope.source,
+          connectorCount: snapshot?.allowedConnectorRows.length ?? 0,
+        }),
+      };
+    });
+  }
+  private createEncryptedRows() {
+    return computed(
+      async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
+        const plan = await get(this.plan$);
+        if (isRouteError(plan) || plan.names.size === 0) {
+          return [];
+        }
+        const db = get(db$);
+        const groups = storedConnectorCredentialReadGroups({
+          bindingSets: plan.bindingSets,
+          kind: "secret",
+          names: plan.names,
+        });
+        return await db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(builtinConnectorCredentialSecretReadCondition({ groups }));
+      },
+    );
+  }
+}
+function createRunPreparedConnectorObjects(
+  input: RunPreparedConnectorInputs | CreateRunErrorResult,
+) {
+  const owner = new PreparedRunConnectorOwner(input);
+  return { connectorContext$: owner.connectorContext$ };
 }
 
 export function prepareRunOutputMetadata(args: {
@@ -14733,7 +14697,6 @@ function createRunRuntimeObjects(
         return snapshot;
       }
       return {
-        db: input.db,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: bodyContext.body,
@@ -14745,8 +14708,14 @@ function createRunRuntimeObjects(
       };
     },
   );
-  const { connectorContext$ } =
-    shared ?? createRunPreparedConnectorObjects(connectorInputs$);
+  const { connectorContext$ } = shared ?? {
+    connectorContext$: computed(async (get) => {
+      return await get(
+        createRunPreparedConnectorObjects(await get(connectorInputs$))
+          .connectorContext$,
+      );
+    }),
+  };
   const runtimeContext$ = computed(
     async (get): Promise<PreparedRuntimeContext | CreateRunErrorResult> => {
       const [
@@ -14818,11 +14787,14 @@ function createRunMemberObjects(
   shared?: SelectedRunReadObjects,
 ) {
   const readInput$ = computed(async (get) => {
-    const { db, args } = await get(input$);
-    return { db, orgId: args.orgId, userId: args.userId };
+    const { args } = await get(input$);
+    return { orgId: args.orgId, userId: args.userId };
   });
   const memberSnapshot$ =
-    shared?.member$ ?? createRunMemberSnapshotObject(readInput$);
+    shared?.member$ ??
+    computed(async (get) => {
+      return await get(createRunMemberSnapshotObject(await get(readInput$)));
+    });
   const userTimezone$ = computed(async (get) => {
     return shared
       ? get(shared.userTimezone$)
@@ -14835,10 +14807,9 @@ function createRunMemberObjects(
   return { userTimezone$, imageModel$ };
 }
 
-function createRunMemberSnapshotObject(input$: AsyncRead<RunMemberReadInput>) {
+function createRunMemberSnapshotObject(args: RunMemberReadInput) {
   return computed(async (get): Promise<RunMemberSnapshot> => {
-    const args = await get(input$);
-    const { db } = args;
+    const db = get(db$);
     const [member] = await db
       .select({
         timezone: orgMembersMetadata.timezone,
@@ -14964,25 +14935,27 @@ function createRunWorkflowObject(
 
 function createRunDisabledPaidToolsObject(input$: RunContextInputObject) {
   const readInput$ = computed(async (get) => {
-    const { db, args } = await get(input$);
+    const { args } = await get(input$);
     return {
-      db,
       orgId: args.orgId,
       userId: args.userId,
     };
   });
-  const snapshot$ = createRunDisabledPaidToolsSnapshotObject(readInput$);
+  const snapshot$ = computed(async (get) => {
+    return await get(
+      createRunDisabledPaidToolsSnapshotObject(await get(readInput$)),
+    );
+  });
   return computed(async (get) => {
     return (await get(snapshot$)).toolIds;
   });
 }
 
 function createRunDisabledPaidToolsSnapshotObject(
-  input$: AsyncRead<RunDisabledPaidToolsReadInput>,
+  args: RunDisabledPaidToolsReadInput,
 ) {
   return computed(async (get): Promise<DisabledPaidToolsSnapshot> => {
-    const args = await get(input$);
-    const { db } = args;
+    const db = get(db$);
     const rows = await db
       .select({ toolId: userDisabledPaidTools.toolId })
       .from(userDisabledPaidTools)
@@ -18136,8 +18109,7 @@ function createPreCreateResourceObjects(
 ) {
   const scope$ = computed(async (get) => {
     const { command } = await get(input$);
-    const db = get(db$);
-    return { db, orgId: command.auth.orgId, userId: command.auth.userId };
+    return { orgId: command.auth.orgId, userId: command.auth.userId };
   });
   const environmentInput$ = computed(async (get) => {
     const scope = await get(scope$);
@@ -18153,9 +18125,19 @@ function createPreCreateResourceObjects(
     };
   });
   return {
-    disabledPaidTools$: createRunDisabledPaidToolsSnapshotObject(scope$),
-    member$: createRunMemberSnapshotObject(scope$),
-    environment$: createRunEnvironmentSnapshotObject(environmentInput$),
+    disabledPaidTools$: computed(async (get) => {
+      return await get(
+        createRunDisabledPaidToolsSnapshotObject(await get(scope$)),
+      );
+    }),
+    member$: computed(async (get) => {
+      return await get(createRunMemberSnapshotObject(await get(scope$)));
+    }),
+    environment$: computed(async (get) => {
+      return await get(
+        createRunEnvironmentSnapshotObject(await get(environmentInput$)),
+      );
+    }),
   };
 }
 
@@ -18247,7 +18229,6 @@ function createPreCreatePreparedConnectorObjects(args: {
         throw new Error("Authorized selected run preparation is missing");
       }
       return {
-        db: get(db$),
         timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
@@ -18259,7 +18240,13 @@ function createPreCreatePreparedConnectorObjects(args: {
       };
     },
   );
-  return createRunPreparedConnectorObjects(inputs$);
+  return {
+    connectorContext$: computed(async (get) => {
+      return await get(
+        createRunPreparedConnectorObjects(await get(inputs$)).connectorContext$,
+      );
+    }),
+  };
 }
 
 function createPreCreateExecutionObjects(args: {
