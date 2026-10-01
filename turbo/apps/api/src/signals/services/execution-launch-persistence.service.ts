@@ -8,7 +8,7 @@ import { safeSync } from "../utils";
 import { conflict } from "../../lib/error";
 import type { OfficialWorkflowRunObservation } from "./official-workflow-run.service";
 import { now, nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import {
   ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
@@ -214,14 +214,6 @@ export interface AgentExecutionRequestObservation {
   readonly ownerUserId: string;
   readonly agentOrgId: string;
 }
-
-export type TestOnlyDirectRunResolver = (args: {
-  readonly db: ReadonlyDb;
-  readonly body: CreateRunBody;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly timing?: ApiDispatchTimingCollector;
-}) => Promise<ResolvedAgentExecution | CreateRunErrorResult>;
 
 export type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
 
@@ -544,7 +536,6 @@ export interface CreateAgentRunArgs {
    * productAgentExecutionPlan; keeping legacy reads in the test fixture
    * preserves historical runner coverage without restoring a runtime dual-read.
    */
-  readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly platformEnvironment?: Record<string, string>;

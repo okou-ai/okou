@@ -72,7 +72,6 @@ import {
   ProductAgentExecutionPlan,
   ResolvedAgentExecution,
   ResolvedRunExecution,
-  TestOnlyDirectRunResolver,
   firstAgent,
 } from "./execution-launch-persistence.service";
 import {
@@ -114,7 +113,6 @@ interface ProductResolutionOptions {
 export interface ResolveAgentExecutionOptions {
   readonly agentObservation?: RunAgentObservation;
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
-  readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
   readonly resetNativeSession?: boolean;
@@ -439,7 +437,7 @@ export async function resolveProductAgentExecution(
   body: Pick<CreateRunBody, "agentId" | "sessionId">,
   userId: string,
   orgId: string,
-  options: Omit<ResolveAgentExecutionOptions, "testOnlyResolveDirectRun">,
+  options: ResolveAgentExecutionOptions,
 ): Promise<ResolvedRunExecution | CreateRunErrorResult> {
   const productAgentExecutionPlan = options.productAgentExecutionPlan;
   if (productAgentExecutionPlan === undefined) {
