@@ -51,7 +51,11 @@ this transaction.
   Agent, metadata, entitlement and credit finalization. Storage and Agent unique
   constraints retain canonical identity; onboarding grants retain their existing
   idempotency key. Paid tiers, ownership/visibility and catalog-selected system
-  default are preserved. Configured non-default policies retain Custom even when
+  default are preserved. The free metadata upsert checks the conflicting row's
+  tier at write time: a concurrent paid writer wins without its entitlement being
+  replaced or receiving a free onboarding grant. That branch only completes the
+  default-Agent pointer; an earlier tier read is not write authority.
+  Configured non-default policies retain Custom even when
   they precede metadata creation; on conflict they retain the stored mode.
   Unconfigured new organizations still start in Auto.
 

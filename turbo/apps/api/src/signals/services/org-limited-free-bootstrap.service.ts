@@ -13,7 +13,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, eq, exists, ne, sql } from "drizzle-orm";
+import { and, eq, exists, ne, notInArray, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
@@ -49,6 +49,7 @@ import { onRejection, settleIncludingAbort } from "../utils";
 import { loadSystemDefaultRunModel } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
+const PAID_TIERS = ["pro", "team", "custom"] as const;
 
 type DbTransaction = Tx;
 
@@ -364,7 +365,9 @@ async function upsertBootstrapOwnerMembership(
 }
 
 function isPaidTier(tier: string): boolean {
-  return tier === "pro" || tier === "team" || tier === "custom";
+  return PAID_TIERS.some((paidTier) => {
+    return paidTier === tier;
+  });
 }
 
 async function reserveBootstrapAgent(
@@ -453,7 +456,7 @@ async function finalizeBootstrap(
         ),
       ),
   );
-  await writeOrgMetadataWithPlanEntitlements(tx, {
+  const initialized = await writeOrgMetadataWithPlanEntitlements(tx, {
     writeOrgMetadata: async (writeTx) => {
       return await writeTx
         .insert(orgMetadataCanonicalWrites)
@@ -482,6 +485,11 @@ async function finalizeBootstrap(
             modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
+          // The earlier tier read is not write authority. Stripe can commit
+          // a paid tier before this upsert owns the conflicting metadata row.
+          setWhere: notInArray(orgMetadataCanonicalWrites.tier, [
+            ...PAID_TIERS,
+          ]),
         })
         .returning({
           orgId: orgMetadata.orgId,
@@ -495,6 +503,16 @@ async function finalizeBootstrap(
       });
     },
   });
+
+  if (initialized.length === 0) {
+    // A paid writer won the metadata row. Conflict handling still owns that
+    // row; complete only the Agent reference and preserve its paid snapshot.
+    await tx
+      .update(orgMetadata)
+      .set({ defaultAgentId: agentRow.id, updatedAt: nowDate() })
+      .where(eq(orgMetadata.orgId, args.orgId));
+    return { bootstrapped: true, agentId: agentRow.id };
+  }
 
   await grantOnboardingCredits(
     tx,

@@ -496,6 +496,51 @@ describe("default Agent bootstrap", () => {
   });
 
   it.each(["pro", "team"] as const)(
+    "preserves a %s purchase racing final bootstrap publication",
+    async (tier) => {
+      const actor = createBddApi(context).user();
+      if (!actor.orgId) {
+        throw new Error("Expected a paid organization fixture");
+      }
+      mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+      const upload = pausedSeedUpload(actor.orgId);
+      const api = clients();
+      const pending = api.status.getStatus({ headers });
+      joinPendingRequest(pending, () => {
+        upload.release("success");
+      });
+      await upload.started;
+
+      // Allow the real Stripe write and bootstrap publication to compete. The
+      // purchase must remain authoritative whether it commits before or after
+      // the bootstrap's earlier tier read; no database pause point is exposed.
+      const purchase = createRunsApi(context).grantProEntitlement(actor, {
+        tier,
+      });
+      const completed = Promise.all([accept(pending, [200]), purchase]);
+      joinPendingRequest(completed, () => {
+        upload.release("success");
+      });
+      upload.release("success");
+      await completed;
+
+      const agentId = await readDefaultId(api);
+      const billing = await accept(api.billing.get({ headers }), [200]);
+      expect(billing.body.tier).toBe(tier);
+      const listed = await accept(api.agents.list({ headers }), [200]);
+      expect(listed.body).toStrictEqual([
+        expect.objectContaining({
+          agentId,
+          ownerId: actor.userId,
+          isDefaultAgent: true,
+          visibility: "public",
+        }),
+      ]);
+      await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
+    },
+  );
+
+  it.each(["pro", "team"] as const)(
     "preserves a %s purchase during stalled bootstrap IO without a free grant",
     async (tier) => {
       const actor = createBddApi(context).user();
