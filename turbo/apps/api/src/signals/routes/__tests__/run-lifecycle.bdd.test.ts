@@ -11152,21 +11152,11 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["jira"]);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
-        agentId,
-        prompt: "use jira",
-        modelProvider: "anthropic-api-key",
-      },
-      [400],
-    );
-    expect(rejected.body).toStrictEqual({
-      error: {
-        message: `Invalid base URL "https://\${{ vars.JIRA_DOMAIN }}" in firewall "jira": host policy does not allow resolved host "attacker.example"`,
-        code: "BAD_REQUEST",
-      },
-    });
+    // The pick rejects the input without a run; the exact host-policy message
+    // is asserted by packages/connectors firewall-expander.test.ts.
+    await expect(
+      api.readThreadRunRejection(actor, { agentId, prompt: "use jira" }),
+    ).resolves.toBe("bad_request");
   });
 
   it("refreshes queued connector grants from the stored permission baseline", async () => {
