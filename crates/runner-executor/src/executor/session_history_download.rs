@@ -1605,6 +1605,8 @@ mod tests {
         task: Option<JoinHandle<io::Result<usize>>>,
         requests: Arc<std::sync::atomic::AtomicUsize>,
         response_sent: Arc<tokio::sync::Notify>,
+        client_closed: Arc<tokio::sync::Notify>,
+        retry_delays: Arc<Mutex<Vec<Duration>>>,
     }
 
     #[derive(Clone)]
@@ -1656,11 +1658,15 @@ mod tests {
             let address = listener.local_addr().unwrap();
             let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let response_sent = Arc::new(tokio::sync::Notify::new());
+            let client_closed = Arc::new(tokio::sync::Notify::new());
+            let retry_delays = Arc::new(Mutex::new(Vec::new()));
             let task = tokio::spawn(serve_session_history_many(
                 listener,
                 responses,
                 Arc::clone(&requests),
                 Arc::clone(&response_sent),
+                Arc::clone(&client_closed),
+                Arc::clone(&retry_delays),
             ));
 
             Self {
@@ -1668,6 +1674,8 @@ mod tests {
                 task: Some(task),
                 requests,
                 response_sent,
+                client_closed,
+                retry_delays,
             }
         }
 
@@ -1688,6 +1696,21 @@ mod tests {
             })
             .await
             .expect("session history fixture should send the expected response");
+        }
+
+        async fn wait_for_client_close(&self) {
+            tokio::time::timeout(Duration::from_secs(5), self.client_closed.notified())
+                .await
+                .expect("session history fixture should observe the client closing its response");
+        }
+
+        fn observed_retry_delay(&self) -> Duration {
+            self.retry_delays
+                .lock()
+                .unwrap()
+                .first()
+                .copied()
+                .expect("session history fixture should have received a second GET")
         }
 
         async fn stop_and_assert_requests(mut self, expected_requests: usize) {
@@ -1735,17 +1758,21 @@ mod tests {
         responses: Vec<MultiShotSessionHistoryResponse>,
         requests: Arc<std::sync::atomic::AtomicUsize>,
         response_sent: Arc<tokio::sync::Notify>,
+        client_closed: Arc<tokio::sync::Notify>,
+        retry_delays: Arc<Mutex<Vec<Duration>>>,
     ) -> io::Result<usize> {
         let mut served = 0usize;
+        let mut previous_response: Option<Instant> = None;
         for response in responses {
             let (mut stream, _) = listener.accept().await?;
-            let mut request = [0u8; 1024];
-            let request_bytes = stream.read(&mut request).await?;
-            if request_bytes == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "session history fixture received an empty request",
-                ));
+            // Consume the complete GET before watching for peer closure, so
+            // fragmented request headers cannot be mistaken for that signal.
+            let _ = crate::test_fixtures::raw_http::read_http_request(&mut stream).await?;
+            if let Some(previous_response) = previous_response {
+                retry_delays
+                    .lock()
+                    .unwrap()
+                    .push(previous_response.elapsed());
             }
 
             let content_length_header = response
@@ -1760,6 +1787,9 @@ mod tests {
                 "HTTP/1.1 {}\r\n{content_length_header}{retry_after_header}Connection: close\r\n\r\n",
                 response.status
             );
+            // Measure the next actual GET from this response's send boundary,
+            // excluding unrelated work after materialization completes.
+            previous_response = Some(Instant::now());
             stream.write_all(response_head.as_bytes()).await?;
             stream.write_all(&response.body).await?;
             requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1767,7 +1797,22 @@ mod tests {
             if response.stall {
                 // Keep the body incomplete until the client times out/cancels.
                 let mut byte = [0u8; 1];
-                let _ = stream.read(&mut byte).await;
+                match stream.read(&mut byte).await {
+                    Ok(0) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                        ) => {}
+                    Ok(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "session history fixture received data after its complete GET",
+                        ));
+                    }
+                    Err(error) => return Err(error),
+                }
+                client_closed.notify_one();
             } else {
                 stream.shutdown().await?;
             }

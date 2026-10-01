@@ -73,23 +73,29 @@ async fn materializer_respects_provider_delay_then_recovers() {
     let body = b"{\"type\":\"init\"}\n";
     let hash = hex::encode(Sha256::digest(body));
     let server = MultiShotSessionHistoryServer::respond_many(vec![
-        MultiShotSessionHistoryResponse::status("429 Too Many Requests").with_retry_after("1"),
+        MultiShotSessionHistoryResponse::new("429 Too Many Requests", Vec::new(), Some(1))
+            .with_retry_after("1")
+            .stalled(),
         MultiShotSessionHistoryResponse::ok(body, Some(body.len() as u64)),
     ])
     .await;
     let session = ref_session(server.url(), hash, body.len() as u64, body.len() as u64);
-    let started = Instant::now();
+    let materializer = start_materializer(&session);
+    let download =
+        tokio::spawn(async move { materializer.finish(&CancellationToken::new()).await });
+    // Dropping the incomplete error body closes the connection only after the
+    // caller rejects 429. Its retry timer is then armed in the same poll.
+    server.wait_for_client_close().await;
 
-    match start_materializer(&session)
-        .finish(&CancellationToken::new())
-        .await
-    {
+    match finish_download(download).await {
         SessionHistoryMaterialization::Downloaded { session, .. } => {
             assert_eq!(session.history_bytes(), body);
-            assert!(started.elapsed() >= Duration::from_secs(1));
         }
         _ => panic!("expected recovery after the provider's delay"),
     }
+    // This is the provider-observed request spacing, not whole-run wall time.
+    // Kernel IO is observed under a real bounded deadline, not a paused clock.
+    assert!(server.observed_retry_delay() >= Duration::from_secs(1));
     server.assert_served(2).await;
 }
 
@@ -246,7 +252,9 @@ async fn cancelling_materializer_stops_provider_backoff_without_another_get() {
     let body = b"{\"type\":\"init\"}\n";
     let hash = hex::encode(Sha256::digest(body));
     let server = MultiShotSessionHistoryServer::respond_many(vec![
-        MultiShotSessionHistoryResponse::status("429 Too Many Requests").with_retry_after("60"),
+        MultiShotSessionHistoryResponse::new("429 Too Many Requests", Vec::new(), Some(1))
+            .with_retry_after("60")
+            .stalled(),
         MultiShotSessionHistoryResponse::ok(body, Some(body.len() as u64)),
     ])
     .await;
@@ -255,15 +263,30 @@ async fn cancelling_materializer_stops_provider_backoff_without_another_get() {
     let download_cancel = cancel.clone();
     let materializer = start_materializer(&session);
     let download = tokio::spawn(async move { materializer.finish(&download_cancel).await });
-    server.wait_for_response(1).await;
+    // Observe rejection of the unfinished 429 body, not just its headers being
+    // sent, so cancellation occurs in the already-armed provider backoff.
+    server.wait_for_client_close().await;
     cancel.cancel();
 
     assert!(matches!(
-        download.await.unwrap(),
+        finish_download(download).await,
         SessionHistoryMaterialization::Failed {
             error: RunnerError::Cancelled,
             ..
         }
     ));
     server.stop_and_assert_requests(1).await;
+}
+
+async fn finish_download(
+    mut download: JoinHandle<SessionHistoryMaterialization>,
+) -> SessionHistoryMaterialization {
+    match tokio::time::timeout(Duration::from_secs(5), &mut download).await {
+        Ok(result) => result.expect("session history download task should not panic"),
+        Err(_) => {
+            download.abort();
+            let _ = download.await;
+            panic!("session history recovery or cancellation should finish promptly");
+        }
+    }
 }
