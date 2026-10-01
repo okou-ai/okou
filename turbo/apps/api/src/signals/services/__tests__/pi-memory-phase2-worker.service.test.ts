@@ -53,6 +53,7 @@ import {
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
+import { mockStripeClient } from "../../external/stripe-client";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
 import {
   createPhase2TestScope,
@@ -549,6 +550,93 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     expect(candidate?.rawMemory).toBe(
       "candidate survives failed standard launch preparation",
     );
+  });
+
+  it("records the failed run when the built-in allowance refresh fails", async () => {
+    const now = new Date("2026-09-05T02:00:00.000Z");
+    const scope = await createPhase2TestScope("allowance-refresh-failure", {
+      emptyBase: true,
+    });
+    await enablePiMemoryForScope(scope);
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    onTestFinished(async () => {
+      await deleteRunSessionsForScope(scope);
+      await db()
+        .delete(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, scope.orgId));
+    });
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    configureNativeCliArtifact();
+    // An expired Stripe-backed allowance must be refreshed from Stripe before
+    // the run can open its allowance windows.
+    await db()
+      .insert(orgUsageAllowanceEntitlements)
+      .values({
+        orgId: scope.orgId,
+        source: "stripe",
+        status: "active",
+        shortWindowSeconds: 18_000,
+        shortWindowUnits: 10_000,
+        weeklyWindowUnits: 100_000,
+        effectiveAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(now.getTime() - 60 * 60 * 1000),
+        stripeSubscriptionId: `sub_${randomUUID()}`,
+      });
+    mockStripeClient(testContext().mocks.stripe);
+    testContext().mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+      new Error("Stripe subscription read failed"),
+    );
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        rawMemory: "candidate survives a failed allowance refresh",
+      },
+    ]);
+    await insertPendingPhase2Job(scope, { updatedAt: now });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const store = createStore();
+
+    await expect(
+      withMockNowForTest(now, async () => {
+        return await store.set(
+          executePiMemoryPhase2Work$,
+          { scope, currentTime: now },
+          testContext().signal,
+        );
+      }),
+    ).resolves.toStrictEqual({
+      outcome: "failed",
+      errorClass: "maintenance_dispatch_failed",
+    });
+    expect(
+      testContext().mocks.stripe.subscriptions.retrieve,
+    ).toHaveBeenCalledTimes(1);
+    // As in the shared launch preparation, the failed run is recorded.
+    await expect(
+      db()
+        .select({ status: agentRuns.status, error: agentRuns.error })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.triggerSource, "agent"),
+            eq(agentRuns.orgId, scope.orgId),
+            eq(agentRuns.userId, scope.userId),
+          ),
+        ),
+    ).resolves.toStrictEqual([
+      { status: "failed", error: "Stripe subscription read failed" },
+    ]);
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "retryable_failure",
+      maintenanceRunId: null,
+      leaseToken: null,
+      retryCount: 1,
+      lastErrorClass: "maintenance_dispatch_failed",
+    });
   });
 
   it("dispatches one isolated threadless run after a shared public Agent source", async () => {

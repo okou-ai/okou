@@ -749,16 +749,27 @@ interface MaintenanceRunFacts {
 }
 
 /** Storage, encrypted secrets and the Pi runner payload for one run. */
+type PreparedMaintenanceMounts = Parameters<
+  typeof prepareMaintenanceStorage
+>[1];
+
 type MaintenancePreparationArgs = MaintenanceRunFacts &
   Omit<MaintenanceLaunchArgs, "encryptedSecrets" | "storage" | "artifact"> & {
-    readonly preparedMounts: Parameters<typeof prepareMaintenanceStorage>[1];
+    // Read in parallel with admission facts; a failed read fails this launch
+    // preparation (and records the failed run) like any other storage step.
+    readonly preparedMounts: Awaited<
+      ReturnType<typeof settle<PreparedMaintenanceMounts>>
+    >;
   };
 
 const prepareMaintenanceLaunch$ = command(
   async ({ set }, args: MaintenancePreparationArgs, signal: AbortSignal) => {
+    if (!args.preparedMounts.ok) {
+      throw args.preparedMounts.error;
+    }
     const { artifact, storage } = await prepareMaintenanceStorage(
       args.job,
-      args.preparedMounts,
+      args.preparedMounts.value,
       args.timing,
     );
     signal.throwIfAborted();
@@ -848,17 +859,25 @@ async function recordFailedMaintenanceLaunch(
 
 /**
  * Launch preparation and, for a built-in model, the Stripe entitlement refresh
- * for the allowance window run together outside the transaction; either
- * unexpected failure fails the preparation fast.
+ * for the allowance window run together outside the transaction. Either
+ * failure fails the whole preparation, which records the failed run, as the
+ * shared launch preparation does.
  */
 const prepareMaintenanceLaunchAndAllowance$ = command(
   async ({ set }, args: MaintenancePreparationArgs, signal: AbortSignal) => {
-    return await Promise.all([
-      settle(set(prepareMaintenanceLaunch$, args, signal), signal),
-      isBuiltInModelProviderType(args.modelProvider.type)
-        ? set(prepareUsageAllowanceRefresh$, { orgId: args.job.orgId }, signal)
-        : undefined,
-    ]);
+    return await settle(
+      Promise.all([
+        set(prepareMaintenanceLaunch$, args, signal),
+        isBuiltInModelProviderType(args.modelProvider.type)
+          ? set(
+              prepareUsageAllowanceRefresh$,
+              { orgId: args.job.orgId },
+              signal,
+            )
+          : undefined,
+      ]),
+      signal,
+    );
   },
 );
 
@@ -902,7 +921,7 @@ export const startMaintenanceRun$ = command(
         ),
         get(createExecutionMemberMetadata(owner)),
         get(createAgentDisabledPaidTools(job.userId, job.orgId)),
-        get(storageObjects.preparedMounts$),
+        settle(get(storageObjects.preparedMounts$), signal),
       ]);
     signal.throwIfAborted();
     if (!source) {
@@ -942,7 +961,7 @@ export const startMaintenanceRun$ = command(
       selectionDigest,
       timing,
     };
-    const [prepared, preparedAllowanceRefresh] = await set(
+    const prepared = await set(
       prepareMaintenanceLaunchAndAllowance$,
       {
         ...runFacts,
@@ -968,7 +987,7 @@ export const startMaintenanceRun$ = command(
       signal.throwIfAborted();
       throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
     }
-    const launch = prepared.value;
+    const [launch, preparedAllowanceRefresh] = prepared.value;
     const commit = withLaunch(
       maintenanceCommitArgs({
         ...runFacts,
