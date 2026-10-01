@@ -45,7 +45,7 @@ import { saveRunSummary } from "../services/run-summary.service";
 import { resolveRunnerWssTarget } from "../services/runner-wss-target.service";
 import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
-import { steerRunNearTimeBudgetForTest } from "../services/cron-steer-run-time-budget.service";
+import { steerRunNearTimeBudgetForTest$ } from "../services/cron-steer-run-time-budget.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -626,7 +626,7 @@ function isTimingStateAction(
 
 async function timingStateActionResponse(
   db: Db,
-  body: TimingStateAction,
+  body: Exclude<TimingStateAction, { action: "steer-run-time-budget" }>,
   signal: AbortSignal,
 ) {
   switch (body.action) {
@@ -640,20 +640,6 @@ async function timingStateActionResponse(
         body: {
           ok: true as const,
           api_started_at: await readRunApiStart(db, body.run_id, signal),
-        },
-      };
-    }
-    case "steer-run-time-budget": {
-      await setRunTimeBudgetElapsed(db, body.run_id, body.elapsed_ms, signal);
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          run_time_budget: await steerRunNearTimeBudgetForTest(
-            db,
-            body.run_id,
-            signal,
-          ),
         },
       };
     }
@@ -1295,6 +1281,20 @@ const postRuntimeStateAction$ = command(
     const db = set(writeDb$);
     if (isReadRunLaunchSnapshotAction(body)) {
       return await readRunLaunchSnapshotActionResponse(db, body, signal);
+    }
+    if (body.action === "steer-run-time-budget") {
+      await setRunTimeBudgetElapsed(db, body.run_id, body.elapsed_ms, signal);
+      return {
+        status: 200 as const,
+        body: {
+          ok: true as const,
+          run_time_budget: await set(
+            steerRunNearTimeBudgetForTest$,
+            body.run_id,
+            signal,
+          ),
+        },
+      };
     }
     if (isTimingStateAction(body)) {
       return await timingStateActionResponse(db, body, signal);

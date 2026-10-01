@@ -50,7 +50,7 @@ import { bestEffort, safeJsonParse, settle } from "../utils";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -1805,7 +1805,9 @@ const runAgentForTeams$ = command(
         }
       })(),
     );
-    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
+    );
     return { kind: "accepted" };
   },
 );

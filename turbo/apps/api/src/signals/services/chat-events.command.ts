@@ -83,7 +83,7 @@ import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.s
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   pickEnqueuedChatThread$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
@@ -1593,7 +1593,6 @@ export const sendNormalEvent$ = command(
     args: NormalSendArgs,
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
-    const db = set(writeDb$);
     const orgPlanCapabilities = args.orgPlanCapabilities;
     signal.throwIfAborted();
     const prepared = await set(prepareNormalSend$, args, signal);
@@ -1676,7 +1675,9 @@ export const sendNormalEvent$ = command(
             signal,
           ),
         );
-        waitUntil(notifyRunningChatRunOfPendingInput(db, thread.threadId));
+        waitUntil(
+          set(notifyRunningChatRunOfPendingInput$, thread.threadId, signal),
+        );
         return createdAt;
       })(),
       signal,

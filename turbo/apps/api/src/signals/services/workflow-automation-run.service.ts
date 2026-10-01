@@ -9,7 +9,7 @@ import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   enqueueChatInput,
   pickEnqueuedChatThread$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -313,7 +313,7 @@ export const runWorkflowAutomationNow$ = command(
           signal,
         ),
       );
-      waitUntil(notifyRunningChatRunOfPendingInput(db, chatThreadId));
+      waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
     return workflowEnqueueResult(scheduleClaim !== undefined, enqueued);
   },

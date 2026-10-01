@@ -25,7 +25,7 @@ import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.serv
 import { insertChatEvent } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
   pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import { waitUntil } from "../context/wait-until";
@@ -273,9 +273,7 @@ const admitChatRunFinishedAutomation$ = command(
           signal,
         ),
       );
-      waitUntil(
-        notifyRunningChatRunOfPendingInput(set(writeDb$), chatThreadId),
-      );
+      waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
   },
 );
@@ -356,7 +354,9 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
               signal,
             ),
           );
-          waitUntil(notifyRunningChatRunOfPendingInput(db, row.chatThreadId));
+          waitUntil(
+            set(notifyRunningChatRunOfPendingInput$, row.chatThreadId, signal),
+          );
         }
         continue;
       }

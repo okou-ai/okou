@@ -58,7 +58,7 @@ import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -1249,7 +1249,9 @@ export const processCanonicalDiscordIngress$ = command(
         }
       })(),
     );
-    waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, ingress.chatThreadId, signal),
+    );
     return true;
   },
 );

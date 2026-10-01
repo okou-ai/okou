@@ -42,7 +42,7 @@ import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -897,7 +897,13 @@ export const processCanonicalSlackIngress$ = command(
         waitUntil(
           set(finishCanonicalSlackEnqueue$, ingress, args.ingressId, signal),
         );
-        waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
+        waitUntil(
+          set(
+            notifyRunningChatRunOfPendingInput$,
+            ingress.chatThreadId,
+            signal,
+          ),
+        );
         return true;
       })(),
       signal,
