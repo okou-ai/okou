@@ -64,30 +64,6 @@ async function overwriteModelProviderSecret(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-/** Persisted legacy state: a single-secret provider without a stored secret. */
-async function clearModelProviderSecretReference(
-  db: Db,
-  body: Extract<
-    TestModelProviderStateActionBody,
-    { readonly action: "clear-secret-reference" }
-  >,
-  signal: AbortSignal,
-) {
-  const [updated] = await db
-    .update(modelProviders)
-    .set({ secretId: null })
-    .where(eq(modelProviders.id, body.provider_id))
-    .returning({ id: modelProviders.id });
-  signal.throwIfAborted();
-  if (!updated) {
-    return {
-      status: 400 as const,
-      body: { error: "Model provider not found" },
-    };
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
 async function mutateModelProviderState(
   db: Db,
   body: TestModelProviderStateActionBody,
@@ -96,9 +72,6 @@ async function mutateModelProviderState(
   switch (body.action) {
     case "overwrite-secret": {
       return await overwriteModelProviderSecret(db, body, signal);
-    }
-    case "clear-secret-reference": {
-      return await clearModelProviderSecretReference(db, body, signal);
     }
   }
 }

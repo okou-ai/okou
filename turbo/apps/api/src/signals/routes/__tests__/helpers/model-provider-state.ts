@@ -63,13 +63,3 @@ export async function overwriteModelProviderSecretForTests(
     secret: args.secret,
   });
 }
-
-export async function clearModelProviderSecretReferenceForTests(
-  signal: AbortSignal,
-  providerId: string,
-): Promise<void> {
-  await postAction(signal, {
-    action: "clear-secret-reference",
-    provider_id: providerId,
-  });
-}

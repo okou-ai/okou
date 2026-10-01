@@ -323,7 +323,7 @@ per execution (Pi or not, and the concrete provider for DeepSeek).
 ## Run-scoped snapshot and admission
 
 Each run decision reads one catalog snapshot. The queue pick
-(`createClaimRunObjects` in `claim-run-context.ts`) loads it once per claim
+(`createThreadClaimRunObjects` in `thread-claim-run.service.ts`) loads it once per claim
 (`claimCatalog$`) and passes it to every step from model resolution to run
 creation: policy projection, model pin, provider admission, Built-in route
 and framework, provider environment, reasoning effort, usage context and

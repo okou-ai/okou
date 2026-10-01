@@ -219,9 +219,9 @@ Anything else should be a factory argument or a `computed`.
 
 ## Reference Implementation
 
-- `turbo/apps/api/src/signals/services/claim-run-context.ts`: the claim graph
-  (`createClaimRunObjects`), with derived head, model inputs, and early-exit
-  assembly.
+- `turbo/apps/api/src/signals/services/thread-claim-run.service.ts`: the claim
+  graph (`createThreadClaimRunObjects`), with derived head, model inputs, and
+  early-exit assembly.
 - `turbo/apps/api/src/signals/services/chat-thread-queue-drain.service.ts`:
   `pickEnqueuedChatThread$` and `enqueuedChatQueueWaitReason$`, with no
   callbacks.

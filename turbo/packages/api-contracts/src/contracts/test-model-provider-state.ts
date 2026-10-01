@@ -17,10 +17,6 @@ export const testModelProviderStateActionBodySchema = z.discriminatedUnion(
       secret_name: z.string(),
       secret: z.string(),
     }),
-    z.object({
-      action: z.literal("clear-secret-reference"),
-      provider_id: z.string(),
-    }),
   ],
 );
 

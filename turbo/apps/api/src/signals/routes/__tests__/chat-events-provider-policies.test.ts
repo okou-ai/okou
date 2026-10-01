@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
@@ -20,10 +21,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  clearModelProviderSecretReferenceForTests,
-  overwriteModelProviderSecretForTests,
-} from "./helpers/model-provider-state";
+import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
 import {
   coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
@@ -2073,11 +2071,11 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
 
-  it("rejects a firewall-injected provider without a stored credential before run admission", async () => {
+  it("rejects a firewall-injected provider whose credential was deleted before run admission", async () => {
     const { actor, agentId } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "anthropic-api-key",
-      secret: "sk-ant-api03-missing-credential",
+      secret: "sk-ant-api03-deleted-credential",
     });
     // claude-fable-5-1 has no Pi route: the firewall-injected key stays an
     // encrypted reference instead of being decrypted at run creation.
@@ -2090,7 +2088,12 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: providerId,
       },
     ]);
-    await clearModelProviderSecretReferenceForTests(context.signal, providerId);
+    // Deleting the provider deletes its stored credential with it.
+    await createMiscRoutesApi(context).deleteOrgModelProvider(
+      actor,
+      "anthropic-api-key",
+      [204],
+    );
 
     const { picked } = await sendUntilPicked(actor, {
       agentId,
@@ -2099,7 +2102,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(picked).toMatchObject({
       eventType: "input.rejected",
-      error: "provider_unavailable",
+      error: "model_provider_unavailable",
     });
   }, 60_000);
 
