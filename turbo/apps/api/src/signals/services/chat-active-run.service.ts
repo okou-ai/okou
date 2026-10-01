@@ -3,13 +3,12 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq, gt, isNotNull, notExists, or, type SQL } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { computed } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { db$ } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
-function unresolvedCancellationRecoveryCondition(
-  db: Pick<Db, "select">,
-  completedAtCondition: SQL,
-) {
+function unresolvedCancellationRecoveryCondition(completedAtCondition: SQL) {
   return and(
     isNotNull(agentRuns.triggerSource),
     eq(agentRuns.status, "cancelled"),
@@ -18,7 +17,7 @@ function unresolvedCancellationRecoveryCondition(
     or(
       eq(agentRuns.cancellationRecoveryCompleted, false),
       notExists(
-        db
+        new QueryBuilder()
           .select({ id: chatEvents.id })
           .from(chatEvents)
           .where(
@@ -33,11 +32,9 @@ function unresolvedCancellationRecoveryCondition(
 }
 
 function freshUnresolvedCancellationRecoveryCondition(
-  db: Pick<Db, "select">,
   apiStartTime?: number,
 ): SQL | undefined {
   return unresolvedCancellationRecoveryCondition(
-    db,
     gt(
       agentRuns.completedAt,
       new Date(
@@ -48,24 +45,23 @@ function freshUnresolvedCancellationRecoveryCondition(
   );
 }
 
-export async function cancellationRecoveryPendingForThread(
-  db: Pick<Db, "select">,
-  args: {
-    readonly threadId: string;
-  },
-): Promise<boolean> {
-  const [run] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, args.threadId),
-        freshUnresolvedCancellationRecoveryCondition(db),
-      ),
-    )
-    .limit(1);
+export function cancellationRecoveryPendingForThread(args: {
+  readonly threadId: string;
+}) {
+  return computed(async (get): Promise<boolean> => {
+    const [run] = await get(db$)
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, args.threadId),
+          freshUnresolvedCancellationRecoveryCondition(),
+        ),
+      )
+      .limit(1);
 
-  return run !== undefined;
+    return run !== undefined;
+  });
 }
 
 // A managed browser outlives the run that opened it and the next run simply
