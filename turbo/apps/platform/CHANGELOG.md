@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.989.3](https://github.com/okou-ai/okou/compare/app-v0.989.2...app-v0.989.3) (2026-10-01)
+
+
+### Refactoring
+
+* remove model catalog rollout compatibility ([#37457](https://github.com/okou-ai/okou/issues/37457)) ([bfdefb5](https://github.com/okou-ai/okou/commit/bfdefb56cc71e50764957c7f168584df7398c7b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.532.2
+    * @okouai/core bumped to 8.725.2
+
 ## [0.989.2](https://github.com/okou-ai/okou/compare/app-v0.989.1...app-v0.989.2) (2026-10-01)
 
 
