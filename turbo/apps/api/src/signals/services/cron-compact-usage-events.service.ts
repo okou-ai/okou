@@ -619,14 +619,41 @@ async function compactUsageEventBatch(
   }
 > {
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
+  if (orgId !== undefined) {
+    // An empty scoped snapshot has no work to protect. A later event is
+    // eligible for the next Cron; hasMore describes this preflight snapshot.
+    const cutoffDate = await loadCompactionCutoff(db);
+    const cutoff = timestampWithoutTimeZone(cutoffDate);
+    const probe = await loadHoldProbe(db, cutoff, rawSeedLimit, orgId);
+    if (probe.probedRawRows === 0) {
+      return {
+        cutoff: cutoffDate.toISOString(),
+        rawSeedLimit,
+        seededRawRows: 0,
+        selectedGrains: 0,
+        probedRawRows: 0,
+        billingErrorHeldRows: 0,
+        rawRowsDeleted: 0,
+        hourlyRowsDeleted: 0,
+        hourlyRowsInserted: 0,
+        maxGrainSourceRows: 0,
+        quantity: "0",
+        creditsCharged: "0",
+        allowanceUnits: "0",
+        affectedShortWindows: 0,
+        affectedWeeklyWindows: 0,
+        reconciled: true,
+        hasMore: false,
+        lockWaitMs: 0,
+      };
+    }
+  }
   return await db.transaction(async (tx) => {
     const lockStartedAt = performance.now();
-    // While old API instances and operator code may still use the global key,
-    // a scoped batch joins it shared before taking its own exclusive org key.
-    await lockUsageEventCompaction(
-      tx,
-      orgId === undefined ? "exclusive" : "shared",
-    );
+    // Old settlement instances take only global shared. Retain global
+    // exclusive for scoped batches until those requests have drained; global
+    // shared plus org exclusive would not exclude an old same-org settler.
+    await lockUsageEventCompaction(tx);
     if (orgId !== undefined) {
       await lockUsageEventCompaction(tx, "exclusive", orgId);
     }

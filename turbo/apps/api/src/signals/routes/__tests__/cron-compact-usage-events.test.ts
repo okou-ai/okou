@@ -288,6 +288,54 @@ describe("usage event compaction cron", () => {
     });
   });
 
+  it("skips scoped lock work on an empty snapshot and catches a later eligible event", async () => {
+    const fixture = await seedFixture();
+    expect((await compactOwnedUsage(fixture)).body).toMatchObject({
+      seededRawRows: 0,
+      selectedGrains: 0,
+      probedRawRows: 0,
+      rawRowsDeleted: 0,
+      hourlyRowsInserted: 0,
+      hasMore: false,
+      lockWaitMs: 0,
+      reconciled: true,
+    });
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        status: "processed",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    expect((await compactOwnedUsage(fixture)).body).toMatchObject({
+      rawRowsDeleted: 1,
+      hourlyRowsInserted: 1,
+    });
+  });
+
+  it("retains the held-error probe when no raw row is eligible", async () => {
+    const fixture = await seedFixture();
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        status: "processed",
+        billingError: "missing_pricing",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    expect((await compactOwnedUsage(fixture)).body).toMatchObject({
+      probedRawRows: 1,
+      billingErrorHeldRows: 1,
+      rawRowsDeleted: 0,
+      hasMore: false,
+    });
+    await expect(readStorage(fixture)).resolves.toMatchObject({ raw: 1 });
+  });
+
   it("compacts only the explicitly owned organization", async () => {
     const owned = await seedFixture();
     const foreign = await seedFixture();
