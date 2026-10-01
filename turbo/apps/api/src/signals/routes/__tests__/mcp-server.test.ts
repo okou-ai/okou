@@ -1217,7 +1217,7 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("projects the owner's DeepSeek alternative routing in model discovery", async () => {
+  it("projects built-in DeepSeek route availability in model discovery", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     // A test-owned mirror of DeepSeek V4 Flash keeps candidate cooldowns
@@ -1236,11 +1236,6 @@ describe("MCP chat discovery and creation", () => {
         modelProviderId: null,
       },
     ]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: f.auth.userId, orgId: f.auth.orgId },
-      { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
-    );
     const token = f.auth.token();
     expect((await listModels(token)).models).toContainEqual(
       expect.objectContaining({
@@ -1249,13 +1244,7 @@ describe("MCP chat discovery and creation", () => {
       }),
     );
 
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: f.auth.userId, orgId: f.auth.orgId },
-      { [FeatureSwitchKey.DeepSeekAlternativeRouting]: true },
-    );
-    // Alternative routing leaves only the OpenRouter candidate; a provider
-    // failure cools it down.
+    // A provider failure cools the eligible OpenRouter candidate down.
     await coolDownBuiltInCandidatesFixture(context, model, [
       {
         provider_type: "openrouter-codex",

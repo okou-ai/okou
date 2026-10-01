@@ -71,7 +71,6 @@ async function dispatchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
-  featureSwitches?: Readonly<Partial<Record<FeatureSwitchKey, boolean>>>,
 ) {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
   // PiMemory is off for everyone by default; the dispatcher only runs for
@@ -81,7 +80,6 @@ async function dispatchMaintenance(
     { orgId: scope.orgId, userId: scope.userId },
     {
       [FeatureSwitchKey.PiMemory]: true,
-      ...featureSwitches,
     },
   );
   onTestFinished(async () => {
@@ -197,15 +195,9 @@ async function launchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
-  featureSwitches?: Readonly<Partial<Record<FeatureSwitchKey, boolean>>>,
 ) {
   const { scope, run, runId, binding, provider, baseFiles } =
-    await dispatchMaintenance(
-      type,
-      credentialScope,
-      represented,
-      featureSwitches,
-    );
+    await dispatchMaintenance(type, credentialScope, represented);
   // One proxy flush aggregates two provider responses.
   const events = [
     { category: "tokens.input", quantity: 6 },
@@ -665,13 +657,13 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   const actual = await executePhase2Runtime(context, run.runId);
   expect(actual.requests).toHaveLength(3);
   for (const request of actual.requests) {
-    expect(request.url).toBe("https://api.deepseek.com/responses");
+    expect(request.url).toBe("https://openrouter.ai/api/v1/responses");
     expect(request.headers.get("authorization")).toMatch(
       /^Bearer built-in-key-runtime-fixture-/,
     );
     // V4.1 Flash publishes no `medium` step, so maintenance sends `high`.
     expect(request.body).toMatchObject({
-      model: "deepseek-flash",
+      model: "deepseek/deepseek-v4.1-flash",
       reasoning: { effort: "high" },
     });
     expect(request.body).not.toHaveProperty("service_tier");
@@ -686,25 +678,6 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   await run.proxy();
   await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
   await expect(run.ledger()).resolves.toHaveLength(4);
-});
-
-test("uses the Phase 2 owner's DeepSeek alternative routing switch", async () => {
-  const run = await launchMaintenance(undefined, "org", undefined, {
-    [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-    [FeatureSwitchKey.OpenRouterUsRouting]: false,
-  });
-  const actual = await executePhase2Runtime(context, run.runId);
-  expect(actual.requests).toHaveLength(3);
-  for (const request of actual.requests) {
-    expect(request.url).toBe("https://openrouter.ai/api/v1/responses");
-    expect(request.headers.get("authorization")).toMatch(
-      /^Bearer built-in-key-runtime-fixture-/,
-    );
-    expect(request.body).toMatchObject({
-      model: "deepseek/deepseek-v4.1-flash",
-      reasoning: { effort: "high" },
-    });
-  }
 });
 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(

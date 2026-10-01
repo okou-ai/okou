@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   builtInModelKeyIdsByVendor$,
   resolveBuiltInModelRuntimeRouteWithKeys,
@@ -1090,11 +1089,6 @@ async function listOrgModelPolicies(
   ]);
   const rows = projectPolicyRows(catalog, orgId, persistedRows);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    orgId,
-    userId,
-  );
   const capabilities = await loadOrgPlanCapabilities(db, orgId);
   const providers = await listOrgProviderRoutes(db, orgId);
   const surfaces = await listOrgSurfaceRoutes(db, orgId);
@@ -1118,7 +1112,6 @@ async function listOrgModelPolicies(
             db,
             catalog,
             policy.model,
-            featureSwitchContext,
             keyIdsByVendor,
           )
         : null;

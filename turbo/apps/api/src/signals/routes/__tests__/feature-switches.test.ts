@@ -28,29 +28,25 @@ describe("/api/feature-switches", () => {
       client().update({
         headers,
         body: {
-          switches: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: true },
+          switches: { [FeatureSwitchKey.OpenRouterUsRouting]: true },
         },
       }),
       [200],
     );
     expect(
-      enabled.body.effectiveSwitches[
-        FeatureSwitchKey.DeepSeekAlternativeRouting
-      ],
+      enabled.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
     ).toBeTruthy();
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
     expect(
-      peer.body.effectiveSwitches[FeatureSwitchKey.DeepSeekAlternativeRouting],
+      peer.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
     ).toBeFalsy();
 
     clerk.session(enabledUserId, orgId, "org:member");
     const original = await accept(client().get({ headers }), [200]);
     expect(
-      original.body.effectiveSwitches[
-        FeatureSwitchKey.DeepSeekAlternativeRouting
-      ],
+      original.body.effectiveSwitches[FeatureSwitchKey.OpenRouterUsRouting],
     ).toBeTruthy();
   });
 
@@ -98,7 +94,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             simpleMorningBrief: true,
-            [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+            [FeatureSwitchKey.OpenRouterUsRouting]: true,
           },
         },
       }),
