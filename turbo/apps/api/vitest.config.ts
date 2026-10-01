@@ -4,6 +4,9 @@ const catalogTests = [
   "src/signals/routes/__tests__/official-workflows.test.ts",
   "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
   "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",
+  // Switches the global model catalog system default, which org policy
+  // writes project away; it must not overlap other suites' policy writes.
+  "src/signals/routes/__tests__/model-catalog.test.ts",
 ];
 
 export default defineConfig({
