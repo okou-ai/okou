@@ -327,15 +327,8 @@ jq -e '
   .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}" and
   (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
-  any(.jobs.build.steps[];
-    .id == "okou-cli" and
-    .run == ".github/scripts/download-okou-cli-artifact.sh" and
-    .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
-    .env.ARTIFACT_REQUIRED == "false" and
-    .env.WAIT_SECONDS == "600" and
-    .env.CHECK_PUBLISHER_STATUS == "true" and
-    .env.GH_TOKEN == "${{ github.token }}"
-  ) and
+  .jobs.build.env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
+  .jobs.build.env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
   any(.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
     (.if | contains("runner-binary-hit-targets")) and
@@ -353,8 +346,16 @@ jq -e '
     .run == ".github/scripts/prepare-runner-image.sh" and
     .env.RUNNER_PATH == "runner-binary-transport/${{ matrix.target }}/runner" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}"
+  ) and
+  any(.jobs.build.steps[];
+    .name == "Upload runner image manifest" and
+    .uses == "actions/upload-artifact@v7" and
+    .with.name == "${{ steps.artifact.outputs.artifact-name }}" and
+    .with.path == "runner-image-manifest/manifest.json" and
+    .with.overwrite == true and
+    .with["retention-days"] == 7
   )
-' <<<"$workflow_json" >/dev/null || fail "build must preserve the all-target host readiness contract for hits and misses"
+' <<<"$workflow_json" >/dev/null || fail "build must preserve host readiness and republish its verified manifest on retry"
 
 jq -e '
   (.jobs.asset.needs | sort) == ["compile", "prepare"] and

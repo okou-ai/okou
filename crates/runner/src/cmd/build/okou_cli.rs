@@ -1,27 +1,39 @@
-//! Versioned Okou CLI artifact installed into the rootfs customize layer.
+//! CLI package staged for installation into the rootfs customize layer.
 //!
-//! `runner build --okou-cli-artifact DIR` points at a directory holding the
-//! published `package.tgz` and its `manifest.json`. The manifest's `versions`
-//! field is the identity the rootfs advertises: the runner never inspects the
-//! bundle to discover versions, so an artifact without versions is rejected.
+//! When bundled, the Runner uses its embedded `package.tgz` plus validated
+//! identity constants from the same build. Local builds may omit it.
 
 use std::path::{Path, PathBuf};
 
+use guest_contracts::okou_cli::InstalledOkouCli;
+#[cfg(test)]
+use guest_contracts::okou_cli::parse_release_version;
+#[cfg(any(test, bundled_okou_cli))]
 use guest_contracts::okou_cli::{
-    InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
-    OkouCliSessionConstruction, OkouCliVersions, parse_release_version,
+    OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
+    OkouCliSessionConstruction, OkouCliVersions,
 };
+#[cfg(test)]
 use serde::Deserialize;
+#[cfg(any(test, bundled_okou_cli))]
 use sha2::{Digest, Sha256};
 
-use crate::error::{RunnerError, RunnerResult};
+#[cfg(any(test, bundled_okou_cli))]
+use crate::error::RunnerError;
+use crate::error::RunnerResult;
 
 use super::hashes::OkouCliHashInput;
 
+#[cfg(any(test, bundled_okou_cli))]
 pub(super) const OKOU_CLI_PACKAGE_FILE: &str = "package.tgz";
+#[cfg(test)]
 pub(super) const OKOU_CLI_MANIFEST_FILE: &str = "manifest.json";
+#[cfg(test)]
 const ARTIFACT_MANIFEST_VERSION: u32 = 1;
+#[cfg(any(test, bundled_okou_cli))]
+const MAX_CLI_PACKAGE_SIZE: usize = 64 * 1024 * 1024;
 
+#[cfg(test)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ArtifactManifest {
@@ -35,6 +47,7 @@ struct ArtifactManifest {
     session_construction: Option<OkouCliSessionConstruction>,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct ArtifactPackage {
     path: String,
@@ -55,10 +68,39 @@ pub(super) struct OkouCliArtifact {
 }
 
 impl OkouCliArtifact {
-    /// Load, verify, and stage the artifact found in `dir`.
-    ///
-    /// The package bytes are copied into a private temp dir so hashing and
-    /// customization consume the same bytes even if `dir` changes mid-build.
+    /// Verify and stage the embedded package, preserving the compiled identity.
+    pub(super) async fn resolve_embedded() -> RunnerResult<Option<Self>> {
+        #[cfg(bundled_okou_cli)]
+        {
+            use crate::cmd::embedded_cli;
+
+            let size = env!("BUNDLED_OKOU_CLI_SIZE")
+                .parse::<u64>()
+                .map_err(|e| RunnerError::Internal(format!("invalid embedded CLI size: {e}")))?;
+            let versions = OkouCliVersions {
+                cli: env!("BUNDLED_OKOU_CLI_VERSION").to_owned(),
+                pi_agent_runtime: env!("BUNDLED_OKOU_PI_RUNTIME_VERSION").to_owned(),
+                pi_sdk: env!("BUNDLED_OKOU_PI_SDK_VERSION").to_owned(),
+            };
+            let session_construction = Some(OkouCliSessionConstruction {
+                digest: env!("BUNDLED_OKOU_SESSION_DIGEST").to_owned(),
+            });
+            return Self::stage_verified(
+                embedded_cli::package(),
+                env!("BUNDLED_OKOU_CLI_SHA256"),
+                size,
+                versions,
+                session_construction,
+            )
+            .await
+            .map(Some);
+        }
+        #[cfg(not(bundled_okou_cli))]
+        Ok(None)
+    }
+
+    /// Test-only manifest fixture for staging and integrity checks.
+    #[cfg(test)]
     pub(super) async fn resolve(dir: &Path) -> RunnerResult<Self> {
         let manifest_path = dir.join(OKOU_CLI_MANIFEST_FILE);
         let manifest_bytes = tokio::fs::read(&manifest_path).await.map_err(|e| {
@@ -119,31 +161,51 @@ impl OkouCliArtifact {
                 source_package.display()
             ))
         })?;
-        let package_sha256 = hex::encode(Sha256::digest(&package_bytes));
-        if package_sha256 != manifest.package.sha256 {
+        Self::stage_verified(
+            &package_bytes,
+            &manifest.package.sha256,
+            manifest.package.size,
+            manifest.versions,
+            manifest.session_construction,
+        )
+        .await
+    }
+
+    #[cfg(any(test, bundled_okou_cli))]
+    async fn stage_verified(
+        package_bytes: &[u8],
+        expected_sha256: &str,
+        expected_size: u64,
+        versions: OkouCliVersions,
+        session_construction: Option<OkouCliSessionConstruction>,
+    ) -> RunnerResult<Self> {
+        if package_bytes.is_empty() || package_bytes.len() > MAX_CLI_PACKAGE_SIZE {
+            return Err(RunnerError::Internal(
+                "Okou CLI package size is out of bounds".into(),
+            ));
+        }
+        let package_sha256 = hex::encode(Sha256::digest(package_bytes));
+        if package_sha256 != expected_sha256 {
             return Err(RunnerError::Internal(format!(
-                "Okou CLI package digest {package_sha256} does not match manifest {}",
-                manifest.package.sha256
+                "Okou CLI package digest {package_sha256} does not match manifest {expected_sha256}"
             )));
         }
         let package_size = u64::try_from(package_bytes.len())
             .map_err(|_| RunnerError::Internal("Okou CLI package exceeds u64 length".into()))?;
-        if package_size != manifest.package.size {
+        if package_size != expected_size {
             return Err(RunnerError::Internal(format!(
-                "Okou CLI package size {package_size} does not match manifest {}",
-                manifest.package.size
+                "Okou CLI package size {package_size} does not match manifest {expected_size}"
             )));
         }
-
         let installed = InstalledOkouCli {
             schema_version: OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION,
-            entrypoint: InstalledOkouCli::entrypoint_for(&manifest.versions.cli),
-            versions: manifest.versions,
+            entrypoint: InstalledOkouCli::entrypoint_for(&versions.cli),
+            versions,
             package: OkouCliInstalledPackage {
                 sha256: package_sha256,
                 size: package_size,
             },
-            session_construction: manifest.session_construction,
+            session_construction,
         };
         let mut installed_manifest_bytes = serde_json::to_vec(&installed).map_err(|e| {
             RunnerError::Internal(format!("encode installed Okou CLI manifest: {e}"))
@@ -153,7 +215,7 @@ impl OkouCliArtifact {
         let temp_dir = tempfile::tempdir()
             .map_err(|e| RunnerError::Internal(format!("create Okou CLI temp dir: {e}")))?;
         let package_path = temp_dir.path().join(OKOU_CLI_PACKAGE_FILE);
-        tokio::fs::write(&package_path, &package_bytes)
+        tokio::fs::write(&package_path, package_bytes)
             .await
             .map_err(|e| RunnerError::Internal(format!("stage Okou CLI package: {e}")))?;
         let installed_manifest_path = temp_dir.path().join("installed.json");
@@ -203,7 +265,7 @@ pub(super) mod test_support {
     use sha2::{Digest, Sha256};
 
     /// Write a well-formed artifact directory and return the package digest.
-    pub(super) fn write_artifact_dir(
+    pub(crate) fn write_artifact_dir(
         dir: &Path,
         package_bytes: &[u8],
         cli_version: &str,
@@ -272,6 +334,71 @@ mod tests {
             std::fs::read(artifact.package_path()).unwrap(),
             b"tarball-bytes"
         );
+    }
+
+    #[tokio::test]
+    async fn staged_bytes_must_match_the_compiled_identity() {
+        let versions = OkouCliVersions {
+            cli: "9.353.0".into(),
+            pi_agent_runtime: "1.36.0".into(),
+            pi_sdk: "0.86.1+okou.0123456789ab".into(),
+        };
+        let bytes = b"tarball-bytes";
+        let sha256 = hex::encode(Sha256::digest(bytes));
+        let artifact = OkouCliArtifact::stage_verified(
+            bytes,
+            &sha256,
+            bytes.len() as u64,
+            versions.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(artifact.package_path()).unwrap(), bytes);
+        assert_eq!(artifact.installed.package.sha256, sha256);
+        assert_eq!(artifact.installed.versions, versions);
+
+        let error = OkouCliArtifact::stage_verified(bytes, &sha256, 42, versions.clone(), None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("size"), "{error}");
+        let error = OkouCliArtifact::stage_verified(b"tampered", &sha256, 8, versions, None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("digest"), "{error}");
+    }
+
+    #[cfg(bundled_okou_cli)]
+    #[tokio::test]
+    async fn embedded_bundle_stages_the_compiled_identity() {
+        let artifact = OkouCliArtifact::resolve_embedded().await.unwrap().unwrap();
+        assert_eq!(
+            artifact.installed.versions.cli,
+            env!("BUNDLED_OKOU_CLI_VERSION")
+        );
+        assert_eq!(
+            artifact.installed.package.sha256,
+            env!("BUNDLED_OKOU_CLI_SHA256")
+        );
+        assert_eq!(
+            artifact.installed.package.size.to_string(),
+            env!("BUNDLED_OKOU_CLI_SIZE")
+        );
+        assert_eq!(
+            artifact
+                .installed
+                .session_construction
+                .as_ref()
+                .unwrap()
+                .digest,
+            env!("BUNDLED_OKOU_SESSION_DIGEST")
+        );
+    }
+
+    #[cfg(not(bundled_okou_cli))]
+    #[tokio::test]
+    async fn local_unbundled_runner_has_no_embedded_cli() {
+        assert!(OkouCliArtifact::resolve_embedded().await.unwrap().is_none());
     }
 
     #[tokio::test]

@@ -18,6 +18,12 @@ jq -e '
   $job["runs-on"] == "ubuntu-latest-8-cores" and
   $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
   ($job | has("environment") | not) and
+  $job.needs == ["release-please", "publish-cli-versioned-artifact"] and
+  any($job.steps[];
+    .name == "Download canonical CLI build input" and
+    .with.name == "runner-release-cli-${{ github.run_id }}" and
+    .with.path == "runner-cli-intermediate"
+  ) and
   $job.strategy.matrix.target == [
     "aarch64-unknown-linux-musl",
     "x86_64-unknown-linux-musl"
@@ -54,6 +60,7 @@ jq -e '
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.TARGET_TRIPLE == "${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
+    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
     (.run | contains("runner_guest_binaries_load")) and
     (.run | contains("env \"${guest_env[@]}\" cargo build --release --target \"$TARGET_TRIPLE\" -p runner"))
   ) and

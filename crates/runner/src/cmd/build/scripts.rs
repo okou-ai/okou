@@ -527,6 +527,11 @@ exit 18
             VERIFY_SCRIPT.contains("--okou-cli-version)"),
             "verify-rootfs.sh must accept --okou-cli-version"
         );
+        assert!(
+            VERIFY_SCRIPT.contains("--okou-cli-manifest)")
+                && VERIFY_SCRIPT.contains("cmp -s \"$OKOU_CLI_MANIFEST\""),
+            "verify-rootfs.sh must compare the entire installed CLI identity"
+        );
     }
 
     /// Guard: customize-rootfs.sh must verify the CA actually made it into the

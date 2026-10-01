@@ -12,10 +12,11 @@
 # Usage:
 #   bash verify-rootfs.sh --rootfs /path/to/image.ext4 [--mode template|rootfs] \
 #     --guest-dest /usr/local/bin/guest-agent [--guest-dest DESTINATION ...] \
-#     [--okou-cli-version 9.353.0]
+#     [--okou-cli-version 9.353.0 --okou-cli-manifest /path/to/installed.json]
 #
 # `--okou-cli-version` asserts that exactly that Okou CLI bundle is installed
-# in a rootfs image. Without it, both modes assert that no CLI is installed.
+# in a rootfs image. The optional expected manifest verifies the complete
+# installed identity. Without a CLI version, both modes assert no CLI.
 
 set -euo pipefail
 
@@ -40,6 +41,7 @@ ROOTFS=""
 MODE="rootfs"
 GUEST_DESTINATIONS=()
 OKOU_CLI_VERSION=""
+OKOU_CLI_MANIFEST=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --mode)   MODE="$2";   shift 2 ;;
     --guest-dest) GUEST_DESTINATIONS+=("$2"); shift 2 ;;
     --okou-cli-version) OKOU_CLI_VERSION="$2"; shift 2 ;;
+    --okou-cli-manifest) OKOU_CLI_MANIFEST="$2"; shift 2 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -61,6 +64,10 @@ if [[ "$MODE" != "template" && "$MODE" != "rootfs" ]]; then
 fi
 if [[ ${#GUEST_DESTINATIONS[@]} -eq 0 ]]; then
   echo "error: at least one --guest-dest is required" >&2
+  exit 1
+fi
+if [[ -n "$OKOU_CLI_MANIFEST" && -z "$OKOU_CLI_VERSION" ]]; then
+  echo "error: --okou-cli-manifest requires --okou-cli-version" >&2
   exit 1
 fi
 if [[ -n "$OKOU_CLI_VERSION" ]]; then
@@ -336,6 +343,11 @@ if [[ "$MODE" == "rootfs" ]]; then
     check_required_file_contains "$OKOU_CLI_INSTALLED_MANIFEST_DEST" \
       "\"entrypoint\":\"${okou_cli_install_dir}/okou.js\"" \
       "Okou CLI installed manifest entrypoint"
+    if [[ -n "$OKOU_CLI_MANIFEST" ]]; then
+      if [[ ! -f "$OKOU_CLI_MANIFEST" ]] || ! cmp -s "$OKOU_CLI_MANIFEST" "${MOUNT_DIR}${OKOU_CLI_INSTALLED_MANIFEST_DEST}"; then
+        errors+=("Okou CLI installed manifest does not match the verified bundle identity")
+      fi
+    fi
     check_required_executable "$OKOU_CLI_LAUNCHER_DEST" "Okou CLI launcher"
     check_required_file_contains "$OKOU_CLI_LAUNCHER_DEST" \
       "${okou_cli_install_dir}/okou.js" \

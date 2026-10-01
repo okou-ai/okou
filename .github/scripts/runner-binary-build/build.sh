@@ -23,8 +23,17 @@ esac
 revision="${RUNNER_BINARY_GIT_REVISION:-HEAD}"
 source_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${revision}^{commit}")
 cli_package="${GUEST_CLI_PATH:-}"
+cli_manifest="${GUEST_CLI_MANIFEST_PATH:-}"
+if { [ -n "$cli_package" ] && [ -z "$cli_manifest" ]; } ||
+   { [ -z "$cli_package" ] && [ -n "$cli_manifest" ]; }; then
+  echo "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must be provided together" >&2
+  exit 2
+fi
 if [ -n "$cli_package" ] && [[ "$cli_package" != /* ]]; then
   cli_package="${REPO_ROOT}/${cli_package}"
+fi
+if [ -n "$cli_manifest" ] && [[ "$cli_manifest" != /* ]]; then
+  cli_manifest="${REPO_ROOT}/${cli_manifest}"
 fi
 cargo_target_dir="${CARGO_TARGET_DIR:-${REPO_ROOT}/crates/target}"
 if [[ "$cargo_target_dir" != /* ]]; then
@@ -143,7 +152,9 @@ build() {
 
   local digest_output binary_input_digest
   digest_output=$(RUNNER_BINARY_GIT_REVISION="$source_sha" \
-    GUEST_CLI_PATH="$cli_package" "${SCRIPT_DIR}/digest.sh" "$target")
+    GUEST_CLI_PATH="$cli_package" \
+    GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
+    "${SCRIPT_DIR}/digest.sh" "$target")
   binary_input_digest=$(sed -n 's/^binary-input-digest=//p' <<<"$digest_output")
   if [[ ! "$binary_input_digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "invalid runner binary input digest: ${binary_input_digest}" >&2
@@ -159,6 +170,7 @@ build() {
   RUNNER_BINARY_INPUT_DIGEST="$binary_input_digest" \
   RUNNER_BINARY_METADATA_PATH="$metadata_path" \
   GUEST_CLI_PATH="$cli_package" \
+  GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
     "${context_root}/.github/scripts/runner-binary-build/compile.sh"
 
   emit "binary-input-digest" "$binary_input_digest"
