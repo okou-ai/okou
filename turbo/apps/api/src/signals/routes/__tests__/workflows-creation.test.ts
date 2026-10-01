@@ -20,11 +20,6 @@ import { onTestFinished } from "vitest";
 import { nowDate } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  assertWorkflowPreparationUnlockedFixture,
-  readWorkflowPreparationFixture,
-  readWorkflowPublicationFixture,
-} from "../../../test-fixtures/workflow-creation";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -157,7 +152,7 @@ function installS3Fixture() {
   };
 }
 
-async function assertAbsent(actor: OrgActor, workflowId: string, name: string) {
+async function assertAbsent(actor: OrgActor, name: string) {
   const listed = await accept(
     client().list({ headers: headers(actor) }),
     [200],
@@ -167,23 +162,6 @@ async function assertAbsent(actor: OrgActor, workflowId: string, name: string) {
       return workflow.name;
     }),
   ).not.toContain(name);
-  await accept(
-    detailClient().run({
-      headers: headers(actor),
-      params: { workflowId },
-    }),
-    [404],
-  );
-  const state = await readWorkflowPublicationFixture(actor.orgId, workflowId);
-  expect(state.workflow).toStrictEqual([]);
-  expect(state.mappings).toStrictEqual([]);
-  expect(state.versions).toStrictEqual([]);
-  expect(
-    state.storage.every((storage) => {
-      return storage.headVersionId === null;
-    }),
-  ).toBeTruthy();
-  return state;
 }
 
 async function assertReadable(
@@ -203,8 +181,8 @@ async function assertReadable(
 }
 
 describe("Workflow creation publication", () => {
-  it("keeps uploads outside publication locks and atomically publishes all rows after files are ready", async () => {
-    const { actor, agent, thread, body } = await setupCreation();
+  it("keeps the Workflow unlisted until its files are ready and publishes readable contents", async () => {
+    const { actor, thread, body } = await setupCreation();
     const s3 = installS3Fixture();
     const started = deferred<string>();
     const release = deferred<void>();
@@ -219,45 +197,24 @@ describe("Workflow creation publication", () => {
       release.resolve();
       await creating;
     });
-    const objectKey = await started.promise;
-    const prepared = await readWorkflowPreparationFixture(
-      actor.orgId,
-      objectKey,
-    );
-    await assertAbsent(actor, prepared.workflowId, body.name);
-    await assertWorkflowPreparationUnlockedFixture(
-      agent.agentId,
-      prepared.storageId,
-    );
+    await started.promise;
+    await assertAbsent(actor, body.name);
     release.resolve();
     const created = await accept(creating, [201]);
     expect(created.body).toMatchObject({
-      id: prepared.workflowId,
+      id: expect.any(String),
       name: body.name,
       visibility: "private",
     });
     await assertReadable(actor, created.body.id, body);
-    const state = await readWorkflowPublicationFixture(
-      actor.orgId,
-      created.body.id,
-    );
-    expect(
-      state.mappings.map((mapping) => {
-        return mapping.chatThreadId;
+    const sharedThread = await accept(
+      detailClient().chatThread({
+        headers: headers(actor),
+        params: { workflowId: created.body.id },
       }),
-    ).toStrictEqual([thread.id]);
-    expect(state.versions).toHaveLength(1);
-    expect(state.storage[0]?.headVersionId).toBe(state.versions[0]?.id);
-    const transactions = [
-      ...state.workflow,
-      ...state.mappings,
-      ...state.storage,
-      ...state.versions,
-    ].map((row) => {
-      return row.transaction;
-    });
-    expect(transactions).toHaveLength(4);
-    expect(new Set(transactions).size).toBe(1);
+      [200],
+    );
+    expect(sharedThread.body.chatThreadId).toBe(thread.id);
     const archive = [...s3.objects].find(([key]) => {
       return key.endsWith("/archive.tar.gz");
     })?.[1];
@@ -308,10 +265,7 @@ describe("Workflow creation publication", () => {
         release.resolve();
         await creating;
       });
-      const prepared = await readWorkflowPreparationFixture(
-        actor.orgId,
-        await started.promise,
-      );
+      await started.promise;
       release.resolve();
       expect((await creating)[0]).toMatchObject({
         status: "rejected",
@@ -320,8 +274,7 @@ describe("Workflow creation publication", () => {
           $metadata: { httpStatusCode: 503, attempts: 3 },
         },
       });
-      const state = await assertAbsent(actor, prepared.workflowId, body.name);
-      expect(state.storage).toStrictEqual([]);
+      await assertAbsent(actor, body.name);
       expect(s3.objects.size).toBe(0);
       s3.intercept(() => {});
       const recovered = await accept(
@@ -353,19 +306,14 @@ describe("Workflow creation publication", () => {
       release.resolve();
       await creating;
     });
-    const prepared = await readWorkflowPreparationFixture(
-      actor.orgId,
-      await started.promise,
-    );
+    await started.promise;
     controller.abort();
     release.resolve();
     expect((await creating)[0]).toMatchObject({
       status: "rejected",
       reason: { name: "AbortError" },
     });
-    expect(
-      (await assertAbsent(actor, prepared.workflowId, body.name)).storage,
-    ).toStrictEqual([]);
+    await assertAbsent(actor, body.name);
     expect(s3.objects.size).toBe(0);
     const recovered = await accept(
       client().create({ headers: headers(actor), body }),
@@ -382,19 +330,14 @@ describe("Workflow creation publication", () => {
       const s3 = installS3Fixture();
       const started = deferred<void>();
       const release = deferred<void>();
-      const attempts: { workflowId: string; storageId: string }[] = [];
+      let uploadsStarted = 0;
       s3.intercept(async (command) => {
         if (
           command instanceof PutObjectCommand &&
           command.input.Key?.endsWith("/archive.tar.gz")
         ) {
-          attempts.push(
-            await readWorkflowPreparationFixture(
-              actor.orgId,
-              command.input.Key,
-            ),
-          );
-          if (attempts.length === 2) {
+          uploadsStarted += 1;
+          if (uploadsStarted === 2) {
             started.resolve();
           }
           await release.promise;
@@ -424,22 +367,15 @@ describe("Workflow creation publication", () => {
       if (!winner || winner.status !== 201) {
         throw new Error("Expected one successful creation");
       }
-      const loser = attempts.find((attempt) => {
-        return attempt.workflowId !== winner.body.id;
-      });
-      if (!loser) {
-        throw new Error("Expected a losing creation attempt");
-      }
-      const loserState = await readWorkflowPublicationFixture(
-        actor.orgId,
-        loser.workflowId,
+      const listed = await accept(
+        client().list({ headers: headers(actor) }),
+        [200],
       );
-      expect(loserState).toStrictEqual({
-        workflow: [],
-        mappings: [],
-        storage: [],
-        versions: [],
-      });
+      expect(
+        listed.body.filter((workflow) => {
+          return workflow.name === body.name;
+        }),
+      ).toMatchObject([{ id: winner.body.id, visibility }]);
       expect(s3.objects.size).toBe(2);
       await assertReadable(actor, winner.body.id, body);
     },
@@ -448,7 +384,7 @@ describe("Workflow creation publication", () => {
   it.each(["notification failure", "post-commit cancellation"])(
     "preserves the committed Workflow after %s",
     async (failure) => {
-      const { actor, body } = await setupCreation();
+      const { actor, thread, body } = await setupCreation();
       const s3 = installS3Fixture();
       const controller = new AbortController();
       context.mocks.ably.publish.mockImplementationOnce(() => {
@@ -479,12 +415,14 @@ describe("Workflow creation publication", () => {
         throw new Error("Expected the committed Workflow");
       }
       await assertReadable(actor, workflow.id, body);
-      const state = await readWorkflowPublicationFixture(
-        actor.orgId,
-        workflow.id,
+      const sharedThread = await accept(
+        detailClient().chatThread({
+          headers: headers(actor),
+          params: { workflowId: workflow.id },
+        }),
+        [200],
       );
-      expect(state.versions).toHaveLength(1);
-      expect(state.mappings).toHaveLength(1);
+      expect(sharedThread.body.chatThreadId).toBe(thread.id);
       expect(s3.objects.size).toBe(2);
     },
   );
@@ -556,10 +494,7 @@ describe("Workflow creation publication", () => {
         release.resolve();
         await creating;
       });
-      const prepared = await readWorkflowPreparationFixture(
-        actor.orgId,
-        await started.promise,
-      );
+      await started.promise;
       if (change === "agent deleted") {
         await bdd.deleteAgent(actor, agent.agentId);
       } else if (change === "agent access revoked") {
@@ -572,22 +507,24 @@ describe("Workflow creation publication", () => {
       release.resolve();
       const result = await creating;
       if (change === "thread deleted") {
-        expect(result.status).toBe(201);
-        await assertReadable(actor, prepared.workflowId, body);
-        const state = await readWorkflowPublicationFixture(
-          actor.orgId,
-          prepared.workflowId,
+        const created = await accept(Promise.resolve(result), [201]);
+        await assertReadable(actor, created.body.id, body);
+        const sharedThread = await accept(
+          detailClient().chatThread({
+            headers: headers(actor),
+            params: { workflowId: created.body.id },
+          }),
+          [200],
         );
-        expect(state.mappings).toStrictEqual([]);
-        expect(state.versions).toHaveLength(1);
+        expect(sharedThread.body.chatThreadId).not.toBe(thread.id);
+        const replacement = await chat.readThreadMetadata(
+          actor,
+          sharedThread.body.chatThreadId,
+        );
+        expect(replacement.id).toBe(sharedThread.body.chatThreadId);
       } else {
         expect(result.status).toBe(change === "agent deleted" ? 404 : 403);
-        const state = await assertAbsent(
-          creator,
-          prepared.workflowId,
-          body.name,
-        );
-        expect(state.storage).toStrictEqual([]);
+        await assertAbsent(creator, body.name);
       }
     },
   );
