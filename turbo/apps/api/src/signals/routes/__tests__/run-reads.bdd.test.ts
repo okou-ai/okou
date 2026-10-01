@@ -84,22 +84,6 @@ async function entitledActor(customerId?: string): Promise<ApiTestUser> {
   return actor;
 }
 
-async function createClaudeAgent(
-  actor: ApiTestUser,
-  prefix: string,
-): Promise<{ readonly agentId: string; readonly name: string }> {
-  const name = `${prefix}-${randomUUID().slice(0, 8)}`;
-  return await api.createDirectAgent(actor, {
-    version: "1",
-    agents: {
-      [name]: {
-        framework: "claude-code",
-        environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-      },
-    },
-  });
-}
-
 /** A product Agent whose runs start through the Thread entry. */
 async function createThreadAgent(
   actor: ApiTestUser,
@@ -362,7 +346,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
   it("reads legacy and expanded unattended trigger sources from logs", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-trigger-sources");
+    const compose = await createThreadAgent(actor, "bdd-trigger-sources");
     if (!actor.orgId) {
       throw new Error("Trigger source reads require an org-scoped actor");
     }
@@ -427,7 +411,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
   it("keeps lifecycle-only logs visible without product metadata", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "lifecycle-only-log");
+    const compose = await createThreadAgent(actor, "lifecycle-only-log");
     if (!actor.orgId) {
       throw new Error("Lifecycle-only log reads require an org-scoped actor");
     }
@@ -1359,20 +1343,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
   });
 });
 
-describe("RUN-01: direct run admission boundaries", () => {
-  it("requires an Agent or Session identity", async () => {
-    const actor = await entitledActor();
-    const missingIdentity = await reads.requestCreateDirectRun(
-      actor,
-      { prompt: "reject a direct run without identity" },
-      [400],
-    );
-    expectApiError(missingIdentity.body);
-    expect(missingIdentity.body.error.message).toBe(
-      "Missing agentId or sessionId",
-    );
-  });
-
+describe("RUN-01: run admission boundaries", () => {
   it("treats the one-run limit as soft for concurrent chat picks and enforces it afterwards", async () => {
     const actor = await entitledActor();
     const agentId = await createChatAgent(actor);
@@ -1467,7 +1438,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("rejects a foreign agent before admitting a direct run", async () => {
+  it("rejects a foreign agent before admitting a run", async () => {
     const actor = await entitledActor();
     const compose = await createThreadAgent(actor, "bdd-admission");
     const first = await api.createThreadRun(actor, {
@@ -1480,24 +1451,24 @@ describe("RUN-01: direct run admission boundaries", () => {
     });
     const outsider = bdd.user();
     const foreignCompose = await createThreadAgent(outsider, "bdd-foreign");
-    const crossOrgCompose = await reads.requestCreateDirectRun(
+    const crossOrgCompose = await chat.requestSendEvent(
       actor,
       {
         agentId: foreignCompose.agentId,
         prompt: "run a foreign compose",
+        model: "claude-fable-5-1",
       },
       [404],
     );
     expectApiError(crossOrgCompose.body);
-    expect(crossOrgCompose.body.error.message).toBe("Resource not found");
+    expect(crossOrgCompose.body.error.message).toBe("Agent not found");
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
   it("restricts production network-body capture to staff organizations", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-admission");
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const compose = await createThreadAgent(actor, "bdd-admission");
     mockEnv("ENV", "production");
     mockOptionalEnv("VERCEL_ENV", "preview");
     const legacyDomainActor = {
@@ -1505,36 +1476,26 @@ describe("RUN-01: direct run admission boundaries", () => {
       email: `bdd-${randomUUID().slice(0, 8)}@vm0.ai`,
     };
     await bdd.readMe(legacyDomainActor);
-    const externalGate = await reads.requestCreateDirectRun(
-      legacyDomainActor,
-      {
+    // The pick rejects a non-staff capture request before any run exists.
+    await expect(
+      api.readThreadRunRejection(legacyDomainActor, {
         agentId: compose.agentId,
         prompt: "capture from a non-staff organization",
         captureNetworkBodies: true,
-      },
-      [403],
-    );
-    expectApiError(externalGate.body);
-    expect(externalGate.body.error.message).toContain("internal accounts");
+      }),
+    ).resolves.toBe("forbidden");
 
     const staff = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     await api.grantProEntitlement(staff);
-    const staffAgent = await createClaudeAgent(staff, "bdd-staff-capture");
-    const allowed = await reads.requestCreateDirectRun(
-      staff,
-      {
-        agentId: staffAgent.agentId,
-        prompt: "capture from a staff organization",
-        captureNetworkBodies: true,
-      },
-      [201],
-    );
-    if (allowed.status !== 201) {
-      throw new Error("Expected the staff capture run create to succeed");
-    }
-    const captureClaim = await api.claimRunnerJob(allowed.body.runId);
+    const staffAgent = await createThreadAgent(staff, "bdd-staff-capture");
+    const allowed = await api.createThreadRun(staff, {
+      agentId: staffAgent.agentId,
+      prompt: "capture from a staff organization",
+      captureNetworkBodies: true,
+    });
+    const captureClaim = await api.claimRunnerJob(allowed.runId);
     expect(captureClaim.captureNetworkBodies).toBeTruthy();
-    await api.requestCancelRun(staff, allowed.body.runId, [200]);
+    await api.requestCancelRun(staff, allowed.runId, [200]);
   });
 });
 

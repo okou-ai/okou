@@ -14,8 +14,6 @@ import {
   type ApiDispatchTimingDimensions,
   ApiDispatchPhaseCollector,
 } from "./api-dispatch-timing.service";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   type PiModelConfig,
@@ -121,7 +119,6 @@ import {
 } from "../../lib/db-structured-result";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { ingestToAxiom, getDatasetName } from "../external/axiom";
-import type { CustomConnectorRuntimeContext } from "./connector-runtime-preparation.service";
 
 export type StorageManifestSource =
   | "system_skill"
@@ -1260,37 +1257,6 @@ function createdRunResponse(
       createdAt: run.createdAt.toISOString(),
     },
   };
-}
-
-export interface PreparedRunContext {
-  readonly disabledPaidTools: readonly string[];
-  readonly body: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: string | undefined;
-  readonly modelUsageLongContextMinTotalInputTokens: number;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly additionalVolumes:
-    | readonly AgentRunCreateAdditionalVolume[]
-    | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly userTimezone: string | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly imageRecognitionAvailable: boolean;
-  /** Resolved once at run start and used as the run's built-in image default. */
-  readonly selectedImageModel: ImageModel;
-}
-
-export interface FinalizedPreparedRunContext extends PreparedRunContext {
-  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
 export function committedAtomicLaunchResponse(args: {

@@ -11,7 +11,6 @@ import type { Db } from "../external/db";
 import {
   measureApiDispatchTiming,
   ApiDispatchTimingCollector,
-  ApiDispatchPhaseCollector,
 } from "./api-dispatch-timing.service";
 import {
   type FeatureSwitchContext,
@@ -108,7 +107,6 @@ import {
   CreateAgentRunArgs,
   CreateRunBody,
   CreateRunErrorResult,
-  FinalizedPreparedRunContext,
   PermissionManifest,
   PreparedRunnerLaunch,
   ResolvedModelProviderEnvironment,
@@ -1625,52 +1623,6 @@ export interface MaterializedRunnerStorage {
   readonly piResources: PreparedPiLaunchResources | undefined;
 }
 
-export function atomicLaunchPayloadInput(args: {
-  readonly capturedStorageMounts?: readonly PersistedStorageMount[];
-  readonly deferredPiResources?: PreparedPiLaunchResources;
-  readonly createArgs: CreateAgentRunArgs;
-  readonly context: FinalizedPreparedRunContext;
-  readonly run: Pick<RunRecord, "id" | "sessionId" | "shouldCreateSession">;
-  readonly timing: ApiDispatchTimingCollector;
-}): BuildRunnerJobPayloadInput {
-  return {
-    disabledPaidTools: args.context.disabledPaidTools,
-    run: args.run,
-    deferredPiResources: args.deferredPiResources,
-    capturedStorageMounts: args.capturedStorageMounts,
-    userId: args.createArgs.userId,
-    orgId: args.createArgs.orgId,
-    resolved: args.context.resolved,
-    body: args.context.body,
-    artifacts: args.context.artifacts,
-    framework: args.context.framework,
-    launchSnapshot: args.context.launchSnapshot,
-    piSandbox: args.context.piSandbox,
-    modelProvider: args.context.modelProvider,
-    connectorContext: args.context.connectorContext,
-    customConnectorContext: args.context.customConnectorContext,
-    permissionManifest: args.context.permissionManifest,
-    billableFirewalls: args.context.billableFirewalls,
-    modelUsageProvider: args.context.modelUsageProvider,
-    modelUsageLongContextMinTotalInputTokens:
-      args.context.modelUsageLongContextMinTotalInputTokens,
-    apiStartTime: args.createArgs.apiStartTime,
-    additionalVolumes: args.context.additionalVolumes,
-    additionalVolumeSources: args.context.additionalVolumeSources,
-    includeOkouTokenSecret: args.createArgs.includeOkouTokenSecret,
-    okouTokenComputerUseHostId: args.createArgs.okouTokenComputerUseHostId,
-    okouTokenCloudBrowserEnabled: args.createArgs.okouTokenCloudBrowserEnabled,
-    imageRecognitionAvailable: args.context.imageRecognitionAvailable,
-    chatThreadId: args.createArgs.chatThreadId,
-    platformEnvironment: args.createArgs.platformEnvironment,
-    userTimezone: args.context.userTimezone,
-    featureSwitchContext: args.context.featureSwitchContext,
-    timing: args.timing,
-    piLaunchConfig: args.createArgs.piLaunchConfig,
-    artifactMissingRootPolicy: args.createArgs.artifactMissingRootPolicy,
-  };
-}
-
 export async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
@@ -1706,15 +1658,6 @@ export async function buildPreparedPermissionManifest(args: {
     return badRequestMessage(result.error.message);
   }
   throw result.error;
-}
-
-export interface AtomicLaunchRunInput {
-  readonly db: Db;
-  readonly args: CreateAgentRunArgs;
-  readonly enforceBuiltInCredits: boolean;
-  readonly context: FinalizedPreparedRunContext;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly phaseTiming: ApiDispatchPhaseCollector;
 }
 
 export function finalizedMaterializedLaunch(

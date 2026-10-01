@@ -27,7 +27,6 @@ import {
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
   buildAgentExecutionConfig,
 } from "./agent-execution-config";
-import { z } from "zod";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import type { ModelCatalog } from "./model-catalog.service";
@@ -50,10 +49,7 @@ import {
   isCompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
 import { isStaffOrg } from "@okouai/core/staff-org";
-import type {
-  FirewallPermissionGrantAction,
-  FirewallPermissionGrant,
-} from "@okouai/connectors/firewall-metadata/policy";
+import type { FirewallPermissionGrant } from "@okouai/connectors/firewall-metadata/policy";
 import type {
   AgentConnectorScopeSnapshot,
   CustomConnectorDefinitionVersion,
@@ -1209,34 +1205,6 @@ export function buildProductRunArgs(
   };
 }
 
-export const bootstrapMetadataRowKindSchema = z.enum([
-  "user_info",
-  "feature_switch",
-  "builtin_connector",
-  "custom_connector",
-  "permission_grant",
-]);
-
-type BootstrapMetadataRowKind = z.output<typeof bootstrapMetadataRowKindSchema>;
-
-export interface BootstrapMetadataQueryRow {
-  readonly kind: BootstrapMetadataRowKind;
-  readonly id: string | null;
-  readonly name: string | null;
-  readonly email: string | null;
-  readonly timezone: string | null;
-  readonly featureUserId: string | null;
-  readonly switches: Record<string, boolean> | null;
-  readonly detail: string | null;
-  readonly action: FirewallPermissionGrantAction | null;
-  readonly permissionNames: readonly string[] | null;
-  readonly permissionBundleRef: string | null;
-  readonly storageVersion: number | null;
-  readonly skillStorageVersionId: string | null;
-  readonly isMcp: boolean | null;
-  readonly expiresAt: Date | null;
-}
-
 export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -1244,22 +1212,6 @@ export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly permissionGrants: readonly FirewallPermissionGrant[];
   readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
-}
-
-export function permissionValidityHorizon(
-  rows: readonly BootstrapMetadataQueryRow[],
-): string | null {
-  let horizon: Date | null = null;
-  for (const row of rows) {
-    if (
-      row.kind === "permission_grant" &&
-      row.expiresAt !== null &&
-      (horizon === null || row.expiresAt.getTime() < horizon.getTime())
-    ) {
-      horizon = row.expiresAt;
-    }
-  }
-  return horizon?.toISOString() ?? null;
 }
 export interface AgentRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;

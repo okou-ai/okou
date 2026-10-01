@@ -8,23 +8,12 @@ import type {
   AgentRunOfficialWorkflowDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import {
-  officialWorkflowCatalogReleases,
-  officialWorkflowCatalogState,
-  officialWorkflowDefinitionRevisions,
-} from "@okouai/db/schema/official-workflow-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { computed, type Computed } from "ccstate";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import type { ReadonlyDb } from "../external/db";
 import {
-  acceptedCatalogFromRow,
-  acceptedRevisionFromRow,
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   type AcceptedOfficialWorkflowCatalog,
   lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
@@ -244,173 +233,6 @@ export function assembleRunObservation(
       definitions: definitions.map(provenanceDefinition),
     },
   };
-}
-
-interface OfficialWorkflowRunReadInput {
-  readonly db: ReadonlyDb;
-  readonly hasOfficialWorkflows: boolean;
-}
-
-type OfficialWorkflowRunReadInputObject = Computed<
-  OfficialWorkflowRunReadInput | Promise<OfficialWorkflowRunReadInput>
->;
-
-function createAcceptedRunCatalogObject(
-  input$: OfficialWorkflowRunReadInputObject,
-) {
-  return computed(async (get) => {
-    const { db, hasOfficialWorkflows } = await get(input$);
-    if (!hasOfficialWorkflows) {
-      return null;
-    }
-    const [row] = await db
-      .select({
-        releaseId: officialWorkflowCatalogState.acceptedReleaseId,
-        payload: officialWorkflowCatalogReleases.payload,
-      })
-      .from(officialWorkflowCatalogState)
-      .innerJoin(
-        officialWorkflowCatalogReleases,
-        eq(
-          officialWorkflowCatalogReleases.id,
-          officialWorkflowCatalogState.acceptedReleaseId,
-        ),
-      )
-      .where(
-        eq(
-          officialWorkflowCatalogState.authority,
-          OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-        ),
-      )
-      .limit(1);
-    const catalog = acceptedCatalogFromRow(row);
-    if (!catalog) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return catalog;
-  });
-}
-
-function createAcceptedRunRevisionsObject(
-  input$: OfficialWorkflowRunReadInputObject,
-  acceptedCandidates$: Computed<Promise<readonly AcceptedRunCandidate[]>>,
-) {
-  return computed(async (get) => {
-    const { db } = await get(input$);
-    const candidates = await get(acceptedCandidates$);
-    if (candidates.length === 0) {
-      return [];
-    }
-    const rows = await db
-      .select({
-        definitionName: officialWorkflowDefinitionRevisions.definitionName,
-        revision: officialWorkflowDefinitionRevisions.revision,
-        payload: officialWorkflowDefinitionRevisions.payload,
-        storageName: officialWorkflowDefinitionRevisions.storageName,
-        storageId: officialWorkflowDefinitionRevisions.storageId,
-        storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
-      })
-      .from(officialWorkflowDefinitionRevisions)
-      .innerJoin(
-        storages,
-        and(
-          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-        ),
-      )
-      .innerJoin(
-        storageVersions,
-        and(
-          eq(
-            storageVersions.id,
-            officialWorkflowDefinitionRevisions.storageVersion,
-          ),
-          eq(
-            storageVersions.storageId,
-            officialWorkflowDefinitionRevisions.storageId,
-          ),
-        ),
-      )
-      .where(
-        or(
-          ...candidates.map(({ accepted }) => {
-            return and(
-              eq(
-                officialWorkflowDefinitionRevisions.definitionName,
-                accepted.name,
-              ),
-              eq(
-                officialWorkflowDefinitionRevisions.revision,
-                accepted.revision,
-              ),
-            );
-          }),
-        ),
-      )
-      .orderBy(
-        asc(officialWorkflowDefinitionRevisions.definitionName),
-        asc(officialWorkflowDefinitionRevisions.revision),
-      );
-    const revisions = new Map(
-      rows.map((row) => {
-        return [
-          JSON.stringify([row.definitionName, row.revision]),
-          acceptedRevisionFromRow(row),
-        ];
-      }),
-    );
-    return candidates.map(({ accepted }) => {
-      return (
-        revisions.get(JSON.stringify([accepted.name, accepted.revision])) ??
-        null
-      );
-    });
-  });
-}
-
-/** The accepted catalog can load before model-dependent mount paths are ready. */
-export function createOfficialWorkflowRunObjects({
-  input$,
-  candidates$,
-}: {
-  readonly input$: OfficialWorkflowRunReadInputObject;
-  readonly candidates$: Computed<
-    Promise<readonly OfficialWorkflowRunCandidate[]>
-  >;
-}) {
-  const catalog$ = createAcceptedRunCatalogObject(input$);
-  const acceptedCandidates$ = computed(async (get) => {
-    const [catalog, candidates] = await Promise.all([
-      get(catalog$),
-      get(candidates$),
-    ]);
-    if (candidates.length === 0) {
-      return [];
-    }
-    if (!catalog) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return acceptedRunCandidates(catalog, candidates);
-  });
-  const revisions$ = createAcceptedRunRevisionsObject(
-    input$,
-    acceptedCandidates$,
-  );
-  const observation$ = computed(
-    async (get): Promise<OfficialWorkflowRunObservation | undefined> => {
-      const [catalog, candidates, revisions] = await Promise.all([
-        get(catalog$),
-        get(acceptedCandidates$),
-        get(revisions$),
-      ]);
-      return catalog && candidates.length > 0
-        ? assembleRunObservation(catalog, candidates, revisions)
-        : undefined;
-    },
-  );
-  return { observation$ };
 }
 
 export async function acquireOfficialWorkflowRunCatalogAdmissionLock(

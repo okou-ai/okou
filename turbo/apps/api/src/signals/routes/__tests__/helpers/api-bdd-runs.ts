@@ -42,7 +42,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   runsCancelContract,
-  runCreateBodySchema,
   runContextContract,
   runRunnerContract,
   runsByIdContract,
@@ -62,13 +61,7 @@ import { now, withNowScopeForTest } from "../../../../lib/time";
 import { createDeferredPromise } from "../../../utils";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import {
-  createDirectAgentExecutionFixture,
-  createDirectRunFixture,
-  listAgentRunsFixture,
-  type DirectAgentExecutionConfig,
-  type DirectRunFixtureRequest,
-} from "../../../../test-fixtures/agent-runs";
+import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
@@ -93,15 +86,12 @@ import { modelProvidersRoutes } from "../../model-providers";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { runsRoutes } from "../../runs";
-import { runFixtureContract, runFixtureRoutes } from "../../test-run-fixture";
 import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-type AgentRunRequest = z.infer<typeof runCreateBodySchema>;
-type DirectRunRequest = DirectRunFixtureRequest;
 interface RunsListQuery {
   readonly status?: string;
   readonly agent?: string;
@@ -189,7 +179,6 @@ const runRoutes = [
   ...modelPoliciesRoutes,
   ...modelProvidersRoutes,
   ...runDetailRoutes,
-  ...runFixtureRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
   ...agentsRoutes,
@@ -325,6 +314,8 @@ export function createRunsApi(
       readonly model?: string;
       /** Continue an existing thread, which resumes its Agent session. */
       readonly threadId?: string;
+      /** Request staff-only network body capture for the run. */
+      readonly captureNetworkBodies?: boolean;
     },
   ) {
     const chat = createChatFilesBddApi(context);
@@ -337,6 +328,9 @@ export function createRunsApi(
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
         ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
       },
       [201],
       systemSkillStorageResolution === undefined
@@ -384,6 +378,7 @@ export function createRunsApi(
       readonly agentId: string;
       readonly prompt: string;
       readonly model?: string;
+      readonly captureNetworkBodies?: boolean;
     },
   ): Promise<string | undefined> {
     const chat = createChatFilesBddApi(context);
@@ -395,6 +390,9 @@ export function createRunsApi(
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
       },
       [201],
     );
@@ -471,29 +469,6 @@ export function createRunsApi(
       grants: [grant],
     };
   };
-
-  async function createDirectRunThroughService(
-    actor: ApiTestUser | null,
-    body: DirectRunRequest,
-  ) {
-    if (!actor?.orgId) {
-      return {
-        status: 401 as const,
-        body: {
-          error: {
-            message: "Not authenticated",
-            code: "UNAUTHORIZED" as const,
-          },
-        },
-      };
-    }
-    return await createDirectRunFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      body,
-      signal: context.signal,
-    });
-  }
 
   return {
     configureRunnerGroup(): string {
@@ -643,21 +618,6 @@ export function createRunsApi(
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
     createThreadRun,
     readThreadRunRejection,
-
-    async createRun(actor: ApiTestUser, body: AgentRunRequest) {
-      const response = await accept(
-        runApp(
-          context,
-          undefined,
-          systemSkillStorageResolution,
-        )(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body,
-        }),
-        [201],
-      );
-      return response.body;
-    },
 
     async claimRunnerJob(
       runId: string,
@@ -1002,37 +962,6 @@ export function createRunsApi(
       });
     },
 
-    async createDirectAgent(
-      actor: ApiTestUser,
-      content: DirectAgentExecutionConfig,
-    ): Promise<{ readonly agentId: string; readonly name: string }> {
-      if (!actor.orgId) {
-        throw new Error("Direct Agent fixtures require an org-scoped actor");
-      }
-      return await createDirectAgentExecutionFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        content,
-        signal: context.signal,
-      });
-    },
-
-    async createDirectRun(actor: ApiTestUser, body: DirectRunRequest) {
-      const response = await accept(
-        createDirectRunThroughService(actor, body),
-        [201],
-      );
-      return response.body;
-    },
-
-    async requestDirectRun(
-      actor: ApiTestUser | null,
-      body: DirectRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-    ) {
-      return await accept(createDirectRunThroughService(actor, body), statuses);
-    },
-
     async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
       if (!actor.orgId) {
         throw new Error("Agent run list service requires an organization");
@@ -1267,38 +1196,6 @@ export function createRunsApi(
         [200],
       );
       return response.body;
-    },
-
-    async requestCreateRun(
-      actor: ApiTestUser | null,
-      body: AgentRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: {
-            ...authenticate(context, actor),
-            ...extraHeaders,
-          },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestCreateRunUnchecked(
-      actor: ApiTestUser | null,
-      body: unknown,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body: body as AgentRunRequest,
-        }),
-        statuses,
-      );
     },
 
     async readRun(actor: ApiTestUser, runId: string) {

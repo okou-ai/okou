@@ -529,19 +529,6 @@ export async function measureApiDispatchTiming<T>(
   return await collector.measure(actionType, spanKind, operation, dimensions);
 }
 
-export function measureApiDispatchTimingSync<T>(
-  collector: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  spanKind: ApiDispatchTimingSpanKind,
-  operation: () => T,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): T {
-  if (!collector) {
-    return operation();
-  }
-  return collector.measureSync(actionType, spanKind, operation, dimensions);
-}
-
 function resolveApiDispatchTimingDimensions(
   dimensions: ApiDispatchTimingDimensionsInput | undefined,
 ): ApiDispatchTimingDimensions | undefined {

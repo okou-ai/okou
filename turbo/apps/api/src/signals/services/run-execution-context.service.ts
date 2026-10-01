@@ -8,11 +8,6 @@ import {
   OfficialWorkflowRunAdmissionError,
 } from "./official-workflow-run.service";
 import type { ReadonlyDb } from "../external/db";
-import {
-  ApiDispatchTimingCollector,
-  ApiDispatchPhaseCollector,
-} from "./api-dispatch-timing.service";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
@@ -60,9 +55,7 @@ import {
   CreateRunBody,
   CreateRunErrorResult,
   EffectiveConnectorScope,
-  FinalizedPreparedRunContext,
   PermissionManifest,
-  PreparedRunContext,
   ResolvedModelProviderEnvironment,
   ResolvedRunExecution,
   StorageManifestSource,
@@ -73,11 +66,7 @@ import {
   skillsRootForRun,
 } from "./execution-storage-manifest.service";
 import { RunConnectorCatalogSelection } from "./run-connector-context.service";
-import { resolvePreparedPiModelConfig } from "./run-model-provider-environment.service";
-import {
-  buildStoredExecutionSecrets,
-  runnerProfile,
-} from "./execution-runner-payload.service";
+import { buildStoredExecutionSecrets } from "./execution-runner-payload.service";
 import { isRouteError, validateCompose } from "./run-execution-body.service";
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
@@ -735,27 +724,6 @@ function preparedRunAdditionalVolumes(args: {
   });
 }
 
-export interface PreparedRunBodyContext {
-  readonly body: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly requestedFramework: SupportedFramework;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-export interface PreparedRuntimeContext {
-  readonly framework: SupportedFramework;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: string | undefined;
-  readonly modelUsageLongContextMinTotalInputTokens: number;
-  readonly connectorScope: EffectiveConnectorScope;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-}
-
 export function prepareRunOutputMetadata(args: {
   readonly createArgs: Pick<
     CreateAgentRunArgs,
@@ -814,12 +782,6 @@ export function isImageRecognitionAvailableForRun(args: {
   );
 }
 
-export interface PrepareRunContextInput {
-  readonly db: ReadonlyDb;
-  readonly args: CreateAgentRunArgs;
-  readonly timing: ApiDispatchTimingCollector;
-}
-
 export function resolveCompatibleDirectResumeSession(args: {
   readonly resolved: ResolvedRunExecution;
   readonly next: SessionExecutionIdentity;
@@ -857,130 +819,3 @@ export type PreparedOfficialWorkflow =
   | OfficialWorkflowRunObservation
   | CreateRunErrorResult
   | undefined;
-
-export function composePreparedRunContext({
-  args,
-  bodyContext,
-  runtimeContext,
-  userTimezone,
-  selectedImageModel,
-  officialWorkflowRun,
-  systemSkillStorageResolution,
-  disabledPaidTools,
-}: {
-  readonly args: CreateAgentRunArgs;
-  readonly bodyContext: PreparedRunBodyContext;
-  readonly runtimeContext: PreparedRuntimeContext;
-  readonly userTimezone: string | undefined;
-  readonly selectedImageModel: PreparedRunContext["selectedImageModel"];
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly systemSkillStorageResolution: SystemSkillStorageResolution;
-  readonly disabledPaidTools: readonly string[];
-}): PreparedRunContext | CreateRunErrorResult {
-  const { body } = bodyContext;
-  const piSandbox = resolvePreparedPiModelConfig({
-    createArgs: args,
-    modelProvider: runtimeContext.modelProvider,
-  });
-  const resolved = resolveCompatibleDirectResumeSession({
-    resolved: bodyContext.resolved,
-    next: {
-      selectedModel: runtimeContext.modelProvider?.selectedModel ?? null,
-      cliAgentType: piSandbox ? "pi" : runtimeContext.framework,
-    },
-  });
-  const validation = validateRunEnvironmentReferences({
-    resolved,
-    body,
-    modelProvider: runtimeContext.modelProvider,
-    connectorContext: runtimeContext.connectorContext,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    permissionManifest: runtimeContext.permissionManifest,
-    validateEnvironmentReferences: args.validateEnvironmentReferences,
-  });
-  if (validation) {
-    return validation;
-  }
-  const metadata = prepareRunOutputMetadata({
-    createArgs: args,
-    systemSkillStorageResolution: systemSkillStorageResolution,
-    connectorScope: runtimeContext.connectorScope,
-    connectorCatalogSelection: runtimeContext.connectorCatalogSelection,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    framework: runtimeContext.framework,
-    piSandbox,
-    body,
-    resolved,
-    officialWorkflowRun,
-  });
-  return {
-    disabledPaidTools,
-    body,
-    resolved,
-    framework: runtimeContext.framework,
-    piSandbox,
-    modelProvider: runtimeContext.modelProvider,
-    connectorContext: runtimeContext.connectorContext,
-    customConnectorContext: runtimeContext.customConnectorContext,
-    permissionManifest: runtimeContext.permissionManifest,
-    billableFirewalls: runtimeContext.billableFirewalls,
-    modelUsageProvider: runtimeContext.modelUsageProvider,
-    modelUsageLongContextMinTotalInputTokens:
-      runtimeContext.modelUsageLongContextMinTotalInputTokens,
-    connectorScope: runtimeContext.connectorScope,
-    ...metadata,
-    officialWorkflowRun,
-    userTimezone,
-    featureSwitchContext: bodyContext.featureSwitchContext,
-    selectedImageModel,
-    imageRecognitionAvailable: isImageRecognitionAvailableForRun({
-      includeOkouTokenSecret: args.includeOkouTokenSecret,
-      selectedModel:
-        runtimeContext.modelProvider?.selectedModel ??
-        args.selectedModelOverride,
-      providerType:
-        runtimeContext.modelProvider?.concreteType ??
-        runtimeContext.modelProvider?.type,
-    }),
-  };
-}
-
-export interface PreparedAgentRun {
-  readonly args: CreateAgentRunArgs;
-  readonly context: PreparedRunContext;
-  readonly contextInput: PrepareRunContextInput;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly phaseTiming: ApiDispatchPhaseCollector;
-}
-
-export function finalizePreparedRunContext(
-  prepared: Omit<PreparedAgentRun, "phaseTiming">,
-  finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"],
-): FinalizedPreparedRunContext {
-  return {
-    ...prepared.context,
-    launchSnapshot: {
-      schemaVersion: 3,
-      framework:
-        prepared.context.piSandbox === undefined
-          ? prepared.context.framework
-          : "pi",
-      runnerProfile: runnerProfile(prepared.context.resolved.content),
-    },
-    body: withFinalRunAppendSystemPrompt({
-      body: {
-        ...prepared.context.body,
-        appendSystemPrompt: finalAppendSystemPrompt,
-      },
-      framework: prepared.context.framework,
-      chatThreadId: prepared.args.chatThreadId,
-      imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
-      mcpConnectorSlugs: [
-        ...prepared.context.connectorContext.mcpConnectorSlugs,
-        ...prepared.context.customConnectorContext.mcpConnectorSlugs,
-      ],
-      selectedImageModel: prepared.context.selectedImageModel,
-      cliAvailable: prepared.args.includeOkouTokenSecret === true,
-    }),
-  };
-}
