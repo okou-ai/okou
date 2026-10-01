@@ -614,10 +614,6 @@ export async function setTelegramThinkingMessageIdFixture(
     .where(eq(chatTelegramContext.id, event.contextId));
 }
 
-interface AgentphoneChatEventByPromptFixture {
-  readonly eventId: string;
-}
-
 /**
  * Chat events live in a database shared by every parallel test worker, so a
  * prompt lookup must be scoped to the caller's own user. Matching on prompt
@@ -642,20 +638,6 @@ async function findOwnedChatEventByPrompt(args: {
     });
   });
   return row ?? null;
-}
-
-export async function findAgentphoneChatEventByPromptFixture(args: {
-  readonly userId: string;
-  readonly prompt: string;
-}): Promise<AgentphoneChatEventByPromptFixture | null> {
-  return await findOwnedChatEventByPrompt({
-    userId: args.userId,
-    prompt: args.prompt,
-    filter: and(
-      eq(chatEvents.eventType, "input.prompt"),
-      eq(chatEvents.contextType, "agentphone"),
-    ),
-  });
 }
 
 export async function findPendingChatEventByPromptFixture(args: {

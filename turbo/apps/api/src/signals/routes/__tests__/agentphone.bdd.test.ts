@@ -7,7 +7,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { findAgentphoneChatEventByPromptFixture } from "../../../test-fixtures/chat-events";
 import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached, settle } from "../../utils";
@@ -16,6 +15,7 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
+import { findPendingInputEventByText } from "./helpers/chat-event-test-reader";
 import {
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
@@ -1467,9 +1467,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       from: phone,
       body: "second queued prompt",
     });
-    const secondEvent = await findAgentphoneChatEventByPromptFixture({
-      userId: actor.userId,
-      prompt: "second queued prompt",
+    const secondEvent = await findPendingInputEventByText(context, {
+      actor,
+      text: "second queued prompt",
     });
     if (!secondEvent) {
       throw new Error("Expected pending AgentPhone queue item");
