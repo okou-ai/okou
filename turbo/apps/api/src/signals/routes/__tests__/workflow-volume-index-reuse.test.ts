@@ -310,15 +310,19 @@ describe("Registered workflow volume index reuse", () => {
       }
       return await original(request);
     });
-    const worker = run(volume.fixture.versionId);
-    await entered.promise;
-    await accept(volume.update(), [200]);
-    release.resolve(undefined);
-    await expect(worker).resolves.toMatchObject({
-      claimed: 1,
-      ready: 0,
-      stale: 1,
-    });
+    const publish = async () => {
+      await entered.promise;
+      await accept(volume.update(), [200]);
+    };
+    // Join both owners immediately, and release the external read even when
+    // publication fails, so a regression cannot leave unhandled worker work.
+    const [worker] = await Promise.all([
+      run(volume.fixture.versionId),
+      publish().finally(() => {
+        release.resolve(undefined);
+      }),
+    ]);
+    expect(worker).toMatchObject({ claimed: 1, ready: 0, stale: 1 });
     await expect(run(volume.fixture.versionId)).resolves.toMatchObject({
       claimed: 0,
     });
