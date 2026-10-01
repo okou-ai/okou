@@ -5,7 +5,9 @@
 //! Authentication stops before ClientInit. [`Authenticated::initialize`] adds
 //! desktop negotiation with an explicit [`SharingMode`] and owned framebuffer updates.
 //! [`Session`] adds immutable PNG captures and balanced keyboard/pointer input.
-//! Failure or cancellation drops the stream, with no background tasks.
+//! Failure or cancellation drops the stream. A QEMU SCRAM step already running
+//! in the blocking pool (including bounded PBKDF2) may finish after cancellation;
+//! that task does not retain the stream.
 
 #![forbid(unsafe_code)]
 
