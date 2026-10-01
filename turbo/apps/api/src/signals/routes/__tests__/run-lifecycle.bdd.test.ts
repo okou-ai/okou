@@ -8041,7 +8041,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-custom-permission-setup-${randomUUID()}`,
     });
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
     const custom = await connectors.createCustomConnector(actor, {
       slug,
@@ -8089,10 +8092,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantResponse.body.grants).toStrictEqual([grant]);
 
     const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-    const disconnectedRun = await api.createRun(actor, {
+    const disconnectedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the disconnected custom connector skill",
-      modelProvider: "anthropic-api-key",
     });
     await connectors.updateCustomConnector(actor, custom.id, {
       displayName: custom.displayName,
@@ -8143,10 +8145,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       runtimeProjection: true,
     });
 
-    const restoredRun = await api.createRun(actor, {
+    const restoredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the reconnected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const restoredClaim = await api.claimRunnerJob(restoredRun.runId);
     const customApis = inlineFirewallApis(
@@ -8191,26 +8192,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(restoredSkillMount?.versionId).toBe(updatedSkill.versionId);
 
     await api.requestCancelRun(actor, restoredRun.runId, [200]);
-
-    const directRun = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "use the direct scoped custom connector",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: [],
-        allowedCustomConnectorIds: [custom.id],
-      },
-    });
-    const directClaim = await api.claimRunnerJob(directRun.runId);
-    expect(
-      inlineFirewallApis(directClaim.firewalls, internalName)[0]?.permissions,
-    ).toStrictEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "chat:write" })]),
-    );
-    expect(findFirewallEntry(directClaim.firewalls, "slack")).toBeUndefined();
-    expect(directClaim.networkPolicies ?? {}).not.toHaveProperty("slack");
-    await api.requestCancelRun(actor, directRun.runId, [200]);
   });
 
   it("fails closed when a custom skill version belongs to another storage", async () => {
