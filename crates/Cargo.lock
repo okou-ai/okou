@@ -3530,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.4"
+version = "0.219.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "api-contracts",
  "async-trait",
