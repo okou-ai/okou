@@ -79,8 +79,12 @@ before tests can run against a trigger-free schema.
   removed passed the whole cleanup/cancellation API file (47 tests). This
   closes that fixture's source dependency, not every producer or production
   convergence. Other fixture dependencies below remain unfinished.
+- `test-computer-use-state.ts` now captures its Run's canonical identity in
+  the insertion transaction using exact stored time/source/thread. Its existing
+  Computer Use API file passes 26 tests against the same isolated trigger-free
+  schema; authorization and ordinary behavior assertions are unchanged.
 - Other direct Run setup remains in `test-pi-memory-stage1-state.ts`,
-  `test-computer-use-state.ts`, `test-cron-monitor-chat-event-queue-state.ts`,
+  `test-cron-monitor-chat-event-queue-state.ts`,
   `test-ssh-connection-state.ts`, `test-telegram-state.ts`, and the
   `test-fixtures/chat-event-retention.ts` / `chat-events.ts` seeders. Several
   service-local Pi fixtures also insert Runs directly. Their caller-specific
