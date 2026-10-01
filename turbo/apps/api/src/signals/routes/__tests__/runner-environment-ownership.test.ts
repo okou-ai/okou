@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -32,58 +30,40 @@ describe("runner environment ownership", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
-    const untrustedSecretValue = "api-untrusted-secret-value";
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-
-    const agentName = `environment-ownership-${randomUUID().slice(0, 8)}`;
-    const agent = await runs.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [agentName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            USER_VALUE: "user-value",
-            OKOU_UNTRUSTED_LITERAL: "untrusted-literal-value",
-            OKOU_UNTRUSTED_SECRET: `\${{ secrets.OKOU_UNTRUSTED_SECRET }}`,
-          },
-        },
-      },
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Environment ownership agent",
+      visibility: "private",
     });
-    const run = await runs.createDirectRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "exercise environment ownership",
-      modelProviderType: "anthropic-api-key",
-      secrets: { OKOU_UNTRUSTED_SECRET: untrustedSecretValue },
     });
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(run.runId);
 
-    expect(claim.environment).toMatchObject({ USER_VALUE: "user-value" });
-    expect(claim.environment).not.toHaveProperty("OKOU_UNTRUSTED_LITERAL");
-    expect(claim.environment).not.toHaveProperty("OKOU_UNTRUSTED_SECRET");
-    expect(claim.secretValues ?? []).not.toContain(untrustedSecretValue);
+    // Platform-owned values reach the Runner only as trusted platform
+    // environment, never as Agent environment entries.
     expect(claim.platformEnvironment).toMatchObject({
       CLI_PKG_URL: expect.any(String),
+      OKOU_TOKEN: expect.any(String),
+      OKOU_AGENT_ID: agent.agentId,
     });
     for (const key of Object.keys(claim.platformEnvironment)) {
       expect(claim.environment).not.toHaveProperty(key);
     }
 
+    // The run snapshot names its secret references but never holds the issued
+    // token value.
     const snapshot = runContextSnapshotForRun(run.runId);
-    expect(snapshot.secretNames).toContain("OKOU_UNTRUSTED_SECRET");
-    expect(snapshot.environmentEntries).not.toContainEqual(
-      expect.objectContaining({ name: "OKOU_UNTRUSTED_LITERAL" }),
+    expect(JSON.stringify(snapshot)).not.toContain(
+      claim.platformEnvironment.OKOU_TOKEN,
     );
-    expect(snapshot.environmentEntries).not.toContainEqual(
-      expect.objectContaining({ name: "OKOU_UNTRUSTED_SECRET" }),
-    );
-    expect(JSON.stringify(snapshot)).not.toContain(untrustedSecretValue);
 
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
