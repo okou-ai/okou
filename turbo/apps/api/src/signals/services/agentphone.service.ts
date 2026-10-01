@@ -52,7 +52,7 @@ import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -1504,7 +1504,7 @@ const runAgentForAgentPhone$ = command(
       })(),
     );
     waitUntil(
-      notifyRunningChatRunOfPendingInput(args.db, persisted.chatThreadId),
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
     );
   },
 );

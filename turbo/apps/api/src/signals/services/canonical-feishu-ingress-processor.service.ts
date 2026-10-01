@@ -32,7 +32,7 @@ import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
@@ -804,7 +804,9 @@ export const processCanonicalFeishuIngress$ = command(
         }
       })(),
     );
-    waitUntil(notifyRunningChatRunOfPendingInput(db, persisted.chatThreadId));
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
+    );
     return true;
   },
 );

@@ -48,7 +48,7 @@ import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -1393,10 +1393,7 @@ const runAgentForTelegram$ = command(
       })(),
     );
     waitUntil(
-      notifyRunningChatRunOfPendingInput(
-        args.source.db,
-        persisted.chatThreadId,
-      ),
+      set(notifyRunningChatRunOfPendingInput$, persisted.chatThreadId, signal),
     );
   },
 );

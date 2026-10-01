@@ -1,6 +1,9 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEvents,
+  chatEventRunlessInputPredicate,
+} from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
 import {
@@ -8,6 +11,7 @@ import {
   count,
   eq,
   isNotNull,
+  inArray,
   isNull,
   lte,
   notExists,
@@ -19,7 +23,6 @@ import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
-import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
@@ -116,49 +119,95 @@ export async function enqueueChatInput(
  * steer, through its runner group. The runner also reads pending input at
  * startup and after its Ably subscription reconnects.
  */
-export async function notifyRunningChatRunOfPendingInput(
-  db: Db,
-  chatThreadId: string,
-): Promise<boolean> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      runnerGroup: agentRuns.runnerGroup,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        eq(agentRuns.status, "running"),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return false;
-  }
-  const pendingInput = await listPendingChatInputs(db, {
-    chatThreadId,
-    eventTypes: ["input.prompt"],
-    budgetForRunId: run.id,
-  });
-  if (pendingInput.length === 0) {
-    return false;
-  }
-  if (run.runnerGroup) {
-    await tapError(
-      publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
-      (error) => {
-        L.warn("Failed to notify runner about active input", {
-          chatThreadId,
-          runId: run.id,
-          error,
-        });
-      },
+export const notifyRunningChatRunOfPendingInput$ = command(
+  async (
+    { get },
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const database = get(db$);
+    const [run] = await database
+      .select({
+        id: agentRuns.id,
+        runnerGroup: agentRuns.runnerGroup,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, chatThreadId),
+          eq(agentRuns.status, "running"),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return false;
+    }
+    const candidates = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          or(
+            eq(chatEvents.eventType, "input.prompt"),
+            and(
+              eq(chatEvents.eventType, "input.budget"),
+              eq(chatEvents.contextType, "agent_run"),
+              eq(chatEvents.contextId, run.id),
+            ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (candidates.length === 0) {
+      return false;
+    }
+    const revokers = await database
+      .select({ eventId: chatEvents.revokesEventId })
+      .from(chatEvents)
+      .where(
+        inArray(
+          chatEvents.revokesEventId,
+          candidates.map((event) => {
+            return event.id;
+          }),
+        ),
+      );
+    signal.throwIfAborted();
+    const revoked = new Set(
+      revokers.map((event) => {
+        return event.eventId;
+      }),
     );
-  }
-  return true;
-}
+    if (
+      candidates.every((event) => {
+        return revoked.has(event.id);
+      })
+    ) {
+      return false;
+    }
+    if (run.runnerGroup) {
+      await tapError(
+        publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
+        (error) => {
+          L.warn("Failed to notify runner about active input", {
+            chatThreadId,
+            runId: run.id,
+            error,
+          });
+        },
+      );
+    }
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 /**
  * User-facing observation of one enqueued input for integrations, taken after
