@@ -135,7 +135,6 @@ import {
   L,
   matchingAuthorizedRequestObservation,
   measureAgentRunPreCreate,
-  ORG_SENTINEL_USER_ID,
   resolveProductAgentExecution,
   resolveRunBodyEnvironment,
   type RunBootstrapContext,
@@ -462,7 +461,7 @@ import {
   providerTypeForSurfaceProtocol,
 } from "./effective-model-route.service";
 import {
-  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
+  ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
 } from "./feature-switch-scope";
 import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
@@ -3433,7 +3432,7 @@ export function createThreadClaimRunObjects(
           !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
-        userId === agentRunsCreateORG_SENTINEL_USER_ID
+        userId === ORG_SENTINEL_USER_ID
       ) {
         return null;
       }
@@ -3491,7 +3490,7 @@ export function createThreadClaimRunObjects(
         and(
           eq(modelProviders.id, policy.modelProviderId),
           eq(modelProviders.orgId, get(queuedModelRoutingInput$).orgId),
-          eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
+          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
         ),
       )
       .limit(1);
@@ -3591,7 +3590,7 @@ export function createThreadClaimRunObjects(
             eq(userFeatureSwitches.orgId, input.orgId),
             inArray(userFeatureSwitches.userId, [
               input.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
+              ORG_SENTINEL_USER_ID,
             ]),
           ),
         );
@@ -4240,7 +4239,7 @@ export function createThreadClaimRunObjects(
             eq(userFeatureSwitches.orgId, head.orgId),
             inArray(userFeatureSwitches.userId, [
               head.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
+              ORG_SENTINEL_USER_ID,
             ]),
           ),
         );
@@ -4452,7 +4451,7 @@ export function createThreadClaimRunObjects(
             eq(userFeatureSwitches.orgId, args.orgId),
             inArray(userFeatureSwitches.userId, [
               row.ownerUserId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
+              ORG_SENTINEL_USER_ID,
             ]),
           ),
         );
@@ -6453,7 +6452,7 @@ export function createThreadClaimRunObjects(
           !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
-        userId === agentRunsCreateORG_SENTINEL_USER_ID
+        userId === ORG_SENTINEL_USER_ID
       ) {
         return null;
       }
@@ -6511,7 +6510,7 @@ export function createThreadClaimRunObjects(
         and(
           eq(modelProviders.id, policy.modelProviderId),
           eq(modelProviders.orgId, get(queuedModelRoutingInput$2).orgId),
-          eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
+          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
         ),
       )
       .limit(1);
@@ -6611,7 +6610,7 @@ export function createThreadClaimRunObjects(
             eq(userFeatureSwitches.orgId, input.orgId),
             inArray(userFeatureSwitches.userId, [
               input.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
+              ORG_SENTINEL_USER_ID,
             ]),
           ),
         );

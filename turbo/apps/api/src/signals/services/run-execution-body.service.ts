@@ -3,6 +3,7 @@
  * compose validation, merged variables and the runtime body environment.
  * Moved verbatim out of the legacy execution graph.
  */
+import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { badRequestMessage, notFound } from "../../lib/error";
 import {
   measureApiDispatchTiming,
@@ -105,8 +106,6 @@ import {
   pendingOkouTokenSecrets,
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./execution-runner-payload.service";
-
-export const ORG_SENTINEL_USER_ID = "__org__";
 
 export const L: ReturnType<typeof logger> = logger("AgentRunCreate");
 

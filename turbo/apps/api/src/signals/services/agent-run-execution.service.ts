@@ -185,7 +185,7 @@ import { systemSkillStorageResolution$ } from "../context/system-skill-storage-r
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   userFeatureSwitchOverridesFromRows,
-  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
+  ORG_SENTINEL_USER_ID,
   type UserFeatureSwitchOverrideRow,
 } from "./feature-switch-scope";
 import { agents } from "@okouai/db/schema/agent";
@@ -455,7 +455,6 @@ import {
   AgentRunIdentityInput,
   BootstrapMetadataQueryRow,
   L,
-  ORG_SENTINEL_USER_ID,
   PersistedRunEnvironmentSecret,
   PersistedRunEnvironmentSnapshot,
   PersistedRunEnvironmentVariable,
@@ -7679,7 +7678,7 @@ function createPreCreateBootstrapMetadataRows(
             eq(userFeatureSwitches.orgId, args.orgId),
             inArray(userFeatureSwitches.userId, [
               args.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
+              ORG_SENTINEL_USER_ID,
             ]),
           ),
         );
