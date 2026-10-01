@@ -55,7 +55,6 @@ import type {
 import type { RunWorkflowRef } from "./workflow-data.service";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import { logger } from "../../lib/log";
 import {
   type CompressedSessionHistoryBlobEncoding,
@@ -288,37 +287,6 @@ export function buildMergedVariables(args: {
   }
 
   const merged = { ...orgVars, ...userVars, ...args.runVars };
-  return Object.keys(merged).length > 0 ? merged : undefined;
-}
-
-async function buildReferencedSecrets(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
-  readonly runSecrets: Record<string, string> | undefined;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<Record<string, string> | undefined> {
-  const environment = firstAgent(args.content)?.environment;
-  const referencedNames = environment
-    ? extractAndGroupVariables(environment).secrets.map((ref) => {
-        return ref.name;
-      })
-    : [];
-  if (referencedNames.length === 0) {
-    return args.runSecrets;
-  }
-
-  const orgSecrets: Record<string, string> = {};
-  const userSecrets: Record<string, string> = {};
-  for (const row of args.persistedEnvironment.secrets) {
-    const target =
-      row.userId === ORG_SENTINEL_USER_ID ? orgSecrets : userSecrets;
-    target[row.name] = await decryptStoredSecretValue(
-      row.encryptedValue,
-      args.featureSwitchContext,
-    );
-  }
-
-  const merged = { ...orgSecrets, ...userSecrets, ...args.runSecrets };
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
@@ -586,28 +554,25 @@ export function initialRunBody(args: {
     : args.body;
 }
 
-export async function buildResolvedRunBody(args: {
+export function buildResolvedRunBody(args: {
   readonly initialBody: CreateRunBody;
   readonly resolved: ResolvedRunExecution;
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly canonicalOkouRuntime: boolean;
   readonly resolvedEnvironment?: RunBodyEnvironment;
-}): Promise<CreateRunBody> {
+}): CreateRunBody {
   const runVars =
     args.initialBody.vars !== undefined
       ? args.initialBody.vars
       : args.resolved.vars;
   const environment =
     args.resolvedEnvironment ??
-    (await resolveRunBodyEnvironment({
-      content: args.resolved.content,
+    resolveRunBodyEnvironment({
       runVars,
       runSecrets: args.initialBody.secrets,
       persistedEnvironment: args.persistedEnvironment,
-      featureSwitchContext: args.featureSwitchContext,
       canonicalOkouRuntime: args.canonicalOkouRuntime,
-    }));
+    });
   return {
     ...args.initialBody,
     ...environment,
@@ -620,24 +585,19 @@ export async function buildResolvedRunBody(args: {
 
 type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
 
-export async function resolveRunBodyEnvironment(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
+export function resolveRunBodyEnvironment(args: {
   readonly runVars: CreateRunBody["vars"];
   readonly runSecrets: CreateRunBody["secrets"];
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly canonicalOkouRuntime: boolean;
-}): Promise<RunBodyEnvironment> {
+}): RunBodyEnvironment {
   const mergedVars = buildMergedVariables({
     persistedEnvironment: args.persistedEnvironment,
     runVars: args.runVars,
   });
-  const mergedSecrets = await buildReferencedSecrets({
-    content: args.content,
-    runSecrets: args.runSecrets,
-    persistedEnvironment: args.persistedEnvironment,
-    featureSwitchContext: args.featureSwitchContext,
-  });
+  // A product Agent's content references only OKOU_TOKEN, which the run
+  // always supplies itself; no stored org/user secret can change the result.
+  const mergedSecrets = args.runSecrets;
 
   return {
     vars: args.canonicalOkouRuntime

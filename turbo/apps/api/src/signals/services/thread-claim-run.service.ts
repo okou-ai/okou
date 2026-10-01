@@ -9692,9 +9692,8 @@ export function createThreadClaimRunObjects(
     connectorSnapshot$: connectorSnapshot$,
   };
   const preCreateBodyEnvironmentEnvironment$ = computed(async (get) => {
-    const [agent, metadata, environment] = await Promise.all([
+    const [agent, environment] = await Promise.all([
       get(preCreateExecutionAgent$),
-      get(preCreateExecutionBootstrapMetadata$),
       get(runEnvironmentSnapshot$),
     ]);
     if (!agent) {
@@ -9703,12 +9702,10 @@ export function createThreadClaimRunObjects(
     if (isRouteError(environment)) {
       return environment;
     }
-    return await resolveRunBodyEnvironment({
-      content: buildAgentExecutionConfig(agent.name),
+    return resolveRunBodyEnvironment({
       runVars: selectedAgentRunVariables(agent.id),
       runSecrets: pendingOkouTokenSecrets(undefined),
       persistedEnvironment: environment,
-      featureSwitchContext: metadata.featureSwitchContext,
       canonicalOkouRuntime: true,
     });
   });
@@ -10714,21 +10711,15 @@ export function createThreadClaimRunObjects(
     );
   });
   const body$ = computed(async (get) => {
-    const [
-      input,
-      resolved,
-      persistedEnvironment,
-      featureSwitchContext,
-      resolvedEnvironment,
-    ] = await Promise.all([
-      get(contextInput$),
-      get(execution$),
-      get(runEnvironmentSnapshot$),
-      get(preCreateModelFeatureSwitchContext$),
-      selectedRunContextShared
-        ? get(selectedRunContextShared.bodyEnvironment$)
-        : undefined,
-    ]);
+    const [input, resolved, persistedEnvironment, resolvedEnvironment] =
+      await Promise.all([
+        get(contextInput$),
+        get(execution$),
+        get(runEnvironmentSnapshot$),
+        selectedRunContextShared
+          ? get(selectedRunContextShared.bodyEnvironment$)
+          : undefined,
+      ]);
     if (isRouteError(resolved)) {
       return resolved;
     }
@@ -10744,11 +10735,10 @@ export function createThreadClaimRunObjects(
     ) {
       return resolvedEnvironment;
     }
-    return await buildResolvedRunBody({
+    return buildResolvedRunBody({
       initialBody: initialRunBody(input.args),
       resolved,
       persistedEnvironment,
-      featureSwitchContext,
       canonicalOkouRuntime: input.args.includeOkouTokenSecret === true,
       resolvedEnvironment,
     });
