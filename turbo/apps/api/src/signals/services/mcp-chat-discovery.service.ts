@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-
 import type {
   McpDiscoveryResult,
   McpListAgentsInput,
@@ -14,7 +13,6 @@ import { loadMemberSubscriptionModels } from "./member-subscription-models.servi
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -46,7 +44,6 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import { loadOrgModelPolicyFacts } from "./model-policy.service";
-
 interface Principal {
   readonly orgId: string;
   readonly userId: string;

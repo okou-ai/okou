@@ -51,10 +51,6 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { server } from "../../../mocks/server";
-import {
-  findPendingChatEventByPromptFixture,
-  readChatEventContextFixture,
-} from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
@@ -80,7 +76,10 @@ import {
   expectIntegrationInputPreview,
   listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
-import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import {
+  findPendingInputEventByText,
+  readProjectedChatEvents,
+} from "./helpers/chat-event-test-reader";
 import {
   clearFeishuConnectorOwnership,
   readConnectorOAuthAccountMutation,
@@ -5700,43 +5699,11 @@ export function registerFeishuIntegrationTests(
             })
           );
         });
-        if (!claimedFeishuMessage?.revokesEventId) {
-          throw new Error("Expected the claimed Feishu message");
-        }
-        const claimedFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.id,
-        );
-        const pendingFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.revokesEventId,
-        );
-        expect(claimedFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: expect.any(String),
-          feishuMessageText: "do the Feishu task",
-          feishuMessageFiles: [
-            {
-              fileId: expect.any(String),
-              messageId: "om_history_file",
-              fileKey: historyFileKey,
-              type: "file",
-            },
-          ],
-          feishuChatType: "p2p",
-          feishuChatId: "oc_feishu_dm",
-          feishuMessageId: firstMessageId,
-          feishuThreadId: firstMessageId,
-          feishuReplyInThread: true,
-          feishuReactionId: expect.any(String),
-          feishuSenderOpenId: "ou_feishu_user",
-          feishuConnectionId: expect.any(String),
-          feishuInstallationId: fixture.installationId,
-        });
-        expect(claimedFeishuContext?.feishuConversationHistory).toContain(
-          "Earlier Feishu conversation context",
-        );
-        expect(pendingFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: claimedFeishuContext?.contextId,
+        // The queued Feishu input was claimed into the launched message.
+        expect(claimedFeishuMessage).toMatchObject({
+          eventType: "input.prompt",
+          revokesEventId: expect.any(String),
+          runId: run.id,
         });
         const completedReply = [...fixtureState.outboundMessages]
           .reverse()
@@ -5907,14 +5874,11 @@ export function registerFeishuIntegrationTests(
             },
           ),
         ).toBeFalsy();
-        const queuedFeishuParams = await findPendingChatEventByPromptFixture({
-          userId: secondActor.userId,
-          prompt: `@Nova ${secondPrompt}`,
+        const queuedFeishuInput = await findPendingInputEventByText(context, {
+          actor: secondActor,
+          text: `@Nova ${secondPrompt}`,
         });
-        expect(queuedFeishuParams).toMatchObject({
-          eventId: expect.any(String),
-        });
-        if (!queuedFeishuParams) {
+        if (!queuedFeishuInput) {
           throw new Error("Expected queued canonical Feishu event");
         }
         await runsApi.heartbeatRunner(runnerGroup);
@@ -6943,9 +6907,9 @@ export function registerSharedFeishuConversationTests(): void {
       );
       await postEvent(callbackUrl, queuedPayload, { encrypted: true });
       await flushWaitUntilForTest();
-      const queuedEvent = await findPendingChatEventByPromptFixture({
-        userId: fixture.actor.userId,
-        prompt: queuedPrompt,
+      const queuedEvent = await findPendingInputEventByText(context, {
+        actor: fixture.actor,
+        text: queuedPrompt,
       });
       if (!queuedEvent) {
         throw new Error("Expected the queued Feishu input event");
@@ -7003,7 +6967,7 @@ export function registerSharedFeishuConversationTests(): void {
         headers: { authorization: "Bearer clerk-session" },
       });
       const original = messages.find((event) => {
-        return event.id === queuedEvent.eventId;
+        return event.id === queuedEvent.id;
       });
       if (!original || original.eventType !== "input.prompt") {
         throw new Error("Expected the original queued Feishu prompt");
@@ -7014,7 +6978,7 @@ export function registerSharedFeishuConversationTests(): void {
         text: queuedPrompt,
       });
       const replacements = messages.filter((event) => {
-        return event.revokesEventId === queuedEvent.eventId;
+        return event.revokesEventId === queuedEvent.id;
       });
       expect(replacements).toStrictEqual([
         expect.objectContaining({
@@ -7076,7 +7040,7 @@ export function registerSharedFeishuConversationTests(): void {
       });
       expect(
         afterReplay.filter((event) => {
-          return event.revokesEventId === queuedEvent.eventId;
+          return event.revokesEventId === queuedEvent.id;
         }),
       ).toHaveLength(1);
       expect(
@@ -7136,9 +7100,9 @@ export function registerSharedFeishuConversationTests(): void {
         { encrypted: true },
       );
       await flushWaitUntilForTest();
-      const failedDeliveryEvent = await findPendingChatEventByPromptFixture({
-        userId: fixture.actor.userId,
-        prompt: failedDeliveryPrompt,
+      const failedDeliveryEvent = await findPendingInputEventByText(context, {
+        actor: fixture.actor,
+        text: failedDeliveryPrompt,
       });
       if (!failedDeliveryEvent) {
         throw new Error("Expected the failed-delivery Feishu input event");
@@ -7187,7 +7151,7 @@ export function registerSharedFeishuConversationTests(): void {
         afterDeliveryFailure.filter((event) => {
           return (
             event.eventType === "input.rejected" &&
-            event.revokesEventId === failedDeliveryEvent.eventId &&
+            event.revokesEventId === failedDeliveryEvent.id &&
             event.error === "insufficient_credits"
           );
         }),

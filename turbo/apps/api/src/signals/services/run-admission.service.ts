@@ -6,7 +6,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
-
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -34,7 +33,6 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
-
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
   | ReturnType<typeof paidPlanRequired>

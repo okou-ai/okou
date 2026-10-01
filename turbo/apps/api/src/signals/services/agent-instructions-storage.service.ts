@@ -11,7 +11,9 @@ import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
   commitPreparedVolumeServerSide,
-  prepareVolumeServerSideWithDb$,
+  prepareVolumeServerSide$,
+  type PreparedServerSideVolume,
+  type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
@@ -75,19 +77,45 @@ export const writeAgentInstructionsStorage$ = command(
   },
 );
 
-export const writeAgentInstructionsStorageInTransaction$ = command(
+/** Prepare and upload without borrowing a caller's transaction. */
+export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
-    args: WriteAgentInstructionsStorageArgs & { readonly tx: Tx },
+    args: Omit<
+      WriteAgentInstructionsStorageArgs,
+      "stableContextPublication"
+    > & {
+      readonly storage?: ServerSideVolumeStorage;
+    },
     signal: AbortSignal,
-  ): Promise<void> => {
-    const volume = await set(
-      prepareVolumeServerSideWithDb$,
-      { db: args.tx, input: instructionVolumeInput(args) },
+  ): Promise<PreparedServerSideVolume> => {
+    return await set(
+      prepareVolumeServerSide$,
+      {
+        ...instructionVolumeInput(args),
+        ...(args.storage ? { storage: args.storage } : {}),
+      },
       signal,
     );
+  },
+);
+
+/** DB-only publication; the caller revalidates source authority and Storage. */
+export async function commitPreparedAgentInstructionsStorageInTransaction(
+  args: {
+    readonly tx: Tx;
+    readonly volume: PreparedServerSideVolume;
+    readonly stableContextPublication?: PiStableContextPublicationFence;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  // Own the immutable Storage parent before generation/index lifecycle locks.
+  await commitPreparedVolumeServerSide(
+    { db: args.tx, volume: args.volume },
+    signal,
+  );
+  if (args.stableContextPublication) {
     if (
-      args.stableContextPublication &&
       !(await lockPiStableContextPublication(
         args.tx,
         args.stableContextPublication,
@@ -97,33 +125,23 @@ export const writeAgentInstructionsStorageInTransaction$ = command(
         "Stable-context publication was superseded before Storage HEAD commit",
       );
     }
-    await commitPreparedVolumeServerSide({ db: args.tx, volume }, signal);
-    if (args.stableContextPublication) {
-      await refreshPiStableContextStorageDemands(
+    await refreshPiStableContextStorageDemands(
+      args.tx,
+      args.stableContextPublication,
+      args.volume.version,
+    );
+    signal.throwIfAborted();
+    if (
+      !(await completePiStableContextPublication(
         args.tx,
         args.stableContextPublication,
-        {
-          storageId: volume.version.storageId,
-          versionId: volume.version.versionId,
-          archiveSize: volume.version.archiveSize,
-          fileCount: volume.version.fileCount,
-        },
-      );
-      signal.throwIfAborted();
-      if (
-        !(await completePiStableContextPublication(
-          args.tx,
-          args.stableContextPublication,
-        ))
-      ) {
-        throw new Error(
-          "Stable-context publication fence changed while locked",
-        );
-      }
+      ))
+    ) {
+      throw new Error("Stable-context publication fence changed while locked");
     }
-    signal.throwIfAborted();
-  },
-);
+  }
+  signal.throwIfAborted();
+}
 
 export const deleteAgentInstructionsStorage$ = command(
   async (

@@ -61,6 +61,7 @@ export interface StripeSubscriptionItem {
 
 export interface StripeSubscription {
   readonly id: string;
+  readonly created?: number;
   readonly customer: string | { readonly id: string };
   readonly status: string;
   readonly metadata?: Record<string, string> | null;
@@ -332,7 +333,7 @@ export interface StripeInvoice {
     } | null;
   } | null;
   readonly amount_due: number;
-  readonly amount_paid?: number;
+  readonly amount_paid: number;
   readonly currency: string;
   readonly status: "draft" | "open" | "paid" | "uncollectible" | "void" | null;
   readonly paid?: boolean;
@@ -490,10 +491,13 @@ export interface StripeSubscriptionSchedulesApi {
 
 export interface StripeCustomersApi {
   retrieve(id: string): Promise<StripeCustomerRef>;
-  create(params: {
-    metadata?: StripeMetadataParam;
-    email?: string;
-  }): Promise<StripeCustomer>;
+  create(
+    params: {
+      metadata?: StripeMetadataParam;
+      email?: string;
+    },
+    options?: StripeRequestOptions,
+  ): Promise<StripeCustomer>;
   update(
     id: string,
     params: {

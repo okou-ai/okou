@@ -55,6 +55,29 @@ export const vncUsernamePasswordAuthenticationSchema = z
   })
   .strict();
 
+// QEMU 8.2.2 SCRAM's exact ASCII input boundary: reject SASLprep-sensitive
+// bytes before encryption instead of silently normalizing them in the engine.
+const qemuScramUsernameSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(
+    /^[\x21-\x2b\x2d-\x3c\x3e-\x7e]+$/u,
+    "SCRAM username must be printable ASCII without space, comma or equals",
+  );
+const qemuScramPasswordSchema = z
+  .string()
+  .min(1)
+  .max(VNC_USERNAME_PASSWORD_MAX_BYTES)
+  .regex(/^[\x20-\x7e]+$/u, "SCRAM password must be printable ASCII");
+export const vncQemuScramAuthenticationSchema = z
+  .object({
+    method: z.literal("qemu_scram_sha256"),
+    username: qemuScramUsernameSchema,
+    password: qemuScramPasswordSchema,
+  })
+  .strict();
+
 export const vncAppleDhAuthenticationSchema = z
   .object({
     method: z.literal("apple_dh_username_password"),
@@ -103,6 +126,7 @@ export const vncLegacyAuthenticationSchema = z.discriminatedUnion("method", [
 
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
   ...vncLegacyAuthenticationSchema.options,
+  vncQemuScramAuthenticationSchema,
   z
     .object({ method: z.literal("client_certificate"), ...clientIdentityInput })
     .strict(),
@@ -172,6 +196,13 @@ export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
       ...vncCredentialResponseBase,
       authMethod: z.literal("username_password"),
       username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "VNC username"),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("qemu_scram_sha256"),
+      username: qemuScramUsernameSchema,
     })
     .strict(),
   z

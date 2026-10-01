@@ -1,3 +1,4 @@
+import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
 import { command, computed } from "ccstate";
 import {
@@ -435,6 +436,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
       searchChatInner$,
     ),
   },
+  ...chatThreadUsageRoutes,
   ...chatThreadActivitySummaryRoutes,
   ...chatThreadArchiveRoutes,
   ...chatThreadsArtifactsSyncRoutes,

@@ -4,6 +4,7 @@ import { createStore } from "ccstate";
 import { sql } from "drizzle-orm";
 import { delay } from "msw";
 import { agents } from "@okouai/db/schema/agent";
+import { insertBenchmarkRunBatch$ } from "../../../scripts/benchmark-run-seed";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -469,7 +470,7 @@ async function seedBackgroundLoad(): Promise<void> {
     }
   }
   await chunkedInsert(runRows, (chunk) => {
-    return db.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
 }
 
@@ -576,7 +577,7 @@ async function seedTargetThreadRuns(
     }
   }
   await chunkedInsert(runRows, (chunk) => {
-    return db.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
   await chunkedInsert(eventRows, (chunk) => {
     return db.insert(chatEvents).values(chunk);

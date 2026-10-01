@@ -1,9 +1,13 @@
-import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import {
+  workflowAutomations,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
+import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { sql } from "drizzle-orm";
 
-import type { Db, ReadonlyDb } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
 export async function resolveGoogleFormsAutomationConnectorId(
@@ -20,64 +24,57 @@ export async function resolveGoogleFormsAutomationConnectorId(
   });
 }
 
-export async function reprojectGoogleFormsAutomationsForOwner(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<void> {
-  const automations = await db
-    .select({
-      id: workflowAutomations.id,
-      workflowId: workflowAutomations.workflowId,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-      ),
-    );
-
-  for (const automation of automations) {
-    const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-      automation.eventConfig,
-    );
-    const desiredConnectorId = await resolveGoogleFormsAutomationConnectorId(
-      db,
-      {
-        ...args,
-        workflowId: automation.workflowId,
-      },
-    );
-    const sourceChanged =
-      desiredConnectorId === null ||
-      config.connectorId !== desiredConnectorId ||
-      (automation.eventConnectorId !== null &&
-        automation.eventConnectorId !== desiredConnectorId);
-    if (sourceChanged) {
-      await db
-        .delete(googleFormsAutomationCursors)
-        .where(eq(googleFormsAutomationCursors.automationId, automation.id));
-    }
-    const eventConfig =
-      desiredConnectorId === null || config.connectorId === desiredConnectorId
-        ? config
-        : { ...config, connectorId: desiredConnectorId };
-    if (
-      automation.eventConnectorId === desiredConnectorId &&
-      eventConfig.connectorId === config.connectorId
-    ) {
-      continue;
-    }
-    await db
-      .update(workflowAutomations)
-      .set({ eventConnectorId: desiredConnectorId, eventConfig })
-      .where(eq(workflowAutomations.id, automation.id));
-  }
+/**
+ * Publish the selected business source and discard an incompatible cursor.
+ * No row locks: the desired account is read from the statement snapshot and
+ * the conditional UPDATE computes the new config from the current target row,
+ * so a concurrent config edit is preserved and a concurrent reprojection
+ * leaves nothing to change.
+ */
+export function googleFormsAccountProjectionStatement(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return sql`
+    WITH desired AS (
+      SELECT ${workflowAutomations.id} AS id,
+        CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
+          THEN ${chatThreadConnectorSelections.connectorId}
+          ELSE ${connectors.id} END AS connector_id
+      FROM ${workflowAutomations}
+      LEFT JOIN ${workflowUserAutomationThreads}
+        ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
+        AND ${workflowUserAutomationThreads.userId} = ${workflowAutomations.ownerUserId}
+        AND ${workflowUserAutomationThreads.workflowId} = ${workflowAutomations.workflowId}
+      LEFT JOIN ${chatThreadConnectorSelections}
+        ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
+        AND ${chatThreadConnectorSelections.connectorSlug} = 'google-forms'
+      LEFT JOIN ${connectors}
+        ON ${connectors.orgId} = ${args.orgId}
+        AND ${connectors.userId} = ${args.userId}
+        AND ${connectors.connectorSlug} = 'google-forms'
+        AND ${connectors.isDefault}
+      WHERE ${workflowAutomations.orgId} = ${args.orgId}
+        AND ${workflowAutomations.ownerUserId} = ${args.userId}
+        AND ${workflowAutomations.kind} = 'event'
+        AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
+    ), changed AS (
+      UPDATE ${workflowAutomations}
+      SET event_connector_id = desired.connector_id,
+        event_config = CASE WHEN desired.connector_id IS NOT NULL
+          AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text
+          THEN jsonb_set(${workflowAutomations.eventConfig}, '{connectorId}', to_jsonb(desired.connector_id::text))
+          ELSE ${workflowAutomations.eventConfig} END
+      FROM desired
+      WHERE ${workflowAutomations.id} = desired.id
+        AND ${workflowAutomations.kind} = 'event'
+        AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
+        AND (${workflowAutomations.eventConnectorId} IS DISTINCT FROM desired.connector_id
+          OR (desired.connector_id IS NOT NULL
+            AND ${workflowAutomations.eventConfig} ->> 'connectorId' IS DISTINCT FROM desired.connector_id::text))
+      RETURNING ${workflowAutomations.id}
+    )
+    DELETE FROM ${googleFormsAutomationCursors}
+    WHERE ${googleFormsAutomationCursors.automationId} IN (SELECT id FROM changed)
+  `;
 }

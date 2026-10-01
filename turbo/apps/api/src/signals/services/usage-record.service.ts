@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import type {
-  UsageRecordRow,
   UsageRecordResponse,
   UsageRecordScope,
 } from "@okouai/api-contracts/contracts/usage-record";
@@ -22,15 +21,13 @@ import {
   sql,
   sum,
 } from "drizzle-orm";
-import { unionAll } from "drizzle-orm/pg-core";
-
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { clerk$ } from "../external/clerk";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
@@ -47,15 +44,13 @@ import {
   usageBreakdownKindExpr,
   usageCreditsExpr,
   usageDisplayProviderExpr,
-  type UsageBreakdownSqlRow,
 } from "./usage-reporting-breakdown";
-import { resolveEmails } from "./usage.service";
 import {
   fixedRangeToPeriod,
   type UsagePeriod,
   type UsageRangeArg,
 } from "./usage-period";
-
+import { resolveUsageEmails$ } from "./usage.service";
 interface UsageRecordArgs {
   readonly userId: string;
   readonly orgId: string;
@@ -64,16 +59,6 @@ interface UsageRecordArgs {
   readonly tz: string;
   readonly page: number;
   readonly pageSize: number;
-}
-
-interface UsageRecordIntermediateRow {
-  readonly rowKey: string;
-  readonly userId: string;
-  readonly threadId: string | null;
-  readonly title: string | null;
-  readonly credits: number;
-  readonly tokens: number;
-  readonly lastActivityAt: string;
 }
 
 function tokenExpr(usage: FinalizedUsageRelation) {
@@ -103,14 +88,14 @@ function tokenExpr(usage: FinalizedUsageRelation) {
 const groupingThreadId = sql`COALESCE(${billingRunAttribution.threadId}, ${agentRuns.chatThreadId})`;
 
 function usageRecordRunsWith(
-  db: Db,
   userId: string | null,
   orgId: string,
   period: UsagePeriod | null,
 ) {
+  const builder = new QueryBuilder();
   const usage = buildFinalizedUsageRelation(period ?? undefined);
-  const usageRows = db.$with("usage_rows").as(
-    db
+  const usageRows = builder.$with("usage_rows").as(
+    builder
       .select({
         runId: usage.runId,
         billingRunId: usage.billingRunId,
@@ -128,8 +113,8 @@ function usageRecordRunsWith(
         ),
       ),
   );
-  const runs = db.$with("runs").as(
-    db
+  const runs = builder.$with("runs").as(
+    builder
       .select({
         runId: usageRows.runId,
         userId: usageRows.userId,
@@ -155,9 +140,10 @@ function usageRecordRunsWith(
 
 type UsageRecordRuns = ReturnType<typeof usageRecordRunsWith>["runs"];
 
-function threadedUsageRecordWith(db: Db, runs: UsageRecordRuns) {
-  return db.$with("threaded").as(
-    db
+function threadedUsageRecordWith(runs: UsageRecordRuns) {
+  const builder = new QueryBuilder();
+  return builder.$with("threaded").as(
+    builder
       .select({
         rowKey:
           sql`CONCAT('thread:', ${runs.chatThreadId}::text, ':user:', ${runs.userId})`
@@ -184,9 +170,10 @@ function threadedUsageRecordWith(db: Db, runs: UsageRecordRuns) {
 // and an erased thread lands here by design: the ledger keeps the amounts and
 // the opaque identifier, never the title. Keep this non-navigable row until that
 // historical data is migrated or retired; #35077 tracks the durable-data boundary.
-function threadlessUsageRecordWith(db: Db, runs: UsageRecordRuns) {
-  return db.$with("threadless").as(
-    db
+function threadlessUsageRecordWith(runs: UsageRecordRuns) {
+  const builder = new QueryBuilder();
+  return builder.$with("threadless").as(
+    builder
       .select({
         rowKey: sql`CONCAT('threadless:user:', ${runs.userId})`
           .mapWith(pgTextDecoder)
@@ -211,52 +198,51 @@ function threadlessUsageRecordWith(db: Db, runs: UsageRecordRuns) {
 }
 
 function recordWith(
-  db: Db,
   userId: string | null,
   orgId: string,
   period: UsagePeriod | null,
 ) {
-  const { usageRows, runs } = usageRecordRunsWith(db, userId, orgId, period);
-  const threaded = threadedUsageRecordWith(db, runs);
-  const threadless = threadlessUsageRecordWith(db, runs);
-  const record = db.$with("record").as(
-    unionAll(
-      db
-        .select({
-          rowKey: threaded.rowKey,
-          userId: threaded.userId,
-          threadId: threaded.threadId,
-          title: threaded.title,
-          credits: threaded.credits,
-          tokens: threaded.tokens,
-          lastActivity: threaded.lastActivity,
-        })
-        .from(threaded),
-      db
-        .select({
-          rowKey: threadless.rowKey,
-          userId: threadless.userId,
-          threadId: threadless.threadId,
-          title: threadless.title,
-          credits: threadless.credits,
-          tokens: threadless.tokens,
-          lastActivity: threadless.lastActivity,
-        })
-        .from(threadless),
-    ),
+  const builder = new QueryBuilder();
+  const { usageRows, runs } = usageRecordRunsWith(userId, orgId, period);
+  const threaded = threadedUsageRecordWith(runs);
+  const threadless = threadlessUsageRecordWith(runs);
+  const record = builder.$with("record").as(
+    builder
+      .select({
+        rowKey: threaded.rowKey,
+        userId: threaded.userId,
+        threadId: threaded.threadId,
+        title: threaded.title,
+        credits: threaded.credits,
+        tokens: threaded.tokens,
+        lastActivity: threaded.lastActivity,
+      })
+      .from(threaded)
+      .unionAll(
+        builder
+          .select({
+            rowKey: threadless.rowKey,
+            userId: threadless.userId,
+            threadId: threadless.threadId,
+            title: threadless.title,
+            credits: threadless.credits,
+            tokens: threadless.tokens,
+            lastActivity: threadless.lastActivity,
+          })
+          .from(threadless),
+      ),
   );
   return { usageRows, runs, threaded, threadless, record };
 }
 
 type UsageRecordRelations = ReturnType<typeof recordWith>;
 
-async function queryUsageRecordRows(
-  db: Db,
+function usageRecordRowsQuery(
   relations: UsageRecordRelations,
   pageSize: number,
   offset: number,
-): Promise<UsageRecordIntermediateRow[]> {
-  const rows = await db
+) {
+  return new QueryBuilder()
     .with(
       relations.usageRows,
       relations.runs,
@@ -276,25 +262,12 @@ async function queryUsageRecordRows(
     .from(relations.record)
     .orderBy(desc(relations.record.lastActivity), asc(relations.record.rowKey))
     .limit(pageSize)
-    .offset(offset);
-  return rows.map((row) => {
-    return {
-      rowKey: row.rowKey,
-      userId: row.userId,
-      threadId: row.threadId,
-      title: row.title,
-      credits: row.credits,
-      tokens: row.tokens,
-      lastActivityAt: row.lastActivity.toISOString(),
-    };
-  });
+    .offset(offset)
+    .as("record_page");
 }
 
-async function queryUsageRecordTotals(
-  db: Db,
-  relations: UsageRecordRelations,
-): Promise<{ total: number; totalCredits: number }> {
-  const rows = await db
+function usageRecordTotalsQuery(relations: UsageRecordRelations) {
+  return new QueryBuilder()
     .with(
       relations.usageRows,
       relations.runs,
@@ -310,27 +283,20 @@ async function queryUsageRecordTotals(
         "total_credits",
       ),
     })
-    .from(relations.record);
-  return {
-    total: rows[0]?.total ?? 0,
-    totalCredits: rows[0]?.totalCredits ?? 0,
-  };
+    .from(relations.record)
+    .as("record_totals");
 }
 
-async function queryUsageRecordBreakdown(
-  db: Db,
+function usageRecordBreakdownQuery(
   userId: string | null,
   orgId: string,
   period: UsagePeriod | null,
   rowKeys: readonly string[],
-): Promise<Map<string, UsageRecordRow["breakdown"]>> {
-  if (rowKeys.length === 0) {
-    return new Map();
-  }
-
+) {
+  const builder = new QueryBuilder();
   const usage = buildFinalizedUsageRelation(period ?? undefined);
-  const usageRows = db.$with("usage_rows").as(
-    db
+  const usageRows = builder.$with("usage_rows").as(
+    builder
       .select({
         chatThreadId: chatThreads.id,
         userId: usage.userId,
@@ -359,8 +325,8 @@ async function queryUsageRecordBreakdown(
         THEN CONCAT('thread:', ${usageRows.chatThreadId}::text, ':user:', ${usageRows.userId})
       ELSE CONCAT('threadless:user:', ${usageRows.userId})
     END`.mapWith(pgTextDecoder);
-  const keyed = db.$with("keyed").as(
-    db
+  const keyed = builder.$with("keyed").as(
+    builder
       .select({
         key: rowKey.as("key"),
         kind: usageRows.kind,
@@ -370,7 +336,7 @@ async function queryUsageRecordBreakdown(
       })
       .from(usageRows),
   );
-  const rows: UsageBreakdownSqlRow[] = await db
+  return builder
     .with(usageRows, keyed)
     .select({
       key: keyed.key,
@@ -390,14 +356,13 @@ async function queryUsageRecordBreakdown(
       asc(keyed.kind),
       asc(keyed.provider),
       asc(keyed.usageKind),
-    );
-
-  return buildUsageBreakdowns(rows);
+    )
+    .as("record_breakdown");
 }
 
 export const usageRecord$ = command(
   async (
-    { get, set },
+    { set },
     args: UsageRecordArgs,
     signal: AbortSignal,
   ): Promise<UsageRecordResponse> => {
@@ -434,17 +399,15 @@ export const usageRecord$ = command(
     const userId = args.scope === "mine" ? args.userId : null;
     const offset = (args.page - 1) * args.pageSize;
     const queryPeriod = period ? normalizeFinalizedUsagePeriod(period) : null;
-    const relations = recordWith(db, userId, args.orgId, queryPeriod);
+    const relations = recordWith(userId, args.orgId, queryPeriod);
 
-    const rows = await queryUsageRecordRows(
-      db,
-      relations,
-      args.pageSize,
-      offset,
-    );
+    const page = usageRecordRowsQuery(relations, args.pageSize, offset);
+    const rows = await db
+      .select()
+      .from(page)
+      .orderBy(desc(page.lastActivity), asc(page.rowKey));
     signal.throwIfAborted();
-    const breakdownByRow = await queryUsageRecordBreakdown(
-      db,
+    const breakdownQuery = usageRecordBreakdownQuery(
       userId,
       args.orgId,
       queryPeriod,
@@ -452,15 +415,29 @@ export const usageRecord$ = command(
         return row.rowKey;
       }),
     );
+    const breakdown =
+      rows.length === 0
+        ? []
+        : await db
+            .select()
+            .from(breakdownQuery)
+            .orderBy(
+              asc(breakdownQuery.key),
+              asc(breakdownQuery.kind),
+              asc(breakdownQuery.provider),
+              asc(breakdownQuery.usageKind),
+            );
     signal.throwIfAborted();
-    const { total, totalCredits } = await queryUsageRecordTotals(db, relations);
+    const breakdownByRow = buildUsageBreakdowns(breakdown);
+    const [totals] = await db.select().from(usageRecordTotalsQuery(relations));
     signal.throwIfAborted();
+    const total = totals?.total ?? 0;
+    const totalCredits = totals?.totalCredits ?? 0;
 
     const emailMap =
       args.scope === "team"
-        ? await resolveEmails(
-            get(clerk$),
-            db,
+        ? await set(
+            resolveUsageEmails$,
             [
               ...new Set(
                 rows.map((row) => {
@@ -494,7 +471,7 @@ export const usageRecord$ = command(
                   email: emailMap.get(row.userId) ?? "unknown",
                 }
               : null,
-          lastActivityAt: row.lastActivityAt,
+          lastActivityAt: row.lastActivity.toISOString(),
         };
       }),
       totalCredits,

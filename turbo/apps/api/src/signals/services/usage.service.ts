@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { inArray } from "drizzle-orm";
+import { asc, inArray } from "drizzle-orm";
 import type {
   MemberUsage,
   UsageMembersResponse,
@@ -11,9 +11,10 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getOrgBillingPeriod$ } from "./org-billing-period.service";
 import {
-  getMemberUsageBreakdowns,
-  getMemberUsageTotals,
+  memberUsageBreakdownQuery,
+  memberUsageTotalsQuery,
 } from "./usage-reporting-ledger";
+import { buildUsageBreakdowns } from "./usage-reporting-breakdown";
 import { fixedRangeToPeriod } from "./usage-period";
 
 interface UsageMembersArgs {
@@ -24,7 +25,7 @@ interface UsageMembersArgs {
 
 export const usageMembers$ = command(
   async (
-    { get, set },
+    { set },
     args: UsageMembersArgs,
     signal: AbortSignal,
   ): Promise<UsageMembersResponse> => {
@@ -49,13 +50,21 @@ export const usageMembers$ = command(
     const db = set(writeDb$);
     const { rows, breakdownByUser } = await db.transaction(
       async (tx) => {
-        const rows = await getMemberUsageTotals(tx, args.orgId, period);
-        const breakdownByUser = await getMemberUsageBreakdowns(
-          tx,
-          args.orgId,
-          period,
-        );
-        return { rows, breakdownByUser };
+        const rows = await tx
+          .select()
+          .from(memberUsageTotalsQuery(args.orgId, period));
+        const breakdownQuery = memberUsageBreakdownQuery(args.orgId, period);
+        const breakdown = await tx
+          .select()
+          .from(breakdownQuery)
+          .orderBy(
+            asc(breakdownQuery.key),
+            asc(breakdownQuery.kind),
+            asc(breakdownQuery.provider),
+            asc(breakdownQuery.usageKind),
+          );
+        signal.throwIfAborted();
+        return { rows, breakdownByUser: buildUsageBreakdowns(breakdown) };
       },
       { isolationLevel: "repeatable read", accessMode: "read only" },
     );
@@ -74,7 +83,7 @@ export const usageMembers$ = command(
     const userIds = rows.map((row) => {
       return row.userId;
     });
-    const emailMap = await resolveEmails(get(clerk$), db, userIds, signal);
+    const emailMap = await set(resolveUsageEmails$, userIds, signal);
 
     const members: MemberUsage[] = rows.map((row) => {
       return {
@@ -105,9 +114,6 @@ export const usageMembers$ = command(
   },
 );
 
-type UsageClerkClient = ReturnType<typeof clerk$.read>;
-type UsageWriteDb = ReturnType<typeof writeDb$.write>;
-
 function primaryEmail(user: ClerkUser): string {
   const primary = user.emailAddresses.find((email) => {
     return email.id === user.primaryEmailAddressId;
@@ -115,59 +121,62 @@ function primaryEmail(user: ClerkUser): string {
   return primary?.emailAddress ?? "unknown";
 }
 
-export async function resolveEmails(
-  client: UsageClerkClient,
-  db: UsageWriteDb,
-  userIds: readonly string[],
-  signal: AbortSignal,
-): Promise<Map<string, string>> {
-  if (userIds.length === 0) {
-    return new Map();
-  }
+export const resolveUsageEmails$ = command(
+  async (
+    { get, set },
+    userIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<Map<string, string>> => {
+    const db = set(writeDb$);
+    const client = get(clerk$);
+    if (userIds.length === 0) {
+      return new Map();
+    }
 
-  const cachedUsers = await db
-    .select({ userId: userCache.userId, email: userCache.email })
-    .from(userCache)
-    .where(inArray(userCache.userId, [...userIds]));
-  signal.throwIfAborted();
-
-  const emailMap = new Map(
-    cachedUsers.map((user) => {
-      return [user.userId, user.email];
-    }),
-  );
-
-  const missingIds = userIds.filter((id) => {
-    return !emailMap.has(id);
-  });
-  if (missingIds.length === 0) {
-    return emailMap;
-  }
-
-  const clerkUsers = await client.users.getUserList({
-    userId: [...missingIds],
-    limit: missingIds.length,
-  });
-  signal.throwIfAborted();
-  const now = nowDate();
-
-  for (const user of clerkUsers.data) {
-    const email = primaryEmail(user);
-    emailMap.set(user.id, email);
-    await db
-      .insert(userCache)
-      .values({
-        userId: user.id,
-        email,
-        imageUrl: user.imageUrl ?? null,
-        cachedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: userCache.userId,
-        set: { email, imageUrl: user.imageUrl ?? null, cachedAt: now },
-      });
+    const cachedUsers = await db
+      .select({ userId: userCache.userId, email: userCache.email })
+      .from(userCache)
+      .where(inArray(userCache.userId, [...userIds]));
     signal.throwIfAborted();
-  }
 
-  return emailMap;
-}
+    const emailMap = new Map(
+      cachedUsers.map((user) => {
+        return [user.userId, user.email];
+      }),
+    );
+
+    const missingIds = userIds.filter((id) => {
+      return !emailMap.has(id);
+    });
+    if (missingIds.length === 0) {
+      return emailMap;
+    }
+
+    const clerkUsers = await client.users.getUserList({
+      userId: [...missingIds],
+      limit: missingIds.length,
+    });
+    signal.throwIfAborted();
+    const now = nowDate();
+
+    for (const user of clerkUsers.data) {
+      const email = primaryEmail(user);
+      emailMap.set(user.id, email);
+      await db
+        .insert(userCache)
+        .values({
+          userId: user.id,
+          email,
+          imageUrl: user.imageUrl ?? null,
+          cachedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: userCache.userId,
+          set: { email, imageUrl: user.imageUrl ?? null, cachedAt: now },
+        });
+      signal.throwIfAborted();
+    }
+
+    return emailMap;
+  },
+);

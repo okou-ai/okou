@@ -4,10 +4,9 @@ import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-t
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { updateChatThreadMetadata } from "../services/chat-thread-metadata-update.service";
+import { updateChatThreadMetadata$ } from "../services/chat-thread-metadata-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const renameBody$ = bodyResultOf(chatThreadRenameContract.rename);
@@ -21,8 +20,8 @@ const renameInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
-  const result = await updateChatThreadMetadata(
-    set(writeDb$),
+  const result = await set(
+    updateChatThreadMetadata$,
     {
       principal: auth,
       threadId: params.id,

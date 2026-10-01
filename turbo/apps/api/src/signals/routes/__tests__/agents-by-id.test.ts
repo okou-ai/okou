@@ -577,9 +577,10 @@ describe("DELETE /api/agents/:id", () => {
     });
     const response = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
 
-    expect(response.body).toStrictEqual({
+    // Lifecycle ownership can already be busy after creating the run. Both
+    // that retryable conflict and the active-run guard must preserve the Agent.
+    expect(response.body).toMatchObject({
       error: {
-        message: "Cannot delete agent: agent is currently running",
         code: "CONFLICT",
       },
     });

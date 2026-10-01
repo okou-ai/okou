@@ -1,3 +1,4 @@
+import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { command } from "ccstate";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -10,7 +11,7 @@ import {
   resolveUsagePricingProvider,
   usagePricingResolution$,
 } from "../context/usage-pricing-resolution";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { processUsageEventKeys$ } from "./credit-usage.service";
 
 const OPENROUTER_USAGE_IDEMPOTENCY_NAMESPACE =
   "3cf6f344-d67b-4d96-ae5d-fd6c0d134b70";
@@ -158,13 +159,29 @@ export const recordOpenRouterUsage$ = command(
         quantity: entry.quantity,
       };
     });
-    await writeDb
-      .insert(usageEvent)
-      .values(eventRows)
-      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+    await set(
+      recordProviderUsageBatch$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.runId,
+        billingContext: args.runId ? "run" : "runless",
+        events: eventRows,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    await set(processOrgUsageEvents$, args.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId: args.orgId,
+        idempotencyKeys: eventRows.map((event) => {
+          return event.idempotencyKey;
+        }),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const processed = await writeDb

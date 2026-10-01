@@ -67,7 +67,6 @@ function activePaidThroughCutoff(at: Date): Date {
   return new Date(at.getTime() - CONCURRENCY_PAYMENT_FAILURE_GRACE_MS);
 }
 
-/** Shared billing policy, including the existing 24-hour payment grace. */
 export function activeConcurrencySubscriptionPredicate(
   orgId: string,
   at: Date,

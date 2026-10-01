@@ -889,6 +889,77 @@ describe("Social data jobs", () => {
     },
   );
 
+  it("preserves newer paid allowance when an older provider refresh completes", async () => {
+    const actor = await seedActor();
+    const before = await credits(actor);
+    const subscriptionId = await grantAllowance(
+      actor,
+      new Date(nowDate().getTime() - 3_600_000),
+    );
+    const observed = source({ start: "async" });
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.subscriptions.retrieve.mockImplementationOnce(
+      async () => {
+        started.resolve();
+        await release.promise;
+        return {
+          id: subscriptionId,
+          status: "canceled",
+          items: { data: [] },
+        };
+      },
+    );
+    const pending = accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 50 }),
+      }),
+      [202, 402],
+    );
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await pending;
+    });
+    await started.promise;
+    await postUsageAllowanceInvoicePaid(context.signal, {
+      orgId: actor.orgId,
+      userId: actor.userId,
+      customerId: `cus_social_allowance_${randomUUID()}`,
+      subscriptionId,
+      effectiveAt: nowDate(),
+      expiresAt: new Date(nowDate().getTime() + 86_400_000),
+      shortWindowSeconds: 5 * 60 * 60,
+      shortWindowUnits: 100,
+      weeklyWindowSeconds: 7 * 24 * 60 * 60,
+      weeklyWindowUnits: 100,
+    });
+    release.resolve();
+    const result = await pending;
+    await expect(credits(actor)).resolves.toBe(before);
+    // A caller may either adopt the current snapshot before admission or
+    // reject its old snapshot. A fresh normal request must use the paid fact.
+    const created =
+      result.status === 202
+        ? result
+        : await accept(
+            client(actor)(socialDataContract).create({
+              headers: authenticate(actor),
+              body: createBody({ maxCredits: before + 50 }),
+            }),
+            [202],
+          );
+    observed.pollStatus = "completed";
+    const completed = await readJob(actor, created.body.jobId);
+    expect(completed.body.billing).toMatchObject({
+      state: "settled",
+      creditsCharged: 0,
+    });
+    await expect(credits(actor)).resolves.toBe(before);
+  });
+
   it("admits a credit-funded job when expired allowance cannot reach Stripe", async () => {
     const actor = await seedActor();
     const subscriptionId = await grantAllowance(

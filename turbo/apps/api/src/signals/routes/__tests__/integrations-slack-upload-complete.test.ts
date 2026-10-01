@@ -40,12 +40,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackOrgConnection$,
-  seedSlackOrgInstallation$,
-  type SlackIntegrationFixture,
-} from "./helpers/integrations-slack";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import {
   deleteUsageStateFixture$,
   type UsageStateFixture,
@@ -72,6 +67,7 @@ const chatApi = createChatFilesBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const runsApi = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
+const slackOrgs = createPublicSlackOrgApi(context);
 
 function authorizationState(authorizationUrl: string): string {
   const state = new URL(authorizationUrl).searchParams.get("state");
@@ -183,7 +179,6 @@ interface RunScopedContext {
 }
 
 describe("POST /api/integrations/slack/upload-file/complete", () => {
-  const slackFixtures: SlackIntegrationFixture[] = [];
   const usageFixtures: UsageStateFixture[] = [];
 
   function actorFor(args: { readonly orgId: string; readonly userId: string }) {
@@ -219,16 +214,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   });
 
   afterEach(async () => {
-    while (slackFixtures.length > 0) {
-      const fixture = slackFixtures.pop();
-      if (fixture) {
-        await store.set(
-          deleteSlackIntegrationFixture$,
-          fixture,
-          context.signal,
-        );
-      }
-    }
     while (usageFixtures.length > 0) {
       const fixture = usageFixtures.pop();
       if (fixture) {
@@ -267,18 +252,37 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     return { orgId, userId };
   }
 
+  /** The OAuth flows authenticate other sessions; restore the member's. */
+  async function restoreMembership(base: {
+    readonly orgId: string;
+    readonly userId: string;
+  }): Promise<void> {
+    await store.set(
+      seedOrgMembership$,
+      { orgId: base.orgId, userId: base.userId, role: "admin" },
+      context.signal,
+    );
+  }
+
+  /** Connects the member's Slack user through the production flow. */
+  async function connectMember(base: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly slackWorkspaceId: string;
+  }): Promise<{ readonly slackUserId: string }> {
+    const connection = await slackOrgs.connectMember(base);
+    await restoreMembership(base);
+    return connection;
+  }
+
   async function seedWithInstallation(): Promise<{
     orgId: string;
     userId: string;
     slackWorkspaceId: string;
   }> {
     const base = await seedBaseContext();
-    const fixture = await store.set(
-      seedSlackOrgInstallation$,
-      { orgId: base.orgId },
-      context.signal,
-    );
-    slackFixtures.push(fixture);
+    const fixture = await slackOrgs.installForOrg({ orgId: base.orgId });
+    await restoreMembership(base);
     return { ...base, slackWorkspaceId: fixture.slackWorkspaceId };
   }
 
@@ -480,11 +484,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
   it("opens a DM for a direct completion addressed to the current user", async () => {
     const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
-    const { slackUserId } = await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId, userId },
-      context.signal,
-    );
+    const { slackUserId } = await connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId,
+    });
     context.mocks.slack.conversations.open.mockResolvedValue({
       ok: true,
       channel: { id: "D-SELF" },
@@ -528,11 +532,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       { userId, orgId },
       { [FeatureSwitchKey.PrivateArtifacts]: false },
     );
-    const { slackUserId } = await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId, userId },
-      context.signal,
-    );
+    const { slackUserId } = await connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId,
+    });
     context.mocks.slack.conversations.open.mockClear();
     context.mocks.slack.conversations.open.mockResolvedValue({
       ok: true,

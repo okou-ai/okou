@@ -4,6 +4,8 @@
  * the committed launch response. Moved verbatim out of the legacy execution
  * graph; owners (Thread, Pi maintenance) assemble their payloads privately.
  */
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { safeSync } from "../utils";
 import { conflict } from "../../lib/error";
 import type { OfficialWorkflowRunObservation } from "./official-workflow-run.service";
@@ -1151,6 +1153,22 @@ export async function persistPendingAtomicLaunch(
   }
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
+  }
+  const capture = billingRunAttributionWrite({
+    id: row.runId,
+    orgId: context.rowsArgs.orgId,
+    userId: context.rowsArgs.userId,
+    startedAt: row.createdAt.toISOString(),
+    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
+    threadId: args.commit.persistence.rows.metadata.chatThreadId,
+  });
+  const [attribution] = await args.tx
+    .insert(billingRunAttribution)
+    .values(capture.values)
+    .onConflictDoUpdate(capture.conflict)
+    .returning({ id: billingRunAttribution.runId });
+  if (!attribution) {
+    throw new Error("New Run billing attribution conflicts with history");
   }
   return {
     kind: "pending",

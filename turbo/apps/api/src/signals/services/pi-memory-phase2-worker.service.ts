@@ -4,7 +4,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { command } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
-
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -24,7 +23,6 @@ import {
   type ClaimedPiMemoryPhase2Job,
   type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
-
 const log = logger("PiMemoryPhase2Worker");
 
 interface PiMemoryPhase2WorkerInput {

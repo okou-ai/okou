@@ -1,5 +1,3 @@
-import { command } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
 import {
   githubWorkflowRunCompletedEventConfigSchema,
   type GithubWorkflowRunCompletedEventConfig,
@@ -7,26 +5,28 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflowGithubProcessedEvents,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-enqueue.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const log = logger("api:github-workflow-run-event");
 
@@ -77,43 +77,6 @@ interface GithubWorkflowRunAutomationRow {
   readonly workflowName: string;
   readonly chatThreadId: string;
   readonly config: GithubWorkflowRunCompletedEventConfig;
-}
-
-export async function prepareGithubWorkflowRunEventConfigForPersist(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly eventConfig: GithubWorkflowRunCompletedEventConfig;
-  },
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: GithubWorkflowRunCompletedEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const [installation] = await db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (!installation) {
-    return {
-      kind: "bad-request",
-      message: "Install GitHub before creating GitHub workflow run automations",
-    };
-  }
-  return {
-    kind: "ok",
-    eventConfig: githubWorkflowRunCompletedEventConfigSchema.parse(
-      args.eventConfig,
-    ),
-  };
 }
 
 function normalized(value: string): string {
@@ -180,92 +143,97 @@ async function findActiveInstallation(args: {
   return installation ?? null;
 }
 
-async function loadGithubWorkflowRunAutomations(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<readonly GithubWorkflowRunAutomationRow[]> {
-  const rows = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+const loadGithubWorkflowRunAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly GithubWorkflowRunAutomationRow[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "github-workflow-run-completed"),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "github-workflow-run-completed"),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.createdAt));
-  signal.throwIfAborted();
+      )
+      .orderBy(asc(workflowAutomations.createdAt));
+    signal.throwIfAborted();
 
-  const automations: GithubWorkflowRunAutomationRow[] = [];
-  const currentTime = nowDate();
-  for (const row of rows) {
-    const config = githubWorkflowRunCompletedEventConfigSchema.safeParse(
-      row.automation.eventConfig,
-    );
-    if (!config.success) {
-      continue;
-    }
-    const canFire = await workflowAutomationCanFire(
-      args.db,
-      {
+    const automations: GithubWorkflowRunAutomationRow[] = [];
+    const currentTime = nowDate();
+    for (const row of rows) {
+      const config = githubWorkflowRunCompletedEventConfigSchema.safeParse(
+        row.automation.eventConfig,
+      );
+      if (!config.success) {
+        continue;
+      }
+      const canFire = await set(
+        workflowAutomationCanFire$,
+        {
+          automation: row.automation,
+          agentId: row.agentId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!canFire) {
+        continue;
+      }
+      const chatThreadId =
+        row.chatThreadId ??
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
+            orgId: row.automation.orgId,
+            userId: row.automation.ownerUserId,
+            workflowId: row.automation.workflowId,
+            agentId: row.agentId,
+            workflowTitle: row.workflowDisplayName ?? row.workflowName,
+            currentTime,
+          },
+          signal,
+        ));
+      signal.throwIfAborted();
+      automations.push({
         automation: row.automation,
         agentId: row.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!canFire) {
-      continue;
+        workflowName: row.workflowName,
+        chatThreadId,
+        config: config.data,
+      });
     }
-    const chatThreadId =
-      row.chatThreadId ??
-      (await args.db.transaction(async (tx) => {
-        return await ensureWorkflowUserAutomationThread(tx, {
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-          workflowId: row.automation.workflowId,
-          agentId: row.agentId,
-          workflowTitle: row.workflowDisplayName ?? row.workflowName,
-          currentTime,
-        });
-      }));
-    signal.throwIfAborted();
-    automations.push({
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      chatThreadId,
-      config: config.data,
-    });
-  }
-  return automations;
-}
+    return automations;
+  },
+);
 
 async function recordProcessedDelivery(args: {
   readonly db: Db;
@@ -429,9 +397,9 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
     const automations = await sourceTiming.measure(
       "api_dispatch_pre_create_agent_automation_event_load_automations",
       async () => {
-        return await loadGithubWorkflowRunAutomations(
+        return await set(
+          loadGithubWorkflowRunAutomations$,
           {
-            db,
             orgId: installation.orgId,
           },
           signal,

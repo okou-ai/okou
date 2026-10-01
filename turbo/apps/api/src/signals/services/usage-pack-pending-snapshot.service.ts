@@ -2,16 +2,18 @@ import {
   usagePackPendingSnapshotGuards,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { asc, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
-import { lockBillingPurchaseOrg } from "./billing-purchase-lock.service";
+
+/** A concurrent pending-snapshot transition committed first; nothing was written. */
+export class UsagePackPendingSnapshotConflict extends Error {}
 
 function isPending(status: string): boolean {
   return status === "checkout_pending" || status === "purchase_pending";
 }
 
-async function lockPendingSnapshotOrgs(
+async function preparePendingSnapshotScope(
   tx: Tx,
   orgIds: readonly string[],
   referencedSubscriptionIds: readonly string[],
@@ -20,12 +22,6 @@ async function lockPendingSnapshotOrgs(
   if (orderedOrgIds.length === 0) {
     throw new Error("Usage pack writes require an organization scope");
   }
-  for (const orgId of orderedOrgIds) {
-    await lockBillingPurchaseOrg(tx, orgId);
-  }
-  // Outgoing lifecycle writers lock the subscription before their AFTER
-  // trigger locks the guard. Lock all existing roots before any guard, also
-  // covering transactions that retire several grandfathered snapshots.
   const roots = await tx
     .select({
       id: usagePackSubscriptions.id,
@@ -37,9 +33,7 @@ async function lockPendingSnapshotOrgs(
         inArray(usagePackSubscriptions.orgId, orderedOrgIds),
         inArray(usagePackSubscriptions.id, referencedSubscriptionIds),
       ),
-    )
-    .orderBy(asc(usagePackSubscriptions.id))
-    .for("update");
+    );
   if (
     roots.some((root) => {
       return !orderedOrgIds.includes(root.orgId);
@@ -56,12 +50,9 @@ async function lockPendingSnapshotOrgs(
     const [guard] = await tx
       .select()
       .from(usagePackPendingSnapshotGuards)
-      .where(eq(usagePackPendingSnapshotGuards.orgId, orgId))
-      .for("update");
+      .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
     if (!guard) {
-      throw new Error(
-        "Usage pack pending snapshot guard disappeared while locking",
-      );
+      throw new Error("Usage pack pending snapshot count disappeared");
     }
     guards.push(guard);
   }
@@ -87,26 +78,43 @@ function pendingRows(rows: readonly SnapshotRow[], orgId: string) {
   });
 }
 
-async function persistPendingCounts(
-  tx: Tx,
-  orgIds: readonly string[],
-  rows: readonly SnapshotRow[],
-) {
-  for (const orgId of orgIds) {
-    await tx
-      .update(usagePackPendingSnapshotGuards)
-      .set({ pendingSnapshotCount: pendingRows(rows, orgId).length })
-      .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
+/**
+ * Publish an actual business-count change, never a lock-only write. A competing
+ * transition that changed the observed count rejects this transaction once;
+ * its subscription/allocation writes roll back with the rejected publication.
+ */
+export async function publishUsagePackPendingSnapshotCount(
+  tx: Pick<Tx, "update">,
+  orgId: string,
+  before: number,
+  after: number,
+): Promise<void> {
+  if (before === after) {
+    return;
+  }
+  const [published] = await tx
+    .update(usagePackPendingSnapshotGuards)
+    .set({ pendingSnapshotCount: after })
+    .where(
+      and(
+        eq(usagePackPendingSnapshotGuards.orgId, orgId),
+        eq(usagePackPendingSnapshotGuards.pendingSnapshotCount, before),
+      ),
+    )
+    .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+  if (!published) {
+    throw new UsagePackPendingSnapshotConflict(
+      "Usage pack pending snapshot count changed during publication",
+    );
   }
 }
 
 /**
  * Own the complete subscription mutation transaction. Scope both organizations
- * for a move, and enter before taking subscription/allocation/metadata locks.
- * Existing usage_pack_billing advisory locks, when needed, precede this call.
- * Every subscription written by the callback must belong to this scope.
- * Supply IDs loaded before the transaction so concurrent organization moves
- * are rejected before taking guards or executing the callback.
+ * for a move. Every subscription written by the callback must belong to this
+ * scope; callbacks must condition transitions on the business state they read.
+ * Subscription roots and count rows are not prelocked. A changed count is
+ * published conditionally in the same transaction as the business rows.
  */
 export async function writeUsagePackPendingSnapshots<T>(
   db: Pick<ApiDb, "transaction">,
@@ -115,7 +123,7 @@ export async function writeUsagePackPendingSnapshots<T>(
   referencedSubscriptionIds: readonly string[] = [],
 ): Promise<T> {
   return await db.transaction(async (tx) => {
-    const { orderedOrgIds, guards } = await lockPendingSnapshotOrgs(
+    const { orderedOrgIds, guards } = await preparePendingSnapshotScope(
       tx,
       orgIds,
       referencedSubscriptionIds,
@@ -172,11 +180,13 @@ export async function writeUsagePackPendingSnapshots<T>(
           "Another usage-pack purchase is already pending for this organization",
         );
       }
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        orgId,
+        prior.size,
+        pending.length,
+      );
     }
-    // The retained trigger may already have changed the count. Assign the
-    // verified final state; never repeat its increment/decrement or probe its
-    // presence to choose which writer owns the side effect.
-    await persistPendingCounts(tx, orderedOrgIds, after);
     return result;
   });
 }
@@ -187,11 +197,19 @@ export async function repairUsagePackPendingSnapshotGuards(
   orgIds: readonly string[],
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const { orderedOrgIds } = await lockPendingSnapshotOrgs(tx, orgIds, []);
-    await persistPendingCounts(
+    const { orderedOrgIds, guards } = await preparePendingSnapshotScope(
       tx,
-      orderedOrgIds,
-      await snapshotRows(tx, orgIds),
+      orgIds,
+      [],
     );
+    const rows = await snapshotRows(tx, orderedOrgIds);
+    for (const guard of guards) {
+      await publishUsagePackPendingSnapshotCount(
+        tx,
+        guard.orgId,
+        guard.pendingSnapshotCount,
+        pendingRows(rows, guard.orgId).length,
+      );
+    }
   });
 }

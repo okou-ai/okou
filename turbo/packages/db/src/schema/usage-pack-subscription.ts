@@ -283,10 +283,10 @@ export const usagePackSubscriptions = pgTable(
 );
 
 /**
- * One persisted pending count per organization. Explicit API transactions and
- * the retained 0954 trigger share this guard during rollout. Migration 0954 preserves
- * the exact count when legacy writers already left competing snapshots. New
- * writers may claim the organization only after reconciliation reaches zero.
+ * One persisted pending count per organization, maintained by explicit API
+ * transactions. Migration 1132 retired the historical 0954 trigger after its
+ * invariant audit. Grandfathered competing snapshots retain their exact count;
+ * new writers may claim the organization after reconciliation reaches zero.
  */
 export const usagePackPendingSnapshotGuards = pgTable(
   "usage_pack_pending_snapshot_guards",

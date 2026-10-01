@@ -88,29 +88,52 @@ async function showModels(settings: HTMLElement): Promise<void> {
   await within(settings).findAllByText("No accounts connected.");
 }
 
-test("Keep loaded model controls usable during Settings navigation and apply realtime changes", async () => {
-  let mode: OrgModelMode = "custom";
-  let credits = 20_000;
+interface SettingsResponses {
+  mode: OrgModelMode;
+  credits: number;
+  holdPoliciesAndBilling: boolean;
+  holdSubscriptions: boolean;
+}
+
+async function openModelsSettings(menu: HTMLElement): Promise<HTMLElement> {
+  click(within(menu).getByText("Settings"));
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await showModels(settings);
+  return settings;
+}
+
+async function closeSettings(settings: HTMLElement): Promise<void> {
+  click(within(settings).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  });
+}
+
+async function setupLoadedModelsSettings() {
+  const responses: SettingsResponses = {
+    mode: "custom",
+    credits: 20_000,
+    holdPoliciesAndBilling: false,
+    holdSubscriptions: false,
+  };
   const release = context.mocks.deferred<void>();
-  let holdPoliciesAndBilling = false;
-  let holdSubscriptions = false;
   installRunChat({ selectedModel: MODEL });
   context.mocks.api(modelPoliciesMainContract.list, async ({ respond }) => {
-    if (holdPoliciesAndBilling) {
+    if (responses.holdPoliciesAndBilling) {
       await release.promise;
     }
-    return respond(200, policyResponse(mode));
+    return respond(200, policyResponse(responses.mode));
   });
   context.mocks.api(billingStatusContract.get, async ({ respond }) => {
-    if (holdPoliciesAndBilling) {
+    if (responses.holdPoliciesAndBilling) {
       await release.promise;
     }
-    return respond(200, billingResponse(credits));
+    return respond(200, billingResponse(responses.credits));
   });
   context.mocks.api(
     personalModelProvidersMainContract.list,
     async ({ respond }) => {
-      if (holdSubscriptions) {
+      if (responses.holdSubscriptions) {
         await release.promise;
       }
       return respond(200, { modelProviders: [] });
@@ -123,45 +146,60 @@ test("Keep loaded model controls usable during Settings navigation and apply rea
   });
   await findButton("GPT 5.6 Sol");
   const menu = await openAccountMenu();
-  holdPoliciesAndBilling = true;
-  click(within(menu).getByText("Settings"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await showModels(settings);
+  responses.holdPoliciesAndBilling = true;
+  const settings = await openModelsSettings(menu);
   await expect(
     findEnabledButton("Add account", settings),
   ).resolves.toBeEnabled();
-  holdSubscriptions = true;
+  responses.holdSubscriptions = true;
+  return { settings, responses, release };
+}
 
+async function reopenModelsSettings(
+  settings: HTMLElement,
+  responses: SettingsResponses,
+): Promise<HTMLElement> {
+  await closeSettings(settings);
+  // Account-menu balance reads have their own freshness contract; only hold
+  // subsequent responses once navigation enters Settings again.
+  responses.holdPoliciesAndBilling = false;
+  responses.holdSubscriptions = false;
+  const menu = await openAccountMenu();
+  responses.holdPoliciesAndBilling = true;
+  responses.holdSubscriptions = true;
+  return openModelsSettings(menu);
+}
+
+test("Keep loaded model controls usable when switching Settings sections", async () => {
+  const { settings } = await setupLoadedModelsSettings();
   click(await findEnabledButton("Preference", settings));
   await within(settings).findByRole("heading", { name: "Preference" });
   await showModels(settings);
   await expect(
     findEnabledButton("Add account", settings),
   ).resolves.toBeEnabled();
-  click(within(settings).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-  });
-  // Account-menu balance reads have their own freshness contract; only hold
-  // subsequent responses once navigation enters Settings again.
-  holdPoliciesAndBilling = false;
-  holdSubscriptions = false;
-  const reopenedMenu = await openAccountMenu();
-  holdPoliciesAndBilling = true;
-  holdSubscriptions = true;
-  click(within(reopenedMenu).getByText("Settings"));
-  const reopened = await screen.findByRole("dialog", { name: "Settings" });
-  await showModels(reopened);
+});
+
+test("Keep loaded model controls usable after reopening Settings", async () => {
+  const { settings, responses } = await setupLoadedModelsSettings();
+  const reopened = await reopenModelsSettings(settings, responses);
   await expect(
     findEnabledButton("Add account", reopened),
   ).resolves.toBeEnabled();
+});
 
-  holdPoliciesAndBilling = false;
-  holdSubscriptions = false;
+test("Apply realtime model policy changes after reopening Settings", async () => {
+  const { settings, responses, release } = await setupLoadedModelsSettings();
+  const reopened = await reopenModelsSettings(settings, responses);
+  await expect(
+    findEnabledButton("Add account", reopened),
+  ).resolves.toBeEnabled();
+  responses.holdPoliciesAndBilling = false;
+  responses.holdSubscriptions = false;
   act(() => {
     release.resolve();
   });
-  mode = "auto";
+  responses.mode = "auto";
   act(() => {
     context.mocks.ably.triggerOnChannel(
       "org:org_default",
@@ -179,15 +217,30 @@ test("Keep loaded model controls usable during Settings navigation and apply rea
   expect(
     within(reopened).queryByRole("heading", { name: "Available models" }),
   ).not.toBeInTheDocument();
+});
 
-  credits = 25_000;
+test("Apply realtime billing changes after reopening Settings", async () => {
+  const { settings, responses, release } = await setupLoadedModelsSettings();
+  const reopened = await reopenModelsSettings(settings, responses);
+  await expect(
+    findEnabledButton("Add account", reopened),
+  ).resolves.toBeEnabled();
+  responses.holdPoliciesAndBilling = false;
+  responses.holdSubscriptions = false;
+  act(() => {
+    release.resolve();
+  });
+  click(await findEnabledButton("Credit balance", reopened));
+  await within(reopened).findByRole("heading", { name: "Credit balance" });
+  await within(reopened).findByText("20,000");
+  responses.credits = 25_000;
   act(() => {
     context.mocks.ably.trigger("billing:changed");
   });
-  click(within(reopened).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-  });
+  await expect(
+    within(reopened).findByText("25,000"),
+  ).resolves.toBeInTheDocument();
+  await closeSettings(reopened);
   await openAccountMenu("25,000 credits");
 });
 

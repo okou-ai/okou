@@ -1,10 +1,11 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   CHAT_EVENT_TYPES,
   chatEventCompatibilityRole,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { computed, type Computed } from "ccstate";
 import {
   and,
   asc,
@@ -21,19 +22,18 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { computed, type Computed } from "ccstate";
 import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$, rawSqlReadDb$, type Db } from "../external/db";
+import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import { visibleChatEventCondition } from "./chat-event-shared.service";
 import {
   chatEventTextCondition,
   chatEventTypeIn,
   runOwnedChatEventCondition,
 } from "./chat-event-type.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
 const INCOMPLETE_ROUND_LIMIT = 20;
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;

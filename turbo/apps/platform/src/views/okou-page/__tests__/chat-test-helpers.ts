@@ -12,6 +12,8 @@ import {
   chatThreadDraftContract,
   chatThreadModelSelectionContract,
   chatThreadEventsContract,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
   chatEventsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   type ChatRunOptionsRequest,
@@ -307,6 +309,7 @@ export function mockChatLifecycle(
     threadId?: string;
     historyEvents?: MockChatEvent[];
     chatEvents?: MockChatEvent[];
+    runUsage?: Readonly<Record<string, ChatEventUsagePayload>>;
     threadTitle?: string | null;
     selectedModel?: string | null;
     codexServiceTier?: CodexServiceTier | null;
@@ -721,6 +724,22 @@ export function mockChatLifecycle(
       createdAt: "2026-03-10T00:00:00Z",
     };
   };
+
+  context.mocks.api(chatThreadUsageContract.read, ({ body, respond }) => {
+    const values =
+      options?.runUsage ??
+      Object.fromEntries(
+        [...historyEvents, ...chatEvents].flatMap((event) => {
+          return event.runId && event.usage ? [[event.runId, event.usage]] : [];
+        }),
+      );
+    return respond(200, {
+      runs: body.runIds.flatMap((runId) => {
+        const usage = values[runId];
+        return usage ? [{ runId, usage }] : [];
+      }),
+    });
+  });
 
   context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
     return respond(404, {

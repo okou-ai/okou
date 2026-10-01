@@ -212,9 +212,10 @@ export async function enqueuePiResourceVersionIndexes(
   signal?.throwIfAborted();
 }
 
-function projectionValues(
+export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
+  updatedAt = nowDate(),
 ) {
   // Only a materialized archive's actual bytes determine its size limit.
   // archiveSize is the registered source revision, not a byte identity.
@@ -226,7 +227,7 @@ function projectionValues(
     sourceArchiveSize: archiveSize,
     leaseId: null,
     leaseExpiresAt: null,
-    updatedAt: nowDate(),
+    updatedAt,
   };
 }
 
@@ -241,7 +242,7 @@ export async function publishPiResourceVersionIndex(
   signal?: AbortSignal,
 ): Promise<void> {
   const { db, versionId, projection, archiveSize, source } = args;
-  const values = projectionValues(projection, archiveSize);
+  const values = piResourceProjectionValues(projection, archiveSize);
   await db
     .insert(piResourceVersionIndexes)
     .values({
@@ -500,7 +501,7 @@ export const executePiResourceIndexWork$ = command(
             }
           }
         }
-        const values = projectionValues(projection, item.archiveSize);
+        const values = piResourceProjectionValues(projection, item.archiveSize);
         const updated = await db
           .update(piResourceVersionIndexes)
           .set(values)

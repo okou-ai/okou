@@ -7,12 +7,12 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, eq, exists, sql } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 /** A Run must still refer to its own current, Agent-bound chat thread. */
-export function runThreadExists(db: Pick<ReadonlyDb, "select">) {
+export function runThreadExists() {
   return exists(
-    db
+    new QueryBuilder()
       .select({ id: chatThreads.id })
       .from(chatThreads)
       .where(
@@ -26,9 +26,9 @@ export function runThreadExists(db: Pick<ReadonlyDb, "select">) {
 }
 
 /** Correlated to the outer Run, Session and exact SSH host. */
-export function runThreadSshAccess(db: Pick<ReadonlyDb, "select">) {
+export function runThreadSshAccess() {
   return exists(
-    db
+    new QueryBuilder()
       .select({ id: chatThreads.id })
       .from(chatThreads)
       .leftJoin(
@@ -50,9 +50,9 @@ export function runThreadSshAccess(db: Pick<ReadonlyDb, "select">) {
 }
 
 /** Correlated to the outer Run, Session and exact VNC host. */
-export function runThreadVncAccess(db: Pick<ReadonlyDb, "select">) {
+export function runThreadVncAccess() {
   return exists(
-    db
+    new QueryBuilder()
       .select({ id: chatThreads.id })
       .from(chatThreads)
       .leftJoin(

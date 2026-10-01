@@ -20,6 +20,25 @@ by `run_id`. This is a read-time API projection: stored `usage_event`,
 unchanged. An old App shows the new response values through its existing
 catalog mapping. No database migration is involved.
 
+## Agent instruction transaction-free preparation
+
+Instruction PUT reserves the existing same-key Pi token and canonical Storage
+generation in a short authorized transaction before archive/manifest IO. Its
+final transaction rechecks current Agent permission/name, Storage identity and
+that exact token before publishing. Failed or cancelled work settles only its
+own token. A superseded preparation returns the additive `409 CONFLICT` response;
+request and successful response shapes remain unchanged. Existing consumers
+already treat non-200 updates as failures and must not blindly retry a conflict.
+
+No schema or token format changes. Old transaction-held API writers share the
+same source locks and keyed publication fencing with new prepared writers; the
+old lock-held IO remains until those instances drain. Rollback restores the old
+transaction boundary. Readers keep following the last committed HEAD throughout
+preparation. Bootstrap already uses the shared preparation/DB-only publication
+helpers; with both callers migrated, the unused transaction wrapper is retired.
+This does not make R2 keys immutable or recover token/byte obligations from
+process termination; see [Storage version publication](storage-version-publication.md).
+
 ## Storage version reuse and reference-first Clerk cleanup
 
 Registered Storage versions are reused from their database metadata without an
@@ -38,6 +57,48 @@ still uses R2-first ordering until it drains. Existing user-deletion jobs retain
 their current handler/checkpoint contract and can resume through the new code.
 See [Storage version publication](storage-version-publication.md) for the bounded
 cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
+
+## Bootstrap private-generation publication and advisory retirement
+
+Bootstrap seed IO now finishes before canonical parent publication. Each new
+attempt prepares a disjoint Storage UUID/prefix without registering a row. A
+short transaction arbitrates the canonical owner/name, takes its parent directly
+`FOR UPDATE`, checks default freshly and publishes only the elected generation.
+An incumbent HEAD is preserved; only a versionless empty container may be
+retired. Agent/metadata/credits/index references commit atomically. Exact failed
+or losing generations reuse handler-v1 storage-object-cleanup inventory; no
+schema, version identity, Runner reader or public API contract changes.
+
+The initial metadata insert now checks configured policies, like the existing
+conflict-update branch: policies configured before a metadata row exists retain
+Custom instead of being switched to Auto. On conflict, configured policies retain
+the stored mode; an unconfigured new org still starts in Auto. The policy and
+catalog schemas and paid-tier behavior do not change.
+
+At the owner's direction, mixed old/new bootstrap API writers are outside this
+change's acceptance scope. No runtime version dispatch or legacy bootstrap path
+is retained, and the earlier preparation-stage writer-drain/rollback gate is not
+an acceptance requirement for this PR. This is a scope decision, not a claim that
+serving builds were inspected. Other deployment and retirement contracts are
+unchanged.
+
+Concurrent attempts using this implementation keep disjoint UUIDs/prefixes.
+Canonical parent ownership and uniqueness select one default; losers enqueue
+only their own prefixes. Existing canonical Storage/version/index rows retain
+their shape and key layout, with no persisted-state conversion or migration.
+Published instructions and legitimate versionless empty reservations remain
+part of the data contract, independent of writer-version coexistence.
+
+Compensation fences an uncertain publication by probing the same candidate's
+primary key under a private probe name, then reads only that captured UUID/prefix.
+It removes only a newly inserted, unpublished probe; any live captured parent is
+retained. Recovery SQL has one-second lock and five-second statement timeouts,
+independent of request cancellation, without lock retries. Cleanup failure does
+not reinterpret a successful publication or replace the original failure.
+Process crashes before inventory and provider late PUTs still need #37402's grace
+sweep. No grace period or complete orphan-GC guarantee is introduced here. The
+[publication protocol](storage-version-publication.md#bootstrap-seed-publication)
+details canonical election, empty-parent recovery and bounded cleanup.
 
 ## Astra Ultrafast temporarily disabled (2026-09-30)
 
@@ -7563,6 +7624,63 @@ returns the original message instead of creating another. After the one-minute
 replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.
+
+## Browser advisory retirement (2026-09-29)
+
+The Browser thread key is retired after the preparation in #37097
+(`405c21452010c37e4ce2facd51c3f1b231646e7d`). Fresh creation and resume use the
+existing owned-thread partial unique index and exact state predicates. Instance
+publication inserts the provider instance and screen, then conditionally changes
+the observed logical Browser in the same command-local transaction. A lost
+logical claim rolls those inserts back. Stop, retention and profile retirement
+keep their existing exact resource identities and conditional writes.
+
+All eight Browser transaction scopes now belong to local commands. They execute
+SQL directly; neither a transaction parameter nor a transaction-capturing helper
+callback leaves the scope. Provider HTTP, CDP, encryption, object storage and
+realtime stay outside those transactions. Post-commit provider cleanup finishes
+its ownership handoff before the caller observes cancellation. No persisted
+field, public API shape, App floor or Runner contract changes.
+
+At the 2026-09-29 inspection, both public API build-info endpoints returned
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555` (API 1.695.0). Vercel's four production
+aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) all
+resolved to READY deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, promoted at
+01:12:01 UTC. That commit descends from #37097, and more than one hour had elapsed
+since promotion when checked; the API's configured invocation bound is 300
+seconds. The normal rollback resolver also requires
+`45b537a596a153a91b76c3bc7223187840f52775`, a descendant of #37097, so supported
+rollback targets contain the Browser preparation. This is read-only rollout
+verification, not a new production deployment.
+
+Recheck serving and supported rollback versions before deployment if either
+changes. Do not restore a pre-#37097 Browser writer alongside the keyless API.
+The preceding prepared API and this version use the same existing constraints,
+state comparisons and statement order during rolling overlap.
+
+## Custom account advisory retirement (2026-09-29)
+
+The custom account target acquisition is removed after the preparation from
+#37097 (`405c21452010c37e4ce2facd51c3f1b231646e7d`). Exact custom-account deletion
+no longer calls the advisory interface; shared account selection and lifecycle
+paths now take it only for builtin targets. Existing definition protection,
+ordered account row writes, account uniqueness, selection foreign keys and
+whole-transaction rollback recovery continue to arbitrate custom writes.
+
+Read-only deployment checks on 2026-09-29 found all production API aliases
+(`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) at READY
+Vercel deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, commit
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555`. Both public build-info endpoints
+returned that commit and version 1.695.0. This version contains #37097; the
+01:12:01 UTC promotion preceded inspection by more than the configured
+300-second API invocation bound. The existing mandatory rollback floor
+`45b537a596a153a91b76c3bc7223187840f52775` also contains #37097.
+
+Recheck supported serving and rollback writers before deployment if that state
+changes. A pre-#37097 custom-account writer cannot coexist with this retirement.
+No App/Runner contract, persisted field or additional deployment floor changes.
+The remaining builtin target lock and transaction-passing account helpers are
+separate Release 1 work, not exceptions to the confirmed final architecture.
 
 ## Canonical Chat application sessions
 

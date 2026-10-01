@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { command } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -75,7 +77,11 @@ import { admissionAttemptOutcome } from "./execution-launch-admission.service";
 import { withFinalRunAppendSystemPrompt } from "./run-execution-context.service";
 import { loadModelCatalog } from "./model-catalog.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
+import {
+  activateUsageAllowanceWindowsForRun,
+  type PreparedUsageAllowanceRefresh,
+  prepareUsageAllowanceRefresh$,
+} from "./usage-allowance.service";
 import {
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
@@ -380,6 +386,7 @@ interface MaintenanceCommit {
   readonly selectionDigest: string;
   readonly commit: Omit<CommitPreparedLaunchArgs, "db">;
   readonly apiStartTime: number;
+  readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
 }
 
 /** Atomic run + Runner job + job binding; the active-run row is last. */
@@ -437,6 +444,7 @@ async function commitMaintenanceRun(db: Db, args: MaintenanceCommit) {
         orgId: job.orgId,
         runId: persisted.run.id,
         runCreatedAt: persisted.run.createdAt,
+        refresh: args.allowanceRefresh,
       });
     }
     // The unique active-run insert stays the final statement.
@@ -731,20 +739,13 @@ interface MaintenanceRunFacts {
 }
 
 /** Storage, encrypted secrets and the Pi runner payload for one run. */
+type MaintenancePreparationArgs = MaintenanceRunFacts &
+  Omit<MaintenanceLaunchArgs, "encryptedSecrets" | "storage" | "artifact"> & {
+    readonly preparedMounts: Parameters<typeof prepareMaintenanceStorage>[1];
+  };
+
 const prepareMaintenanceLaunch$ = command(
-  async (
-    { set },
-    args: MaintenanceRunFacts &
-      Omit<
-        MaintenanceLaunchArgs,
-        "encryptedSecrets" | "storage" | "artifact"
-      > & {
-        readonly preparedMounts: Parameters<
-          typeof prepareMaintenanceStorage
-        >[1];
-      },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: MaintenancePreparationArgs, signal: AbortSignal) => {
     const { artifact, storage } = await prepareMaintenanceStorage(
       args.job,
       args.preparedMounts,
@@ -808,14 +809,48 @@ async function recordFailedMaintenanceLaunch(
     creditAdmitted: false,
   };
   await db.transaction(async (tx) => {
+    const createdAt = nowDate();
+    const metadata = launchRunMetadataValues(rows);
     await tx.insert(agentSessions).values(launchSessionValues(rows));
     await tx
       .insert(agentRuns)
-      .values(launchRunValues(rows, nowDate(), launchRunMetadataValues(rows)));
+      .values(launchRunValues(rows, createdAt, metadata));
+    const capture = billingRunAttributionWrite({
+      id: commit.identity.runId,
+      orgId: rows.orgId,
+      userId: rows.userId,
+      startedAt: createdAt.toISOString(),
+      triggerSource: metadata.triggerSource,
+      threadId: metadata.chatThreadId,
+    });
+    const [attribution] = await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoUpdate(capture.conflict)
+      .returning({ id: billingRunAttribution.runId });
+    if (!attribution) {
+      throw new Error("New Run billing attribution conflicts with history");
+    }
     await tx.insert(agentRunCallbacks).values([...commit.callbackRows]);
     await args.credential.validate(tx);
   });
 }
+
+/**
+ * Launch preparation and, for a built-in model, the Stripe entitlement refresh
+ * for the allowance window run together outside the transaction; either
+ * unexpected failure fails the preparation fast.
+ */
+const prepareMaintenanceLaunchAndAllowance$ = command(
+  async ({ set }, args: MaintenancePreparationArgs, signal: AbortSignal) => {
+    return await Promise.all([
+      settle(set(prepareMaintenanceLaunch$, args, signal), signal),
+      isBuiltInModelProviderType(args.modelProvider.type)
+        ? set(prepareUsageAllowanceRefresh$, { orgId: args.job.orgId }, signal)
+        : undefined,
+    ]);
+  },
+);
 
 /**
  * Independent memory-maintenance sandbox execution for one claimed Pi
@@ -897,22 +932,19 @@ export const startMaintenanceRun$ = command(
       selectionDigest,
       timing,
     };
-    const prepared = await settle(
-      set(
-        prepareMaintenanceLaunch$,
-        {
-          ...runFacts,
-          framework,
-          piSandbox,
-          permissionManifest,
-          usage,
-          disabledPaidTools,
-          userTimezone: member.preferences?.timezone ?? undefined,
-          featureSwitchContext: admitted.featureSwitchContext,
-          preparedMounts,
-        },
-        signal,
-      ),
+    const [prepared, preparedAllowanceRefresh] = await set(
+      prepareMaintenanceLaunchAndAllowance$,
+      {
+        ...runFacts,
+        framework,
+        piSandbox,
+        permissionManifest,
+        usage,
+        disabledPaidTools,
+        userTimezone: member.preferences?.timezone ?? undefined,
+        featureSwitchContext: admitted.featureSwitchContext,
+        preparedMounts,
+      },
       signal,
     );
     if (!prepared.ok) {
@@ -937,6 +969,7 @@ export const startMaintenanceRun$ = command(
     );
     const committed = await commitMaintenanceRun(db, {
       job,
+      allowanceRefresh: preparedAllowanceRefresh,
       credential: admitted.credential,
       selectionDigest,
       commit,

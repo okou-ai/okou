@@ -1,6 +1,6 @@
 import { command, computed } from "ccstate";
 import { randomUUID } from "node:crypto";
-import { and, eq, notExists, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notExists, notInArray } from "drizzle-orm";
 import {
   getFrameworkForType,
   modelProviderTypeSchema,
@@ -22,7 +22,7 @@ import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
@@ -39,17 +39,9 @@ const ORG_SENTINEL_USER_ID = "__org__";
 const SECRET_PLACEHOLDER = "{{secret}}";
 const HEADER_NAME_REGEX = /^[A-Za-z][A-Za-z0-9-]*$/;
 
-async function customConnectionsAllowed(
-  db: Db,
-  orgId: string,
-): Promise<boolean> {
-  const [org] = await db
-    .select({ mode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  // A missing metadata row reads as Custom, matching every other mode check.
-  return org?.mode !== "auto";
+/** Pure condition; a missing metadata row reads as Custom, matching every other mode check. */
+function autoModeOrg(orgId: string) {
+  return and(eq(orgMetadata.orgId, orgId), eq(orgMetadata.modelMode, "auto"));
 }
 
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
@@ -293,29 +285,10 @@ function secretName(connectionId: string): string {
   return `MODEL_PROVIDER_GATEWAY_${connectionId.replaceAll("-", "").toUpperCase()}`;
 }
 
-async function loadConnection(
-  db: Db | ReadonlyDb,
-  orgId: string,
-  connectionId: string,
-): Promise<ModelProviderConnectionResponse | null> {
-  const [connection] = await db
-    .select()
-    .from(modelProviderConnections)
-    .where(
-      and(
-        eq(modelProviderConnections.id, connectionId),
-        eq(modelProviderConnections.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  if (!connection) {
-    return null;
-  }
-  const surfaces = await db
-    .select()
-    .from(modelProviderSurfaces)
-    .where(eq(modelProviderSurfaces.connectionId, connection.id))
-    .orderBy(modelProviderSurfaces.protocol);
+function connectionResponse(
+  connection: typeof modelProviderConnections.$inferSelect,
+  surfaces: readonly (typeof modelProviderSurfaces.$inferSelect)[],
+): ModelProviderConnectionResponse {
   return {
     id: connection.id,
     displayName: connection.displayName,
@@ -339,6 +312,37 @@ async function loadConnection(
   };
 }
 
+const loadConnection$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly connectionId: string },
+    signal: AbortSignal,
+  ): Promise<ModelProviderConnectionResponse | null> => {
+    const db = set(writeDb$);
+    const [connection] = await db
+      .select()
+      .from(modelProviderConnections)
+      .where(
+        and(
+          eq(modelProviderConnections.id, args.connectionId),
+          eq(modelProviderConnections.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!connection) {
+      return null;
+    }
+    const surfaces = await db
+      .select()
+      .from(modelProviderSurfaces)
+      .where(eq(modelProviderSurfaces.connectionId, connection.id))
+      .orderBy(modelProviderSurfaces.protocol);
+    signal.throwIfAborted();
+    return connectionResponse(connection, surfaces);
+  },
+);
+
 export const modelProviderConnectionsForOrg = (orgId: string) => {
   return computed(async (get) => {
     const db = get(db$);
@@ -351,19 +355,33 @@ export const modelProviderConnectionsForOrg = (orgId: string) => {
       return { connections: [] };
     }
     const connections = await db
-      .select({ id: modelProviderConnections.id })
+      .select()
       .from(modelProviderConnections)
       .where(eq(modelProviderConnections.orgId, orgId))
       .orderBy(modelProviderConnections.displayName);
+    const surfaces =
+      connections.length === 0
+        ? []
+        : await db
+            .select()
+            .from(modelProviderSurfaces)
+            .where(
+              inArray(
+                modelProviderSurfaces.connectionId,
+                connections.map((connection) => {
+                  return connection.id;
+                }),
+              ),
+            )
+            .orderBy(modelProviderSurfaces.protocol);
     return {
-      connections: (
-        await Promise.all(
-          connections.map((connection) => {
-            return loadConnection(db, orgId, connection.id);
+      connections: connections.map((connection) => {
+        return connectionResponse(
+          connection,
+          surfaces.filter((surface) => {
+            return surface.connectionId === connection.id;
           }),
-        )
-      ).filter((connection): connection is ModelProviderConnectionResponse => {
-        return connection !== null;
+        );
       }),
     };
   });
@@ -391,7 +409,12 @@ export const createModelProviderConnection$ = command(
     const db = set(writeDb$);
     const connectionId = randomUUID();
     const created = await db.transaction(async (tx) => {
-      if (!(await customConnectionsAllowed(tx, args.orgId))) {
+      const [autoOrg] = await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(autoModeOrg(args.orgId))
+        .limit(1);
+      if (autoOrg) {
         return false;
       }
       const [secret] = await tx
@@ -427,7 +450,11 @@ export const createModelProviderConnection$ = command(
         "Provider connections cannot be configured in Auto mode",
       );
     }
-    const connection = await loadConnection(db, args.orgId, connectionId);
+    const connection = await set(
+      loadConnection$,
+      { orgId: args.orgId, connectionId },
+      signal,
+    );
     signal.throwIfAborted();
     if (!connection) {
       throw new Error("Expected custom model provider connection insert");
@@ -463,7 +490,12 @@ export const updateModelProviderConnection$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      if (!(await customConnectionsAllowed(tx, args.orgId))) {
+      const [autoOrg] = await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(autoModeOrg(args.orgId))
+        .limit(1);
+      if (autoOrg) {
         return "auto";
       }
       const [connection] = await tx
@@ -525,7 +557,11 @@ export const updateModelProviderConnection$ = command(
     if (!result) {
       return notFound("Resource not found");
     }
-    const updated = await loadConnection(db, args.orgId, args.connectionId);
+    const updated = await set(
+      loadConnection$,
+      { orgId: args.orgId, connectionId: args.connectionId },
+      signal,
+    );
     signal.throwIfAborted();
     if (!updated) {
       throw new Error("Expected custom model provider connection update");

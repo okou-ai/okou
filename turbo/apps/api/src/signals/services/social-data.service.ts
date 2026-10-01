@@ -1,3 +1,5 @@
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
+import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -30,10 +32,7 @@ import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import {
-  checkManagedCreditsSnapshotInDb,
-  recordManagedUsageInCompactionLockedTransaction,
-} from "./managed-usage.service";
+import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
   readSocialDataProviderRun,
@@ -47,8 +46,6 @@ import {
   SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -456,7 +453,7 @@ export const createSocialDataJob$ = command(
         }
         // The owner-row transaction has ended. Allowance refresh takes the
         // credit lock and can call Stripe, so neither belongs under that row.
-        await resolveUsageAllowanceAvailability(db, args.auth.orgId);
+        await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
         signal.throwIfAborted();
         const refreshed = await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
@@ -637,64 +634,26 @@ async function saveClaimOutcome(
 }
 
 const settleSocialDataJob$ = command(
-  async ({ get, set }, claim: Claim, signal: AbortSignal): Promise<void> => {
+  async ({ set }, claim: Claim, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const resolution = get(usagePricingResolution$);
-    const effects = await db.transaction(async (tx) => {
-      await lockUsageEventCompaction(tx, "shared");
-      signal.throwIfAborted();
-      const [job] = await tx
-        .select()
-        .from(socialDataJobs)
-        .where(claimedWhere(claim))
-        .for("update");
-      signal.throwIfAborted();
-      if (!job || job.creditsCharged !== null) {
-        return null;
-      }
-      if (job.actualCostUsdMicros === null) {
-        throw new Error("Completed Social data job has no settlement cost");
-      }
-      const receipt =
-        job.actualCostUsdMicros === 0 || job.maxCredits === 0
-          ? null
-          : await recordManagedUsageInCompactionLockedTransaction(
-              tx,
-              {
-                actor: {
-                  orgId: job.orgId,
-                  userId: job.userId,
-                  ...(job.billingRunId ? { runId: job.billingRunId } : {}),
-                },
-                resource: {
-                  kind: "social",
-                  provider: providerFor(job.platform),
-                  category: BILLING_CATEGORY,
-                  quantity: job.actualCostUsdMicros,
-                },
-                label: "Okou Social",
-                idempotencyKey: job.usageIdempotencyKey,
-                pricingSnapshot: {
-                  unitPrice: job.unitPrice,
-                  unitSize: job.unitSize,
-                  creditsLimit: job.maxCredits,
-                },
-              },
-              resolution,
-              signal,
-            );
-      signal.throwIfAborted();
-      await tx
-        .update(socialDataJobs)
-        .set({
-          creditsCharged: receipt?.creditsCharged ?? 0,
-          reservedCredits: 0,
-          completedAt: nowDate(),
-          updatedAt: nowDate(),
-        })
-        .where(claimedWhere(claim));
-      return receipt?.effects ?? null;
-    });
+    const [current] = await db
+      .select({
+        creditsCharged: socialDataJobs.creditsCharged,
+      })
+      .from(socialDataJobs)
+      .where(claimedWhere(claim));
+    signal.throwIfAborted();
+    if (!current || current.creditsCharged !== null) {
+      return;
+    }
+    const effects = await set(
+      settleOrgUsage$,
+      {
+        orgId: claim.job.orgId,
+        social: { jobId: claim.job.id, expiresAt: claim.expiresAt },
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (effects) {
       await set(

@@ -83,7 +83,7 @@ export async function writeOrgMetadataWithPlanEntitlements<Row>(
   return rows;
 }
 
-function orgPlanEntitlementValues(
+export function orgPlanEntitlementValues(
   args: UpsertOrgPlanEntitlementArgs,
   stripeSubscriptionSnapshot: ResolvedStripeSubscriptionSnapshot,
 ) {

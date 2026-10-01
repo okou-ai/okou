@@ -23,6 +23,7 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
   chatThreadEventsContract,
+  chatThreadUsageContract,
   chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
@@ -306,6 +307,10 @@ export const apiAgentsHandlers = [
       serviceTier: body.serviceTier ?? null,
     });
   }),
+
+  mockApi(chatThreadUsageContract.read, ({ respond }) =>
+    respond(200, { runs: [] }),
+  ),
 
   // POST /api/chat/events/catch-up
   mockApi(chatThreadEventsContract.catchUp, ({ body, respond }) => {

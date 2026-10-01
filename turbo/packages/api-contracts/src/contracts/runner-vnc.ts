@@ -3,7 +3,10 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 import { VNC_HOST_MAX_LENGTH, vncTrustSchema } from "./vnc-connections";
-import { vncLegacyAuthenticationSchema } from "./vnc-credentials";
+import {
+  vncLegacyAuthenticationSchema,
+  vncUsernamePasswordAuthenticationSchema,
+} from "./vnc-credentials";
 
 const c = initContract();
 
@@ -25,6 +28,9 @@ export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_none"), trust: vncTrustSchema }).strict(),
+  z
+    .object({ type: z.literal("qemu_x509_sasl"), trust: vncTrustSchema })
+    .strict(),
   z.object({ type: z.literal("apple_vnc_password") }).strict(),
   z.object({ type: z.literal("apple_dh") }).strict(),
   z.object({ type: z.literal("apple_srp") }).strict(),
@@ -38,6 +44,16 @@ const clientIdentityWire = {
 
 const runnerX509AuthenticationSchema = z.discriminatedUnion("method", [
   ...vncLegacyAuthenticationSchema.options,
+  // Generated private DTOs share a username/password field shape. The owner
+  // contract and API post-KMS validation enforce stricter SCRAM ASCII bounds;
+  // the Runner validates again before opening a socket.
+  z
+    .object({
+      method: z.literal("qemu_scram_sha256"),
+      username: vncUsernamePasswordAuthenticationSchema.shape.username,
+      password: vncUsernamePasswordAuthenticationSchema.shape.password,
+    })
+    .strict(),
   z.object({ method: z.literal("none") }).strict(),
   z
     .object({ method: z.literal("client_certificate"), ...clientIdentityWire })
@@ -69,6 +85,7 @@ const supportedProfileFieldsSchema = z
       "none",
       "vnc_password",
       "username_password",
+      "qemu_scram_sha256",
       "apple_dh_username_password",
       "apple_srp_username_password",
       "apple_rsa_srp_username_password",
@@ -79,6 +96,7 @@ const supportedProfileFieldsSchema = z
       "x509_none",
       "x509_vnc",
       "x509_plain",
+      "qemu_x509_sasl",
       "apple_vnc_password",
       "apple_dh",
       "apple_srp",
@@ -94,6 +112,7 @@ const exactSecurityByAuth = {
   vnc_password: "x509_vnc",
   client_certificate_vnc_password: "x509_vnc",
   username_password: "x509_plain",
+  qemu_scram_sha256: "qemu_x509_sasl",
   apple_dh_username_password: "apple_dh",
   apple_srp_username_password: "apple_srp",
   apple_rsa_srp_username_password: "apple_rsa_srp",

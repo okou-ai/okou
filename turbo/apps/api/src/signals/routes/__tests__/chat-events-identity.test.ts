@@ -9,10 +9,10 @@ import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createChatEventsFixture,
-  type PromptMessage,
-  type RunnerClaim,
   okouTokenFromClaim,
   userMessages,
+  type PromptMessage,
+  type RunnerClaim,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();

@@ -64,7 +64,6 @@ export class ChatThreadEventIdConflictError extends Error {
 async function insertChatThreadEvent(
   db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
-  strict: boolean,
 ): Promise<void> {
   let orgId = args.orgId ?? undefined;
   if (orgId === undefined) {
@@ -80,11 +79,19 @@ async function insertChatThreadEvent(
     throw new Error("Unable to resolve org for chat thread event");
   }
 
-  // Sequence allocation and insertion commit together even without an outer
-  // transaction. A deliberate id conflict may leave a sequence gap.
-  const inserted = await executeRawRows(
+  await executeRawRows(
     db,
-    sql`WITH reserved AS (
+    chatThreadEventInsertSql({ ...args, orgId }),
+    z.object({ id: z.string().uuid() }),
+  );
+}
+
+/** Pure statement preparation; the owning command executes and commits it. */
+export function chatThreadEventInsertSql(
+  args: ChatThreadEventAppend & { readonly orgId: string },
+) {
+  const orgId = args.orgId;
+  return sql`WITH reserved AS (
       INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
       VALUES (${args.userId}, ${orgId}, 1)
       ON CONFLICT (user_id, org_id) DO UPDATE
@@ -109,27 +116,14 @@ async function insertChatThreadEvent(
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
     FROM reserved
     ON CONFLICT (id) DO NOTHING
-    RETURNING id`,
-    z.object({ id: z.string().uuid() }),
-  );
-  if (strict && inserted.length === 0) {
-    throw new ChatThreadEventIdConflictError();
-  }
+    RETURNING id`;
 }
 
 export async function appendChatThreadEvent(
   db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
 ): Promise<void> {
-  await insertChatThreadEvent(db, args, false);
-}
-
-/** A conflicting event id aborts the caller's transaction instead of dropping projection evidence. */
-export async function appendChatThreadEventStrict(
-  db: ChatThreadEventWriter,
-  args: ChatThreadEventAppend & { readonly eventId: string },
-): Promise<void> {
-  await insertChatThreadEvent(db, args, true);
+  await insertChatThreadEvent(db, args);
 }
 
 /**

@@ -1583,6 +1583,55 @@
       "when": 1790818909561,
       "tag": "1303_remove_model_catalog_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 1304,
+      "version": "7",
+      "when": 1790833645553,
+      "tag": "1304_bright_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 1305,
+      "version": "7",
+      "when": 1790861611406,
+      "tag": "1305_retire_provisional_billing_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1306,
+      "version": "7",
+      "when": 1790861620230,
+      "tag": "1306_retire_billing_attribution_mutation_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 1307,
+      "version": "7",
+      "when": 1790861629366,
+      "tag": "1307_allowance_window_uniqueness",
+      "breakpoints": true
+    },
+    {
+      "idx": 1308,
+      "version": "7",
+      "when": 1790861638533,
+      "tag": "1308_connector_selection_no_action_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 1309,
+      "version": "7",
+      "when": 1790861647649,
+      "tag": "1309_connector_selection_deferred_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 1310,
+      "version": "7",
+      "when": 1790861656764,
+      "tag": "1310_retire_application_billing_capture_triggers",
+      "breakpoints": true
     }
   ]
 }

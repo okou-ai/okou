@@ -39,7 +39,10 @@ export interface DueWorkflowAutomation {
   readonly allowClaimedOnceScheduleAutomation?: boolean;
 }
 
-export type RunWorkflowAutomationResult = { readonly kind: "enqueued" };
+export type RunWorkflowAutomationResult = {
+  readonly kind: "enqueued";
+  readonly scheduleOccurrence?: "claimed" | "superseded";
+};
 
 export interface RunWorkflowAutomationNowArgs {
   readonly due: DueWorkflowAutomation;
@@ -107,20 +110,14 @@ export type PersistWorkflowQueueSourceTransition = (
   tx: WorkflowQueueAdmissionTransaction,
 ) => Promise<void>;
 
-export type ScheduleUnclaimed = "superseded";
-
-type WorkflowScheduleClaimAttempt =
-  | { readonly kind: "claimed"; readonly claimId: string }
-  | { readonly kind: "unavailable" };
-
 export interface WorkflowScheduleClaimPlan {
-  readonly claim: (
-    tx: WorkflowQueueAdmissionTransaction,
-  ) => Promise<WorkflowScheduleClaimAttempt>;
-  readonly bindQueueEvent: (
-    tx: WorkflowQueueAdmissionTransaction,
-    args: { readonly claimId: string; readonly queueEventId: string },
-  ) => Promise<void>;
+  readonly claimId: string;
+  readonly automationId: string;
+  readonly orgId: string;
+  readonly ownerUserId: string;
+  readonly workflowId: string;
+  readonly scheduledAnchorAt: Date;
+  readonly claimedAt: Date;
 }
 
 export class ScheduleOccurrenceUnavailableError extends Error {
@@ -287,13 +284,6 @@ async function pendingAutomationEventIds(
   return contexts.flatMap(({ eventId, contextId }) => {
     return contextId !== null && ownedIds.has(contextId) ? [eventId] : [];
   });
-}
-
-export async function hasPendingAutomationEvent(
-  db: Pick<Db, "select">,
-  args: { readonly chatThreadId: string; readonly automationId: string },
-): Promise<boolean> {
-  return (await pendingAutomationEventIds(db, args)).length > 0;
 }
 
 export async function revokePendingScheduleTicks(

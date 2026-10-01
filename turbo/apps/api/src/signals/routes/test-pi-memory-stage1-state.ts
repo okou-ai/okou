@@ -1,4 +1,5 @@
 import { observePiMemoryStage1Cost } from "../services/pi-memory-stage1-cost.service";
+import { captureFixtureRunBilling } from "../services/billing-run-fixture";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
@@ -231,6 +232,28 @@ function candidateCondition(scope: CandidateScope) {
   );
 }
 
+function startupFixtureValues(
+  body: Extract<TestPiMemoryStage1StateActionBody, { action: "seed" }>,
+  sessionId: string,
+  triggerThreadId: string,
+) {
+  return {
+    sessionId,
+    orgId: body.org_id,
+    userId: body.user_id,
+    status: "pending",
+    prompt: "startup fixture",
+    chatThreadId: triggerThreadId,
+    triggerSource: "web",
+    autonomyBudget: 0,
+    launchSnapshot: {
+      schemaVersion: 3 as const,
+      framework: "pi" as const,
+      runnerProfile: DEFAULT_PROFILE,
+    },
+  };
+}
+
 async function seedCandidate(
   db: Db,
   body: Extract<TestPiMemoryStage1StateActionBody, { action: "seed" }>,
@@ -289,24 +312,27 @@ async function seedCandidate(
     framework: "pi" as const,
     runnerProfile: DEFAULT_PROFILE,
   };
-  await db.insert(agentRuns).values({
-    id: sourceRunId,
-    modelProvider: "built-in",
-    selectedModel: "gpt-6-astra",
-    reasoningEffort: "high",
-    codexServiceTier: "fast",
-    sessionId,
-    orgId: body.org_id,
-    userId: body.user_id,
-    status: "completed",
-    prompt: "source fixture",
-    chatThreadId: sourceThreadId,
-    triggerSource: "web",
-    autonomyBudget: 0,
-    launchSnapshot,
-    createdAt: completedAt,
-    completedAt,
-    ...body.source,
+  await db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: sourceRunId,
+      modelProvider: "built-in",
+      selectedModel: "gpt-6-astra",
+      reasoningEffort: "high",
+      codexServiceTier: "fast",
+      sessionId,
+      orgId: body.org_id,
+      userId: body.user_id,
+      status: "completed",
+      prompt: "source fixture",
+      chatThreadId: sourceThreadId,
+      triggerSource: "web",
+      autonomyBudget: 0,
+      launchSnapshot,
+      createdAt: completedAt,
+      completedAt,
+      ...body.source,
+    });
+    await captureFixtureRunBilling(tx, sourceRunId);
   });
   await db.insert(conversations).values({
     runId: sourceRunId,
@@ -314,23 +340,17 @@ async function seedCandidate(
     cliAgentSessionId: body.pi_session_id,
     cliAgentSessionHistoryHash: body.source_history_hash,
   });
-  const [trigger] = await db
-    .insert(agentRuns)
-    .values({
-      sessionId,
-      orgId: body.org_id,
-      userId: body.user_id,
-      status: "pending",
-      prompt: "startup fixture",
-      chatThreadId: triggerThreadId,
-      triggerSource: "web",
-      autonomyBudget: 0,
-      launchSnapshot,
-    })
-    .returning();
-  if (!trigger) {
-    throw new Error("Missing startup fixture");
-  }
+  const trigger = await db.transaction(async (tx) => {
+    const [run] = await tx
+      .insert(agentRuns)
+      .values(startupFixtureValues(body, sessionId, triggerThreadId))
+      .returning();
+    if (!run) {
+      throw new Error("Missing startup fixture");
+    }
+    await captureFixtureRunBilling(tx, run.id);
+    return run;
+  });
   await db.transaction(async (tx) => {
     await requestPiMemoryStage1Day(tx, trigger);
   });
@@ -484,16 +504,19 @@ async function createActiveRun(
     throw new Error("Missing active source fixture");
   }
   const runId = randomUUID();
-  await db.insert(agentRuns).values({
-    id: runId,
-    orgId: scope.org_id,
-    userId: scope.user_id,
-    sessionId: source.sessionId,
-    chatThreadId: source.chatThreadId,
-    status: "pending",
-    prompt: "fresh continuation without a checkpoint",
-    triggerSource: "web",
-    autonomyBudget: 0,
+  await db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: runId,
+      orgId: scope.org_id,
+      userId: scope.user_id,
+      sessionId: source.sessionId,
+      chatThreadId: source.chatThreadId,
+      status: "pending",
+      prompt: "fresh continuation without a checkpoint",
+      triggerSource: "web",
+      autonomyBudget: 0,
+    });
+    await captureFixtureRunBilling(tx, runId);
   });
   signal.throwIfAborted();
   return actionOk({ run_id: runId, agent_session_id: source.sessionId });

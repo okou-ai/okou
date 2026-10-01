@@ -4,14 +4,25 @@ import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
+import {
+  enqueueChatInput,
+  pickEnqueuedChatThread$,
+  notifyRunningChatRunOfPendingInput,
+} from "./chat-thread-queue-drain.service";
+import {
+  persistedWorkflowAutomationEventPayload,
+  workflowAutomationDisplayMessage,
+} from "./workflow-automation-context.service";
 import {
   revokePendingScheduleTicks,
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventWriter,
   type PersistWorkflowQueueSourceTransition,
-  type WorkflowScheduleClaimPlan,
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
+  type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
 import {
   censusWorkflowAdmission,
@@ -19,17 +30,7 @@ import {
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import {
-  enqueueChatInput,
-  pickEnqueuedChatThread$,
-  notifyRunningChatRunOfPendingInput,
-} from "./chat-thread-queue-drain.service";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import {
-  persistedWorkflowAutomationEventPayload,
-  workflowAutomationDisplayMessage,
-} from "./workflow-automation-context.service";
+import { persistWorkflowScheduleOccurrence } from "./workflow-schedule-queue.service";
 
 const publishEnqueuedWorkflowInput$ = command(
   async (
@@ -73,6 +74,20 @@ const WORKFLOW_ENQUEUE_ACTIONS = {
   callback: "api_dispatch_workflow_enqueue_transaction_callback",
   queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
 } as const;
+
+function workflowEnqueueResult(
+  journaled: boolean,
+  enqueued: boolean,
+): RunWorkflowAutomationResult {
+  return {
+    kind: "enqueued",
+    scheduleOccurrence: journaled
+      ? enqueued
+        ? "claimed"
+        : "superseded"
+      : undefined,
+  };
+}
 
 function workflowAdmissionSchedulePath(
   kind: string,
@@ -126,24 +141,15 @@ function queueAdmissionSourceTransition(args: {
   return {
     persistSourceTransition: async (tx, eventId) => {
       if (scheduleClaim) {
-        const claim = await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_enqueue_schedule_claim",
-          async () => {
-            return await scheduleClaim.claim(tx);
-          },
-        );
-        if (claim.kind === "unavailable") {
-          throw new ScheduleOccurrenceUnavailableError();
-        }
         await measureWorkflowAdmissionStep(
           args.timing,
-          "api_dispatch_workflow_enqueue_event_binding",
-          async () => {
-            await scheduleClaim.bindQueueEvent(tx, {
-              claimId: claim.claimId,
-              queueEventId: eventId,
-            });
+          "api_dispatch_workflow_enqueue_schedule_claim",
+          () => {
+            return persistWorkflowScheduleOccurrence(
+              tx,
+              scheduleClaim,
+              eventId,
+            );
           },
         );
       }
@@ -294,8 +300,6 @@ export const runWorkflowAutomationNow$ = command(
     );
     signal.throwIfAborted();
 
-    // A superseded occurrence adds no queue item; the claim plan's owner
-    // records why.
     if (enqueued) {
       waitUntil(
         set(
@@ -311,6 +315,6 @@ export const runWorkflowAutomationNow$ = command(
       );
       waitUntil(notifyRunningChatRunOfPendingInput(db, chatThreadId));
     }
-    return { kind: "enqueued" };
+    return workflowEnqueueResult(scheduleClaim !== undefined, enqueued);
   },
 );

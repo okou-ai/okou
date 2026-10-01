@@ -11,18 +11,18 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import {
-  createCloudflareAccessConfig,
-  convertCloudflareAccessToPersonal,
-  convertCloudflareAccessToOrganization,
-  deleteCloudflareAccessConfig,
-  listCloudflareAccessConfigs,
-  previewCloudflareAccessConversion,
-  previewCloudflareAccessDeletion,
-  updateCloudflareAccessConfig,
+  createCloudflareAccessConfig$,
+  convertCloudflareAccessToPersonal$,
+  convertCloudflareAccessToOrganization$,
+  deleteCloudflareAccessConfig$,
+  listCloudflareAccessConfigs$,
+  previewCloudflareAccessConversion$,
+  previewCloudflareAccessDeletion$,
+  updateCloudflareAccessConfig$,
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { loadUserDisplayNames } from "../services/user-profile-directory.service";
@@ -42,9 +42,9 @@ const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
   return context;
 });
 
-const listConfigs$ = command(async ({ get }, signal: AbortSignal) => {
-  const configs = await listCloudflareAccessConfigs(
-    get(db$),
+const listConfigs$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const configs = await set(
+    listCloudflareAccessConfigs$,
     get(organizationAuthContext$),
   );
   signal.throwIfAborted();
@@ -58,8 +58,7 @@ const createConfig$ = command(
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
-    const config = await createCloudflareAccessConfig({
-      db: set(writeDb$),
+    const config = await set(createCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       body,
       id: body.id,
@@ -78,8 +77,7 @@ const updateConfig$ = command(
     signal: AbortSignal,
   ) => {
     const featureContext = await set(encryptionContext$, signal);
-    const result = await updateCloudflareAccessConfig({
-      db: set(writeDb$),
+    const result = await set(updateCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       configId,
       body,
@@ -97,8 +95,7 @@ const deleteConfig$ = command(
     body: DeleteCloudflareAccessRequest,
     signal: AbortSignal,
   ) => {
-    const result = await deleteCloudflareAccessConfig({
-      db: set(writeDb$),
+    const result = await set(deleteCloudflareAccessConfig$, {
       owner: get(organizationAuthContext$),
       configId,
       body,
@@ -190,8 +187,7 @@ const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { configId } = get(
     pathParamsOf(cloudflareAccessContract.convertToOrganization),
   );
-  const result = await convertCloudflareAccessToOrganization({
-    db: set(writeDb$),
+  const result = await set(convertCloudflareAccessToOrganization$, {
     owner: get(organizationAuthContext$),
     configId,
     expectedRevision: body.data.expectedRevision,
@@ -219,16 +215,8 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const result =
     operation === "convert"
-      ? await previewCloudflareAccessConversion({
-          db: get(db$),
-          owner,
-          configId,
-        })
-      : await previewCloudflareAccessDeletion({
-          db: get(db$),
-          owner,
-          configId,
-        });
+      ? await set(previewCloudflareAccessConversion$, { owner, configId })
+      : await set(previewCloudflareAccessDeletion$, { owner, configId });
   signal.throwIfAborted();
   if (!result.ok) {
     return cloudflareAccessErrorResponse(
@@ -267,8 +255,7 @@ const convertConfig$ = command(
     body: ConvertCloudflareAccessRequest,
     signal: AbortSignal,
   ) => {
-    const result = await convertCloudflareAccessToPersonal({
-      db: set(writeDb$),
+    const result = await set(convertCloudflareAccessToPersonal$, {
       owner: get(organizationAuthContext$),
       configId,
       body,

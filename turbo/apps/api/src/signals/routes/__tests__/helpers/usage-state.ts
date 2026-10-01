@@ -417,25 +417,6 @@ export const deleteBillingAttribution$ = command(
   },
 );
 
-export const seedUsageOverflowGrain$ = command(
-  async (
-    _,
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly processedAt: Date;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await postAction(signal, {
-      action: "seed-usage-overflow-grain",
-      org_id: args.orgId,
-      user_id: args.userId,
-      processed_at: args.processedAt.toISOString(),
-    });
-  },
-);
-
 export const materializeHourlyUsage$ = command(
   async (
     _,

@@ -135,13 +135,15 @@ function paidInvoice(
   lines: readonly StripeInvoiceLine[],
   hasMoreLines = false,
 ): StripeInvoice {
+  const amount = lines.reduce((total, line) => {
+    return total + line.amount;
+  }, 0);
   return {
     id,
     customer: customerId,
     metadata: {},
-    amount_due: lines.reduce((total, line) => {
-      return total + line.amount;
-    }, 0),
+    amount_due: amount,
+    amount_paid: amount,
     currency: "usd",
     status: "paid",
     paid: true,

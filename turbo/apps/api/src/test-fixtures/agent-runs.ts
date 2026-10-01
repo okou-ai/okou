@@ -7,7 +7,6 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { agentRunList } from "../signals/services/agent-runs.service";
-
 /**
  * Test fixtures for agent-run state that no public route reads or seeds
  * directly. Runs themselves start through the real Thread or Pi entries.

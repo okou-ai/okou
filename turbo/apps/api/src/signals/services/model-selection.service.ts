@@ -18,10 +18,6 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  loadMemberSubscriptionModels,
-  type MemberSubscriptionModel,
-} from "./member-subscription-models.service";
 import { and, eq, or } from "drizzle-orm";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";
@@ -45,6 +41,10 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
+import {
+  loadMemberSubscriptionModels,
+  type MemberSubscriptionModel,
+} from "./member-subscription-models.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =

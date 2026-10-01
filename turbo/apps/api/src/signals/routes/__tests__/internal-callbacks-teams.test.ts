@@ -13,17 +13,16 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  findPendingChatEventByPromptFixture,
-  readChatEventContextFixture,
-} from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import {
+  findPendingInputEventByText,
+  readProjectedChatEvents,
+} from "./helpers/chat-event-test-reader";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -660,42 +659,14 @@ describe("Teams chat callbacks", () => {
         activityId: queuedActivityId,
         text: queuedPrompt,
       });
-      const queuedParams = await findPendingChatEventByPromptFixture({
-        userId: teams.actor.userId,
-        prompt: queuedPrompt,
+      const queuedInput = await findPendingInputEventByText(context, {
+        actor: teams.actor,
+        text: queuedPrompt,
       });
-      expect(queuedParams).toMatchObject({
-        eventId: expect.any(String),
-      });
-      if (!queuedParams) {
+      if (!queuedInput) {
         throw new Error("Expected queued Teams event");
       }
 
-      if (phase === "stored context") {
-        await expect(
-          readChatEventContextFixture(queuedParams.eventId),
-        ).resolves.toMatchObject({
-          contextType: "teams",
-          teamsTenantId: teams.fixture.teamsTenantId,
-          teamsTeamId: null,
-          teamsChannelId: null,
-          teamsConversationId: `a:personal-${teams.fixture.teamsUserId}`,
-          teamsConversationType: "personal",
-          teamsActivityId: queuedActivityId,
-          teamsThreadContext: "",
-          teamsMessageText: queuedPrompt,
-          teamsMessageFiles: [],
-          teamsTenantName: teams.fixture.teamsTenantName,
-          teamsTeamName: null,
-          teamsThreadId: "direct-message:main",
-          teamsServiceUrl: teams.fixture.serviceUrl,
-          teamsAppId: teams.fixture.teamsAppId,
-          teamsSenderUserId: teams.fixture.teamsUserId,
-          teamsSenderDisplayName: "Ada Lovelace",
-          teamsSenderPrincipalName: teams.fixture.teamsUserPrincipalName,
-          teamsConnectionId: expect.any(String),
-        });
-      }
       await completeSandboxRun({
         runId: firstRunId,
         sandboxToken: firstClaim.sandboxToken,
@@ -730,6 +701,28 @@ describe("Teams chat callbacks", () => {
           exitCode: 0,
         });
       } else {
+        // The admitted Teams context reaches the queued launch.
+        const queuedClaim = await claimTeamsRun({
+          runnerGroup: teams.runnerGroup,
+          runId: queuedRunId,
+        });
+        expect(queuedClaim.prompt).toBe(queuedPrompt);
+        for (const line of [
+          `Tenant ID: ${teams.fixture.teamsTenantId}`,
+          `Tenant name: ${teams.fixture.teamsTenantName}`,
+          `Conversation ID: a:personal-${teams.fixture.teamsUserId}`,
+          "Conversation type: personal",
+          `Activity ID: ${queuedActivityId}`,
+          `Teams app ID: ${teams.fixture.teamsAppId}`,
+          "Teams display name: Ada Lovelace",
+          `Teams user principal name: ${teams.fixture.teamsUserPrincipalName}`,
+          `Teams user ID: ${teams.fixture.teamsUserId}`,
+        ]) {
+          expect(queuedClaim.appendSystemPrompt).toContain(line);
+        }
+        // A personal chat has no team or channel.
+        expect(queuedClaim.appendSystemPrompt).not.toContain("Team ID:");
+        expect(queuedClaim.appendSystemPrompt).not.toContain("Channel ID:");
         await runsApi.requestCancelRun(teams.actor, queuedRunId, [200]);
       }
     },
@@ -763,11 +756,11 @@ describe("Teams chat callbacks", () => {
       text: queuedPrompt,
     });
     await expect(
-      findPendingChatEventByPromptFixture({
-        userId: teams.actor.userId,
-        prompt: queuedPrompt,
+      findPendingInputEventByText(context, {
+        actor: teams.actor,
+        text: queuedPrompt,
       }),
-    ).resolves.toMatchObject({ eventId: expect.any(String) });
+    ).resolves.toMatchObject({ eventType: "input.prompt" });
 
     await seedOrgMetadata({
       orgId: teams.fixture.orgId,
@@ -837,11 +830,11 @@ describe("Teams chat callbacks", () => {
       text: queuedPrompt,
       omitRecipient: true,
     });
-    const queuedParams = await findPendingChatEventByPromptFixture({
-      userId: teams.actor.userId,
-      prompt: queuedPrompt,
+    const queuedInput = await findPendingInputEventByText(context, {
+      actor: teams.actor,
+      text: queuedPrompt,
     });
-    if (!queuedParams) {
+    if (!queuedInput) {
       throw new Error("Expected queued Teams bot fallback event");
     }
     await completeSandboxRun({

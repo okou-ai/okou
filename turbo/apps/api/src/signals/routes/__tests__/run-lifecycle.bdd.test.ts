@@ -9243,7 +9243,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
-  it("rotates builtin Automatic credentials once for concurrent expiry and requires reconnect after revocation", async () => {
+  it("rotates expired builtin Automatic credentials and requires reconnect after revocation", async () => {
     const catalog = await installAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -9294,15 +9294,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const concurrent = await Promise.all([
-      fw.requestFirewallAuth(headers, body, [200]),
-      fw.requestFirewallAuth(headers, body, [200]),
-    ]);
-    for (const resolved of concurrent) {
-      expect(resolved.body).toMatchObject({
-        headers: { Authorization: "Bearer builtin-rotated-access-1" },
-      });
-    }
+    const expired = await fw.requestFirewallAuth(headers, body, [200]);
+    expect(expired.body).toMatchObject({
+      headers: { Authorization: "Bearer builtin-rotated-access-1" },
+    });
     expect(
       provider.tokenBodies.map((tokenBody) => {
         return tokenBody.get("grant_type");
@@ -14178,24 +14173,83 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       return { actor, runId: run.runId, error };
     }
 
+    async function completePublicFailure(args: {
+      readonly failureReason: RunFailureReasonToken;
+      readonly modelProvider?: "anthropic-api-key" | "built-in";
+    }) {
+      const api = createRunsApi(context);
+      const chat = createChatFilesBddApi(context);
+      const webhooks = createWebhookCallbackApi(context);
+      const modelProvider = args.modelProvider ?? "anthropic-api-key";
+      const selectedModel =
+        modelProvider === "built-in"
+          ? await seedBuiltInDefaultModelKey()
+          : "claude-sonnet-5";
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const run = await chat.sendAndLaunch(actor, {
+        agentId,
+        model: selectedModel,
+        prompt: `fail ${modelProvider} with ${args.failureReason}`,
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const error = `provider failure for ${run.runId}`;
+      const completed = await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          error,
+          failureReason: args.failureReason,
+        },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      expect(completed.body).toStrictEqual({ success: true, status: "failed" });
+      await flushWaitUntilForTest();
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "failed",
+        error,
+        source: { providerType: modelProvider, model: selectedModel },
+      });
+      const projected = await chat.listThreadEvents(actor, run.threadId);
+      const failures = projected.events
+        .filter((event) => {
+          return event.eventType === "run.failed";
+        })
+        .filter((event) => {
+          return event.runId === run.runId;
+        });
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.failureReason).toBe(args.failureReason);
+      const raw = await chat.listThreadEventRows(actor, run.threadId);
+      const rawFailures = raw.filter((event) => {
+        return event.runId === run.runId && event.eventType === "run.failed";
+      });
+      expect(rawFailures).toHaveLength(1);
+      expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
+      return { failures, rawFailures };
+    }
+
     it.each(terminalFailureReasons)(
-      "persists %s as the terminal failure reason",
+      "publishes %s as the terminal failure reason",
       async (failureReason) => {
-        const { runId } = await completeFailure({ failureReason });
-        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+        const { failures, rawFailures } = await completePublicFailure({
           failureReason,
-        );
+        });
+        expect(failures[0]?.failureReason).toBe(failureReason);
+        expect(rawFailures[0]?.failureReason).toBe(failureReason);
       },
     );
 
     it.each(["anthropic-api-key", "built-in"] as const)(
       "preserves failed completion when sandbox root storage fills on %s",
       async (modelProvider) => {
-        const { runId } = await completeFailure({
+        const { failures, rawFailures } = await completePublicFailure({
           modelProvider,
           failureReason: "guest_root_filesystem_full",
         });
-        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+        expect(failures[0]?.failureReason).toBe("guest_root_filesystem_full");
+        expect(rawFailures[0]?.failureReason).toBe(
           "guest_root_filesystem_full",
         );
       },

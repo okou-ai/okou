@@ -1,3 +1,4 @@
+import { loadModelCatalog } from "./model-catalog.service";
 import type {
   McpCreateChatWithMessageInput,
   McpCreateChatThreadInput,
@@ -13,8 +14,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-
-import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -23,18 +22,19 @@ import {
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import type { ApiOrgRole } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { createChatThreadInTransaction } from "./chat-thread.service";
-import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
+import {
+  chatThreadServiceTierFromCodex,
+  chatThreadEventInsertSql,
+} from "./chat-thread-event.service";
 import {
   chatThreadModelPinColumns,
-  resolveRequiredDefaultChatThreadModelPin,
+  resolveRequiredDefaultChatThreadModelPin$,
 } from "./chat-thread-model.service";
-import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 import { submitMcpChatInput$ } from "./mcp-chat-send.service";
@@ -43,7 +43,6 @@ import {
   resolveModelSelectionPin,
   type ModelFirstPin,
 } from "./model-selection.service";
-
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
 const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
@@ -104,71 +103,64 @@ function combinedInputId(input: McpCreateChatWithMessageInput): string {
   return uuidv5(input.requestId, COMBINED_INPUT_NAMESPACE);
 }
 
-async function assertCreationAgentVisible(
-  tx: Tx,
-  principal: Principal,
-  agentId: string,
-): Promise<void> {
-  const [selected] = await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, agentId),
-        eq(agents.orgId, principal.orgId),
-        visibleJoinedAgentCondition(principal.userId),
-      ),
-    )
-    .limit(1);
-  if (!selected) {
-    throw new McpThreadCreationError("not_found", "Agent not found.");
-  }
-}
-
-async function resolveDefaultAgent(
-  tx: Tx,
-  principal: Principal,
-): Promise<string> {
-  const [selected] = await tx
-    .select({ agentId: agents.id })
-    .from(orgMetadata)
-    .innerJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
-    .where(
-      and(
-        eq(orgMetadata.orgId, principal.orgId),
-        eq(agents.orgId, principal.orgId),
-        visibleJoinedAgentCondition(principal.userId),
-      ),
-    )
-    .limit(1);
-  if (!selected) {
-    throw new McpThreadCreationError(
-      "selection_unavailable",
-      "No visible default Agent is configured. Pass agentId explicitly or configure an organization default Agent.",
-    );
-  }
-  return selected.agentId;
-}
-
-/** Resolve the Agent an existing creation used, or the requested/default one. */
-async function resolveCreationAgent(
-  tx: Tx,
-  principal: Principal,
-  input: McpCreateChatThreadInput,
-): Promise<string> {
-  const [thread] = await tx
-    .select({ agentId: chatThreads.agentId })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, input.requestId))
-    .limit(1);
-  if (thread) {
-    if (thread.agentId === null) {
+const resolveCreationAgent$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpCreateChatThreadInput,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const [thread] = await db
+      .select({ agentId: chatThreads.agentId })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, input.requestId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (thread?.agentId === null) {
       creationConflict();
     }
-    return thread.agentId;
-  }
-  return input.agentId ?? (await resolveDefaultAgent(tx, principal));
-}
+    let agentId = thread?.agentId ?? input.agentId;
+    if (agentId === undefined) {
+      const [selected] = await db
+        .select({ agentId: agents.id })
+        .from(orgMetadata)
+        .innerJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
+        .where(
+          and(
+            eq(orgMetadata.orgId, principal.orgId),
+            eq(agents.orgId, principal.orgId),
+            visibleJoinedAgentCondition(principal.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!selected) {
+        throw new McpThreadCreationError(
+          "selection_unavailable",
+          "No visible default Agent is configured. Pass agentId explicitly or configure an organization default Agent.",
+        );
+      }
+      agentId = selected.agentId;
+    }
+    const [selected] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.orgId, principal.orgId),
+          visibleJoinedAgentCondition(principal.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!selected) {
+      throw new McpThreadCreationError("not_found", "Agent not found.");
+    }
+    return agentId;
+  },
+);
 
 function optionalSelectionMatches(
   expected: string | undefined,
@@ -212,216 +204,306 @@ function creationMetadataMatches(args: {
   ].every(Boolean);
 }
 
-async function readCreation(
-  tx: Tx,
-  principal: Principal,
-  input: McpCreateChatThreadInput,
-) {
-  const expectedEventId = creationEventId(input);
-  const [thread] = await tx
-    .select({
-      id: chatThreads.id,
-      userId: chatThreads.userId,
-      agentId: chatThreads.agentId,
-      title: sql`left(${chatThreads.title}, 500)`.mapWith(
-        nullableDriverValueDecoder(pgTextDecoder),
-      ),
-      titleTruncated:
-        sql`COALESCE(length(${chatThreads.title}) > 500, false)`.mapWith(
-          pgBooleanDecoder,
-        ),
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      createdAt: chatThreads.createdAt,
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, input.requestId))
-    .for("key share")
-    .limit(1);
-  const [event] = await tx
-    .select({
-      userId: chatThreadEvents.userId,
-      orgId: chatThreadEvents.orgId,
-      threadId: chatThreadEvents.chatThreadId,
-      agentId: chatThreadEvents.agentId,
-      kind: chatThreadEvents.kind,
-      titleMatches:
-        sql`${chatThreadEvents.title} IS NOT DISTINCT FROM ${input.title ?? null}`.mapWith(
-          nullableDriverValueDecoder(pgBooleanDecoder),
-        ),
-      model: chatThreadEvents.selectedModel,
-      createdAt: chatThreadEvents.createdAt,
-    })
-    .from(chatThreadEvents)
-    .where(eq(chatThreadEvents.id, expectedEventId))
-    .limit(1);
-  if (!thread && !event) {
-    return null;
-  }
-  if (!thread || !event) {
-    creationConflict();
-  }
-  if (!creationMetadataMatches({ principal, input, thread, event })) {
-    creationConflict();
-  }
-  if (event.createdAt.getTime() + CREATION_RETRY_MS <= now()) {
-    throw new McpThreadCreationError(
-      "request_expired",
-      "The 24-hour creation retry window has expired. Inspect the original conversation before creating new work; this request was not applied again.",
-    );
-  }
-  return { thread, acceptedAt: event.createdAt };
-}
-
-async function initializeThread(
-  tx: Tx,
-  principal: Principal,
-  input: McpCreateChatThreadInput,
-  agentId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  // Policy seeding/repair is a write. Resolve it on this transaction so the
-  // resolver's nested transaction is a savepoint.
-  let pin: ModelFirstPin;
-  let codexServiceTier: "fast" | "ultrafast" | null = null;
-  if (input.model === undefined) {
-    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
-      tx,
-      principal,
-    );
-    pin = initialModel;
-    codexServiceTier =
-      initialModel.serviceTier === "priority"
-        ? "fast"
-        : initialModel.serviceTier === "ultrafast"
-          ? "ultrafast"
-          : null;
-  } else {
-    const resolved = await resolveModelSelectionPin({
-      db: tx,
-      ...principal,
-      modelSelection: {
-        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-        selectedModel: input.model,
+const readCreation$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpCreateChatThreadInput,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const expectedEventId = creationEventId(input);
+    const { thread, event } = await db.transaction(
+      async (tx) => {
+        const [thread] = await tx
+          .select({
+            id: chatThreads.id,
+            userId: chatThreads.userId,
+            agentId: chatThreads.agentId,
+            title: sql`left(${chatThreads.title}, 500)`.mapWith(
+              nullableDriverValueDecoder(pgTextDecoder),
+            ),
+            titleTruncated:
+              sql`COALESCE(length(${chatThreads.title}) > 500, false)`.mapWith(
+                pgBooleanDecoder,
+              ),
+            selectedModel: chatThreads.selectedModel,
+            codexServiceTier: chatThreads.codexServiceTier,
+            createdAt: chatThreads.createdAt,
+          })
+          .from(chatThreads)
+          .where(eq(chatThreads.id, input.requestId))
+          .limit(1);
+        signal.throwIfAborted();
+        const [event] = await tx
+          .select({
+            userId: chatThreadEvents.userId,
+            orgId: chatThreadEvents.orgId,
+            threadId: chatThreadEvents.chatThreadId,
+            agentId: chatThreadEvents.agentId,
+            kind: chatThreadEvents.kind,
+            titleMatches:
+              sql`${chatThreadEvents.title} IS NOT DISTINCT FROM ${input.title ?? null}`.mapWith(
+                nullableDriverValueDecoder(pgBooleanDecoder),
+              ),
+            model: chatThreadEvents.selectedModel,
+            createdAt: chatThreadEvents.createdAt,
+          })
+          .from(chatThreadEvents)
+          .where(eq(chatThreadEvents.id, expectedEventId))
+          .limit(1);
+        signal.throwIfAborted();
+        return { thread, event };
       },
-    });
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
     signal.throwIfAborted();
-    if ("status" in resolved) {
+    if (!thread && !event) {
+      return null;
+    }
+    if (!thread || !event) {
+      creationConflict();
+    }
+    if (!creationMetadataMatches({ principal, input, thread, event })) {
+      creationConflict();
+    }
+    if (event.createdAt.getTime() + CREATION_RETRY_MS <= now()) {
       throw new McpThreadCreationError(
-        "selection_unavailable",
-        resolved.body.error.message,
+        "request_expired",
+        "The 24-hour creation retry window has expired. Inspect the original conversation before creating new work; this request was not applied again.",
       );
     }
-    pin = resolved;
-  }
-  const defaults = await loadNewChatThreadDefaults(tx, principal);
-  signal.throwIfAborted();
-  const catalog = await loadModelCatalog(tx);
-  signal.throwIfAborted();
-  const modelSettings =
-    input.model === undefined
-      ? defaults.modelSettings
-      : (() => {
-          const effort = resolveChatReasoningEffort({
-            catalog,
-            selectedModel: pin.selectedModel,
-            modelProviderType: pin.modelProviderType,
-            modelSettings: defaults.modelSettings,
-            requested: undefined,
-          });
-          if ("status" in effort) {
-            throw new McpThreadCreationError(
-              "selection_unavailable",
-              effort.body.error.message,
-            );
-          }
-          return effort.modelSettings;
-        })();
-  const created = await createChatThreadInTransaction(tx, {
-    userId: principal.userId,
-    orgId: principal.orgId,
-    agentId,
-    title: input.title,
-    clientThreadId: input.requestId,
-    eventId: creationEventId(input),
-    ...chatThreadModelPinColumns(pin),
-    modelSettings,
-    cloudBrowserEnabled: defaults.cloudBrowserEnabled,
-    codexServiceTier,
-    connectorSelections: [],
-  });
-  signal.throwIfAborted();
-  if (created.kind === "invalid_connector_selection") {
-    throw new McpThreadCreationError("invalid_state", created.message);
-  }
-  return created.kind === "created";
-}
-
-async function createInTransaction(
-  tx: Tx,
-  principal: Principal,
-  input: McpCreateChatThreadInput,
-  signal: AbortSignal,
-): Promise<McpCreatedChatThread> {
-  // Concurrent requests for one requestId race on the chat_threads primary
-  // key: the loser's INSERT waits for the winner, observes the conflict, and
-  // replays (or conflicts on) the committed creation below.
-  const agentId = await resolveCreationAgent(tx, principal, input);
-  await assertCreationAgentVisible(tx, principal, agentId);
-  signal.throwIfAborted();
-  let creation = await readCreation(tx, principal, input);
-  let replayed = true;
-  if (!creation) {
-    replayed = !(await initializeThread(tx, principal, input, agentId, signal));
-    // appendChatThreadEvent tolerates event-ID duplicates. Never commit a
-    // newly inserted thread unless its exact initial event was also written.
-    creation = await readCreation(tx, principal, input);
-    if (!creation) {
-      throw new Error("Canonical creation did not persist its identity");
-    }
-  }
-  signal.throwIfAborted();
-  const { thread, acceptedAt } = creation;
-  if (thread.agentId !== agentId) {
-    creationConflict();
-  }
-  const models = await mcpChatThreadModels(tx, principal, [
-    thread.selectedModel,
-  ]);
-  signal.throwIfAborted();
-  const model = models.get(thread.selectedModel);
-  if (!model) {
-    throw new Error("Created thread model projection is missing");
-  }
-  return {
-    threadId: thread.id,
-    agentId,
-    title: thread.title,
-    titleTruncated: thread.titleTruncated,
-    model,
-    serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
-    createdAt: formatMcpChatTimestamp(thread.createdAt),
-    url: new URL(`/chats/${thread.id}`, env("APP_URL")).toString(),
-    replayed,
-    retryUntil: formatMcpChatTimestamp(
-      new Date(acceptedAt.getTime() + CREATION_RETRY_MS),
-    ),
-  };
-}
-
-async function createChatThread(
-  args: {
-    readonly db: Db;
-    readonly principal: Principal;
-    readonly input: McpCreateChatThreadInput;
+    return { thread, acceptedAt: event.createdAt };
   },
-  signal: AbortSignal,
-): Promise<McpCreatedChatThread> {
-  signal.throwIfAborted();
-  return await args.db.transaction(async (tx) => {
-    return await createInTransaction(tx, args.principal, args.input, signal);
-  });
-}
+);
+
+const prepareThreadModel$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpCreateChatThreadInput,
+    signal: AbortSignal,
+  ) => {
+    let pin: ModelFirstPin;
+    let codexServiceTier: "fast" | "ultrafast" | null = null;
+    if (input.model === undefined) {
+      const initialModel = await set(
+        resolveRequiredDefaultChatThreadModelPin$,
+        { orgId: principal.orgId, userId: principal.userId },
+        undefined,
+        signal,
+      );
+      pin = initialModel;
+      codexServiceTier =
+        initialModel.serviceTier === "priority"
+          ? "fast"
+          : initialModel.serviceTier === "ultrafast"
+            ? "ultrafast"
+            : null;
+    } else {
+      const resolved = await resolveModelSelectionPin({
+        db: set(writeDb$),
+        orgId: principal.orgId,
+        userId: principal.userId,
+        modelSelection: {
+          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+          selectedModel: input.model,
+        },
+      });
+      signal.throwIfAborted();
+      if ("status" in resolved) {
+        return {
+          kind: "unavailable" as const,
+          message: resolved.body.error.message,
+        };
+      }
+      pin = resolved;
+    }
+    const catalog = await loadModelCatalog(set(writeDb$));
+    signal.throwIfAborted();
+    const defaults = await set(loadNewChatThreadDefaults$, principal, signal);
+    signal.throwIfAborted();
+    const modelSettings =
+      input.model === undefined
+        ? defaults.modelSettings
+        : (() => {
+            const effort = resolveChatReasoningEffort({
+              catalog,
+              selectedModel: pin.selectedModel,
+              modelSettings: defaults.modelSettings,
+              requested: undefined,
+            });
+            if ("status" in effort) {
+              throw new McpThreadCreationError(
+                "selection_unavailable",
+                effort.body.error.message,
+              );
+            }
+            return effort.modelSettings;
+          })();
+    return {
+      kind: "prepared" as const,
+      pin,
+      codexServiceTier,
+      modelSettings,
+      cloudBrowserEnabled: defaults.cloudBrowserEnabled,
+    };
+  },
+);
+
+const commitNewThread$ = command(
+  async (
+    { set },
+    args: {
+      readonly principal: Principal;
+      readonly input: McpCreateChatThreadInput;
+      readonly agentId: string;
+      readonly prepared:
+        | { readonly kind: "unavailable"; readonly message: string }
+        | {
+            readonly kind: "prepared";
+            readonly pin: ModelFirstPin;
+            readonly codexServiceTier: "fast" | "ultrafast" | null;
+            readonly modelSettings: import("@okouai/api-contracts/contracts/model-reasoning-effort").ModelSettings;
+            readonly cloudBrowserEnabled: boolean;
+          };
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.input.requestId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return false;
+      }
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, args.agentId),
+            eq(agents.orgId, args.principal.orgId),
+            visibleJoinedAgentCondition(args.principal.userId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!agent) {
+        throw new McpThreadCreationError("not_found", "Agent not found.");
+      }
+      const prepared = args.prepared;
+      if (prepared.kind === "unavailable") {
+        throw new McpThreadCreationError(
+          "selection_unavailable",
+          prepared.message,
+        );
+      }
+      const [thread] = await tx
+        .insert(chatThreads)
+        .values({
+          id: args.input.requestId,
+          userId: args.principal.userId,
+          agentId: args.agentId,
+          title: args.input.title ?? null,
+          lastReadAt: sql`NOW()`,
+          ...chatThreadModelPinColumns(prepared.pin),
+          modelSettings: prepared.modelSettings,
+          codexServiceTier: prepared.codexServiceTier,
+          computerUseHostId: null,
+          cloudBrowserEnabled: prepared.cloudBrowserEnabled,
+        })
+        .onConflictDoNothing()
+        .returning();
+      signal.throwIfAborted();
+      if (!thread) {
+        return false;
+      }
+      const { rowCount } = await tx.execute(
+        chatThreadEventInsertSql({
+          kind: "created",
+          userId: thread.userId,
+          orgId: args.principal.orgId,
+          chatThreadId: thread.id,
+          agentId: args.agentId,
+          eventId: creationEventId(args.input),
+          title: thread.title,
+          selectedModel: thread.selectedModel,
+          modelSettings: thread.modelSettings,
+          serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
+          computerUseHostId: thread.computerUseHostId,
+          cloudBrowserEnabled: thread.cloudBrowserEnabled,
+          createdAt: thread.createdAt,
+        }),
+      );
+      signal.throwIfAborted();
+      if (rowCount === 0) {
+        creationConflict();
+      }
+      return true;
+    });
+  },
+);
+
+const createChatThread$ = command(
+  async (
+    { set },
+    args: {
+      readonly principal: Principal;
+      readonly input: McpCreateChatThreadInput;
+    },
+    signal: AbortSignal,
+  ): Promise<McpCreatedChatThread> => {
+    const { principal, input } = args;
+    const agentId = await set(resolveCreationAgent$, principal, input, signal);
+    let creation = await set(readCreation$, principal, input, signal);
+    let replayed = true;
+    if (!creation) {
+      const prepared = await set(prepareThreadModel$, principal, input, signal);
+      replayed = !(await set(
+        commitNewThread$,
+        { principal, input, agentId, prepared },
+        signal,
+      ));
+      creation = await set(readCreation$, principal, input, signal);
+      if (!creation) {
+        throw new Error("Canonical creation did not persist its identity");
+      }
+    }
+    signal.throwIfAborted();
+    const { thread, acceptedAt } = creation;
+    if (thread.agentId !== agentId) {
+      creationConflict();
+    }
+    const models = await mcpChatThreadModels(set(writeDb$), principal, [
+      thread.selectedModel,
+    ]);
+    signal.throwIfAborted();
+    const model = models.get(thread.selectedModel);
+    if (!model) {
+      throw new Error("Created thread model projection is missing");
+    }
+    return {
+      threadId: thread.id,
+      agentId,
+      title: thread.title,
+      titleTruncated: thread.titleTruncated,
+      model,
+      serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
+      createdAt: formatMcpChatTimestamp(thread.createdAt),
+      url: new URL(`/chats/${thread.id}`, env("APP_URL")).toString(),
+      replayed,
+      retryUntil: formatMcpChatTimestamp(
+        new Date(acceptedAt.getTime() + CREATION_RETRY_MS),
+      ),
+    };
+  },
+);
 
 /**
  * Create a chat thread, and for a combined request send its first message
@@ -443,14 +525,13 @@ export const createMcpChatThread$ = command(
       signal,
       AbortSignal.timeout(15_000),
     ]);
-    const db = set(writeDb$);
     const result = await settle(
       // The route's waitUntil owner retains the real transaction through
       // commit/rollback. The deadline stops the work; it must not race away
       // from a transaction that can still hold locks or finish a write.
-      createChatThread(
+      set(
+        createChatThread$,
         {
-          db,
           principal: args.principal,
           input: args.input,
         },

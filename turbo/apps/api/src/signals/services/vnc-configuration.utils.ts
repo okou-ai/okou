@@ -15,10 +15,8 @@ import {
   VNC_ERROR_CODES,
   type VncErrorCode,
 } from "@okouai/api-contracts/contracts/vnc-errors";
-import type { Db } from "../external/db";
 import { safeSync } from "../utils";
 
-export type VncTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type VncResult<T> =
   | { readonly ok: true; readonly value: T }
   | {
@@ -29,6 +27,11 @@ export type VncResult<T> =
     };
 
 const failures = {
+  membershipRevoked: {
+    kind: "not_found",
+    code: VNC_ERROR_CODES.UNAVAILABLE,
+    message: "VNC configuration is not available",
+  },
   invalidHost: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_HOST,
@@ -306,6 +309,7 @@ export function isVncProfileCompatible(
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
     (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
     (authMethod === "username_password" && securityType === "x509_plain") ||
+    (authMethod === "qemu_scram_sha256" && securityType === "qemu_x509_sasl") ||
     (authMethod === "apple_dh_username_password" &&
       securityType === "apple_dh") ||
     (authMethod === "apple_srp_username_password" &&

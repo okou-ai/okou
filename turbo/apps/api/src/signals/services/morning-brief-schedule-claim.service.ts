@@ -1,28 +1,33 @@
-import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import {
+  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, asc, desc, eq, isNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  loadMorningBriefMigrationState,
-  type MorningBriefStateReader,
-} from "./morning-brief-migration-state.service";
-import { advanceTimeAutomationAfterCompletion } from "./time-automation";
-import { scheduleExpired } from "./schedule-expiry-policy";
-import {
-  consumeSelectedLegacyMorningBriefObligation,
-  lockMorningBriefLegacyWriterAuthority,
-  settleSelectedLegacyMorningBriefObligation,
+  morningBriefLegacyWriterAuthorityFromRow,
+  readMorningBriefNativeScheduleForWrite,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
+import { advanceTimeAutomationAfterCompletion } from "./time-automation";
+
+import { advanceInFlightSchedule } from "./morning-brief-legacy-settlement-sql";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -31,24 +36,6 @@ const log = logger("MorningBriefScheduleClaim");
 /** Mirrors the legacy poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-type MorningBriefScheduleClaimRow =
-  typeof morningBriefScheduleClaims.$inferSelect;
-
-/**
- * The owner identity a claim is written for, resolved before the claim
- * transaction and re-verified against the locked automation row inside it.
- */
-interface MorningBriefScheduleClaimOwner {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-  readonly workflowId: string;
-}
-
-type MorningBriefScheduleClaimAttempt =
-  | { readonly kind: "claimed"; readonly claim: MorningBriefScheduleClaimRow }
-  /** The locked row no longer matches the due occurrence this tick resolved. */
-  | { readonly kind: "unavailable" };
-
 /**
  * Whether the poller should journal this automation.
  *
@@ -56,234 +43,124 @@ type MorningBriefScheduleClaimAttempt =
  * installed Morning Brief is journaled. The cheap blueprint predicate keeps the
  * canonical read off every unrelated due automation.
  */
-export async function isCanonicalMorningBriefAutomation(
-  db: MorningBriefStateReader,
-  automation: AutomationRow,
-): Promise<boolean> {
-  if (
-    automation.kind !== "schedule" ||
-    automation.scheduleType !== "cron" ||
-    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-  ) {
-    return false;
-  }
-  const state = await loadMorningBriefMigrationState(db, {
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-  });
-  return state.kind === "installed" && state.automation.id === automation.id;
+function canJournalMorningBrief(automation: AutomationRow) {
+  return (
+    automation.kind === "schedule" &&
+    automation.scheduleType === "cron" &&
+    automation.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+  );
 }
 
-async function nextClaimSequence(
-  tx: Tx,
-  automationId: string,
-): Promise<number> {
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return (current?.claimSequence ?? 0) + 1;
-}
-
-/**
- * Consume the due occurrence and journal it in the caller's transaction.
- *
- * The locked automation row must still be the same enabled automation whose
- * `next_run_at` is the anchor this tick resolved, and clearing the schedule,
- * recording `last_run_at` and inserting the journal row all commit together. A caller
- * that aborts leaves the schedule exactly as it found it.
- */
-export async function claimMorningBriefSchedule(
-  tx: Tx,
-  args: {
-    readonly automationId: string;
-    readonly owner: MorningBriefScheduleClaimOwner;
-    readonly scheduledAnchorAt: Date;
-    readonly claimedAt: Date;
+export const isCanonicalMorningBriefAutomation$ = command(
+  async (
+    { set },
+    automation: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (!canJournalMorningBrief(automation)) {
+      return false;
+    }
+    const db = set(writeDb$);
+    const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
+    const [enrollment] = await db
+      .select({ workflowId: morningBriefEnrollments.workflowId })
+      .from(morningBriefEnrollments)
+      .where(
+        and(
+          eq(morningBriefEnrollments.orgId, owner.orgId),
+          eq(morningBriefEnrollments.userId, owner.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const installations = await db
+      .select({
+        id: workflows.id,
+        installationState: workflows.officialInstallationState,
+        agentId: workflows.agentId,
+      })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, owner.orgId),
+          eq(workflows.ownerUserId, owner.userId),
+          eq(workflows.visibility, "private"),
+          eq(
+            workflows.officialDefinitionName,
+            MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+          ),
+        ),
+      )
+      .orderBy(asc(workflows.createdAt), asc(workflows.id));
+    signal.throwIfAborted();
+    let selected =
+      installations.length <= 1
+        ? installations[0]
+        : installations.find((installation) => {
+            return installation.id === enrollment?.workflowId;
+          });
+    if (!selected && installations.length > 1) {
+      const [candidate] = await db
+        .select({
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+        })
+        .from(orgMetadata)
+        .leftJoin(
+          agents,
+          and(
+            eq(agents.id, orgMetadata.defaultAgentId),
+            eq(agents.orgId, orgMetadata.orgId),
+          ),
+        )
+        .where(eq(orgMetadata.orgId, owner.orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      const defaultAgentId =
+        candidate?.id &&
+        (candidate.visibility !== "private" || candidate.owner === owner.userId)
+          ? candidate.id
+          : null;
+      selected =
+        installations.find((installation) => {
+          return installation.agentId === defaultAgentId;
+        }) ?? installations[0];
+    }
+    if (selected?.installationState !== "installed") {
+      return false;
+    }
+    const rows = await db
+      .select({
+        id: workflowAutomations.id,
+        kind: workflowAutomations.kind,
+        scheduleType: workflowAutomations.scheduleType,
+        blueprintKey: workflowAutomations.officialBlueprintKey,
+        reconciliationStatus: workflowAutomations.officialReconciliationStatus,
+        resultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
+      })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+          eq(workflowAutomations.workflowId, selected.id),
+        ),
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    const current = rows[0];
+    return (
+      rows.length === 1 &&
+      current?.id === automation.id &&
+      current.kind === "schedule" &&
+      current.scheduleType === "cron" &&
+      current.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
+      current.reconciliationStatus === "current" &&
+      current.resultEmailEnabled === true
+    );
   },
-): Promise<MorningBriefScheduleClaimAttempt> {
-  const lineage = {
-    orgId: args.owner.orgId,
-    userId: args.owner.ownerUserId,
-    workflowId: args.owner.workflowId,
-    automationId: args.automationId,
-  };
-  const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
-  if (authority.kind === "stale") {
-    return { kind: "unavailable" };
-  }
-  const [locked] = await tx
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1)
-    .for("update");
-  if (
-    !locked ||
-    !locked.enabled ||
-    locked.orgId !== args.owner.orgId ||
-    locked.ownerUserId !== args.owner.ownerUserId ||
-    locked.workflowId !== args.owner.workflowId ||
-    locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime() ||
-    scheduleExpired(args.scheduledAnchorAt, nowDate())
-  ) {
-    return { kind: "unavailable" };
-  }
-
-  if (
-    !(await consumeSelectedLegacyMorningBriefObligation(
-      tx,
-      lineage,
-      authority,
-      { occurrenceAt: locked.nextRunAt, claimedAt: args.claimedAt },
-    ))
-  ) {
-    return { kind: "unavailable" };
-  }
-
-  const claimSequence = await nextClaimSequence(tx, args.automationId);
-  const [claim] = await tx
-    .insert(morningBriefScheduleClaims)
-    .values({
-      automationId: args.automationId,
-      orgId: locked.orgId,
-      ownerUserId: locked.ownerUserId,
-      workflowId: locked.workflowId,
-      scheduledAnchorAt: args.scheduledAnchorAt,
-      claimedAt: args.claimedAt,
-      claimSequence,
-    })
-    .returning();
-  if (!claim) {
-    throw new Error("Morning Brief schedule claim insert returned no row");
-  }
-  await tx
-    .update(workflowAutomations)
-    .set({
-      nextRunAt: null,
-      lastRunAt: args.claimedAt,
-      updatedAt: args.claimedAt,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.nextRunAt, args.scheduledAnchorAt),
-      ),
-    );
-  return { kind: "claimed", claim };
-}
-
-/** Bind the exact queue event this claim inserted, in the same transaction. */
-export async function bindMorningBriefScheduleClaimQueueEvent(
-  tx: Tx,
-  args: { readonly claimId: string; readonly queueEventId: string },
-): Promise<void> {
-  const bound = await tx
-    .update(morningBriefScheduleClaims)
-    .set({ queueEventId: args.queueEventId, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.id, args.claimId),
-        isNull(morningBriefScheduleClaims.queueEventId),
-      ),
-    )
-    .returning({ id: morningBriefScheduleClaims.id });
-  if (bound.length === 0) {
-    throw new Error("Morning Brief schedule claim already bound a queue event");
-  }
-}
-
-/** The journaled occurrence a queue event was admitted for, if any. */
-export async function morningBriefScheduleClaimIdForQueueEvent(
-  db: Pick<Db, "select">,
-  queueEventId: string,
-): Promise<string | null> {
-  const [claim] = await db
-    .select({ id: morningBriefScheduleClaims.id })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.queueEventId, queueEventId))
-    .limit(1);
-  return claim?.id ?? null;
-}
-
-/**
- * Bind the Run to the occurrence its queue event was admitted for. The
- * automation runs this inside the launch transaction that claimed that exact
- * event and inserts the Run, so a lost claim or a rolled-back launch leaves no
- * binding and no Run callback can observe the Run without it.
- */
-export async function bindMorningBriefScheduleClaimRun(
-  db: Db | Tx,
-  args: { readonly queueEventId: string; readonly runId: string },
-): Promise<void> {
-  await db
-    .update(morningBriefScheduleClaims)
-    .set({
-      runId: args.runId,
-      queueDisposition: "claimed",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.queueEventId, args.queueEventId),
-        isNull(morningBriefScheduleClaims.runId),
-      ),
-    );
-}
-
-/** Whether this Run belongs to a recorded occurrence at all. */
-export async function morningBriefScheduleClaimBound(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<boolean> {
-  const [bound] = await db
-    .select({ id: morningBriefScheduleClaims.id })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  return bound !== undefined;
-}
-
-/**
- * Whether a newer journaled claim already superseded the occurrence this Run
- * belongs to.
- *
- * The launch transaction commits the Run and its journal binding together, but
- * the last-run fields are written after that transaction returns. This must not
- * be folded into that late UPDATE as a subquery: under READ COMMITTED a single
- * statement keeps the snapshot it started with, so an UPDATE that begins before
- * a newer claimant commits, then waits on the automation row, would still
- * evaluate the subquery against its pre-wait snapshot and overwrite the newer
- * value. The caller therefore takes the automation row lock first and calls
- * this afterwards, as separate statements that observe everything the wait let
- * through. An unjournaled Run matches no occurrence and is never superseded,
- * which keeps every other automation's behavior unchanged.
- */
-export async function morningBriefScheduleClaimSuperseded(
-  tx: Tx,
-  runId: string,
-): Promise<boolean> {
-  const [own] = await tx
-    .select({
-      automationId: morningBriefScheduleClaims.automationId,
-      claimSequence: morningBriefScheduleClaims.claimSequence,
-    })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  if (!own) {
-    return false;
-  }
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return (current?.claimSequence ?? own.claimSequence) > own.claimSequence;
-}
+);
 
 type MorningBriefScheduleRevocationScope =
   | {
@@ -345,47 +222,17 @@ type MorningBriefScheduleSettlementSubject =
   | { readonly kind: "claim"; readonly claimId: string }
   | { readonly kind: "run"; readonly runId: string };
 
-interface MorningBriefScheduleSettlementOutcome {
-  readonly settled: boolean;
-  readonly nextRunAt?: Date | null;
-}
-
-async function loadSettlementClaim(
-  tx: Tx,
-  automationId: string,
-  subject: MorningBriefScheduleSettlementSubject,
-): Promise<MorningBriefScheduleClaimRow | undefined> {
-  const [claim] = await tx
-    .select()
-    .from(morningBriefScheduleClaims)
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.automationId, automationId),
-        subject.kind === "claim"
-          ? eq(morningBriefScheduleClaims.id, subject.claimId)
-          : eq(morningBriefScheduleClaims.runId, subject.runId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  return claim;
-}
-
-async function isCurrentClaim(
-  tx: Tx,
-  claim: MorningBriefScheduleClaimRow,
-): Promise<boolean> {
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, claim.automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return current?.claimSequence === claim.claimSequence;
-}
-
-interface SettleMorningBriefScheduleArgs {
+interface SettleMorningBriefScheduleInput {
   readonly automationId: string;
+  readonly subject: MorningBriefScheduleSettlementSubject;
+  readonly settlement: Exclude<
+    MorningBriefScheduleClaimSettlement,
+    "unsettled"
+  >;
+  readonly isCreditError?: boolean;
+}
+
+interface SettleMorningBriefScheduleArgs extends SettleMorningBriefScheduleInput {
   readonly owner:
     | {
         readonly orgId: string;
@@ -393,102 +240,87 @@ interface SettleMorningBriefScheduleArgs {
         readonly workflowId: string;
       }
     | undefined;
-  readonly subject: MorningBriefScheduleSettlementSubject;
-  readonly settlement: Exclude<
-    MorningBriefScheduleClaimSettlement,
-    "unsettled"
-  >;
-  /** Insufficient credits never counts as a failure or disables the schedule. */
   readonly isCreditError: boolean;
 }
 
-async function lockSettlementAuthority(
-  tx: Tx,
-  args: SettleMorningBriefScheduleArgs,
-): Promise<{
-  readonly lineage:
-    | (NonNullable<SettleMorningBriefScheduleArgs["owner"]> & {
-        readonly automationId: string;
-      })
-    | undefined;
-  readonly authority: MorningBriefLegacyWriterAuthority;
-}> {
-  const lineage =
-    args.owner === undefined
-      ? undefined
-      : { ...args.owner, automationId: args.automationId };
-  const authority: MorningBriefLegacyWriterAuthority =
-    lineage === undefined
-      ? { kind: "ordinary", fence: { kind: "ordinary" } }
-      : await lockMorningBriefLegacyWriterAuthority(tx, lineage);
-  return { lineage, authority };
-}
-
-function canPublishLegacySettlement(automation: AutomationRow): boolean {
-  return (
-    automation.enabled &&
-    automation.nextRunAt === null &&
-    automation.scheduleType === "cron"
+function settlementClaimCondition(args: SettleMorningBriefScheduleInput) {
+  return and(
+    eq(morningBriefScheduleClaims.automationId, args.automationId),
+    args.subject.kind === "claim"
+      ? eq(morningBriefScheduleClaims.id, args.subject.claimId)
+      : eq(morningBriefScheduleClaims.runId, args.subject.runId),
   );
 }
 
-/**
- * The one operation that advances the legacy Morning Brief schedule.
- *
- * Both the completion callback and the outer pre-run failure path call it. It
- * locks the automation and its journaled occurrence together, then refuses to
- * act unless that occurrence is still the current claim, is still unsettled,
- * belongs to an enabled automation, and no writer has already published a new
- * `next_run_at`. The recurrence is computed from the schedule and timezone
- * read under that lock, so a timezone edit made while the claim was active is
- * the one that takes effect. Schedule advance and settlement commit together,
- * which makes a duplicate callback, a failed-Run callback racing the outer
- * error path, and a callback from a superseded claim all no-ops.
- */
-async function settleMorningBriefSchedule(
-  tx: Tx,
-  args: SettleMorningBriefScheduleArgs,
-): Promise<MorningBriefScheduleSettlementOutcome> {
-  const { lineage, authority } = await lockSettlementAuthority(tx, args);
-  if (authority.kind === "stale") {
-    return { settled: false };
-  }
-  const [automation] = await tx
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1)
-    .for("update");
-  if (!automation) {
-    return { settled: false };
-  }
-  const claim = await loadSettlementClaim(tx, args.automationId, args.subject);
-  if (!claim || claim.settlement !== "unsettled") {
-    return { settled: false };
-  }
-  if (!(await isCurrentClaim(tx, claim))) {
-    // A newer journaled claim already owns the schedule.
-    return { settled: false };
-  }
-  if (authority.kind === "selected" && authority.row.phase !== "legacy") {
-    // Cutover already owns recurrence. The old execution remains a real drain
-    // fact, but its callback has no authority to publish or pause either side.
-    const settledAt = nowDate();
-    await markSettled(tx, claim.id, args, settledAt);
-    return { settled: true };
-  }
-  // Sampled only now: waiting on the schedule, automation and occurrence row
-  // locks can outlast a recurrence boundary, and an instant read before them
-  // would publish a successor that is already in the past.
-  const settledAt = nowDate();
-  if (!canPublishLegacySettlement(automation)) {
-    // A user action already published the schedule this occurrence would have
-    // written, or the automation is no longer a running cron schedule. The
-    // occurrence is still consumed so a later duplicate cannot advance it.
-    await markSettled(tx, claim.id, args, settledAt);
-    return { settled: true };
-  }
+const prepareMorningBriefScheduleSettlement$ = command(
+  async (
+    { set },
+    args: SettleMorningBriefScheduleInput,
+    signal?: AbortSignal,
+  ): Promise<SettleMorningBriefScheduleArgs | null> => {
+    const db = set(writeDb$);
+    const [binding] = await db
+      .select({
+        orgId: morningBriefScheduleClaims.orgId,
+        userId: morningBriefScheduleClaims.ownerUserId,
+        workflowId: morningBriefScheduleClaims.workflowId,
+      })
+      .from(morningBriefScheduleClaims)
+      .where(settlementClaimCondition(args))
+      .limit(1);
+    signal?.throwIfAborted();
+    if (!binding) {
+      return null;
+    }
+    let owner: SettleMorningBriefScheduleArgs["owner"];
+    if (binding.orgId !== null && binding.userId !== null) {
+      owner = {
+        orgId: binding.orgId,
+        userId: binding.userId,
+        workflowId: binding.workflowId,
+      };
+    } else {
+      const [automation] = await db
+        .select({
+          orgId: workflowAutomations.orgId,
+          userId: workflowAutomations.ownerUserId,
+          workflowId: workflowAutomations.workflowId,
+        })
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.id, args.automationId))
+        .limit(1);
+      signal?.throwIfAborted();
+      owner = automation;
+    }
+    let isCreditError = args.isCreditError ?? false;
+    if (args.subject.kind === "run" && args.settlement !== "completed") {
+      // The exact journal binding authorizes this read; no unrelated Run is inspected.
+      const [run] = await db
+        .select({ failureReason: agentRuns.failureReason })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, args.subject.runId))
+        .limit(1);
+      signal?.throwIfAborted();
+      isCreditError = run?.failureReason === "insufficient_credits";
+    }
+    return { ...args, owner, isCreditError };
+  },
+);
 
+function legacyMorningBriefSettlementPlan(
+  automation: AutomationRow,
+  authority: MorningBriefLegacyWriterAuthority,
+  args: SettleMorningBriefScheduleArgs,
+  settledAt: Date,
+) {
+  if (
+    (authority.kind === "selected" && authority.row.phase !== "legacy") ||
+    !automation.enabled ||
+    automation.nextRunAt !== null ||
+    automation.scheduleType !== "cron"
+  ) {
+    return null;
+  }
   const consecutiveFailures =
     args.settlement === "completed"
       ? 0
@@ -503,9 +335,10 @@ async function settleMorningBriefSchedule(
     completedAt: settledAt,
     shouldDisable,
   });
-  await tx
-    .update(workflowAutomations)
-    .set({
+  return {
+    shouldDisable,
+    consecutiveFailures,
+    automationValues: {
       consecutiveFailures,
       ...(shouldDisable ? { enabled: false } : {}),
       ...(shouldDisable && authority.kind === "selected"
@@ -513,187 +346,260 @@ async function settleMorningBriefSchedule(
         : {}),
       nextRunAt,
       updatedAt: settledAt,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.enabled, true),
-        isNull(workflowAutomations.nextRunAt),
-      ),
-    );
-  await markSettled(tx, claim.id, args, settledAt);
-  if (lineage !== undefined) {
-    await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
-      enabled: automation.enabled && !shouldDisable,
-      cronExpression: automation.cronExpression,
-      timezone: automation.timezone,
-      nextRunAt,
-      at: settledAt,
-    });
-  }
-  if (shouldDisable) {
-    log.warn(
-      "Morning Brief schedule auto-disabled after consecutive failures",
-      {
-        automationId: args.automationId,
-        orgId: claim.orgId,
-        userId: claim.ownerUserId,
-        consecutiveFailures,
-      },
-    );
-  }
-  return { settled: true, nextRunAt };
+    },
+  };
 }
 
-async function markSettled(
+type MorningBriefScheduleSettlementOutcome = {
+  readonly orgId: string | null;
+  readonly userId: string | null;
+  readonly consecutiveFailures: number;
+} | null;
+
+/** Another settler already settled this occurrence; roll back this transaction. */
+class MorningBriefClaimAlreadySettled extends Error {}
+
+/**
+ * Settle one occurrence once: read, compute, then conditional writes.
+ *
+ * No row is locked and nothing is retried. Writes follow the documented order
+ * (native row, legacy automation, then its claim). The schedule advance is a
+ * single conditional pass ({@link advanceInFlightSchedule}): a toggle, cutover
+ * or settlement that already published the successor wins unchanged, and a
+ * cron or timezone edit that landed after the read is applied from the
+ * columns the write returned. The claim write is the exactly-once gate: when
+ * another settler already settled it, the whole transaction rolls back and
+ * this call settles nothing.
+ */
+async function attemptMorningBriefScheduleSettlement(
   tx: Tx,
-  claimId: string,
   args: SettleMorningBriefScheduleArgs,
-  settledAt: Date,
-): Promise<void> {
-  await tx
+): Promise<MorningBriefScheduleSettlementOutcome> {
+  const lineage = args.owner && {
+    ...args.owner,
+    automationId: args.automationId,
+  };
+  const native = lineage
+    ? await readMorningBriefNativeScheduleForWrite(tx, lineage)
+    : undefined;
+  const authority: MorningBriefLegacyWriterAuthority = lineage
+    ? morningBriefLegacyWriterAuthorityFromRow(native?.row, lineage)
+    : { kind: "ordinary", fence: { kind: "ordinary" } };
+  const [automation] = await tx
+    .select(workflowAutomationColumns())
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, args.automationId))
+    .limit(1);
+  if (!automation) {
+    return null;
+  }
+  const [claim] = await tx
+    .select()
+    .from(morningBriefScheduleClaims)
+    .where(settlementClaimCondition(args))
+    .limit(1);
+  if (!claim || claim.settlement !== "unsettled") {
+    return null;
+  }
+  const [current] = await tx
+    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.automationId, args.automationId))
+    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+    .limit(1);
+  if (current?.claimSequence !== claim.claimSequence) {
+    return null;
+  }
+  const settledAt = nowDate();
+  const plan = legacyMorningBriefSettlementPlan(
+    automation,
+    authority,
+    args,
+    settledAt,
+  );
+  const advanced = plan
+    ? await advanceInFlightSchedule(tx, {
+        automationId: args.automationId,
+        read: {
+          scheduleType: "cron",
+          cronExpression: automation.cronExpression,
+          intervalSeconds: automation.intervalSeconds,
+          timezone: automation.timezone,
+        },
+        automationValues: plan.automationValues,
+        shouldDisable: plan.shouldDisable,
+        at: settledAt,
+        requireEmptySlot: true,
+        legacy:
+          lineage &&
+          authority.kind === "selected" &&
+          authority.row.phase === "legacy"
+            ? { lineage, row: authority.row }
+            : undefined,
+      })
+    : "superseded";
+  const [settled] = await tx
     .update(morningBriefScheduleClaims)
-    .set({
-      settlement: args.settlement,
-      settledAt,
-      updatedAt: settledAt,
-    })
+    .set({ settlement: args.settlement, settledAt, updatedAt: settledAt })
     .where(
       and(
-        eq(morningBriefScheduleClaims.id, claimId),
+        eq(morningBriefScheduleClaims.id, claim.id),
         eq(morningBriefScheduleClaims.settlement, "unsettled"),
       ),
+    )
+    .returning({ id: morningBriefScheduleClaims.id });
+  if (!settled) {
+    // Another settler won this occurrence; discard everything written here.
+    throw new MorningBriefClaimAlreadySettled();
+  }
+  return plan?.shouldDisable && advanced === "advanced"
+    ? {
+        orgId: claim.orgId,
+        userId: claim.ownerUserId,
+        consecutiveFailures: plan.consecutiveFailures,
+      }
+    : null;
+}
+
+/** One occurrence and its native mirror settle together with direct local SQL. */
+const commitMorningBriefScheduleSettlement$ = command(
+  async (
+    { set },
+    args: SettleMorningBriefScheduleArgs,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const result = await settle(
+      db.transaction(async (tx) => {
+        const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
+        signal?.throwIfAborted();
+        return attempted;
+      }),
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (!result.ok) {
+      if (result.error instanceof MorningBriefClaimAlreadySettled) {
+        return;
+      }
+      throw result.error;
+    }
+    if (result.value) {
+      log.warn(
+        "Morning Brief schedule auto-disabled after consecutive failures",
+        { automationId: args.automationId, ...result.value },
+      );
+    }
+  },
+);
+
+export const settleMorningBriefScheduleForRun$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly runId: string;
+      readonly settlement: Exclude<
+        MorningBriefScheduleClaimSettlement,
+        "unsettled" | "pre_run_failure"
+      >;
+    },
+    signal?: AbortSignal,
+  ): Promise<boolean> => {
+    const prepared = await set(
+      prepareMorningBriefScheduleSettlement$,
+      {
+        automationId: args.automationId,
+        subject: { kind: "run", runId: args.runId },
+        settlement: args.settlement,
+      },
+      signal,
+    );
+    if (!prepared) {
+      return false;
+    }
+    await set(commitMorningBriefScheduleSettlement$, prepared, signal);
+    return true;
+  },
+);
+
+export const settleMorningBriefSchedulePreRunFailure$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly claimId: string;
+      readonly isCreditError: boolean;
+    },
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const prepared = await set(
+      prepareMorningBriefScheduleSettlement$,
+      {
+        automationId: args.automationId,
+        subject: { kind: "claim", claimId: args.claimId },
+        settlement: "pre_run_failure",
+        isCreditError: args.isCreditError,
+      },
+      signal,
+    );
+    if (prepared) {
+      await set(commitMorningBriefScheduleSettlement$, prepared, signal);
+    }
+  },
+);
+
+export async function bindMorningBriefScheduleClaimRun(
+  db: Db | Tx,
+  args: { readonly queueEventId: string; readonly runId: string },
+): Promise<void> {
+  await db
+    .update(morningBriefScheduleClaims)
+    .set({
+      runId: args.runId,
+      queueDisposition: "claimed",
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.queueEventId, args.queueEventId),
+        isNull(morningBriefScheduleClaims.runId),
+      ),
     );
 }
 
-async function resolveSettlementOwner(
-  db: Db,
-  automationId: string,
-  binding: {
-    readonly orgId: string | null;
-    readonly userId: string | null;
-    readonly workflowId: string;
-  },
-): Promise<SettleMorningBriefScheduleArgs["owner"]> {
-  if (binding.orgId !== null && binding.userId !== null) {
-    return {
-      orgId: binding.orgId,
-      userId: binding.userId,
-      workflowId: binding.workflowId,
-    };
-  }
-  const [automation] = await db
-    .select({
-      orgId: workflowAutomations.orgId,
-      userId: workflowAutomations.ownerUserId,
-      workflowId: workflowAutomations.workflowId,
-    })
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, automationId))
+export async function morningBriefScheduleClaimBound(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [bound] = await db
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.runId, runId))
     .limit(1);
-  return automation?.userId === null || automation === undefined
-    ? undefined
-    : {
-        orgId: automation.orgId,
-        userId: automation.userId,
-        workflowId: automation.workflowId,
-      };
+  return bound !== undefined;
 }
 
-/**
- * Settle a journaled occurrence identified by its Run.
- *
- * Returns false when the Run has no journal binding, which is the exact
- * compatibility signal the legacy callback uses to keep its existing
- * unjournaled behavior.
- */
-export async function settleMorningBriefScheduleForRun(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly runId: string;
-    readonly settlement: Exclude<
-      MorningBriefScheduleClaimSettlement,
-      "unsettled" | "pre_run_failure"
-    >;
-    /** Read only for a recognized occurrence, so unjournaled callbacks add no query. */
-    readonly resolveIsCreditError: () => Promise<boolean>;
-  },
+export async function morningBriefScheduleClaimSuperseded(
+  tx: Tx,
+  runId: string,
 ): Promise<boolean> {
-  const [binding] = await db
+  const [own] = await tx
     .select({
-      id: morningBriefScheduleClaims.id,
-      orgId: morningBriefScheduleClaims.orgId,
-      userId: morningBriefScheduleClaims.ownerUserId,
-      workflowId: morningBriefScheduleClaims.workflowId,
+      automationId: morningBriefScheduleClaims.automationId,
+      claimSequence: morningBriefScheduleClaims.claimSequence,
     })
     .from(morningBriefScheduleClaims)
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.automationId, args.automationId),
-        eq(morningBriefScheduleClaims.runId, args.runId),
-      ),
-    )
+    .where(eq(morningBriefScheduleClaims.runId, runId))
     .limit(1);
-  if (!binding) {
+  if (!own) {
     return false;
   }
-  const isCreditError = await args.resolveIsCreditError();
-  const owner = await resolveSettlementOwner(db, args.automationId, binding);
-  await db.transaction(async (tx) => {
-    return await settleMorningBriefSchedule(tx, {
-      automationId: args.automationId,
-      owner,
-      subject: { kind: "run", runId: args.runId },
-      settlement: args.settlement,
-      isCreditError,
-    });
-  });
-  return true;
-}
-
-/**
- * Recover a claim whose queue admission never committed a queue event.
- *
- * The claim and its queue event commit together, so an unbound claim can only
- * exist when the claim transaction itself failed after the insert — the
- * journal row then rolls back with it. This guard covers the remaining case:
- * the poller consumed the schedule and then failed before a Run could be
- * created, which settles here through the same operation the callback uses.
- */
-export async function settleMorningBriefSchedulePreRunFailure(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly claimId: string;
-    readonly isCreditError: boolean;
-  },
-): Promise<void> {
-  const [binding] = await db
-    .select({
-      orgId: morningBriefScheduleClaims.orgId,
-      userId: morningBriefScheduleClaims.ownerUserId,
-      workflowId: morningBriefScheduleClaims.workflowId,
-    })
+  const [current] = await tx
+    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
     .from(morningBriefScheduleClaims)
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.id, args.claimId),
-        eq(morningBriefScheduleClaims.automationId, args.automationId),
-      ),
-    )
+    .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
+    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
     .limit(1);
-  if (!binding) {
-    return;
-  }
-  const owner = await resolveSettlementOwner(db, args.automationId, binding);
-  await db.transaction(async (tx) => {
-    return await settleMorningBriefSchedule(tx, {
-      automationId: args.automationId,
-      owner,
-      subject: { kind: "claim", claimId: args.claimId },
-      settlement: "pre_run_failure",
-      isCreditError: args.isCreditError,
-    });
-  });
+  return (current?.claimSequence ?? own.claimSequence) > own.claimSequence;
 }

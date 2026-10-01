@@ -12,12 +12,12 @@ import { getApiTestMocks } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   deleteUsagePricingRows,
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
-import { server } from "../../../mocks/server";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
@@ -138,7 +138,6 @@ describe("shared SDK ingestion", () => {
           timing_scope: "inline",
           pending_events: 3,
           compaction_lock_wait_ms: 0,
-          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -164,11 +163,6 @@ describe("shared SDK ingestion", () => {
         durationMs: 0,
         success: true,
       },
-      {
-        actionType: "api_billing_settlement_org_lock_wait",
-        durationMs: 0,
-        success: true,
-      },
     ]);
     expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
       "vm0-sandbox-op-log-dev",
@@ -183,7 +177,6 @@ describe("shared SDK ingestion", () => {
           timing_scope: "inline",
           pending_events: 3,
           compaction_lock_wait_ms: 0,
-          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -207,14 +200,6 @@ describe("shared SDK ingestion", () => {
           _time: expect.any(String),
           source: "api",
           op_type: "api_billing_settlement_compaction_lock_wait",
-          operation_domain: "billing",
-          duration_ms: 0,
-          success: true,
-        },
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "api_billing_settlement_org_lock_wait",
           operation_domain: "billing",
           duration_ms: 0,
           success: true,
@@ -325,16 +310,16 @@ describe("shared SDK ingestion", () => {
       expect(large.body).toMatchObject({
         seededRawRows: 500,
         selectedGrains: 1,
-        rawRowsDeleted: 501,
+        rawRowsDeleted: 500,
         hasMore: true,
         reconciled: true,
       });
-      expectGrainMax(501);
+      expectGrainMax(500);
 
       const remaining = await compact();
       expect(remaining.body).toMatchObject({
-        selectedGrains: 1,
-        rawRowsDeleted: 3,
+        selectedGrains: 2,
+        rawRowsDeleted: 4,
         reconciled: true,
       });
       expectGrainMax(3);
@@ -416,16 +401,16 @@ describe("shared SDK ingestion", () => {
       const reconsolidated = await compact();
       expect(reconsolidated.body).toMatchObject({
         rawRowsDeleted: 2,
-        hourlyRowsDeleted: 2,
+        hourlyRowsDeleted: 0,
         selectedGrains: 2,
         allowanceUnits: "5",
         reconciled: true,
       });
-      expectGrainMax(3);
+      expectGrainMax(1);
     });
   });
 
-  it("emits settlement phases only for committed nonempty work", async () => {
+  it("emits settlement timing only for committed nonempty work", async () => {
     // Telemetry-client suite exception: observe the committed route and SDK
     // boundary together; do not inspect financial tables or service internals.
     mockEnv("ENV", "development");
@@ -476,6 +461,7 @@ describe("shared SDK ingestion", () => {
         categories: ["tokens.input"],
       });
     });
+    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     await store.set(
       insertUsageEvent$,
       {
@@ -506,7 +492,6 @@ describe("shared SDK ingestion", () => {
         });
       });
     };
-    await accept(api.rollback({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toStrictEqual([]);
 
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
@@ -515,25 +500,10 @@ describe("shared SDK ingestion", () => {
         timing_scope: "standalone",
         pending_events: 1,
         compaction_lock_wait_ms: expect.any(Number),
-        org_lock_wait_ms: expect.any(Number),
-        pending_read_ms: expect.any(Number),
-        pricing_read_ms: expect.any(Number),
-        pricing_calculation_ms: expect.any(Number),
-        allowance_ms: expect.any(Number),
-        allowance_allocation_read_ms: expect.any(Number),
-        allowance_anchor_ms: expect.any(Number),
-        allowance_window_lock_ms: expect.any(Number),
-        allowance_window_issue_ms: expect.any(Number),
-        allowance_allocate_ms: expect.any(Number),
-        allowance_window_write_ms: expect.any(Number),
-        allowance_allocation_write_ms: expect.any(Number),
-        event_write_ms: expect.any(Number),
-        grant_deduction_ms: expect.any(Number),
-        org_credit_ms: expect.any(Number),
-        org_balance_read_ms: expect.any(Number),
-        org_expire_credits_ms: expect.any(Number),
-        org_debit_ms: expect.any(Number),
-        org_expiry_lot_deduction_ms: expect.any(Number),
+        statement_grouping: "command_local_batch",
+        grant_rows: 0,
+        expired_rows: 0,
+        expiry_rows: 0,
       }),
     ]);
     expect(settlementTimings()[0]).not.toHaveProperty("org_id");
@@ -560,13 +530,12 @@ describe("shared SDK ingestion", () => {
     if (!Array.isArray(committedBatch)) {
       throw new Error("Expected a committed settlement timing batch");
     }
-    expect(committedBatch).toHaveLength(4);
+    expect(committedBatch).toHaveLength(3);
     for (const [dimension, opType] of [
       [
         "compaction_lock_wait_ms",
         "api_billing_settlement_compaction_lock_wait",
       ],
-      ["org_lock_wait_ms", "api_billing_settlement_org_lock_wait"],
     ] as const) {
       const lockEvent: unknown = committedBatch.find((event: unknown) => {
         return (
@@ -619,11 +588,9 @@ describe("shared SDK ingestion", () => {
     expect(settlementTimings()).toHaveLength(2);
     expect(settlementTimings()[1]).toStrictEqual(
       expect.objectContaining({
-        org_credit_ms: 0,
-        org_balance_read_ms: 0,
-        org_expire_credits_ms: 0,
-        org_debit_ms: 0,
-        org_expiry_lot_deduction_ms: 0,
+        statement_grouping: "command_local_batch",
+        expired_rows: 0,
+        expiry_rows: 0,
         grant_rows: 1,
       }),
     );

@@ -1,5 +1,3 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   slackChatIngress,
   type SlackChatIngressStatus,
@@ -7,11 +5,17 @@ import {
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+import type { Tx } from "../../lib/db-types";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
-} from "./chat-thread-create.service";
+  integrationChatThreadInsertFromRouteSql,
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+  type IntegrationChatThreadCreation,
+} from "./integration-chat-thread-publication";
 import {
   INTEGRATION_DM_SESSION_KEY,
   isIntegrationDmSessionKey,
@@ -55,163 +59,195 @@ function slackChatThreadRouteWhere(key: SlackChatThreadRouteKey) {
   );
 }
 
+/** Read the route and update its direct-message destination in this command. */
+export const findSlackChatThreadRoute$ = command(
+  async (
+    { set },
+    key: SlackChatThreadRouteKey,
+    signal: AbortSignal,
+  ): Promise<SlackChatThreadRouteBinding | undefined> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const [route] = await tx
+        .select(ROUTE_COLUMNS)
+        .from(slackChatThreadRoutes)
+        .where(slackChatThreadRouteWhere(key))
+        .limit(1);
+      if (
+        route &&
+        key.threadTs === INTEGRATION_DM_SESSION_KEY &&
+        route.channelId !== key.channelId
+      ) {
+        const [updated] = await tx
+          .update(slackChatThreadRoutes)
+          .set({ channelId: key.channelId })
+          .where(
+            and(
+              eq(slackChatThreadRoutes.id, route.id),
+              slackChatThreadRouteWhere(key),
+            ),
+          )
+          .returning({ channelId: slackChatThreadRoutes.channelId });
+        if (!updated) {
+          throw new Error("Failed to update Slack DM route destination");
+        }
+        signal.throwIfAborted();
+        return { ...route, ...updated };
+      }
+      signal.throwIfAborted();
+      return route;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+/** Slash commands identify only the main direct-message conversation. */
+export const findSlackDirectMessageChatThreadId$ = command(
+  async (
+    { set },
+    key: Omit<SlackChatThreadRouteKey, "threadTs">,
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({ chatThreadId: slackChatThreadRoutes.chatThreadId })
+      .from(slackChatThreadRoutes)
+      .where(
+        and(
+          slackChatThreadRouteWhere({
+            ...key,
+            threadTs: INTEGRATION_DM_SESSION_KEY,
+          }),
+          eq(slackChatThreadRoutes.channelId, key.channelId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return route?.chatThreadId;
+  },
+);
+
+const ROUTE_COLUMNS = {
+  id: slackChatThreadRoutes.id,
+  connectionId: slackChatThreadRoutes.connectionId,
+  channelId: slackChatThreadRoutes.channelId,
+  threadTs: slackChatThreadRoutes.threadTs,
+  userId: slackChatThreadRoutes.userId,
+  chatThreadId: slackChatThreadRoutes.chatThreadId,
+} as const;
+
 async function loadSlackChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
+  tx: Tx,
   key: SlackChatThreadRouteKey,
 ): Promise<SlackChatThreadRouteBinding | undefined> {
-  const [route] = await db
-    .select({
-      id: slackChatThreadRoutes.id,
-      connectionId: slackChatThreadRoutes.connectionId,
-      channelId: slackChatThreadRoutes.channelId,
-      threadTs: slackChatThreadRoutes.threadTs,
-      userId: slackChatThreadRoutes.userId,
-      chatThreadId: slackChatThreadRoutes.chatThreadId,
-    })
+  const [route] = await tx
+    .select(ROUTE_COLUMNS)
     .from(slackChatThreadRoutes)
     .where(slackChatThreadRouteWhere(key))
     .limit(1);
-  if (
-    route &&
-    key.threadTs === INTEGRATION_DM_SESSION_KEY &&
-    route.channelId !== key.channelId
-  ) {
-    const [updated] = await db
-      .update(slackChatThreadRoutes)
-      .set({ channelId: key.channelId })
-      .where(
-        and(
-          eq(slackChatThreadRoutes.id, route.id),
-          slackChatThreadRouteWhere(key),
-        ),
-      )
-      .returning({ channelId: slackChatThreadRoutes.channelId });
-    if (!updated) {
-      throw new Error("Failed to update Slack DM route destination");
-    }
-    return { ...route, ...updated };
-  }
   return route;
 }
 
-export async function findSlackChatThreadRoute(
-  db: Db,
+/** A DM route follows the latest destination through one conditional update. */
+async function adoptSlackChatThreadRoute(
+  tx: Tx,
+  existing: SlackChatThreadRouteBinding,
   key: SlackChatThreadRouteKey,
-): Promise<SlackChatThreadRouteBinding | undefined> {
-  return await loadSlackChatThreadRoute(db, key);
+): Promise<SlackChatThreadRouteBinding> {
+  if (
+    key.threadTs !== INTEGRATION_DM_SESSION_KEY ||
+    existing.channelId === key.channelId
+  ) {
+    return existing;
+  }
+  const [updated] = await tx
+    .update(slackChatThreadRoutes)
+    .set({ channelId: key.channelId })
+    .where(
+      and(
+        eq(slackChatThreadRoutes.id, existing.id),
+        slackChatThreadRouteWhere(key),
+      ),
+    )
+    .returning({ channelId: slackChatThreadRoutes.channelId });
+  if (!updated) {
+    throw new Error("Failed to update Slack DM route destination");
+  }
+  return { ...existing, ...updated };
 }
 
 /**
- * Read the main DM chat thread when `channelId` is the connection's DM
- * channel. Slash commands carry no thread timestamp, so only the main DM
- * conversation can be identified.
+ * The unique route and its new thread/event commit in this command alone.
+ * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
+ * reads the committed winner once. The thread row is inserted by the same
+ * statement only when the route insert wins.
  */
-export async function findSlackDirectMessageChatThreadId(
-  db: Pick<Db, "select">,
-  key: Omit<SlackChatThreadRouteKey, "threadTs">,
-): Promise<string | undefined> {
-  const [route] = await db
-    .select({ chatThreadId: slackChatThreadRoutes.chatThreadId })
-    .from(slackChatThreadRoutes)
-    .where(
-      and(
-        slackChatThreadRouteWhere({
-          ...key,
-          threadTs: INTEGRATION_DM_SESSION_KEY,
-        }),
-        eq(slackChatThreadRoutes.channelId, key.channelId),
-      ),
-    )
-    .limit(1);
-  return route?.chatThreadId;
-}
-
-async function requireSlackChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: SlackChatThreadRouteKey,
-): Promise<SlackChatThreadRouteBinding> {
-  const route = await loadSlackChatThreadRoute(db, key);
-  if (!route) {
-    throw new Error("Failed to resolve Slack chat thread route after conflict");
-  }
-  return route;
-}
-
-export async function ensureCanonicalSlackChatThreadRoute(
-  db: Db,
-  args: SlackChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly currentTime: Date;
-  },
-): Promise<SlackChatThreadRouteBinding> {
-  return await db.transaction(async (tx) => {
-    const existing = await loadSlackChatThreadRoute(tx, args);
-    if (existing) {
-      return existing;
-    }
-
-    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
-      tx,
-      args,
+export const ensureCanonicalSlackChatThreadRoute$ = command(
+  async (
+    { set },
+    args: SlackChatThreadRouteKey & IntegrationChatThreadCreation,
+    signal: AbortSignal,
+  ): Promise<SlackChatThreadRouteBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
     );
-    const thread = await insertChatThread(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      selectedModel: initialModel.selectedModel,
-      codexServiceTier:
-        initialModel.serviceTier === "priority"
-          ? "fast"
-          : initialModel.serviceTier === "ultrafast"
-            ? "ultrafast"
-            : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
+    const candidateId = randomUUID();
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const existing = await loadSlackChatThreadRoute(tx, args);
+      if (existing) {
+        return await adoptSlackChatThreadRoute(tx, existing, args);
+      }
+      const thread = integrationChatThreadValues(args, candidateId, defaults);
+      const insertedRoute = tx.$with("inserted_slack_route").as(
+        tx
+          .insert(slackChatThreadRoutes)
+          .values({
+            connectionId: args.connectionId,
+            channelId: args.channelId,
+            threadTs: args.threadTs,
+            userId: args.userId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing({
+            target: [
+              slackChatThreadRoutes.connectionId,
+              slackChatThreadRoutes.channelId,
+              slackChatThreadRoutes.threadTs,
+              slackChatThreadRoutes.userId,
+            ],
+          })
+          .returning(ROUTE_COLUMNS),
+      );
+      const insertedThread = tx
+        .$with("inserted_slack_thread", {})
+        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
+      const [route] = await tx
+        .with(insertedRoute, insertedThread)
+        .select()
+        .from(insertedRoute);
+      if (route) {
+        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+        signal.throwIfAborted();
+        return route;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once.
+      const winner = await loadSlackChatThreadRoute(tx, args);
+      if (!winner) {
+        throw new Error(
+          "Failed to resolve Slack chat thread route after conflict",
+        );
+      }
+      return await adoptSlackChatThreadRoute(tx, winner, args);
     });
-    if (!thread) {
-      throw new Error("Failed to create canonical Slack chat thread");
-    }
-
-    const [route] = await tx
-      .insert(slackChatThreadRoutes)
-      .values({
-        connectionId: args.connectionId,
-        channelId: args.channelId,
-        threadTs: args.threadTs,
-        userId: args.userId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          slackChatThreadRoutes.connectionId,
-          slackChatThreadRoutes.channelId,
-          slackChatThreadRoutes.threadTs,
-          slackChatThreadRoutes.userId,
-        ],
-      })
-      .returning({
-        id: slackChatThreadRoutes.id,
-        connectionId: slackChatThreadRoutes.connectionId,
-        channelId: slackChatThreadRoutes.channelId,
-        threadTs: slackChatThreadRoutes.threadTs,
-        userId: slackChatThreadRoutes.userId,
-        chatThreadId: slackChatThreadRoutes.chatThreadId,
-      });
-
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      return await requireSlackChatThreadRoute(tx, args);
-    }
-
-    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
-    return route;
-  });
-}
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 interface SlackChatIngressAdmission {
   readonly id: string;
@@ -220,74 +256,83 @@ interface SlackChatIngressAdmission {
   readonly retryCount: number;
 }
 
-export async function admitCanonicalSlackChatEvent(
-  db: Db,
-  args: {
-    readonly routeId: string;
-    readonly eventId: string;
-    readonly payload: string;
-    readonly isRetry: boolean;
-    readonly currentTime: Date;
+export const admitCanonicalSlackChatEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly routeId: string;
+      readonly eventId: string;
+      readonly payload: string;
+      readonly isRetry: boolean;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<SlackChatIngressAdmission> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(slackChatIngress)
+        .values({
+          routeId: args.routeId,
+          eventId: args.eventId,
+          payload: args.payload,
+          status: "pending",
+          retryCount: args.isRetry ? 1 : 0,
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .onConflictDoNothing({ target: slackChatIngress.eventId })
+        .returning({
+          id: slackChatIngress.id,
+          routeId: slackChatIngress.routeId,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        });
+      signal.throwIfAborted();
+      if (inserted) {
+        return { ...inserted, inserted: true };
+      }
+
+      const [existing] = await tx
+        .select({
+          id: slackChatIngress.id,
+          routeId: slackChatIngress.routeId,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        })
+        .from(slackChatIngress)
+        .where(eq(slackChatIngress.eventId, args.eventId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!existing) {
+        throw new Error("Failed to resolve canonical Slack ingress event");
+      }
+      if (existing.routeId !== args.routeId) {
+        throw new Error("Slack event ID is already bound to another route");
+      }
+      if (!args.isRetry) {
+        return { ...existing, inserted: false };
+      }
+
+      const [retried] = await tx
+        .update(slackChatIngress)
+        .set({
+          retryCount: sql`${slackChatIngress.retryCount} + 1`,
+          updatedAt: args.currentTime,
+        })
+        .where(eq(slackChatIngress.id, existing.id))
+        .returning({
+          id: slackChatIngress.id,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        });
+      signal.throwIfAborted();
+      if (!retried) {
+        throw new Error("Failed to record canonical Slack ingress retry");
+      }
+      return { ...retried, inserted: false };
+    });
+    signal.throwIfAborted();
+    return result;
   },
-): Promise<SlackChatIngressAdmission> {
-  return await db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(slackChatIngress)
-      .values({
-        routeId: args.routeId,
-        eventId: args.eventId,
-        payload: args.payload,
-        status: "pending",
-        retryCount: args.isRetry ? 1 : 0,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .onConflictDoNothing({ target: slackChatIngress.eventId })
-      .returning({
-        id: slackChatIngress.id,
-        routeId: slackChatIngress.routeId,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      });
-    if (inserted) {
-      return { ...inserted, inserted: true };
-    }
-
-    const [existing] = await tx
-      .select({
-        id: slackChatIngress.id,
-        routeId: slackChatIngress.routeId,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      })
-      .from(slackChatIngress)
-      .where(eq(slackChatIngress.eventId, args.eventId))
-      .limit(1);
-    if (!existing) {
-      throw new Error("Failed to resolve canonical Slack ingress event");
-    }
-    if (existing.routeId !== args.routeId) {
-      throw new Error("Slack event ID is already bound to another route");
-    }
-    if (!args.isRetry) {
-      return { ...existing, inserted: false };
-    }
-
-    const [retried] = await tx
-      .update(slackChatIngress)
-      .set({
-        retryCount: sql`${slackChatIngress.retryCount} + 1`,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(slackChatIngress.id, existing.id))
-      .returning({
-        id: slackChatIngress.id,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      });
-    if (!retried) {
-      throw new Error("Failed to record canonical Slack ingress retry");
-    }
-    return { ...retried, inserted: false };
-  });
-}
+);

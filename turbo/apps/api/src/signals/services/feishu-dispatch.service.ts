@@ -36,10 +36,10 @@ import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import {
   feishuRouteThreadId,
-  findFeishuRoutedChatThreadId,
+  findFeishuRoutedChatThreadId$,
 } from "./feishu-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel,
+  readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
@@ -722,24 +722,58 @@ async function replyModelUnavailable(
   );
 }
 
+function feishuModelCommandOptions(
+  options: readonly FeishuModelOption[],
+  currentSelectedModel: string | null,
+) {
+  return options.map((option) => {
+    return {
+      commandValue: option.model,
+      label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
+      current: currentSelectedModel === option.model,
+    };
+  });
+}
+
+function findFeishuModelOption(
+  options: readonly FeishuModelOption[],
+  input: string,
+) {
+  const normalized = input.toLowerCase();
+  return options.find((option) => {
+    return (
+      option.model.toLowerCase() === normalized ||
+      option.label.toLowerCase() === normalized
+    );
+  });
+}
+
 const handleModelCommand$ = command(
   async (
     { set },
     args: ConnectedCommandArgs,
     signal: AbortSignal,
   ): Promise<void> => {
-    const chatThreadId = await findFeishuRoutedChatThreadId(args.db, {
-      connectionId: args.connection.id,
-      chatId: args.message.chatId,
-      threadId: feishuRouteThreadId(args.message),
-      userId: args.connection.userId,
-    });
+    const chatThreadId = await set(
+      findFeishuRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: feishuRouteThreadId(args.message),
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    const currentSelectedModel = await readIntegrationChatThreadModel(args.db, {
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-      chatThreadId,
-    });
+    const currentSelectedModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!currentSelectedModel) {
       await replyNotice(
@@ -784,26 +818,20 @@ const handleModelCommand$ = command(
           text: commandOptionsText({
             intro: `Send one of these commands to choose the model for this ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} conversation.`,
             command: "model",
-            options: picker.options.map((option) => {
-              return {
-                commandValue: option.model,
-                label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
-                current: picker.currentSelectedModel === option.model,
-              };
-            }),
+            options: feishuModelCommandOptions(
+              picker.options,
+              picker.currentSelectedModel,
+            ),
           }),
         },
         signal,
       );
       return;
     }
-    const normalized = args.command.argument.toLowerCase();
-    const selected = picker.options.find((option) => {
-      return (
-        option.model.toLowerCase() === normalized ||
-        option.label.toLowerCase() === normalized
-      );
-    });
+    const selected = findFeishuModelOption(
+      picker.options,
+      args.command.argument,
+    );
     if (!selected) {
       await replyModelUnavailable(args, signal);
       return;

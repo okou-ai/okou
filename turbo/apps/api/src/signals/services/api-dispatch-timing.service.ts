@@ -1,7 +1,7 @@
-import { performance } from "node:perf_hooks";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { env } from "../../lib/env";
+import { performance } from "node:perf_hooks";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
+import { env } from "../../lib/env";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import {

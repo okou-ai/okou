@@ -96,6 +96,7 @@ function accepted(
   orgId: string,
   invitation: { id: string; claimId: string },
   userId: string,
+  statuses: readonly (200 | 503)[] = [200],
 ) {
   const body = JSON.stringify({
     type: "organizationInvitation.accepted",
@@ -121,8 +122,28 @@ function accepted(
         "svix-signature": new Webhook(secret).sign(id, at, body),
       },
     }),
-    [200],
+    statuses,
   );
+}
+
+type Delivery = Parameters<typeof accepted>;
+
+/**
+ * Concurrent deliveries may lose an invitation slot race; that delivery gets
+ * 503 and Clerk redelivers it. Redeliveries run after the concurrent batch.
+ */
+async function acceptedConcurrently(deliveries: readonly Delivery[]) {
+  const responses = await Promise.all(
+    deliveries.map(([orgId, invitation, userId]) => {
+      return accepted(orgId, invitation, userId, [200, 503]);
+    }),
+  );
+  for (const [index, response] of responses.entries()) {
+    const delivery = deliveries[index];
+    if (response.status === 503 && delivery) {
+      await accepted(delivery[0], delivery[1], delivery[2]);
+    }
+  }
 }
 
 async function progress() {
@@ -275,13 +296,13 @@ test("concurrent acceptances fill all 15 global invitation slots while pending i
   for (let i = 0; i < 14; i++) {
     initialInvitations.push(await sendInvitation());
   }
-  await Promise.all(
-    initialInvitations.map((invitation, index) => {
-      return accepted(
+  await acceptedConcurrently(
+    initialInvitations.map((invitation, index): Delivery => {
+      return [
         first.orgId,
         invitation,
         index === 0 ? sameInvitee : `user_${randomUUID()}`,
-      );
+      ];
     }),
   );
   const pendingA = await sendInvitation();
@@ -292,9 +313,9 @@ test("concurrent acceptances fill all 15 global invitation slots while pending i
     claimedCount: 14,
     pendingCount: 3,
   });
-  await Promise.all([
-    accepted(first.orgId, pendingA, `user_${randomUUID()}`),
-    accepted(second.orgId, pendingB, `user_${randomUUID()}`),
+  await acceptedConcurrently([
+    [first.orgId, pendingA, `user_${randomUUID()}`],
+    [second.orgId, pendingB, `user_${randomUUID()}`],
   ]);
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 15,
@@ -340,11 +361,11 @@ test("concurrent invitations of the same account across organizations award only
   const secondInvitation = await sendInvitation();
   const invitee = `user_${randomUUID()}`;
 
-  await Promise.all([
-    accepted(first.orgId, firstInvitation, invitee),
-    accepted(second.orgId, secondInvitation, invitee),
-    accepted(first.orgId, firstInvitation, invitee),
-    accepted(second.orgId, secondInvitation, invitee),
+  await acceptedConcurrently([
+    [first.orgId, firstInvitation, invitee],
+    [second.orgId, secondInvitation, invitee],
+    [first.orgId, firstInvitation, invitee],
+    [second.orgId, secondInvitation, invitee],
   ]);
 
   const claimedCounts = [];

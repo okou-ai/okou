@@ -12,14 +12,21 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { storages } from "@okouai/db/schema/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { and, eq, exists, ne, notInArray, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
-import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { writeAgentInstructionsStorageInTransaction$ } from "./agent-instructions-storage.service";
+import {
+  commitPreparedAgentInstructionsStorageInTransaction,
+  prepareAgentInstructionsStorage$,
+} from "./agent-instructions-storage.service";
+import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
+import {
+  enqueueStorageObjectCleanup,
+  executeStorageObjectCleanupWork$,
+} from "./storage-object-cleanup.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
   grantOnboardingCredits,
@@ -38,10 +45,11 @@ import {
   writeOrgMetadataWithPlanEntitlements,
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
-import { onRejection } from "../utils";
+import { onRejection, settleIncludingAbort } from "../utils";
 import { loadSystemDefaultRunModel } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
+const PAID_TIERS = ["pro", "team", "custom"] as const;
 
 type DbTransaction = Tx;
 
@@ -72,42 +80,238 @@ interface BootstrapInstructionsStorage {
   readonly s3Prefix: string;
 }
 
+function bootstrapStorageValues(
+  orgId: string,
+  storage: BootstrapInstructionsStorage,
+) {
+  return {
+    id: storage.id,
+    orgId,
+    userId: VOLUME_ORG_USER_ID,
+    name: getInstructionsStorageName(DEFAULT_AGENT_NAME),
+    s3Prefix: storage.s3Prefix,
+  };
+}
+
 async function ensureBootstrapInstructionsStorage(
   tx: DbTransaction,
   orgId: string,
-): Promise<BootstrapInstructionsStorage> {
-  const { storageId, s3Prefix } = newStorageS3Location(orgId);
-  const [storage] = await tx
+  candidate: BootstrapInstructionsStorage,
+) {
+  const [inserted] = await tx
     .insert(storages)
-    .values({
-      id: storageId,
-      orgId,
-      userId: VOLUME_ORG_USER_ID,
-      name: getInstructionsStorageName(DEFAULT_AGENT_NAME),
-      s3Prefix,
-    })
-    .onConflictDoUpdate({
+    .values(bootstrapStorageValues(orgId, candidate))
+    .onConflictDoNothing({
       target: [storages.orgId, storages.userId, storages.name],
-      // Own the real parent before deciding whether seed publication is still
-      // needed. Preserve the canonical identity, HEAD and timestamps on reuse.
-      set: { name: sql`${storages.name}` },
     })
-    .returning({ id: storages.id, s3Prefix: storages.s3Prefix });
+    .returning({ id: storages.id });
+  // Take the strong parent lock directly, not NO KEY UPDATE then an upgrade:
+  // version writers may already own FK KEY SHARE before updating this row.
+  const [storage] = await tx
+    .select({
+      id: storages.id,
+      s3Prefix: storages.s3Prefix,
+      headVersionId: storages.headVersionId,
+    })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, orgId),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        eq(storages.name, getInstructionsStorageName(DEFAULT_AGENT_NAME)),
+      ),
+    )
+    .for("update");
   if (!storage) {
-    throw new Error("Expected bootstrap instructions Storage after upsert");
+    throw new Error("Canonical bootstrap instructions Storage disappeared");
   }
-  return storage;
+  return { ...storage, insertedCandidate: inserted?.id === storage.id };
 }
 
-async function lockOrgBootstrap(
+async function enqueueBootstrapPrefixCleanup(
   tx: DbTransaction,
-  orgId: string,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('org_bootstrap:' || ${orgId}))`,
+  args: EnsureOrgLimitedFreeBootstrapArgs,
+  s3Prefix: string,
+  signal: AbortSignal,
+): Promise<string> {
+  return await enqueueStorageObjectCleanup(
+    tx,
+    {
+      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      target: { kind: "prefix", value: s3Prefix },
+      orgId: args.orgId,
+      userId: args.ownerUserId,
+    },
+    signal,
   );
 }
+
+async function publishBootstrap(
+  tx: DbTransaction,
+  args: EnsureOrgLimitedFreeBootstrapArgs & {
+    readonly agentId: string;
+    readonly candidate: BootstrapInstructionsStorage;
+    readonly volume: PreparedServerSideVolume;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly result: EnsureOrgLimitedFreeBootstrapResult;
+  readonly cleanupJobIds: readonly string[];
+}> {
+  const storage = await ensureBootstrapInstructionsStorage(
+    tx,
+    args.orgId,
+    args.candidate,
+  );
+  signal.throwIfAborted();
+  const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
+  signal.throwIfAborted();
+  const cleanupJobIds: string[] = [];
+  if (
+    storage.id === args.candidate.id &&
+    storage.s3Prefix !== args.candidate.s3Prefix
+  ) {
+    throw new Error("Bootstrap candidate Storage generation changed");
+  }
+  if (existingAgentId || storage.headVersionId) {
+    // A concurrent winner (including edited seed instructions) owns this HEAD.
+    // INSERT RETURNING, not identity equality, owns unpublished retirement.
+    if (storage.insertedCandidate) {
+      await tx.delete(storages).where(eq(storages.id, args.candidate.id));
+      signal.throwIfAborted();
+    }
+    if (storage.id !== args.candidate.id || storage.insertedCandidate) {
+      cleanupJobIds.push(
+        await enqueueBootstrapPrefixCleanup(
+          tx,
+          args,
+          args.candidate.s3Prefix,
+          signal,
+        ),
+      );
+    }
+    if (!existingAgentId && storage.headVersionId) {
+      const [head] = await tx
+        .select({ id: storageVersions.id })
+        .from(storageVersions)
+        .where(
+          and(
+            eq(storageVersions.id, storage.headVersionId),
+            eq(storageVersions.storageId, storage.id),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!head) {
+        throw new Error(
+          "Bootstrap instructions HEAD belongs to another Storage",
+        );
+      }
+    }
+    const result = existingAgentId
+      ? { bootstrapped: false, agentId: existingAgentId }
+      : await finalizeBootstrap(tx, args);
+    signal.throwIfAborted();
+    return { result, cleanupJobIds };
+  }
+
+  if (storage.id !== args.candidate.id) {
+    const [version] = await tx
+      .select({ id: storageVersions.id })
+      .from(storageVersions)
+      .where(eq(storageVersions.storageId, storage.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (version) {
+      throw new Error(
+        "Bootstrap instructions Storage has versions but no HEAD",
+      );
+    }
+    // The locked incumbent has never published content. Retire its exact
+    // generation; never rebind our logical version to its UUID or prefix.
+    await tx.delete(storages).where(eq(storages.id, storage.id));
+    signal.throwIfAborted();
+    await tx
+      .insert(storages)
+      .values(bootstrapStorageValues(args.orgId, args.candidate));
+    signal.throwIfAborted();
+    cleanupJobIds.push(
+      await enqueueBootstrapPrefixCleanup(tx, args, storage.s3Prefix, signal),
+    );
+  }
+
+  await commitPreparedAgentInstructionsStorageInTransaction(
+    { tx, volume: args.volume },
+    signal,
+  );
+  const result = await finalizeBootstrap(tx, args);
+  signal.throwIfAborted();
+  return { result, cleanupJobIds };
+}
+
+const cleanupBootstrapCandidate$ = command(
+  async (
+    { set },
+    args: EnsureOrgLimitedFreeBootstrapArgs & {
+      readonly candidate: BootstrapInstructionsStorage;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const jobId = await db.transaction(async (tx) => {
+      // Bound recovery SQL independently of the cancelled request. Publication
+      // may still be settling for this exact candidate; a timeout is not proof
+      // that it rolled back.
+      await tx.execute(sql`SELECT
+        set_config('statement_timeout', '5000ms', true),
+        set_config('lock_timeout', '1000ms', true)`);
+      signal.throwIfAborted();
+      // Arbitrate only the captured primary key. The private probe name cannot
+      // wait on/adopt a peer's canonical generation. A pending commit involving
+      // this exact UUID must settle before absence can mean rollback.
+      const [probe] = await tx
+        .insert(storages)
+        .values({
+          ...bootstrapStorageValues(args.orgId, args.candidate),
+          name: `${getInstructionsStorageName(DEFAULT_AGENT_NAME)}--cleanup-${args.candidate.id}`,
+        })
+        .onConflictDoNothing()
+        .returning({ id: storages.id });
+      signal.throwIfAborted();
+      const [storage] = await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.id, args.candidate.id),
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            eq(storages.s3Prefix, args.candidate.s3Prefix),
+          ),
+        );
+      signal.throwIfAborted();
+      if (storage && !probe) {
+        // An uncertain commit succeeded. Never delete a live captured parent,
+        // and never redirect compensation to the current same-name generation.
+        return null;
+      }
+      if (probe) {
+        await tx.delete(storages).where(eq(storages.id, probe.id));
+        signal.throwIfAborted();
+      }
+      return await enqueueBootstrapPrefixCleanup(
+        tx,
+        args,
+        args.candidate.s3Prefix,
+        signal,
+      );
+    });
+    signal.throwIfAborted();
+    if (jobId) {
+      await set(executeStorageObjectCleanupWork$, { jobIds: [jobId] }, signal);
+    }
+  },
+);
 
 async function existingDefaultAgentId(
   tx: DbTransaction,
@@ -162,7 +366,9 @@ async function upsertBootstrapOwnerMembership(
 }
 
 function isPaidTier(tier: string): boolean {
-  return tier === "pro" || tier === "team" || tier === "custom";
+  return PAID_TIERS.some((paidTier) => {
+    return paidTier === tier;
+  });
 }
 
 async function reserveBootstrapAgent(
@@ -239,7 +445,19 @@ async function finalizeBootstrap(
     return { bootstrapped: true, agentId: agentRow.id };
   }
 
-  await writeOrgMetadataWithPlanEntitlements(tx, {
+  const systemDefaultModel = await loadSystemDefaultRunModel(tx);
+  const hasConfiguredPolicies = exists(
+    tx
+      .select({ id: orgModelPolicies.id })
+      .from(orgModelPolicies)
+      .where(
+        and(
+          eq(orgModelPolicies.orgId, args.orgId),
+          ne(orgModelPolicies.model, systemDefaultModel),
+        ),
+      ),
+  );
+  const initialized = await writeOrgMetadataWithPlanEntitlements(tx, {
     writeOrgMetadata: async (writeTx) => {
       return await writeTx
         .insert(orgMetadataCanonicalWrites)
@@ -249,9 +467,10 @@ async function finalizeBootstrap(
           tier: "limited-free-1",
           onboardingPaymentPending: false,
           onboardingComplete: false,
-          // New organizations use Auto. The column default stays Custom so
-          // older API writers keep creating Custom organizations.
-          modelMode: "auto",
+          // A policy can be configured before metadata exists. Preserve the
+          // Custom policy contract on INSERT as well as on conflict. Unconfigured
+          // new organizations use Auto; the schema's Custom default is unchanged.
+          modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN 'custom' ELSE 'auto' END`,
           updatedAt: nowDate(),
         })
         .onConflictDoUpdate({
@@ -260,16 +479,17 @@ async function finalizeBootstrap(
             defaultAgentId: agentRow.id,
             tier: "limited-free-1",
             onboardingPaymentPending: false,
-            // Another writer may have created the row first. Only an org whose
-            // policies are at most the fixed default (which any policy read
-            // inserts) becomes Auto; configured models keep the stored mode.
-            modelMode: sql`CASE WHEN EXISTS (
-              SELECT 1 FROM ${orgModelPolicies}
-              WHERE ${orgModelPolicies.orgId} = ${args.orgId}
-                AND ${orgModelPolicies.model} <> ${await loadSystemDefaultRunModel(tx)}
-            ) THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
+            // Another writer may have created the row first. Only an org with
+            // no configured non-default model becomes Auto; configured models
+            // keep the stored mode.
+            modelMode: sql`CASE WHEN ${hasConfiguredPolicies} THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
+          // The earlier tier read is not write authority. Stripe can commit
+          // a paid tier before this upsert owns the conflicting metadata row.
+          setWhere: notInArray(orgMetadataCanonicalWrites.tier, [
+            ...PAID_TIERS,
+          ]),
         })
         .returning({
           orgId: orgMetadata.orgId,
@@ -284,6 +504,16 @@ async function finalizeBootstrap(
     },
   });
 
+  if (initialized.length === 0) {
+    // A paid writer won the metadata row. Conflict handling still owns that
+    // row; complete only the Agent reference and preserve its paid snapshot.
+    await tx
+      .update(orgMetadata)
+      .set({ defaultAgentId: agentRow.id, updatedAt: nowDate() })
+      .where(eq(orgMetadata.orgId, args.orgId));
+    return { bootstrapped: true, agentId: agentRow.id };
+  }
+
   await grantOnboardingCredits(
     tx,
     args.orgId,
@@ -296,7 +526,7 @@ async function finalizeBootstrap(
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { get, set },
+    { set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
@@ -325,102 +555,63 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
     );
     signal.throwIfAborted();
 
-    // Retain the actual generation outside the transaction: a newly inserted
-    // parent can roll back after uploading bytes, leaving no row to find later.
-    let instructionsStorage: BootstrapInstructionsStorage | undefined;
-    const cleanupUnclaimedInstructions = async (): Promise<void> => {
-      const attemptedStorage = instructionsStorage;
-      if (!attemptedStorage) {
-        return;
-      }
-      const s3Prefix = await writeDb.transaction(
+    const location = newStorageS3Location(args.orgId);
+    const candidate = { id: location.storageId, s3Prefix: location.s3Prefix };
+    const bootstrap = (async () => {
+      // No canonical parent is reserved and no transaction/lock spans the PUTs.
+      // Every competing preparation has its own logical and physical generation.
+      const volume = await set(
+        prepareAgentInstructionsStorage$,
+        {
+          orgId: args.orgId,
+          agentName: DEFAULT_AGENT_NAME,
+          instructions: SEED_INSTRUCTIONS,
+          storage: candidate,
+        },
+        signal,
+      );
+      return await writeDb.transaction(
         async (tx) => {
-          await lockOrgBootstrap(tx, args.orgId);
-          const identity = and(
-            eq(storages.id, attemptedStorage.id),
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            eq(storages.name, getInstructionsStorageName(DEFAULT_AGENT_NAME)),
+          return await publishBootstrap(
+            tx,
+            { ...args, agentId: reservation.agentId, candidate, volume },
+            signal,
           );
-          const [storage] = await tx
-            .select({ s3Prefix: storages.s3Prefix })
-            .from(storages)
-            .where(identity)
-            .for("update");
-          if (!storage) {
-            // This generation was rolled back or already deleted. A replacement
-            // has its own UUID/prefix and must never be adopted by compensation.
-            return attemptedStorage.s3Prefix;
-          }
-          if (await existingDefaultAgentId(tx, args.orgId)) {
-            return null;
-          }
-          const [deleted] = await tx
-            .delete(storages)
-            .where(identity)
-            .returning({ s3Prefix: storages.s3Prefix });
-          if (!deleted) {
-            throw new Error(
-              "Locked bootstrap instructions Storage disappeared",
-            );
-          }
-          return deleted.s3Prefix;
         },
         { isolationLevel: "read committed" },
       );
-
-      if (!s3Prefix) {
-        return;
-      }
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const objects = await get(listS3ObjectsUnderPrefix(bucket, s3Prefix));
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
+    })();
+    const publication = await onRejection(bootstrap, async () => {
+      // Cancellation ends request work, not the owned compensation obligation.
+      // Preserve the original error even if inventory persistence is unavailable.
+      const cleanup = await settleIncludingAbort(
+        set(
+          cleanupBootstrapCandidate$,
+          { ...args, candidate },
+          AbortSignal.timeout(5000),
         ),
       );
-    };
-
-    const bootstrap = writeDb.transaction(
-      async (tx) => {
-        // Keep the advisory key until every serving/rollback writer owns the
-        // Storage parent before its fresh default-Agent decision.
-        await lockOrgBootstrap(tx, args.orgId);
-        instructionsStorage = await ensureBootstrapInstructionsStorage(
-          tx,
-          args.orgId,
-        );
-        signal.throwIfAborted();
-        const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-        if (existingAgentId) {
-          return { bootstrapped: false, agentId: existingAgentId };
-        }
-
-        await set(
-          writeAgentInstructionsStorageInTransaction$,
-          {
-            tx,
-            orgId: args.orgId,
-            agentName: DEFAULT_AGENT_NAME,
-            instructions: SEED_INSTRUCTIONS,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-
-        return await finalizeBootstrap(tx, {
+      if (!cleanup.ok) {
+        L.warn("Bootstrap candidate cleanup failed", {
           orgId: args.orgId,
-          ownerUserId: args.ownerUserId,
-          agentId: reservation.agentId,
+          storageId: candidate.id,
+          error: cleanup.error,
         });
-      },
-      { isolationLevel: "read committed" },
-    );
-    const result = await onRejection(bootstrap, cleanupUnclaimedInstructions);
+      }
+    });
     signal.throwIfAborted();
+    if (publication.cleanupJobIds.length > 0) {
+      // Inventory is already committed; an interrupted attempt remains retryable.
+      await settleIncludingAbort(
+        set(
+          executeStorageObjectCleanupWork$,
+          { jobIds: publication.cleanupJobIds },
+          AbortSignal.timeout(5000),
+        ),
+      );
+    }
+    signal.throwIfAborted();
+    const result = publication.result;
 
     if (result.bootstrapped) {
       L.debug("Org limited-free bootstrap completed", {

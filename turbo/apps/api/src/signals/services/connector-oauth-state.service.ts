@@ -1,9 +1,10 @@
+import { command } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt, isNotNull, isNull, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
 const storedOAuthStateSelection = Object.freeze({
@@ -275,6 +276,46 @@ export async function claimConnectorOAuthState(
 
   return existingState ? { kind: "invalid" } : { kind: "missing" };
 }
+
+export const claimBuiltinConnectorOAuthState$ = command(
+  async (
+    { set },
+    args: { readonly state: string; readonly connectorSlug: ConnectorSlug },
+    signal: AbortSignal,
+  ): Promise<ConnectorOAuthStateClaimResult<StoredBuiltinOAuthState>> => {
+    const db = set(writeDb$);
+    const target = {
+      kind: "builtin",
+      connectorSlug: args.connectorSlug,
+    } as const;
+    const [claimedState] = await db
+      .delete(connectorOauthStates)
+      .where(
+        and(
+          eq(connectorOauthStates.state, args.state),
+          ...oauthStateTargetConditions(target),
+          isNull(connectorOauthStates.consumedAt),
+          gt(connectorOauthStates.expiresAt, nowDate()),
+        ),
+      )
+      .returning(storedOAuthStateSelection);
+    signal.throwIfAborted();
+    if (claimedState) {
+      const state = narrowStoredOAuthState(claimedState, target);
+      if (!state) {
+        throw new Error("Claimed builtin OAuth state has invalid identity");
+      }
+      return { kind: "usable", state };
+    }
+    const [existingState] = await db
+      .select({ id: connectorOauthStates.id })
+      .from(connectorOauthStates)
+      .where(eq(connectorOauthStates.state, args.state))
+      .limit(1);
+    signal.throwIfAborted();
+    return existingState ? { kind: "invalid" } : { kind: "missing" };
+  },
+);
 
 export async function readCustomConnectorOAuthState(
   db: ReadonlyDb,

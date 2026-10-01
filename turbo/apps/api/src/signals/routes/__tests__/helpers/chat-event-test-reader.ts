@@ -4,12 +4,16 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import {
   chatEventSchema,
   chatThreadEventsContract,
+  chatThreadsContract,
   type ChatEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { expect } from "vitest";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../../chat-threads";
+import type { ApiTestUser } from "./api-bdd";
+import { createRouteMocks } from "./route-test";
 
 const MAX_EVENT_ROWS_PER_PAGE = 50;
 
@@ -94,4 +98,54 @@ export async function readProjectedChatEvents(
     }
     cursor = nextCursor;
   }
+}
+
+type InputPromptEvent = Extract<
+  ChatEvent,
+  { readonly eventType: "input.prompt" }
+>;
+
+/**
+ * Finds the caller's queued input with this exact text part through the
+ * public thread lifecycle feed and thread events. A queued input has no run.
+ */
+export async function findPendingInputEventByText(
+  context: TestContext,
+  args: { readonly actor: ApiTestUser; readonly text: string },
+): Promise<InputPromptEvent | undefined> {
+  createRouteMocks(context).clerk.session(
+    args.actor.userId,
+    args.actor.orgId,
+    args.actor.orgRole,
+  );
+  const headers = { authorization: "Bearer clerk-session" };
+  const lifecycle = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
+      { headers, query: {} },
+    ),
+    [200],
+  );
+  const threadIds = lifecycle.body.events.flatMap((event) => {
+    return event.kind === "created" ? [event.chatThreadId] : [];
+  });
+  const matches: InputPromptEvent[] = [];
+  for (const threadId of threadIds) {
+    const events = await readProjectedChatEvents(context, {
+      threadId,
+      headers,
+    });
+    for (const event of events) {
+      if (
+        event.eventType === "input.prompt" &&
+        event.runId === undefined &&
+        event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === args.text;
+        })
+      ) {
+        matches.push(event);
+      }
+    }
+  }
+  expect(matches.length).toBeLessThanOrEqual(1);
+  return matches[0];
 }

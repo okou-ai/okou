@@ -4,7 +4,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, inArray, type SQL } from "drizzle-orm";
 
-import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
+import { disconnectedPersonalAccountCleanupSql } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 
@@ -130,6 +130,8 @@ export async function transitionAgentRunsToTerminal(
   await tx
     .delete(agentRunConnectorDiagnosticRegistrations)
     .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
-  await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
+  for (const statement of disconnectedPersonalAccountCleanupSql(transitioned)) {
+    await tx.execute(statement);
+  }
   return transitioned;
 }

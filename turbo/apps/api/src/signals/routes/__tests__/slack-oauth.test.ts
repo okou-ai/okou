@@ -6,7 +6,7 @@ import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -14,22 +14,31 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { slackOauthRoutes } from "../slack-oauth";
 import {
   countSlackOrgConnections$,
   deleteSlackConnectOrg$,
-  findSlackOrgConnection$,
   findSlackOrgInstallation$,
   seedSlackConnectOrg$,
   type SlackConnectFixture,
 } from "./helpers/slack-connect";
-import { createFixtureTracker } from "./helpers/route-test";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import {
+  createPublicSlackOrgApi,
+  type PublicSlackOrgOptions,
+  uniqueSlackUserId,
+} from "./helpers/slack-public-install";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { integrationsSlackRoutes } from "../integrations-slack";
+import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
+import { slackConnectRoutes } from "../slack-connect";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
+const slackOrgs = createPublicSlackOrgApi(context);
 const API_ORIGIN = "https://api.okou.ai";
 const WEB_ORIGIN = "https://www.okou.ai";
 const APP_ORIGIN = "https://app.okou.ai";
@@ -168,7 +177,7 @@ describe("Slack OAuth API routes", () => {
     await store.set(deleteSlackConnectOrg$, fixture, context.signal);
   });
 
-  beforeEach(() => {
+  function applyOAuthTestEnv(): void {
     mockEnv("OKOU_WEB_URL", WEB_ORIGIN);
     mockEnv("OKOU_API_BACKEND_URL", undefined);
     mockEnv("APP_URL", APP_ORIGIN);
@@ -183,7 +192,48 @@ describe("Slack OAuth API routes", () => {
       ok: true,
       message_ts: "mock.ephemeral.ts",
     });
+  }
+
+  beforeEach(() => {
+    applyOAuthTestEnv();
   });
+
+  /**
+   * Installs the workspace for an org through the production OAuth install
+   * flow, then restores this file's OAuth environment and drains the
+   * install's background notifications before the scenario starts.
+   */
+  async function installPublicOrg(options: PublicSlackOrgOptions = {}) {
+    const fixture = await slackOrgs.installOrg(options);
+    await flushWaitUntilForTest();
+    applyOAuthTestEnv();
+    context.mocks.slack.chat.postMessage.mockClear();
+    context.mocks.slack.oauth.v2.access.mockClear();
+    return fixture;
+  }
+
+  /** The admin's public Slack integration status for the org. */
+  async function readIntegrationStatus(orgId: string, userId: string) {
+    createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+    return (
+      await accept(
+        setupApp({ context, routes: integrationsSlackRoutes })(
+          integrationsSlackContract,
+        ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      )
+    ).body;
+  }
+
+  /** A fresh org/user/workspace identity with nothing installed. */
+  function unseededIdentity() {
+    return {
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+      slackWorkspaceId: `T_${randomUUID().replace(/-/g, "").slice(0, 10)}`,
+      slackUserId: uniqueSlackUserId(),
+    };
+  }
 
   describe("GET /api/slack/oauth/install", () => {
     it("redirects to Slack OAuth with bot scopes and callback URI", async () => {
@@ -354,9 +404,7 @@ describe("Slack OAuth API routes", () => {
 
   describe("GET /api/slack/oauth/connect", () => {
     it("redirects to Slack OAuth with team and connect state", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
 
       const response = await appRequest(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
@@ -380,9 +428,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("uses the API origin for connect callback URLs", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
 
       const response = await appRequest(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
@@ -400,9 +446,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("includes the pending prompt in connect state when provided", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
 
       const response = await appRequest(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}&prompt=${encodeURIComponent("summarize my inbox")}`,
@@ -421,9 +465,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("truncates long connect prompts to protect OAuth state length", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       const prompt = "x".repeat(1200);
 
       const response = await appRequest(
@@ -437,9 +479,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("truncates connect prompts without splitting Unicode codepoints", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       const prompt = "\u{1F600}".repeat(600);
 
       const response = await appRequest(
@@ -459,9 +499,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("omits prompt from connect state when absent", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
 
       const response = await appRequest(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
@@ -498,18 +536,11 @@ describe("Slack OAuth API routes", () => {
 
   describe("GET /api/integrations/slack/oauth/callback", () => {
     it("stores the official Okou installation and redirects to the app", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
-        teamName: fixture.slackWorkspaceName,
+        teamName: "Test Workspace",
         authedUserId: fixture.slackUserId,
         scope: "chat:write,channels:read",
       });
@@ -530,16 +561,14 @@ describe("Slack OAuth API routes", () => {
         `${APP_ORIGIN}/settings/slack?status=connected`,
       );
 
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        fixture.slackWorkspaceId,
-        context.signal,
-      );
-      expect(installation).toMatchObject({
-        orgId: fixture.orgId,
-        installedByUserId: fixture.userId,
-        botUserId: "B_TEST",
-        botScopes: JSON.stringify(["chat:write", "channels:read"]),
+      // The org now has the installation, with the narrower granted scopes.
+      await expect(
+        readIntegrationStatus(fixture.orgId, fixture.userId),
+      ).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        workspaceName: "Test Workspace",
+        scopeMismatch: true,
       });
       expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -547,15 +576,6 @@ describe("Slack OAuth API routes", () => {
         }),
       );
 
-      const connection = await store.set(
-        findSlackOrgConnection$,
-        {
-          slackWorkspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-        context.signal,
-      );
-      expect(connection).toMatchObject({ userId: fixture.userId });
       await flushWaitUntilForTest();
       const slackMessages = JSON.stringify(
         context.mocks.slack.chat.postMessage.mock.calls,
@@ -565,14 +585,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("keeps an Okou flow on Okou while reusing the official installation identity", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
@@ -594,14 +607,9 @@ describe("Slack OAuth API routes", () => {
       expect(response.headers.get("location")).toContain(
         `${OKOU_APP_ORIGIN}/settings/slack?status=connected`,
       );
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        fixture.slackWorkspaceId,
-        context.signal,
-      );
-      expect(installation).toMatchObject({
-        botUserId: "B_TEST",
-      });
+      await expect(
+        readIntegrationStatus(fixture.orgId, fixture.userId),
+      ).resolves.toMatchObject({ isInstalled: true, isConnected: true });
       expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledWith(
         expect.objectContaining({
           redirect_uri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
@@ -745,14 +753,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("rejects platform install for a non-admin member", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       await seedMembership(fixture.orgId, fixture.userId, "member");
       mockOAuthSuccess({ teamId: fixture.slackWorkspaceId });
       const state = await installStateFor({
@@ -774,14 +775,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("returns a framework error when the platform installer is not an org member", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       mockOAuthSuccess({ teamId: fixture.slackWorkspaceId });
       const state = await installStateFor({
         orgId: fixture.orgId,
@@ -802,17 +796,9 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("creates an unbound installation from an unscoped install state", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
-        teamName: fixture.slackWorkspaceName,
         authedUserId: fixture.slackUserId,
       });
 
@@ -826,12 +812,27 @@ describe("Slack OAuth API routes", () => {
       expect(location).toContain(`w=${fixture.slackWorkspaceId}`);
       expect(location).toContain(`u=${fixture.slackUserId}`);
 
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        fixture.slackWorkspaceId,
-        context.signal,
+      // The installed workspace is not bound to any org: a member cannot
+      // connect to it, only an admin may claim it.
+      createRouteMocks(context).clerk.session(
+        fixture.userId,
+        fixture.orgId,
+        "org:member",
       );
-      expect(installation?.orgId).toBeNull();
+      const memberConnect = await accept(
+        setupApp({ context, routes: slackConnectRoutes })(
+          slackConnectContract,
+        ).connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            requestUserScopes: true,
+            workspaceId: fixture.slackWorkspaceId,
+            slackUserId: fixture.slackUserId,
+          },
+        }),
+        [403],
+      );
+      expect(memberConnect.body.error.message).toContain("Only admins");
     });
 
     it("redirects to the failed page when the install OAuth exchange fails", async () => {
@@ -871,13 +872,6 @@ describe("Slack OAuth API routes", () => {
       expect(decodeURIComponent(location ?? "")).toContain(
         "Failed to complete Slack installation",
       );
-
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        "",
-        context.signal,
-      );
-      expect(installation).toBeUndefined();
     });
 
     it("rejects an install OAuth response without an authenticated user ID", async () => {
@@ -905,28 +899,17 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("rejects a platform install when the workspace belongs to another org", async () => {
-      const originalOrgId = `org_original_${now()}`;
-      const requestingOrgId = `org_requesting_${now()}`;
-      const requestingUserId = `user_requesting_${now()}`;
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          {
-            orgId: originalOrgId,
-            slackWorkspaceId: "T_REJECTED",
-          },
-          context.signal,
-        ),
-      );
-      await seedMembership(requestingOrgId, requestingUserId, "admin");
+      const original = await installPublicOrg({ withConnection: true });
+      const requesting = unseededIdentity();
+      await seedMembership(requesting.orgId, requesting.userId, "admin");
       mockOAuthSuccess({
-        teamId: fixture.slackWorkspaceId,
+        teamId: original.slackWorkspaceId,
         accessToken: "xoxb-requesting-token",
         authedUserId: "U_REQUESTING",
       });
       const state = await installStateFor({
-        orgId: requestingOrgId,
-        userId: requestingUserId,
+        orgId: requesting.orgId,
+        userId: requesting.userId,
       });
 
       const response = await appRequest(
@@ -940,21 +923,18 @@ describe("Slack OAuth API routes", () => {
         "already installed by another organization",
       );
 
-      const installation = await store.set(
-        findSlackOrgInstallation$,
-        fixture.slackWorkspaceId,
-        context.signal,
-      );
-      expect(installation).toMatchObject({ orgId: originalOrgId });
-      const connection = await store.set(
-        findSlackOrgConnection$,
-        {
-          slackWorkspaceId: fixture.slackWorkspaceId,
-          slackUserId: "U_REQUESTING",
-        },
-        context.signal,
-      );
-      expect(connection).toBeUndefined();
+      // The original org keeps its installation and connection; the
+      // requesting org neither gained the workspace nor a connection.
+      await expect(
+        readIntegrationStatus(original.orgId, original.userId),
+      ).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        workspaceName: original.slackWorkspaceName,
+      });
+      await expect(
+        readIntegrationStatus(requesting.orgId, requesting.userId),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
     });
 
     it("updates token and scopes for a same-org platform reinstall", async () => {
@@ -1092,14 +1072,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("sends the pending prompt DM for platform installs when state includes a prompt", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
@@ -1121,14 +1094,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("does not send a pending prompt DM for platform installs without a prompt", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      const fixture = unseededIdentity();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,
@@ -1151,9 +1117,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("replays the signed Okou redirect URI in the connect token exchange", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       await seedMembership(fixture.orgId, fixture.userId, "member");
       const start = await appRequest(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
@@ -1188,9 +1152,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("redirects connect flow OAuth exchange failures to the Slack settings error path", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       const state = await connectStateFor({
         orgId: fixture.orgId,
         userId: fixture.userId,
@@ -1213,14 +1175,26 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("redirects connect flow when no installation exists for the org", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       const state = await connectStateFor({
         orgId: fixture.orgId,
         userId: fixture.userId,
       });
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
+      // An org admin uninstalls the workspace before Slack calls back.
+      createRouteMocks(context).clerk.session(
+        fixture.actor.userId,
+        fixture.orgId,
+        "org:admin",
+      );
+      await accept(
+        setupApp({ context, routes: integrationsSlackRoutes })(
+          integrationsSlackContract,
+        ).disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { action: "uninstall" },
+        }),
+        [200],
+      );
       mockOAuthSuccess({ teamId: "T_MISSING", authedUserId: "U_MISSING" });
 
       const response = await appRequest(
@@ -1236,9 +1210,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("redirects connect flow when Slack returns a different workspace", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       mockOAuthSuccess({
         teamId: "T_DIFFERENT",
         authedUserId: fixture.slackUserId,
@@ -1261,9 +1233,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("redirects explicit platform reinstalls back to the Works page", async () => {
-      const fixture = await track(
-        store.set(seedSlackConnectOrg$, {}, context.signal),
-      );
+      const fixture = await installPublicOrg();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
         teamId: fixture.slackWorkspaceId,

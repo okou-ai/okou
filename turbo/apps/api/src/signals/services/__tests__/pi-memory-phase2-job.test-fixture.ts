@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { captureFixtureRunBilling } from "../billing-run-fixture";
 
 import { and, eq, inArray } from "drizzle-orm";
 import { onTestFinished } from "vitest";
@@ -404,9 +405,8 @@ export async function insertPhase2CandidatesWithSources(
     await db()
       .insert(agentSessions)
       .values({ id: sessionId, orgId: scope.orgId, userId: scope.userId });
-    await db()
-      .insert(agentRuns)
-      .values({
+    await db().transaction(async (tx) => {
+      await tx.insert(agentRuns).values({
         id: source.sourceRunId,
         sessionId,
         orgId: scope.orgId,
@@ -418,6 +418,8 @@ export async function insertPhase2CandidatesWithSources(
         selectedModel: "gpt-6-luna",
         ...binding,
       });
+      await captureFixtureRunBilling(tx, source.sourceRunId);
+    });
     onTestFinished(async () => {
       await db().delete(agentSessions).where(eq(agentSessions.id, sessionId));
     });

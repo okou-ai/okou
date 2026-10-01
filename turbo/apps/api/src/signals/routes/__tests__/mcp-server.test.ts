@@ -69,7 +69,6 @@ import { http, HttpResponse } from "msw";
 import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
-
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -125,6 +124,7 @@ import {
   setupConnectedDiscordActor,
 } from "./helpers/discord-fixture";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
@@ -137,7 +137,6 @@ import {
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-
 const context = testContext();
 const resource = "https://api.mcp.example.test/mcp";
 const issuer = "https://clerk.mcp.example.test";
@@ -1010,6 +1009,46 @@ async function nativeRunnerChatActor(
     },
   ]);
   return actor;
+}
+
+async function assistantMessagesFixture(
+  prompt: string,
+  messages: readonly string[],
+) {
+  const auth = fixture();
+  const f = createChatEventsFixture(context);
+  const actor = await nativeRunnerChatActor(f, auth);
+  const sent = await f.sendChatRun(actor.actor, {
+    agentId: actor.agentId,
+    model: NATIVE_RUNNER_MODEL,
+    prompt,
+  });
+  onTestFinished(async () => {
+    await f.cancelChatRun(actor.actor, sent.runId);
+  });
+  const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+  await f.webhooks.requestAgentEvents(
+    {
+      runId: sent.runId,
+      events: messages.map((text, sequenceNumber) => {
+        return {
+          type: "assistant",
+          sequenceNumber,
+          message: { content: [{ type: "text", text }] },
+        };
+      }),
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  await flushWaitUntilForTest();
+  return {
+    auth,
+    actor: actor.actor,
+    chat: f.chat,
+    threadId: sent.threadId,
+    runId: sent.runId,
+  };
 }
 
 async function chatRunFixture() {
@@ -4555,15 +4594,16 @@ describe("MCP chat mutations", () => {
 });
 
 describe("MCP canonical message reads", () => {
-  it("pages latest and earlier messages with genuine references and the original input time after rejection", async () => {
-    const f = await messageFixture();
-    const sent = await f.send("Message 0");
-    for (let index = 1; index < 23; index++) {
-      await f.send(`Message ${index}`, sent.threadId);
-    }
+  it("pages latest and earlier messages with the default 20-message limit", async () => {
+    const f = await assistantMessagesFixture(
+      "Message 0",
+      Array.from({ length: 22 }, (_, index) => {
+        return `Message ${index + 1}`;
+      }),
+    );
     const token = f.auth.token();
-    const canonical = await f.chat.listThreadEvents(f.actor, sent.threadId);
-    const latest = await getMessages(token, { threadId: sent.threadId });
+    const canonical = await f.chat.listThreadEvents(f.actor, f.threadId);
+    const latest = await getMessages(token, { threadId: f.threadId });
     expect(latest.messages).toHaveLength(20);
     expect(
       latest.messages.map((message) => {
@@ -4577,7 +4617,7 @@ describe("MCP canonical message reads", () => {
     expect(latest.newerCursor).toBeNull();
     expect(latest.olderCursor).not.toBeNull();
     const older = await getMessages(token, {
-      threadId: sent.threadId,
+      threadId: f.threadId,
       cursor: latest.olderCursor,
     });
     expect(
@@ -4596,7 +4636,46 @@ describe("MCP canonical message reads", () => {
     ).toBe(23);
     for (const message of all) {
       const original = canonical.events.find((event) => {
-        return event.id === message.ref.eventId;
+        return (
+          (event.eventType === "input.prompt" ||
+            event.eventType === "output.message") &&
+          event.runId === f.runId &&
+          chatEventDisplayText(event) === message.text
+        );
+      });
+      expect(original).toBeDefined();
+      expect(message.ref).toStrictEqual({
+        threadId: f.threadId,
+        eventId: original?.id,
+        seqId: original?.seqId,
+      });
+      expect(new URL(message.url).pathname).toBe(`/chats/${f.threadId}`);
+    }
+  });
+
+  it("preserves rejected input references and original timestamps across message pages", async () => {
+    const f = await messageFixture();
+    const sent = await f.send("Message 0");
+    await f.send("Message 1", sent.threadId);
+    const token = f.auth.token();
+    const canonical = await f.chat.listThreadEvents(f.actor, sent.threadId);
+    const args = { threadId: sent.threadId, limit: 1 };
+    const latest = await getMessages(token, args);
+    expect(latest.messages).toHaveLength(1);
+    expect(latest.messages[0]?.text).toBe("Message 1");
+    expect(latest.olderCursor).not.toBeNull();
+    const older = await getMessages(token, {
+      ...args,
+      cursor: latest.olderCursor,
+    });
+    expect(older.messages).toHaveLength(1);
+    expect(older.messages[0]?.text).toBe("Message 0");
+    for (const message of [...older.messages, ...latest.messages]) {
+      const original = canonical.events.find((event) => {
+        return (
+          event.eventType === "input.rejected" &&
+          chatEventDisplayText(event) === message.text
+        );
       });
       const initialInput = canonical.events.find((event) => {
         return (
@@ -5653,12 +5732,73 @@ describe("MCP canonical message reads", () => {
 });
 
 describe("MCP message search", () => {
-  it("pages beyond 25 matches with real references and leaves thread state unchanged", async () => {
-    const f = await messageFixture();
+  it("pages beyond 25 matches without losing or repeating canonical references", async () => {
     const query = "mcpsearchpaging";
+    const f = await assistantMessagesFixture(
+      "Search the assistant output",
+      Array.from({ length: 29 }, (_, index) => {
+        return `${query} ${index}`;
+      }),
+    );
+    const token = f.auth.token();
+    await projectSearchMessages([f.threadId]);
+    const canonical = await f.chat.listThreadEvents(f.actor, f.threadId);
+    const source = canonical.events
+      .filter((event) => {
+        return event.eventType === "output.message";
+      })
+      .map((event) => {
+        return {
+          ref: { threadId: f.threadId, eventId: event.id, seqId: event.seqId },
+          createdAt: event.createdAt,
+        };
+      });
+    source.sort((left, right) => {
+      return (
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.ref.seqId - left.ref.seqId
+      );
+    });
+    const args = { query, limit: 7 };
+    let page = await searchMessages(token, args);
+    expect(page.matches).toHaveLength(7);
+    expect(page.scanLimited).toBeFalsy();
+    const matches = [...page.matches];
+    while (page.nextCursor !== null) {
+      expect(matches.length).toBeLessThan(29);
+      const result = await callTool(token, "search_chat_messages", {
+        ...args,
+        cursor: page.nextCursor,
+      });
+      expect(result.isError).not.toBeTruthy();
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+        512 * 1024,
+      );
+      page = mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
+      expect(page.scanLimited).toBeFalsy();
+      matches.push(...page.matches);
+    }
+    expect(
+      matches.map(({ ref, sourceEventAt }) => {
+        return { ref, createdAt: new Date(sourceEventAt).toISOString() };
+      }),
+    ).toStrictEqual(source);
+    expect(matches).toHaveLength(29);
+    expect(
+      new Set(
+        matches.map(({ ref }) => {
+          return ref.eventId;
+        }),
+      ).size,
+    ).toBe(29);
+  });
+
+  it("resolves rejected search references across threads without changing their state", async () => {
+    const f = await messageFixture();
+    const query = "mcpsearchreferences";
     const first = await withMockNowForTest(now(), async () => {
       const sent = await f.send(`${query} 0`);
-      for (let index = 1; index < 28; index++) {
+      for (let index = 1; index < 3; index++) {
         await f.send(`${query} ${index}`, sent.threadId);
       }
       const second = await f.send(`${query} another thread`);
@@ -5700,11 +5840,13 @@ describe("MCP message search", () => {
         right.ref.seqId - left.ref.seqId
       );
     });
-    const args = { query, limit: 7 };
+    const args = { query, limit: 2 };
     let page = await searchMessages(token, args);
+    expect(page.matches).toHaveLength(2);
+    expect(page.scanLimited).toBeFalsy();
     const matches = [...page.matches];
     while (page.nextCursor !== null) {
-      expect(matches.length).toBeLessThan(29);
+      expect(matches.length).toBeLessThan(4);
       const result = await callTool(token, "search_chat_messages", {
         ...args,
         cursor: page.nextCursor,
@@ -5722,14 +5864,14 @@ describe("MCP message search", () => {
         return { ref, createdAt: new Date(sourceEventAt).toISOString() };
       }),
     ).toStrictEqual(source);
-    expect(matches).toHaveLength(29);
+    expect(matches).toHaveLength(4);
     expect(
       new Set(
         matches.map(({ ref }) => {
           return ref.eventId;
         }),
       ).size,
-    ).toBe(29);
+    ).toBe(4);
     for (const match of matches) {
       expect(match.agent.agentId).toBe(f.agent.agentId);
       expect(match.excerpt).toMatchObject({

@@ -1,9 +1,14 @@
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 
 import type { Db } from "../external/db";
+import {
+  workflowAutomationSnapshotColumns,
+  type WorkflowAutomationSnapshot,
+} from "./workflow-automation-snapshot";
 
 export function workflowAutomationColumns() {
   return {
+    ...workflowAutomationSnapshotColumns(),
     id: workflowAutomations.id,
     orgId: workflowAutomations.orgId,
     workflowId: workflowAutomations.workflowId,
@@ -41,7 +46,10 @@ export function workflowAutomationColumns() {
 export async function insertWorkflowAutomation(
   db: Db,
   values: typeof workflowAutomations.$inferInsert,
-): Promise<typeof workflowAutomations.$inferSelect | undefined> {
+): Promise<
+  | (typeof workflowAutomations.$inferSelect & WorkflowAutomationSnapshot)
+  | undefined
+> {
   const [row] = await db
     .insert(workflowAutomations)
     .values(values)

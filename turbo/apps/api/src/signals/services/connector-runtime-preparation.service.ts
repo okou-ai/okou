@@ -1,40 +1,40 @@
 /** Runtime connector capability shared by launch preparation and runtime sync. */
-import {
-  type ExpandedFirewallConfig,
-  type FirewallPolicies,
-  extractSecretNamesFromApis,
-  type FirewallPolicy,
-  canonicalizeFirewallBaseUrl,
-  validateBaseUrlHostPolicy,
-  type ExecutionFirewallInlineEntry,
-  type NetworkPolicy,
-  type Firewall,
-} from "@okouai/connectors/firewall-types";
-import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
-import { customConnectorSlugSchema } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { customConnectorSlugSchema } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
+import {
+  type ExecutionFirewallInlineEntry,
+  type ExpandedFirewallConfig,
+  type Firewall,
+  type FirewallPolicies,
+  type FirewallPolicy,
+  type NetworkPolicy,
+  canonicalizeFirewallBaseUrl,
+  extractSecretNamesFromApis,
+  validateBaseUrlHostPolicy,
+} from "@okouai/connectors/firewall-types";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { safeSync } from "../utils";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { CustomConnectorCredentialAccess } from "./custom-connector-credential-access.service";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
   type CustomConnectorPermissionBundle,
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
 import {
+  CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
   CustomConnectorRuntimePrefixError,
+  type CustomConnectorStoredValueRow,
   customConnectorInternalName,
   customConnectorPrefixTemplateVariableKeys,
-  type CustomConnectorStoredValueRow,
-  renderCustomConnectorTemplateForRuntime,
-  CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
   customConnectorValueMarkerKey,
   renderCustomConnectorRuntimePrefix,
+  renderCustomConnectorTemplateForRuntime,
 } from "./custom-connector.service";
-import { orderByCustomConnectorId } from "./custom-connector-order";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
-import { safeSync } from "../utils";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import { networkPolicyForFirewallPolicy } from "./firewall-network-policy.service";
-import type { CustomConnectorCredentialAccess } from "./custom-connector-credential-access.service";
 
 export interface CustomConnectorRuntimeContext {
   readonly firewalls: readonly ExpandedFirewallConfig[];

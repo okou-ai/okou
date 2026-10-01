@@ -227,6 +227,11 @@ interface ForwardedInternalCallback {
 interface SlackAppInstallOptions {
   readonly teamId?: string;
   readonly installerSlackUserId?: string;
+  /** Bot token Slack returns from the install exchange. */
+  readonly botToken?: string;
+  /** Granted bot scopes; `null` models an exchange that reports none. */
+  readonly botScopes?: string | null;
+  readonly teamName?: string;
 }
 
 interface SlackAppInstallation {
@@ -1043,13 +1048,20 @@ export function createBddIntegrationApi(context: TestContext) {
       if (actor) {
         authenticate(context, routeMocks, actor);
       }
+      const botScopes =
+        options.botScopes === undefined
+          ? SLACK_APP_BOT_SCOPES
+          : options.botScopes;
       context.mocks.slack.oauth.v2.access.mockResolvedValueOnce({
         ok: true,
-        access_token: `xoxb-bdd-${teamId}`,
+        access_token: options.botToken ?? `xoxb-bdd-${teamId}`,
         bot_user_id: botUserId,
-        team: { id: teamId, name: `BDD Slack App ${teamId}` },
+        team: {
+          id: teamId,
+          name: options.teamName ?? `BDD Slack App ${teamId}`,
+        },
         authed_user: { id: installerSlackUserId },
-        scope: SLACK_APP_BOT_SCOPES,
+        ...(botScopes === null ? {} : { scope: botScopes }),
       });
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,

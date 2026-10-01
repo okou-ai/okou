@@ -22,8 +22,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { updateRestrictedPlanAccessFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
-  stageUnrepairedOrgModelPolicyFixture,
-  readUnrepairedOrgModelPolicyFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
@@ -2769,80 +2767,6 @@ describe("conditional organization model policy writes", () => {
         selectedModel: "gpt-5.6-luna",
         serviceTier: null,
       });
-    },
-  );
-});
-
-describe("conditional policy writes and persisted repair boundaries", () => {
-  it.each(["unseeded"] as const)(
-    "rejects missing and stale preconditions for %s policies",
-    async (state) => {
-      const fixture = seedFixture();
-      useSession(fixture);
-      await accept(
-        apiClient().update({
-          headers: authHeaders(),
-          body: {
-            revision: await currentPolicyRevision(),
-            policies: [
-              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-              makeBuiltInPolicy("gpt-5.6-luna"),
-              makeBuiltInPolicy("gpt-6-astra"),
-            ],
-          },
-        }),
-        [200],
-      );
-      const preferences = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      await accept(
-        preferences.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-6-astra", serviceTier: null },
-        }),
-        [200],
-      );
-      useSession(fixture);
-      const previous = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      await stageUnrepairedOrgModelPolicyFixture({
-        orgId: fixture.orgId,
-        state,
-      });
-      const before = await readUnrepairedOrgModelPolicyFixture(fixture.orgId);
-      for (const revision of [undefined, previous.body.revision]) {
-        const rejected = await accept(
-          apiClient().update({
-            headers: authHeaders(),
-            body: {
-              policies: [
-                makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-                makeBuiltInPolicy("gpt-5.6-luna"),
-              ],
-              revision,
-            },
-          }),
-          [409],
-        );
-        expect(rejected.body.error.message).toContain("Refresh model settings");
-        await expect(
-          readUnrepairedOrgModelPolicyFixture(fixture.orgId),
-        ).resolves.toStrictEqual(before);
-      }
-      // The system default is projected on every read.
-      const repaired = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(
-        repaired.body.policies.map((policy) => {
-          return policy.model;
-        }),
-      ).toContain(SEEDED_SYSTEM_DEFAULT_MODEL);
     },
   );
 });

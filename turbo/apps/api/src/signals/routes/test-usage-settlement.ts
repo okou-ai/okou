@@ -9,14 +9,10 @@ import { asc, eq } from "drizzle-orm";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import type { RouteEntry } from "../route-entry";
 import { checkBillableOperationCredits$ } from "../services/billable-operation-admission.service";
 import { createUsagePackCreditGrant } from "../services/usage-pack-credit.service";
-import {
-  processOrgUsageEvents$,
-  processOrgUsageEventsInTransaction,
-} from "../services/credit-usage.service";
+import { processOrgUsageEvents$ } from "../services/credit-usage.service";
 import { checkOrgCreditsForRunAdmission } from "../services/run-admission.service";
 import { loadModelCatalog } from "../services/model-catalog.service";
 import {
@@ -24,10 +20,8 @@ import {
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
-import { settle } from "../utils";
 
 const body$ = bodyResultOf(testUsageSettlementContract.process);
-const rollbackBody$ = bodyResultOf(testUsageSettlementContract.rollback);
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
 const cleanupBody$ = bodyResultOf(testUsageSettlementContract.cleanup);
 const createGrantBody$ = bodyResultOf(testUsageSettlementContract.createGrant);
@@ -49,48 +43,6 @@ const processUsageSettlement$ = command(
     await set(processOrgUsageEvents$, bodyResult.data.org_id, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
-  },
-);
-
-class IntentionalUsageSettlementRollback extends Error {}
-
-const rollbackUsageSettlement$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-    const bodyResult = await get(rollbackBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const db = set(writeDb$);
-    const pricingResolution = get(usagePricingResolution$);
-    const result = await settle(
-      db.transaction(async (tx) => {
-        await processOrgUsageEventsInTransaction(
-          tx,
-          bodyResult.data.org_id,
-          pricingResolution,
-          signal,
-        );
-        // The same financial operation has run, but its transaction has not
-        // committed. Throwing here must roll back event, window and wallet.
-        throw new IntentionalUsageSettlementRollback();
-      }),
-      signal,
-    );
-    if (
-      result.ok ||
-      !(result.error instanceof IntentionalUsageSettlementRollback)
-    ) {
-      throw result.ok
-        ? new Error("Expected usage settlement rollback")
-        : result.error;
-    }
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { rolled_back: true as const } };
   },
 );
 
@@ -290,10 +242,6 @@ export const testUsageSettlementRoutes: readonly RouteEntry[] = [
   {
     route: testUsageSettlementContract.process,
     handler: processUsageSettlement$,
-  },
-  {
-    route: testUsageSettlementContract.rollback,
-    handler: rollbackUsageSettlement$,
   },
   {
     route: testUsageSettlementContract.setup,

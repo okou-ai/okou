@@ -1,10 +1,12 @@
 import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 
 import {
+  importReference,
   isDatabaseExpression,
   isDrizzleExecuteCall,
   memberName,
   propertyName,
+  resolveLocalExpression,
 } from "../syntax.ts";
 import { createRule } from "../utils.ts";
 
@@ -120,6 +122,47 @@ function executeUsage(node: TSESTree.CallExpression): ExecuteUsage {
   return { kind: "raw-result", assertion };
 }
 
+function isRuntimeDecoded(
+  sourceCode: Parameters<typeof importReference>[0],
+  node: TSESTree.CallExpression,
+): boolean {
+  const awaited = node.parent;
+  if (awaited.type !== AST_NODE_TYPES.AwaitExpression) {
+    return false;
+  }
+  const decoder = awaited.parent;
+  if (
+    decoder.type !== AST_NODE_TYPES.CallExpression ||
+    decoder.arguments.length !== 2 ||
+    decoder.arguments[1] !== awaited ||
+    decoder.arguments[0]?.type === AST_NODE_TYPES.SpreadElement
+  ) {
+    return false;
+  }
+  const callee = resolveLocalExpression(sourceCode, decoder.callee);
+  const identifier =
+    callee.type === AST_NODE_TYPES.Identifier
+      ? callee
+      : callee.type === AST_NODE_TYPES.MemberExpression
+        ? resolveLocalExpression(sourceCode, callee.object)
+        : null;
+  if (identifier?.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  const imported = importReference(sourceCode, identifier);
+  return (
+    imported !== null &&
+    !imported.isTypeOnly &&
+    imported.source.startsWith(".") &&
+    /(?:^|\/)lib\/db-raw-rows(?:\.[cm]?[jt]s)?$/u.test(imported.source) &&
+    (callee.type === AST_NODE_TYPES.Identifier
+      ? imported.importedName === "parseRawRows"
+      : imported.importedName === "*" &&
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        memberName(callee) === "parseRawRows")
+  );
+}
+
 export const requireExecuteRowSchema = createRule({
   name: "require-execute-row-schema",
   defaultOptions: [],
@@ -135,7 +178,7 @@ export const requireExecuteRowSchema = createRule({
       rowTypeArgument:
         "Drizzle execute row generics are compile-only. Remove the type argument and use executeRawRows(...) with a runtime schema.",
       rawResult:
-        "Do not consume raw rows from Drizzle execute. Use executeRawRows(...) with a runtime schema; direct execute is only for discarded results or rowCount.",
+        "Do not consume raw rows from Drizzle execute. Use executeRawRows(...) or parseRawRows(schema, await tx.execute(...)) with a runtime schema; otherwise direct execute is only for discarded results or rowCount.",
       assertedResult:
         "A TypeScript assertion does not validate a Drizzle execute result. Decode rows with executeRawRows(...) instead.",
       executeReference:
@@ -195,7 +238,10 @@ export const requireExecuteRowSchema = createRule({
             messageId: "assertedResult",
           });
         }
-        if (usage.kind === "raw-result") {
+        if (
+          usage.kind === "raw-result" &&
+          !isRuntimeDecoded(context.sourceCode, node)
+        ) {
           context.report({ node, messageId: "rawResult" });
         }
       },

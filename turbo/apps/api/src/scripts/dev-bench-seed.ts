@@ -18,12 +18,15 @@ import {
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
+import { createStore } from "ccstate";
+import { insertBenchmarkRunBatch$ } from "./benchmark-run-seed";
 import { closeDbPool, db } from "../lib/db";
 import { optionalEnv } from "../lib/env";
 import { normalizeRunMetadata } from "../signals/services/agent-run-metadata-write.service";
 import { webChatContextId } from "../signals/services/web-chat-queue-context.service";
 import { onRejection } from "../signals/utils";
 
+const store = createStore();
 const BULK_INSERT_CHUNK = 500;
 const SCRIPT_MARKER = "dev-bench-seed";
 const ALLOW_NON_LOCAL_ENV = "DEV_BENCH_SEED_ALLOW_NON_LOCAL";
@@ -925,7 +928,7 @@ async function insertProfileRows(
   rows: BuiltProfileRows,
 ): Promise<void> {
   await chunkedInsert(rows.runRows, (chunk) => {
-    return database.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
   const eventRows = rows.eventRows.map((row) => {
     const seqId = row.seqId;

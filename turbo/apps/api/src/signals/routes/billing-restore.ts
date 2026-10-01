@@ -49,6 +49,9 @@ const restoreAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (!result.ok) {
+    if (result.reason === "billing_changed") {
+      return conflict("Billing changed while restoring; refresh and try again");
+    }
     if (result.reason === "no_subscription") {
       return conflict("Org has no active subscription");
     }

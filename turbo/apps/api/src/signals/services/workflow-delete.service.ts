@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { lockAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
@@ -196,7 +196,6 @@ async function lockWorkflowForDeletion(tx: Tx, args: DeleteWorkflowInput) {
 
   return workflow;
 }
-
 export const deleteWorkflow$ = command(
   async (
     { set },
@@ -204,7 +203,6 @@ export const deleteWorkflow$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const writeDb = set(writeDb$);
-
     const result = await writeDb.transaction(async (tx) => {
       const workflow = await lockWorkflowForDeletion(tx, args);
       if (!workflow) {
@@ -225,7 +223,6 @@ export const deleteWorkflow$ = command(
           "Uninstall Official Workflows through the Official installation endpoint",
         );
       }
-
       const automations = await tx
         .select({
           orgId: workflowAutomations.orgId,
@@ -236,9 +233,7 @@ export const deleteWorkflow$ = command(
         })
         .from(workflowAutomations)
         .where(eq(workflowAutomations.workflowId, workflow.id));
-
       await tx.delete(workflows).where(eq(workflows.id, workflow.id));
-
       const storageName = getCustomSkillStorageName(workflow.id);
       const [storage] = await tx
         .select({ id: storages.id, s3Prefix: storages.s3Prefix })
@@ -251,19 +246,16 @@ export const deleteWorkflow$ = command(
           ),
         )
         .limit(1);
-
       if (storage) {
         // Stable-context publishers lock resource parents before the head.
         // Delete in the same parent-before-head order so a publisher holding a
         // Storage key-share lock cannot deadlock with Workflow invalidation.
         await tx.delete(storages).where(eq(storages.id, storage.id));
       }
-
       await retireDeletedWorkflowStableContext(tx, {
         orgId: args.orgId,
         workflow,
       });
-
       return {
         deleted: true as const,
         s3Prefix: storage?.s3Prefix ?? null,
@@ -271,20 +263,17 @@ export const deleteWorkflow$ = command(
       };
     });
     signal.throwIfAborted();
-
     if (!result.deleted) {
       return false;
     }
-
-    await reconcileAutomationEventWatches(
+    await set(
+      reconcileAutomationEventWatches$,
       {
-        db: writeDb,
         automations: result.automations,
       },
       signal,
     );
     signal.throwIfAborted();
-
     if (result.s3Prefix) {
       await set(
         purgeDeletedStoragePrefix$,
@@ -295,7 +284,6 @@ export const deleteWorkflow$ = command(
         signal,
       );
     }
-
     return true;
   },
 );

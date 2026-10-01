@@ -1,21 +1,24 @@
-import { Buffer } from "node:buffer";
-import { OAuth2Client } from "google-auth-library";
-import { command } from "ccstate";
-import { and, eq, isNotNull, or } from "drizzle-orm";
-import { z } from "zod";
 import { googleMeetTranscriptGeneratedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   googleWorkspaceEventSubscriptionStates,
   googleWorkspaceProcessedEvents,
 } from "@okouai/db/schema/google-workspace-event";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
+import { OAuth2Client } from "google-auth-library";
+import { Buffer } from "node:buffer";
+import { z } from "zod";
+import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
 import { optionalEnv } from "../../lib/env";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { nowDate } from "../../lib/time";
 import {
   bestEffort,
   safeJsonParse,
@@ -23,27 +26,25 @@ import {
   settleIncludingAbort,
   tapError,
 } from "../utils";
+import { AutomationEventSourceTiming } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import {
-  AutomationEventSourceTiming,
-  type AutomationEventRunTiming,
-} from "./automation-event-source-timing.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type {
-  AutomationRow,
-  WorkflowQueueAdmissionTransaction,
-} from "./workflow-automation-enqueue.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { lockBuiltinConnectorState } from "./auth-state-lock.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  GoogleMeetAutomationSourceChangedError,
+  persistGoogleMeetWorkflowSource,
+} from "./workflow-google-meet-queue.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
 const GOOGLE_WORKSPACE_EVENTS_API_BASE =
@@ -469,67 +470,58 @@ async function loadWorkspaceSubscriptionState(
   return state ?? null;
 }
 
-async function persistWorkspaceSubscriptionState(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly targetResource: string;
-    readonly eventTypes: readonly string[];
-    readonly topicName: string;
-    readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
-    readonly currentTime: Date;
-  },
-  signal: AbortSignal,
-): Promise<GoogleWorkspaceSubscriptionStateRow> {
+/**
+ * Conditional unique upsert of one subscription state: it applies only while
+ * the account exists and, when required, a consumer is live.
+ */
+function googleMeetSubscriptionPublicationSql(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly targetResource: string;
+  readonly eventTypes: readonly string[];
+  readonly topicName: string;
+  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly currentTime: Date;
+  readonly consumerCondition: SQL | undefined;
+}) {
   const expireTime = subscriptionExpireTime(
     args.subscription,
     args.currentTime,
   );
-  const [state] = await args.db
-    .insert(googleWorkspaceEventSubscriptionStates)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-      provider: "google-meet",
-      targetResource: args.targetResource,
-      eventTypes: args.eventTypes,
-      eventTypesKey: eventTypesKey(args.eventTypes),
-      subscriptionName: args.subscription.name,
-      pubsubTopic: args.topicName,
-      state: args.subscription.state ?? null,
-      expireTime,
-      lastRenewedAt: args.currentTime,
-      needsRepair: false,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .onConflictDoUpdate({
-      target: [
-        googleWorkspaceEventSubscriptionStates.connectorId,
-        googleWorkspaceEventSubscriptionStates.provider,
-        googleWorkspaceEventSubscriptionStates.targetResource,
-        googleWorkspaceEventSubscriptionStates.pubsubTopic,
-        googleWorkspaceEventSubscriptionStates.eventTypesKey,
-      ],
-      set: {
-        subscriptionName: args.subscription.name,
-        eventTypes: args.eventTypes,
-        state: args.subscription.state ?? null,
-        expireTime,
-        lastRenewedAt: args.currentTime,
-        needsRepair: false,
-        updatedAt: args.currentTime,
-      },
-    })
-    .returning();
-  signal.throwIfAborted();
-  if (!state) {
-    throw new Error("Failed to persist Google Workspace subscription state");
-  }
-  return state;
+  const timestamp = sql`${args.currentTime.toISOString()}::timestamp`;
+  const accountCondition = and(
+    eq(connectors.id, args.connectorId),
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+  );
+  const consumerGate =
+    args.consumerCondition === undefined
+      ? sql`TRUE`
+      : sql`EXISTS (SELECT 1 FROM ${workflowAutomations} WHERE ${args.consumerCondition})`;
+  return sql`INSERT INTO ${googleWorkspaceEventSubscriptionStates} (
+      org_id, user_id, connector_id, provider, target_resource, event_types,
+      event_types_key, subscription_name, pubsub_topic, state, expire_time,
+      last_renewed_at, needs_repair, created_at, updated_at
+    )
+    SELECT ${args.orgId}, ${args.userId}, ${args.connectorId}::uuid,
+      'google-meet', ${args.targetResource},
+      ${JSON.stringify(args.eventTypes)}::jsonb, ${eventTypesKey(args.eventTypes)},
+      ${args.subscription.name}, ${args.topicName},
+      ${args.subscription.state ?? null}, ${expireTime.toISOString()}::timestamp,
+      ${timestamp}, false, ${timestamp}, ${timestamp}
+    WHERE EXISTS (SELECT 1 FROM ${connectors} WHERE ${accountCondition})
+      AND ${consumerGate}
+    ON CONFLICT (connector_id, provider, target_resource, pubsub_topic, event_types_key)
+    DO UPDATE SET
+      subscription_name = EXCLUDED.subscription_name,
+      event_types = EXCLUDED.event_types,
+      state = EXCLUDED.state,
+      expire_time = EXCLUDED.expire_time,
+      last_renewed_at = EXCLUDED.last_renewed_at,
+      needs_repair = false,
+      updated_at = EXCLUDED.updated_at
+    RETURNING id`;
 }
 
 async function createWorkspaceSubscription(
@@ -658,6 +650,11 @@ async function deletePreparedGoogleMeetSubscription(
   signal.throwIfAborted();
 }
 
+/**
+ * Best-effort remote cleanup after an account deletion committed. Skips a
+ * subscription that local state has since adopted; a concurrent adoption after
+ * this read may lose notifications until repair (accepted gap).
+ */
 export async function deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
   args: {
     readonly db: Db;
@@ -665,38 +662,21 @@ export async function deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  let cleanupError: unknown = null;
-  await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.pending.orgId,
-      userId: args.pending.userId,
-      connectorSlug: "google-meet",
-    });
-    signal.throwIfAborted();
-    const [adopted] = await tx
-      .select({ id: googleWorkspaceEventSubscriptionStates.id })
-      .from(googleWorkspaceEventSubscriptionStates)
-      .where(
-        eq(
-          googleWorkspaceEventSubscriptionStates.subscriptionName,
-          args.pending.subscriptionName,
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (adopted) {
-      return;
-    }
-    const deleted = await settleIncludingAbort(
-      bestEffort(deletePreparedGoogleMeetSubscription(args.pending, signal)),
-    );
-    if (!deleted.ok) {
-      cleanupError = deleted.error;
-    }
-  });
-  if (cleanupError !== null) {
-    throw cleanupError;
+  const [adopted] = await args.db
+    .select({ id: googleWorkspaceEventSubscriptionStates.id })
+    .from(googleWorkspaceEventSubscriptionStates)
+    .where(
+      eq(
+        googleWorkspaceEventSubscriptionStates.subscriptionName,
+        args.pending.subscriptionName,
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (adopted) {
+    return;
   }
+  await deletePreparedGoogleMeetSubscription(args.pending, signal);
 }
 
 async function listWorkspaceSubscriptions(
@@ -829,7 +809,24 @@ type GoogleMeetSubscriptionReconcileResult =
     }
   | { readonly kind: "bad_request"; readonly message: string };
 
-async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
+interface GoogleMeetSubscriptionPublication {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly targetResource: string;
+  readonly eventTypes: readonly string[];
+  readonly topicName: string;
+  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly currentTime: Date;
+  readonly accessToken: string;
+}
+
+/**
+ * Prepares the remote Workspace Events subscription outside any transaction.
+ * Returns the subscription to publish, or a terminal result. Replacement and
+ * repair may miss notifications (accepted, as for Calendar).
+ */
+async function prepareGoogleMeetTranscriptGeneratedSubscription(
   args: {
     readonly db: Db;
     readonly orgId: string;
@@ -840,7 +837,12 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
 ): Promise<
   | {
       readonly kind: "ok";
-      readonly action: "unchanged" | "created" | "renewed";
+      readonly action: "unchanged";
+    }
+  | {
+      readonly kind: "prepared";
+      readonly created: boolean;
+      readonly publication: GoogleMeetSubscriptionPublication;
     }
   | { readonly kind: "bad_request"; readonly message: string }
 > {
@@ -935,9 +937,10 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
     };
   }
 
-  await persistWorkspaceSubscriptionState(
-    {
-      db: args.db,
+  return {
+    kind: "prepared",
+    created,
+    publication: {
       orgId: args.orgId,
       userId: args.userId,
       connectorId: accessResult.access.connectorId,
@@ -946,13 +949,40 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
       topicName: topicResult.topicName,
       subscription: subscription.value,
       currentTime,
+      accessToken: accessResult.access.accessToken,
     },
-    signal,
-  );
-  return {
-    kind: "ok",
-    action: created ? "created" : "renewed",
   };
+}
+
+/** Meet automations of one owner that target one connector, in any state. */
+function googleMeetConnectorAutomationsCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+}) {
+  return and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.kind, "event"),
+    eq(
+      workflowAutomations.eventType,
+      GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+    ),
+    eq(workflowAutomations.eventConnectorId, args.connectorId),
+  );
+}
+
+function googleMeetConsumerStateCondition(allowStagedOfficialTarget: boolean) {
+  return allowStagedOfficialTarget
+    ? or(
+        eq(workflowAutomations.enabled, true),
+        and(
+          eq(workflowAutomations.enabled, false),
+          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+          isNotNull(workflowAutomations.officialBlueprintKey),
+        ),
+      )
+    : eq(workflowAutomations.enabled, true);
 }
 
 export async function hasEnabledGoogleMeetConsumer(
@@ -965,30 +995,15 @@ export async function hasEnabledGoogleMeetConsumer(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const consumerState = args.allowStagedOfficialTarget
-    ? or(
-        eq(workflowAutomations.enabled, true),
-        and(
-          eq(workflowAutomations.enabled, false),
-          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-          isNotNull(workflowAutomations.officialBlueprintKey),
-        ),
-      )
-    : eq(workflowAutomations.enabled, true);
   const [consumer] = await args.db
     .select({ id: workflowAutomations.id })
     .from(workflowAutomations)
     .where(
       and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+        googleMeetConnectorAutomationsCondition(args),
+        googleMeetConsumerStateCondition(
+          args.allowStagedOfficialTarget === true,
         ),
-        eq(workflowAutomations.eventConnectorId, args.connectorId),
-        consumerState,
       ),
     )
     .limit(1);
@@ -1097,90 +1112,184 @@ async function reconcileGoogleMeetSubscriptionLifecycle(
   },
   signal: AbortSignal,
 ): Promise<GoogleMeetSubscriptionReconcileResult> {
-  const transition = await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: "google-meet",
-    });
-    signal.throwIfAborted();
-    const hasConsumer =
-      args.ensurePreparedOfficialTarget === true ||
-      (await hasEnabledGoogleMeetConsumer(
-        {
-          db: tx,
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.connectorId,
-          allowStagedOfficialTarget: args.allowStagedOfficialTarget === true,
-        },
-        signal,
-      ));
-    if (hasConsumer) {
-      return {
-        result: await ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
-          {
-            db: tx,
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorId: args.connectorId,
-          },
-          signal,
-        ),
-        cleanupError: null,
-      };
+  const consumerArgs = {
+    db: args.db,
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorId: args.connectorId,
+    allowStagedOfficialTarget: args.allowStagedOfficialTarget === true,
+  };
+  const wantsSubscription =
+    args.ensurePreparedOfficialTarget === true ||
+    (await hasEnabledGoogleMeetConsumer(consumerArgs, signal));
+  if (wantsSubscription) {
+    const prepared = await prepareGoogleMeetTranscriptGeneratedSubscription(
+      args,
+      signal,
+    );
+    if (prepared.kind !== "prepared") {
+      return prepared;
     }
-
-    const states = await loadGoogleMeetSubscriptionStatesForOwner(
+    const published = await publishGoogleMeetSubscription(
       {
-        db: tx,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: args.connectorId,
+        ...consumerArgs,
+        requireConsumer: args.ensurePreparedOfficialTarget !== true,
+        publication: prepared.publication,
       },
       signal,
     );
-    const state = googleMeetSubscriptionStateForCleanup(states);
-    const pendingDelete = state
-      ? await pendingGoogleMeetSubscriptionDeleteForState(
-          { db: tx, state },
-          signal,
-        )
-      : null;
-    let cleanupError: unknown = null;
-    if (pendingDelete) {
-      const deleted = await settleIncludingAbort(
-        bestEffort(deletePreparedGoogleMeetSubscription(pendingDelete, signal)),
-      );
-      if (!deleted.ok) {
-        cleanupError = deleted.error;
-      }
-    }
-    await tx
-      .delete(googleWorkspaceEventSubscriptionStates)
-      .where(
-        and(
-          eq(googleWorkspaceEventSubscriptionStates.orgId, args.orgId),
-          eq(googleWorkspaceEventSubscriptionStates.userId, args.userId),
-          eq(
-            googleWorkspaceEventSubscriptionStates.connectorId,
-            args.connectorId,
+    if (!published) {
+      // The consumer went away while the remote subscription was prepared.
+      // Removing a subscription this request created is best effort.
+      if (prepared.created) {
+        await settleIncludingAbort(
+          bestEffort(
+            deletePreparedGoogleMeetSubscription(
+              {
+                accessToken: prepared.publication.accessToken,
+                orgId: args.orgId,
+                subscriptionName: prepared.publication.subscription.name,
+                userId: args.userId,
+              },
+              signal,
+            ),
           ),
-          eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
-        ),
-      );
+        );
+      }
+      return { kind: "ok", action: "unchanged" };
+    }
     return {
-      result: {
-        kind: "ok" as const,
-        action: "removed" as const,
-      },
-      cleanupError,
+      kind: "ok",
+      action: prepared.created ? "created" : "renewed",
     };
-  });
-  if (transition.cleanupError !== null) {
-    throw transition.cleanupError;
   }
-  return transition.result;
+
+  const states = await loadGoogleMeetSubscriptionStatesForOwner(
+    consumerArgs,
+    signal,
+  );
+  const state = googleMeetSubscriptionStateForCleanup(states);
+  const pendingDelete = state
+    ? await pendingGoogleMeetSubscriptionDeleteForState(
+        { db: args.db, state },
+        signal,
+      )
+    : null;
+  const removed = await removeGoogleMeetSubscriptionStates(
+    consumerArgs,
+    signal,
+  );
+  if (!removed) {
+    return { kind: "ok", action: "unchanged" };
+  }
+  // Remote cleanup follows the local decision and is best effort. A consumer
+  // enabled meanwhile may lose notifications until its repair recreates the
+  // subscription; that gap is accepted.
+  if (pendingDelete) {
+    const deleted = await settleIncludingAbort(
+      bestEffort(deletePreparedGoogleMeetSubscription(pendingDelete, signal)),
+    );
+    if (!deleted.ok) {
+      throw deleted.error;
+    }
+  }
+  return { kind: "ok", action: "removed" };
+}
+
+/**
+ * Short local publication: one conditional unique upsert that applies only
+ * while the account exists and (when required) a consumer is live. No row is
+ * locked; the connector FK protects a new row from a concurrent account
+ * delete. A disable racing this statement may still publish one state, which
+ * consumer-less removal cleans up (accepted notification/cleanup gap).
+ */
+async function publishGoogleMeetSubscription(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly allowStagedOfficialTarget: boolean;
+    readonly requireConsumer: boolean;
+    readonly publication: GoogleMeetSubscriptionPublication;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const published = await settle(
+    executeRawRows(
+      args.db,
+      googleMeetSubscriptionPublicationSql({
+        ...args.publication,
+        orgId: args.orgId,
+        userId: args.userId,
+        consumerCondition: args.requireConsumer
+          ? and(
+              googleMeetConnectorAutomationsCondition(args),
+              googleMeetConsumerStateCondition(args.allowStagedOfficialTarget),
+            )
+          : undefined,
+      }),
+      z.object({ id: z.string() }),
+    ),
+    signal,
+  );
+  if (!published.ok) {
+    if (isForeignKeyViolation(published.error)) {
+      return false;
+    }
+    throw published.error;
+  }
+  return published.value.length > 0;
+}
+
+/**
+ * Deletes local subscription state only while no consumer is enabled, in one
+ * conditional DELETE; no automation row is locked. A consumer enabled or
+ * retargeted concurrently may see a notification gap until its repair
+ * recreates the subscription (accepted).
+ */
+async function removeGoogleMeetSubscriptionStates(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly allowStagedOfficialTarget: boolean;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const removed = await args.db
+    .delete(googleWorkspaceEventSubscriptionStates)
+    .where(
+      and(
+        eq(googleWorkspaceEventSubscriptionStates.orgId, args.orgId),
+        eq(googleWorkspaceEventSubscriptionStates.userId, args.userId),
+        eq(
+          googleWorkspaceEventSubscriptionStates.connectorId,
+          args.connectorId,
+        ),
+        eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
+        notExists(
+          args.db
+            .select({ id: workflowAutomations.id })
+            .from(workflowAutomations)
+            .where(
+              and(
+                googleMeetConnectorAutomationsCondition(args),
+                googleMeetConsumerStateCondition(
+                  args.allowStagedOfficialTarget,
+                ),
+              ),
+            ),
+        ),
+      ),
+    )
+    .returning({ id: googleWorkspaceEventSubscriptionStates.id });
+  signal.throwIfAborted();
+  if (removed.length > 0) {
+    return true;
+  }
+  return !(await hasEnabledGoogleMeetConsumer(args, signal));
 }
 
 export async function ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
@@ -1210,79 +1319,153 @@ async function loadGoogleMeetConnectorInventory(
   },
   signal: AbortSignal,
 ): Promise<Set<string>> {
-  return await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: "google-meet",
-    });
-    await reprojectGoogleMeetAutomationsForOwner(tx, args);
-    signal.throwIfAborted();
-    const automationRows = await tx
-      .selectDistinct({ connectorId: workflowAutomations.eventConnectorId })
+  // No row locks: reprojection reads the current selections/default and
+  // rewrites only differing targets; an account change committed afterwards
+  // is converged by its own repair. The inventory reads follow.
+  await reprojectGoogleMeetAutomationsForOwner(args.db, args);
+  signal.throwIfAborted();
+  const automationRows = await args.db
+    .selectDistinct({ connectorId: workflowAutomations.eventConnectorId })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        or(
+          eq(workflowAutomations.enabled, true),
+          and(
+            eq(workflowAutomations.enabled, false),
+            eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+            isNotNull(workflowAutomations.officialBlueprintKey),
+          ),
+        ),
+        eq(workflowAutomations.kind, "event"),
+        eq(
+          workflowAutomations.eventType,
+          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+        ),
+        isNotNull(workflowAutomations.eventConnectorId),
+      ),
+    );
+  const states = await args.db
+    .select({
+      connectorId: googleWorkspaceEventSubscriptionStates.connectorId,
+    })
+    .from(googleWorkspaceEventSubscriptionStates)
+    .where(
+      and(
+        eq(googleWorkspaceEventSubscriptionStates.orgId, args.orgId),
+        eq(googleWorkspaceEventSubscriptionStates.userId, args.userId),
+        eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
+      ),
+    );
+  signal.throwIfAborted();
+  return new Set(
+    [...automationRows, ...states].flatMap((row) => {
+      return row.connectorId === null ? [] : [row.connectorId];
+    }),
+  );
+}
+
+const repairGoogleMeetAutomationProjection$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly automationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    // No row locks: read the automation and its selected account plainly,
+    // then retarget with a conditional UPDATE that applies only while the
+    // observed target and the selection are unchanged. A concurrent change
+    // makes it a no-op and is converged by that change's own repair.
+    const [automation] = await db
+      .select({
+        id: workflowAutomations.id,
+        workflowId: workflowAutomations.workflowId,
+        eventConnectorId: workflowAutomations.eventConnectorId,
+      })
       .from(workflowAutomations)
       .where(
         and(
+          eq(workflowAutomations.id, args.automationId),
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.userId),
-          or(
-            eq(workflowAutomations.enabled, true),
-            and(
-              eq(workflowAutomations.enabled, false),
-              eq(
-                workflowAutomations.officialReconciliationStatus,
-                "reconciling",
-              ),
-              isNotNull(workflowAutomations.officialBlueprintKey),
-            ),
-          ),
           eq(workflowAutomations.kind, "event"),
           eq(
             workflowAutomations.eventType,
             GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
           ),
-          isNotNull(workflowAutomations.eventConnectorId),
         ),
-      );
-    const states = await tx
-      .select({
-        connectorId: googleWorkspaceEventSubscriptionStates.connectorId,
-      })
-      .from(googleWorkspaceEventSubscriptionStates)
-      .where(
-        and(
-          eq(googleWorkspaceEventSubscriptionStates.orgId, args.orgId),
-          eq(googleWorkspaceEventSubscriptionStates.userId, args.userId),
-          eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
-        ),
-      );
+      )
+      .limit(1);
     signal.throwIfAborted();
-    return new Set(
-      [...automationRows, ...states].flatMap((row) => {
-        return row.connectorId === null ? [] : [row.connectorId];
-      }),
-    );
-  });
-}
-
-async function repairGoogleMeetAutomationAccountProjectionsForOwner(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
+    if (!automation) {
+      return;
+    }
+    const selectionSql = workflowAutomationConnectorSelectionSql({
       orgId: args.orgId,
       userId: args.userId,
+      workflowId: automation.workflowId,
       connectorSlug: "google-meet",
     });
-    await reprojectGoogleMeetAutomationsForOwner(tx, args);
+    const [selected] = parseRawRows(
+      z.object({ connectorId: z.string().nullable() }),
+      await db.execute(selectionSql),
+    );
     signal.throwIfAborted();
-  });
-}
+    const eventConnectorId = selected?.connectorId ?? null;
+    if (eventConnectorId === automation.eventConnectorId) {
+      return;
+    }
+    await db
+      .update(workflowAutomations)
+      .set({ eventConnectorId })
+      .where(
+        and(
+          eq(workflowAutomations.id, automation.id),
+          sql`${workflowAutomations.eventConnectorId} IS NOT DISTINCT FROM ${automation.eventConnectorId}::uuid`,
+          sql`(${selectionSql}) IS NOT DISTINCT FROM ${eventConnectorId}::uuid`,
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
+const repairGoogleMeetAutomationAccountProjectionsForOwner$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const automations = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.kind, "event"),
+          eq(
+            workflowAutomations.eventType,
+            GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const automation of automations) {
+      await set(
+        repairGoogleMeetAutomationProjection$,
+        { ...args, automationId: automation.id },
+        signal,
+      );
+    }
+  },
+);
 
 async function reconcileGoogleMeetSubscriptionInventory(
   args: {
@@ -1558,191 +1741,205 @@ function googleMeetTranscriptEventContext(
   };
 }
 
-async function loadWorkspaceSubscriptionStateByName(
-  args: {
-    readonly db: Db;
-    readonly subscriptionName: string;
-  },
-  signal: AbortSignal,
-): Promise<GoogleWorkspaceSubscriptionStateRow | null> {
-  const [state] = await args.db
-    .select()
-    .from(googleWorkspaceEventSubscriptionStates)
-    .where(
-      eq(
-        googleWorkspaceEventSubscriptionStates.subscriptionName,
-        args.subscriptionName,
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return state ?? null;
-}
-
-async function handleWorkspaceLifecycleEvent(
-  args: {
-    readonly db: Db;
-    readonly decoded: DecodedWorkspacePubSubPush;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const subscriptionName = subscriptionNameFromCloudEvent(
-    args.decoded.cloudEvent,
-  );
-  if (!subscriptionName) {
-    return;
-  }
-  const currentTime = nowDate();
-  const data = dataRecord(args.decoded.cloudEvent.data);
-  const subscription = dataRecord(data.subscription);
-  const expireTime =
-    typeof subscription.expire_time === "string"
-      ? new Date(subscription.expire_time)
-      : null;
-  const update: {
-    state?: string;
-    expireTime?: Date;
-    needsRepair: boolean;
-    updatedAt: Date;
-  } = {
-    needsRepair:
-      args.decoded.cloudEvent.type !==
-      "google.workspace.events.subscription.v1.expirationReminder",
-    updatedAt: currentTime,
-  };
-  if (
-    args.decoded.cloudEvent.type ===
-    "google.workspace.events.subscription.v1.suspended"
-  ) {
-    update.state = "SUSPENDED";
-  } else if (
-    args.decoded.cloudEvent.type ===
-    "google.workspace.events.subscription.v1.expired"
-  ) {
-    update.state = "DELETED";
-  }
-  if (expireTime && !Number.isNaN(expireTime.getTime())) {
-    update.expireTime = expireTime;
-  }
-
-  await args.db
-    .update(googleWorkspaceEventSubscriptionStates)
-    .set(update)
-    .where(
-      eq(
-        googleWorkspaceEventSubscriptionStates.subscriptionName,
-        subscriptionName,
-      ),
-    );
-  signal.throwIfAborted();
-}
-
-async function loadGoogleMeetEventAutomations(
-  args: {
-    readonly db: Db;
-    readonly state: GoogleWorkspaceSubscriptionStateRow;
-  },
-  signal: AbortSignal,
-): Promise<GoogleMeetEventAutomationRow[]> {
-  const automationRows = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+const loadWorkspaceSubscriptionStateByName$ = command(
+  async (
+    { set },
+    args: {
+      readonly subscriptionName: string;
+    },
+    signal: AbortSignal,
+  ): Promise<GoogleWorkspaceSubscriptionStateRow | null> => {
+    const db = set(writeDb$);
+    const [state] = await db
+      .select()
+      .from(googleWorkspaceEventSubscriptionStates)
+      .where(
         eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+          googleWorkspaceEventSubscriptionStates.subscriptionName,
+          args.subscriptionName,
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.state.orgId),
-        eq(workflowAutomations.ownerUserId, args.state.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
-        ),
-        eq(workflowAutomations.eventConnectorId, args.state.connectorId),
-      ),
-    );
-  signal.throwIfAborted();
-
-  const currentTime = nowDate();
-  const automations: GoogleMeetEventAutomationRow[] = [];
-  for (const row of automationRows) {
-    const config = googleMeetTranscriptGeneratedEventConfigSchema.safeParse(
-      row.automation.eventConfig,
-    );
-    if (!config.success || config.data.scope.type !== "organizer_user") {
-      continue;
-    }
-    const chatThreadId =
-      row.chatThreadId ??
-      (await args.db.transaction(async (tx) => {
-        return await ensureWorkflowUserAutomationThread(tx, {
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-          workflowId: row.automation.workflowId,
-          agentId: row.agentId,
-          workflowTitle: row.workflowDisplayName ?? row.workflowName,
-          currentTime,
-        });
-      }));
+      )
+      .limit(1);
     signal.throwIfAborted();
-    automations.push({
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      workflowTitle: row.workflowDisplayName ?? row.workflowName,
-      chatThreadId,
-    });
-  }
-  return automations;
-}
-
-async function insertWorkspaceProcessedEvent(
-  args: {
-    readonly db: Db;
-    readonly state: GoogleWorkspaceSubscriptionStateRow;
-    readonly automation: GoogleMeetEventAutomationRow;
-    readonly decoded: DecodedWorkspacePubSubPush;
-    readonly event: GoogleMeetTranscriptEventContext;
+    return state ?? null;
   },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const [processed] = await args.db
-    .insert(googleWorkspaceProcessedEvents)
-    .values({
-      subscriptionStateId: args.state.id,
-      automationId: args.automation.automation.id,
-      pubsubMessageId: args.decoded.messageId,
-      cloudEventId: args.event.cloudEventId,
-      cloudEventType: args.event.cloudEventType,
-      conferenceRecordName: args.event.conferenceRecordName,
-      transcriptName: args.event.transcriptName,
-      createdAt: nowDate(),
-    })
-    .onConflictDoNothing()
-    .returning({ id: googleWorkspaceProcessedEvents.id });
-  signal.throwIfAborted();
-  return processed?.id ?? null;
-}
+);
+
+const handleWorkspaceLifecycleEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly decoded: DecodedWorkspacePubSubPush;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const subscriptionName = subscriptionNameFromCloudEvent(
+      args.decoded.cloudEvent,
+    );
+    if (!subscriptionName) {
+      return;
+    }
+    const currentTime = nowDate();
+    const data = dataRecord(args.decoded.cloudEvent.data);
+    const subscription = dataRecord(data.subscription);
+    const expireTime =
+      typeof subscription.expire_time === "string"
+        ? new Date(subscription.expire_time)
+        : null;
+    const update: {
+      state?: string;
+      expireTime?: Date;
+      needsRepair: boolean;
+      updatedAt: Date;
+    } = {
+      needsRepair:
+        args.decoded.cloudEvent.type !==
+        "google.workspace.events.subscription.v1.expirationReminder",
+      updatedAt: currentTime,
+    };
+    if (
+      args.decoded.cloudEvent.type ===
+      "google.workspace.events.subscription.v1.suspended"
+    ) {
+      update.state = "SUSPENDED";
+    } else if (
+      args.decoded.cloudEvent.type ===
+      "google.workspace.events.subscription.v1.expired"
+    ) {
+      update.state = "DELETED";
+    }
+    if (expireTime && !Number.isNaN(expireTime.getTime())) {
+      update.expireTime = expireTime;
+    }
+
+    await db
+      .update(googleWorkspaceEventSubscriptionStates)
+      .set(update)
+      .where(
+        eq(
+          googleWorkspaceEventSubscriptionStates.subscriptionName,
+          subscriptionName,
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
+const loadGoogleMeetEventAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GoogleWorkspaceSubscriptionStateRow;
+    },
+    signal: AbortSignal,
+  ): Promise<GoogleMeetEventAutomationRow[]> => {
+    const db = set(writeDb$);
+    const automationRows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.state.orgId),
+          eq(workflowAutomations.ownerUserId, args.state.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(
+            workflowAutomations.eventType,
+            GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+          ),
+          eq(workflowAutomations.eventConnectorId, args.state.connectorId),
+        ),
+      );
+    signal.throwIfAborted();
+
+    const currentTime = nowDate();
+    const automations: GoogleMeetEventAutomationRow[] = [];
+    for (const row of automationRows) {
+      const config = googleMeetTranscriptGeneratedEventConfigSchema.safeParse(
+        row.automation.eventConfig,
+      );
+      if (!config.success || config.data.scope.type !== "organizer_user") {
+        continue;
+      }
+      const chatThreadId =
+        row.chatThreadId ??
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
+            orgId: row.automation.orgId,
+            userId: row.automation.ownerUserId,
+            workflowId: row.automation.workflowId,
+            agentId: row.agentId,
+            workflowTitle: row.workflowDisplayName ?? row.workflowName,
+            currentTime,
+          },
+          signal,
+        ));
+      signal.throwIfAborted();
+      automations.push({
+        automation: row.automation,
+        agentId: row.agentId,
+        workflowName: row.workflowName,
+        workflowTitle: row.workflowDisplayName ?? row.workflowName,
+        chatThreadId,
+      });
+    }
+    return automations;
+  },
+);
+
+const insertWorkspaceProcessedEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GoogleWorkspaceSubscriptionStateRow;
+      readonly automation: GoogleMeetEventAutomationRow;
+      readonly decoded: DecodedWorkspacePubSubPush;
+      readonly event: GoogleMeetTranscriptEventContext;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const [processed] = await db
+      .insert(googleWorkspaceProcessedEvents)
+      .values({
+        subscriptionStateId: args.state.id,
+        automationId: args.automation.automation.id,
+        pubsubMessageId: args.decoded.messageId,
+        cloudEventId: args.event.cloudEventId,
+        cloudEventType: args.event.cloudEventType,
+        conferenceRecordName: args.event.conferenceRecordName,
+        transcriptName: args.event.transcriptName,
+        createdAt: nowDate(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: googleWorkspaceProcessedEvents.id });
+    signal.throwIfAborted();
+    return processed?.id ?? null;
+  },
+);
 
 function buildGoogleMeetWorkflowAutomationBrief(
   event: GoogleMeetTranscriptEventContext,
@@ -1777,163 +1974,152 @@ function googleMeetTriggerContext(args: {
   };
 }
 
-class GoogleMeetAutomationSourceChangedError extends Error {
-  constructor() {
-    super(
-      "Google Meet automation source changed before durable queue admission",
-    );
-    this.name = "GoogleMeetAutomationSourceChangedError";
-  }
+interface GoogleMeetEventDispatchInput {
+  readonly state: GoogleWorkspaceSubscriptionStateRow;
+  readonly decoded: DecodedWorkspacePubSubPush;
+  readonly event: GoogleMeetTranscriptEventContext;
+  readonly apiStartTime: number;
+  readonly sourceReadStartedAt: number;
+  readonly sourceReadFinishedAt: number;
 }
 
-async function persistCurrentGoogleMeetAutomationSource(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: {
-    readonly automationId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSourceId: string;
-    readonly subscriptionStateId: string;
-    readonly subscriptionName: string;
+const deleteWorkspaceProcessedEvent$ = command(
+  async ({ set }, processedId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .delete(googleWorkspaceProcessedEvents)
+      .where(eq(googleWorkspaceProcessedEvents.id, processedId));
+    signal.throwIfAborted();
   },
-  signal: AbortSignal,
-): Promise<void> {
-  await lockBuiltinConnectorState(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "google-meet",
-  });
-  const [currentState] = await tx
-    .select({ id: googleWorkspaceEventSubscriptionStates.id })
-    .from(googleWorkspaceEventSubscriptionStates)
-    .where(
-      and(
-        eq(googleWorkspaceEventSubscriptionStates.id, args.subscriptionStateId),
-        eq(
-          googleWorkspaceEventSubscriptionStates.subscriptionName,
-          args.subscriptionName,
-        ),
-        eq(
-          googleWorkspaceEventSubscriptionStates.connectorId,
-          args.connectorSourceId,
-        ),
-        eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  const [currentAutomation] = await tx
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
-        ),
-        eq(workflowAutomations.eventConnectorId, args.connectorSourceId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!currentState || !currentAutomation) {
-    throw new GoogleMeetAutomationSourceChangedError();
-  }
-}
+);
 
-async function dispatchGoogleMeetTranscriptEventForState(
-  args: {
-    readonly db: Db;
-    readonly state: GoogleWorkspaceSubscriptionStateRow;
-    readonly decoded: DecodedWorkspacePubSubPush;
-    readonly event: GoogleMeetTranscriptEventContext;
-    readonly startRun: (args: {
+const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
+  async (
+    { set },
+    args: GoogleMeetEventDispatchInput & {
       readonly automation: GoogleMeetEventAutomationRow;
-      readonly event: GoogleMeetTranscriptEventContext;
-      readonly timing: AutomationEventRunTiming;
-    }) => Promise<"ok" | "error" | "superseded">;
-    readonly sourceTiming: AutomationEventSourceTiming;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly dispatched: number;
-      readonly duplicates: number;
-    }
-  | { readonly kind: "run_error"; readonly message: string }
-> {
-  const automations = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_automations",
-    async () => {
-      return await loadGoogleMeetEventAutomations(
-        {
-          db: args.db,
-          state: args.state,
-        },
-        signal,
-      );
     },
-  );
-  let dispatched = 0;
-  let duplicates = 0;
-
-  for (const automation of automations) {
-    const runTiming = args.sourceTiming.createRunTiming();
-    const processedId = await runTiming.measure(
+    signal: AbortSignal,
+  ): Promise<"dispatched" | "duplicate" | "superseded"> => {
+    const sourceTiming = new AutomationEventSourceTiming(
+      "google_meet",
+      args.apiStartTime,
+      [
+        {
+          actionType:
+            "api_dispatch_pre_create_agent_automation_event_load_source_state",
+          startedAt: args.sourceReadStartedAt,
+          finishedAt: args.sourceReadFinishedAt,
+        },
+      ],
+    );
+    const runTiming = sourceTiming.createRunTiming();
+    const receiptStartedAt = now();
+    const processedId = await set(insertWorkspaceProcessedEvent$, args, signal);
+    runTiming.recordElapsed(
       "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      async () => {
-        return await insertWorkspaceProcessedEvent(
-          {
-            db: args.db,
-            state: args.state,
-            automation,
-            decoded: args.decoded,
-            event: args.event,
-          },
-          signal,
-        );
-      },
+      receiptStartedAt,
     );
     if (!processedId) {
-      duplicates++;
-      continue;
+      return "duplicate";
     }
-
-    const started = await args.startRun({
-      automation,
+    const inputStartedAt = now();
+    const context = googleMeetTriggerContext({
+      workflowName: args.automation.workflowName,
+      automationId: args.automation.automation.id,
       event: args.event,
-      timing: runTiming,
     });
+    const triggerBrief = buildGoogleMeetWorkflowAutomationBrief(args.event);
+    runTiming.recordElapsed(
+      "api_dispatch_pre_create_agent_automation_event_build_run_input",
+      inputStartedAt,
+    );
+    const started = await settle(
+      set(
+        runWorkflowAutomationNow$,
+        {
+          due: {
+            automation: args.automation.automation,
+            agentId: args.automation.agentId,
+            chatThreadId: args.automation.chatThreadId,
+          },
+          automationContext: context,
+          connectorSourceId: args.state.connectorId,
+          apiStartTime: args.apiStartTime,
+          triggerSource: "automation-event",
+          triggerBrief,
+          persistSourceTransition: async (tx) => {
+            await persistGoogleMeetWorkflowSource(
+              tx,
+              {
+                source: {
+                  automationId: args.automation.automation.id,
+                  orgId: args.automation.automation.orgId,
+                  userId: args.automation.automation.ownerUserId,
+                  connectorSourceId: args.state.connectorId,
+                  subscriptionStateId: args.state.id,
+                  subscriptionName: args.state.subscriptionName,
+                },
+                automationId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
+          },
+          timing: runTiming.collectorForRunStart(),
+        },
+        signal,
+      ),
+      signal,
+    );
     signal.throwIfAborted();
-    if (started === "superseded") {
-      await args.db
-        .delete(googleWorkspaceProcessedEvents)
-        .where(eq(googleWorkspaceProcessedEvents.id, processedId));
-      signal.throwIfAborted();
-      continue;
+    if (!started.ok) {
+      if (started.error instanceof GoogleMeetAutomationSourceChangedError) {
+        await set(deleteWorkspaceProcessedEvent$, processedId, signal);
+        return "superseded";
+      }
+      throw started.error;
     }
-    if (started !== "ok") {
-      await args.db
-        .delete(googleWorkspaceProcessedEvents)
-        .where(eq(googleWorkspaceProcessedEvents.id, processedId));
-      signal.throwIfAborted();
-      return {
-        kind: "run_error",
-        message: "Failed to start Google Meet transcript workflow run",
-      };
-    }
-    dispatched++;
-  }
+    return "dispatched";
+  },
+);
 
-  return { kind: "ok", dispatched, duplicates };
-}
+type GoogleMeetTranscriptDispatchResult = {
+  readonly kind: "ok";
+  readonly dispatched: number;
+  readonly duplicates: number;
+};
+
+const dispatchGoogleMeetTranscriptEventForState$ = command(
+  async (
+    { set },
+    args: GoogleMeetEventDispatchInput & {
+      readonly automations: readonly GoogleMeetEventAutomationRow[];
+    },
+    signal: AbortSignal,
+  ): Promise<GoogleMeetTranscriptDispatchResult> => {
+    let dispatched = 0;
+    let duplicates = 0;
+    for (const automation of args.automations) {
+      const result = await set(
+        dispatchGoogleMeetTranscriptEventForAutomation$,
+        { ...args, automation },
+        signal,
+      );
+      dispatched += result === "dispatched" ? 1 : 0;
+      duplicates += result === "duplicate" ? 1 : 0;
+    }
+    return { kind: "ok", dispatched, duplicates };
+  },
+);
 
 async function authenticateAndDecodeGoogleWorkspacePush(
   args: {
@@ -1953,48 +2139,34 @@ async function authenticateAndDecodeGoogleWorkspacePush(
   return decodeWorkspacePubSubPush(args.rawBody);
 }
 
-async function loadCurrentGoogleMeetSubscriptionState(
-  args: {
-    readonly db: Db;
-    readonly subscriptionName: string;
-    readonly sourceTiming: AutomationEventSourceTiming;
+const loadCurrentGoogleMeetSubscriptionState$ = command(
+  async (
+    { set },
+    subscriptionName: string,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly state: GoogleWorkspaceSubscriptionStateRow;
+    readonly sourceReadStartedAt: number;
+    readonly sourceReadFinishedAt: number;
+  } | null> => {
+    const sourceReadStartedAt = now();
+    const state = await set(
+      loadWorkspaceSubscriptionStateByName$,
+      { subscriptionName },
+      signal,
+    );
+    const sourceReadFinishedAt = now();
+    if (!state || state.provider !== "google-meet") {
+      return null;
+    }
+    await set(
+      repairGoogleMeetAutomationAccountProjectionsForOwner$,
+      { orgId: state.orgId, userId: state.userId },
+      signal,
+    );
+    return { state, sourceReadStartedAt, sourceReadFinishedAt };
   },
-  signal: AbortSignal,
-): Promise<GoogleWorkspaceSubscriptionStateRow | null> {
-  const state = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_source_state",
-    async () => {
-      return await loadWorkspaceSubscriptionStateByName(
-        { db: args.db, subscriptionName: args.subscriptionName },
-        signal,
-      );
-    },
-  );
-  signal.throwIfAborted();
-  if (!state || state.provider !== "google-meet") {
-    return null;
-  }
-  await repairGoogleMeetAutomationAccountProjectionsForOwner(
-    args.db,
-    { orgId: state.orgId, userId: state.userId },
-    signal,
-  );
-  signal.throwIfAborted();
-  return state;
-}
-
-function completedGoogleMeetWebhookResult(
-  result: Awaited<ReturnType<typeof dispatchGoogleMeetTranscriptEventForState>>,
-): GoogleWorkspaceWebhookResult {
-  return result.kind === "ok"
-    ? {
-        kind: "ok",
-        watchStates: 1,
-        dispatched: result.dispatched,
-        duplicates: result.duplicates,
-      }
-    : result;
-}
+);
 
 export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
   async (
@@ -2014,13 +2186,12 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
       return decoded;
     }
 
-    const db = set(writeDb$);
     if (
       decoded.cloudEvent.type.startsWith(
         "google.workspace.events.subscription.v1.",
       )
     ) {
-      await handleWorkspaceLifecycleEvent({ db, decoded }, signal);
+      await set(handleWorkspaceLifecycleEvent$, { decoded }, signal);
       return { kind: "ok", watchStates: 0, dispatched: 0, duplicates: 0 };
     }
 
@@ -2032,93 +2203,36 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
       return event;
     }
 
-    const sourceTiming = new AutomationEventSourceTiming(
-      "google_meet",
-      args.apiStartTime,
-    );
-    const state = await loadCurrentGoogleMeetSubscriptionState(
-      {
-        db,
-        subscriptionName: event.context.subscriptionName,
-        sourceTiming,
-      },
+    const source = await set(
+      loadCurrentGoogleMeetSubscriptionState$,
+      event.context.subscriptionName,
       signal,
     );
-    if (!state) {
+    if (!source) {
       return { kind: "ok", watchStates: 0, dispatched: 0, duplicates: 0 };
     }
-
-    const result = await dispatchGoogleMeetTranscriptEventForState(
+    const automations = await set(
+      loadGoogleMeetEventAutomations$,
+      { state: source.state },
+      signal,
+    );
+    const result = await set(
+      dispatchGoogleMeetTranscriptEventForState$,
       {
-        db,
-        state,
+        ...source,
+        automations,
         decoded,
         event: event.context,
-        sourceTiming,
-        startRun: async ({ automation, event, timing }) => {
-          const runInput = await timing.measure(
-            "api_dispatch_pre_create_agent_automation_event_build_run_input",
-            () => {
-              const context = googleMeetTriggerContext({
-                workflowName: automation.workflowName,
-                automationId: automation.automation.id,
-                event,
-              });
-              return {
-                context,
-                triggerBrief: buildGoogleMeetWorkflowAutomationBrief(event),
-              };
-            },
-          );
-          const started = await settle(
-            set(
-              runWorkflowAutomationNow$,
-              {
-                due: {
-                  automation: automation.automation,
-                  agentId: automation.agentId,
-                  chatThreadId: automation.chatThreadId,
-                },
-                automationContext: runInput.context,
-                connectorSourceId: state.connectorId,
-                apiStartTime: args.apiStartTime,
-                triggerSource: "automation-event",
-                triggerBrief: runInput.triggerBrief,
-                persistSourceTransition: async (tx) => {
-                  await persistCurrentGoogleMeetAutomationSource(
-                    tx,
-                    {
-                      automationId: automation.automation.id,
-                      orgId: automation.automation.orgId,
-                      userId: automation.automation.ownerUserId,
-                      connectorSourceId: state.connectorId,
-                      subscriptionStateId: state.id,
-                      subscriptionName: state.subscriptionName,
-                    },
-                    signal,
-                  );
-                },
-                timing: timing.collectorForRunStart(),
-              },
-              signal,
-            ),
-            signal,
-          );
-          signal.throwIfAborted();
-          if (!started.ok) {
-            if (
-              started.error instanceof GoogleMeetAutomationSourceChangedError
-            ) {
-              return "superseded";
-            }
-            throw started.error;
-          }
-          return "ok";
-        },
+        apiStartTime: args.apiStartTime,
       },
       signal,
     );
-    return completedGoogleMeetWebhookResult(result);
+    return {
+      kind: "ok",
+      watchStates: 1,
+      dispatched: result.dispatched,
+      duplicates: result.duplicates,
+    };
   },
 );
 

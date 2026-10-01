@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   clearAllDetached,
   collectAllDetachedErrorsForTest,
-  settleIncludingAbort,
   detach,
   joinAll,
   joinAllInOrder,
   Mechanism,
+  settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
 

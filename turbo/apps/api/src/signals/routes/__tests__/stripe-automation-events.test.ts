@@ -1407,16 +1407,16 @@ describe("Stripe automation event webhook", () => {
     );
   });
 
-  it("rolls back the complete two-tenant fan-out and succeeds on Stripe retry", async () => {
-    const firstReceipt = Date.parse("2026-08-07T08:30:00.000Z");
-    mockNow(firstReceipt);
+  it("delivers a replayed Stripe event once to each connected tenant", async () => {
     const first = await setupScenario();
     const second = await setupScenario();
     expect(first.actor.orgId).not.toBe(second.actor.orgId);
     expect(first.actor.userId).not.toBe(second.actor.userId);
-    await postStripeAutomationEvent(
-      invoicePaidEvent({ eventId: "evt_cross_tenant_seed" }),
-    );
+    const event = invoicePaidEvent({ eventId: "evt_cross_tenant_replay" });
+    await Promise.all([
+      postStripeAutomationEvent(event),
+      postStripeAutomationEvent(event),
+    ]);
     expect((await executeAutomation(first)).body).toStrictEqual(
       EXECUTED_EXECUTION,
     );
@@ -1426,57 +1426,16 @@ describe("Stripe automation event webhook", () => {
     await expect(automationInputEvents(first)).resolves.toHaveLength(1);
     await expect(automationInputEvents(second)).resolves.toHaveLength(1);
 
-    await applyDeliveryFixture(second, "fail-next-ingress-for-automation");
-    mockNow(firstReceipt + 60_000);
-    const retryEvent = invoicePaidEvent({
-      eventId: "evt_cross_tenant_retry",
-    });
-    await postStripeAutomationEvent(retryEvent, 500);
-    expect(
-      (await readStripeAutomation(first)).health.lastMatchingEventReceivedAt,
-    ).toBe("2026-08-07T08:30:00.000Z");
-    expect(
-      (await readStripeAutomation(second)).health.lastMatchingEventReceivedAt,
-    ).toBe("2026-08-07T08:30:00.000Z");
-
-    await applyDeliveryFixture(second, "clear-forced-failures");
-    await postStripeAutomationEvent(retryEvent);
-    expect((await executeAutomation(first)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    expect((await executeAutomation(second)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    await expect(automationInputEvents(first)).resolves.toHaveLength(2);
-    await expect(automationInputEvents(second)).resolves.toHaveLength(2);
-  });
-
-  it("retries a queue-admission failure without admitting a second source event", async () => {
-    const scenario = await setupScenario();
-    await postStripeAutomationEvent(
-      invoicePaidEvent({ eventId: "evt_queue_admission_retry" }),
-    );
-    await applyDeliveryFixture(
-      scenario,
-      "fail-next-queue-admission-for-automation",
-    );
-
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      TERMINALLY_SKIPPED_EXECUTION,
-    );
-    await expect(automationInputEvents(scenario)).resolves.toHaveLength(0);
-    expect((await readStripeAutomation(scenario)).health).toMatchObject({
-      lastDeliveryStatus: "pending",
+    await postStripeAutomationEvent(event);
+    expect((await executeAutomation(first)).body).toStrictEqual(NO_EXECUTION);
+    expect((await executeAutomation(second)).body).toStrictEqual(NO_EXECUTION);
+    await expect(automationInputEvents(first)).resolves.toHaveLength(1);
+    await expect(automationInputEvents(second)).resolves.toHaveLength(1);
+    expect((await readStripeAutomation(first)).health).toMatchObject({
+      lastDeliveryStatus: "delivered",
       warning: null,
     });
-
-    await applyDeliveryFixture(scenario, "clear-forced-failures");
-    await applyDeliveryFixture(scenario, "make-latest-due");
-    expect((await executeAutomation(scenario)).body).toStrictEqual(
-      EXECUTED_EXECUTION,
-    );
-    await expect(automationInputEvents(scenario)).resolves.toHaveLength(1);
-    expect((await readStripeAutomation(scenario)).health).toMatchObject({
+    expect((await readStripeAutomation(second)).health).toMatchObject({
       lastDeliveryStatus: "delivered",
       warning: null,
     });

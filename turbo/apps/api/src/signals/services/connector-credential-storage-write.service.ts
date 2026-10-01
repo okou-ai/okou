@@ -1,8 +1,10 @@
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -150,16 +152,75 @@ async function deleteConnectorOwnedCredentialRowsWhere(
   signal.throwIfAborted();
 }
 
+/**
+ * Actually delete the account, then resolve its references in the next SQL
+ * snapshot. The existing deferred account FK is checked at commit. A selection
+ * committed before the deletion's ordinary parent-row mutation is included in
+ * the child DELETE; a later insert fails its FK check. No lock-only write or
+ * SELECT lock is used, and the exact returned count includes late references.
+ */
 async function deleteConnectorCredentialStorageConnectionsWhere(
   db: Db,
   conditions: ConnectorCredentialStorageDeleteConditions,
   signal: AbortSignal,
-): Promise<void> {
-  await db.delete(chatThreadConnectorSelections).where(conditions.selection);
-  signal.throwIfAborted();
-  await deleteConnectorOwnedCredentialRowsWhere(db, conditions, signal);
-  await db.delete(connectors).where(conditions.connection);
-  signal.throwIfAborted();
+): Promise<number> {
+  return await db.transaction(async (tx) => {
+    await deleteConnectorOwnedCredentialRowsWhere(tx, conditions, signal);
+    await tx.execute(
+      sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
+    );
+    const deleted = await tx
+      .delete(connectors)
+      .where(conditions.connection)
+      .returning({ id: connectors.id });
+    const selections =
+      deleted.length === 0
+        ? []
+        : await tx
+            .delete(chatThreadConnectorSelections)
+            .where(
+              inArray(
+                chatThreadConnectorSelections.connectorId,
+                deleted.map((row) => {
+                  return row.id;
+                }),
+              ),
+            )
+            .returning({
+              connectorId: chatThreadConnectorSelections.connectorId,
+            });
+    await tx.execute(
+      sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
+    );
+    if (deleted.length > 0) {
+      // FK deletion has already cleared event_connector_id. Use the retained
+      // source config to invalidate only cursors belonging to deleted accounts.
+      // A subsequent projection onto a new account is a different source.
+      await tx.delete(googleFormsAutomationCursors).where(
+        inArray(
+          googleFormsAutomationCursors.automationId,
+          tx
+            .select({ id: workflowAutomations.id })
+            .from(workflowAutomations)
+            .where(
+              and(
+                eq(
+                  workflowAutomations.eventType,
+                  "google-forms-response-submitted",
+                ),
+                sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+                  deleted.map((row) => {
+                    return row.id;
+                  }),
+                )}::text[])`,
+              ),
+            ),
+        ),
+      );
+    }
+    signal.throwIfAborted();
+    return selections.length;
+  });
 }
 
 export async function deleteConnectorOwnedCredentialRows(
@@ -179,14 +240,15 @@ export async function deleteConnectorOwnedCredentialRows(
   );
 }
 
+/** Deletes one account with its selections and credential rows. */
 export async function deleteConnectorCredentialStorageConnection(
   db: Db,
   args: {
     readonly connectorId: string;
   },
   signal: AbortSignal,
-): Promise<void> {
-  await deleteConnectorCredentialStorageConnectionsWhere(
+): Promise<number> {
+  return await deleteConnectorCredentialStorageConnectionsWhere(
     db,
     {
       selection: eq(

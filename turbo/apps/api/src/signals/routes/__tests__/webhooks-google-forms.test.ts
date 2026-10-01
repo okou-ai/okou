@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { testGoogleFormsWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-forms-watch-renewal";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -18,12 +19,15 @@ import {
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { testGoogleFormsWatchRenewalRoutes } from "../test-google-forms-watch-renewal";
 import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -36,6 +40,7 @@ const mocks = createRouteMocks(context);
 const workflows = createWorkflowsBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
+const chat = createChatFilesBddApi(context);
 
 const FORM_ID = `1FAIpQLScWebhookGoogleFormsTest${randomUUID().replaceAll("-", "")}`;
 const FORM_URL = `https://docs.google.com/forms/d/${FORM_ID}/edit`;
@@ -126,6 +131,7 @@ interface FormsApiRecorder {
   responseFields: string[];
   stoppedWatchIds: string[];
   watchIds: string[];
+  remoteWatchIds: Set<string>;
 }
 
 function configureFormsApi(
@@ -137,6 +143,7 @@ function configureFormsApi(
     responseFields: [],
     stoppedWatchIds: [],
     watchIds: [],
+    remoteWatchIds: new Set(),
   };
   server.use(
     http.get(
@@ -226,6 +233,19 @@ function configureFormsApi(
         });
       },
     ),
+    http.get("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
+      return HttpResponse.json({
+        watches: [...recorder.remoteWatchIds].map((id) => {
+          return {
+            id,
+            createTime: "2026-08-05T09:45:00Z",
+            expireTime: "2099-08-12T09:45:00Z",
+            eventType: "RESPONSES",
+            target: { topic: { topicName: TOPIC_NAME } },
+          };
+        }),
+      });
+    }),
     http.post(
       "https://forms.googleapis.com/v1/forms/:formId/watches",
       async ({ request }) => {
@@ -237,6 +257,7 @@ function configureFormsApi(
         });
         const watchId = `forms-watch-${randomUUID()}`;
         recorder.watchIds.push(watchId);
+        recorder.remoteWatchIds.add(watchId);
         return HttpResponse.json({
           id: watchId,
           createTime: "2026-08-05T09:45:00Z",
@@ -260,6 +281,7 @@ function configureFormsApi(
           throw new Error("Expected a Google Forms watch ID");
         }
         recorder.stoppedWatchIds.push(params.watchId);
+        recorder.remoteWatchIds.delete(params.watchId);
         return new HttpResponse(null, { status: 204 });
       },
     ),
@@ -382,7 +404,248 @@ async function setupGoogleFormsAutomation() {
 }
 
 describe("Google Forms Pub/Sub webhook", () => {
-  it("delivers metadata without response data", async () => {
+  it("repairs a remotely missing watch and accepts later notifications", async () => {
+    const { actor, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped workflow actor");
+    }
+    const previousWatchId = formsApi.watchIds[0];
+    if (!previousWatchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    formsApi.remoteWatchIds.clear();
+    const renewal = setupApp({
+      context,
+      routes: testGoogleFormsWatchRenewalRoutes,
+    })(testGoogleFormsWatchRenewalContract);
+    const repair = await accept(
+      renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
+      [200],
+    );
+    expect(repair.body).toMatchObject({ success: true, failed: 0 });
+    const replacementWatchId = formsApi.watchIds.at(-1);
+    if (!replacementWatchId || replacementWatchId === previousWatchId) {
+      throw new Error("Expected a repaired Google Forms watch");
+    }
+    await expect(
+      postWebhook(formsPushBody("after-watch-repair", replacementWatchId)),
+    ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
+    await expect(
+      postWebhook(
+        formsPushBody("after-watch-repair-retry", replacementWatchId),
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { dispatched: 0 } });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
+    await expect(
+      postWebhook(formsPushBody("retired-watch-after-repair", previousWatchId)),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { watchStates: 0, dispatched: 0 },
+    });
+  });
+
+  it("keeps pending responses when an already enabled automation refreshes its watch binding", async () => {
+    const { automationId, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const watchId = formsApi.watchIds[0];
+    if (!watchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter !== null) {
+            expect(filter).toBe(`timestamp > ${SEED_CURSOR}`);
+          }
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "response-pending-during-rebind",
+                createTime: RESPONSE_CREATE_TIME,
+                lastSubmittedTime: RESPONSE_SUBMITTED_TIME,
+                respondentEmail: "pending@example.test",
+              },
+            ],
+          });
+        },
+      ),
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    const pushed = await postWebhook(
+      formsPushBody("response-pending-during-rebind", watchId),
+    );
+    expect(pushed).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    const delivered = events.filter((event) => {
+      return event.eventType === "input.automation";
+    });
+    expect(delivered.map(chatEventDisplayText)).toStrictEqual([
+      `A new response from pending@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
+  });
+
+  it.each(["explicit disable", "chat thread deletion"])(
+    "does not replay disabled-period responses after %s and re-enable",
+    async (stop) => {
+      const { actor, automationId, chatThreadId, formsApi } =
+        await setupGoogleFormsAutomation();
+      const originalWatchId = formsApi.watchIds[0];
+      if (stop === "chat thread deletion") {
+        await chat.deleteThread(actor, chatThreadId);
+      } else {
+        await accept(
+          automationsClient().disable({
+            headers: authHeaders(),
+            params: { id: automationId },
+          }),
+          [200],
+        );
+      }
+      expect(formsApi.stoppedWatchIds).toContain(originalWatchId);
+      const resumedCursor = "2026-08-05T10:15:00.123456Z";
+      const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
+      const filters: string[] = [];
+      server.use(
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter === null) {
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "response-while-disabled",
+                    createTime: resumedCursor,
+                    lastSubmittedTime: resumedCursor,
+                  },
+                ],
+              });
+            }
+            filters.push(filter);
+            expect(filter).toBe(`timestamp > ${resumedCursor}`);
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "response-after-resume",
+                  createTime: resumedResponseTime,
+                  lastSubmittedTime: resumedResponseTime,
+                  respondentEmail: "after-resume@example.test",
+                },
+              ],
+            });
+          },
+        ),
+      );
+      await accept(
+        automationsClient().enable({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      const resumedWatchId = formsApi.watchIds.at(-1);
+      if (!resumedWatchId || resumedWatchId === originalWatchId) {
+        throw new Error("Expected a new watch after explicit re-enable");
+      }
+      const pushed = await postWebhook(
+        formsPushBody("response-after-explicit-resume", resumedWatchId),
+      );
+      expect(pushed).toMatchObject({
+        status: 200,
+        body: { watchStates: 1, dispatched: 1 },
+      });
+      expect(filters).toStrictEqual([`timestamp > ${resumedCursor}`]);
+      await flushWaitUntilForTest();
+      const current = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      if (!current.body.chatThreadId) {
+        throw new Error("Expected the resumed automation's chat thread");
+      }
+      const events = await workflows.readThreadEvents(
+        current.body.chatThreadId,
+      );
+      const delivered = events.filter((event) => {
+        return event.eventType === "input.automation";
+      });
+      expect(delivered).toHaveLength(1);
+      expect(delivered.map(chatEventDisplayText)).toStrictEqual([
+        `A new response from after-resume@example.test was submitted to Google Form "${FORM_TITLE}".`,
+      ]);
+    },
+  );
+
+  it("does not enqueue a response after the automation is disabled during retrieval", async () => {
+    const { automationId, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const watchId = formsApi.watchIds[0];
+    if (!watchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        async () => {
+          await accept(
+            automationsClient().disable({
+              headers: authHeaders(),
+              params: { id: automationId },
+            }),
+            [200],
+          );
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "response-after-disable",
+                createTime: RESPONSE_CREATE_TIME,
+                lastSubmittedTime: RESPONSE_SUBMITTED_TIME,
+              },
+            ],
+          });
+        },
+      ),
+    );
+    const pushed = await postWebhook(
+      formsPushBody("response-after-disable", watchId),
+    );
+    expect(pushed).toMatchObject({
+      status: 200,
+      body: { dispatched: 0 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toStrictEqual([]);
+    expect(formsApi.stoppedWatchIds).toContain(watchId);
+  });
+
+  it("delivers metadata without response data and de-duplicates a retry", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
     const watchId = formsApi.watchIds[0];
@@ -443,21 +706,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     expect(eventContext).not.toHaveProperty("answers");
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
     expect(claim.appendSystemPrompt).not.toContain("# Current context");
-    await flushWaitUntilForTest();
-  });
-
-  it("de-duplicates a retry", async () => {
-    const { formsApi } = await setupGoogleFormsAutomation();
-    const watchId = formsApi.watchIds[0];
-    if (!watchId) {
-      throw new Error("Expected a Google Forms watch id");
-    }
-    const push = formsPushBody("pubsub-forms-retry", watchId);
-    const first = await postWebhook(push);
-    expect(first).toMatchObject({
-      status: 200,
-      body: { watchStates: 1, dispatched: 1, duplicates: 0 },
-    });
     const retry = await postWebhook(push);
     expect(retry).toStrictEqual({
       status: 200,
@@ -468,9 +716,130 @@ describe("Google Forms Pub/Sub webhook", () => {
         duplicates: 1,
       },
     });
-    expect(formsApi.responseFilters).toHaveLength(2);
     await flushWaitUntilForTest();
+    const retriedEvents = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      retriedEvents.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
   });
+
+  it.each(["firewall", "Forms"] as const)(
+    "keeps a successful refresh after a concurrent %s provider outage",
+    async (failingWriter) => {
+      const startedAt = now();
+      const { actor, chatThreadId, formsApi } =
+        await setupGoogleFormsAutomation();
+      const watchId = formsApi.watchIds[0];
+      if (!watchId) {
+        throw new Error("Expected a Google Forms watch");
+      }
+      await expect(
+        postWebhook(formsPushBody("before-refresh-outage", watchId)),
+      ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
+      await flushWaitUntilForTest();
+      const events = await workflows.readThreadEvents(chatThreadId);
+      const runId = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected a running Forms workflow");
+      }
+      await runs.heartbeatRunner(RUNNER_GROUP);
+      await runs.claimRunnerJob(runId);
+      const connection = await connectors.readConnectorBySlug(
+        actor,
+        "google-forms",
+      );
+      const fw = createFirewallApi(context);
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({}),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("GOOGLE_FORMS_TOKEN")}`,
+        },
+        secretConnectorMap: { GOOGLE_FORMS_TOKEN: "google-forms" },
+        secretConnectorMetadataMap: {
+          GOOGLE_FORMS_TOKEN: {
+            sourceType: "connector" as const,
+            sourceId: connection.id,
+          },
+        },
+      };
+      // Google verifies this provider-issued JWT against wall-clock time,
+      // while only the application's OAuth expiry clock advances below.
+      const googleIdToken = signedGoogleIdToken();
+      mockNow(startedAt + 2 * 60 * 60 * 1000);
+      const headers = fw.sandboxHeaders(actor, runId);
+      const refreshedForms = configureFormsApi(["forms-refresh-success"]);
+      let preparedSuccess = false;
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", async () => {
+          if (preparedSuccess) {
+            return HttpResponse.json(
+              { error: "server_error" },
+              { status: 503 },
+            );
+          }
+          preparedSuccess = true;
+          // The successful request has read its credential snapshot. A real
+          // second API request encounters an outage before that first request
+          // receives its successful token response and publishes it.
+          if (failingWriter === "firewall") {
+            const failed = await fw.requestFirewallAuth(
+              headers,
+              { ...body, forceRefresh: true },
+              [502],
+            );
+            expect(failed.body).toMatchObject({
+              error: { failureReason: "upstream_provider" },
+            });
+          } else {
+            const failed = await postWebhook(
+              formsPushBody("during-refresh-outage", watchId),
+              googleIdToken,
+            );
+            expect(failed).toMatchObject({
+              status: 200,
+              body: { dispatched: 0 },
+            });
+            await expect(
+              connectors.readConnectorBySlug(actor, "google-forms"),
+            ).resolves.toMatchObject({ connectionStatus: "connected" });
+          }
+          return HttpResponse.json({
+            access_token: "forms-refresh-success",
+            expires_in: 3600,
+          });
+        }),
+      );
+      if (failingWriter === "Forms") {
+        const published = await fw.requestFirewallAuth(
+          headers,
+          { ...body, forceRefresh: true },
+          [200],
+        );
+        expect(published.body).toMatchObject({
+          headers: { Authorization: "Bearer forms-refresh-success" },
+        });
+      }
+      const retry = await postWebhook(
+        formsPushBody("after-refresh-outage", watchId),
+        googleIdToken,
+      );
+      expect(retry).toMatchObject({ status: 200, body: { duplicates: 1 } });
+      expect(refreshedForms.authorizationHeaders).toContain(
+        "Bearer forms-refresh-success",
+      );
+      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
+      expect(resolved.body).toMatchObject({
+        headers: { Authorization: "Bearer forms-refresh-success" },
+      });
+      await expect(
+        connectors.readConnectorBySlug(actor, "google-forms"),
+      ).resolves.toMatchObject({ connectionStatus: "connected" });
+    },
+  );
 
   it("acknowledges events without dispatching after Forms access becomes unavailable", async () => {
     const startedAt = now();
@@ -840,6 +1209,111 @@ describe("Google Forms Pub/Sub webhook", () => {
         return event.eventType === "input.prompt";
       }),
     ).toHaveLength(0);
+  });
+
+  it("keeps the current selected account usable after a provider failure", async () => {
+    const { first, firstWatchId, secondConnector, secondWatchId } =
+      await setupGoogleFormsMultiAccountAutomations();
+    const resumedCursor = "2026-08-05T10:15:00.123456Z";
+    const responseTime = "2026-08-05T10:16:00.123456Z";
+    const selectAccount = async (connectionId: string) => {
+      return await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(),
+          params: { id: first.chatThreadId },
+          body: {
+            connectionId,
+            target: { kind: "builtin", connectorSlug: "google-forms" },
+          },
+        }),
+        [200],
+      );
+    };
+    let preparingReplacement = false;
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        async ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter !== null) {
+            expect([
+              `timestamp > ${resumedCursor}`,
+              `timestamp > ${SEED_CURSOR}`,
+            ]).toContain(filter);
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "after-account-publication",
+                  createTime: responseTime,
+                  lastSubmittedTime: responseTime,
+                  respondentEmail: "selected-account@example.test",
+                },
+              ],
+            });
+          }
+          if (!preparingReplacement) {
+            preparingReplacement = true;
+            // The selected source has changed but remote preparation is not
+            // complete. Even an outgoing watch must not fire the old account.
+            await expect(
+              postWebhook(
+                formsPushBody("during-account-preparation", firstWatchId),
+              ),
+            ).resolves.toMatchObject({
+              status: 200,
+              body: { dispatched: 0 },
+            });
+            return HttpResponse.json(
+              { error: { message: "Provider unavailable" } },
+              { status: 503 },
+            );
+          }
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "replacement-baseline",
+                createTime: resumedCursor,
+                lastSubmittedTime: resumedCursor,
+              },
+            ],
+          });
+        },
+      ),
+    );
+    await selectAccount(secondConnector.id);
+    // Repeating the same public choice repairs its missing watch/cursor;
+    // recovery does not require changing the account again.
+    await selectAccount(secondConnector.id);
+    const current = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: first.automationId },
+      }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      enabled: true,
+      eventConfig: {
+        connectorId: secondConnector.id,
+      },
+    });
+    await expect(
+      postWebhook(formsPushBody("after-account-publication", secondWatchId)),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { dispatched: 2 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(first.chatThreadId);
+    expect(
+      events
+        .filter((event) => {
+          return event.eventType === "input.automation";
+        })
+        .map(chatEventDisplayText),
+    ).toStrictEqual([
+      `A new response from selected-account@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
   });
 
   it("routes the selected account with exact credentials", async () => {

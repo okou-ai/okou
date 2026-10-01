@@ -1234,6 +1234,39 @@ const chatThreadThreadIdPathParamsSchema = z.object({
   threadId: z.string().uuid(),
 });
 
+export const CHAT_THREAD_USAGE_RUN_LIMIT = 100;
+
+/** Bounded read: money comes from settled usage, independent of chat hints. */
+export const chatThreadUsageContract = c.router({
+  read: {
+    method: "POST",
+    path: "/api/chat-threads/:id/usage",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    body: z.object({
+      runIds: z
+        .array(z.string().uuid())
+        .min(1)
+        .max(CHAT_THREAD_USAGE_RUN_LIMIT),
+    }),
+    responses: {
+      200: z.object({
+        runs: z.array(
+          z.object({
+            runId: z.string().uuid(),
+            usage: chatEventUsagePayloadSchema,
+          }),
+        ),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read settled usage for runs owned by a private chat thread",
+  },
+});
+
 export const chatThreadByIdContract = c.router({
   get: {
     method: "GET",

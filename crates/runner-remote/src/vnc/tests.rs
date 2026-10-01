@@ -208,6 +208,41 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
             "authority_failure",
         ),
         (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"x509_sasl","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"qemu_x509_sasl"}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"has,comma","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"é","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"sêcret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
             json!({"method":"client_certificate","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA"}),
             json!({"type":"x509_vnc","trust":{"mode":"system"}}),
             "authority_failure",

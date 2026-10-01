@@ -9,16 +9,15 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import {
-  seedSlackOrgConnection$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
 
-const context = testContext();
+// Connecting a Slack user resolves the built-in Slack connector OAuth method.
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
+const slackOrgs = createPublicSlackOrgApi(context);
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 
@@ -83,17 +82,37 @@ describe("POST /api/integrations/slack/message", () => {
     return { orgId, userId };
   }
 
+  /** The OAuth flows authenticate other sessions; restore the member's. */
+  async function restoreMembership(base: {
+    readonly orgId: string;
+    readonly userId: string;
+  }): Promise<void> {
+    await store.set(
+      seedOrgMembership$,
+      { orgId: base.orgId, userId: base.userId, role: "admin" },
+      context.signal,
+    );
+  }
+
+  /** Connects the member's Slack user through the production flow. */
+  async function connectMember(base: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly slackWorkspaceId: string;
+  }): Promise<{ readonly slackUserId: string }> {
+    const connection = await slackOrgs.connectMember(base);
+    await restoreMembership(base);
+    return connection;
+  }
+
   async function seedWithInstallation(): Promise<{
     orgId: string;
     userId: string;
     slackWorkspaceId: string;
   }> {
     const base = await seedBaseContext();
-    const fixture = await store.set(
-      seedSlackOrgInstallation$,
-      { orgId: base.orgId },
-      context.signal,
-    );
+    const fixture = await slackOrgs.installForOrg({ orgId: base.orgId });
+    await restoreMembership(base);
     return { ...base, slackWorkspaceId: fixture.slackWorkspaceId };
   }
 
@@ -310,11 +329,11 @@ describe("POST /api/integrations/slack/message", () => {
 
   it("resolves 'me' to current user's Slack ID and sends DM", async () => {
     const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
-    const { slackUserId } = await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId, userId: userId },
-      context.signal,
-    );
+    const { slackUserId } = await connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId,
+    });
     const token = okouToken({ userId, orgId, runId: "run-1" });
 
     const client = setupApp({
@@ -397,11 +416,11 @@ describe("POST /api/integrations/slack/message", () => {
     const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
     const { runId } = await seedAgentRun({ orgId, userId });
 
-    const { slackUserId } = await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId, userId: userId },
-      context.signal,
-    );
+    const { slackUserId } = await connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId,
+    });
 
     const token = okouToken({ userId, orgId, runId });
 
