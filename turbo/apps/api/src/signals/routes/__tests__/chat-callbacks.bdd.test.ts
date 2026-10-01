@@ -3302,12 +3302,6 @@ describe("CHAT-02: drain-time admission failure", () => {
       prompt: "finish before queued built-in model admission",
     });
     const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
-    const queuedPrompt = "reject this queued message without a built-in key";
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: anchor.threadId,
-      prompt: queuedPrompt,
-    });
     await api.updateOrgModelPolicies(actor, [
       {
         model,
@@ -3317,7 +3311,14 @@ describe("CHAT-02: drain-time admission failure", () => {
         modelProviderId: null,
       },
     ]);
+    // The queued input keeps the model selected when it is enqueued.
     await chat.updateThreadModelSelection(actor, anchor.threadId, model);
+    const queuedPrompt = "reject this queued message without a built-in key";
+    const queuedEventId = await queueChatEvent(actor, {
+      agentId,
+      threadId: anchor.threadId,
+      prompt: queuedPrompt,
+    });
     chatCallbacks.mockChatOutputEvents([]);
     // Provider failures cool down every Built-in candidate of the model.
     await coolDownBuiltInCandidatesFixture(
