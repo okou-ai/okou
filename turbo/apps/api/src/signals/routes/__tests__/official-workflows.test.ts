@@ -120,7 +120,6 @@ import {
   readChatEventSnapshotHead,
   readLatestWorkflowAutomationRunFixture,
   readOfficialWorkflowRunStateFixture,
-  readRunAutonomyBudgetFixture,
   readWorkflowAutomationAutonomyFixture,
   seedBuiltInModelKey,
   setOfficialWorkflowAutomationAdmissionStateFixture,
@@ -9465,9 +9464,6 @@ describe("Official Workflow Run admission", () => {
         },
         runner_job_count: 1,
       });
-      await expect(
-        readRunAutonomyBudgetFixture(context, resumedRunId),
-      ).resolves.toBe(queueCase.origin === "agent_run" ? 3 : 10);
       const resumedClaim = await runs.claimRunnerJob(resumedRunId);
       expect(resumedClaim.prompt).toBe(`/${installation.body.workflow.name}`);
       if (

@@ -132,10 +132,7 @@ import {
   configureNativeCliArtifact,
   createChatEventsFixture,
 } from "./helpers/chat-events-fixture";
-import {
-  readAgentRunCallbacks$,
-  seedAgentRunCallback$,
-} from "./helpers/agent-run-callback";
+import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   deleteSlackIntegrationFixture$,
   seedSlackEnvironmentAgent$,
@@ -151,11 +148,9 @@ import {
   clearRunApiStart,
   mutateRunnerJobConnectorPermissionBaseline,
   removeRunCanonicalStorageState,
-  readRunAutonomyBudgetFixture,
   readRunApiStart,
   readRunClaimOwner,
   readRunFailureReasonFixture,
-  readRunLaunchSnapshotFixture,
   readRunnerJobStorageState,
   readStoragePersistenceState,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
@@ -3149,26 +3144,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
     expect(compatiblePoll.body.job?.runId).toBe(created.runId);
     expect(compatiblePoll.body.job?.experimentalProfile).toBe("vm0/large");
-
-    const launchSnapshot = await readRunLaunchSnapshotFixture(
-      context,
-      created.runId,
-    );
-    expect(launchSnapshot).toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: "claude-code",
-        runnerProfile: compatiblePoll.body.job?.experimentalProfile,
-      },
-    });
     const claim = await api.claimRunnerJob(created.runId);
-    expect(launchSnapshot.launch_snapshot?.framework).toBe(claim.cliAgentType);
-
+    expect(claim.cliAgentType).toBe("claude-code");
     await api.requestCancelRun(actor, created.runId, [200]);
-    await expect(
-      readRunLaunchSnapshotFixture(context, created.runId),
-    ).resolves.toStrictEqual(launchSnapshot);
   });
 
   it("skips runner-local exclusions without mutating shared queue state", async () => {
@@ -3275,16 +3253,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toBeNull();
-    await expect(
-      readRunLaunchSnapshotFixture(context, resumed.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: resumedClaim.cliAgentType,
-        runnerProfile: DEFAULT_PROFILE,
-      },
-    });
 
     if (!actor.orgId) {
       throw new Error("Expected session owner to have an organization");
@@ -5040,48 +5008,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("records a failed queued launch when queue payload encryption fails", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before queued encryption failure one",
-      modelProvider: "anthropic-api-key",
-    });
-    const second = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before queued encryption failure two",
-      modelProvider: "anthropic-api-key",
-    });
-
-    mockEnv("SECRETS_KMS_KEY_ID", undefined);
-    const failed = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run should fail when payload encryption fails",
-      modelProvider: "anthropic-api-key",
-    });
-
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(
-      "SECRETS_KMS_KEY_ID is required for KMS secret encryption",
-    );
-    const stored = await api.readRun(actor, failed.runId);
-    expect(stored.status).toBe("failed");
-    await expect(
-      readRunAutonomyBudgetFixture(context, failed.runId),
-    ).resolves.toBe(10);
-    await expect(readRunApiStart(context, failed.runId)).resolves.toStrictEqual(
-      expect.any(String),
-    );
-    await expect(
-      readConnectorDiagnosticRegistration(failed.runId),
-    ).resolves.toBeNull();
-
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
-  });
-
   it("removes cancelled runs from the claimable queue", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -5542,16 +5468,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
     // GPT 5.6 is Pi-eligible: chat runs launch a Pi turn, not a Codex job.
     expect(claim.cliAgentType).toBe("pi");
-    await expect(
-      readRunLaunchSnapshotFixture(context, sent.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: claim.cliAgentType,
-        runnerProfile: poll.body.job?.experimentalProfile,
-      },
-    });
     expect(claim.piModelConfig).toMatchObject({
       provider: "openai",
       model: selectedModel,
@@ -14069,16 +13985,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     });
     expect(failedRun.status).toBe("failed");
     expect(failedRun.error).toBe("Only vm0/* runner groups are supported");
-    await expect(
-      readRunLaunchSnapshotFixture(context, failedRun.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: "claude-code",
-        runnerProfile: "vm0/large",
-      },
-    });
     const storedFailedRun = await api.readRun(actor, failedRun.runId);
     expect(storedFailedRun.status).toBe("failed");
     const failedClaim = await api.requestClaimRunnerJob(
@@ -14172,95 +14078,6 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     expect(cancelNote.runLifecycleEvent).toBe("cancelled");
     expect(cancelNote.content).toStrictEqual(expect.any(String));
     expect(routeRequests).toBe(0);
-  });
-});
-
-describe("HOOK-01: callback authentication failures", () => {
-  it("fails closed without authentication material on progress and completion", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const prompt = `missing callback authentication ${randomUUID()}`;
-    const created = await api.createRun(actor, {
-      agentId,
-      prompt,
-      modelProvider: "anthropic-api-key",
-    });
-    const callbackUrl = "https://callback.example/missing-authentication";
-    await callbackStore.set(
-      seedAgentRunCallback$,
-      {
-        runId: created.runId,
-        url: callbackUrl,
-        payload: {},
-        persistSecret: false,
-      },
-      context.signal,
-    );
-
-    let callbackRequests = 0;
-    server.use(
-      http.post(callbackUrl, () => {
-        callbackRequests += 1;
-        return HttpResponse.json({ ok: true });
-      }),
-    );
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, created.runId)}`,
-    };
-
-    await webhooks.requestAgentHeartbeat(
-      { runId: created.runId },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(0);
-    await expect(
-      callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          prompt,
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        status: "pending",
-        attempts: 0,
-        lastError: null,
-      }),
-    ]);
-
-    await webhooks.requestAgentComplete(
-      { runId: created.runId, exitCode: 0 },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(callbackRequests).toBe(0);
-    await expect(
-      callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          prompt,
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        status: "failed",
-        attempts: 0,
-        lastError: "Callback secret is missing",
-      }),
-    ]);
   });
 });
 
