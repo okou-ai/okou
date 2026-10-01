@@ -244,9 +244,9 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
     {
       name: "an arbitrary imported run factory is not run provenance",
       code: `
-        import { createDirectRunFixture } from "./fake-run-fixture";
+        import { createUnapprovedRunFixture } from "./fake-run-fixture";
         import { seedUsagePricingRows } from "${fixtureModule}";
-        const run = await createDirectRunFixture();
+        const run = await createUnapprovedRunFixture();
         await seedUsagePricingRows([{ kind: "generation", provider: run.runId, category: "maps", unitPrice: 1, unitSize: 1 }]);
       `,
       errors: [{ messageId: "unownedPricing" }],
@@ -276,10 +276,10 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
     {
       name: "mixed run-object wrapper calls are fail-closed",
       code: `
-        import { createDirectRunFixture } from "../../../test-fixtures/agent-runs";
+        import { createUnapprovedRunFixture } from "../../../test-fixtures/agent-runs";
         import { seedUsagePricingRows } from "${fixtureModule}";
         function identity(run) { return run; }
-        const fixture = await createDirectRunFixture();
+        const fixture = await createUnapprovedRunFixture();
         const owned = identity(fixture);
         identity({ runId: "google-maps" });
         await seedUsagePricingRows([{ kind: "generation", provider: owned.runId, category: "maps", unitPrice: 1, unitSize: 1 }]);
