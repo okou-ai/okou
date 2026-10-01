@@ -35,7 +35,7 @@
 //! # Cross-language compatibility
 //!
 //! Catalog changes must stay compatible with TypeScript artifact validation in
-//! `turbo/apps/api/src/signals/services/connector-catalog-artifacts/firewall.ts`
+//! `turbo/packages/connectors/src/connector-catalog/artifacts/firewall.ts`
 //! and `turbo/packages/connectors/src/firewall-types.ts`, the runtime projection
 //! in
 //! `turbo/packages/connectors/src/firewall-metadata/runner-runtime-catalog.ts`,
