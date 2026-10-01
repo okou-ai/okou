@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
-
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -12,13 +11,12 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { computed, type Computed } from "ccstate";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
-
+import { command } from "ccstate";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import type { Db } from "../external/db";
+import { env } from "../../lib/env";
+import { writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -30,8 +28,6 @@ const MAX_COMPRESSED_BYTES = 8 * 1024 * 1024;
 const MAX_HISTORY_BYTES = 32 * 1024 * 1024;
 const MAX_HISTORY_ROWS = 50_000;
 const HISTORY_TIMEOUT_MS = 15_000;
-const SQL_TIMEOUT_MS = 3000;
-const TAIL_PAGE_SIZE = 1000;
 const gunzipAsync = promisify(gunzip);
 
 export class McpMessageHistoryError extends Error {
@@ -43,48 +39,27 @@ export class McpMessageHistoryError extends Error {
     this.name = "McpMessageHistoryError";
   }
 }
-
 export interface HistoryBudget {
   readonly check: () => void;
-  readonly remainingMs: () => number;
   bytes: number;
   rows: number;
 }
-
-/** A caller may share this envelope across several canonical thread reads. */
 export function createMcpChatHistoryBudget(signal: AbortSignal): HistoryBudget {
   const deadline = performance.now() + HISTORY_TIMEOUT_MS;
-  const check = () => {
-    signal.throwIfAborted();
-    if (performance.now() >= deadline) {
-      throw new McpMessageHistoryError(
-        "history_limit",
-        "Chat history exceeded the 15 second read budget.",
-      );
-    }
-  };
   return {
-    check,
-    remainingMs: () => {
-      check();
-      return Math.max(1, Math.floor(deadline - performance.now()));
+    check() {
+      signal.throwIfAborted();
+      if (performance.now() >= deadline) {
+        throw new McpMessageHistoryError(
+          "history_limit",
+          "Chat history exceeded the 15 second read budget.",
+        );
+      }
     },
     bytes: 0,
     rows: 0,
   };
 }
-
-export async function boundHistoryQuery(
-  tx: Tx,
-  budget: HistoryBudget,
-): Promise<void> {
-  const milliseconds = Math.min(SQL_TIMEOUT_MS, budget.remainingMs());
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${`${milliseconds.toString()}ms`}, true)`,
-  );
-  budget.check();
-}
-
 function addHistorySize(
   budget: HistoryBudget,
   bytes: number,
@@ -100,14 +75,12 @@ function addHistorySize(
     );
   }
 }
-
 interface SnapshotHead {
   readonly lastSeqId: number;
   readonly terminalSeqId: number | null;
   readonly terminalEventId: string | null;
   readonly objectKey: string;
 }
-
 function decodeHistoryArchive(
   body: Buffer,
   head: SnapshotHead,
@@ -148,167 +121,6 @@ function decodeHistoryArchive(
   budget.check();
   return rows;
 }
-
-function historyArchive(
-  bucket: string,
-  head: SnapshotHead,
-  threadId: string,
-  budget: HistoryBudget,
-  signal: AbortSignal,
-): Computed<Promise<ChatEventRow[]>> {
-  return computed(async (get) => {
-    if (
-      !Number.isSafeInteger(head.lastSeqId) ||
-      head.lastSeqId <= 0 ||
-      head.terminalSeqId === null ||
-      !Number.isSafeInteger(head.terminalSeqId) ||
-      !(
-        (head.terminalSeqId === 0 && head.terminalEventId === null) ||
-        (head.terminalSeqId > 0 &&
-          head.terminalSeqId <= head.lastSeqId &&
-          head.terminalEventId !== null)
-      )
-    ) {
-      throw new Error("Chat history archive pointer is invalid");
-    }
-    const digest = /-([0-9a-f]{64})\.ndjson\.gz$/u.exec(head.objectKey)?.[1];
-    if (digest === undefined) {
-      throw new Error("Chat history archive object key is invalid");
-    }
-    budget.check();
-    const compressed = await get(
-      downloadS3BufferWithMaxBytes(
-        bucket,
-        head.objectKey,
-        MAX_COMPRESSED_BYTES,
-        signal,
-      ),
-    );
-    budget.check();
-    if (createHash("sha256").update(compressed).digest("hex") !== digest) {
-      throw new Error("Chat history archive checksum is invalid");
-    }
-    const body = await gunzipAsync(compressed, {
-      maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
-    });
-    budget.check();
-    return decodeHistoryArchive(body, head, threadId, budget);
-  });
-}
-
-interface TailPage {
-  readonly afterSeqId: number;
-  readonly lastSeqId: number;
-  readonly count: number;
-}
-
-/**
- * Never fetch unbounded payloads to discover they exceed the read budget.
- * PostgreSQL measures its JSON text before returning any body. The fixed
- * allowance covers UUIDs, sequence/time fields and JSON property names;
- * variable text columns receive the maximum JSON escaping expansion as well.
- */
-async function preflightHistoryTail(
-  tx: Tx,
-  threadId: string,
-  afterSeqId: number,
-  budget: HistoryBudget,
-): Promise<readonly TailPage[]> {
-  const pages: TailPage[] = [];
-  let cursor = afterSeqId;
-  for (;;) {
-    await boundHistoryQuery(tx, budget);
-    const metadata = await tx
-      .select({
-        seqId: chatEvents.seqId,
-        bytes: sql`(
-          COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint
-          + 1024
-          + 6 * (
-            COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint
-            + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint
-            + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint
-          )
-        )`.mapWith(pgInt8ToSafeIntegerDecoder),
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, threadId),
-          gt(chatEvents.seqId, cursor),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(Math.min(TAIL_PAGE_SIZE, MAX_HISTORY_ROWS - budget.rows + 1));
-    budget.check();
-    for (const row of metadata) {
-      addHistorySize(budget, row.bytes, 1);
-    }
-    const last = metadata.at(-1);
-    if (last === undefined) {
-      return pages;
-    }
-    pages.push({
-      afterSeqId: cursor,
-      lastSeqId: last.seqId,
-      count: metadata.length,
-    });
-    cursor = last.seqId;
-    if (metadata.length < TAIL_PAGE_SIZE) {
-      return pages;
-    }
-  }
-}
-
-async function readHistoryTail(
-  tx: Tx,
-  threadId: string,
-  pages: readonly TailPage[],
-  budget: HistoryBudget,
-): Promise<readonly ChatEventRow[]> {
-  const events: ChatEventRow[] = [];
-  for (const page of pages) {
-    await boundHistoryQuery(tx, budget);
-    const rows = await tx
-      .select({
-        id: chatEvents.id,
-        chatThreadId: chatEvents.chatThreadId,
-        runId: chatEvents.runId,
-        revokesEventId: chatEvents.revokesEventId,
-        eventType: chatEvents.eventType,
-        payload: chatEvents.payload,
-        failureReason: chatEvents.failureReason,
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-        runEventId: chatEvents.runEventId,
-        seqId: chatEvents.seqId,
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, threadId),
-          gt(chatEvents.seqId, page.afterSeqId),
-          lte(chatEvents.seqId, page.lastSeqId),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(page.count);
-    budget.check();
-    if (rows.length !== page.count) {
-      throw new Error("Chat history tail changed inside its read snapshot");
-    }
-    for (const row of rows) {
-      budget.check();
-      const event = chatEventRowFromDbRow(row);
-      chatEventFromRow(event);
-      events.push(event);
-    }
-  }
-  return events;
-}
-
 function historyReadFailure(error: unknown): McpMessageHistoryError {
   if (error instanceof McpMessageHistoryError) {
     return error;
@@ -331,141 +143,189 @@ function historyReadFailure(error: unknown): McpMessageHistoryError {
   );
 }
 
-/** History and its business projection share one authorized read snapshot. */
-export function readMcpChatHistoryProjection<T>(
-  runtime: {
-    readonly db: Db;
-    readonly bucket: string;
-    readonly historyBudget?: HistoryBudget;
-  },
-  principal: { readonly userId: string; readonly orgId: string },
-  threadId: string,
-  signal: AbortSignal,
-  project: (
-    tx: Tx,
-    history: readonly ChatEventRow[],
+/**
+ * Snapshot pointer, byte preflight and tail must describe one read snapshot.
+ * This short read-only transaction owns SET LOCAL and all SQL inline. Archive IO
+ * happens only after it releases the client; no DB handle crosses a boundary.
+ */
+export const readMcpChatMessageHistory$ = command(
+  async (
+    { get, set },
+    principal: { readonly userId: string; readonly orgId: string },
+    threadId: string,
     budget: HistoryBudget,
-  ) => Promise<T>,
-): Computed<Promise<T | null>> {
-  return computed(async (get) => {
-    const budget = runtime.historyBudget ?? createMcpChatHistoryBudget(signal);
-    budget.check();
-    const historySignal = AbortSignal.any([
+    signal: AbortSignal,
+  ): Promise<readonly ChatEventRow[] | null> => {
+    const operationSignal = AbortSignal.any([
       signal,
       AbortSignal.timeout(HISTORY_TIMEOUT_MS),
     ]);
-    // Bound the response even while pg is waiting to acquire a pooled client.
-    // The transaction promise stays observed if cancellation wins. A late
-    // acquisition checks the budget before business reads, then Drizzle owns
-    // rollback/release; in-flight SELECTs also have server-side deadlines.
     const result = await settleIncludingAbort(
-      awaitWithSignal(
-        runtime.db.transaction(
-          async (tx) => {
-            budget.check();
-            await boundHistoryQuery(tx, budget);
-            const [owned] = await tx
-              .select({ id: chatThreads.id })
-              .from(chatThreads)
-              .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-              .where(
-                and(
-                  eq(chatThreads.id, threadId),
-                  eq(chatThreads.userId, principal.userId),
-                  eq(agents.orgId, principal.orgId),
-                ),
-              )
-              .limit(1);
-            budget.check();
-            if (owned === undefined) {
-              return null;
-            }
-            await boundHistoryQuery(tx, budget);
-            const [head] = await tx
-              .select({
-                lastSeqId: chatEventSnapshots.lastSeqId,
-                terminalSeqId: chatEventSnapshots.terminalSeqId,
-                terminalEventId: chatEventSnapshots.terminalEventId,
-                objectKey: chatEventSnapshots.objectKey,
-              })
-              .from(chatEventSnapshots)
-              .where(
-                and(
-                  eq(chatEventSnapshots.chatThreadId, threadId),
-                  eq(
-                    chatEventSnapshots.archiveSchemaVersion,
-                    CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-                  ),
-                ),
-              )
-              .limit(1);
-            budget.check();
-            const archive = head
-              ? await get(
-                  historyArchive(
-                    runtime.bucket,
-                    head,
-                    threadId,
-                    budget,
-                    historySignal,
+      (async () => {
+        const selected = await awaitWithSignal(
+          set(writeDb$).transaction(
+            async (tx) => {
+              budget.check();
+              await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
+              const [owned] = await tx
+                .select({ id: chatThreads.id })
+                .from(chatThreads)
+                .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+                .where(
+                  and(
+                    eq(chatThreads.id, threadId),
+                    eq(chatThreads.userId, principal.userId),
+                    eq(agents.orgId, principal.orgId),
                   ),
                 )
-              : [];
-            const pages = await preflightHistoryTail(
-              tx,
-              threadId,
-              head?.lastSeqId ?? 0,
-              budget,
-            );
-            const tail = await readHistoryTail(tx, threadId, pages, budget);
-            const history = [...archive, ...tail];
-            const eventIds = new Set<string>();
-            for (const event of history) {
+                .limit(1);
               budget.check();
-              if (eventIds.has(event.id)) {
-                // Historical archives can contain IDs that the canonical
-                // snapshot writer has not normalized yet. Their revoke and
-                // content references are ambiguous until that repair lands.
-                throw new Error("Chat history event identity is ambiguous");
+              if (!owned) {
+                return null;
               }
-              eventIds.add(event.id);
-            }
-            budget.check();
-            const projection = await project(tx, history, budget);
-            budget.check();
-            return projection;
-          },
-          { isolationLevel: "repeatable read", accessMode: "read only" },
-        ),
-        historySignal,
-      ),
+              const [head] = await tx
+                .select({
+                  lastSeqId: chatEventSnapshots.lastSeqId,
+                  terminalSeqId: chatEventSnapshots.terminalSeqId,
+                  terminalEventId: chatEventSnapshots.terminalEventId,
+                  objectKey: chatEventSnapshots.objectKey,
+                })
+                .from(chatEventSnapshots)
+                .where(
+                  and(
+                    eq(chatEventSnapshots.chatThreadId, threadId),
+                    eq(
+                      chatEventSnapshots.archiveSchemaVersion,
+                      CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+                    ),
+                  ),
+                )
+                .limit(1);
+              budget.check();
+              // Measure JSON/text before requesting payloads. The fixed overhead covers
+              // identifiers, timestamps and keys; six is the maximal JSON escaping cost.
+              const metadata = await tx
+                .select({
+                  seqId: chatEvents.seqId,
+                  bytes:
+                    sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
+                      pgInt8ToSafeIntegerDecoder,
+                    ),
+                })
+                .from(chatEvents)
+                .where(
+                  and(
+                    eq(chatEvents.chatThreadId, threadId),
+                    gt(chatEvents.seqId, head?.lastSeqId ?? 0),
+                  ),
+                )
+                .orderBy(asc(chatEvents.seqId))
+                .limit(MAX_HISTORY_ROWS - budget.rows + 1);
+              for (const row of metadata) {
+                addHistorySize(budget, row.bytes, 1);
+              }
+              const tail = await tx
+                .select({
+                  id: chatEvents.id,
+                  chatThreadId: chatEvents.chatThreadId,
+                  runId: chatEvents.runId,
+                  revokesEventId: chatEvents.revokesEventId,
+                  eventType: chatEvents.eventType,
+                  payload: chatEvents.payload,
+                  failureReason: chatEvents.failureReason,
+                  contextType: chatEvents.contextType,
+                  contextId: chatEvents.contextId,
+                  runEventSequenceNumber: chatEvents.runEventSequenceNumber,
+                  runEventId: chatEvents.runEventId,
+                  seqId: chatEvents.seqId,
+                  createdAt: chatEvents.createdAt,
+                })
+                .from(chatEvents)
+                .where(
+                  and(
+                    eq(chatEvents.chatThreadId, threadId),
+                    gt(chatEvents.seqId, head?.lastSeqId ?? 0),
+                  ),
+                )
+                .orderBy(asc(chatEvents.seqId))
+                .limit(metadata.length + 1);
+              budget.check();
+              if (tail.length !== metadata.length) {
+                throw new Error(
+                  "Chat history tail changed inside its read snapshot",
+                );
+              }
+              return { head, tail };
+            },
+            { isolationLevel: "repeatable read", accessMode: "read only" },
+          ),
+          operationSignal,
+        );
+        budget.check();
+        if (!selected) {
+          return null;
+        }
+        const { head, tail } = selected;
+        let archive: ChatEventRow[] = [];
+        if (head) {
+          if (
+            !Number.isSafeInteger(head.lastSeqId) ||
+            head.lastSeqId <= 0 ||
+            head.terminalSeqId === null ||
+            !Number.isSafeInteger(head.terminalSeqId) ||
+            !(
+              (head.terminalSeqId === 0 && head.terminalEventId === null) ||
+              (head.terminalSeqId > 0 &&
+                head.terminalSeqId <= head.lastSeqId &&
+                head.terminalEventId !== null)
+            )
+          ) {
+            throw new Error("Chat history archive pointer is invalid");
+          }
+          const digest = /-([0-9a-f]{64})\.ndjson\.gz$/u.exec(
+            head.objectKey,
+          )?.[1];
+          if (digest === undefined) {
+            throw new Error("Chat history archive object key is invalid");
+          }
+          const compressed = await get(
+            downloadS3BufferWithMaxBytes(
+              env("R2_USER_STORAGES_BUCKET_NAME"),
+              head.objectKey,
+              MAX_COMPRESSED_BYTES,
+              operationSignal,
+            ),
+          );
+          budget.check();
+          if (
+            createHash("sha256").update(compressed).digest("hex") !== digest
+          ) {
+            throw new Error("Chat history archive checksum is invalid");
+          }
+          const body = await gunzipAsync(compressed, {
+            maxOutputLength: Math.max(1, MAX_HISTORY_BYTES - budget.bytes),
+          });
+          budget.check();
+          archive = decodeHistoryArchive(body, head, threadId, budget);
+        }
+        const history = [...archive, ...tail.map(chatEventRowFromDbRow)];
+        const eventIds = new Set<string>();
+        for (const event of history) {
+          budget.check();
+          chatEventFromRow(event);
+          if (eventIds.has(event.id)) {
+            throw new Error("Chat history event identity is ambiguous");
+          }
+          eventIds.add(event.id);
+        }
+        return history;
+      })(),
     );
+    signal.throwIfAborted();
     budget.check();
     if (!result.ok) {
       throw historyReadFailure(result.error);
     }
     return result.value;
-  });
-}
-
-/** Authorized, complete history within an explicit resource envelope. */
-export function readMcpChatMessageHistory(
-  runtime: {
-    readonly db: Db;
-    readonly bucket: string;
-    readonly historyBudget?: HistoryBudget;
   },
-  principal: { readonly userId: string; readonly orgId: string },
-  threadId: string,
-  signal: AbortSignal,
-): Computed<Promise<readonly ChatEventRow[] | null>> {
-  return readMcpChatHistoryProjection(
-    runtime,
-    principal,
-    threadId,
-    signal,
-    (_tx, history) => {
-      return Promise.resolve(history);
-    },
-  );
-}
+);

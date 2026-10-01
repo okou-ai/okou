@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-
-import { mcpCreateChatThreadInputSchema } from "../mcp-chat-creation";
 import { mcpChatModelIdSchema } from "../mcp-chat-discovery";
 import {
   mcpRevokeQueuedMessageInputSchema,
@@ -10,143 +8,66 @@ import {
 import { mcpGetChatStatusInputSchema } from "../mcp-chat-status";
 import { mcpUpdateChatThreadInputSchema } from "../mcp-chat-thread-update";
 import { mcpListChatThreadsInputSchema } from "../mcp-chat-threads";
+const id = "00000000-0000-4000-8000-000000000001";
 
-const id = "00000000-0000-0000-0000-000000000000";
-
-describe("MCP chat input schemas", () => {
-  it("publishes nonblank string and nonempty patch constraints", () => {
+describe("MCP Web input adaptation", () => {
+  it("requires only the ordinary Agent and prompt, with optional thread/model", () => {
+    const input = { agentId: id, prompt: "Preserved text" };
+    expect(mcpSendChatMessageInputSchema.parse(input)).toEqual(input);
+    expect(
+      mcpSendChatMessageInputSchema.parse({
+        ...input,
+        threadId: id,
+        model: "future/model-id",
+      }),
+    ).toEqual({ ...input, threadId: id, model: "future/model-id" });
     expect(z.toJSONSchema(mcpSendChatMessageInputSchema)).toMatchObject({
-      properties: {
-        text: { type: "string", maxLength: 32_000, pattern: "\\S" },
-      },
-    });
-    expect(z.toJSONSchema(mcpCreateChatThreadInputSchema)).toMatchObject({
-      properties: {
-        title: {
-          type: "string",
-          minLength: 1,
-          maxLength: 200,
-          pattern: "\\S",
-        },
-        model: {
-          type: "string",
-          minLength: 1,
-          maxLength: 255,
-          pattern: "\\S",
-        },
-        message: {
-          type: "string",
-          maxLength: 32_000,
-          pattern: "\\S",
-        },
-      },
-      required: ["requestId"],
-    });
-    expect(z.toJSONSchema(mcpUpdateChatThreadInputSchema)).toMatchObject({
-      properties: {
-        patch: {
-          type: "object",
-          minProperties: 1,
-          additionalProperties: false,
-          properties: {
-            title: {
-              type: "string",
-              minLength: 1,
-              maxLength: 200,
-              pattern: "\\S",
-            },
-            model: {
-              anyOf: [
-                {
-                  type: "string",
-                  minLength: 1,
-                  maxLength: 255,
-                  pattern: "\\S",
-                },
-                { type: "null" },
-              ],
-            },
-          },
-        },
-      },
-    });
-    expect(z.toJSONSchema(mcpListChatThreadsInputSchema)).toMatchObject({
-      properties: {
-        title: {
-          type: "string",
-          minLength: 1,
-          maxLength: 200,
-          pattern: "\\S",
-        },
-      },
+      type: "object",
+      required: ["agentId", "prompt"],
+      additionalProperties: false,
     });
   });
-
+  it.each(["", " ", "\n\t"])("rejects blank prompt %j", (prompt) => {
+    expect(
+      mcpSendChatMessageInputSchema.safeParse({ agentId: id, prompt }).success,
+    ).toBe(false);
+  });
+  it.each([
+    "requestId",
+    "inputRef",
+    "retryUntil",
+    "replayed",
+    "text",
+    "waitMs",
+    "clientEventId",
+    "orgId",
+  ])("rejects old protocol or identity field %s", (field) => {
+    expect(
+      mcpSendChatMessageInputSchema.safeParse({
+        agentId: id,
+        prompt: "Text",
+        [field]: id,
+      }).success,
+    ).toBe(false);
+  });
   it("keeps model syntax separate from live catalog availability", () => {
-    for (const model of ["", " ", "\n\t"]) {
-      expect(mcpChatModelIdSchema.safeParse(model).success).toBe(false);
-    }
     expect(mcpChatModelIdSchema.safeParse("future/model-id").success).toBe(
       true,
     );
-
-    const create = z.toJSONSchema(mcpCreateChatThreadInputSchema);
-    const update = z.toJSONSchema(mcpUpdateChatThreadInputSchema);
-    expect(JSON.stringify(create)).not.toContain('"enum"');
-    expect(JSON.stringify(update.properties?.patch)).not.toContain('"enum"');
+    expect(mcpChatModelIdSchema.safeParse(" ").success).toBe(false);
   });
-
-  it("rejects blank text and titles while preserving each title transform", () => {
-    const send = { threadId: id, requestId: id, text: "" };
-    expect(mcpSendChatMessageInputSchema.safeParse(send).success).toBe(false);
-    expect(
-      mcpSendChatMessageInputSchema.safeParse({ ...send, text: " \n\t " })
-        .success,
-    ).toBe(false);
-    expect(
-      mcpSendChatMessageInputSchema.safeParse({ ...send, text: "你好" })
-        .success,
-    ).toBe(true);
-
-    const create = { requestId: id, agentId: id, model: "future/model-id" };
-    expect(
-      mcpCreateChatThreadInputSchema.safeParse({ ...create, title: "  " })
-        .success,
-    ).toBe(false);
-    expect(
-      mcpCreateChatThreadInputSchema.parse({
-        ...create,
-        title: "  Preserved title  ",
-      }).title,
-    ).toBe("  Preserved title  ");
-    expect(
-      mcpCreateChatThreadInputSchema.parse({ requestId: id }),
-    ).toStrictEqual({ requestId: id });
-    expect(
-      mcpCreateChatThreadInputSchema.safeParse({
-        requestId: id,
-        message: undefined,
-      }).success,
-    ).toBe(false);
-    expect(
-      mcpCreateChatThreadInputSchema.parse({
-        requestId: id,
-        message: "Use every default",
-      }),
-    ).toStrictEqual({ requestId: id, message: "Use every default" });
-
-    expect(
-      mcpListChatThreadsInputSchema.safeParse({ title: " \n\t " }).success,
-    ).toBe(false);
-    expect(
-      mcpListChatThreadsInputSchema.parse({
-        title: `${" ".repeat(250)}Trimmed filter${" ".repeat(250)}`,
-      }).title,
-    ).toBe("Trimmed filter");
-  });
-
-  it("retains sparse update and nullable model semantics", () => {
-    const update = { requestId: id, threadId: id };
+  it("retains sparse metadata and nullable model without replay identity", () => {
+    for (const patch of [
+      { title: "New title" },
+      { model: null },
+      { model: "future/model-id" },
+      { title: "New title", model: null },
+    ]) {
+      expect(
+        mcpUpdateChatThreadInputSchema.safeParse({ threadId: id, patch })
+          .success,
+      ).toBe(true);
+    }
     for (const patch of [
       {},
       { title: " " },
@@ -154,31 +75,39 @@ describe("MCP chat input schemas", () => {
       { extra: true },
     ]) {
       expect(
-        mcpUpdateChatThreadInputSchema.safeParse({ ...update, patch }).success,
+        mcpUpdateChatThreadInputSchema.safeParse({ threadId: id, patch })
+          .success,
       ).toBe(false);
     }
-    for (const patch of [
-      { title: "New title" },
-      { model: null },
-      { model: "future/model-id" },
-      { title: "New title", model: "future/model-id" },
-    ]) {
-      expect(
-        mcpUpdateChatThreadInputSchema.safeParse({ ...update, patch }).success,
-      ).toBe(true);
-    }
+    expect(
+      mcpUpdateChatThreadInputSchema.safeParse({
+        threadId: id,
+        patch: { title: "Title" },
+        requestId: id,
+      }).success,
+    ).toBe(false);
+    expect(
+      mcpListChatThreadsInputSchema.parse({ title: " Trimmed filter " }).title,
+    ).toBe("Trimmed filter");
   });
-
-  it("publishes canonical chat status and revocation selectors", () => {
-    const inputRef = { threadId: id, eventId: id, seqId: 1 };
-    expect(mcpGetChatStatusInputSchema.parse({ inputRef })).toStrictEqual({
-      inputRef,
+  it("uses ordinary Run and queued-event identities, not an input reference protocol", () => {
+    expect(mcpGetChatStatusInputSchema.parse({ runId: id })).toEqual({
+      runId: id,
     });
-    expect(mcpGetChatStatusInputSchema.parse({ threadId: id })).toStrictEqual({
-      threadId: id,
-    });
-    expect(mcpRevokeQueuedMessageInputSchema.parse({ inputRef })).toStrictEqual(
-      { inputRef },
-    );
+    expect(
+      mcpGetChatStatusInputSchema.safeParse({ runId: id, waitMs: 0 }).success,
+    ).toBe(false);
+    expect(
+      mcpRevokeQueuedMessageInputSchema.parse({
+        agentId: id,
+        threadId: id,
+        revokesEventId: id,
+      }),
+    ).toEqual({ agentId: id, threadId: id, revokesEventId: id });
+    expect(
+      mcpRevokeQueuedMessageInputSchema.safeParse({
+        inputRef: { threadId: id, eventId: id, seqId: 1 },
+      }).success,
+    ).toBe(false);
   });
 });

@@ -54,13 +54,6 @@ interface ChatThreadEventAppend {
   readonly createdAt?: Date;
 }
 
-export class ChatThreadEventIdConflictError extends Error {
-  constructor() {
-    super("Chat thread event id is already in use");
-    this.name = "ChatThreadEventIdConflictError";
-  }
-}
-
 async function insertChatThreadEvent(
   db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,

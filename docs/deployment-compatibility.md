@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## MCP Web-parity protocol simplification (#37513)
+
+The owner approved a breaking MCP simplification: `create_chat_thread`, MCP
+request identities/exact replay, input receipts, lifecycle/wait observations and
+next-action handoffs are removed without a legacy fallback. MCP clients must
+refresh tool schemas and send `{agentId, prompt, threadId?, model?}`; omission of
+`threadId` creates a normal conversation. Status reads take `{runId}` and return
+the ordinary Web Run response. Old protocol arguments are rejected, not replayed
+or silently translated. An uncertain send must not be automatically retried.
+
+Ordinary Web/CLI event identity, enqueue, money/admission, queue lease/fencing,
+recall/cancellation and historical persisted message/source decoding are
+unchanged. No DB migration or stored-input conversion is required. Historical
+MCP source annotations remain readable as ordinary message provenance. The
+common metadata command no longer accepts the MCP-only mutation identity; Web
+metadata event IDs keep their existing behavior. Mixed MCP-serving versions can
+advertise different tool schemas during deployment; clients must use the schema
+of the serving version rather than assume old request replay is available.
+
 ## Long-context threshold in the Runner payload (2026-10-01)
 
 The long-context pricing threshold is catalog data:
