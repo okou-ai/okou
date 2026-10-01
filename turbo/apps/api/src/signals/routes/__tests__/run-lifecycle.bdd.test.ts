@@ -1379,11 +1379,14 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     // A Thread launch failure creates no run and surfaces from the pick;
     // the first preparation failure wins over the later storage failure.
-    const failed = api.createThreadRun(actor, { agentId, prompt });
+    const failed = api.readThreadLaunchFailure(actor, { agentId, prompt });
     await kmsStarted.promise;
     await storageStarted.promise;
     releaseStorage.resolve(undefined);
-    await expect(failed).rejects.toThrow(contextError.message);
+    await expect(failed).resolves.toStrictEqual({
+      pickError: contextError.message,
+      inputError: "internal_error",
+    });
     await storageFinished.promise;
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
@@ -1550,14 +1553,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         prompt,
       });
     };
+    const failedContinuation = (prompt: string) => {
+      return api.readThreadLaunchFailure(actor, {
+        agentId,
+        threadId: initialRun.threadId,
+        prompt,
+      });
+    };
     const overlapPrompt = `overlap request and canonical session storage ${randomUUID()}`;
-    const overlapped = continueSession(overlapPrompt);
+    const overlapped = failedContinuation(overlapPrompt);
     await Promise.all([
       requestPresignStarted.promise,
       sessionPresignStarted.promise,
     ]);
     releaseRequestPresign.resolve(undefined);
-    await expect(overlapped).rejects.toThrow(sessionError.message);
+    await expect(overlapped).resolves.toStrictEqual({
+      pickError: sessionError.message,
+      inputError: "internal_error",
+    });
     await requestPresignFinished.promise;
 
     context.mocks.s3.getSignedUrl.mockImplementation(
@@ -1571,8 +1584,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     );
     await expect(
-      continueSession("session storage alone fails"),
-    ).rejects.toThrow(sessionError.message);
+      failedContinuation("session storage alone fails"),
+    ).resolves.toStrictEqual({
+      pickError: sessionError.message,
+      inputError: "internal_error",
+    });
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,

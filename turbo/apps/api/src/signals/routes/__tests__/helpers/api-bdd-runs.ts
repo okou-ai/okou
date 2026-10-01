@@ -420,6 +420,7 @@ export function createRunsApi(
       readonly agentId: string;
       readonly prompt: string;
       readonly model?: string;
+      readonly threadId?: string;
     },
   ): Promise<{
     readonly pickError: string;
@@ -434,6 +435,7 @@ export function createRunsApi(
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
       },
       [201],
     );
