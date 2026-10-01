@@ -1,13 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
-import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
-import type {
-  ChatSlackMentionDisplayNames,
-  ChatSlackMessageAssets,
-  ChatSlackMessageFiles,
-} from "@okouai/db/jsonb-contracts/chat-slack-context";
-import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
-import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
