@@ -207,13 +207,14 @@ test("Apply realtime model policy changes after reopening Settings", async () =>
       null,
     );
   });
-  await within(reopened).findByText("Easy model");
-  await within(reopened).findByRole("heading", {
-    name: "Personal Model Subscriptions",
-  });
+  await within(reopened).findByRole("heading", { name: "Use more models" });
+  await expect(
+    findEnabledButton("Connect account", reopened),
+  ).resolves.toBeEnabled();
+  expect(within(reopened).queryByText("Easy model")).not.toBeInTheDocument();
   expect(
-    within(reopened).getByRole("heading", { name: "Models" }),
-  ).toBeInTheDocument();
+    within(reopened).queryByRole("heading", { name: "Models" }),
+  ).not.toBeInTheDocument();
   expect(
     within(reopened).queryByRole("heading", { name: "Available models" }),
   ).not.toBeInTheDocument();
@@ -269,13 +270,14 @@ test("Keep the Models header without organization loading UI while the initial m
   act(() => {
     release.resolve();
   });
-  await within(settings).findByText("Easy model");
-  await within(settings).findByRole("heading", {
-    name: "Personal Model Subscriptions",
-  });
+  await within(settings).findByRole("heading", { name: "Use more models" });
+  await expect(
+    findEnabledButton("Connect account", settings),
+  ).resolves.toBeEnabled();
+  expect(within(settings).queryByText("Easy model")).not.toBeInTheDocument();
   expect(
-    within(settings).getByRole("heading", { name: "Models" }),
-  ).toBeInTheDocument();
+    within(settings).queryByRole("heading", { name: "Models" }),
+  ).not.toBeInTheDocument();
   expect(
     within(settings).queryByRole("status", { name: "Loading models..." }),
   ).not.toBeInTheDocument();
