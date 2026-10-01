@@ -138,6 +138,8 @@ type BddSendEventBody =
 
 interface RequestSendEventOptions {
   readonly usagePricingResolution?: UsagePricingResolution;
+  /** Request headers beyond authentication, such as a preview bypass. */
+  readonly extraHeaders?: Readonly<Record<string, string>>;
 }
 
 /** Both body fields are optional on the contract, and an omitted
@@ -1644,6 +1646,9 @@ export function createChatFilesBddApi(context: TestContext) {
       return await accept(
         client.send({
           headers: authenticate(context, actor),
+          ...(options.extraHeaders === undefined
+            ? {}
+            : { extraHeaders: options.extraHeaders }),
           body: requestBody,
         }),
         statuses,

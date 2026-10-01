@@ -12136,6 +12136,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 describe("RUN-03: user-runner protocol and runner authentication", () => {
   it("passes a valid preview bypass header or cookie into the run environment", async () => {
     const api = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
     const { actor, agentId } = await entitledRunActor();
     const previewBypass = "bdd-preview-bypass";
     const requests = [
@@ -12154,30 +12155,42 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     for (const request of requests) {
       mockEnv("ENV", "preview");
       mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", previewBypass);
-      const created = await api.requestCreateRun(
+      // The send carries the bypass; its pick runs inside that request.
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
           prompt: request.prompt,
-          modelProvider: "anthropic-api-key",
+          model: "claude-sonnet-5",
+          clientEventId,
         },
         [201],
-        request.headers,
+        { extraHeaders: request.headers },
       );
+      await flushWaitUntilForTest();
       mockEnv("ENV", "development");
 
-      expect(created.status).toBe(201);
-      if (created.status !== 201) {
-        throw new Error("Expected preview run creation to succeed");
+      expect(sent.status).toBe(201);
+      if (sent.status !== 201) {
+        throw new Error("Expected the preview send to be accepted");
       }
-      const claim = await api.claimRunnerJob(created.body.runId);
+      const runId = (
+        await chat.listThreadEvents(actor, sent.body.threadId)
+      ).events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the preview send to launch a run");
+      }
+      const claim = await api.claimRunnerJob(runId);
       expect(claim.platformEnvironment).toMatchObject({
         VERCEL_AUTOMATION_BYPASS_SECRET: previewBypass,
       });
       expect(claim.environment).not.toHaveProperty(
         "VERCEL_AUTOMATION_BYPASS_SECRET",
       );
-      await api.requestCancelRun(actor, created.body.runId, [200]);
+      await api.requestCancelRun(actor, runId, [200]);
     }
   });
 
