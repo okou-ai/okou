@@ -12,10 +12,6 @@ import {
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
 } from "../../../test-fixtures/model-catalog";
-import {
-  readRunModelLaunchOptionsFixture,
-  readRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -286,17 +282,13 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await flushWaitUntilForTest();
 
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "built-in",
-      selectedModel: model,
-      modelRuntimeProvider: "openrouter-codex",
-      modelRuntimeModel: "openai/gpt-6-luna",
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      source: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        model,
+      },
     });
-    await expect(
-      readRunModelLaunchOptionsFixture(run.runId),
-    ).resolves.toMatchObject({ reasoningEffort: "high" });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim).toMatchObject({
       cliAgentType: "pi",

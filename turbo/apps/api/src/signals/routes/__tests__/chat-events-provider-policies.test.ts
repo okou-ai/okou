@@ -5,11 +5,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import {
-  readQueuedLangfuseContextFixture,
-  readRunLangfuseTraceEnabledFixture,
-  readRunModelRuntimeRouteFixture,
-} from "../../../test-fixtures/agent-runs";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   acquireBddBuiltInModelKey,
@@ -846,33 +841,13 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "gpt-6-luna",
     });
     await flushWaitUntilForTest();
-    await expect(
-      readRunLangfuseTraceEnabledFixture(run.runId),
-    ).resolves.toBeTruthy();
-    const queuedContext = await readQueuedLangfuseContextFixture({
-      runId: run.runId,
-      userId: actor.userId,
-      orgId,
-    });
-    expect(queuedContext.platformEnvironment).toMatchObject({
-      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      LANGFUSE_TRACING_ENABLED: "true",
-    });
-    expect(queuedContext.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(queuedContext.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
-    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
 
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
+    expect(claimed.claim.platformEnvironment).toMatchObject({
+      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      LANGFUSE_TRACING_ENABLED: "true",
+    });
     expect(claimed.claim.platformEnvironment).not.toHaveProperty(
       "LANGFUSE_PUBLIC_KEY",
     );
@@ -882,9 +857,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claimed.claim.secretValues).not.toContain(
       "sk-lf-bdd-trace-admission",
     );
-    await expect(
-      readRunLangfuseTraceEnabledFixture(run.runId),
-    ).resolves.toBeTruthy();
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -2094,11 +2066,8 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "claude-opus-5",
     });
     runId = run.runId;
-    await expect(
-      readRunModelRuntimeRouteFixture(run.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "built-in",
-      selectedModel: "claude-opus-5",
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      source: { providerType: "built-in", model: "claude-opus-5" },
     });
 
     const { claim, sandboxHeaders } = await claimChatRun(
