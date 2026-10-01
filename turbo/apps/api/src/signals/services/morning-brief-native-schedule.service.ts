@@ -6,7 +6,7 @@ import {
   type MorningBriefExecutionTarget,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
@@ -752,17 +752,31 @@ export async function revokeMorningBriefNativeAuthority(
 }
 
 /** Revoke the exact canonical thread before its deletion can cascade content. */
-export async function revokeMorningBriefNativeThreadAuthority(
-  tx: MorningBriefNativeWriter,
+/** Pure lifecycle fence: revoke only this destination's current epoch. */
+export function revokeMorningBriefNativeThreadAuthoritySql(
   args: MorningBriefMemberIdentity & { readonly chatThreadId: string },
   at: Date,
-): Promise<MorningBriefNativeScheduleRow | undefined> {
-  const owner = { orgId: args.orgId, userId: args.userId };
-  const current = await lockMorningBriefNativeSchedule(tx, owner);
-  if (current?.chatThreadId !== args.chatThreadId) {
-    return undefined;
-  }
-  return await revokeMorningBriefNativeAuthority(tx, owner, at);
+) {
+  const deadline = new Date(
+    at.getTime() + NATIVE_DRAIN_REPORT_AFTER_MS,
+  ).toISOString();
+  return sql`WITH revoked AS (
+    UPDATE ${morningBriefNativeSchedules} SET
+      enabled = false, next_run_at = null, schedule_owner = null,
+      owner_epoch = owner_epoch + 1,
+      draining_epoch = CASE WHEN phase = 'native' THEN owner_epoch ELSE draining_epoch END,
+      drain_deadline_at = CASE WHEN phase = 'native' THEN ${deadline}::timestamp ELSE drain_deadline_at END,
+      drain_unresolved_reason = CASE WHEN phase = 'native' THEN 'authority-revoked' ELSE drain_unresolved_reason END,
+      phase = CASE WHEN phase = 'native' THEN 'rollback-draining' ELSE phase END,
+      updated_at = ${at.toISOString()}::timestamp
+    WHERE org_id = ${args.orgId} AND user_id = ${args.userId} AND chat_thread_id = ${args.chatThreadId}::uuid
+    RETURNING owner_epoch - 1 AS revoked_epoch
+  ) UPDATE ${morningBriefNativeOccurrences} SET
+    state = 'settled', outcome = 'revoked', settled_at = ${at.toISOString()}::timestamp,
+    lease_token = null, lease_expires_at = null, deferred_until = null,
+    delivery_pending = false, updated_at = ${at.toISOString()}::timestamp
+  WHERE org_id = ${args.orgId} AND user_id = ${args.userId}
+    AND owner_epoch IN (SELECT revoked_epoch FROM revoked) AND settled_at IS NULL`;
 }
 
 /**

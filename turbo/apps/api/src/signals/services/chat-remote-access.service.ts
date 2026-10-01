@@ -10,9 +10,9 @@ import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -41,12 +41,11 @@ interface ThreadHostOwner extends ThreadOwner {
   readonly connectionId: string;
 }
 
-/** Validate every initial selection before inserting the chat thread. */
-export async function ownsInitialRemoteAccessHosts(
-  tx: Tx,
+/** Pure ownership predicate, evaluated by the creation owner's SELECT. */
+export function initialRemoteAccessOwnershipPredicate(
   owner: Owner,
   overrides: readonly InitialRemoteAccessOverride[],
-): Promise<boolean> {
+) {
   const sshIds = overrides
     .filter((item) => {
       return item.protocol === "ssh";
@@ -61,68 +60,49 @@ export async function ownsInitialRemoteAccessHosts(
     .map((item) => {
       return item.connectionId;
     });
-  const [ssh, vnc] = await Promise.all([
-    sshIds.length
-      ? tx
-          .select({ id: sshConnections.id })
-          .from(sshConnections)
-          .where(
-            and(
-              inArray(sshConnections.id, sshIds),
-              eq(sshConnections.orgId, owner.orgId),
-              eq(sshConnections.userId, owner.userId),
-            ),
-          )
-      : Promise.resolve([]),
-    vncIds.length
-      ? tx
-          .select({ id: vncConnections.id })
-          .from(vncConnections)
-          .where(
-            and(
-              inArray(vncConnections.id, vncIds),
-              eq(vncConnections.orgId, owner.orgId),
-              eq(vncConnections.userId, owner.userId),
-            ),
-          )
-      : Promise.resolve([]),
-  ]);
-  return ssh.length === sshIds.length && vnc.length === vncIds.length;
+  const builder = new QueryBuilder();
+  const ssh = builder
+    .select({ count: count() })
+    .from(sshConnections)
+    .where(
+      and(
+        inArray(sshConnections.id, sshIds),
+        eq(sshConnections.orgId, owner.orgId),
+        eq(sshConnections.userId, owner.userId),
+      ),
+    );
+  const vnc = builder
+    .select({ count: count() })
+    .from(vncConnections)
+    .where(
+      and(
+        inArray(vncConnections.id, vncIds),
+        eq(vncConnections.orgId, owner.orgId),
+        eq(vncConnections.userId, owner.userId),
+      ),
+    );
+  return sql`(${ssh}) = ${sshIds.length} AND (${vnc}) = ${vncIds.length}`;
 }
 
-export async function insertInitialRemoteAccessOverrides(
-  tx: Tx,
+/** Plain INSERT values; no handles, execution or escaping closures. */
+export function initialRemoteAccessValues(
   chatThreadId: string,
   overrides: readonly InitialRemoteAccessOverride[],
-): Promise<void> {
-  const ssh = overrides.filter((item) => {
-    return item.protocol === "ssh";
-  });
-  const vnc = overrides.filter((item) => {
-    return item.protocol === "vnc";
-  });
-  if (ssh.length) {
-    await tx.insert(chatThreadSshAccessOverrides).values(
-      ssh.map((item) => {
+) {
+  const values = (protocol: RemoteAccessProtocol) => {
+    return overrides
+      .filter((item) => {
+        return item.protocol === protocol;
+      })
+      .map((item) => {
         return {
           chatThreadId,
           connectionId: item.connectionId,
           enabled: item.enabled,
         };
-      }),
-    );
-  }
-  if (vnc.length) {
-    await tx.insert(chatThreadVncAccessOverrides).values(
-      vnc.map((item) => {
-        return {
-          chatThreadId,
-          connectionId: item.connectionId,
-          enabled: item.enabled,
-        };
-      }),
-    );
-  }
+      });
+  };
+  return { ssh: values("ssh"), vnc: values("vnc") };
 }
 
 async function notifyRemoteAccessChange(

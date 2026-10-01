@@ -78,7 +78,7 @@ import {
   morningBriefScheduleClaimSuperseded,
 } from "./morning-brief-schedule-claim.service";
 import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import {
@@ -282,14 +282,16 @@ async function persistClaimProducerBinding(
           eq(chatThreads.agentId, producer.expectedAgentId),
         ),
       );
-    await appendChatThreadEvent(tx, {
-      kind: "sort_touched",
-      chatThreadId: producer.threadId,
-      userId: producer.userId,
-      orgId: producer.orgId,
-      agentId: producer.agentId,
-      reassignedAgentId: producer.agentId,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        kind: "sort_touched",
+        chatThreadId: producer.threadId,
+        userId: producer.userId,
+        orgId: producer.orgId,
+        agentId: producer.agentId,
+        reassignedAgentId: producer.agentId,
+      }),
+    );
   }
 }
 

@@ -1,13 +1,15 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  modelSettingsSchema,
+  type ModelSettings,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import type { SQL } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
-import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { and, eq, sql, type SQL } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
-  appendChatThreadEvent,
+  chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 
@@ -31,56 +33,70 @@ interface NewChatThreadArgs {
   readonly updatedAt?: Date;
 }
 
-/** All creation paths resolve Chat defaults here; explicit selections win. */
-export async function insertChatThread(tx: Tx, args: NewChatThreadArgs) {
-  const { orgId, ...values } = args;
-  const defaults =
-    args.modelSettings !== undefined && args.cloudBrowserEnabled !== undefined
-      ? {
-          modelSettings: args.modelSettings,
-          cloudBrowserEnabled: args.cloudBrowserEnabled,
-        }
-      : await loadNewChatThreadDefaults(tx, { orgId, userId: args.userId });
+type CreatedThread = Pick<
+  typeof chatThreads.$inferSelect,
+  | "id"
+  | "userId"
+  | "title"
+  | "selectedModel"
+  | "modelSettings"
+  | "codexServiceTier"
+  | "computerUseHostId"
+  | "cloudBrowserEnabled"
+  | "createdAt"
+> & {
+  readonly agentId: string;
+};
+
+/** Pure INSERT plan. The owning command executes it in its own statement. */
+export function prepareChatThreadInsert(args: NewChatThreadArgs) {
+  const builder = new QueryBuilder();
+  const defaults = builder.$with("new_chat_thread_defaults").as(
+    builder
+      .select({
+        modelSettings: orgMembersMetadata.modelSettings,
+        cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
+      })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.userId),
+          args.modelSettings !== undefined &&
+            args.cloudBrowserEnabled !== undefined
+            ? sql`false`
+            : sql`true`,
+        ),
+      )
+      .limit(1),
+  );
+  const { orgId: _orgId, ...values } = args;
   const computerUseHostId =
     args.cloudBrowserEnabled === true ? null : (args.computerUseHostId ?? null);
-  const [thread] = await tx
-    .insert(chatThreads)
-    .values({
+  return {
+    defaults,
+    values: {
       ...values,
-      modelSettings: args.modelSettings ?? defaults.modelSettings,
+      modelSettings:
+        args.modelSettings ??
+        sql`COALESCE((SELECT ${defaults.modelSettings} FROM ${defaults}), '{}'::jsonb)`,
       computerUseHostId,
       cloudBrowserEnabled: computerUseHostId
         ? false
-        : (args.cloudBrowserEnabled ?? defaults.cloudBrowserEnabled),
-    })
-    // Both the primary key and (id, user_id) are unique. Skip either conflict
-    // so the caller can apply its own owner-scoped replay policy.
-    .onConflictDoNothing()
-    .returning({
-      id: chatThreads.id,
-      userId: chatThreads.userId,
-      title: chatThreads.title,
-      selectedModel: chatThreads.selectedModel,
-      modelSettings: chatThreads.modelSettings,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      createdAt: chatThreads.createdAt,
-    });
-  return thread ? { ...thread, agentId: args.agentId } : undefined;
+        : (args.cloudBrowserEnabled ??
+          sql`COALESCE((SELECT ${defaults.cloudBrowserEnabled} FROM ${defaults}), true)`),
+    },
+  };
 }
 
-/** Append only after the caller wins any integration route conflict. */
-export async function appendChatThreadCreatedEvent(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly eventId?: string;
-    readonly thread: NonNullable<Awaited<ReturnType<typeof insertChatThread>>>;
-  },
-): Promise<void> {
+/** Pure list-event statement; execution stays with the creation owner. */
+export function chatThreadCreatedEventSql(args: {
+  readonly orgId: string;
+  readonly eventId?: string;
+  readonly thread: CreatedThread;
+}) {
   const { thread } = args;
-  await appendChatThreadEvent(tx, {
+  return chatThreadEventInsertSql({
     kind: "created",
     userId: thread.userId,
     orgId: args.orgId,
@@ -95,4 +111,16 @@ export async function appendChatThreadCreatedEvent(
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
     createdAt: thread.createdAt,
   });
+}
+
+/** Validate the stored preferences before the creation owner may commit. */
+export function createdChatThreadFromRow(
+  row: Omit<CreatedThread, "agentId">,
+  agentId: string,
+): CreatedThread {
+  return {
+    ...row,
+    modelSettings: modelSettingsSchema.parse(row.modelSettings),
+    agentId,
+  };
 }

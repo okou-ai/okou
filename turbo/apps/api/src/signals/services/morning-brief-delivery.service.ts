@@ -1,6 +1,6 @@
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 
@@ -68,4 +68,12 @@ export async function revokeMorningBriefDeliveryOwnership(
   if (outboxIds.length > 0) {
     await tx.delete(emailOutbox).where(inArray(emailOutbox.id, outboxIds));
   }
+}
+
+/** Pure atomic cleanup for a deleted destination and its content-bearing mail. */
+export function revokeMorningBriefThreadDeliverySql(chatThreadId: string) {
+  return sql`WITH revoked AS (
+    DELETE FROM ${morningBriefDeliveries} WHERE chat_thread_id = ${chatThreadId}::uuid
+    RETURNING email_outbox_id
+  ) DELETE FROM ${emailOutbox} WHERE id IN (SELECT email_outbox_id FROM revoked WHERE email_outbox_id IS NOT NULL)`;
 }

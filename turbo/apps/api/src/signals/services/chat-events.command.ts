@@ -71,12 +71,13 @@ import {
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
+  chatThreadCreatedEventSql,
+  prepareChatThreadInsert,
+  createdChatThreadFromRow,
 } from "./chat-thread-create.service";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  appendChatThreadEvent,
+  chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
@@ -922,7 +923,7 @@ async function insertNewSendThread(
   args: NormalSendArgs,
   thread: NewSendThread,
 ): Promise<boolean> {
-  const created = await insertChatThread(tx, {
+  const createdPlan = prepareChatThreadInsert({
     orgId: args.orgId,
     id: thread.threadId,
     userId: args.userId,
@@ -937,14 +938,35 @@ async function insertNewSendThread(
     computerUseHostId: thread.computerAccess.computerUseHostId,
     cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
   });
+  const [createdRow] = await tx
+    .with(createdPlan.defaults)
+    .insert(chatThreads)
+    .values(createdPlan.values)
+    .onConflictDoNothing()
+    .returning({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      modelSettings: chatThreads.modelSettings,
+      codexServiceTier: chatThreads.codexServiceTier,
+      computerUseHostId: chatThreads.computerUseHostId,
+      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      createdAt: chatThreads.createdAt,
+    });
+  const created = createdRow
+    ? createdChatThreadFromRow(createdRow, createdPlan.values.agentId)
+    : undefined;
   if (!created) {
     return false;
   }
-  await appendChatThreadCreatedEvent(tx, {
-    orgId: args.orgId,
-    eventId: args.body.chatThreadEventId,
-    thread: created,
-  });
+  await tx.execute(
+    chatThreadCreatedEventSql({
+      orgId: args.orgId,
+      eventId: args.body.chatThreadEventId,
+      thread: created,
+    }),
+  );
   return true;
 }
 
@@ -1003,26 +1025,32 @@ async function updateExistingSendThread(
     createdAt: updatedAt,
   };
   if (modelChanged) {
-    await appendChatThreadEvent(tx, {
-      ...event,
-      kind: "model_selection_updated",
-      selectedModel,
-      modelSettingsPatch: runSettings.modelSettingsPatch,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        ...event,
+        kind: "model_selection_updated",
+        selectedModel,
+        modelSettingsPatch: runSettings.modelSettingsPatch,
+      }),
+    );
   }
   if (tierChanged) {
-    await appendChatThreadEvent(tx, {
-      ...event,
-      kind: "service_tier_updated",
-      serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        ...event,
+        kind: "service_tier_updated",
+        serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
+      }),
+    );
   }
   if (accessChanged) {
-    await appendChatThreadEvent(tx, {
-      ...event,
-      kind: "computer_use_host_updated",
-      ...computerAccess,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        ...event,
+        kind: "computer_use_host_updated",
+        ...computerAccess,
+      }),
+    );
   }
 }
 
