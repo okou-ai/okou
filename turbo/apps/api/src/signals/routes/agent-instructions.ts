@@ -1,8 +1,12 @@
 import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { storages } from "@okouai/db/schema/storage";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -25,7 +29,6 @@ import {
   commitPreparedAgentInstructionsStorageInTransaction,
   prepareAgentInstructionsStorage$,
 } from "../services/agent-instructions-storage.service";
-import { lockAgentInstructionsStoragesInTransaction } from "../services/agent-instructions-storage-transaction.service";
 import {
   resolveCanonicalVolumeStorage,
   type ServerSideVolumeStorage,
@@ -89,6 +92,28 @@ async function lockInstructionAgent(tx: Tx, orgId: string, agentId: string) {
   return agent;
 }
 
+async function lockInstructionStorage(
+  tx: Tx,
+  orgId: string,
+  agentName: string,
+) {
+  // This route owns one unique (org, user, name) Storage, after its Agent and
+  // before Pi locks. Keep publication independent of bulk deletion helpers.
+  const [storage] = await tx
+    .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, orgId),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        eq(storages.name, getInstructionsStorageName(agentName)),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  return storage;
+}
+
 interface PublishInstructionArgs {
   readonly reservation: ReservedInstructionPublication;
   readonly member: { readonly userId: string; readonly role: string };
@@ -136,9 +161,11 @@ const prepareAndPublishAgentInstructions$ = command(
       }
 
       // Source deletion and publication both take Storage before Pi locks.
-      const [storage] = await lockAgentInstructionsStoragesInTransaction(tx, [
-        { orgId: reservation.orgId, agentName: current.name },
-      ]);
+      const storage = await lockInstructionStorage(
+        tx,
+        reservation.orgId,
+        current.name,
+      );
       signal.throwIfAborted();
       if (
         storage?.id !== reservation.storage.id ||
@@ -232,9 +259,11 @@ const reserveAgentInstructionPublication$ = command(
         },
         signal,
       );
-      const [storage] = await lockAgentInstructionsStoragesInTransaction(tx, [
-        { orgId: args.orgId, agentName: current.name },
-      ]);
+      const storage = await lockInstructionStorage(
+        tx,
+        args.orgId,
+        current.name,
+      );
       signal.throwIfAborted();
       if (
         storage?.id !== reservedStorage.id ||
