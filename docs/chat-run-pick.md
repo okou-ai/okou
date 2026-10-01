@@ -437,13 +437,8 @@ and Codex protocol assembly. Non-Pi Codex subscription-account/org auth-json exe
 same source/effect/pure-conversion boundary. Account-source IDs remain distinct
 from member-provider IDs; required fields and server-only refresh/ID-token policy
 are selected from the existing auth-method registry. Thread retains deferred
-source IDs and real nonsecret Codex routing identity. Claude OAuth and Pi
-Codex account/org execution also consume the owned source/runtime boundary;
-member subscription accounts no longer fall back to a separate legacy
-personal-account snapshot after the exact source has been prepared. A
-registered provider pin without a stored credential scope first resolves the
-exact row owner (member or workspace) and then reads that exact source; the
-legacy regular-provider snapshot fallback is gone from Thread.
+source IDs and real nonsecret Codex routing identity. Non-Pi Claude OAuth and
+Pi Codex account/org execution also consume the owned source/runtime boundary.
 Explicit cloud deployments/profiles now use stored `configuredModel` facts:
 Bedrock bearer/SigV4 and Azure projections validate required auth fields through
 the existing registry; the owner retains Pi cloud mapping checks before pure

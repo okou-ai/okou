@@ -9,7 +9,6 @@ import {
 } from "./execution-connector-sources.service";
 import {
   createModelSourceSnapshot,
-  type ModelSourceIdentity,
   type ModelSourceSnapshot,
 } from "./execution-model-source.service";
 import {
@@ -198,8 +197,10 @@ import {
   overriddenRuntimeSecretAliases,
   pendingOkouTokenSecrets,
   persistedStorageMountRequests,
+  personalProviderEnvironmentFromSnapshot,
   personalSubscriptionAccountCandidates,
   piConfigurationRouteError,
+  pinnedProviderSecretProjection,
   type PreparedConnectorContext,
   type PreparedOfficialWorkflow,
   type PreparedPiLaunchResources,
@@ -213,6 +214,7 @@ import {
   prepareRunnerStorageInput,
   prepareRunOutputMetadata,
   priorPiMemoryRecall,
+  regularProviderEnvironmentFromSnapshot,
   resolveProductAgentExecution,
   type ResolvedModelProviderEnvironment,
   type ResolveModelProviderEnvironmentArgs,
@@ -614,7 +616,10 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
 import {
   modelProviderConnections,
   modelProviderSurfaces,
@@ -677,8 +682,12 @@ import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-function isMigratedRegisteredSource(type: string | undefined): boolean {
+function isMigratedRegisteredSource(
+  type: string | undefined,
+  scope: string | undefined,
+): boolean {
   return (
+    scope !== undefined &&
     type !== undefined &&
     [
       "anthropic-api-key",
@@ -693,60 +702,11 @@ function isMigratedRegisteredSource(type: string | undefined): boolean {
   );
 }
 
-/**
- * A pin without a credential scope names one exact provider row owned by the
- * member or the workspace; the owner decides which exact source is read.
- */
-async function registeredProviderSourceIdentity(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderId: string;
-    readonly modelProviderCredentialScope?: "member" | "org";
-  },
+function isMemberSubscriptionSource(
   type: string,
-): Promise<ModelSourceIdentity | null> {
-  const owner =
-    args.modelProviderCredentialScope ??
-    (await unscopedRegisteredProviderOwner(db, args, type));
-  if (!owner) {
-    return null;
-  }
-  return {
-    kind: owner === "member" ? "member-provider" : "organization",
-    modelProviderId: args.modelProviderId,
-  };
-}
-
-async function unscopedRegisteredProviderOwner(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderId: string;
-  },
-  type: string,
-): Promise<"member" | "org" | null> {
-  const [provider] = await db
-    .select({ userId: modelProviders.userId })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, args.modelProviderId),
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.type, type),
-        or(
-          eq(modelProviders.userId, args.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
-    return null;
-  }
-  return provider.userId === ORG_SENTINEL_USER_ID ? "org" : "member";
+  scope: string | undefined,
+): boolean {
+  return isPersonalSubscriptionProviderType(type) && scope !== "org";
 }
 
 function isMigratedAccountSource(
@@ -754,7 +714,30 @@ function isMigratedAccountSource(
 ): boolean {
   return (
     args.modelProviderType === "codex-oauth-token" ||
-    args.modelProviderType === "claude-code-oauth-token"
+    (args.modelProviderType === "claude-code-oauth-token" && !args.piExecution)
+  );
+}
+
+function isMigratedOrgAccountSource(
+  args: ResolveModelProviderEnvironmentArgs | undefined,
+): boolean {
+  return (
+    args !== undefined &&
+    args.modelProviderCredentialScope === "org" &&
+    isMigratedAccountSource(args)
+  );
+}
+
+function isPreparedRegisteredSource(
+  args: ResolveModelProviderEnvironmentArgs | undefined,
+): boolean {
+  return (
+    args !== undefined &&
+    (isMigratedRegisteredSource(
+      args.modelProviderType,
+      args.modelProviderCredentialScope,
+    ) ||
+      isMigratedOrgAccountSource(args))
   );
 }
 
@@ -8902,21 +8885,32 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const type = args.modelProviderType;
-    if (type !== undefined && isMigratedRegisteredSource(type)) {
-      const source = await registeredProviderSourceIdentity(
-        context.input.db,
-        { ...args, modelProviderId: args.modelProviderId },
-        type,
+    const registered =
+      type !== undefined &&
+      [
+        "anthropic-api-key",
+        "openai-api-key",
+        "openrouter-api-key",
+        "openrouter-codex",
+        "vercel-ai-gateway",
+        "vercel-ai-gateway-codex",
+        "aws-bedrock",
+        "azure-foundry",
+      ].includes(type);
+    if (registered && args.modelProviderCredentialScope !== undefined) {
+      return await get(
+        createModelSourceSnapshot({
+          orgId: args.orgId,
+          userId: args.userId,
+          source: {
+            kind:
+              args.modelProviderCredentialScope === "member"
+                ? "member-provider"
+                : "organization",
+            modelProviderId: args.modelProviderId,
+          },
+        }),
       );
-      return source
-        ? await get(
-            createModelSourceSnapshot({
-              orgId: args.orgId,
-              userId: args.userId,
-              source,
-            }),
-          )
-        : null;
     }
     return await get(
       createModelSourceSnapshot({
@@ -9289,6 +9283,142 @@ export function createThreadClaimRunObjects(
       ? await get(internalPreparedConfiguredEnvironment$)
       : null;
   });
+  const pinnedPersonalProviderSnapshot$ = computed(async (get) => {
+    const context = await get(pinnedContext$);
+    const args = context?.environmentArgs;
+    if (
+      !context ||
+      !args?.modelProviderId ||
+      !args.modelProviderType ||
+      !isPersonalSubscriptionProviderType(args.modelProviderType) ||
+      args.modelProviderCredentialScope === "org"
+    ) {
+      return null;
+    }
+    const rows = await context.input.db
+      .select({
+        account: modelProviderAccounts,
+        selectedModel: modelProviders.selectedModel,
+        secret: {
+          name: modelProviderAccountSecrets.name,
+          encryptedValue: modelProviderAccountSecrets.encryptedValue,
+        },
+      })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviders,
+        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      )
+      .leftJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.modelProviderId),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, args.modelProviderType),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    const first = rows[0];
+    return first
+      ? {
+          account: first.account,
+          selectedModel: first.selectedModel,
+          secrets: rows.flatMap((row) => {
+            return row.secret ? [row.secret] : [];
+          }),
+        }
+      : null;
+  });
+  const pinnedRegularProviderSnapshot$ = computed(async (get) => {
+    const [context, gatewayEnvironment] = await Promise.all([
+      get(pinnedContext$),
+      get(pinnedGatewayProviderEnvironment$),
+    ]);
+    const args = context?.environmentArgs;
+    const type = args?.modelProviderType;
+    if (isPreparedRegisteredSource(args)) {
+      return null;
+    }
+
+    if (
+      gatewayEnvironment ||
+      !context ||
+      !args?.modelProviderId ||
+      !type ||
+      !isModelProviderType(type) ||
+      isBuiltInModelProviderType(type) ||
+      isMemberSubscriptionSource(type, args.modelProviderCredentialScope)
+    ) {
+      return null;
+    }
+    const multiAuth = hasAuthMethods(type);
+    const hasFirewallAuth =
+      multiAuth && getModelProviderFirewall(type) !== undefined;
+    const rows = await context.input.db
+      .select({
+        provider: {
+          id: modelProviders.id,
+          type: modelProviders.type,
+          userId: modelProviders.userId,
+          isDefault: modelProviders.isDefault,
+          selectedModel: modelProviders.selectedModel,
+          authMethod: modelProviders.authMethod,
+        },
+        secret: {
+          name: secretsTable.name,
+          encryptedValue: pinnedProviderSecretProjection(
+            type,
+            hasFirewallAuth,
+            args.piExecution,
+          ),
+        },
+      })
+      .from(modelProviders)
+      .leftJoin(
+        secretsTable,
+        multiAuth
+          ? and(
+              eq(secretsTable.orgId, modelProviders.orgId),
+              eq(secretsTable.userId, modelProviders.userId),
+              eq(secretsTable.type, "model-provider"),
+            )
+          : eq(secretsTable.id, modelProviders.secretId),
+      )
+      .where(
+        and(
+          eq(modelProviders.id, args.modelProviderId),
+          eq(modelProviders.orgId, args.orgId),
+          eq(modelProviders.type, type),
+          args.modelProviderCredentialScope === "org"
+            ? eq(modelProviders.userId, ORG_SENTINEL_USER_ID)
+            : args.modelProviderCredentialScope === "member"
+              ? eq(modelProviders.userId, args.userId)
+              : or(
+                  eq(modelProviders.userId, args.userId),
+                  eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+                ),
+        ),
+      );
+    const first = rows[0];
+    return first
+      ? {
+          provider: {
+            ...first.provider,
+            encryptedValue: first.secret?.encryptedValue ?? null,
+          },
+          secrets: rows.flatMap((row) => {
+            return row.secret ? [row.secret] : [];
+          }),
+        }
+      : null;
+  });
   const environment$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
       const context = await get(pinnedContext$);
@@ -9304,12 +9434,32 @@ export function createThreadClaimRunObjects(
         isPersonalSubscriptionProviderType(args.modelProviderType) &&
         args.modelProviderCredentialScope !== "org"
       ) {
-        // Member subscription accounts use the exact selected account source.
-        return await get(internalPreparedConfiguredEnvironment$);
+        if (
+          args.modelProviderType === "codex-oauth-token" &&
+          !args.piExecution
+        ) {
+          return await get(internalPreparedConfiguredEnvironment$);
+        }
+        const personal = await get(pinnedPersonalProviderSnapshot$);
+        return personal
+          ? await personalProviderEnvironmentFromSnapshot(
+              args,
+              personal.account,
+              personal.selectedModel,
+              personal.secrets,
+            )
+          : null;
       }
-      // Registered, organization-account and gateway sources are all prepared
-      // from their exact selected source snapshot.
-      return await get(pinnedGatewayProviderEnvironment$);
+      const [gateway, regular] = await Promise.all([
+        get(pinnedGatewayProviderEnvironment$),
+        get(pinnedRegularProviderSnapshot$),
+      ]);
+      return (
+        gateway ??
+        (regular
+          ? await regularProviderEnvironmentFromSnapshot(args, regular)
+          : null)
+      );
     },
   );
   const queuedModelRoute$ = computed(async (get) => {
