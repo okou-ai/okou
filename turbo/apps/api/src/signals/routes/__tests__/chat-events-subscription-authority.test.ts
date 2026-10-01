@@ -7,6 +7,11 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/database-transaction-barrier";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
@@ -162,28 +167,46 @@ describe("CHAT-02: run-level model overrides", () => {
     it("rejects an account disconnected after capture before environment preparation", async () => {
       const f = await prepareSubscriptionThread();
       const clientEventId = randomUUID();
-      await sendHeldInput(
-        f,
-        clientEventId,
-        "reject a disconnected captured account",
+      const events = await withDatabaseTransactionBarrierFixture(
+        {
+          // The exact selected account source read (account + its secrets).
+          select: (queryArgs) => {
+            const text = barrierQueryText(queryArgs);
+            return (
+              text.includes('from "model_provider_accounts"') &&
+              text.includes('"model_provider_account_secrets"') &&
+              barrierQueryBinds(queryArgs, f.captured.accountSourceId)
+            );
+          },
+          stopAt: (_queryArgs, selecting) => {
+            return selecting;
+          },
+          work: async (barrier) => {
+            await sendHeldInput(
+              f,
+              clientEventId,
+              "reject a disconnected captured account",
+            );
+            await Promise.all([
+              f.preparation.arrival("subscription-account"),
+              f.preparation.arrival("thread-session"),
+            ]);
+            f.preparation.releaseAll();
+            await barrier.entered;
+            await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
+            await authDeviceSupport.deletePersonalModelProviderAccount(
+              f.actor,
+              f.captured.accountSourceId,
+            );
+            barrier.release();
+            // Own the source read and rejection before the fixture closes its pool.
+            return await waitForRejection(f);
+          },
+        },
+        context.signal,
       );
 
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      await expect(waitForRejection(f)).resolves.toStrictEqual([
+      expect(events).toStrictEqual([
         expect.objectContaining({
           eventType: "input.prompt",
           id: clientEventId,

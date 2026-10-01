@@ -197,7 +197,6 @@ import {
   overriddenRuntimeSecretAliases,
   pendingOkouTokenSecrets,
   persistedStorageMountRequests,
-  personalProviderEnvironmentFromSnapshot,
   personalSubscriptionAccountCandidates,
   piConfigurationRouteError,
   pinnedProviderSecretProjection,
@@ -618,7 +617,6 @@ import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-proje
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
-  modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import {
   modelProviderConnections,
@@ -715,7 +713,7 @@ function isMigratedAccountSource(
 ): boolean {
   return (
     args.modelProviderType === "codex-oauth-token" ||
-    (args.modelProviderType === "claude-code-oauth-token" && !args.piExecution)
+    args.modelProviderType === "claude-code-oauth-token"
   );
 }
 
@@ -9272,59 +9270,6 @@ export function createThreadClaimRunObjects(
       ? await get(internalPreparedConfiguredEnvironment$)
       : null;
   });
-  const pinnedPersonalProviderSnapshot$ = computed(async (get) => {
-    const context = await get(pinnedContext$);
-    const args = context?.environmentArgs;
-    if (
-      !context ||
-      !args?.modelProviderId ||
-      !args.modelProviderType ||
-      !isPersonalSubscriptionProviderType(args.modelProviderType) ||
-      args.modelProviderCredentialScope === "org"
-    ) {
-      return null;
-    }
-    const rows = await context.input.db
-      .select({
-        account: modelProviderAccounts,
-        selectedModel: modelProviders.selectedModel,
-        secret: {
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        },
-      })
-      .from(modelProviderAccounts)
-      .innerJoin(
-        modelProviders,
-        eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-      )
-      .leftJoin(
-        modelProviderAccountSecrets,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.modelProviderId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, args.modelProviderType),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
-    const first = rows[0];
-    return first
-      ? {
-          account: first.account,
-          selectedModel: first.selectedModel,
-          secrets: rows.flatMap((row) => {
-            return row.secret ? [row.secret] : [];
-          }),
-        }
-      : null;
-  });
   const pinnedRegularProviderSnapshot$ = computed(async (get) => {
     const [context, gatewayEnvironment] = await Promise.all([
       get(pinnedContext$),
@@ -9423,21 +9368,8 @@ export function createThreadClaimRunObjects(
         isPersonalSubscriptionProviderType(args.modelProviderType) &&
         args.modelProviderCredentialScope !== "org"
       ) {
-        if (
-          args.modelProviderType === "codex-oauth-token" &&
-          !args.piExecution
-        ) {
-          return await get(internalPreparedConfiguredEnvironment$);
-        }
-        const personal = await get(pinnedPersonalProviderSnapshot$);
-        return personal
-          ? await personalProviderEnvironmentFromSnapshot(
-              args,
-              personal.account,
-              personal.selectedModel,
-              personal.secrets,
-            )
-          : null;
+        // Member subscription accounts use the exact selected account source.
+        return await get(internalPreparedConfiguredEnvironment$);
       }
       const [gateway, regular] = await Promise.all([
         get(pinnedGatewayProviderEnvironment$),
