@@ -62,8 +62,8 @@ import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
-  clearCanonicalSlackThreadStatusIfIdle,
-  refreshCanonicalSlackThreadStatus,
+  clearCanonicalSlackThreadStatusIfIdle$,
+  refreshCanonicalSlackThreadStatus$,
 } from "./canonical-slack-thread-status.service";
 import {
   insertAssistantEvents$,
@@ -2884,39 +2884,41 @@ const prepareFailedTerminalChatCallbackWork$ = command(
   },
 );
 
-async function clearSlackThreadStatusAfterTerminalCallback(
-  args: {
-    readonly db: Db;
-    readonly chatThreadId: string;
-    readonly slackDelivery: SlackDeliveryTarget | undefined;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.slackDelivery) {
-    return;
-  }
-  await tapError(
-    clearCanonicalSlackThreadStatusIfIdle(
-      args.db,
-      {
-        chatThreadId: args.chatThreadId,
-        channelId: args.slackDelivery.channelId,
-        threadTs: args.slackDelivery.threadTs,
-        ...(args.slackDelivery.routeThreadTs
-          ? { routeThreadTs: args.slackDelivery.routeThreadTs }
-          : {}),
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to clear canonical Slack thread status", {
-        chatThreadId: args.chatThreadId,
-        error,
-      });
+const clearSlackThreadStatusAfterTerminalCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      readonly slackDelivery: SlackDeliveryTarget | undefined;
     },
-  );
-  signal.throwIfAborted();
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!args.slackDelivery) {
+      return;
+    }
+    await tapError(
+      set(
+        clearCanonicalSlackThreadStatusIfIdle$,
+        {
+          chatThreadId: args.chatThreadId,
+          channelId: args.slackDelivery.channelId,
+          threadTs: args.slackDelivery.threadTs,
+          ...(args.slackDelivery.routeThreadTs
+            ? { routeThreadTs: args.slackDelivery.routeThreadTs }
+            : {}),
+        },
+        signal,
+      ),
+      (error) => {
+        log.warn("Failed to clear canonical Slack thread status", {
+          chatThreadId: args.chatThreadId,
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 async function clearFeishuThinkingAfterTerminalCallback(
   args: {
@@ -2940,35 +2942,47 @@ async function clearFeishuThinkingAfterTerminalCallback(
   signal.throwIfAborted();
 }
 
-async function handleTerminalChatCallbackPreparationFailure(
-  args: {
-    readonly callback: TerminalChatCallbackArgs;
-    readonly error: unknown;
-    readonly persistedThreadId: string | undefined;
+const tryClearTerminalIntegrationStatus$ = command(
+  async (
+    { set },
+    callback: Pick<TerminalChatCallbackArgs, "payload">,
+    chatThreadId: string,
+    signal: AbortSignal,
+  ) => {
+    return await settleIncludingAbort(
+      set(clearTerminalIntegrationStatus$, callback, chatThreadId, signal),
+    );
   },
-  signal: AbortSignal,
-): Promise<never> {
-  // Join the cleanup within the existing owner, including its abort. A
-  // secondary cleanup failure must never replace the original load/capture
-  // error.
-  const cleared = await settleIncludingAbort(
-    clearTerminalIntegrationStatus(
-      args.callback,
+);
+
+const handleTerminalChatCallbackPreparationFailure$ = command(
+  async (
+    { set },
+    args: {
+      readonly callback: Pick<TerminalChatCallbackArgs, "callback" | "payload">;
+      readonly error: unknown;
+      readonly persistedThreadId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<never> => {
+    // Join the cleanup within the existing owner, including its abort. A
+    // secondary cleanup failure must never replace the original load/capture
+    // error.
+    const cleared = await set(
+      tryClearTerminalIntegrationStatus$,
+      { payload: args.callback.payload },
       args.persistedThreadId ?? args.callback.payload.threadId,
       signal,
-    ),
-  );
-  if (!cleared.ok) {
-    log.error(
-      "Failed to clear integration status after terminal callback error",
-      {
-        runId: args.callback.callback.runId,
-        error: cleared.error,
-      },
     );
-  }
-  throw args.error;
-}
+    if (!cleared.ok) {
+      log.error(
+        "Failed to clear integration status after terminal callback error",
+        { runId: args.callback.callback.runId, error: cleared.error },
+      );
+    }
+    throw args.error;
+  },
+);
 
 const dispatchCanonicalDeliveryCallbacks$ = command(
   async (
@@ -3132,27 +3146,31 @@ const releaseManagedBrowsersForTerminalCallback$ = command(
   },
 );
 
-async function clearTerminalIntegrationStatus(
-  args: TerminalChatCallbackArgs,
-  chatThreadId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await clearSlackThreadStatusAfterTerminalCallback(
-    {
-      db: args.db,
-      chatThreadId,
-      slackDelivery: args.payload.slackDelivery,
-    },
-    signal,
-  );
-  await clearFeishuThinkingAfterTerminalCallback(
-    {
-      db: args.db,
-      feishuDelivery: args.payload.feishuDelivery,
-    },
-    signal,
-  );
-}
+const clearTerminalIntegrationStatus$ = command(
+  async (
+    { set },
+    args: Pick<TerminalChatCallbackArgs, "payload">,
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await set(
+      clearSlackThreadStatusAfterTerminalCallback$,
+      {
+        chatThreadId,
+        slackDelivery: args.payload.slackDelivery,
+      },
+      signal,
+    );
+    await clearFeishuThinkingAfterTerminalCallback(
+      {
+        db,
+        feishuDelivery: args.payload.feishuDelivery,
+      },
+      signal,
+    );
+  },
+);
 
 const finishTerminalChatCallbackAfterProjection$ = command(
   async (
@@ -3186,8 +3204,9 @@ const finishTerminalChatCallbackAfterProjection$ = command(
     // must neither hold the completion ACK nor be cancelled with its request.
     // The thread's queue is woken by whoever releases the run's active slot.
     waitUntil(
-      clearTerminalIntegrationStatus(
-        args.callback,
+      set(
+        clearTerminalIntegrationStatus$,
+        { payload: args.callback.payload },
         args.chatThread.chatThreadId,
         new AbortController().signal,
       ),
@@ -3333,14 +3352,20 @@ const processTerminalChatCallback$ = command(
       signal,
     );
     if (!prepared.ok) {
-      return await handleTerminalChatCallbackPreparationFailure(
-        { callback: args, error: prepared.error, persistedThreadId },
+      return await set(
+        handleTerminalChatCallbackPreparationFailure$,
+        {
+          callback: { callback: args.callback, payload: args.payload },
+          error: prepared.error,
+          persistedThreadId,
+        },
         signal,
       );
     }
     if (!prepared.value) {
-      await clearTerminalIntegrationStatus(
-        args,
+      await set(
+        clearTerminalIntegrationStatus$,
+        { payload: args.payload },
         persistedThreadId ?? args.payload.threadId,
         signal,
       );
@@ -3387,8 +3412,8 @@ const processChatInternalCallback$ = command(
         const backgroundSignal = new AbortController().signal;
         waitUntil(
           tapError(
-            refreshCanonicalSlackThreadStatus(
-              args.db,
+            set(
+              refreshCanonicalSlackThreadStatus$,
               {
                 chatThreadId: payload.data.threadId,
                 channelId: payload.data.slackDelivery.channelId,

@@ -32,8 +32,8 @@ import {
   type CanonicalSlackInputAsset,
 } from "./canonical-asset.service";
 import {
-  canonicalSlackThreadStatusTargetForIngress,
-  clearCanonicalSlackThreadStatusIfIdle,
+  canonicalSlackThreadStatusTargetForIngress$,
+  clearCanonicalSlackThreadStatusIfIdle$,
 } from "./canonical-slack-thread-status.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
@@ -462,7 +462,6 @@ const settleCanonicalSlackStatusAfterPick$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const notice = chatQueueWaitNotice(args.reason);
     if (notice) {
       await postCanonicalSlackWaitNotice(args.ingress, args.ingressId, notice);
@@ -470,8 +469,8 @@ const settleCanonicalSlackStatusAfterPick$ = command(
       return;
     }
     await tapError(
-      clearCanonicalSlackThreadStatusIfIdle(
-        db,
+      set(
+        clearCanonicalSlackThreadStatusIfIdle$,
         {
           chatThreadId: args.ingress.chatThreadId,
           channelId: args.ingress.channelId,
@@ -917,13 +916,14 @@ export const processCanonicalSlackIngress$ = command(
     signal.throwIfAborted();
     await tapError(
       (async () => {
-        const target = await canonicalSlackThreadStatusTargetForIngress(
-          db,
+        const target = await set(
+          canonicalSlackThreadStatusTargetForIngress$,
           args.ingressId,
+          signal,
         );
         signal.throwIfAborted();
         if (target) {
-          await clearCanonicalSlackThreadStatusIfIdle(db, target, signal);
+          await set(clearCanonicalSlackThreadStatusIfIdle$, target, signal);
         }
       })(),
       (error) => {
