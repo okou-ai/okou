@@ -2672,10 +2672,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   });
 
   // Historical persisted-state exception (docs/testing.md rollout coexistence;
-  // testing-external-behavior.md historical states): current admission no
-  // longer writes these runner-job contexts, which
-  // pi-model-config-claim-capability.ts and the claim path still read during
-  // the #29908 compatibility window. Delete with that reader when it closes.
+  // testing-external-behavior.md historical states): only the previous profile
+  // API wrote this runner-job context, which the claim path still reads.
+  // Delete with that reader once such rows can no longer be pending.
   it("polls and claims context written by the previous profile API", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -6968,9 +6967,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
   // Historical persisted-state exception (docs/testing.md rollout coexistence;
   // testing-external-behavior.md historical states): current admission no
-  // longer writes these runner-job contexts, which
-  // pi-model-config-claim-capability.ts and the claim path still read during
-  // the #29908 compatibility window. Delete with that reader when it closes.
+  // longer writes these stored Pi generations, which
+  // pi-model-config-claim-capability.ts still reads and negotiates. Delete with
+  // that reader once older generations can no longer be pending.
   it.each(nativePiFixtures)(
     "claims stored native $name only with generation 4 capability",
     async ({ config: piModelConfig }) => {

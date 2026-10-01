@@ -9079,7 +9079,6 @@ describe("Official Workflow Run admission", () => {
       );
       await flushWaitUntilForTest();
       let resumedRunId: string | null | undefined;
-      await flushWaitUntilForTest();
       await expect(
         (async () => {
           const events = await chat.listThreadEvents(
