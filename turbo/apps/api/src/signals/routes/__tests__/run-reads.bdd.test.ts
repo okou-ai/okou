@@ -2260,7 +2260,7 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("preserves reuse outcomes from completion through runner reads", async () => {
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD sandbox reuse reason agent",
       description: "Sandbox reuse reason compatibility.",
@@ -2280,10 +2280,9 @@ describe("RUN-04: agent run telemetry families", () => {
     ] as const;
 
     for (const scenario of scenarios) {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: `record ${scenario.name}`,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       const headers = sandboxHeaders(claim.sandboxToken);
@@ -2446,17 +2445,16 @@ describe("RUN-04: agent run telemetry families", () => {
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD zero detail agent",
       description: "Agent run detail reads.",
       visibility: "private",
     });
 
-    const agentRun = await api.createRun(actor, {
+    const agentRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "agent run detail",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(agentRun.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -2478,10 +2476,9 @@ describe("RUN-04: agent run telemetry families", () => {
       [200],
     );
 
-    const bareRun = await api.createRun(actor, {
+    const bareRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "agent run without snapshots",
-      modelProvider: "anthropic-api-key",
     });
 
     const runId = agentRun.runId;
