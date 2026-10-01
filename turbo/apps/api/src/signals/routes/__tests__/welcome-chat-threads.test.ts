@@ -27,6 +27,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -312,7 +313,7 @@ describe("POST /api/welcome-chat-threads", () => {
     );
   });
 
-  it("allows an unresolved default model and does not require generation credits", async () => {
+  it("falls back to the fixed default model and does not require generation credits", async () => {
     const { actor } = await fixture();
     await runs.ensureOrgModelProvider(actor);
     await accept(
@@ -334,7 +335,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [200],
     );
-    expect(metadata.body.selectedModel).toBeNull();
+    expect(metadata.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     expect((await runs.readBillingStatus(actor)).credits).toBe(0);
     await expect(
       chat.listThreadEventRows(actor, body.id),

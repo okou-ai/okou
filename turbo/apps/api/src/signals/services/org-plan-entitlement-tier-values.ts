@@ -28,7 +28,8 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyCredits: true,
     autoRechargeAllowed: false,
     supportByok: true,
-    restrictedBuiltInModels: false,
+    // Every free plan runs only the catalog's free Built-in models.
+    restrictedBuiltInModels: true,
     videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: 10,

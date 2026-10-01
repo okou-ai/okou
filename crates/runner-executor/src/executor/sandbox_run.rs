@@ -1818,6 +1818,8 @@ pub(super) async fn register_proxy(
         capture_network_bodies: context.capture_network_bodies.unwrap_or(false),
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
+        model_usage_long_context_min_total_input_tokens: context
+            .model_usage_long_context_min_total_input_tokens,
     };
     let publication = config
         .registry

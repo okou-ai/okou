@@ -1,12 +1,11 @@
+import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import {
-  getCanonicalModelDisplayName,
-  type ModelProviderResponse,
-  type OrgModelPolicy,
-  type SupportedRunModel,
+import type {
+  ModelProviderResponse,
+  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -44,12 +43,9 @@ const RUN_C = "a0000000-0000-4000-a000-000000000303";
 const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
 
-function configureCodexSubscriptionPolicies(
-  models: readonly SupportedRunModel[],
-): void {
+function configureCodexSubscriptionPolicies(models: readonly string[]): void {
   configureModelPolicies(models, {
     credentialScope: "member",
-    defaultModel: models[0],
     defaultProviderType: "codex-oauth-token",
     modelProviderId: PROVIDER_ID,
   });
@@ -81,10 +77,9 @@ function recoveryCard(): Promise<HTMLElement> {
 }
 
 function configureModelPolicies(
-  models: readonly SupportedRunModel[],
+  models: readonly string[],
   options: {
     readonly credentialScope?: "member" | "org";
-    readonly defaultModel?: SupportedRunModel;
     readonly defaultProviderType?: "built-in" | "codex-oauth-token";
     readonly modelProviderId?: string | null;
   } = {},
@@ -94,8 +89,7 @@ function configureModelPolicies(
     return {
       id: `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       model,
-      modelLabel: getCanonicalModelDisplayName(model),
-      isDefault: model === (options.defaultModel ?? models[0]),
+      modelLabel: mockCatalogDisplayName(model),
       defaultProviderType: options.defaultProviderType ?? "built-in",
       credentialScope: options.credentialScope ?? "org",
       modelProviderId: options.modelProviderId ?? null,
@@ -134,7 +128,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
 
 function failedRunEvents(
   error: string,
-  model: SupportedRunModel,
+  model: string,
   failureReason?: MockChatEventInput["failureReason"],
 ): MockChatEventInput[] {
   return [
@@ -327,16 +321,10 @@ test.each(STRUCTURED_FAILURE_CASES)(
   },
 );
 
-test("shows only Auto for configured Okou models when the Add Model switch is off", async () => {
-  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"], {
-    defaultModel: "gpt-5.6-luna",
-  });
+test("shows Auto once for a configured Okou model", async () => {
+  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"]);
   installRunChat({ selectedModel: "gpt-5.6-luna" });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouModels]: false },
-  });
+  await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
   const user = userEvent.setup({ delay: null });

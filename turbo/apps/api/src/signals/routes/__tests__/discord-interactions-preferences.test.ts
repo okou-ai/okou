@@ -48,6 +48,7 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const accountApi = createAuthOrgAgentsBddApi(context);
@@ -463,9 +464,14 @@ async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
     modelPoliciesMainContract,
   );
   const initial = await accept(policies.list({ headers }), [200]);
+  const autoPolicy = {
+    model: SEEDED_SYSTEM_DEFAULT_MODEL,
+    defaultProviderType: "built-in" as const,
+    credentialScope: "org" as const,
+    modelProviderId: null,
+  };
   const defaultPolicy = {
     model: "claude-fable-5-1" as const,
-    isDefault: true,
     defaultProviderType: "anthropic-api-key" as const,
     credentialScope: "org" as const,
     modelProviderId: anthropic.body.provider.id,
@@ -476,10 +482,10 @@ async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
       body: {
         revision: initial.body.revision,
         policies: [
+          autoPolicy,
           defaultPolicy,
           {
             model: "gpt-6-astra",
-            isDefault: false,
             defaultProviderType: "openai-api-key",
             credentialScope: "org",
             modelProviderId: openai.body.provider.id,
@@ -492,7 +498,7 @@ async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   const preference = setupApp({ context, routes: userModelPreferenceRoutes })(
     userModelPreferenceContract,
   );
-  return { headers, policies, preference, defaultPolicy };
+  return { headers, policies, preference, defaultPolicy, autoPolicy };
 }
 
 beforeEach(() => {
@@ -659,7 +665,7 @@ describe("Discord account preferences through private controls", () => {
 
   it("rechecks model policy after a picker is issued without changing the member preference", async () => {
     const scope = await routedModelFixture();
-    const { headers, policies, preference, defaultPolicy } =
+    const { headers, policies, preference, defaultPolicy, autoPolicy } =
       await configureModelPreferences(scope);
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
@@ -681,7 +687,10 @@ describe("Discord account preferences through private controls", () => {
     await accept(
       policies.update({
         headers,
-        body: { revision: current.body.revision, policies: [defaultPolicy] },
+        body: {
+          revision: current.body.revision,
+          policies: [autoPolicy, defaultPolicy],
+        },
       }),
       [200],
     );
@@ -691,9 +700,10 @@ describe("Discord account preferences through private controls", () => {
     );
 
     expect(rejected.content).toContain("no longer have access to that model");
+    // The thread's removed model resolves to the fixed org default.
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual(["claude-fable-5-1"]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     const after = await accept(preference.get({ headers }), [200]);
     expect(after.body.selectedModel).toBeNull();
   });
@@ -778,7 +788,7 @@ describe("Discord account preferences through private controls", () => {
     "rejects a model selection revoked by %s during access revalidation",
     async (revocation) => {
       const scope = await routedModelFixture();
-      const { headers, policies, preference, defaultPolicy } =
+      const { headers, policies, preference, defaultPolicy, autoPolicy } =
         await configureModelPreferences(scope);
       const discord = discordHttp([scope]);
       const sender = guildSender(scope);
@@ -807,7 +817,7 @@ describe("Discord account preferences through private controls", () => {
               headers,
               body: {
                 revision: current.body.revision,
-                policies: [defaultPolicy],
+                policies: [autoPolicy, defaultPolicy],
               },
             }),
             [200],

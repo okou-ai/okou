@@ -68,8 +68,9 @@ actor ChatService {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
     async let policiesRequest: ModelPolicies = client.request("/api/model-policies")
-    let (agents, preference, policies) = try await (
-      agentsRequest, preferenceRequest, policiesRequest
+    async let catalogRequest: ModelCatalog = client.request("/api/model-catalog")
+    let (agents, preference, policies, catalog) = try await (
+      agentsRequest, preferenceRequest, policiesRequest, catalogRequest
     )
     guard
       let agent = agents.first(where: {
@@ -79,11 +80,15 @@ actor ChatService {
       if agentID != nil { throw ChatServiceError.agentUnavailable }
       throw ChatServiceError.noDefaultAgent
     }
-    let model =
-      preference.selectedModel
-      ?? policies.policies.first(where: { $0.isDefault && $0.routeStatus == "valid" })?.model
-      ?? policies.workspaceDefaultModel
-    guard let model else { throw ChatServiceError.noDefaultModel }
+    // A saved selection of a retired model resolves to its active replacement.
+    let savedModel = preference.selectedModel.map { catalog.resolve($0) }
+    let defaultIsRoutable = policies.policies.contains(where: {
+      $0.model == catalog.systemDefaultModel && $0.routeStatus == "valid"
+    })
+    let systemDefault = defaultIsRoutable ? catalog.systemDefaultModel : nil
+    guard let model = savedModel ?? systemDefault else {
+      throw ChatServiceError.noDefaultModel
+    }
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: model,

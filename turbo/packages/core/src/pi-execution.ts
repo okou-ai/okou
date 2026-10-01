@@ -1,15 +1,13 @@
 import {
-  getBuiltInModelRouteCandidates,
-  getProviderRuntimeModel,
-  isActiveRunModel,
   isBuiltInModelProviderType,
-  isOkouRunModel,
-  isModelSupportedByProvider,
   modelProviderTypeSchema,
-  type ActiveRunModel,
-  type BuiltInModelRouteProviderType,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isPiRouteClass,
+  ownRoutesAllowCustomGateway,
+  type PiRouteClass,
+} from "@okouai/api-contracts/contracts/model-catalog";
 
 import {
   isPiRuntimeIdentityResolvable,
@@ -17,123 +15,127 @@ import {
   type PiRuntimeIdentity,
 } from "./pi-runtime-capability";
 
+export type { PiRouteClass };
+
 /**
- * Why a model or route stays off the Pi loop, and what would change it.
+ * Why a route stays off the Pi loop even when its model is Pi-eligible.
  *
- * - `frontier-vendor-harness`: the model line runs on its vendor's own harness.
- *   Re-evaluated only when that principle changes.
  * - `subscription-terms`: the vendor's subscription terms do not permit Pi to
  *   use the credential. Never re-evaluated.
- * - `capability`: the pinned Pi runtime cannot resolve the model. The dynamic
- *   gate in `isPiRouteRuntimeCapable` does clear itself once the pinned SDK
- *   catalog carries the identity, but a model also pinned `pi: false` here for
- *   this reason still needs a human to flip the table.
- *   Keeping the static exclusion is deliberate: a model must not reach Pi
- *   without a recorded decision and a billing check.
+ *
+ * Model eligibility itself is catalog data (`run_model_catalog.pi_route_class`,
+ * NULL = not eligible, the default for a new model); this module keeps only
+ * protocol rules and terms restrictions.
  */
-export type PiExclusionReason =
-  | "frontier-vendor-harness"
-  | "subscription-terms"
-  | "capability";
+export type PiExclusionReason = "subscription-terms";
 
-/** Which family of route rules a Pi-eligible model is admitted through. */
-export type PiRouteClass = "claude-native" | "gpt-codex" | "deepseek";
-
-export type PiModelPolicy =
-  | { readonly pi: true; readonly route: PiRouteClass }
-  | {
-      readonly pi: false;
-      readonly exception: PiExclusionReason;
-      readonly reason: string;
-    };
+/** One enabled catalog route as Pi admission reads it. */
+export interface PiCatalogRoute {
+  /** Provider that serves the request (`concrete_provider_type`). */
+  readonly concreteProviderType: string;
+  readonly upstreamModel: string;
+  readonly serviceTiers: readonly string[];
+}
 
 /**
- * The exhaustive Pi admission decision for every active run model.
- *
- * `satisfies Record<ActiveRunModel, PiModelPolicy>` is the enforcement: adding
- * a model to `SUPPORTED_RUN_MODELS` fails type-check until a decision is
- * recorded here, so admission, credential capture and API-owned billing can no
- * longer drift apart behind a comment. Admission narrows here only; the Gen4
- * reader vocabulary in `pi-native-models.ts` is separately versioned.
+ * The catalog facts about one model that Pi admission reads, built from
+ * `run_model_catalog` and its enabled `model_routes` by `piCatalogModel`.
  */
-export const PI_MODEL_POLICY = {
-  "okou-1.0": { pi: true, route: "gpt-codex" },
-  "claude-fable-5-1": {
-    pi: false,
-    exception: "frontier-vendor-harness",
-    reason: "The Fable frontier line runs on the Claude Code vendor harness.",
-  },
-  "claude-opus-5-5": { pi: true, route: "claude-native" },
-  "claude-opus-5": { pi: true, route: "claude-native" },
-  "claude-sonnet-5-5": { pi: true, route: "claude-native" },
-  "claude-sonnet-5": { pi: true, route: "claude-native" },
-  "gpt-6-astra": {
-    pi: false,
-    exception: "frontier-vendor-harness",
-    reason: "The Astra frontier line runs on the Codex vendor harness.",
-  },
-  "gpt-6.1-sol": { pi: true, route: "gpt-codex" },
-  "gpt-6-sol": { pi: true, route: "gpt-codex" },
-  "gpt-6-luna": { pi: true, route: "gpt-codex" },
-  "gpt-5.6-sol": { pi: true, route: "gpt-codex" },
-  "gpt-5.6-luna": { pi: true, route: "gpt-codex" },
-  "deepseek-v4.1-flash": { pi: true, route: "deepseek" },
-  "deepseek-v4-flash": { pi: true, route: "deepseek" },
-} as const satisfies Record<ActiveRunModel, PiModelPolicy>;
-
-/** Fails to compile when the table and `ActiveRunModel` stop covering each other. */
-type AssertTrue<T extends true> = T;
-type Identical<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? true
-    : false;
-export type PiModelPolicyCoversEveryActiveModel = AssertTrue<
-  Identical<keyof typeof PI_MODEL_POLICY, ActiveRunModel>
->;
-
-type PiModelOfRouteClass<R extends PiRouteClass> = {
-  [K in keyof typeof PI_MODEL_POLICY]: (typeof PI_MODEL_POLICY)[K] extends {
-    readonly pi: true;
-    readonly route: R;
-  }
-    ? K
-    : never;
-}[keyof typeof PI_MODEL_POLICY];
-
-export type PiGptModel = PiModelOfRouteClass<"gpt-codex">;
-
-export type PiDeepSeekModel = PiModelOfRouteClass<"deepseek">;
-
-function activeRunModel(
-  model: string | null | undefined,
-): ActiveRunModel | null {
-  return typeof model === "string" && isActiveRunModel(model) ? model : null;
+export interface PiCatalogModel {
+  readonly model: string;
+  /** `run_model_catalog.pi_route_class`; null means not Pi-eligible. */
+  readonly piRouteClass: PiRouteClass | null;
+  /** Enabled Built-in candidates in ascending fallback priority. */
+  readonly builtIn: readonly PiCatalogRoute[];
+  /** Enabled non-Built-in routes by provider type. */
+  readonly own: ReadonlyMap<string, PiCatalogRoute>;
+  /** Whether an organization's custom gateway may serve the model. */
+  readonly customGatewayAllowed: boolean;
 }
 
-function piRouteClass(model: string | null | undefined): PiRouteClass | null {
-  const active = activeRunModel(model);
-  if (active === null) {
+/** The catalog shape shared by the API snapshot and `GET /api/model-catalog`. */
+export interface PiCatalogSource {
+  readonly models: readonly {
+    readonly model: string;
+    readonly piRouteClass: string | null;
+  }[];
+  readonly routes: readonly {
+    readonly model: string;
+    readonly providerType: string;
+    readonly concreteProviderType: string;
+    readonly subscriptionType: string | null;
+    readonly upstreamModel: string;
+    readonly enabled: boolean;
+    readonly priority: number;
+    readonly serviceTiers: readonly string[];
+  }[];
+}
+
+/**
+ * Project one catalog model for Pi admission. A model outside the catalog is
+ * null, which no Pi rule admits.
+ */
+export function piCatalogModel(
+  catalog: PiCatalogSource,
+  model: string | null | undefined,
+): PiCatalogModel | null {
+  const row = catalog.models.find((entry) => {
+    return entry.model === model;
+  });
+  if (!row) {
     return null;
   }
-  const policy: PiModelPolicy = PI_MODEL_POLICY[active];
-  return policy.pi ? policy.route : null;
+  const routes = catalog.routes
+    .filter((route) => {
+      return route.enabled && route.model === row.model;
+    })
+    .sort((left, right) => {
+      return left.priority - right.priority;
+    });
+  const toRoute = (route: (typeof routes)[number]): PiCatalogRoute => {
+    return {
+      concreteProviderType: route.concreteProviderType,
+      upstreamModel: route.upstreamModel,
+      serviceTiers: route.serviceTiers,
+    };
+  };
+  const ownRoutes = routes.filter((route) => {
+    return !isBuiltInModelProviderType(route.providerType);
+  });
+  const own = new Map<string, PiCatalogRoute>();
+  // A provider-selected row wins over an Auto-mode subscription row.
+  const ordered = [
+    ...ownRoutes.filter((route) => {
+      return route.subscriptionType === null;
+    }),
+    ...ownRoutes.filter((route) => {
+      return route.subscriptionType !== null;
+    }),
+  ];
+  for (const route of ordered) {
+    if (!own.has(route.providerType)) {
+      own.set(route.providerType, toRoute(route));
+    }
+  }
+  return {
+    model: row.model,
+    piRouteClass: isPiRouteClass(row.piRouteClass) ? row.piRouteClass : null,
+    builtIn: routes
+      .filter((route) => {
+        return isBuiltInModelProviderType(route.providerType);
+      })
+      .map(toRoute),
+    own,
+    customGatewayAllowed: ownRoutesAllowCustomGateway(
+      ownRoutes.map((route) => {
+        return route.providerType;
+      }),
+    ),
+  };
 }
 
-/** Admission and API-owned billing must expand together. */
-export function isPiGptModel(
-  model: string | null | undefined,
-): model is PiGptModel {
-  return piRouteClass(model) === "gpt-codex";
-}
-
-export function isPiDeepSeekModel(
-  model: string | null | undefined,
-): model is PiDeepSeekModel {
-  return piRouteClass(model) === "deepseek";
-}
-
-export function isPiNativeModel(model: string | null | undefined): boolean {
-  return piRouteClass(model) === "claude-native";
+function piRouteClass(model: PiCatalogModel | null): PiRouteClass | null {
+  return model?.piRouteClass ?? null;
 }
 
 /** Routes the Pi loop must never take, with the exception class that owns them. */
@@ -143,53 +145,124 @@ const PI_EXCLUDED_ROUTES = {
   "claude-code-oauth-token": "subscription-terms",
 } as const satisfies Partial<Record<ModelProviderType, PiExclusionReason>>;
 
-export function isPiNativeRoute(
-  type: string | null | undefined,
-  model: string | null | undefined,
-): boolean {
-  const provider = modelProviderTypeSchema.safeParse(type);
-  return (
-    isPiNativeModel(model) &&
-    typeof model === "string" &&
-    provider.success &&
-    !Object.hasOwn(PI_EXCLUDED_ROUTES, provider.data) &&
-    (provider.data === "custom-anthropic-messages"
-      ? model !== "claude-sonnet-5-5"
-      : isModelSupportedByProvider(model, provider.data))
-  );
+/**
+ * Codex Fast is carried on the wire as the `priority` service tier; a route
+ * offers it only when its catalog row lists that tier.
+ */
+function routeCarriesFast(route: PiCatalogRoute | undefined): boolean {
+  return route?.serviceTiers.includes("priority") ?? false;
 }
 
-function isGptApiKeyPiProviderType(value: string | null | undefined): boolean {
+function builtInRuntimeRoute(
+  model: PiCatalogModel,
+  runtimeProviderType: string | null | undefined,
+): PiCatalogRoute | undefined {
+  return model.builtIn.find((route) => {
+    return route.concreteProviderType === runtimeProviderType;
+  });
+}
+
+export function isPiNativeRoute(
+  type: string | null | undefined,
+  model: PiCatalogModel | null,
+): boolean {
+  const provider = modelProviderTypeSchema.safeParse(type);
+  if (
+    model === null ||
+    piRouteClass(model) !== "claude-native" ||
+    !provider.success ||
+    Object.hasOwn(PI_EXCLUDED_ROUTES, provider.data)
+  ) {
+    return false;
+  }
+  if (provider.data === "custom-anthropic-messages") {
+    return model.customGatewayAllowed;
+  }
+  if (isBuiltInModelProviderType(provider.data)) {
+    return model.builtIn.length > 0;
+  }
+  return model.own.has(provider.data);
+}
+
+/** Direct Responses routes the Pi GPT dialect speaks. */
+function isGptDirectPiProviderType(value: string | null | undefined): boolean {
   return (
+    value === "codex-oauth-token" ||
     value === "openai-api-key" ||
     value === "openrouter-codex" ||
     value === "vercel-ai-gateway-codex"
   );
 }
 
-function isDeepSeekPiProviderType(
+/** Runtime providers that honour Codex Fast on a Built-in route. */
+function isFastCapableBuiltInRuntime(
   value: string | null | undefined,
-): value is "deepseek" | "openrouter-codex" {
+): boolean {
+  return value === "openai-api-key" || value === "openrouter-codex";
+}
+
+function isDeepSeekPiProviderType(value: string | null | undefined): boolean {
   return value === "deepseek" || value === "openrouter-codex";
 }
 
-function isOkouPiExecutionRoute(
-  model: ActiveRunModel,
-  builtIn: boolean,
+function isBuiltInRouteAdmitted(
+  model: PiCatalogModel,
+  modelProviderType: string | null | undefined,
   runtimeProviderType: string | null | undefined,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): boolean {
+  if (!isBuiltInModelProviderType(modelProviderType)) return false;
+  // Admitted on one of the model's enabled Built-in candidates, or before the
+  // vendor is picked (every candidate must then pass the capability gate).
+  const runtimeUnpicked =
+    runtimeProviderType === null ||
+    runtimeProviderType === undefined ||
+    isBuiltInModelProviderType(runtimeProviderType);
   return (
-    isOkouRunModel(model) &&
-    builtIn &&
-    runtimeProviderType === "openrouter-codex" &&
-    codexServiceTier === undefined
+    model.builtIn.length > 0 &&
+    (runtimeUnpicked ||
+      builtInRuntimeRoute(model, runtimeProviderType) !== undefined)
   );
 }
 
-/** Route rules, unchanged: model policy decides eligibility, this decides reach. */
+function isDeepSeekRouteAdmitted(args: {
+  readonly model: PiCatalogModel;
+  readonly builtIn: boolean;
+  readonly custom: boolean;
+  readonly modelProviderType: string | null | undefined;
+  readonly runtimeProviderType: string | null | undefined;
+}): boolean {
+  return (
+    (args.builtIn && isDeepSeekPiProviderType(args.runtimeProviderType)) ||
+    args.custom ||
+    (isDeepSeekPiProviderType(args.modelProviderType) &&
+      args.model.own.has(args.modelProviderType ?? ""))
+  );
+}
+
+function isGptRouteAdmitted(args: {
+  readonly model: PiCatalogModel;
+  readonly builtIn: boolean;
+  readonly custom: boolean;
+  readonly modelProviderType: string | null | undefined;
+  readonly runtimeProviderType: string | null | undefined;
+  readonly codexServiceTier: "fast" | undefined;
+}): boolean {
+  const ownRoute = isGptDirectPiProviderType(args.modelProviderType)
+    ? args.model.own.get(args.modelProviderType ?? "")
+    : undefined;
+  if (!args.builtIn && !args.custom && ownRoute === undefined) return false;
+  if (args.codexServiceTier === undefined || args.custom) return true;
+  // Codex Fast is honoured only on a route that carries it.
+  if (ownRoute !== undefined) return routeCarriesFast(ownRoute);
+  return (
+    isFastCapableBuiltInRuntime(args.runtimeProviderType) &&
+    routeCarriesFast(builtInRuntimeRoute(args.model, args.runtimeProviderType))
+  );
+}
+
+/** Route rules: the catalog decides eligibility and routes, this decides reach. */
 function isPiRouteAdmitted(args: {
-  readonly model: ActiveRunModel;
+  readonly model: PiCatalogModel;
   readonly route: PiRouteClass;
   readonly modelProviderType: string | null | undefined;
   readonly runtimeProviderType: string | null | undefined;
@@ -198,44 +271,31 @@ function isPiRouteAdmitted(args: {
   if (args.route === "claude-native") {
     return isPiNativeRoute(args.modelProviderType, args.model);
   }
+  // Ultrafast is a vendor-harness tier; Pi never carries it.
   if (args.codexServiceTier === "ultrafast") return false;
-  const builtIn = isBuiltInModelProviderType(args.modelProviderType);
   const custom = args.modelProviderType === "custom-openai-responses";
-  if (args.model === "gpt-6.1-sol" && custom) return false;
-  if (args.route === "deepseek") {
-    return (
-      (builtIn && isDeepSeekPiProviderType(args.runtimeProviderType)) ||
-      custom ||
-      (isDeepSeekPiProviderType(args.modelProviderType) &&
-        isModelSupportedByProvider(args.model, args.modelProviderType))
-    );
-  }
-  if (isOkouRunModel(args.model)) {
-    return isOkouPiExecutionRoute(
+  if (custom && !args.model.customGatewayAllowed) return false;
+  const routeArgs = {
+    model: args.model,
+    builtIn: isBuiltInRouteAdmitted(
       args.model,
-      builtIn,
+      args.modelProviderType,
       args.runtimeProviderType,
-      args.codexServiceTier,
-    );
-  }
-  const direct =
-    args.modelProviderType === "codex-oauth-token" ||
-    isGptApiKeyPiProviderType(args.modelProviderType);
-  if (!builtIn && !custom && !direct) return false;
-  // Codex fast tier is only honoured on a runtime route that can carry it.
-  return (
-    args.codexServiceTier === undefined ||
-    custom ||
-    direct ||
-    (builtIn &&
-      (args.runtimeProviderType === "openai-api-key" ||
-        args.runtimeProviderType === "openrouter-codex"))
-  );
+    ),
+    custom,
+    modelProviderType: args.modelProviderType,
+    runtimeProviderType: args.runtimeProviderType,
+  };
+  return args.route === "deepseek"
+    ? isDeepSeekRouteAdmitted(routeArgs)
+    : isGptRouteAdmitted({
+        ...routeArgs,
+        codexServiceTier: args.codexServiceTier,
+      });
 }
 
-function builtInCatalogProvider(
-  type: BuiltInModelRouteProviderType,
-): PiCatalogProvider | null {
+/** Concrete Built-in provider → the Pi catalog provider that resolves it. */
+function builtInCatalogProvider(type: string): PiCatalogProvider | null {
   switch (type) {
     case "deepseek": {
       return "deepseek";
@@ -254,27 +314,41 @@ function builtInCatalogProvider(
   }
 }
 
+/**
+ * An OpenRouter preset (`@preset/...`) is an opaque upstream name; Pi resolves
+ * its capabilities from the catalog model it is pinned to.
+ */
+export function isPresetUpstreamModel(
+  upstreamModel: string | null | undefined,
+): boolean {
+  if (typeof upstreamModel !== "string") {
+    return false;
+  }
+  return upstreamModel.startsWith("@preset/");
+}
+
 function builtInRouteIdentities(
-  model: ActiveRunModel,
+  model: PiCatalogModel,
   runtimeProviderType: string | null | undefined,
 ): readonly PiRuntimeIdentity[] {
-  const candidates = getBuiltInModelRouteCandidates(model);
-  const selected = candidates.filter((candidate) => {
-    return candidate.providerType === runtimeProviderType;
+  const selected = model.builtIn.filter((candidate) => {
+    return candidate.concreteProviderType === runtimeProviderType;
   });
   // Built-in availability routing picks the vendor at launch. When the caller
   // already knows it, gate on that one; otherwise every candidate the run could
   // land on has to resolve.
-  const targets = selected.length > 0 ? selected : candidates;
+  const targets = selected.length > 0 ? selected : model.builtIn;
   const identities: PiRuntimeIdentity[] = [];
   for (const target of targets) {
-    const provider = builtInCatalogProvider(target.providerType);
+    const provider = builtInCatalogProvider(target.concreteProviderType);
     if (provider === null) {
       return [];
     }
     identities.push({
       provider,
-      model: isOkouRunModel(model) ? model : target.upstreamModel,
+      model: isPresetUpstreamModel(target.upstreamModel)
+        ? model.model
+        : target.upstreamModel,
     });
   }
   return identities;
@@ -282,12 +356,13 @@ function builtInRouteIdentities(
 
 function responsesRouteIdentity(
   route: "gpt-codex" | "deepseek",
-  model: ActiveRunModel,
+  model: PiCatalogModel,
   providerType: ModelProviderType,
 ): PiRuntimeIdentity | null {
+  const upstreamModel = model.own.get(providerType)?.upstreamModel;
   switch (providerType) {
     case "codex-oauth-token": {
-      return { provider: "openai-codex", model };
+      return { provider: "openai-codex", model: model.model };
     }
     // Both gateways send an aliased request model but pin `catalogModel` to the
     // selected model, so capability follows the selected model itself.
@@ -295,26 +370,23 @@ function responsesRouteIdentity(
     case "vercel-ai-gateway-codex": {
       return {
         provider: route === "gpt-codex" ? "openai" : "deepseek",
-        model,
+        model: model.model,
       };
     }
     case "openai-api-key": {
-      return {
-        provider: "openai",
-        model: getProviderRuntimeModel(providerType, model),
-      };
+      return upstreamModel === undefined
+        ? null
+        : { provider: "openai", model: upstreamModel };
     }
     case "openrouter-codex": {
-      return {
-        provider: "openrouter",
-        model: getProviderRuntimeModel(providerType, model),
-      };
+      return upstreamModel === undefined
+        ? null
+        : { provider: "openrouter", model: upstreamModel };
     }
     case "deepseek": {
-      return {
-        provider: "deepseek",
-        model: getProviderRuntimeModel(providerType, model),
-      };
+      return upstreamModel === undefined
+        ? null
+        : { provider: "deepseek", model: upstreamModel };
     }
     default: {
       return null;
@@ -322,18 +394,27 @@ function responsesRouteIdentity(
   }
 }
 
+export interface PiRouteArgs {
+  /** The selected model's catalog projection (`piCatalogModel`). */
+  readonly catalogModel: PiCatalogModel | null;
+  readonly modelProviderType: string | null | undefined;
+  readonly runtimeProviderType: string | null | undefined;
+}
+
+export interface PiExecutionRouteArgs extends PiRouteArgs {
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+}
+
 /**
  * The Pi catalog identities a route would ask the runtime to resolve, mirroring
  * the launch metadata built in `pi-sandbox-config.ts`. An empty result means no
  * identity is derivable, which fails the capability gate closed.
  */
-export function piRouteCatalogIdentities(args: {
-  readonly selectedModel: string | null | undefined;
-  readonly modelProviderType: string | null | undefined;
-  readonly runtimeProviderType: string | null | undefined;
-}): readonly PiRuntimeIdentity[] {
-  const model = activeRunModel(args.selectedModel);
-  const route = piRouteClass(args.selectedModel);
+export function piRouteCatalogIdentities(
+  args: PiRouteArgs,
+): readonly PiRuntimeIdentity[] {
+  const model = args.catalogModel;
+  const route = piRouteClass(model);
   const provider = modelProviderTypeSchema.safeParse(args.modelProviderType);
   if (model === null || route === null || !provider.success) {
     return [];
@@ -341,7 +422,7 @@ export function piRouteCatalogIdentities(args: {
   if (route === "claude-native") {
     // Every native route, Bedrock included, resolves its capabilities from Pi's
     // `anthropic` catalog with the selected model as `catalogModel`.
-    return [{ provider: "anthropic", model }];
+    return [{ provider: "anthropic", model: model.model }];
   }
   if (isBuiltInModelProviderType(provider.data)) {
     return builtInRouteIdentities(model, args.runtimeProviderType);
@@ -351,19 +432,14 @@ export function piRouteCatalogIdentities(args: {
 }
 
 /**
- * Model policy and route rules only, without the runtime capability gate. The
- * capability tests enumerate from here so that dropping an identity from the
- * capability data shows up as a disagreement with the resolver rather than
- * quietly shrinking the set of routes under test.
+ * Catalog eligibility and route rules only, without the runtime capability
+ * gate. The capability tests enumerate from here so that dropping an identity
+ * from the capability data shows up as a disagreement with the resolver rather
+ * than quietly shrinking the set of routes under test.
  */
-export function isPiPolicyAdmittedRoute(args: {
-  readonly selectedModel: string | null | undefined;
-  readonly modelProviderType: string | null | undefined;
-  readonly runtimeProviderType: string | null | undefined;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
-}): boolean {
-  const model = activeRunModel(args.selectedModel);
-  const route = piRouteClass(args.selectedModel);
+export function isPiPolicyAdmittedRoute(args: PiExecutionRouteArgs): boolean {
+  const model = args.catalogModel;
+  const route = piRouteClass(model);
   return (
     model !== null &&
     route !== null &&
@@ -378,11 +454,7 @@ export function isPiPolicyAdmittedRoute(args: {
 }
 
 /** The pinned Pi runtime can resolve every identity this route may request. */
-export function isPiRouteRuntimeCapable(args: {
-  readonly selectedModel: string | null | undefined;
-  readonly modelProviderType: string | null | undefined;
-  readonly runtimeProviderType: string | null | undefined;
-}): boolean {
+export function isPiRouteRuntimeCapable(args: PiRouteArgs): boolean {
   const identities = piRouteCatalogIdentities(args);
   return (
     identities.length > 0 && identities.every(isPiRuntimeIdentityResolvable)
@@ -391,15 +463,10 @@ export function isPiRouteRuntimeCapable(args: {
 
 /**
  * Shared by Chat controls and server admission; trigger source does not select
- * a runtime. Admission is model policy, then route rules, then runtime
+ * a runtime. Admission is catalog eligibility, then route rules, then runtime
  * capability: a capability miss falls back to the legacy loop instead of
  * reaching the session-creation throw in `@okouai/pi-agent-runtime`.
  */
-export function isPiExecutionRoute(args: {
-  readonly selectedModel: string | null | undefined;
-  readonly modelProviderType: string | null | undefined;
-  readonly runtimeProviderType: string | null | undefined;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
-}): boolean {
+export function isPiExecutionRoute(args: PiExecutionRouteArgs): boolean {
   return isPiPolicyAdmittedRoute(args) && isPiRouteRuntimeCapable(args);
 }

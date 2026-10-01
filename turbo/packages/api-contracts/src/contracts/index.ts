@@ -145,6 +145,12 @@ export {
   type ImageRecognitionResponse,
 } from "./image-recognition";
 export {
+  modelCatalogContract,
+  modelCatalogResponseSchema,
+  type ModelCatalogContract,
+  type ModelCatalogResponse,
+} from "./model-catalog";
+export {
   modelPoliciesMainContract,
   type ModelPoliciesMainContract,
 } from "./model-policies";
@@ -486,15 +492,9 @@ export {
   updateOrgModelPolicySchema,
   orgModelPoliciesResponseSchema,
   updateOrgModelPoliciesRequestSchema,
-  supportedRunModelSchema,
+  runModelIdSchema,
   modelProviderCredentialScopeSchema,
   MODEL_PROVIDER_TYPES,
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
-  DEFAULT_ORG_MODEL_POLICY_MODELS,
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  LIMITED_FREE1_DEFAULT_RUN_MODEL,
   getFrameworkForType,
   getSecretNameForType,
   getModelProviderEnvBindings,
@@ -503,15 +503,8 @@ export {
   hasModelSelection,
   allowsCustomModel,
   getCustomModelPlaceholder,
-  getDefaultOrgModelPolicySeed,
   // Provider compatibility
-  getCanonicalModelDisplayName,
-  getProvidersForModel,
-  getProviderRuntimeModel,
-  isModelSupportedByProvider,
-  isSupportedRunModel,
   normalizeRunModelId,
-  getBuiltInModelPriceTier,
   // Selectable provider filtering
   getSelectableProviderTypes,
   isBuiltInModelProviderType,
@@ -536,12 +529,8 @@ export {
   type UpdateOrgModelPolicy,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPoliciesRequest,
-  type SupportedRunModel,
   type ModelProviderCredentialScope,
-  type DefaultOrgModelPolicySeed,
-  type BuiltInModelRouteCandidate,
   type BuiltInModelRouteProviderType,
-  type BuiltInModelRouteTarget,
   // Multi-auth provider types
   type SecretFieldConfig,
   type AuthMethodConfig,
@@ -549,17 +538,10 @@ export {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   getModelProviderFirewall,
   // Built-in provider
-  BUILT_IN_MODEL_TO_PROVIDER,
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   BUILT_IN_MODEL_ALIAS_TO_MODEL,
-  getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
-  getBuiltInConcreteProviderType,
-  getBuiltInVendor,
-  getBuiltInApiModel,
-  getBuiltInVisibleModels,
   normalizeBuiltInModelId,
-  isLimitedFree1RestrictedRunModel,
 } from "./model-providers";
 export {
   artifactCatalogContract,

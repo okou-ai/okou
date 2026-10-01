@@ -15,6 +15,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { deleteModelProviderConnection$ } from "./model-provider-gateway.service";
 import { deleteOrgModelProvider$ } from "./model-provider.service";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
 import {
   listOrgModelPolicies$,
   updateOrgModelPolicies$,
@@ -111,15 +112,8 @@ const enterAutoMode$ = command(
           orgId: params.orgId,
           userId: params.userId,
           revision: snapshot.revision,
-          policies: [
-            {
-              model: "okou-1.0",
-              isDefault: true,
-              defaultProviderType: "built-in",
-              credentialScope: "org",
-              modelProviderId: null,
-            },
-          ],
+          // Auto keeps only the projected system default.
+          policies: [],
         },
         signal,
       );
@@ -154,24 +148,19 @@ const enterCustomMode$ = command(
       );
     signal.throwIfAborted();
     // Reconcile on every Custom request so a retry repairs a partial switch.
-    const policies = await db
-      .select({
-        model: orgModelPolicies.model,
-        isDefault: orgModelPolicies.isDefault,
-      })
-      .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, orgId));
+    const [stored, systemDefaultModel] = await Promise.all([
+      db
+        .select({ model: orgModelPolicies.model })
+        .from(orgModelPolicies)
+        .where(eq(orgModelPolicies.orgId, orgId)),
+      loadSystemDefaultRunModel(db),
+    ]);
     signal.throwIfAborted();
-    const defaultPolicy = policies.find((policy) => {
-      return policy.isDefault;
-    });
-    if (!defaultPolicy) {
-      return;
-    }
+    const policies = [...stored, { model: systemDefaultModel }];
     await db
       .update(orgMembersMetadata)
       .set({
-        selectedModel: defaultPolicy.model,
+        selectedModel: systemDefaultModel,
         serviceTier: null,
         updatedAt: nowDate(),
       })

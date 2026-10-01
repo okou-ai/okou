@@ -1,19 +1,13 @@
 import {
-  getModelProviderTypeForSurfaceProtocol,
-  modelProviderSurfaceProtocolSchema,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
-import {
-  getProvidersForModel,
-  getRunModelAccess,
-  getRunModelRouteAccess,
   isBuiltInModelProviderType,
-  isModelSupportedByProvider,
-  isSupportedRunModel,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  getModelProviderTypeForSurfaceProtocol,
+  modelProviderSurfaceProtocolSchema,
+} from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import {
@@ -22,8 +16,13 @@ import {
 } from "@okouai/db/schema/model-provider-gateway";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db, ReadonlyDb } from "../external/db";
+import {
+  catalogHasProviderRoute,
+  isCatalogModelRunnable,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-
 const ORG_SENTINEL_USER_ID = "__org__";
 const PERSONAL_TYPES = [
   "claude-code-oauth-token",
@@ -35,7 +34,7 @@ export interface ResolvedModelFirstPolicyRoute {
   readonly modelProviderId: string | null;
   readonly modelProviderType: ModelProviderType;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope;
-  readonly selectedModel: SupportedRunModel;
+  readonly selectedModel: string;
   readonly personalConnectionState?:
     | "capture_required"
     | "reconnect_required"
@@ -201,7 +200,7 @@ async function resolveCustomSurfacePolicyRoute(params: {
   readonly db: Db;
   readonly orgId: string;
   readonly policy: {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly modelProviderId: string | null;
     readonly modelProviderSurfaceId: string;
   };
@@ -313,7 +312,21 @@ function parsePolicyRoute(policy: ModelRoutePolicy): {
   return { providerType, credentialScope };
 }
 
+/** Whether the catalog has an enabled route of the selected provider type. */
+function catalogServesModel(
+  catalog: ModelCatalog,
+  model: string,
+  providerType: ModelProviderType,
+): boolean {
+  return catalogHasProviderRoute(
+    catalog,
+    model,
+    isBuiltInModelProviderType(providerType) ? "built-in" : providerType,
+  );
+}
+
 function policyCanUsePersonalMetadata(args: {
+  readonly catalog: ModelCatalog;
   readonly policy: ModelRoutePolicy;
   readonly credentialScope: ModelProviderCredentialScope;
 }): boolean {
@@ -322,14 +335,13 @@ function policyCanUsePersonalMetadata(args: {
   }
   // Subscriptions only ever carry a personal type, so a model that supports
   // none of them can never match one and needs no metadata read.
-  return getProvidersForModel(args.policy.model).some((providerType) => {
-    return PERSONAL_TYPES.some((personalType): boolean => {
-      return personalType === providerType;
-    });
+  return PERSONAL_TYPES.some((personalType): boolean => {
+    return catalogServesModel(args.catalog, args.policy.model, personalType);
   });
 }
 
 async function memberContextForPolicy(
+  catalog: ModelCatalog,
   member: ModelRouteMemberContext,
   policy: ModelRoutePolicy,
   credentialScope: ModelProviderCredentialScope,
@@ -339,7 +351,7 @@ async function memberContextForPolicy(
   }
   if (
     !member.memberScoped ||
-    !policyCanUsePersonalMetadata({ policy, credentialScope }) ||
+    !policyCanUsePersonalMetadata({ catalog, policy, credentialScope }) ||
     member.personalMetadata.kind === "not-applicable"
   ) {
     return { memberScoped: member.memberScoped, subscriptions: [] };
@@ -348,22 +360,101 @@ async function memberContextForPolicy(
   return { memberScoped: true, subscriptions: loaded.subscriptions };
 }
 
+/** The member's loaded logical subscriptions (none for sentinel contexts). */
+export async function loadedMemberModelRouteContext(
+  member: ModelRouteMemberContext,
+): Promise<MemberModelRouteContext> {
+  if (!("personalMetadata" in member)) {
+    return member;
+  }
+  if (member.personalMetadata.kind === "not-applicable") {
+    return { memberScoped: false, subscriptions: [] };
+  }
+  const loaded = await member.personalMetadata.load();
+  return { memberScoped: true, subscriptions: loaded.subscriptions };
+}
+
+/**
+ * The one free-plan exemption besides free Built-in models, for Auto and
+ * Custom alike: the route uses the requesting member's own connected, valid
+ * (not reconnect-required) Claude Code or Codex account with member credential
+ * scope, and the model has an enabled catalog subscription route
+ * (`model_routes.subscription_type`) of that type. A model name or provider
+ * type alone is never exempt; API keys, custom gateways and organization
+ * credentials never are.
+ */
+export function isMemberSubscriptionRoute(args: {
+  readonly catalog: ModelCatalog;
+  readonly member: MemberModelRouteContext;
+  readonly model: string | null | undefined;
+  readonly providerType: string | null | undefined;
+  /** The route's credential scope when the caller knows it. */
+  readonly credentialScope?: string | null;
+}): boolean {
+  const { model } = args;
+  const type = PERSONAL_TYPES.find((candidate) => {
+    return candidate === args.providerType;
+  });
+  if (
+    !model ||
+    !type ||
+    !args.member.memberScoped ||
+    (args.credentialScope !== undefined &&
+      args.credentialScope !== null &&
+      args.credentialScope !== "member") ||
+    !isCatalogModelRunnable(args.catalog, model)
+  ) {
+    return false;
+  }
+  return (
+    args.member.subscriptions.some((candidate) => {
+      return candidate.type === type && !candidate.needsReconnect;
+    }) &&
+    args.catalog.routes.some((route) => {
+      return (
+        route.enabled &&
+        route.model === model &&
+        route.subscriptionType === type
+      );
+    })
+  );
+}
+
 function policyRouteAllowedForPlan(args: {
+  readonly catalog: ModelCatalog;
   readonly policy: ModelRoutePolicy;
   readonly providerType: ModelProviderType;
+  readonly credentialScope: ModelProviderCredentialScope;
+  readonly member: MemberModelRouteContext;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
 }): boolean {
+  if (
+    isMemberSubscriptionRoute({
+      catalog: args.catalog,
+      member: args.member,
+      model: args.policy.model,
+      providerType: args.providerType,
+      credentialScope: args.credentialScope,
+    })
+  ) {
+    return catalogServesModel(
+      args.catalog,
+      args.policy.model,
+      args.providerType,
+    );
+  }
   return (
-    getRunModelRouteAccess(
+    catalogRunModelRouteAccess(
+      args.catalog,
       args.policy.model,
       args.providerType,
       args.capabilities.restrictedBuiltInModels,
     ) === "allowed" &&
     (args.policy.modelProviderSurfaceId !== null ||
-      isModelSupportedByProvider(args.policy.model, args.providerType)) &&
+      catalogServesModel(args.catalog, args.policy.model, args.providerType)) &&
     (args.capabilities.supportByok ||
       isBuiltInModelProviderType(args.providerType))
   );
@@ -372,6 +463,8 @@ function policyRouteAllowedForPlan(args: {
 /** Shared by runtime model selection and the additive member response. */
 export async function resolveEffectivePolicyRoute(params: {
   readonly db: Db;
+  /** Loaded once by the caller and shared across every policy it resolves. */
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
@@ -381,14 +474,12 @@ export async function resolveEffectivePolicyRoute(params: {
   readonly policy: ModelRoutePolicy;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   const { policy } = params;
-  if (
-    !isSupportedRunModel(policy.model) ||
-    getRunModelAccess(policy.model) !== "allowed"
-  ) {
+  if (!isCatalogModelRunnable(params.catalog, policy.model)) {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);
   const member = await memberContextForPolicy(
+    params.catalog,
     params.member,
     policy,
     credentialScope,
@@ -396,9 +487,8 @@ export async function resolveEffectivePolicyRoute(params: {
   // Organization Subscription policies keep their required member route under either switch state.
   // A missing nullable org FK is configuration loss, not malformed structure.
   if (member.memberScoped && credentialScope === "org") {
-    const supported = getProvidersForModel(policy.model);
     const personal = member.subscriptions.find((candidate) => {
-      return supported.includes(candidate.type);
+      return catalogServesModel(params.catalog, policy.model, candidate.type);
     });
     if (personal) {
       // Do not turn an effective personal entitlement denial into a null route:
@@ -416,8 +506,11 @@ export async function resolveEffectivePolicyRoute(params: {
   }
   if (
     !policyRouteAllowedForPlan({
+      catalog: params.catalog,
       policy,
       providerType,
+      credentialScope,
+      member,
       capabilities: params.capabilities,
     })
   ) {
@@ -489,6 +582,7 @@ export async function resolveEffectivePolicyRoute(params: {
 
 /** Resolve routing from already-loaded facts without another database read. */
 export function resolveEffectivePolicyRouteFromSnapshot(params: {
+  readonly catalog: ModelCatalog;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
@@ -502,17 +596,13 @@ export function resolveEffectivePolicyRouteFromSnapshot(params: {
   } | null;
 }): ResolvedModelFirstPolicyRoute | null {
   const { policy, member } = params;
-  if (
-    !isSupportedRunModel(policy.model) ||
-    getRunModelAccess(policy.model) !== "allowed"
-  ) {
+  if (!isCatalogModelRunnable(params.catalog, policy.model)) {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);
   if (member.memberScoped && credentialScope === "org") {
-    const supported = getProvidersForModel(policy.model);
     const personal = member.subscriptions.find((candidate) => {
-      return supported.includes(candidate.type);
+      return catalogServesModel(params.catalog, policy.model, candidate.type);
     });
     if (personal) {
       return {
@@ -528,8 +618,11 @@ export function resolveEffectivePolicyRouteFromSnapshot(params: {
   }
   if (
     !policyRouteAllowedForPlan({
+      catalog: params.catalog,
       policy,
       providerType,
+      credentialScope,
+      member,
       capabilities: params.capabilities,
     })
   ) {
@@ -592,9 +685,11 @@ export function resolveEffectivePolicyRouteFromSnapshot(params: {
 
 /** Whether the exact policy can use the member's logical subscription routes. */
 export function modelPolicyUsesPersonalMetadata(
+  catalog: ModelCatalog,
   policy: ModelRoutePolicy,
 ): boolean {
   return policyCanUsePersonalMetadata({
+    catalog,
     policy,
     credentialScope: parsePolicyRoute(policy).credentialScope,
   });

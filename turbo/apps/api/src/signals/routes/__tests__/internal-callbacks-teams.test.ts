@@ -21,6 +21,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
@@ -408,7 +409,7 @@ async function setupConnectedTeamsActor(
   await runsApi.updateOrgModelPolicies(actor, [
     {
       model: "claude-fable-5-1",
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: providerId,
@@ -1135,6 +1136,11 @@ describe("Teams chat callbacks", () => {
         orgRole: "org:admin",
       });
       await authOrgApi.completeOnboarding(secondActor);
+      // The participant's new input starts from their own model preference.
+      await createBddIntegrationApi(context).updateUserModelPreference(
+        secondActor,
+        "claude-fable-5-1",
+      );
 
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;
       const postedActivityCountBeforeConnect = teamsApi.postedActivities.length;

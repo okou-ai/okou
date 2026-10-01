@@ -1,9 +1,7 @@
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
-  getProviderRuntimeModel,
   getSecretNameForType,
-  isModelSupportedByProvider,
   type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
@@ -30,7 +28,15 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { resolveBuiltInModelRuntimeRouteFromCatalog } from "./built-in-model-runtime-route.service";
+import {
+  catalogBuiltInCandidates,
+  catalogBuiltInRoute,
+  catalogProviderUpstreamModel,
+  loadModelCatalog,
+  type ModelCatalog,
+  ModelCatalogInvariantError,
+} from "./model-catalog.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
@@ -83,6 +89,12 @@ export type PiMemoryStage1CredentialResult =
       readonly selectedModel: PiMemoryStage1Model;
       readonly billing: PiMemoryStage1Billing;
       readonly modelProviderType: string;
+      /**
+       * Long-context threshold of the catalog route pricing this extraction
+       * (null: single tier), captured with the credential like a foreground
+       * run's `modelUsageLongContextMinTotalInputTokens`.
+       */
+      readonly longContextMinTotalInputTokens: number | null;
       readonly quota: PiMemoryQuotaSource;
       /** Re-read the exact binding without refreshing or selecting defaults. */
       readonly validate: (signal: AbortSignal) => Promise<void>;
@@ -110,6 +122,7 @@ interface ResolutionContext {
     readonly type: string;
   };
   readonly context: Awaited<ReturnType<typeof loadUserFeatureSwitchContext>>;
+  readonly catalog: ModelCatalog;
 }
 
 function skip(
@@ -122,6 +135,38 @@ function skip(
 interface Stage1Selection {
   readonly selectedModel: PiMemoryStage1Model;
   readonly mode: PiMemoryStage1Billing["mode"];
+  readonly longContextMinTotalInputTokens: number | null;
+}
+
+/**
+ * The long-context threshold of the highest-priority Built-in route of
+ * `model` priced under the model's own ID, the `usage_pricing` provider
+ * extraction usage is recorded and valued under (null: single tier).
+ */
+export function piMemoryStage1ModelPricingThreshold(
+  catalog: ModelCatalog,
+  model: PiMemoryStage1Model,
+): number | null {
+  const route = catalogBuiltInCandidates(catalog, model).find((candidate) => {
+    return candidate.pricingProvider === model;
+  });
+  return route?.longContextMinTotalInputTokens ?? null;
+}
+
+/**
+ * BYOK extraction is not billed; its cost observation values usage with the
+ * `usage_pricing` rows of the model's own ID and so follows that rule's
+ * threshold.
+ */
+function byokStage1Selection(catalog: ModelCatalog): Stage1Selection {
+  return {
+    selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL,
+    mode: "byok",
+    longContextMinTotalInputTokens: piMemoryStage1ModelPricingThreshold(
+      catalog,
+      PI_MEMORY_STAGE1_BYOK_MODEL,
+    ),
+  };
 }
 
 function availableCredential(
@@ -140,6 +185,7 @@ function availableCredential(
     model,
     selectedModel: selection.selectedModel,
     modelProviderType: binding.type,
+    longContextMinTotalInputTokens: selection.longContextMinTotalInputTokens,
     quota,
     billing: {
       mode: selection.mode,
@@ -202,8 +248,11 @@ async function builtinCredential(
   ) {
     return skip("source_binding_invalid");
   }
-  const route = await resolveBuiltInModelRuntimeRoute(
+  // Resolve against the held snapshot so the served route and its pricing
+  // threshold come from the same catalog read.
+  const route = await resolveBuiltInModelRuntimeRouteFromCatalog(
     db,
+    args.catalog,
     PI_MEMORY_STAGE1_BUILT_IN_MODEL,
     context,
   );
@@ -218,6 +267,19 @@ async function builtinCredential(
   );
   if (!endpoint) {
     return skip("provider_model_unsupported");
+  }
+  // The served route's own pricing trigger. The route was resolved from this
+  // snapshot, so a miss is a broken invariant: fail closed rather than bill
+  // every token at the base (single-tier) categories.
+  const servedRoute = catalogBuiltInRoute(
+    args.catalog,
+    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+    route.providerType,
+  );
+  if (!servedRoute) {
+    throw new ModelCatalogInvariantError(
+      "Pi memory Stage 1 pricing threshold is missing",
+    );
   }
   const readKey = async () => {
     const [key] = await db
@@ -252,7 +314,12 @@ async function builtinCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL, mode: "builtin" },
+    {
+      selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+      mode: "builtin",
+      longContextMinTotalInputTokens:
+        servedRoute.longContextMinTotalInputTokens,
+    },
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -330,7 +397,7 @@ async function codexCredential(
       dialect: "openai-codex-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await personalModelProviderAccountById(accountArgs);
       validationSignal.throwIfAborted();
@@ -431,7 +498,7 @@ async function gatewayCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await readSurface();
       validationSignal.throwIfAborted();
@@ -449,7 +516,12 @@ async function apiKeyCredential(
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
   const type = route.productProviderType;
-  if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_BYOK_MODEL, type)) {
+  const upstreamModel = catalogProviderUpstreamModel(
+    args.catalog,
+    PI_MEMORY_STAGE1_BYOK_MODEL,
+    type,
+  );
+  if (upstreamModel === null) {
     return skip("provider_model_unsupported");
   }
   const secretOwner = binding.scope === "org" ? "__org__" : source.userId;
@@ -493,7 +565,7 @@ async function apiKeyCredential(
     {
       provider: route.provider,
       baseUrl: endpoint.baseUrl,
-      model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_BYOK_MODEL),
+      model: upstreamModel,
       ...(type === "vercel-ai-gateway-codex"
         ? { catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL }
         : {}),
@@ -501,7 +573,7 @@ async function apiKeyCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
+    byokStage1Selection(args.catalog),
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -534,11 +606,14 @@ export async function resolvePiMemoryStage1Credential(
     source.userId,
   );
   signal.throwIfAborted();
+  const catalog = await loadModelCatalog(db);
+  signal.throwIfAborted();
   const args = {
     db,
     source,
     binding: { ...binding, type: binding.type },
     context,
+    catalog,
   };
   if (binding.type === "built-in") {
     return await builtinCredential(args, signal);

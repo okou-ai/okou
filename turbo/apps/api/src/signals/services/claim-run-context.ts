@@ -1,6 +1,499 @@
+import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
-  CHAT_EVENT_CONTENT_TEXT_TYPES,
+  type PgPoolAcquisitionCapture,
+  withPgPoolAcquisitionCapture,
+} from "../../lib/db-instrumentation";
+import { executeRawRows } from "../../lib/db-raw-rows";
+import {
+  nullableDriverValueDecoder,
+  zodDriverValueDecoder,
+  zodEnumDriverValueDecoder,
+  pgBooleanDecoder,
+  pgInt8ToBigIntDecoder,
+  pgInt8ToSafeIntegerDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
+import { env, optionalEnv } from "../../lib/env";
+import {
+  AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+  badRequestMessage,
+  conflict,
+  notFound,
+  insufficientCredits as pickChatRunModelInsufficientCredits,
+  providerUnavailable,
+} from "../../lib/error";
+import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
+import { logger } from "../../lib/log";
+import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
+import {
+  buildSlackSystemPrompt,
+  canonicalSlackAgentPrompt,
+  resolveUserMentions,
+} from "../../lib/slack-webhook-context";
+import { now, nowDate } from "../../lib/time";
+import { previewAutomationBypass$ } from "../context/hono";
+import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
+import { db$, rawSqlReadDb$, type ReadonlyDb, writeDb$ } from "../external/db";
+import {
+  publishChatThreadMessageCreatedSafely,
+  publishThreadListChangedSafely,
+} from "../external/realtime";
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
+import { publicPresignedGetUrlSigner$ } from "../external/s3";
+import type { SlackUserInfo } from "../external/slack-message-client";
+import { getOfficialTelegramBotConfig } from "../external/telegram-official";
+import { onRejection, safeSync, settle, tapError } from "../utils";
+import { buildAgentExecutionConfig } from "./agent-execution-config";
+import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
+import {
+  type AgentRunAfterPreCreate,
+  type AgentRunCreateBody,
+  type AgentRunGraphInput,
+  type AgentRunIdentityInput,
+  type AgentRunIdentityCommand,
+  type AgentRunRecord,
+  agentRunResolutionOptions,
+  agentRunsCreateForbidden,
+  type AgentRunSelectionInput,
+  type AgentRunStorageInput,
+  type AgentRunStoragePlan,
+  type AgentRunStorageSelection,
+  allowedStoredConnectorRows,
+  assemblePiLaunchResources,
+  assertUniquePersistedMountPaths,
+  atomicLaunchPayloadInput,
+  type AtomicLaunchRunInput,
+  bindStableAppendSystemPrompt,
+  bootstrapLoadTimingDimensions,
+  bootstrapMaterializeTimingDimensions,
+  type BootstrapMetadataQueryRow,
+  buildCreateAgentRunArgs,
+  buildMergedVariables,
+  buildNewRunCustomConnectorRuntimeContext,
+  buildPreparedPermissionManifest,
+  buildResolvedRunBody,
+  buildStorageIndex,
+  buildSignedStorageEntries,
+  storagePrefixVersionRequests,
+  storageIndexWithPrefixVersions,
+  buildStoredExecutionContextDraft,
+  builtInModelProviderEnvironmentFromSnapshot,
+  canonicalPiMemoryMount,
+  combinePreparedStorageEntries,
+  type CommitPreparedLaunchArgs,
+  prepareAtomicLaunchPersistence,
+  buildStoredExecutionSecrets,
+  composePreparedRunContext,
+  connectorScopeForRuntimeSnapshot,
+  connectorScopeFromCreateArgs,
+  countBucket,
+  type CreateAgentRunArgs,
+  type CreateQueueFirstAgentRunCommandArgs,
+  type CreateRunErrorResult,
+  customConnectorCandidateRuntimeRows,
+  customConnectorNewRunRowIsAdmissible,
+  customGatewayProviderEnvironmentFromSnapshot,
+  decryptStoredConnectorSecretRows,
+  type DisabledPaidToolsSnapshot,
+  eagerStoredConnectorSecretInputs,
+  eagerStoredConnectorSecretNames,
+  type EffectiveConnectorScope,
+  emptyBootstrapMetadataFields,
+  emptyCustomConnectorRuntimeContext,
+  enforceCaptureNetworkBodiesGate,
+  exactStorageVersions,
+  finalizedMaterializedLaunch,
+  finalizePreparedRunContext,
+  finalizePreparedStorage,
+  finalStorageManifestPlans,
+  frameworkApiKeyEnv,
+  frameworkForProviderSelection,
+  hasExplicitFrameworkApiKey,
+  headStorageVersions,
+  initialRunBody,
+  insufficientCredits,
+  isEmptyRunConnectorScope,
+  isModelProviderType,
+  isRouteError,
+  L,
+  matchingAuthorizedRequestObservation,
+  type MaterializedAgentRunStorage,
+  materializePreparedPiProvider,
+  materializeRunBootstrapContext,
+  materializeStoredConnectorSnapshotRows,
+  measureAgentRunPreCreate,
+  mergeRecords,
+  modelProviderFramework,
+  noContentPiMemoryRecall,
+  OfficialWorkflowArtifactResolutionError,
+  officialWorkflowRunCandidates,
+  ORG_SENTINEL_USER_ID,
+  overriddenRuntimeSecretAliases,
+  pendingOkouTokenSecrets,
+  type PersistedRunEnvironmentSecret,
+  type PersistedRunEnvironmentVariable,
+  persistedStorageMountRequests,
+  personalProviderEnvironmentFromSnapshot,
+  personalSubscriptionAccountCandidates,
+  piConfigurationRouteError,
+  pinnedProviderSecretProjection,
+  type PreparedConnectorContext,
+  type PreparedOfficialWorkflow,
+  type PreparedPiLaunchResources,
+  type PreparedRunBodyContext,
+  type PreparedRunContext,
+  type PreparedRuntimeContext,
+  prepareModelUsageContext,
+  loadRunRoutePricing,
+  type PreparePiLaunchResourcesArgs,
+  prepareRequestStorageResolution,
+  type PrepareRunContextInput,
+  prepareRunnerStorageInput,
+  prepareRunOutputMetadata,
+  priorPiMemoryRecall,
+  readOnlyStoragePresignedUrlRequest,
+  regularProviderEnvironmentFromSnapshot,
+  resolveAgentExecution,
+  type ResolvedModelProviderEnvironment,
+  type ResolveModelProviderEnvironmentArgs,
+  resolvePreparedPiModelConfig,
+  resolveRunBodyEnvironment,
+  resolveSessionStorageOverlay,
+  resolveSessionWritebackStorageMounts,
+  resolveStorageEntries,
+  resolveStorageManifestInputs,
+  resolveStoredConnectorSecrets,
+  resolveValidatedPersistedStorageMounts,
+  type RunAgentObservation,
+  type RunBootstrapContext,
+  type RunBootstrapSnapshotRows,
+  runConnectorAccountCandidatesFromRows,
+  runConnectorAccountRequests,
+  type RunConnectorCatalogSelection,
+  type RunConnectorContextSnapshot,
+  type RunConnectorPreparation,
+  type RunConnectorReadInput,
+  type RunConnectorSelection,
+  runConnectorTargetFromRow,
+  runConnectorTargetIsAuthorized,
+  runCustomConnectorAccessTokenSecret,
+  runCustomConnectorConnectionColumns,
+  runCustomConnectorRefreshTokenSecret,
+  runEnvironmentSecretNames,
+  type RunMemberSnapshot,
+  type RunModelProviderReadInput,
+  type RunPreparedConnectorInputs,
+  runThreadConnectorCandidates,
+  type RunWorkflowModelState,
+  type RunWorkflowReadInput,
+  selectedAgentRunVariables,
+  selectedRunModelProviderArgs,
+  selectedRunPiExecution,
+  selectedRunStorageExecution,
+  skillsRootForRun,
+  storageEntriesMetadata,
+  type StorageIndexEntry,
+  storageIndexKey,
+  type StorageIndexRow,
+  StorageManifestBuildStats,
+  storageManifestPresignedUrlRequests,
+  storedConnectorContextFromSnapshot,
+  storedConnectorCredentialReadGroups,
+  type StoredConnectorEncryptedSecretRow,
+  storedConnectorExecutionContextFromSnapshot,
+  type StoredConnectorMaterializationSnapshot,
+  type StoredConnectorMaterializationSnapshotRow,
+  storedConnectorTimingDimensions,
+  type ThreadConnectorSelectionIds,
+  uniqueStorageIndexRequests,
+  validateCompose,
+  withoutLegacyAgentRunEnvironmentEntries,
+  withPaidToolPlatformEnvironment,
+} from "./agent-run-execution.service";
+import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
+import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
+import {
+  observeAgentRunPiExecutionSnapshot,
+  observeAgentRunPreCreateParallelStage,
+  observeRunConnectorAccountsRead,
+  observeRunContextParallelStage,
+} from "./agent-run-preparation-hooks";
+import {
+  type AgentPhoneDeliveryTarget,
+  agentphoneDeliveryTargetSchema,
+} from "./agentphone-chat-callback-payload";
+import { buildAgentPhonePrompt } from "./agentphone-prompt";
+import {
+  ApiDispatchPhaseCollector,
+  ApiDispatchTimingCollector,
+  measureApiDispatchTiming,
+} from "./api-dispatch-timing.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
+import { childAutonomyBudget } from "./autonomy-budget.service";
+import {
+  type BuiltInModelRuntimeRoute,
+  builtInModelRuntimeRouteFromSnapshot,
+  isBuiltInModelRuntimeRoutePermitted,
+  unpricedBuiltInModelMessage,
+} from "./built-in-model-runtime-route.service";
+import { builtinConnectorCredentialSecretReadCondition } from "./builtin-connector-credential-access.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventUserMessage,
+  canonicalChatInputModelSelection,
+  parseCanonicalChatEventRequiredOfficialWorkflowIds,
+} from "./canonical-chat-event-read.service";
+import {
+  touchChatThreadLastMessageAt,
+  visibleChatEventCondition,
+} from "./chat-event-shared.service";
+import {
+  chatEventTextCondition,
+  chatEventTypeIn,
+  runOwnedChatEventCondition,
+} from "./chat-event-type.service";
+import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
+import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
+import type {
+  ChatQueueHeadRejection,
+  ChatQueueHeadContext,
+} from "./chat-queue-run-assembly";
+import {
+  isWebChatContextType,
+  type QueuedUserMessage,
+  type QueuedUserMessageContextType,
+  queuedUserMessageTriggerSource,
+} from "./chat-queued-event.service";
+import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
+import {
+  catalogBuiltInCandidates,
+  catalogHasProviderRoute,
+  loadModelCatalog,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
+import {
+  chatThreadConversationRun,
+  type ChatThreadExecutionSnapshot,
+  type ChatThreadSessionResolution,
+  chatThreadSessionSelection,
+  resolveChatThreadSessionSnapshot,
+} from "./chat-session-continuity.service";
+import {
+  agentRunSourceAnnotation,
+  projectUserMessage,
+  requiredUserMessageForEvent,
+} from "./chat-user-message.service";
+import { connectorAccountTargetKey } from "./connector-account-resolution.service";
+import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
+import {
+  decodeAcceptedConnectorCatalogPayload,
+  externalCatalogJoin,
+  ExternalConnectorCatalogUnavailableError,
+  identityLogFields,
+  readCachedConnectorCatalogSnapshot,
+} from "./connector-catalog-external-reader.service";
+import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
+import {
+  isPersonalSubscriptionRoute,
+  loadMemberSubscriptionModels,
+} from "./subscription-model-catalog.service";
+import {
+  type CapturedConnectorCatalogIdentity,
+  type ConnectorCatalogRuntimeProjectionRowsRead,
+  projectionIdentityReadHook,
+  resolveProjectionIdentity,
+  validateConnectorCatalogRuntimeProjectionRows,
+} from "./connector-catalog-runtime-projection.service";
+import {
+  clearRuntimeSelectionInFlight,
+  getConnectorRuntimeConnector,
+  materializeProjectedRuntimeSelection,
+  observeRuntimeSelection,
+  projectionIdentityKey,
+  rememberProjectedConnectors,
+  requestedProjectionConnectorSlugs,
+  type RuntimeSelectionBuildResult,
+  runtimeSelectionCache,
+  runtimeSelectionFromAcceptedSnapshot,
+  runtimeSelectionProjectionKey,
+  takeCachedProjectedConnectors,
+  uniqueSortedConnectorSlugs,
+} from "./connector-catalog-runtime.service";
+import { connectorCatalogSource } from "./connector-catalog-source";
+import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
+import {
+  type CustomConnectorRuntimeContext,
+  loadEffectiveCustomConnectorPermissionBundle,
+  resolveCustomConnectorBaseUrlVars,
+} from "./connector-runtime-preparation.service";
+import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
+import {
+  encryptPersistentSecretValue,
+  encryptPersistentSecretsMap,
+} from "./crypto.utils";
+import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
+import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
+import { normaliseCustomConnectorRow } from "./custom-connector.service";
+import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import {
+  type DiscordDeliveryTarget,
+  discordDeliveryTargetSchema,
+} from "./discord-chat-callback-payload";
+import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
+import {
+  isMemberSubscriptionRoute,
+  memberModelRouteContextFromAccounts,
+  modelPolicyUsesPersonalMetadata,
+  providerTypeForSurfaceProtocol,
+} from "./effective-model-route.service";
+import {
+  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
+  userFeatureSwitchOverridesFromRows,
+} from "./feature-switch-scope";
+import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
+import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import { formatIntegrationRunError$ } from "./integration-run-errors.service";
+import {
+  buildChatPriorRunsContext,
+  buildQueuedCreateAgentRunArgs,
+  ChatCallbackPreCreateTimingCollector,
+  type CreateQueuedChatRunInput,
+  type CreateQueuedChatRunInputArgs,
+  deliverQueuedPromptRejection$,
+  deliverUnexpectedQueuedPromptRejection$,
+  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
+  type PriorRunEvent,
+  queuedChatRunCallbackInputs,
+  queuedIntegrationLaunchFields,
+  type QueuedLaunchMaterial,
+  queuedMessageAdmissionFailure,
+  type QueuedMessageAdmissionFailure,
+  type QueuedMessageModelRouteResolution,
+  queuedMessageRejection,
+  type QueuedPromptLaunchContext,
+  type QueuedRunAdmissionFailureInput,
+  queuedUserMessageProjection,
+  rejectedQueuedRunAdmissionFailure,
+  routeQueuedMessagePiExecution,
+} from "./internal-chat-run-callback.service";
+import type { InternalRunCallbackKind } from "./internal-run-callback";
+import {
+  type MemorySummaryProjectionReadInput,
+  memorySummaryProjectionReadResult,
+  type MemorySummaryProjectionReadResult,
+} from "./memory-summary-projection.service";
+import {
+  type EnsuredOrgModelPolicyFacts,
+  orgModelPolicyFactsFromSnapshot,
+} from "./model-policy.service";
+import {
+  type CapturedPersonalSubscriptionAccount,
+  isPersonalSubscriptionProviderType,
+  type MemberModelAccountSnapshot,
+} from "./model-provider-account.service";
+import {
+  type ModelFirstPin,
+  modelProviderWriteTypeForLaunch,
+  type ProviderModelSupport,
+  resolveQueuedModelSelectionPinFromSnapshot,
+  resolveRunSelectionModel,
+} from "./model-selection.service";
+import {
+  acceptedCatalogFromRow,
+  acceptedRevisionFromRow,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+} from "./official-workflow-catalog-read.service";
+import {
+  dispatchConfiguredOfficialWorkflowReconciliation$,
+  type OfficialWorkflowReconciliationResult,
+} from "./official-workflow-reconciliation-dispatch.service";
+import {
+  acceptedRunCandidates,
+  assembleRunObservation,
+  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
+  OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowRunObservation,
+} from "./official-workflow-run.service";
+import {
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
+  runtimeStatusForEntitlement,
+} from "./org-plan-entitlement-read.service";
+import { piCatalogModel } from "@okouai/core/pi-execution";
+import { shouldUsePiExecution } from "./pi-sandbox-config";
+import {
+  additionalVolumesForRun,
+  selectedUserPresentationTemplateIds,
+  userPresentationTemplateVolumes,
+} from "./presentation-template-data.service";
+import {
+  checkCatalogRunRoute,
+  checkOrgPlanRunAdmission,
+  type OrgCreditAvailability,
+  type RunAdmissionInput,
+} from "./run-admission.service";
+import {
+  planStorageManifestMixedLookup,
+  signStorageManifestPresignedUrls,
+  type SelectedStoragePresignedUrlCacheRow,
+  storageManifestCacheCountBucket,
+  storageManifestPresignedUrlCacheLookupPairs,
+  type StorageManifestPresignedUrlCacheScope,
+} from "./system-storage-presigned-url-cache.service";
+import {
+  type TeamsDeliveryTarget,
+  teamsDeliveryTargetSchema,
+} from "./teams-chat-callback-payload";
+import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
+import {
+  type TelegramDeliveryTarget,
+  telegramDeliveryTargetSchema,
+} from "./telegram-chat-callback-payload";
+import { buildTelegramPrompt } from "./telegram-prompt";
+import {
+  ACTIVE_ALLOWANCE_STATUSES,
+  activeAllowanceCutoff,
+  remainingUnits,
+  type UsageAllowanceAvailabilitySnapshot,
+  type PreparedUsageAllowanceRefresh,
+  prepareUsageAllowanceRefresh,
+  resolveAvailabilityInTransaction,
+} from "./usage-allowance.service";
+import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
+import {
+  selectedUserTemplateIds,
+  userTemplateVolumes,
+} from "./user-template-data.service";
+import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
+import { buildWebChatAppendSystemPrompt } from "./web-chat-session-prompt.service";
+import {
+  EVENT_POLICY,
+  restoredWorkflowAutomationEventPayload,
+  storedWorkflowAutomationContext,
+  workflowAutomationAgentPrompt,
+  type WorkflowAutomationEventPayload,
+  workflowAutomationEventTypeSchema,
+} from "./workflow-automation-context.service";
+import {
+  AutomationRow,
+  DueWorkflowAutomation,
+} from "./workflow-automation-enqueue.service";
+import { manualTriggerSource } from "./workflow-automation-trigger-source";
+import {
+  type RunWorkflowSourceRow,
+  visibleWorkflowCondition,
+  workflowsForRunFromRows,
+} from "./workflow-data.service";
+import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
+import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
+import {
   CHAT_EVENT_TYPES,
+  CHAT_EVENT_CONTENT_TEXT_TYPES,
   CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
   chatEventCompatibilityRole,
   type ChatEventType,
@@ -11,17 +504,11 @@ import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
-  ACTIVE_RUN_MODELS,
-  getBuiltInConcreteProviderType,
   getFrameworkForType,
   getModelProviderFirewall,
-  getRunModelAccess,
   hasAuthMethods,
   isBuiltInModelProviderType,
-  isModelSupportedByProvider,
-  isSupportedRunModel,
   modelProviderTypeSchema,
-  RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -47,7 +534,6 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { isValidVersionPrefix } from "@okouai/core/version-id";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -134,6 +620,7 @@ import { userTemplates } from "@okouai/db/schema/user-template";
 import { variables } from "@okouai/db/schema/variable";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed, state } from "ccstate";
+import { isValidVersionPrefix } from "@okouai/core/version-id";
 import {
   and,
   asc,
@@ -146,8 +633,8 @@ import {
   inArray,
   isNotNull,
   isNull,
-  like,
   lt,
+  like,
   lte,
   max,
   min,
@@ -159,487 +646,6 @@ import {
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import {
-  type PgPoolAcquisitionCapture,
-  withPgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
-import {
-  nullableDriverValueDecoder,
-  pgBooleanDecoder,
-  pgInt8ToBigIntDecoder,
-  pgInt8ToSafeIntegerDecoder,
-  pgTextDecoder,
-  zodDriverValueDecoder,
-  zodEnumDriverValueDecoder,
-} from "../../lib/db-structured-result";
-import { env, optionalEnv } from "../../lib/env";
-import {
-  AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-  badRequestMessage,
-  conflict,
-  notFound,
-  insufficientCredits as pickChatRunModelInsufficientCredits,
-  providerUnavailable,
-} from "../../lib/error";
-import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
-import { logger } from "../../lib/log";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
-import {
-  buildSlackSystemPrompt,
-  canonicalSlackAgentPrompt,
-  resolveUserMentions,
-} from "../../lib/slack-webhook-context";
-import { now, nowDate } from "../../lib/time";
-import { previewAutomationBypass$ } from "../context/hono";
-import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
-import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
-import { publicPresignedGetUrlSigner$ } from "../external/s3";
-import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import type { SlackUserInfo } from "../external/slack-message-client";
-import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { onRejection, safeSync, settle, tapError } from "../utils";
-import { buildAgentExecutionConfig } from "./agent-execution-config";
-import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
-import {
-  type AgentRunAfterPreCreate,
-  type AgentRunCreateBody,
-  type AgentRunGraphInput,
-  type AgentRunIdentityCommand,
-  type AgentRunIdentityInput,
-  type AgentRunRecord,
-  agentRunResolutionOptions,
-  agentRunsCreateForbidden,
-  type AgentRunSelectionInput,
-  type AgentRunStorageInput,
-  type AgentRunStoragePlan,
-  type AgentRunStorageSelection,
-  allowedStoredConnectorRows,
-  assemblePiLaunchResources,
-  assertUniquePersistedMountPaths,
-  atomicLaunchPayloadInput,
-  type AtomicLaunchRunInput,
-  bindStableAppendSystemPrompt,
-  bootstrapLoadTimingDimensions,
-  bootstrapMaterializeTimingDimensions,
-  type BootstrapMetadataQueryRow,
-  buildCreateAgentRunArgs,
-  buildMergedVariables,
-  buildNewRunCustomConnectorRuntimeContext,
-  buildPreparedPermissionManifest,
-  buildResolvedRunBody,
-  buildSignedStorageEntries,
-  buildStorageIndex,
-  buildStoredExecutionContextDraft,
-  buildStoredExecutionSecrets,
-  builtInModelProviderEnvironmentFromSnapshot,
-  canonicalPiMemoryMount,
-  combinePreparedStorageEntries,
-  type CommitPreparedLaunchArgs,
-  composePreparedRunContext,
-  connectorScopeForRuntimeSnapshot,
-  connectorScopeFromCreateArgs,
-  countBucket,
-  type CreateAgentRunArgs,
-  type CreateQueueFirstAgentRunCommandArgs,
-  type CreateRunErrorResult,
-  customConnectorCandidateRuntimeRows,
-  customConnectorNewRunRowIsAdmissible,
-  customGatewayProviderEnvironmentFromSnapshot,
-  decryptStoredConnectorSecretRows,
-  type DisabledPaidToolsSnapshot,
-  eagerStoredConnectorSecretInputs,
-  eagerStoredConnectorSecretNames,
-  type EffectiveConnectorScope,
-  emptyBootstrapMetadataFields,
-  emptyCustomConnectorRuntimeContext,
-  enforceCaptureNetworkBodiesGate,
-  exactStorageVersions,
-  finalizedMaterializedLaunch,
-  finalizePreparedRunContext,
-  finalizePreparedStorage,
-  finalStorageManifestPlans,
-  frameworkApiKeyEnv,
-  frameworkForProviderSelection,
-  hasExplicitFrameworkApiKey,
-  headStorageVersions,
-  initialRunBody,
-  insufficientCredits,
-  isEmptyRunConnectorScope,
-  isModelProviderType,
-  isRouteError,
-  L,
-  matchingAuthorizedRequestObservation,
-  type MaterializedAgentRunStorage,
-  materializePreparedPiProvider,
-  materializeRunBootstrapContext,
-  materializeStoredConnectorSnapshotRows,
-  measureAgentRunPreCreate,
-  mergeRecords,
-  modelProviderFramework,
-  noContentPiMemoryRecall,
-  OfficialWorkflowArtifactResolutionError,
-  officialWorkflowRunCandidates,
-  ORG_SENTINEL_USER_ID,
-  overriddenRuntimeSecretAliases,
-  pendingOkouTokenSecrets,
-  type PersistedRunEnvironmentSecret,
-  type PersistedRunEnvironmentVariable,
-  persistedStorageMountRequests,
-  personalProviderEnvironmentFromSnapshot,
-  personalSubscriptionAccountCandidates,
-  piConfigurationRouteError,
-  pinnedProviderSecretProjection,
-  prepareAtomicLaunchPersistence,
-  type PreparedConnectorContext,
-  type PreparedOfficialWorkflow,
-  type PreparedPiLaunchResources,
-  type PreparedRunBodyContext,
-  type PreparedRunContext,
-  type PreparedRuntimeContext,
-  prepareModelUsageContext,
-  type PreparePiLaunchResourcesArgs,
-  prepareRequestStorageResolution,
-  type PrepareRunContextInput,
-  prepareRunnerStorageInput,
-  prepareRunOutputMetadata,
-  priorPiMemoryRecall,
-  readOnlyStoragePresignedUrlRequest,
-  regularProviderEnvironmentFromSnapshot,
-  resolveAgentExecution,
-  type ResolvedModelProviderEnvironment,
-  type ResolveModelProviderEnvironmentArgs,
-  resolvePreparedPiModelConfig,
-  resolveRunBodyEnvironment,
-  resolveSessionStorageOverlay,
-  resolveSessionWritebackStorageMounts,
-  resolveStorageEntries,
-  resolveStorageManifestInputs,
-  resolveStoredConnectorSecrets,
-  resolveValidatedPersistedStorageMounts,
-  type RunAgentObservation,
-  type RunBootstrapContext,
-  type RunBootstrapSnapshotRows,
-  runConnectorAccountCandidatesFromRows,
-  runConnectorAccountRequests,
-  type RunConnectorCatalogSelection,
-  type RunConnectorContextSnapshot,
-  type RunConnectorPreparation,
-  type RunConnectorReadInput,
-  type RunConnectorSelection,
-  runConnectorTargetFromRow,
-  runConnectorTargetIsAuthorized,
-  runCustomConnectorAccessTokenSecret,
-  runCustomConnectorConnectionColumns,
-  runCustomConnectorRefreshTokenSecret,
-  runEnvironmentSecretNames,
-  type RunMemberSnapshot,
-  type RunModelProviderReadInput,
-  type RunPreparedConnectorInputs,
-  runThreadConnectorCandidates,
-  type RunWorkflowModelState,
-  type RunWorkflowReadInput,
-  selectedAgentRunVariables,
-  selectedRunModelProviderArgs,
-  selectedRunPiExecution,
-  selectedRunStorageExecution,
-  skillsRootForRun,
-  storageEntriesMetadata,
-  type StorageIndexEntry,
-  storageIndexKey,
-  type StorageIndexRow,
-  storageIndexWithPrefixVersions,
-  StorageManifestBuildStats,
-  storageManifestPresignedUrlRequests,
-  storagePrefixVersionRequests,
-  storedConnectorContextFromSnapshot,
-  storedConnectorCredentialReadGroups,
-  type StoredConnectorEncryptedSecretRow,
-  storedConnectorExecutionContextFromSnapshot,
-  type StoredConnectorMaterializationSnapshot,
-  type StoredConnectorMaterializationSnapshotRow,
-  storedConnectorTimingDimensions,
-  type ThreadConnectorSelectionIds,
-  uniqueStorageIndexRequests,
-  validateCompose,
-  withoutLegacyAgentRunEnvironmentEntries,
-  withPaidToolPlatformEnvironment,
-} from "./agent-run-execution.service";
-import {
-  observeAgentRunPiExecutionSnapshot,
-  observeAgentRunPreCreateParallelStage,
-  observeRunConnectorAccountsRead,
-  observeRunContextParallelStage,
-} from "./agent-run-preparation-hooks";
-import {
-  type AgentPhoneDeliveryTarget,
-  agentphoneDeliveryTargetSchema,
-} from "./agentphone-chat-callback-payload";
-import { buildAgentPhonePrompt } from "./agentphone-prompt";
-import {
-  ApiDispatchPhaseCollector,
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-} from "./api-dispatch-timing.service";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
-import { childAutonomyBudget } from "./autonomy-budget.service";
-import {
-  type BuiltInModelRuntimeRoute,
-  builtInModelRuntimeRouteFromSnapshot,
-  isBuiltInModelRuntimeRoutePermitted,
-} from "./built-in-model-runtime-route.service";
-import { builtinConnectorCredentialSecretReadCondition } from "./builtin-connector-credential-access.service";
-import {
-  canonicalChatEventContent,
-  canonicalChatEventUserMessage,
-  canonicalChatInputModelSelection,
-  parseCanonicalChatEventRequiredOfficialWorkflowIds,
-} from "./canonical-chat-event-read.service";
-import {
-  touchChatThreadLastMessageAt,
-  visibleChatEventCondition,
-} from "./chat-event-shared.service";
-import {
-  chatEventTextCondition,
-  chatEventTypeIn,
-  runOwnedChatEventCondition,
-} from "./chat-event-type.service";
-import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
-import type {
-  ChatQueueHeadContext,
-  ChatQueueHeadRejection,
-} from "./chat-queue-run-assembly";
-import {
-  isWebChatContextType,
-  type QueuedUserMessage,
-  type QueuedUserMessageContextType,
-  queuedUserMessageTriggerSource,
-} from "./chat-queued-event.service";
-import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import {
-  chatThreadConversationRun,
-  type ChatThreadExecutionSnapshot,
-  type ChatThreadSessionResolution,
-  chatThreadSessionSelection,
-  resolveChatThreadSessionSnapshot,
-} from "./chat-session-continuity.service";
-import {
-  agentRunSourceAnnotation,
-  projectUserMessage,
-  requiredUserMessageForEvent,
-} from "./chat-user-message.service";
-import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
-import {
-  decodeAcceptedConnectorCatalogPayload,
-  externalCatalogJoin,
-  ExternalConnectorCatalogUnavailableError,
-  identityLogFields,
-  readCachedConnectorCatalogSnapshot,
-} from "./connector-catalog-external-reader.service";
-import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
-import {
-  type CapturedConnectorCatalogIdentity,
-  type ConnectorCatalogRuntimeProjectionRowsRead,
-  projectionIdentityReadHook,
-  resolveProjectionIdentity,
-  validateConnectorCatalogRuntimeProjectionRows,
-} from "./connector-catalog-runtime-projection.service";
-import {
-  clearRuntimeSelectionInFlight,
-  getConnectorRuntimeConnector,
-  materializeProjectedRuntimeSelection,
-  observeRuntimeSelection,
-  projectionIdentityKey,
-  rememberProjectedConnectors,
-  requestedProjectionConnectorSlugs,
-  type RuntimeSelectionBuildResult,
-  runtimeSelectionCache,
-  runtimeSelectionFromAcceptedSnapshot,
-  runtimeSelectionProjectionKey,
-  takeCachedProjectedConnectors,
-  uniqueSortedConnectorSlugs,
-} from "./connector-catalog-runtime.service";
-import { connectorCatalogSource } from "./connector-catalog-source";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
-import {
-  type CustomConnectorRuntimeContext,
-  loadEffectiveCustomConnectorPermissionBundle,
-  resolveCustomConnectorBaseUrlVars,
-} from "./connector-runtime-preparation.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import {
-  encryptPersistentSecretsMap,
-  encryptPersistentSecretValue,
-} from "./crypto.utils";
-import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
-import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
-import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
-import { normaliseCustomConnectorRow } from "./custom-connector.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import {
-  type DiscordDeliveryTarget,
-  discordDeliveryTargetSchema,
-} from "./discord-chat-callback-payload";
-import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
-import {
-  memberModelRouteContextFromAccounts,
-  modelPolicyUsesPersonalMetadata,
-  providerTypeForSurfaceProtocol,
-} from "./effective-model-route.service";
-import {
-  ORG_SENTINEL_USER_ID as agentRunsCreateORG_SENTINEL_USER_ID,
-  userFeatureSwitchOverridesFromRows,
-} from "./feature-switch-scope";
-import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
-import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import {
-  buildChatPriorRunsContext,
-  buildQueuedCreateAgentRunArgs,
-  ChatCallbackPreCreateTimingCollector,
-  type CreateQueuedChatRunInput,
-  type CreateQueuedChatRunInputArgs,
-  deliverQueuedPromptRejection$,
-  deliverUnexpectedQueuedPromptRejection$,
-  buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
-  type PriorRunEvent,
-  queuedChatRunCallbackInputs,
-  queuedIntegrationLaunchFields,
-  type QueuedLaunchMaterial,
-  queuedMessageAdmissionFailure,
-  type QueuedMessageAdmissionFailure,
-  type QueuedMessageModelRouteResolution,
-  queuedMessageRejection,
-  type QueuedPromptLaunchContext,
-  type QueuedRunAdmissionFailureInput,
-  queuedUserMessageProjection,
-  rejectedQueuedRunAdmissionFailure,
-  routeQueuedMessagePiExecution,
-} from "./internal-chat-run-callback.service";
-import type { InternalRunCallbackKind } from "./internal-run-callback";
-import {
-  type MemorySummaryProjectionReadInput,
-  memorySummaryProjectionReadResult,
-  type MemorySummaryProjectionReadResult,
-} from "./memory-summary-projection.service";
-import {
-  type EnsuredOrgModelPolicyFacts,
-  ensureOrgModelPoliciesLocked,
-  modelPolicyCapabilities,
-  shouldReplaceExistingDefaultForPlan,
-} from "./model-policy.service";
-import {
-  type CapturedPersonalSubscriptionAccount,
-  isPersonalSubscriptionProviderType,
-  type MemberModelAccountSnapshot,
-} from "./model-provider-account.service";
-import {
-  type ModelFirstPin,
-  modelProviderWriteTypeForLaunch,
-  type ProviderModelSupport,
-  resolveQueuedModelSelectionPinFromSnapshot,
-} from "./model-selection.service";
-import {
-  acceptedCatalogFromRow,
-  acceptedRevisionFromRow,
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-} from "./official-workflow-catalog-read.service";
-import {
-  dispatchConfiguredOfficialWorkflowReconciliation$,
-  type OfficialWorkflowReconciliationResult,
-} from "./official-workflow-reconciliation-dispatch.service";
-import {
-  acceptedRunCandidates,
-  assembleRunObservation,
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowRunObservation,
-} from "./official-workflow-run.service";
-import {
-  loadOrgPlanCapabilities,
-  type OrgPlanCapabilities,
-  runtimeStatusForEntitlement,
-} from "./org-plan-entitlement-read.service";
-import { shouldUsePiExecution } from "./pi-sandbox-config";
-import {
-  additionalVolumesForRun,
-  selectedUserPresentationTemplateIds,
-  userPresentationTemplateVolumes,
-} from "./presentation-template-data.service";
-import {
-  checkOrgPlanRunAdmission,
-  type OrgCreditAvailability,
-  type RunAdmissionInput,
-} from "./run-admission.service";
-import {
-  isAutoPersonalSubscriptionRoute,
-  loadMemberSubscriptionModels,
-} from "./subscription-model-catalog.service";
-import {
-  planStorageManifestMixedLookup,
-  type SelectedStoragePresignedUrlCacheRow,
-  signStorageManifestPresignedUrls,
-  storageManifestCacheCountBucket,
-  storageManifestPresignedUrlCacheLookupPairs,
-  type StorageManifestPresignedUrlCacheScope,
-} from "./system-storage-presigned-url-cache.service";
-import {
-  type TeamsDeliveryTarget,
-  teamsDeliveryTargetSchema,
-} from "./teams-chat-callback-payload";
-import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
-import {
-  type TelegramDeliveryTarget,
-  telegramDeliveryTargetSchema,
-} from "./telegram-chat-callback-payload";
-import { buildTelegramPrompt } from "./telegram-prompt";
-import {
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
-  type PreparedUsageAllowanceRefresh,
-  prepareUsageAllowanceRefresh,
-  remainingUnits,
-  resolveAvailabilityInTransaction,
-  type UsageAllowanceAvailabilitySnapshot,
-} from "./usage-allowance.service";
-import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
-import {
-  selectedUserTemplateIds,
-  userTemplateVolumes,
-} from "./user-template-data.service";
-import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
-import { buildWebChatAppendSystemPrompt } from "./web-chat-session-prompt.service";
-import {
-  EVENT_POLICY,
-  restoredWorkflowAutomationEventPayload,
-  storedWorkflowAutomationContext,
-  workflowAutomationAgentPrompt,
-  type WorkflowAutomationEventPayload,
-  workflowAutomationEventTypeSchema,
-} from "./workflow-automation-context.service";
-import {
-  AutomationRow,
-  DueWorkflowAutomation,
-} from "./workflow-automation-enqueue.service";
-import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  type RunWorkflowSourceRow,
-  visibleWorkflowCondition,
-  workflowsForRunFromRows,
-} from "./workflow-data.service";
-import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
-
 export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
@@ -1220,6 +1226,7 @@ function queuedPromptRunInput(args: {
   readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
+  readonly catalog: ModelCatalog;
 }): CreateQueuedChatRunInput {
   const { input, launch, templates } = args;
   if (input.queuedMessage.autonomyBudget.kind !== "ok") {
@@ -1258,7 +1265,9 @@ function queuedPromptRunInput(args: {
     piExecution,
     codexServiceTier: routedModel.codexServiceTier,
     reasoningEffort: resolveReasoningEffortForDispatch({
+      catalog: args.catalog,
       selectedModel: routedModel.modelPin.selectedModel,
+      modelProviderType: routedModel.effectiveModelProvider,
       effort: routedModel.reasoningEffort ?? undefined,
       runtimeProviderType:
         routedModel.builtInModelRuntimeRoute?.providerType ??
@@ -1523,6 +1532,7 @@ type ModelContext =
   | { readonly ok: false; readonly failure: RunFailure };
 
 function workflowModelContext(
+  catalog: ModelCatalog,
   chatThreadId: string,
   threadModelContext: QueuedModelContext,
 ): ModelContext {
@@ -1575,7 +1585,7 @@ function workflowModelContext(
   const piExecution = shouldUsePiExecution({
     chatThreadId,
     modelProviderType: effectiveModelProvider,
-    selectedModel,
+    catalogModel: piCatalogModel(catalog, selectedModel),
     codexServiceTier: runCodexServiceTier,
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
   });
@@ -1589,7 +1599,9 @@ function workflowModelContext(
     codexServiceTier: runCodexServiceTier,
     reasoningEffort:
       resolveReasoningEffortForDispatch({
+        catalog,
         selectedModel,
+        modelProviderType: effectiveModelProvider,
         effort: threadModelContext.reasoningEffort,
         runtimeProviderType:
           builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,
@@ -2230,6 +2242,27 @@ type RunErrorResponse = {
   };
 };
 
+/**
+ * A Built-in pin that found no route because every executable candidate
+ * lacks usage pricing is rejected as unbillable (not as a temporary outage).
+ */
+async function unpricedBuiltInModelRejection(
+  db: ReadonlyDb,
+  args: Parameters<typeof loadBuiltInRoutePricing>[1],
+): Promise<RunErrorResponse | undefined> {
+  const message = unpricedBuiltInModelMessage(
+    args.catalog,
+    args.model,
+    await loadBuiltInRoutePricing(db, args),
+  );
+  return message
+    ? {
+        status: 503,
+        body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
+      }
+    : undefined;
+}
+
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
@@ -2405,9 +2438,140 @@ function storageManifestCacheLookupCondition(
   );
 }
 
+interface QueuedProviderAdmissionSurface {
+  readonly id: string;
+  readonly protocol: string;
+  readonly modelMappings: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The pinned provider's framing: its CLI agent framework (Built-in runs use
+ * the protocol framework of the model's primary catalog candidate) and
+ * whether a validated catalog model lacks a route on the pinned provider, so
+ * only a matching custom surface mapping can serve it.
+ */
+function queuedProviderRouteFraming(
+  catalog: ModelCatalog,
+  pin: ModelFirstPin,
+  providerModelSupport: ProviderModelSupport | undefined,
+) {
+  const parsed = modelProviderTypeSchema.safeParse(pin.modelProviderType);
+  const knownProvider = parsed.success ? parsed.data : null;
+  const pinModel = pin.selectedModel;
+  const [primaryBuiltIn] =
+    pinModel === null ? [] : catalogBuiltInCandidates(catalog, pinModel);
+  const primaryConcrete = modelProviderTypeSchema.safeParse(
+    primaryBuiltIn?.concreteProviderType,
+  );
+  const cliAgentType = knownProvider
+    ? getFrameworkForType(
+        isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
+          ? primaryConcrete.data
+          : knownProvider,
+      )
+    : null;
+  const requiresCustomSurface =
+    (providerModelSupport ?? "validate") === "validate" &&
+    pinModel !== null &&
+    catalog.byModel.has(pinModel) &&
+    (!knownProvider ||
+      !catalogHasProviderRoute(
+        catalog,
+        pinModel,
+        isBuiltInModelProviderType(knownProvider) ? "built-in" : knownProvider,
+      ));
+  return { cliAgentType, requiresCustomSurface };
+}
+
+function customSurfaceServesPin(
+  surface: QueuedProviderAdmissionSurface | null,
+  pin: ModelFirstPin,
+): boolean {
+  return (
+    surface !== null &&
+    pin.selectedModel !== null &&
+    surface.id === pin.modelProviderId &&
+    providerTypeForSurfaceProtocol(surface.protocol) ===
+      pin.modelProviderType &&
+    typeof surface.modelMappings[pin.selectedModel] === "string"
+  );
+}
+
+/**
+ * Provider admission shared by the chat and workflow-automation picks: model
+ * support on the pinned provider, org plan admission (the member's own
+ * subscription route is plan-exempt), then the Built-in credit balance.
+ */
+async function resolveQueuedProviderAdmission(params: {
+  readonly catalog: ModelCatalog;
+  readonly pin: ModelFirstPin;
+  readonly providerModelSupport: ProviderModelSupport | undefined;
+  readonly customSurface: () => Promise<QueuedProviderAdmissionSurface | null>;
+  readonly personalSubscription: () => Promise<boolean>;
+  readonly capabilities: () => Parameters<
+    typeof checkOrgPlanRunAdmission
+  >[0]["capabilities"];
+  readonly creditBalance: () => Promise<{
+    readonly spendableCredits: number;
+    readonly usagePackCredits: number;
+  } | null>;
+}) {
+  const { catalog, pin } = params;
+  const effectiveModelProvider = pin.modelProviderType;
+  const { cliAgentType, requiresCustomSurface } = queuedProviderRouteFraming(
+    catalog,
+    pin,
+    params.providerModelSupport,
+  );
+  if (
+    requiresCustomSurface &&
+    !customSurfaceServesPin(await params.customSurface(), pin)
+  ) {
+    return {
+      effectiveModelProvider,
+      cliAgentType,
+      error: badRequestMessage(
+        "The selected model is not supported by the current model provider",
+      ),
+      needsAllowance: false,
+    };
+  }
+  const personalSubscription = await params.personalSubscription();
+  const error = checkOrgPlanRunAdmission({
+    catalog,
+    capabilities: params.capabilities(),
+    modelProviderType: effectiveModelProvider,
+    selectedModel: pin.selectedModel,
+    personalSubscription,
+  });
+  if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
+    return {
+      effectiveModelProvider,
+      cliAgentType,
+      error,
+      needsAllowance: false,
+    };
+  }
+  const balance = await params.creditBalance();
+  return {
+    effectiveModelProvider,
+    cliAgentType,
+    error: balance ? undefined : pickChatRunModelInsufficientCredits(),
+    needsAllowance:
+      balance !== null &&
+      balance.usagePackCredits <= 0 &&
+      balance.spendableCredits <= 0,
+  };
+}
+
 export function createClaimRunObjects(claim: ThreadClaim) {
   const preparedAllowanceRefresh$ = computed(async (get) => {
     return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
+  });
+  // One model catalog snapshot per claim: the queued input is re-resolved
+  // against the catalog current at the pick, not at enqueue.
+  const claimCatalog$ = computed((get) => {
+    return loadModelCatalog(get(db$));
   });
   const appendChatQueueHeadRejection$ = command(
     async (
@@ -2729,12 +2893,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, get(queuedModelInputsInput$).orgId),
-          inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-        ),
-      );
+      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$).orgId));
   });
   const policyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$);
@@ -2750,7 +2909,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ]);
     return (
       facts.policies.find((policy) => {
-        return policy.model === selection?.selectedModel;
+        return (
+          selection !== null &&
+          selection !== undefined &&
+          policy.model ===
+            (resolveRunSelectionModel(facts.catalog, selection.selectedModel) ??
+              selection.selectedModel)
+        );
       }) ?? null
     );
   });
@@ -2777,7 +2942,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(orgMetadata$),
       ]);
       if (
-        ((!policy || !modelPolicyUsesPersonalMetadata(policy)) &&
+        ((!policy ||
+          !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
@@ -2901,6 +3067,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ]);
     return selection
       ? resolveQueuedModelSelectionPinFromSnapshot({
+          catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
           facts,
           member,
@@ -2989,6 +3156,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
+    const catalog = await get(claimCatalog$);
+    // A new run skips Built-in candidates whose billable categories for the
+    // requested service tier lack usage_pricing, like any unavailable one.
+    const routePricing = await loadBuiltInRoutePricing(get(db$), {
+      catalog,
+      model: pin.selectedModel,
+      serviceTier: (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
+      resolution: get(usagePricingResolution$),
+    });
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$),
@@ -2997,10 +3173,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ],
     );
     return builtInModelRuntimeRouteFromSnapshot({
+      catalog,
       selectedModel: pin.selectedModel,
       featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
+      routePricing,
     });
   });
   const runtime = {
@@ -3153,20 +3331,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     customSurface$: queuedProviderAdmissionCustomSurface$,
   } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
-  /** Auto: the member's catalog subscription route is plan-exempt. */
-  const autoPersonalSubscription$ = computed(async (get) => {
-    const [pin, subscriptionModels] = await Promise.all([
+  /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
+  const personalSubscription$ = computed(async (get) => {
+    const [pin, member, catalog] = await Promise.all([
       get(queuedProviderAdmissionModelPin$),
-      get(subscriptionModels$),
+      get(queuedModelRoutingMemberRoutes$),
+      get(claimCatalog$),
     ]);
     return (
       !("status" in pin) &&
-      pin.modelProviderCredentialScope === "member" &&
-      subscriptionModels.some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType
-        );
+      isMemberSubscriptionRoute({
+        catalog,
+        member,
+        model: pin.selectedModel,
+        providerType: pin.modelProviderType,
+        credentialScope: pin.modelProviderCredentialScope,
       })
     );
   });
@@ -3175,68 +3354,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
-    const effectiveModelProvider = pin.modelProviderType;
-    const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-    const knownProvider = parsed.success ? parsed.data : null;
-    const cliAgentType = knownProvider
-      ? getFrameworkForType(
-          isBuiltInModelProviderType(knownProvider) &&
-            isSupportedRunModel(pin.selectedModel)
-            ? getBuiltInConcreteProviderType(pin.selectedModel)
-            : knownProvider,
-        )
-      : null;
-    if (
-      (get(queuedProviderAdmissionInput$).providerModelSupport ??
-        "validate") === "validate" &&
-      isSupportedRunModel(pin.selectedModel) &&
-      (!knownProvider ||
-        !isModelSupportedByProvider(pin.selectedModel, knownProvider))
-    ) {
-      const surface = await get(queuedProviderAdmissionCustomSurface$);
-      if (
-        !surface ||
-        surface.id !== pin.modelProviderId ||
-        providerTypeForSurfaceProtocol(surface.protocol) !==
-          effectiveModelProvider ||
-        typeof surface.modelMappings[pin.selectedModel] !== "string"
-      ) {
-        return {
-          effectiveModelProvider,
-          cliAgentType,
-          error: badRequestMessage(
-            "The selected model is not supported by the current model provider",
-          ),
-          needsAllowance: false,
-        };
-      }
-    }
-    const autoPersonalSubscription = await get(autoPersonalSubscription$);
-    const error = checkOrgPlanRunAdmission({
-      capabilities: get(queuedProviderAdmissionPolicyFacts$)
-        .orgPlanCapabilities,
-      modelProviderType: effectiveModelProvider,
-      selectedModel: pin.selectedModel,
-      autoPersonalSubscription,
+    return await resolveQueuedProviderAdmission({
+      catalog: await get(claimCatalog$),
+      pin,
+      providerModelSupport: get(queuedProviderAdmissionInput$)
+        .providerModelSupport,
+      customSurface: () => {
+        return get(queuedProviderAdmissionCustomSurface$);
+      },
+      personalSubscription: () => {
+        return get(personalSubscription$);
+      },
+      capabilities: () => {
+        return get(queuedProviderAdmissionPolicyFacts$).orgPlanCapabilities;
+      },
+      creditBalance: () => {
+        return get(queuedProviderAdmissionCreditBalance$);
+      },
     });
-    if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-      return {
-        effectiveModelProvider,
-        cliAgentType,
-        error,
-        needsAllowance: false,
-      };
-    }
-    const balance = await get(queuedProviderAdmissionCreditBalance$);
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-      needsAllowance:
-        balance !== null &&
-        balance.usagePackCredits <= 0 &&
-        balance.spendableCredits <= 0,
-    };
   });
   const admission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$,
@@ -3248,89 +3383,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$,
   } = queuedModelSources;
   const initialFacts$ = computed(async (get) => {
-    const [orgPlanCapabilities, policies] = await Promise.all([
+    const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
       get(queuedModelCommandsCapabilities$),
       get(queuedModelCommandsInitialPolicies$),
+      get(claimCatalog$),
+      get(queuedModelCommandsInput$),
     ]);
-    return { orgPlanCapabilities, policies };
+    // Policies are projected from the claim's catalog snapshot; the fixed
+    // system default needs no lazy per-organization seeding.
+    return orgModelPolicyFactsFromSnapshot({
+      catalog,
+      orgId: input.orgId,
+      orgPlanCapabilities,
+      stored,
+    });
   });
   const orgModelPolicyInitializationInitializeModelPolicy$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const [input, initial] = await Promise.all([
-        get(queuedModelCommandsInput$),
-        get(initialFacts$),
-      ]);
-      signal.throwIfAborted();
-      const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
-      if (
-        initial.policies.length > 0 &&
-        !shouldReplaceExistingDefaultForPlan(
-          initial.policies.find((policy) => {
-            return policy.isDefault;
-          }),
-          capabilities,
-        )
-      ) {
-        return initial;
-      }
-      const facts = await set(writeDb$).transaction(async (tx) => {
-        signal.throwIfAborted();
-        const [row] = await tx
-          .select({
-            planKey: orgPlanEntitlements.planKey,
-            status: orgPlanEntitlements.status,
-            baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-            canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
-            canBuyCredits: orgPlanEntitlements.canBuyCredits,
-            showUsagePack: orgPlanEntitlements.showUsagePack,
-            autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-            supportByok: orgPlanEntitlements.supportByok,
-            restrictedBuiltInModels:
-              orgPlanEntitlements.restrictedBuiltInModels,
-            videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
-            workflowWebhookAutomationAllowed:
-              orgPlanEntitlements.workflowWebhookTriggerAllowed,
-            audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
-            audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
-            audioDailyDurationSeconds:
-              orgPlanEntitlements.audioDailyDurationSeconds,
-          })
-          .from(orgPlanEntitlements)
-          .where(eq(orgPlanEntitlements.orgId, input.orgId))
-          .limit(1);
-        signal.throwIfAborted();
-        let orgPlanCapabilities: OrgPlanCapabilities | null = null;
-        if (row) {
-          if (row.restrictedBuiltInModels === null) {
-            throw new Error(
-              `Unexpected NULL restricted_built_in_models for org plan entitlement ${input.orgId}`,
-            );
-          }
-          orgPlanCapabilities = {
-            ...row,
-            restrictedBuiltInModels: row.restrictedBuiltInModels,
-            status: runtimeStatusForEntitlement(row.status),
-          };
-        } else {
-          const [org] = await tx
-            .select({ orgId: orgMetadata.orgId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, input.orgId))
-            .limit(1);
-          signal.throwIfAborted();
-          if (org) {
-            throw new Error(`Missing org plan entitlement for ${input.orgId}`);
-          }
-        }
-        const initialized = await ensureOrgModelPoliciesLocked(
-          tx,
-          input.orgId,
-          input.userId,
-          orgPlanCapabilities,
-        );
-        signal.throwIfAborted();
-        return initialized;
-      });
+    async ({ get }, signal: AbortSignal) => {
+      const facts = await get(initialFacts$);
       signal.throwIfAborted();
       return facts;
     },
@@ -3422,11 +3492,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!selection) {
         return badRequestMessage("Queued input is missing its model selection");
       }
-      if (getRunModelAccess(selection.selectedModel) === "retired") {
-        return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-      }
-      if (!isSupportedRunModel(selection.selectedModel)) {
-        return badRequestMessage("Invalid model selection");
+      // Re-resolve the captured model against the claim's catalog snapshot
+      // (current at the pick, not at enqueue) with the same resolution as
+      // enqueue and run creation; a replaced model routes to its final
+      // replacement. Already-started runs are never re-resolved.
+      if (
+        !resolveRunSelectionModel(
+          await get(claimCatalog$),
+          selection.selectedModel,
+        )
+      ) {
+        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
       }
       await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
@@ -3449,6 +3525,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const allowance = admission.needsAllowance
         ? await set(refreshUsageAllowance$, signal)
         : null;
+      // `null`: a Built-in pin with no available route.
+      const unpriced =
+        builtInModelRuntimeRoute === null && pin.selectedModel
+          ? await unpricedBuiltInModelRejection(get(db$), {
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            })
+          : undefined;
+      signal.throwIfAborted();
       return {
         pin,
         providerAdmission: {
@@ -3456,6 +3543,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           cliAgentType: admission.cliAgentType,
           error:
             admission.error ??
+            unpriced ??
             (admission.needsAllowance &&
             (!allowance || allowance.remainingUnits <= 0)
               ? pickChatRunModelInsufficientCredits()
@@ -4887,6 +4975,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("A valid prompt model is missing session preparation");
       }
       return queuedPromptRunInput({
+        catalog: await get(claimCatalog$),
         input: args,
         launch,
         model,
@@ -4950,6 +5039,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           effectiveModelProvider:
             model.providerAdmission.effectiveModelProvider,
           builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
+          piCatalogModel: piCatalogModel(
+            await get(claimCatalog$),
+            model.pin.selectedModel,
+          ),
           cliAgentType: model.providerAdmission.cliAgentType,
           codexServiceTier: model.runCodexServiceTier,
           reasoningEffort: model.reasoningEffort,
@@ -5267,7 +5360,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         },
         codexServiceTier: routedModel.codexServiceTier,
         reasoningEffort: resolveReasoningEffortForDispatch({
+          catalog: await get(claimCatalog$),
           selectedModel: routedModel.modelPin.selectedModel,
+          modelProviderType: routedModel.effectiveModelProvider,
           effort: routedModel.reasoningEffort ?? undefined,
           runtimeProviderType:
             routedModel.builtInModelRuntimeRoute?.providerType ??
@@ -5811,12 +5906,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, get(queuedModelInputsInput$2).orgId),
-          inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-        ),
-      );
+      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$2).orgId));
   });
   const queuedModelInputsPolicyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$2);
@@ -5832,7 +5922,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ]);
     return (
       facts.policies.find((policy) => {
-        return policy.model === selection?.selectedModel;
+        return (
+          selection !== null &&
+          selection !== undefined &&
+          policy.model ===
+            (resolveRunSelectionModel(facts.catalog, selection.selectedModel) ??
+              selection.selectedModel)
+        );
       }) ?? null
     );
   });
@@ -5859,7 +5955,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(queuedModelInputsOrgMetadata$),
       ]);
       if (
-        ((!policy || !modelPolicyUsesPersonalMetadata(policy)) &&
+        ((!policy ||
+          !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
@@ -5983,6 +6080,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ]);
     return selection
       ? resolveQueuedModelSelectionPinFromSnapshot({
+          catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
           facts,
           member,
@@ -6071,6 +6169,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
+    const catalog = await get(claimCatalog$);
+    // A new run skips Built-in candidates whose billable categories for the
+    // requested service tier lack usage_pricing, like any unavailable one.
+    const routePricing = await loadBuiltInRoutePricing(get(db$), {
+      catalog,
+      model: pin.selectedModel,
+      serviceTier: (await get(queuedModelRuntimeSelection$2))?.codexServiceTier,
+      resolution: get(usagePricingResolution$),
+    });
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$2),
@@ -6079,10 +6186,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ],
     );
     return builtInModelRuntimeRouteFromSnapshot({
+      catalog,
       selectedModel: pin.selectedModel,
       featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
+      routePricing,
     });
   });
   const queuedModelRuntime = {
@@ -6238,20 +6347,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelRouting;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$2 } =
     queuedModelCredits;
-  /** Auto: the member's catalog subscription route is plan-exempt. */
-  const autoPersonalSubscription$2 = computed(async (get) => {
-    const [pin, subscriptionModels] = await Promise.all([
+  /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
+  const personalSubscription$2 = computed(async (get) => {
+    const [pin, member, catalog] = await Promise.all([
       get(queuedProviderAdmissionModelPin$2),
-      get(subscriptionModels$2),
+      get(queuedModelRoutingMemberRoutes$2),
+      get(claimCatalog$),
     ]);
     return (
       !("status" in pin) &&
-      pin.modelProviderCredentialScope === "member" &&
-      subscriptionModels.some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType
-        );
+      isMemberSubscriptionRoute({
+        catalog,
+        member,
+        model: pin.selectedModel,
+        providerType: pin.modelProviderType,
+        credentialScope: pin.modelProviderCredentialScope,
       })
     );
   });
@@ -6260,68 +6370,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
-    const effectiveModelProvider = pin.modelProviderType;
-    const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-    const knownProvider = parsed.success ? parsed.data : null;
-    const cliAgentType = knownProvider
-      ? getFrameworkForType(
-          isBuiltInModelProviderType(knownProvider) &&
-            isSupportedRunModel(pin.selectedModel)
-            ? getBuiltInConcreteProviderType(pin.selectedModel)
-            : knownProvider,
-        )
-      : null;
-    if (
-      (get(queuedProviderAdmissionInput$2).providerModelSupport ??
-        "validate") === "validate" &&
-      isSupportedRunModel(pin.selectedModel) &&
-      (!knownProvider ||
-        !isModelSupportedByProvider(pin.selectedModel, knownProvider))
-    ) {
-      const surface = await get(queuedProviderAdmissionCustomSurface$2);
-      if (
-        !surface ||
-        surface.id !== pin.modelProviderId ||
-        providerTypeForSurfaceProtocol(surface.protocol) !==
-          effectiveModelProvider ||
-        typeof surface.modelMappings[pin.selectedModel] !== "string"
-      ) {
-        return {
-          effectiveModelProvider,
-          cliAgentType,
-          error: badRequestMessage(
-            "The selected model is not supported by the current model provider",
-          ),
-          needsAllowance: false,
-        };
-      }
-    }
-    const autoPersonalSubscription = await get(autoPersonalSubscription$2);
-    const error = checkOrgPlanRunAdmission({
-      capabilities: get(queuedProviderAdmissionPolicyFacts$2)
-        .orgPlanCapabilities,
-      modelProviderType: effectiveModelProvider,
-      selectedModel: pin.selectedModel,
-      autoPersonalSubscription,
+    return await resolveQueuedProviderAdmission({
+      catalog: await get(claimCatalog$),
+      pin,
+      providerModelSupport: get(queuedProviderAdmissionInput$2)
+        .providerModelSupport,
+      customSurface: () => {
+        return get(queuedProviderAdmissionCustomSurface$2);
+      },
+      personalSubscription: () => {
+        return get(personalSubscription$2);
+      },
+      capabilities: () => {
+        return get(queuedProviderAdmissionPolicyFacts$2).orgPlanCapabilities;
+      },
+      creditBalance: () => {
+        return get(queuedProviderAdmissionCreditBalance$2);
+      },
     });
-    if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
-      return {
-        effectiveModelProvider,
-        cliAgentType,
-        error,
-        needsAllowance: false,
-      };
-    }
-    const balance = await get(queuedProviderAdmissionCreditBalance$2);
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-      needsAllowance:
-        balance !== null &&
-        balance.usagePackCredits <= 0 &&
-        balance.spendableCredits <= 0,
-    };
   });
   const queuedModelAdmission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$2,
@@ -6333,89 +6399,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     internalPolicyFacts$: queuedModelCommandsInternalPolicyFacts$2,
   } = queuedModelSources2;
   const queuedModelCommandsInitialFacts$ = computed(async (get) => {
-    const [orgPlanCapabilities, policies] = await Promise.all([
+    const [orgPlanCapabilities, stored, catalog, input] = await Promise.all([
       get(queuedModelCommandsCapabilities$2),
       get(queuedModelCommandsInitialPolicies$2),
+      get(claimCatalog$),
+      get(queuedModelCommandsInput$2),
     ]);
-    return { orgPlanCapabilities, policies };
+    // Policies are projected from the claim's catalog snapshot; the fixed
+    // system default needs no lazy per-organization seeding.
+    return orgModelPolicyFactsFromSnapshot({
+      catalog,
+      orgId: input.orgId,
+      orgPlanCapabilities,
+      stored,
+    });
   });
   const orgModelPolicyInitializationInitializeModelPolicy$2 = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const [input, initial] = await Promise.all([
-        get(queuedModelCommandsInput$2),
-        get(queuedModelCommandsInitialFacts$),
-      ]);
-      signal.throwIfAborted();
-      const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
-      if (
-        initial.policies.length > 0 &&
-        !shouldReplaceExistingDefaultForPlan(
-          initial.policies.find((policy) => {
-            return policy.isDefault;
-          }),
-          capabilities,
-        )
-      ) {
-        return initial;
-      }
-      const facts = await set(writeDb$).transaction(async (tx) => {
-        signal.throwIfAborted();
-        const [row] = await tx
-          .select({
-            planKey: orgPlanEntitlements.planKey,
-            status: orgPlanEntitlements.status,
-            baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-            canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
-            canBuyCredits: orgPlanEntitlements.canBuyCredits,
-            showUsagePack: orgPlanEntitlements.showUsagePack,
-            autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-            supportByok: orgPlanEntitlements.supportByok,
-            restrictedBuiltInModels:
-              orgPlanEntitlements.restrictedBuiltInModels,
-            videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
-            workflowWebhookAutomationAllowed:
-              orgPlanEntitlements.workflowWebhookTriggerAllowed,
-            audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
-            audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
-            audioDailyDurationSeconds:
-              orgPlanEntitlements.audioDailyDurationSeconds,
-          })
-          .from(orgPlanEntitlements)
-          .where(eq(orgPlanEntitlements.orgId, input.orgId))
-          .limit(1);
-        signal.throwIfAborted();
-        let orgPlanCapabilities: OrgPlanCapabilities | null = null;
-        if (row) {
-          if (row.restrictedBuiltInModels === null) {
-            throw new Error(
-              `Unexpected NULL restricted_built_in_models for org plan entitlement ${input.orgId}`,
-            );
-          }
-          orgPlanCapabilities = {
-            ...row,
-            restrictedBuiltInModels: row.restrictedBuiltInModels,
-            status: runtimeStatusForEntitlement(row.status),
-          };
-        } else {
-          const [org] = await tx
-            .select({ orgId: orgMetadata.orgId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, input.orgId))
-            .limit(1);
-          signal.throwIfAborted();
-          if (org) {
-            throw new Error(`Missing org plan entitlement for ${input.orgId}`);
-          }
-        }
-        const initialized = await ensureOrgModelPoliciesLocked(
-          tx,
-          input.orgId,
-          input.userId,
-          orgPlanCapabilities,
-        );
-        signal.throwIfAborted();
-        return initialized;
-      });
+    async ({ get }, signal: AbortSignal) => {
+      const facts = await get(queuedModelCommandsInitialFacts$);
       signal.throwIfAborted();
       return facts;
     },
@@ -6514,11 +6515,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!selection) {
         return badRequestMessage("Queued input is missing its model selection");
       }
-      if (getRunModelAccess(selection.selectedModel) === "retired") {
-        return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-      }
-      if (!isSupportedRunModel(selection.selectedModel)) {
-        return badRequestMessage("Invalid model selection");
+      // Re-resolve the captured model against the claim's catalog snapshot
+      // (current at the pick, not at enqueue) with the same resolution as
+      // enqueue and run creation; a replaced model routes to its final
+      // replacement. Already-started runs are never re-resolved.
+      if (
+        !resolveRunSelectionModel(
+          await get(claimCatalog$),
+          selection.selectedModel,
+        )
+      ) {
+        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
       }
       await set(queuedModelInitializeModelPolicy$, signal);
       const pin = await get(queuedModelModelPin$);
@@ -6541,6 +6548,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const allowance = admission.needsAllowance
         ? await set(queuedModelRefreshUsageAllowance$, signal)
         : null;
+      // `null`: a Built-in pin with no available route.
+      const unpriced =
+        builtInModelRuntimeRoute === null && pin.selectedModel
+          ? await unpricedBuiltInModelRejection(get(db$), {
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            })
+          : undefined;
+      signal.throwIfAborted();
       return {
         pin,
         providerAdmission: {
@@ -6548,6 +6566,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           cliAgentType: admission.cliAgentType,
           error:
             admission.error ??
+            unpriced ??
             (admission.needsAllowance &&
             (!allowance || allowance.remainingUnits <= 0)
               ? pickChatRunModelInsufficientCredits()
@@ -6565,7 +6584,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     queuedModelResolveQueuedModel$2;
   const automationLaunchEffectsResolveAutomationModel$ = command(
     async (
-      { set },
+      { get, set },
       args: Pick<AssembleWorkflowAutomationRunArgs, "due" | "queueEventId">,
       timing: ApiDispatchTimingCollector,
       signal: AbortSignal,
@@ -6586,7 +6605,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             signal,
           );
           signal.throwIfAborted();
-          return workflowModelContext(args.due.chatThreadId, context);
+          return workflowModelContext(
+            await get(claimCatalog$),
+            args.due.chatThreadId,
+            context,
+          );
         },
       );
     },
@@ -8303,12 +8326,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreatePreparedInput$ = computed(async (get) => {
-    const [input, resolution, appendSystemPrompt, fullCommand] =
+    const [input, resolution, appendSystemPrompt, fullCommand, catalog] =
       await Promise.all([
         get(preCreatePostAuthorizationPostAuthorization$),
         get(threadSession$),
         get(sessionPrompt$),
         get(selectedCommand$),
+        get(claimCatalog$),
       ]);
     if (!fullCommand) {
       return null;
@@ -8324,6 +8348,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return {
       ...input,
+      catalog,
       command: {
         ...fullCommand,
         modelProviderId: input.command.modelProviderId,
@@ -8521,11 +8546,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         db: get(db$),
         timing: input.timing,
-        args: selectedRunModelProviderArgs(
-          account.command,
-          agent,
-          account.capturedPersonalSubscriptionAccount,
-        ),
+        args: {
+          ...selectedRunModelProviderArgs(
+            account.command,
+            agent,
+            account.capturedPersonalSubscriptionAccount,
+          ),
+          catalog: await get(claimCatalog$),
+        },
       };
     },
   );
@@ -8563,6 +8591,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
         frameworkForProviderSelection(
+          args.catalog,
           args.modelProviderType,
           args.selectedModelOverride,
         ) ?? composeFramework
@@ -8609,6 +8638,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return (
       frameworkForProviderSelection(
+        args.catalog,
         provider.type,
         args.selectedModelOverride ?? provider.selectedModel,
       ) ?? composeFramework
@@ -8640,6 +8670,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       !hasExplicitFrameworkApiKey(content, requestedFramework) ||
       isBuiltInModelProviderType(args.modelProviderType);
     const environmentArgs: ResolveModelProviderEnvironmentArgs = {
+      catalog: args.catalog,
       orgId: args.orgId,
       userId: args.userId,
       framework: requestedFramework,
@@ -8745,7 +8776,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (
         !route ||
         route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(route) ||
+        !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
         getFrameworkForType(route.providerType) !== args.framework
       ) {
         return null;
@@ -8976,8 +9007,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isRouteError(provider)) {
       return provider;
     }
-    if (context.input.args.codexServiceTier === "ultrafast") {
-      return badRequestMessage("Astra Ultrafast is temporarily disabled");
+    if (
+      context.input.args.codexServiceTier === "ultrafast" &&
+      !isCatalogUltrafastServiceTierSupported(
+        context.input.args.catalog,
+        provider?.selectedModel,
+        provider?.type,
+      )
+    ) {
+      return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),
@@ -10091,6 +10129,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         db,
         args: {
+          catalog: await get(claimCatalog$),
           orgId: command.auth.orgId,
           userId: command.auth.userId,
           injectSkillVolumes: { workflows },
@@ -10454,6 +10493,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : requestedFramework;
       const piSandbox = resolvePreparedPiModelConfig({
         createArgs: {
+          catalog: await get(claimCatalog$),
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },
@@ -11659,9 +11699,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (isRouteError(connectors)) {
         return connectors;
       }
+      const catalog = await get(claimCatalog$);
       const usage = prepareModelUsageContext({
+        catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
+        routePricing: await loadRunRoutePricing(get(db$), {
+          catalog,
+          modelProvider,
+          serviceTier: (await get(contextInput$)).args.codexServiceTier,
+          resolution: get(usagePricingResolution$),
+        }),
       });
       if (isRouteError(usage)) {
         return usage;
@@ -12000,10 +12048,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
-  const runAdmissionAutoPersonalSubscription$ = computed(async (get) => {
+  const runAdmissionPersonalSubscription$ = computed(async (get) => {
     const input = await get(capturedRunAdmissionReadInput$);
-    return await isAutoPersonalSubscriptionRoute({
+    return await isPersonalSubscriptionRoute({
       db: get(db$),
+      catalog: input.catalog,
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,
@@ -12012,9 +12061,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runAdmissionCheckAdmission$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [input, autoPersonalSubscription] = await Promise.all([
+      const [input, personalSubscription] = await Promise.all([
         get(capturedRunAdmissionReadInput$),
-        get(runAdmissionAutoPersonalSubscription$),
+        get(runAdmissionPersonalSubscription$),
       ]);
       signal.throwIfAborted();
       if (!input.enforceBuiltInCredits) {
@@ -12024,14 +12073,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           checkOrgPlanRunAdmission({
             ...input,
             capabilities,
-            autoPersonalSubscription,
+            personalSubscription,
           }) ?? null
         );
       }
       const availability = await get(runAdmissionAvailability$);
       signal.throwIfAborted();
-      if (getRunModelAccess(input.selectedModel) === "retired") {
-        return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+      const routeFailure = checkCatalogRunRoute(input.catalog, input);
+      if (routeFailure) {
+        return routeFailure;
       }
       if (!availability) {
         return insufficientCredits();
@@ -12039,7 +12089,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const failure = checkOrgPlanRunAdmission({
         ...input,
         capabilities: availability,
-        autoPersonalSubscription,
+        personalSubscription,
       });
       if (failure) {
         return failure;
@@ -12677,6 +12727,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           const credits = await set(
             checkAdmission$,
             {
+              catalog: await get(claimCatalog$),
               orgId: claim.orgId,
               userId: input.command.auth.userId,
               modelProviderType: "built-in",
@@ -12694,6 +12745,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return await set(
         checkAdmission$,
         {
+          catalog: await get(claimCatalog$),
           orgId: claim.orgId,
           userId: input.command.auth.userId,
           modelProviderType: model?.type ?? input.command.body.modelProvider,

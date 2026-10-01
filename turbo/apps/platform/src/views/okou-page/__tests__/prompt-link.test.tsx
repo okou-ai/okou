@@ -1,3 +1,4 @@
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
@@ -219,10 +220,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe("gpt-6-luna");
+  expect(capture.createdThreads[0]?.model).toBe(MOCK_SYSTEM_DEFAULT_MODEL);
   expect(userMessageParts(send)).toContainEqual({
     type: "model",
-    selectedModel: "gpt-6-luna",
+    selectedModel: MOCK_SYSTEM_DEFAULT_MODEL,
   });
 });
 

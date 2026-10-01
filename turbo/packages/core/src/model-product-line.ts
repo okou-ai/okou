@@ -35,8 +35,9 @@ const MODEL_PRODUCT_LINE_SET: ReadonlySet<string> = new Set(
 /**
  * Lines that run on their vendor's own harness instead of the Pi loop. This is
  * the epic's rule as data: frontier lines stay with the vendor, everything else
- * is Pi-eligible. `pi-admission-policy.test.ts` holds `PI_MODEL_POLICY` to it,
- * so a future model on one of these lines cannot reach Pi without failing.
+ * is Pi-eligible. `pi-admission-policy.test.ts` holds the seeded catalog's
+ * `pi_route_class` to it, so a future model on one of these lines cannot be
+ * seeded with a Pi route class without failing.
  */
 export const FRONTIER_MODEL_PRODUCT_LINES = [
   "fable",

@@ -1,5 +1,5 @@
 {
-  "id": "546b1b8f-b536-4b7e-994f-523c2971d27c",
+  "id": "ddc17ff1-28f3-4fd1-8e2e-3bd9c9ec1cab",
   "prevId": "1f25831a-e6fe-4eca-bdc4-f0895fe52b1a",
   "version": "7",
   "dialect": "postgresql",
@@ -8478,9 +8478,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
@@ -8499,10 +8499,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"chat_threads\".\"pinned_at\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_chat_threads_user_agent_last_message": {
           "name": "idx_chat_threads_user_agent_last_message",
@@ -8527,9 +8527,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_threads_user_last_message_id": {
           "name": "idx_chat_threads_user_last_message_id",
@@ -8554,48 +8554,48 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "chat_threads_agent_id_agents_id_fk": {
           "name": "chat_threads_agent_id_agents_id_fk",
           "tableFrom": "chat_threads",
+          "tableTo": "agents",
           "columnsFrom": [
             "agent_id"
           ],
-          "tableTo": "agents",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "chat_threads_computer_use_host_id_computer_use_hosts_id_fk": {
           "name": "chat_threads_computer_use_host_id_computer_use_hosts_id_fk",
           "tableFrom": "chat_threads",
+          "tableTo": "computer_use_hosts",
           "columnsFrom": [
             "computer_use_host_id"
           ],
-          "tableTo": "computer_use_hosts",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_chat_threads_id_user": {
           "name": "uq_chat_threads_id_user",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "user_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -36333,9 +36333,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_vnc_connections_ssh": {
           "name": "idx_vnc_connections_ssh",
@@ -36354,9 +36354,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_vnc_connections_owner_created": {
           "name": "idx_vnc_connections_owner_created",
@@ -36387,9 +36387,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_vnc_connections_user": {
           "name": "idx_vnc_connections_user",
@@ -36408,64 +36408,64 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "vnc_connections_ssh_owner_fk": {
           "name": "vnc_connections_ssh_owner_fk",
           "tableFrom": "vnc_connections",
+          "tableTo": "ssh_connections",
           "columnsFrom": [
             "ssh_connection_id",
             "org_id",
             "user_id"
           ],
-          "tableTo": "ssh_connections",
           "columnsTo": [
             "id",
             "org_id",
             "user_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "vnc_connections_credential_owner_fk": {
           "name": "vnc_connections_credential_owner_fk",
           "tableFrom": "vnc_connections",
+          "tableTo": "vnc_credentials",
           "columnsFrom": [
             "credential_id",
             "org_id",
             "user_id"
           ],
-          "tableTo": "vnc_credentials",
           "columnsTo": [
             "id",
             "org_id",
             "user_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "vnc_connections_credential_profile_fk": {
           "name": "vnc_connections_credential_profile_fk",
           "tableFrom": "vnc_connections",
+          "tableTo": "vnc_credentials",
           "columnsFrom": [
             "credential_id",
             "org_id",
             "user_id",
             "auth_method"
           ],
-          "tableTo": "vnc_credentials",
           "columnsTo": [
             "id",
             "org_id",
             "user_id",
             "auth_method"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -36612,9 +36612,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_vnc_credentials_user": {
           "name": "idx_vnc_credentials_user",
@@ -36633,9 +36633,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -36643,22 +36643,22 @@
       "uniqueConstraints": {
         "uq_vnc_credentials_owner_id": {
           "name": "uq_vnc_credentials_owner_id",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "org_id",
             "user_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "uq_vnc_credentials_owner_id_auth_method": {
           "name": "uq_vnc_credentials_owner_id_auth_method",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "org_id",
             "user_id",
             "auth_method"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},

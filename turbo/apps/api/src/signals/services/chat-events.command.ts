@@ -1,3 +1,4 @@
+import { resolveRunSelectionModel } from "./model-selection.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   chatEventsContract,
@@ -6,7 +7,7 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -61,6 +62,12 @@ import {
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+
+import {
+  catalogModelOffersUltrafast,
+  isCatalogFastServiceTierSupported,
+} from "./model-route-capabilities.service";
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
@@ -87,7 +94,7 @@ import {
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
-import { isCodexFastServiceTierSupported } from "./model-selection.service";
+
 import {
   organizationPlanCapabilities$,
   type OrgPlanCapabilities,
@@ -117,7 +124,7 @@ interface NormalSendBody {
   readonly chatThreadEventId?: string;
   readonly chatThreadSortEventId?: string;
   readonly sourceRunId?: string;
-  readonly model?: SupportedRunModel;
+  readonly model?: string;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
     readonly reasoningEffort?: ReasoningEffort;
@@ -664,6 +671,7 @@ interface ThreadComputerAccess {
 }
 
 function requestedThreadRunSettings(
+  catalog: ModelCatalog,
   body: NormalSendBody,
   current: {
     readonly selectedModel: string | null;
@@ -673,6 +681,7 @@ function requestedThreadRunSettings(
 ): ThreadRunSettings | ReturnType<typeof badRequestMessage> {
   const selectedModel = body.model ?? current.selectedModel;
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel,
     modelSettings: current.modelSettings,
     requested: body.runOptions?.reasoningEffort,
@@ -683,7 +692,7 @@ function requestedThreadRunSettings(
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
     requestedTier === "fast" &&
-    !isCodexFastServiceTierSupported({ selectedModel })
+    !isCatalogFastServiceTierSupported(catalog, selectedModel)
   ) {
     return badRequestMessage(
       "Codex fast mode is only available for GPT 5.6 runs",
@@ -698,8 +707,13 @@ function requestedThreadRunSettings(
   const codexServiceTier = keepsStoredTier
     ? current.codexServiceTier
     : (requestedTier ?? null);
-  if (codexServiceTier === "ultrafast") {
-    return badRequestMessage("Astra Ultrafast is temporarily disabled");
+  // The catalog route capabilities decide Ultrafast availability, including
+  // a stored thread tier kept by this send.
+  if (
+    codexServiceTier === "ultrafast" &&
+    !catalogModelOffersUltrafast(catalog, selectedModel)
+  ) {
+    return badRequestMessage("Ultrafast is unavailable for this model route");
   }
   return {
     selectedModel,
@@ -801,6 +815,7 @@ const resolveSendThread$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly body: NormalSendBody;
+      readonly catalog: ModelCatalog;
       readonly existing?: {
         readonly thread: ExistingSendThreadRow;
         readonly agentId: string;
@@ -818,7 +833,11 @@ const resolveSendThread$ = command(
         ),
         modelSettingsPatch: undefined,
       };
-      const runSettings = requestedThreadRunSettings(args.body, current);
+      const runSettings = requestedThreadRunSettings(
+        args.catalog,
+        args.body,
+        current,
+      );
       if ("status" in runSettings) {
         return runSettings;
       }
@@ -853,7 +872,7 @@ const resolveSendThread$ = command(
         : null;
     const defaults = await set(loadNewChatThreadDefaults$, member, signal);
     signal.throwIfAborted();
-    const runSettings = requestedThreadRunSettings(args.body, {
+    const runSettings = requestedThreadRunSettings(args.catalog, args.body, {
       selectedModel: initialModel?.selectedModel ?? null,
       modelSettings: defaults.modelSettings,
       codexServiceTier:
@@ -1070,6 +1089,31 @@ function assertOfficialSourceClaim(
   }
 }
 
+/**
+ * The stored prompt: an agent-sourced send carries its source Run annotation;
+ * an MCP send carries its source part.
+ */
+function normalSendUserMessage(
+  args: NormalSendArgs,
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+): UserMessageDocument {
+  if (agentRunSource !== null) {
+    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
+  }
+  return args.mcpSource === undefined
+    ? args.body.userMessage
+    : {
+        ...args.body.userMessage,
+        parts: [...args.body.userMessage.parts, args.mcpSource],
+      };
+}
+
+/**
+ * A conflict on the insert is accepted as a duplicate without a lookup. Only
+ * a follow-up with a server-generated id cannot have collided on its id, so
+ * its conflict is the revoke edge taken concurrently.
+ */
+
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
   readonly id: string;
@@ -1263,6 +1307,7 @@ async function prepareNormalSend(
         | Awaited<ReturnType<typeof loadAuthorizedAgent>>
         | Awaited<ReturnType<typeof loadAuthorizedExistingSendThread>>;
       readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+      readonly catalog: ModelCatalog;
     }
   | NormalSendFailure
   | CreatedChatEventResponse
@@ -1313,7 +1358,15 @@ async function prepareNormalSend(
   if (invalidTemplate) {
     return invalidTemplate;
   }
-  return { authorized, agentRunSource: source.source };
+  const catalog = await loadModelCatalog(db);
+  signal.throwIfAborted();
+  if (
+    args.body.model !== undefined &&
+    resolveRunSelectionModel(catalog, args.body.model) === null
+  ) {
+    return badRequestMessage(`Unknown model "${args.body.model}"`);
+  }
+  return { authorized, agentRunSource: source.source, catalog };
 }
 
 /** A direct user message moves its thread's sidebar recency after the pick. */
@@ -1351,6 +1404,7 @@ const prepareNormalSendInput$ = command(
       readonly userId: string;
       readonly body: NormalSendBody;
       readonly runSettings: ThreadRunSettings;
+      readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
     },
     signal: AbortSignal,
@@ -1370,6 +1424,7 @@ const prepareNormalSendInput$ = command(
       ...args.runSettings,
       reasoningEffort: args.body.runOptions?.reasoningEffort,
       orgPlanCapabilities: args.orgPlanCapabilities,
+      catalog: args.catalog,
     });
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -1389,15 +1444,7 @@ function preparedNormalSendEvent(
     modelSelection,
     id: args.body.clientEventId ?? randomUUID(),
     threadId: threadId,
-    userMessage:
-      agentRunSource !== null
-        ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
-        : args.mcpSource === undefined
-          ? args.body.userMessage
-          : {
-              ...args.body.userMessage,
-              parts: [...args.body.userMessage.parts, args.mcpSource],
-            },
+    userMessage: normalSendUserMessage(args, agentRunSource),
     triggerSource: normalSendTriggerSource(args.auth),
     agentRunSource,
     requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
@@ -1465,15 +1512,13 @@ export const sendNormalEvent$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const { authorized, agentRunSource } = prepared;
-    if ("status" in authorized) {
-      return authorized;
-    }
+    const { authorized, agentRunSource, catalog } = prepared;
     const thread = await set(
       resolveSendThread$,
       {
         ...args,
         orgPlanCapabilities,
+        catalog,
         existing:
           "thread" in authorized
             ? { thread: authorized.thread, agentId: authorized.agent.id }
@@ -1501,6 +1546,7 @@ export const sendNormalEvent$ = command(
         ...args,
         runSettings: thread.runSettings,
         orgPlanCapabilities,
+        catalog,
       },
       signal,
     );

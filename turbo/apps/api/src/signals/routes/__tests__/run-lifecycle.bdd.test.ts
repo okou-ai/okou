@@ -1,31 +1,20 @@
-import { createHash, randomUUID } from "node:crypto";
 import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
-
+import { createHash, randomUUID } from "node:crypto";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import {
+  readPrimaryBuiltInRouteFixture,
+  updateRestrictedPlanAccessFixture,
+} from "../../../test-fixtures/model-route-capabilities";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  getBuiltInApiModel,
-  getBuiltInConcreteProviderType,
-  getBuiltInVendor,
   getModelProviderFirewall,
-  getProviderRuntimeModel,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import type {
-  KnownRunFailureReason,
-  RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -34,40 +23,76 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
-  type PiModelConfig,
   type Job as RunnerJob,
+  type PiModelConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
+import type {
+  KnownRunFailureReason,
+  RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
-import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
-import {
-  UNKNOWN_PERMISSION_GRANT,
-  type ExecutionFirewallEntry,
-  type FirewallApi,
-} from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
 } from "@okouai/core/storage-names";
+import {
+  UNKNOWN_PERMISSION_GRANT,
+  type ExecutionFirewallEntry,
+  type FirewallApi,
+} from "@okouai/connectors/firewall-types";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
-
+import { v5 as uuidv5 } from "uuid";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-} from "../../../lib/secret-kms-client";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
+import {
+  deleteUsagePricingRows,
+  seedOrgMetadata,
+  seedUsagePricingRows,
+} from "../../../test-fixtures/system-config-seeds";
+import {
+  deleteOrgPlanEntitlementFixture,
+  readOrgPlanEntitlementFixture,
+  upsertOrgPlanEntitlementFixture,
+} from "../../../test-fixtures/org-plan-entitlement";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import {
+  API_TEST_CONNECTOR_CATALOG,
+  API_TEST_CONNECTOR_FIREWALL_CONFIGS,
+  apiTestConnectorCatalogValidationAuthority,
+  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
+  corruptApiTestConnectorCatalogActiveSnapshotPayload,
+  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
+  corruptApiTestConnectorCatalogRuntimeProjectionPayload,
+  deleteApiTestConnectorCatalogCompatibility,
+  invalidateApiTestConnectorCatalogCompatibility,
+  installApiTestConnectorCatalog,
+  readApiTestConnectorCatalogCompatibilityEvaluations,
+  readApiTestConnectorCatalogValidationAuthority,
+  replaceApiTestConnectorCatalogFilteredAuthMethods,
+  replaceApiTestConnectorCatalogStoredBytes,
+  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
+  setApiTestConnectorCatalogValidationAuthority,
+} from "../../../test-fixtures/connector-catalog";
+import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   readRunIdentityMismatchWriteCountsFixture,
   readRunModelRuntimeRouteFixture,
@@ -79,55 +104,12 @@ import {
   timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
 import {
-  API_TEST_CONNECTOR_CATALOG,
-  API_TEST_CONNECTOR_FIREWALL_CONFIGS,
-  apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
-  corruptApiTestConnectorCatalogActiveSnapshotPayload,
-  corruptApiTestConnectorCatalogRuntimeProjectionDigest,
-  corruptApiTestConnectorCatalogRuntimeProjectionPayload,
-  deleteApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-  invalidateApiTestConnectorCatalogCompatibility,
-  readApiTestConnectorCatalogCompatibilityEvaluations,
-  readApiTestConnectorCatalogValidationAuthority,
-  replaceApiTestConnectorCatalogFilteredAuthMethods,
-  replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
-  setApiTestConnectorCatalogValidationAuthority,
-} from "../../../test-fixtures/connector-catalog";
-import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import {
-  deleteUsagePricingRows,
-  seedOrgMetadata,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
-import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorCheckRoutes } from "../connector-check";
-import { builtinConnectorsRoutes } from "../connectors";
-import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
-import {
-  readAgentRunCallbacks$,
-  seedAgentRunCallback$,
-} from "./helpers/agent-run-callback";
-import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
+import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -145,14 +127,24 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
 } from "./helpers/chat-events-fixture";
-import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
+import {
+  readAgentRunCallbacks$,
+  seedAgentRunCallback$,
+} from "./helpers/agent-run-callback";
+import {
+  deleteSlackIntegrationFixture$,
+  seedSlackEnvironmentAgent$,
+  seedSlackOrgInstallation$,
+} from "./helpers/integrations-slack";
 import {
   deleteCustomConnectorCredentialValues,
   seedCustomConnectorRuntimeConnectors,
@@ -160,23 +152,16 @@ import {
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
 import {
-  deleteSlackIntegrationFixture$,
-  seedSlackEnvironmentAgent$,
-  seedSlackOrgInstallation$,
-} from "./helpers/integrations-slack";
-import { setPaidToolDisabled } from "./helpers/paid-tools";
-import { createRouteMocks } from "./helpers/route-test";
-import {
   clearRunApiStart,
   mutateRunnerJobConnectorPermissionBaseline,
-  readRunApiStart,
+  removeRunCanonicalStorageState,
   readRunAutonomyBudgetFixture,
+  readRunApiStart,
   readRunClaimOwner,
   readRunFailureReasonFixture,
   readRunLaunchSnapshotFixture,
   readRunnerJobStorageState,
   readStoragePersistenceState,
-  removeRunCanonicalStorageState,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setCustomConnectorAuthTemplateFixture,
@@ -186,9 +171,21 @@ import {
   setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
-import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
-
+import {
+  setSecretKmsClientForTests,
+  type SecretKmsClient,
+  type SecretKmsDataKey,
+  type SecretKmsGenerateDataKeyRequest,
+} from "../../../lib/secret-kms-client";
+import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsRoutes } from "../connectors";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { connectorCheckRoutes } from "../connector-check";
+import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
+import { createRouteMocks } from "./helpers/route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
  *
@@ -409,13 +406,14 @@ async function expectBuiltInModelRunRuntimeRoute(
   runId: string,
   selectedModel: string,
 ): Promise<void> {
+  const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
   await expect(readRunModelRuntimeRouteFixture(runId)).resolves.toStrictEqual({
     modelProvider: "built-in",
     selectedModel,
-    modelRuntimeProvider: getBuiltInConcreteProviderType(selectedModel),
-    modelRuntimeModel: getProviderRuntimeModel("built-in", selectedModel),
+    modelRuntimeProvider: primary.concreteProviderType,
+    modelRuntimeModel: primary.upstreamModel,
     builtInModelKeyId: expect.any(String),
-    builtInModelKeyVendor: getBuiltInVendor(selectedModel),
+    builtInModelKeyVendor: primary.vendor,
   });
 }
 
@@ -5547,7 +5545,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("uses Luna for unavailable limited-free chat models and rejects paid pins", async () => {
+  it("uses the fixed Auto default for unavailable limited-free chat models and rejects pins outside it", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5569,17 +5567,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       credits: 1000,
       onboardingPaymentPending: false,
     });
+    // A new organization starts in Auto with only the fixed default.
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-6-luna");
+    expect(modelPolicies.modelMode).toBe("auto");
     expect(
-      modelPolicies.policies.find((policy) => {
-        return policy.model === "gpt-6-luna";
+      modelPolicies.policies.map((policy) => {
+        return policy.model;
       }),
-    ).toMatchObject({ isDefault: true });
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
 
-    await seedBuiltInModelKey("gpt-6-luna");
-    // Luna is Pi-eligible, so the limited-free default chat run is claimed as
-    // a sandbox Pi turn rather than a Codex Runner job.
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
+    // The fixed default is Pi-eligible, so the limited-free default chat run
+    // is claimed as a sandbox Pi turn rather than a Codex Runner job.
     preparePiSandboxClaim();
     const sent = await chat.sendAndLaunch(actor, {
       agentId,
@@ -5589,18 +5588,18 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(sent.runId);
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      provider: "openai",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
     });
-    expect(claim.modelUsageProvider).toBe("gpt-6-luna");
+    expect(claim.modelUsageProvider).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     await api.requestCancelRun(actor, sent.runId, [200]);
     await finishCancelledRun(sent.runId, claim.sandboxToken);
 
-    // Unavailable selections fall back to the workspace default at enqueue.
-    // Explicitly pinning an unavailable model still reports its access error.
+    // Unavailable selections fall back to the fixed default at enqueue.
+    // Explicitly pinning a model outside the Auto policy is rejected.
     for (const [model, status, code] of [
-      ["gpt-6-astra", 402, "INSUFFICIENT_CREDITS"],
-      ["claude-fable-5-1", 402, "INSUFFICIENT_CREDITS"],
+      ["gpt-6-astra", 400, "BAD_REQUEST"],
+      ["claude-fable-5-1", 400, "BAD_REQUEST"],
       ["gpt-5.6-sol", 400, "BAD_REQUEST"],
     ] as const) {
       const fallback = await chat.sendAndLaunch(actor, {
@@ -5610,10 +5609,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       });
       const fallbackClaim = await api.claimRunnerJob(fallback.runId);
       expect(fallbackClaim.piModelConfig).toMatchObject({
-        provider: "openai",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       });
-      expect(fallbackClaim.modelUsageProvider).toBe("gpt-6-luna");
+      expect(fallbackClaim.modelUsageProvider).toBe(
+        SEEDED_SYSTEM_DEFAULT_MODEL,
+      );
       await api.requestCancelRun(actor, fallback.runId, [200]);
       await finishCancelledRun(fallback.runId, fallbackClaim.sandboxToken);
 
@@ -5633,7 +5634,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   it("claims built-in model runs with billable model firewall and usage provider", async () => {
     const api = createRunsApi(context);
     const selectedModel = await seedBuiltInDefaultModelKey();
-    const concreteProvider = getBuiltInConcreteProviderType(selectedModel);
+    const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
+    const concreteProvider = primary.concreteProviderType;
     const expectedFirewall = getModelProviderFirewall(concreteProvider)?.name;
     if (!expectedFirewall) {
       throw new Error(
@@ -5653,8 +5655,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: selectedModel });
-    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.environment).toMatchObject({
+      OPENAI_MODEL: primary.upstreamModel,
+    });
 
     expect(
       claim.firewalls?.map((firewall) => {
@@ -5664,6 +5667,47 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.billableFirewalls).toContain(expectedFirewall);
     expect(claim.modelUsageProvider).toBe(selectedModel);
 
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
+  it("runs a provider-prefixed ID of a model the catalog frees for restricted plans", async () => {
+    const api = createRunsApi(context);
+    const selectedModel = "deepseek-v4-flash";
+    await seedBuiltInModelKey(selectedModel);
+    // Free-plan Built-in access is the catalog row's flag, not a code list.
+    onTestFinished(
+      await updateRestrictedPlanAccessFixture({
+        model: selectedModel,
+        builtInOnRestrictedPlans: true,
+      }),
+    );
+    const { actor, runnerGroup } = await entitledRunActor();
+    if (!actor.orgId) {
+      throw new Error("Expected the restricted-plan actor to have an org");
+    }
+    const compose = await api.createDirectAgent(actor, {
+      version: "1",
+      agents: { main: { framework: "codex" } },
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: true,
+    });
+
+    // The OpenRouter upstream ID names exactly one catalog model, which the
+    // catalog now allows on restricted plans.
+    const run = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "provider-prefixed built-in model",
+      selectedModelProviderType: "built-in",
+      selectedModelOverride: "deepseek/deepseek-v4-flash",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
+    expect(claim.modelUsageProvider).toBe(selectedModel);
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -5677,7 +5721,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -5764,7 +5808,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: selectedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
@@ -5869,7 +5913,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -5894,7 +5938,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(claim.piModelConfig).toMatchObject({
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        model: getBuiltInApiModel(selectedModel),
+        model: (await readPrimaryBuiltInRouteFixture(selectedModel))
+          .upstreamModel,
       });
       expect(
         claim.firewalls?.map((firewall) => {
@@ -5933,7 +5978,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: selectedModel,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "openrouter-codex",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -6004,21 +6049,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: unsupportedModel,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openrouter-codex",
         credentialScope: "org",
         modelProviderId: openrouterProviderId,
       },
       {
         model: supportedModel,
-        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: anthropicProviderId,
       },
       {
         model: unknownModel,
-        isDefault: false,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openaiProviderId,
@@ -6029,7 +6072,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // sandbox Pi claim.
     preparePiSandboxClaim();
 
-    async function claimModel(model: SupportedRunModel) {
+    async function claimModel(model: string) {
       const sent = await chat.sendAndLaunch(actor, {
         agentId,
         prompt: `recognition eligibility for ${model}`,
@@ -6287,7 +6330,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: orgProvider.providerId,
@@ -6296,7 +6339,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         // Member-scope routes resolve the provider per caller at run time,
         // so they must not pin a provider id.
         model: "gpt-6-astra",
-        isDefault: false,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
         modelProviderId: null,
@@ -15513,7 +15555,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-6-astra",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
         modelProviderId: openAiProviderId,

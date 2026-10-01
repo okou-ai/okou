@@ -56,6 +56,8 @@ struct SandboxEntry {
     billable_firewalls: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_usage_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_usage_long_context_min_total_input_tokens: Option<u64>,
 }
 
 /// Parameters for registering a sandbox in the proxy registry.
@@ -76,6 +78,7 @@ pub struct SandboxRegistration<'a> {
     pub capture_network_bodies: bool,
     pub billable_firewalls: &'a [String],
     pub model_usage_provider: Option<&'a str>,
+    pub model_usage_long_context_min_total_input_tokens: Option<u64>,
 }
 
 async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
@@ -673,6 +676,8 @@ impl ProxyRegistryHandle {
                 capture_network_bodies: registration.capture_network_bodies,
                 billable_firewalls: registration.billable_firewalls.to_vec(),
                 model_usage_provider: registration.model_usage_provider.map(String::from),
+                model_usage_long_context_min_total_input_tokens: registration
+                    .model_usage_long_context_min_total_input_tokens,
             },
         );
         registry.updated_at = now;
@@ -1080,6 +1085,7 @@ mod tests {
             capture_network_bodies: false,
             billable_firewalls: &[],
             model_usage_provider: None,
+            model_usage_long_context_min_total_input_tokens: None,
         }
     }
 
@@ -1317,6 +1323,7 @@ mod tests {
                 capture_network_bodies: false,
                 billable_firewalls: vec![],
                 model_usage_provider: None,
+                model_usage_long_context_min_total_input_tokens: None,
             },
         );
         write_registry(&registry_path, &registry).await.unwrap();
@@ -2873,6 +2880,7 @@ mod tests {
             cli_agent_type: "codex",
             billable_firewalls: &billable,
             model_usage_provider: Some("claude-sonnet-4-6"),
+            model_usage_long_context_min_total_input_tokens: Some(272_001),
             ..base_registration()
         };
         harness
@@ -2898,6 +2906,10 @@ mod tests {
         assert_eq!(
             value["sandboxes"]["10.200.0.9"]["modelUsageProvider"],
             serde_json::json!("claude-sonnet-4-6")
+        );
+        assert_eq!(
+            value["sandboxes"]["10.200.0.9"]["modelUsageLongContextMinTotalInputTokens"],
+            serde_json::json!(272_001)
         );
     }
 

@@ -1,21 +1,18 @@
-import type {
-  ChatThreadServiceTier,
-  CodexServiceTier,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { createHash } from "node:crypto";
 import {
   modelSettingsSchema,
   type ModelSettings,
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type {
+  ChatThreadServiceTier,
+  CodexServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { createHash } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
-
-import { agents } from "@okouai/db/schema/agent";
-import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -23,20 +20,22 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   ChatThreadEventIdConflictError,
-  chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
+  chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
   validateCodexServiceTier,
   type ModelFirstPin,
 } from "./model-selection.service";
-
+import { agents } from "@okouai/db/schema/agent";
+import { command } from "ccstate";
 const UPDATE_RETRY_MS = 24 * 60 * 60 * 1000;
 const MODEL_EVENT_NAMESPACE = "be62e24f-d82d-42bf-bdbf-7bc199e18bc8";
 
@@ -303,6 +302,7 @@ function metadataResult(
 }
 
 function resolveModelColumns(
+  catalog: ModelCatalog,
   args: ChatThreadMetadataUpdateArgs,
   current: CurrentModelState,
   preparedPin: PreparedPin,
@@ -328,7 +328,9 @@ function resolveModelColumns(
     return { kind: "response", response: pin };
   }
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel: pin.selectedModel,
+    modelProviderType: pin.modelProviderType,
     modelSettings: modelSettingsSchema.parse(current.modelSettings),
     requested: args.patch.reasoningEffort,
   });
@@ -339,7 +341,11 @@ function resolveModelColumns(
     args.codexServiceTier.kind === "preserve"
       ? current.codexServiceTier
       : args.codexServiceTier.value;
-  const tierError = validateCodexServiceTier({ pin, codexServiceTier });
+  const tierError = validateCodexServiceTier({
+    catalog,
+    pin,
+    codexServiceTier,
+  });
   if (tierError) {
     return { kind: "response", response: tierError };
   }
@@ -461,6 +467,8 @@ const commitMetadata$ = command(
     signal: AbortSignal,
   ): Promise<ChatThreadMetadataUpdateResult> => {
     const db = set(writeDb$);
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       const [current] = await tx
         .select(currentSelection)
@@ -484,7 +492,7 @@ const commitMetadata$ = command(
       if (existing) {
         return metadataResult(current, existing.acceptedAt, true);
       }
-      const model = resolveModelColumns(args, current, pin);
+      const model = resolveModelColumns(catalog, args, current, pin);
       if (model.kind === "response") {
         return model;
       }

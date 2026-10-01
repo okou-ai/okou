@@ -5,11 +5,6 @@ import {
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {
-  getBuiltInVisibleModels,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { agents } from "@okouai/db/schema/agent";
@@ -47,7 +42,7 @@ import {
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
+import { listOrgModelPoliciesWithSystemDefault$ } from "./model-policy.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -98,7 +93,7 @@ export interface FeishuDispatchConnection {
 }
 
 interface FeishuModelOption {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -626,9 +621,8 @@ const feishuModelPickerState$ = command(
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const policies = await set(
-      listOrgModelPolicies$,
+    const { response: policies, systemDefaultModel } = await set(
+      listOrgModelPoliciesWithSystemDefault$,
       { orgId, userId },
       signal,
     );
@@ -636,17 +630,13 @@ const feishuModelPickerState$ = command(
     return {
       options: policies.policies
         .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            !visibleModels.has(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
+          if (policy.routeStatus !== "valid") {
             return [];
           }
           return {
             model: policy.model,
             label: policy.modelLabel,
-            isDefault: policy.isDefault,
+            isDefault: policy.model === systemDefaultModel,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),

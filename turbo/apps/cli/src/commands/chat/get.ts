@@ -2,9 +2,11 @@ import chalk from "chalk";
 import { Command } from "commander";
 
 import { getChatThread } from "../../lib/api/domains/chat";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
+import { formatCatalogThreadModel } from "../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import { formatChatEffort, resolveChatThreadId } from "./shared";
+import { resolveChatThreadId } from "./shared";
 
 interface GetOptions {
   readonly threadId?: string;
@@ -53,9 +55,10 @@ Notes:
         console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
       }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
+      const catalog = await getModelCatalog();
       console.log(
         chalk.dim(
-          `  Model:  ${thread.selectedModel ?? "(default)"}${formatChatEffort(thread.selectedModel, thread.modelSettings)}`,
+          `  Model:  ${formatCatalogThreadModel(catalog, thread.selectedModel, thread.modelSettings)}`,
         ),
       );
     }),

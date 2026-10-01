@@ -514,6 +514,27 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
       ),
     ),
   ),
+  // No official rate page is recorded for gpt-6-sol. These rows mirror the
+  // production `usage_pricing` rows (the billing authority; read through
+  // MaskDB on 2026-10-01, last updated 2026-09-22): Standard rates / 0.8 like
+  // gpt-6-luna, with the GPT-6 long-context (x2 input family, x1.5 output)
+  // and fast (x2) rule.
+  ...usageGroup(
+    "model",
+    "gpt-6-sol",
+    withFastPricing(
+      withLongContextPricing(
+        [
+          ["tokens.input", 2500, 1_000_000],
+          ["tokens.cache_read", 250, 1_000_000],
+          ["tokens.cache_creation", 3125, 1_000_000],
+          ["tokens.output", 12_500, 1_000_000],
+        ],
+        2,
+        1.5,
+      ),
+    ),
+  ),
   // https://developers.openai.com/api/docs/models/gpt-6-luna
   ...usageGroup("model", "gpt-6-luna", GPT_6_LUNA_PRICING),
   // OpenAI API pricing retrieved 2026-07-31 from:

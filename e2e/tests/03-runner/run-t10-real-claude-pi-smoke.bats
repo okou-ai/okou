@@ -19,6 +19,8 @@ setup_file() {
 
     local policies policy_payload feature_switches
     policies="$(runner_api_curl "/api/model-policies")"
+    # The server projects the catalog system default into every policy list
+    # and ignores it on writes, so the listed policies are re-sent as-is.
     policy_payload="$(jq -c --arg model "$REAL_PI_MODEL" '
         {
             revision,
@@ -27,7 +29,6 @@ setup_file() {
                     select(.model != $model) |
                     {
                         model,
-                        isDefault,
                         defaultProviderType,
                         credentialScope,
                         modelProviderId
@@ -35,7 +36,6 @@ setup_file() {
                 ] + [
                     {
                         model: $model,
-                        isDefault: any(.policies[]; .model == $model and .isDefault),
                         defaultProviderType: "built-in",
                         credentialScope: "org",
                         modelProviderId: null

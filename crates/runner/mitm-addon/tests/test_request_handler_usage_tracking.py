@@ -659,6 +659,7 @@ async def test_billable_model_provider_records_model_usage_provider(
         sandbox_fields={
             "cliAgentType": "codex",
             "modelUsageProvider": "claude-opus-4-6",
+            "modelUsageLongContextMinTotalInputTokens": 200_001,
         },
     )
     flow = _model_provider_tracking_flow(real_flow)
@@ -673,6 +674,7 @@ async def test_billable_model_provider_records_model_usage_provider(
     assert flow.metadata[metadata_keys.CLI_AGENT_TYPE] == "codex"
     assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is True
     assert flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] == "claude-opus-4-6"
+    assert flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] == 200_001
     assert_pending(
         usage_control_root,
         flows=1,

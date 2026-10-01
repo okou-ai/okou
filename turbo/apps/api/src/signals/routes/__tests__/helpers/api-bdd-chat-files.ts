@@ -44,11 +44,6 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   agentsMainContract,
@@ -103,6 +98,7 @@ import {
   readProjectedChatEvents,
 } from "./chat-event-test-reader";
 import { createRouteMocks } from "./route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 interface AuthHeaders {
   readonly authorization?: string;
@@ -114,7 +110,7 @@ type BddSendEventBody =
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
-      readonly model?: SupportedRunModel;
+      readonly model?: string;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageDocument;
       readonly hasTextContent?: boolean;
@@ -300,7 +296,7 @@ interface ModelSelectionRequestOptions {
 }
 
 function modelSelectionBody(
-  model: SupportedRunModel | null,
+  model: string | null,
   options: ModelSelectionRequestOptions | undefined,
 ) {
   return {
@@ -346,22 +342,30 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(modelPoliciesMainContract);
   }
 
+  /** The member preference, else the fixed org default, as a client sends it. */
   async function defaultCreateThreadModel(
     actor: ApiTestUser | null,
-  ): Promise<SupportedRunModel> {
+  ): Promise<string> {
     if (!actor?.orgId) {
-      return DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+      return SEEDED_SYSTEM_DEFAULT_MODEL;
     }
-    const response = await accept(
+    const policies = await accept(
       modelPoliciesClient().list({ headers: authenticate(context, actor) }),
       [200],
     );
-    const model =
-      response.body.workspaceDefaultModel ??
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
-    return isSupportedRunModel(model)
-      ? model
-      : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    const preference = await accept(
+      userModelPreferenceClient().get({
+        headers: authenticate(context, actor),
+      }),
+      [200],
+    );
+    const preferred = preference.body.selectedModel;
+    return preferred &&
+      policies.body.policies.some((policy) => {
+        return policy.model === preferred;
+      })
+      ? preferred
+      : SEEDED_SYSTEM_DEFAULT_MODEL;
   }
 
   function threadByIdClient() {
@@ -461,9 +465,7 @@ export function createChatFilesBddApi(context: TestContext) {
   }
 
   return {
-    async getDefaultCreateThreadModel(
-      actor: ApiTestUser,
-    ): Promise<SupportedRunModel> {
+    async getDefaultCreateThreadModel(actor: ApiTestUser): Promise<string> {
       return await defaultCreateThreadModel(actor);
     },
 
@@ -509,7 +511,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        readonly model?: string;
       },
     ): Promise<{ readonly id: string; readonly title: string | null }> {
       const response = await accept(
@@ -537,7 +539,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        readonly model?: string;
       },
       statuses: readonly (201 | 400 | 401 | 402 | 404)[],
     ) {
@@ -1123,7 +1125,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async updateThreadModelSelection(
       actor: ApiTestUser,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
@@ -1138,7 +1140,7 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: SupportedRunModel | null,
+      selectedModel: string | null,
       selectedImageModel?: ImageModelId | null,
     ): Promise<void> {
       await accept(
@@ -1157,7 +1159,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestUpdateThreadModelSelection(
       actor: ApiTestUser | null,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
       options?: ModelSelectionRequestOptions,
     ) {

@@ -1,19 +1,19 @@
+import { loadModelCatalog } from "./model-catalog.service";
 import type {
+  McpCreateChatWithMessageInput,
   McpCreateChatThreadInput,
   McpCreateChatThreadOutput,
-  McpCreateChatWithMessageInput,
   McpCreateEmptyChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -26,24 +26,23 @@ import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
+  chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import {
   chatThreadModelPinColumns,
   resolveRequiredDefaultChatThreadModelPin$,
 } from "./chat-thread-model.service";
-import { submitMcpChatInput$ } from "./mcp-chat-send.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
+import { submitMcpChatInput$ } from "./mcp-chat-send.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
   type ModelFirstPin,
 } from "./model-selection.service";
-
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
 const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
@@ -320,6 +319,8 @@ const prepareThreadModel$ = command(
       }
       pin = resolved;
     }
+    const catalog = await loadModelCatalog(set(writeDb$));
+    signal.throwIfAborted();
     const defaults = await set(loadNewChatThreadDefaults$, principal, signal);
     signal.throwIfAborted();
     const modelSettings =
@@ -327,6 +328,7 @@ const prepareThreadModel$ = command(
         ? defaults.modelSettings
         : (() => {
             const effort = resolveChatReasoningEffort({
+              catalog,
               selectedModel: pin.selectedModel,
               modelSettings: defaults.modelSettings,
               requested: undefined,

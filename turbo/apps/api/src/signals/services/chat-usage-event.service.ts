@@ -1,16 +1,15 @@
-import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import { randomUUID } from "node:crypto";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { nowDate } from "../../lib/time";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
 } from "./chat-event-append.service";
 import { readSettledRunUsage$ } from "./chat-run-usage.service";
-
 /** Usage events are refresh hints; the settled ledger owns displayed amounts. */
 export const maybeEmitRunUsageEvent$ = command(
   async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {

@@ -100,3 +100,27 @@ func chatRequestBody(_ request: URLRequest) -> Data {
   }
   return result
 }
+
+/// `/api/model-catalog` fixture with one retired model.
+func modelCatalogResponse(systemDefaultModel: String) -> ChatHTTPResponse {
+  let entries: [(model: String, displayName: String, replacedBy: String?)] = [
+    ("okou-1.0", "Auto", nil),
+    ("claude-sonnet-5", "Claude Sonnet 5", nil),
+    ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
+    ("claude-opus-5-5", "Claude Opus 5.5", nil),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
+  ]
+  let models = entries.enumerated().map { index, entry -> String in
+    let (model, displayName, replacedBy) = entry
+    let replacement = replacedBy.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"model":"\(model)","displayName":"\(displayName)","sortOrder":\(index),\
+      "isSystemDefault":\(model == systemDefaultModel),"replacedBy":\(replacement),\
+      "resolvedModel":"\(replacedBy ?? model)","priceTier":null}
+      """
+  }
+  return ChatHTTPResponse(
+    body:
+      "{\"systemDefaultModel\":\"\(systemDefaultModel)\",\"models\":[\(models.joined(separator: ","))],\"routes\":[]}"
+  )
+}

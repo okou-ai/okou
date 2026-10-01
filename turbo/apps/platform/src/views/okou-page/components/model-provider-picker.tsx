@@ -2,7 +2,6 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import { getModelRunOptions } from "@okouai/api-contracts/contracts/model-run-options";
 import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
@@ -31,21 +30,19 @@ import {
   cn,
 } from "@okouai/ui";
 import {
-  getCanonicalModelDisplayName,
   getModelProviderPresentationLabel,
-  getProvidersForModel,
   isBuiltInModelProviderType,
-  isCodexFastModeModel,
-  isActiveRunModel,
-  isSupportedRunModel,
   type ModelProviderType,
   type OrgModelPolicy,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n/index.ts";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../../signals/external/model-catalog.ts";
 import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
@@ -58,11 +55,15 @@ import {
   setSettingsDialogOpen$,
 } from "../../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../../signals/page-signal";
-import { resolveExplicitModelSelection$ } from "../../../signals/okou-page/model-default-selection";
+import {
+  isPolicyFastModeAvailable,
+  isPolicyUltrafastAvailable,
+  resolveExplicitModelSelection$,
+} from "../../../signals/okou-page/model-default-selection";
 import { detach, Reason } from "../../../signals/utils";
 import {
   getModelBrandIconType,
-  getBuiltInModelPriceTier,
+  getCatalogModelPriceTier,
   getBuiltInModelPriceTierLabel,
 } from "./settings/provider-ui-config";
 import { ProviderIcon } from "./settings/provider-icons";
@@ -73,7 +74,8 @@ import { ModelPickerMenuContent } from "./model-picker-menu.tsx";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
 export interface ModelProviderSelection {
-  selectedModel: SupportedRunModel;
+  /** An active catalog model ID. */
+  selectedModel: string;
   codexServiceTier?: CodexServiceTier;
   modelSettings?: ModelSettings;
 }
@@ -241,21 +243,29 @@ function stripInteractiveClasses(cls: string | undefined): string | undefined {
     .join(" ");
 }
 
-function getModelFirstIconType(model: string): ModelProviderType | undefined {
-  if (isSupportedRunModel(model)) {
-    return getModelBrandIconType(model);
-  }
-  return getProvidersForModel(model).find((type) => {
-    return !isBuiltInModelProviderType(type);
-  });
+function getModelFirstIconType(
+  model: string,
+  catalog: ModelCatalog | null | undefined,
+): ModelProviderType | undefined {
+  return catalog?.has(model)
+    ? getModelBrandIconType(model, catalog)
+    : undefined;
+}
+
+function catalogDisplayName(
+  catalog: ModelCatalog | null | undefined,
+  model: string,
+): string {
+  return catalog?.displayName(model) ?? model;
 }
 
 function selectionAllowedValue(
   value: ModelProviderSelection | null,
   policies: OrgModelPolicy[],
   modelCapabilities: ModelPlanCapabilities,
+  catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
-  if (!value || !isActiveRunModel(value.selectedModel)) {
+  if (!value || !catalog?.isActive(value.selectedModel)) {
     return null;
   }
   const policy = policies.find((candidate) => {
@@ -271,18 +281,20 @@ function selectionLabel({
   selection,
   placeholder,
   fastLabel,
+  catalog,
   fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   fastLabel: string;
+  catalog: ModelCatalog | null | undefined;
   /** See `ModelProviderPickerProps.fastShownByCaller`. */
   fastShownByCaller?: boolean;
 }): string {
   if (!selection) {
     return placeholder;
   }
-  const modelLabel = getCanonicalModelDisplayName(selection.selectedModel);
+  const modelLabel = catalogDisplayName(catalog, selection.selectedModel);
   if (selection.codexServiceTier === "ultrafast") {
     return `${modelLabel} ${i18n.t(($) => {
       return $.settings.models.picker.ultrafast;
@@ -306,6 +318,7 @@ export function ModelFirstTriggerLabel({
   fastLabel: string;
   fastShownByCaller?: boolean;
 }) {
+  const catalog = useLastResolved(modelCatalog$);
   if (!selection) {
     return (
       <ResponsiveTriggerContent
@@ -315,7 +328,7 @@ export function ModelFirstTriggerLabel({
       />
     );
   }
-  const iconType = getModelFirstIconType(selection.selectedModel);
+  const iconType = getModelFirstIconType(selection.selectedModel, catalog);
   return (
     <ResponsiveTriggerContent
       mobileIcon={mobileIcon}
@@ -326,6 +339,7 @@ export function ModelFirstTriggerLabel({
             selection,
             placeholder,
             fastLabel,
+            catalog,
             fastShownByCaller,
           })}
         </span>
@@ -348,10 +362,12 @@ function ModelFirstDisabledPickerLabel({
   mobileIconTrigger: boolean;
   fastLabel: string;
 }) {
+  const catalog = useLastResolved(modelCatalog$);
   const label = selectionLabel({
     selection: value,
     placeholder,
     fastLabel,
+    catalog,
   });
   return (
     <span
@@ -373,27 +389,29 @@ function ModelFirstDisabledPickerLabel({
 
 function modelFirstSelectionFromRaw(
   raw: string,
+  catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
   if (raw === INHERIT_SENTINEL) {
     return null;
   }
   if (raw.startsWith(CODEX_ULTRAFAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_ULTRAFAST_OPTION_PREFIX.length);
-    return selectedModel === "gpt-6-astra"
+    return catalog?.isActive(selectedModel) &&
+      catalog.supportsServiceTier(selectedModel, "ultrafast")
       ? { selectedModel, codexServiceTier: "ultrafast" }
       : null;
   }
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
-      isActiveRunModel(selectedModel) &&
-      isCodexFastModeModel(selectedModel)
+      catalog?.isActive(selectedModel) &&
+      catalog.supportsServiceTier(selectedModel, "priority")
     ) {
       return { selectedModel, codexServiceTier: "fast" };
     }
     return null;
   }
-  if (!isActiveRunModel(raw)) {
+  if (!catalog?.isActive(raw)) {
     return null;
   }
   return {
@@ -421,6 +439,7 @@ function codexFastOptionValue(model: string): string {
 function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
+  catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null | undefined {
   if (currentSelection?.codexServiceTier === "ultrafast") {
     if (
@@ -449,7 +468,7 @@ function modelFirstSelectionFromInteraction(
       return { selectedModel: currentSelection.selectedModel };
     }
   }
-  return modelFirstSelectionFromRaw(raw);
+  return modelFirstSelectionFromRaw(raw, catalog);
 }
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
@@ -471,10 +490,11 @@ export function ModelFirstPolicyRowContent({
   selected?: boolean;
   showSelectedIndicator?: boolean;
 }) {
-  const iconType = getModelFirstIconType(policy.model);
+  const catalog = useLastResolved(modelCatalog$);
+  const iconType = getModelFirstIconType(policy.model, catalog);
   const route = getMemberModelPolicyRoute(policy);
   const builtInPriceTier = isBuiltInModelProviderType(route.providerType)
-    ? getBuiltInModelPriceTier(policy.model)
+    ? getCatalogModelPriceTier(catalog, policy.model)
     : undefined;
   const restricted = !memberModelPolicyAllowedForPlan(
     policy,
@@ -483,7 +503,9 @@ export function ModelFirstPolicyRowContent({
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
-      <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {catalogDisplayName(catalog, policy.model)}
+      </span>
       {builtInPriceTier !== undefined ? (
         <PriceTierBadge
           tier={builtInPriceTier}
@@ -516,21 +538,16 @@ function ModelFirstPolicyRow({
   selection: ModelProviderSelection | null;
 }) {
   const { t } = useTranslation();
-  const fastAvailable =
-    isMemberModelPolicyConfigurable(policy) &&
-    (policy.subscriptionOptions
-      ? policy.subscriptionOptions.serviceTier === "priority"
-      : isCodexFastModeModel(policy.model));
+  const catalog = useLastResolved(modelCatalog$);
+  const fastAvailable = isPolicyFastModeAvailable(policy, catalog);
   if (fastAvailable) {
-    const modelLabel = policy.modelLabel;
+    const modelLabel = catalogDisplayName(catalog, policy.model);
     const selected = selection?.selectedModel === policy.model;
     const fastSelected = selected && selection.codexServiceTier === "fast";
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
     });
-    const ultrafastAvailable =
-      getModelRunOptions(policy.model).ultrafast !== undefined &&
-      getMemberModelPolicyRoute(policy).providerType === "openai-api-key";
+    const ultrafastAvailable = isPolicyUltrafastAvailable(policy, catalog);
     return (
       <>
         <div
@@ -622,7 +639,7 @@ function ModelFirstPolicyRow({
     <SelectItem
       key={policy.id}
       value={policy.model}
-      disabled={!isMemberModelPolicyConfigurable(policy)}
+      disabled={!isMemberModelPolicyConfigurable(policy, catalog)}
     >
       <ModelFirstPolicyRowContent
         policy={policy}
@@ -648,6 +665,7 @@ function ModelFirstPolicyItems({
   showSeparator?: boolean;
 }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   const explicitSelectedModel = selection?.selectedModel ?? null;
   const hasExplicitSelectedPolicy =
     explicitSelectedModel === null ||
@@ -669,7 +687,7 @@ function ModelFirstPolicyItems({
           disabled
           aria-hidden="true"
         >
-          {getCanonicalModelDisplayName(explicitSelectedModel)}
+          {catalogDisplayName(catalog, explicitSelectedModel)}
         </SelectItem>
       )}
       {policies.length === 0 ? (
@@ -720,6 +738,7 @@ function ModelFirstModelPickerContentLayout({
   fastLabel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
       {isHiddenModelFirstSelectValue(selectValue) &&
@@ -734,6 +753,7 @@ function ModelFirstModelPickerContentLayout({
               selection,
               placeholder,
               fastLabel,
+              catalog,
             })}
           </SelectItem>
         )}
@@ -756,23 +776,38 @@ interface ModelFirstModelPickerState {
   triggerAriaLabel: string;
 }
 
+/**
+ * Pickers offer only active catalog models (`replacedBy === null`) that the
+ * organization routes, in catalog `sortOrder`.
+ */
 export function resolveModelFirstModelPickerState({
   value,
   policyResponse,
+  catalog,
   modelCapabilities,
   placeholder,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
   policyResponse: { policies: OrgModelPolicy[] } | null | undefined;
+  catalog: ModelCatalog | null | undefined;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   fastLabel: string;
 }): ModelFirstModelPickerState {
-  const policies = (policyResponse?.policies ?? []).filter((policy) => {
-    return isActiveRunModel(policy.model);
-  });
-  const selection = selectionAllowedValue(value, policies, modelCapabilities);
+  const policies = (policyResponse?.policies ?? [])
+    .filter((policy) => {
+      return catalog?.isActive(policy.model) ?? false;
+    })
+    .sort((left, right) => {
+      return catalog ? catalog.compare(left.model, right.model) : 0;
+    });
+  const selection = selectionAllowedValue(
+    value,
+    policies,
+    modelCapabilities,
+    catalog,
+  );
   return {
     policies,
     selection,
@@ -781,6 +816,7 @@ export function resolveModelFirstModelPickerState({
       selection,
       placeholder,
       fastLabel,
+      catalog,
     }),
   };
 }
@@ -848,10 +884,12 @@ function resolveExplicitModelFirstModelPickerState({
   value,
   placeholder,
   fastLabel,
+  catalog,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
   fastLabel: string;
+  catalog: ModelCatalog | null | undefined;
 }): ModelFirstModelPickerState {
   return {
     policies: [],
@@ -861,6 +899,7 @@ function resolveExplicitModelFirstModelPickerState({
       selection: value,
       placeholder,
       fastLabel,
+      catalog,
     }),
   };
 }
@@ -876,6 +915,7 @@ function ModelFirstModelPickerMessageContent({
   fastLabel: string;
   message: string;
 }) {
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <SelectContent className="min-w-[260px]">
       <SelectItem
@@ -888,6 +928,7 @@ function ModelFirstModelPickerMessageContent({
           selection: value,
           placeholder,
           fastLabel,
+          catalog,
         })}
       </SelectItem>
       <div className="px-2 py-2 text-sm text-muted-foreground">{message}</div>
@@ -912,14 +953,18 @@ function SubscribedExplicitModelFirstModelPickerContent({
 }) {
   const { t } = useTranslation();
   const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const catalogLoadable = useLastLoadable(modelCatalog$);
   const policyResponse = useLastResolved(orgModelPolicies$);
+  const catalog = useLastResolved(modelCatalog$);
+  const loading =
+    policiesLoadable.state === "loading" || catalogLoadable.state === "loading";
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
-  if (policyResponse === undefined) {
+  if (policyResponse === undefined || catalog === undefined) {
     if (nativeMenu) {
       return (
         <div className="px-2 py-2 text-sm text-muted-foreground" role="status">
-          {policiesLoadable.state === "loading"
+          {loading
             ? t(($) => {
                 return $.settings.models.picker.loading;
               })
@@ -935,7 +980,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
         placeholder={placeholder}
         fastLabel={fastLabel}
         message={
-          policiesLoadable.state === "loading"
+          loading
             ? t(($) => {
                 return $.settings.models.picker.loading;
               })
@@ -949,6 +994,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   const state = resolveModelFirstModelPickerState({
     value,
     policyResponse,
+    catalog,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel,
@@ -961,14 +1007,14 @@ function SubscribedExplicitModelFirstModelPickerContent({
         options={state.policies.map((policy) => {
           return {
             model: policy.model,
-            label: policy.modelLabel,
+            label: catalog.displayName(policy.model),
             content: (
               <ModelFirstPolicyRowContent
                 policy={policy}
                 modelCapabilities={modelCapabilities}
               />
             ),
-            disabled: !isMemberModelPolicyConfigurable(policy),
+            disabled: !isMemberModelPolicyConfigurable(policy, catalog),
           };
         })}
       />
@@ -1024,10 +1070,12 @@ function EnabledExplicitModelFirstModelPicker(
   },
 ) {
   const handleSelectionChange = useExplicitModelSelectionChange(props);
+  const catalog = useLastResolved(modelCatalog$);
   const state = resolveExplicitModelFirstModelPickerState({
     value: props.value,
     placeholder: props.placeholder,
     fastLabel: props.fastLabel,
+    catalog,
   });
   const handleRawValueChange: NonNullable<
     ComponentProps<typeof Select<string>>["onValueChange"]
@@ -1041,7 +1089,11 @@ function EnabledExplicitModelFirstModelPicker(
     if (raw === state.selectValue && details.reason === "none") {
       return;
     }
-    const selection = modelFirstSelectionFromInteraction(raw, state.selection);
+    const selection = modelFirstSelectionFromInteraction(
+      raw,
+      state.selection,
+      catalog,
+    );
     if (selection !== undefined) {
       handleSelectionChange(selection);
     }

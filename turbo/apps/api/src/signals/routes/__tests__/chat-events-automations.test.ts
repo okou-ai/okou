@@ -1,44 +1,43 @@
+import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
   readPiMemoryStage1DayFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
+import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
+import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronExtractPiMemoryStage1RoutesForTest } from "../cron-extract-pi-memory-stage1";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import {
-  createChatEventsFixture,
-  createPiUsagePricingResolution,
-  expectExactPrivatePiMemoryAdmission,
-  expectNoBuiltInModelUsage,
-  requireOrgId,
-  totalChargedCredits,
-} from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { piResponsesTextSse } from "./helpers/pi-responses";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
 } from "./helpers/runtime-state";
-
+import {
+  createChatEventsFixture,
+  requireOrgId,
+  expectNoBuiltInModelUsage,
+  createPiUsagePricingResolution,
+  expectExactPrivatePiMemoryAdmission,
+  totalChargedCredits,
+} from "./helpers/chat-events-fixture";
+import { piResponsesTextSse } from "./helpers/pi-responses";
 const context = testContext();
 const {
   api,
@@ -153,6 +152,15 @@ async function extractOwnedThreadPiMemory(
   await flushWaitUntilForTest();
 }
 
+async function builtInCatalogUpstreamModel(model: string): Promise<string> {
+  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
+    ?.upstreamModel;
+  if (upstreamModel === undefined) {
+    throw new Error(`Expected a Built-in catalog route for ${model}`);
+  }
+  return upstreamModel;
+}
+
 describe("thread-bound Pi Automation execution", () => {
   it.each(
     (["gpt-6-luna", "deepseek-v4.1-flash"] as const).flatMap(
@@ -180,7 +188,7 @@ describe("thread-bound Pi Automation execution", () => {
         await api.updateOrgModelPolicies(actor, [
           {
             model: "gpt-6-astra",
-            isDefault: true,
+            preferred: true,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null,
@@ -190,7 +198,7 @@ describe("thread-bound Pi Automation execution", () => {
         await api.updateOrgModelPolicies(actor, [
           {
             model: "claude-fable-5-1",
-            isDefault: true,
+            preferred: true,
             defaultProviderType: "anthropic-api-key",
             credentialScope: "org",
             modelProviderId: providerId,
@@ -315,7 +323,7 @@ describe("thread-bound Pi Automation execution", () => {
       const piClaim = await claimChatRun(runnerGroup, piRunId);
       expect(piClaim.claim).toMatchObject({
         piModelConfig: {
-          model: getProviderRuntimeModel("built-in", selectedModel),
+          model: await builtInCatalogUpstreamModel(selectedModel),
         },
       });
       const sandboxUsage = {
@@ -344,7 +352,7 @@ describe("thread-bound Pi Automation execution", () => {
         responsesModel: {
           provider:
             selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
-          model: getProviderRuntimeModel("built-in", selectedModel),
+          model: await builtInCatalogUpstreamModel(selectedModel),
         },
         usagePricingResolution,
       });
@@ -404,7 +412,7 @@ describe("thread-bound Pi Automation execution", () => {
       await flushWaitUntilForTest();
       const userClaim = await claimChatRun(runnerGroup, user.runId);
       expect(userClaim.claim.piModelConfig).toMatchObject({
-        model: getProviderRuntimeModel("built-in", selectedModel),
+        model: await builtInCatalogUpstreamModel(selectedModel),
       });
       await completeSandboxFirstPiRun({
         actor,
@@ -417,7 +425,7 @@ describe("thread-bound Pi Automation execution", () => {
         responsesModel: {
           provider:
             selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
-          model: getProviderRuntimeModel("built-in", selectedModel),
+          model: await builtInCatalogUpstreamModel(selectedModel),
         },
         usagePricingResolution,
       });
@@ -455,7 +463,7 @@ describe("CHAT effort: automation launches", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -572,7 +580,7 @@ describe("CHAT effort: automation launches", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model: route.model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: route.providerType,
           credentialScope: "org",
           modelProviderId: providerId,

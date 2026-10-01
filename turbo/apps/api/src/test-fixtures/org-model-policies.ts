@@ -1,14 +1,10 @@
-import type {
-  ModelProviderType,
-  SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, eq, sql } from "drizzle-orm";
+
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 
 import { db } from "../lib/db";
-
 /**
  * The API version before the global addition gate could persist any active
  * model. Stage that historical state to prove a later catalog disablement does
@@ -17,14 +13,13 @@ import { db } from "../lib/db";
 export async function stagePreAddabilityModelPolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly model: SupportedRunModel;
+  readonly model: string;
 }): Promise<void> {
   const inserted = await db()
     .insert(orgModelPolicies)
     .values({
       orgId: args.orgId,
       model: args.model,
-      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -38,61 +33,6 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   }
 }
 
-/** Enable one model in the test database without changing the production catalog. */
-export async function enableRunModelCatalogEntryFixture(
-  model: SupportedRunModel,
-): Promise<() => Promise<void>> {
-  const [existing] = await db()
-    .select({ allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy })
-    .from(runModelCatalog)
-    .where(eq(runModelCatalog.model, model))
-    .limit(1);
-  await db()
-    .insert(runModelCatalog)
-    .values({ model, allowNewOrgPolicy: true })
-    .onConflictDoUpdate({
-      target: runModelCatalog.model,
-      set: { allowNewOrgPolicy: true },
-    });
-  return async () => {
-    if (existing) {
-      await db()
-        .update(runModelCatalog)
-        .set({ allowNewOrgPolicy: existing.allowNewOrgPolicy })
-        .where(eq(runModelCatalog.model, model));
-    } else {
-      await db()
-        .delete(runModelCatalog)
-        .where(eq(runModelCatalog.model, model));
-    }
-  };
-}
-
-/** Remove one operator catalog row to exercise the production fail-closed path. */
-export async function removeRunModelCatalogEntryFixture(
-  model: SupportedRunModel,
-): Promise<() => Promise<void>> {
-  const [removed] = await db()
-    .delete(runModelCatalog)
-    .where(eq(runModelCatalog.model, model))
-    .returning();
-  if (!removed) {
-    throw new Error(`Expected run model catalog entry for ${model}`);
-  }
-
-  let restored = false;
-  return async () => {
-    if (restored) {
-      return;
-    }
-    await db()
-      .insert(runModelCatalog)
-      .values(removed)
-      .onConflictDoNothing({ target: runModelCatalog.model });
-    restored = true;
-  };
-}
-
 /**
  * Simulate a persisted discriminator written by a later release. The current
  * production API intentionally cannot construct this canonical row because
@@ -101,7 +41,7 @@ export async function removeRunModelCatalogEntryFixture(
  */
 export async function setOrgModelPolicyProviderTypeFixture(args: {
   readonly orgId: string;
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly defaultProviderType: ModelProviderType;
 }): Promise<void> {
   const updated = await db()
@@ -119,16 +59,27 @@ export async function setOrgModelPolicyProviderTypeFixture(args: {
   }
 }
 
-/**
- * Stage a member run preference outside the organization's policy. Policy
- * writes migrate member preferences, and the preference route rejects models
- * outside the policy, so neither can construct this state; it proves that a
- * media-only preference write still succeeds while it persists.
- */
+export async function stageUnrepairedOrgModelPolicyFixture(args: {
+  readonly orgId: string;
+  readonly state: "unseeded" | "missing_default";
+}): Promise<void> {
+  await db()
+    .delete(orgModelPolicies)
+    .where(
+      args.state === "unseeded"
+        ? eq(orgModelPolicies.orgId, args.orgId)
+        : and(
+            eq(orgModelPolicies.orgId, args.orgId),
+            eq(orgModelPolicies.model, "okou-1.0"),
+          ),
+    );
+}
+
+/** The public GET cannot observe these states without repairing them first. */
 export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly selectedModel: SupportedRunModel;
+  readonly selectedModel: string;
 }): Promise<void> {
   await db()
     .insert(orgMembersMetadata)

@@ -1,16 +1,16 @@
-import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
   piNativeInferenceUrl,
 } from "@okouai/api-contracts/contracts/pi-native";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isPiNativeModel } from "@okouai/core/pi-execution";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createHash, randomUUID } from "node:crypto";
+import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { SEEDED_MODEL_CATALOG } from "@okouai/core/__tests__/seeded-model-catalog";
+import { piCatalogModel } from "@okouai/core/pi-execution";
+import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
@@ -23,22 +23,22 @@ import {
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import {
-  claimEnvironment,
-  configureNativeCliArtifact,
   createChatEventsFixture,
+  configureNativeCliArtifact,
+  requireOrgId,
+  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
+  claimEnvironment,
   expectExactPrivatePiMemoryAdmission,
-  expectNoBuiltInModelUsage,
-  requireOrgId,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
-
 const context = testContext();
 const {
   api,
@@ -229,7 +229,7 @@ async function completeNativeToolRun({
   await api.updateOrgModelPolicies(actor, [
     {
       model,
-      isDefault: true,
+      preferred: true,
       defaultProviderType: "custom-anthropic-messages",
       credentialScope: "org",
       modelProviderId: null,
@@ -261,6 +261,20 @@ async function completeNativeToolRun({
   await cancelChatRun(actor, resumed.runId, resumedClaim.sandboxHeaders);
 }
 
+/** The upstream model of the model's catalog route for a provider type. */
+async function catalogUpstreamModel(
+  type: string,
+  model: string,
+): Promise<string> {
+  const upstreamModel = (await loadPiCatalogModelFixture(model))?.own.get(
+    type,
+  )?.upstreamModel;
+  if (upstreamModel === undefined) {
+    throw new Error(`Expected a ${type} catalog route for ${model}`);
+  }
+  return upstreamModel;
+}
+
 describe("shared native Pi route activation", () => {
   it.each([
     { type: "openrouter-codex", model: "deepseek-v4.1-flash" },
@@ -272,6 +286,7 @@ describe("shared native Pi route activation", () => {
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
+      const upstreamModel = await catalogUpstreamModel(type, model);
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const { providerId } = await upsertOrgModelProvider(actor, {
         type,
@@ -280,7 +295,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -300,7 +315,7 @@ describe("shared native Pi route activation", () => {
       expect(firstClaim.claim).toMatchObject({
         piSessionId: first.threadId,
         resumeSession: null,
-        piModelConfig: { model: getProviderRuntimeModel(type, model) },
+        piModelConfig: { model: upstreamModel },
       });
       await completeSandboxFirstPiRun({
         actor,
@@ -311,7 +326,7 @@ describe("shared native Pi route activation", () => {
         answer: "DeepSeek BYOK answer",
         responsesModel: {
           provider: "deepseek",
-          model: getProviderRuntimeModel(type, model),
+          model: upstreamModel,
         },
         usagePricingResolution: pricing,
       });
@@ -326,7 +341,7 @@ describe("shared native Pi route activation", () => {
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
         piSessionId: first.threadId,
-        piModelConfig: { model: getProviderRuntimeModel(type, model) },
+        piModelConfig: { model: upstreamModel },
         resumeSession: {
           sessionId: first.threadId,
           historyRef: { kind: "blob", hash: expect.any(String) },
@@ -341,7 +356,14 @@ describe("shared native Pi route activation", () => {
   // `claude-fable-5-1` is still read from persisted native config, but the
   // Fable frontier line runs on the Claude Code vendor harness, so it has no
   // native Pi run to assert here. Enumerate from the admission decision.
-  it.each(piNativeCatalogModelSchema.options.filter(isPiNativeModel))(
+  it.each(
+    piNativeCatalogModelSchema.options.filter((model) => {
+      return (
+        piCatalogModel(SEEDED_MODEL_CATALOG, model)?.piRouteClass ===
+        "claude-native"
+      );
+    }),
+  )(
     "runs built-in %s in the sandbox with the route effort and exact session continuation",
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -460,7 +482,7 @@ describe("shared native Pi route activation", () => {
       const upstreamModel =
         type === "azure-foundry" || type === "custom-anthropic-messages"
           ? "production-deployment"
-          : getProviderRuntimeModel(type, model);
+          : await catalogUpstreamModel(type, model);
       let providerId: string | null = null;
       let surfaceId: string | null = null;
       if (type === "custom-anthropic-messages") {
@@ -504,7 +526,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -684,7 +706,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "aws-bedrock",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -829,7 +851,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: type,
           credentialScope: "org",
           modelProviderId: providerId,
@@ -893,7 +915,7 @@ describe("shared native Pi route activation", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
@@ -1018,7 +1040,7 @@ describe("shared native Pi route activation", () => {
       await api.updateOrgModelPolicies(actor, [
         {
           model,
-          isDefault: true,
+          preferred: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
           modelProviderId: providerId,
@@ -1142,7 +1164,7 @@ describe("shared native Pi route activation", () => {
     await api.updateOrgModelPolicies(actor, [
       {
         model,
-        isDefault: true,
+        preferred: true,
         defaultProviderType: "claude-code-oauth-token",
         credentialScope: "member",
         modelProviderId: null,

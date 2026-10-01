@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-
 import { command, computed } from "ccstate";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
 import {
   testSlackStateContract,
   type TestSlackStatePostBody,
@@ -24,7 +19,6 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { variables } from "@okouai/db/schema/variable";
 import { and, desc, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { authRoute } from "../auth/auth-route";
@@ -44,10 +38,10 @@ import {
   isPreviewEndpointAllowed,
   previewEndpointNotFoundResponse,
 } from "./preview-endpoint-access";
+import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgPlanEntitlementValues } from "../services/org-plan-entitlements.service";
 import { orgCreditExpirationSql } from "../services/org-credit-expiration";
-
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_WORKSPACE_NAME = "E2E Test Workspace";
 const DEFAULT_AGENT_NAME = "e2e-slack-agent";
@@ -289,14 +283,14 @@ async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
   await acquireBuiltInModelKeyFixture(
     db,
     agentId,
-    builtInModelKeyRows(agentId),
+    builtInModelKeyRows(agentId, await loadSystemDefaultBuiltInVendor(db)),
   );
 }
 
-function builtInModelKeyRows(agentId: string) {
+function builtInModelKeyRows(agentId: string, defaultVendor: string) {
   return [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: defaultVendor,
       apiKey: `built-in-key-default-${agentId}`,
       label: agentId,
     },

@@ -1,42 +1,43 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { storages } from "@okouai/db/schema/storage";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { command, computed, type Computed } from "ccstate";
 import {
-  modelSettingsSchema,
-  withModelReasoningEffort,
-} from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type {
-  SecretResponse,
-  SecretType,
-} from "@okouai/api-contracts/contracts/secrets";
+  colorThemeSchema,
+  type ColorTheme,
+  SUPPORTED_USER_LOCALES,
+  type SendMode,
+  themePreferenceSchema,
+  type ThemePreference,
+  type UserLocale,
+  type UpdateUserPreferencesRequest,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import type {
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
-  colorThemeSchema,
-  SUPPORTED_USER_LOCALES,
-  themePreferenceSchema,
-  type ColorTheme,
-  type SendMode,
-  type ThemePreference,
-  type UpdateUserPreferencesRequest,
-  type UserLocale,
-  type UserPreferencesResponse,
-} from "@okouai/api-contracts/contracts/user-preferences";
+  isCatalogModelRunnable,
+  loadModelCatalog,
+} from "./model-catalog.service";
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import {
+  modelSettingsSchema,
+  withModelReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  SecretResponse,
+  SecretType,
+} from "@okouai/api-contracts/contracts/secrets";
 import type { VariableListResponse } from "@okouai/api-contracts/contracts/variables";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { secrets } from "@okouai/db/schema/secret";
-import { storages } from "@okouai/db/schema/storage";
 import { variables } from "@okouai/db/schema/variable";
-import { command, computed, type Computed } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { isValidTimeZone } from "../utils";
-
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;
@@ -199,11 +200,17 @@ export function userModelPreference({
       )
       .limit(1);
 
-    const selectedModel = isActiveRunModel(row?.selectedModel)
-      ? row.selectedModel
-      : null;
+    // Only an active catalog model with a route is a current selection.
+    const catalog = await loadModelCatalog(db);
+    const selectedModel =
+      row?.selectedModel && isCatalogModelRunnable(catalog, row.selectedModel)
+        ? row.selectedModel
+        : null;
     const serviceTier: ChatThreadServiceTier | null =
-      selectedModel && row?.serviceTier === "priority" ? row.serviceTier : null;
+      selectedModel &&
+      (row?.serviceTier === "priority" || row?.serviceTier === "ultrafast")
+        ? row.serviceTier
+        : null;
     // A model retired from the catalog reads as unset rather than throwing:
     // the column is not re-validated when the catalog changes.
     const selectedImageModel = isImageModelId(row?.selectedImageModel)

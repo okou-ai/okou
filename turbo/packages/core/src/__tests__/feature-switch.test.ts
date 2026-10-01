@@ -25,7 +25,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
-    expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
@@ -181,36 +180,6 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
       }),
     ).toBe(false);
-  });
-
-  it("enables Okou models for staff and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
-        false,
-      );
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.OkouModels, {
-          ...context,
-          overrides: { [FeatureSwitchKey.OkouModels]: true },
-        }),
-      ).toBe(true);
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, staffContext)).toBe(
-      true,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.OkouModels, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.OkouModels]: false },
-      }),
-    ).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Show the Okou 1.0 model family in Add Model for the staff organization.",
-      rolloutStage: "beta",
-    });
   });
 
   it("should return true for globally enabled switch", () => {
