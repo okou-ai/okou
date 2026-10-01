@@ -185,9 +185,7 @@ const dispatchClaim$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryPhase2WorkerResult> => {
     const runId = await set(startMaintenanceRun$, input.claim, signal);
-    return runId === null
-      ? { outcome: "stale" }
-      : { outcome: "dispatched", runId };
+    return { outcome: "dispatched", runId };
   },
 );
 

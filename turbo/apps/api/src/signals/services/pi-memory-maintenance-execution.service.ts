@@ -830,7 +830,7 @@ export const startMaintenanceRun$ = command(
     { get, set },
     job: ClaimedPiMemoryPhase2Job,
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<string> => {
     const db = set(writeDb$);
     const apiStartTime = now();
     const admitted = await admitMaintenance(db, job, signal);
