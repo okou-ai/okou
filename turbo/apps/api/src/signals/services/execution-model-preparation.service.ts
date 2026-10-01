@@ -126,6 +126,53 @@ function deferredCredentialReferences(
   return values;
 }
 
+/**
+ * A ChatGPT account's credentials stay server-side, as on main: firewall auth
+ * resolves its stored token rows by name, so only rows of its own auth method
+ * become references. A non-Pi run decrypts just CHATGPT_ACCOUNT_ID, which
+ * workspace routing compares with the account check; it is not a credential.
+ */
+async function codexAccountCredentials(
+  db: ReadonlyDb,
+  source: ModelSourceSnapshot,
+  piExecution: boolean | undefined,
+  signal: AbortSignal,
+): Promise<ModelCredentialValues | null> {
+  const method =
+    source.configuration.kind === "registered-provider"
+      ? source.configuration.authMethod
+      : null;
+  const rules = method
+    ? getSecretsForAuthMethod("codex-oauth-token", method)
+    : undefined;
+  if (!rules) {
+    return null;
+  }
+  const own = {
+    ...source,
+    credentials: source.credentials.filter((credential) => {
+      return credential.name in rules;
+    }),
+  };
+  const references = deferredCredentialReferences(own);
+  if (piExecution) {
+    return references;
+  }
+  const account = await resolveModelCredentialValues(
+    db,
+    {
+      ...own,
+      credentials: own.credentials.filter((credential) => {
+        return credential.name === "CHATGPT_ACCOUNT_ID";
+      }),
+    },
+    signal,
+  );
+  return account?.CHATGPT_ACCOUNT_ID
+    ? { ...references, CHATGPT_ACCOUNT_ID: account.CHATGPT_ACCOUNT_ID }
+    : null;
+}
+
 async function resolveModelCredentialValues(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
@@ -187,14 +234,16 @@ export async function prepareRegisteredModelEnvironment(
   // As on main, a firewall-injected single-secret credential that Pi does not
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
-    deferred &&
-    !capture &&
-    !hasAuthMethods(type) &&
-    source.credentials.every((credential) => {
-      return credential.kind === "encrypted";
-    })
-      ? deferredCredentialReferences(source)
-      : await resolveModelCredentialValues(db, source, signal);
+    deferred && type === "codex-oauth-token"
+      ? await codexAccountCredentials(db, source, piExecution, signal)
+      : deferred &&
+          !capture &&
+          !hasAuthMethods(type) &&
+          source.credentials.every((credential) => {
+            return credential.kind === "encrypted";
+          })
+        ? deferredCredentialReferences(source)
+        : await resolveModelCredentialValues(db, source, signal);
   if (!credentials) {
     return null;
   }

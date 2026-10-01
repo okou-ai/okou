@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   assistantMessages,
   createChatEventsFixture,
@@ -11,9 +12,11 @@ import {
 const context = testContext({ connectorCatalog: true });
 const {
   chat,
+  chatCallbacks,
   entitledChatActor,
   configureSubscriptionPiModel,
   authDeviceSupport,
+  sendChatRun,
   waitForThreadMessages,
 } = createChatEventsFixture(context);
 
@@ -83,4 +86,36 @@ describe("Pi Codex subscription admission", () => {
     ]);
     expect(JSON.stringify(messages.events)).not.toContain(f.identity);
   }, 30_000);
+});
+
+describe("ChatGPT subscription credentials at launch", () => {
+  it.each([
+    ["gpt-6-luna", 0],
+    ["gpt-6-astra", 1],
+  ] as const)(
+    "launches %s with %i stored-secret decrypts",
+    async (selectedModel, decrypts) => {
+      const f = await fixture();
+      await chatCallbacks.updateOrgModelPolicies(f.actor, [
+        {
+          model: selectedModel,
+          preferred: true,
+          defaultProviderType: "codex-oauth-token",
+          credentialScope: "member",
+          modelProviderId: null,
+        },
+      ]);
+      // The tokens stay behind firewall auth; only native Codex workspace
+      // routing reads the plain account id.
+      const kms = useSecretKmsProbe();
+      const run = await sendChatRun(f.actor, {
+        agentId: f.agentId,
+        model: selectedModel,
+        prompt: "launch with the connected ChatGPT account",
+      });
+      expect(run.runId).toStrictEqual(expect.any(String));
+      expect(kms.decryptCalls).toBe(decrypts);
+    },
+    30_000,
+  );
 });
