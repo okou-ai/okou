@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.989.4](https://github.com/okou-ai/okou/compare/app-v0.989.3...app-v0.989.4) (2026-10-01)
+
+
+### Bug Fixes
+
+* **platform:** surface imessage onboarding and display numeric phone numbers ([#37478](https://github.com/okou-ai/okou/issues/37478)) ([706cc37](https://github.com/okou-ai/okou/commit/706cc37f73e9f00494cd07015422be92e20748ec))
+
 ## [0.989.3](https://github.com/okou-ai/okou/compare/app-v0.989.2...app-v0.989.3) (2026-10-01)
 
 
