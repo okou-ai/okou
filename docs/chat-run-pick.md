@@ -55,7 +55,11 @@ const [hasCapacity, hasInput] = await Promise.all([
 ]);
 signal.throwIfAborted();
 if (!hasCapacity) {
-  await set(releaseClaim$, claim, signal);
+  if (await set(releaseClaim$, claim, signal)) {
+    // Post-release capacity re-read: see "Org-full release and wakeup".
+    set(internalReloadPick$, (revision) => revision + 1);
+    if (await get(orgHasCapacity$)) set(scheduleThreadPick$, signal);
+  }
   return null;
 }
 if (!hasInput) {
@@ -192,6 +196,36 @@ fallback. Transient failures (KMS, a brief database outage) are handled the
 same way and the user sends again. The no-capacity exit never does this. If the
 marking write itself fails, the lease simply expires; there is no other
 catch/finally cleanup, so the thread waits at most about 10 seconds.
+
+### Org-full release and wakeup
+
+A slot release (run completion, cancellation, cleanup) schedules one
+organization pick, and that pick counts and claims only _unleased_ queued
+threads. If a thread's own pick holds its lease at that moment and has
+already read the organization as full, the slot release skips the thread
+and the thread's pick then releases its lease without launching. Without a
+follow-up, the input waits with a free slot until some unrelated later pick.
+This race is pre-existing: main's pick has the same claim → capacity read →
+release ordering. This PR's change made the window wide enough for main's
+single-read `chat-events-pi-preparation` scenario to hit it on CI.
+
+So after an org-full release that still owned the lease, the pick invalidates
+its capacity reads and reads capacity once more. If a slot is free, it
+schedules one fresh fixed-thread pick through `scheduleThreadPick$`. This is
+the same `waitUntil`-owned path used when input arrives under a lease. The
+scheduled pick runs with the pick's own signal, which is the background-work
+signal and not a request-response signal. Its failure is reported through
+`waitUntil`'s detached-promise handling, never as a floating rejection.
+Boundaries:
+
+- No retry and no loop. The follow-up is one new pick. It stops at its own
+  next org-full observation, and its own release re-reads capacity only once.
+  Capacity has to have changed again for another pick to be scheduled.
+- A release that no longer owned the lease (a lost lease) does nothing more.
+  The current lease holder owns the thread.
+- Ordinary capacity bookkeeping is unchanged; this only closes the
+  claim-held window.
+
 Every lease comparison (claim and organization candidates) uses
 the application clock `nowDate()`, never database `now()`, so tests move the
 clock instead of waiting. There is no claim heartbeat, session preparation
