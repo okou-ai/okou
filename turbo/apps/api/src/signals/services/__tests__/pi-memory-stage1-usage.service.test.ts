@@ -134,13 +134,10 @@ describe("Stage 1 durable usage boundary", () => {
     ).toStrictEqual([{ billing_context: "runless" }]);
   });
 
-  it("rejects actual DB subtype and immutable identity mutations", async () => {
+  it("rejects invalid stored Pi subtype and anchor mutations", async () => {
     const h = harness();
     await recordPiMemoryStage1Usage(h.db, h.args);
     for (const mutation of [
-      "billing_context='runless'",
-      "org_id='different'",
-      "user_id='different'",
       "billing_anchor_at=now() + interval '1 day'",
       "run_id=gen_random_uuid()",
       "billing_run_id=gen_random_uuid()",
@@ -264,7 +261,7 @@ describe("Stage 1 durable usage boundary", () => {
       )
     ).rows[0].anchor;
     await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',5,'processed',0,'2020-01-01',$3,'runless')",
+      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_anchor_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',5,'processed',0,'2020-01-01',$3,$3,'runless')",
       [h.orgId, h.userId, original],
     );
     const reader = await h.pool.connect();
@@ -302,7 +299,7 @@ describe("Stage 1 durable usage boundary", () => {
     // Late raw usage for the same extraction model must preserve total cost
     // across bounded compaction batches, regardless of physical fragment count.
     await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
+      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_anchor_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,$3,'pi_memory_stage1')",
       [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
     );
     const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))

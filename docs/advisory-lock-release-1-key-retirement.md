@@ -3,6 +3,39 @@
 **R1 remains incomplete.** Database-handle propagation is not an acceptance
 target. There is no merge, release or production-operation authorization.
 
+## File-level financial retirement follow-up
+
+The continuation after `35a75f38` removes **12 business acquisition sites**:
+Plan change 5, migration 4, invitation 2 and allocation confirmation 1. It also
+removes the now-unused Plan acquisition helper body, so the coordinator's
+literal getter/helper count decreases by 13 rather than 12. Plan-change,
+migration and invitation files now acquire neither financial builder.
+
+| Path                               | Money / identity arbitration after removal                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Plan confirmation                  | Real owned preview-to-applying transition, exact quote identity and existing active-org partial uniqueness. Observed other pending financial work is checked in the transition predicate, not treated as a cross-table mutex. Provider mutation retains the stored operation idempotency identity.                       |
+| Plan schedule request/completion   | Existing deferred request is installed once under exact quote/status/null-request conditions. A loser reads the matching committed request once. Completion transitions the real intent before child/schedule publication in the same transaction; later failure rolls everything back. No new JSON state is introduced. |
+| Plan failure/restore               | Failure updates child intents only if its real applying-to-failed transition wins; paid/completed winner is not regressed. Restore completes its owned intent and retires only the observed scheduled child IDs, not a newer schedule replacement. Stripe calls stay outside SQL.                                        |
+| Allocation confirmation            | Existing standalone/current-user partial uniqueness, exact financial identity and real preview-to-applying transition; active owned source/Price/USD and observed financial eligibility are checked in that UPDATE. Receipt/source/grant publication remains separate.                                                   |
+| Migration confirmation/revision    | Existing open-org/provider uniqueness and exact stored row-version qualify a real applying/revising transition. Revision changes its actual priced selections transactionally, not a mutex field. Known Stripe subscription identity is unchanged.                                                                       |
+| Migration root materialization     | Existing root PK/unique Stripe binding or actual legacy-Price-to-new-Price conversion arbitrates publication. A losing transaction rolls back; one matching committed canonical root/allocation read resolves identical replay. No new UUID, root rebinding or materialization retry.                                    |
+| Migration invitation completion    | Exact migration row-version qualifies completed publication before invitation payment rows in the same commit. Losing concurrent completion reads one same-invoice/payment winner; insertion/amount/ownership failure rolls back completion too.                                                                         |
+| Invitation activation/refund claim | Actual owned purchase status transition includes parent/org/root and observed pending-payment eligibility. Grant/allocation/refund-source publication is atomic in its existing transaction; PI, amount, refund attempt and idempotency identity remain unchanged. Quantity sync is declarative and outside SQL.         |
+
+Added user API cases cover concurrent/replayed zero/paid migration invoice
+publication and a refund committed at Stripe whose response is lost: the API
+reports the unknown failure, ordinary reconciliation resumes the same PI/refund
+attempt/idempotency key, and grants/refund identity do not duplicate or regress.
+The provider mock records one refund per real request key; it does not mock
+internal ledger state. Existing pending-payment-before-activation and exact
+amount/credit assertions remain unchanged.
+
+These observations and local publication conditions are **not** a new global
+cross-table serializability protocol. They do not certify initial-purchase
+unknown-outcome admission, every remaining financial writer or overissue policy.
+The credit decision and first purchase family remain unchanged. Remaining keys
+and row-lock work are still incomplete R1; no definition is declared retired.
+
 ## September 30 decisions supersede compatibility ordering
 
 Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿了”, followed by

@@ -4648,6 +4648,30 @@ export const repairUsagePackConfigurationBeforeConfirmation$ = command(
   },
 );
 
+function activeAllocationSourceCondition(
+  db: Pick<Db, "select">,
+  change: UsagePackAllocationChangeRow,
+  source: typeof usagePackAllocations.$inferSelect,
+) {
+  return sql`EXISTS (${db
+    .select({ id: usagePackAllocations.id })
+    .from(usagePackAllocations)
+    .where(
+      and(
+        eq(usagePackAllocations.id, source.id),
+        eq(usagePackAllocations.orgId, change.orgId),
+        eq(
+          usagePackAllocations.usagePackSubscriptionId,
+          change.usagePackSubscriptionId,
+        ),
+        eq(usagePackAllocations.userId, change.userId),
+        eq(usagePackAllocations.status, "active"),
+        eq(usagePackAllocations.stripePriceId, source.stripePriceId),
+        eq(usagePackAllocations.usagePackUsd, source.usagePackUsd),
+      ),
+    )})`;
+}
+
 export const prepareUsagePackChangeConfirmation$ = command(
   async (
     { set },
@@ -4657,10 +4681,8 @@ export const prepareUsagePackChangeConfirmation$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const result = await db.transaction(async (tx) => {
-      // No row locks: all admission writers hold the retained
-      // usage_pack_billing key; every transition below is conditional on the
-      // previewed state it was decided from.
-      await tx.execute(usagePackBillingLockSql(args.orgId));
+      // The existing live standalone-operation uniqueness plus the real
+      // preview -> applying transition admits this stored financial intent.
       const [found] = await tx
         .select({ change: usagePackAllocationChanges })
         .from(usagePackAllocationChanges)
@@ -4710,6 +4732,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       const previewedChange = and(
         eq(usagePackAllocationChanges.id, change.id),
         eq(usagePackAllocationChanges.status, "previewed"),
+        fulfillmentChangeIdentity(change),
       );
       if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
         const [expired] = await tx
@@ -4756,7 +4779,13 @@ export const prepareUsagePackChangeConfirmation$ = command(
       const [prepared] = await tx
         .update(usagePackAllocationChanges)
         .set({ status: "applying", updatedAt: at })
-        .where(previewedChange)
+        .where(
+          and(
+            previewedChange,
+            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: change.usagePackSubscriptionId, allocationChangeId: change.id })})`,
+            activeAllocationSourceCondition(tx, change, source),
+          ),
+        )
         .returning();
       return prepared
         ? { status: "ready" as const, change: prepared }

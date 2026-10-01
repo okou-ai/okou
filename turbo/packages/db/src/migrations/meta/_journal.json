@@ -1618,6 +1618,13 @@
       "when": 1790823590306,
       "tag": "1308_connector_selection_deferred_references",
       "breakpoints": true
+    },
+    {
+      "idx": 1309,
+      "version": "7",
+      "when": 1790827904719,
+      "tag": "1309_retire_application_billing_capture_triggers",
+      "breakpoints": true
     }
   ]
 }

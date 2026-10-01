@@ -52,11 +52,9 @@ import { settle } from "../utils";
 import {
   calculateUsagePackAdditionCreditGrant,
   calculateUsagePackUpgradeCreditGrants,
-  failScheduledUsagePackAllocationChangesForSchedule,
   fulfillUsagePackSubscriptionChangeInvoice,
   reconcileUsagePackAllocationChangeSubscription,
   usagePackInvoiceFulfillmentExists,
-  usagePackBillingLockSql,
   usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
@@ -1103,11 +1101,31 @@ const prepareSubscriptionChange$ = command(
   },
 );
 
-async function lockUsagePackBillingOrg(
-  tx: Pick<WriteTx, "execute">,
-  orgId: string,
-): Promise<void> {
-  await tx.execute(usagePackBillingLockSql(orgId));
+function subscriptionChangeIdentity(root: UsagePackSubscriptionChangeRow) {
+  return and(
+    eq(usagePackSubscriptionChanges.id, root.id),
+    eq(usagePackSubscriptionChanges.orgId, root.orgId),
+    eq(
+      usagePackSubscriptionChanges.usagePackSubscriptionId,
+      root.usagePackSubscriptionId,
+    ),
+    eq(usagePackSubscriptionChanges.sourceTier, root.sourceTier),
+    eq(usagePackSubscriptionChanges.targetTier, root.targetTier),
+    eq(
+      usagePackSubscriptionChanges.prorationTimestamp,
+      root.prorationTimestamp,
+    ),
+    eq(
+      usagePackSubscriptionChanges.immediateAmountCents,
+      root.immediateAmountCents,
+    ),
+    eq(
+      usagePackSubscriptionChanges.nextRecurringAmountCents,
+      root.nextRecurringAmountCents,
+    ),
+    eq(usagePackSubscriptionChanges.currency, root.currency),
+    eq(usagePackSubscriptionChanges.previewExpiresAt, root.previewExpiresAt),
+  );
 }
 
 function retirePlanPreviewSql(orgId: string, at: Date) {
@@ -1953,6 +1971,42 @@ function storedSubscriptionChangePreview(
   };
 }
 
+async function completeDeferredIntent(
+  tx: WriteTx,
+  expected: UsagePackSubscriptionChangeRow,
+  observed: UsagePackSubscriptionChangeRow,
+  effectiveAt: Date,
+  updatedAt: Date,
+): Promise<boolean> {
+  const [completed] = await tx
+    .update(usagePackSubscriptionChanges)
+    .set({
+      status: "completed",
+      effectiveAt,
+      completedAt: updatedAt,
+      updatedAt,
+    })
+    .where(
+      and(
+        subscriptionChangeIdentity(expected),
+        eq(usagePackSubscriptionChanges.status, observed.status),
+      ),
+    )
+    .returning({ id: usagePackSubscriptionChanges.id });
+  if (completed) {
+    return true;
+  }
+  const [winner] = await tx
+    .select({ status: usagePackSubscriptionChanges.status })
+    .from(usagePackSubscriptionChanges)
+    .where(subscriptionChangeIdentity(expected))
+    .limit(1);
+  if (winner?.status === "completed") {
+    return false;
+  }
+  throw new Error("Deferred subscription change changed before publication");
+}
+
 async function persistDeferredSubscriptionChangeSchedule(
   db: Db,
   stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
@@ -1969,16 +2023,26 @@ async function persistDeferredSubscriptionChangeSchedule(
       return change.kind === "downgrade" || change.kind === "removal";
     });
   await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, stored.root.orgId);
     const [root] = await tx
       .select()
       .from(usagePackSubscriptionChanges)
-      .where(eq(usagePackSubscriptionChanges.id, stored.root.id))
+      .where(subscriptionChangeIdentity(stored.root))
       .limit(1);
     if (!root || root.status === "failed") {
       throw new Error("Deferred subscription change is no longer applicable");
     }
     if (root.status === "completed") {
+      return;
+    }
+    if (
+      !(await completeDeferredIntent(
+        tx,
+        stored.root,
+        root,
+        hasDeferredChanges ? effectiveAt : root.effectiveAt,
+        updatedAt,
+      ))
+    ) {
       return;
     }
     const planReplacementScheduleId = await pendingPlanReplacementScheduleId(
@@ -2045,15 +2109,6 @@ async function persistDeferredSubscriptionChangeSchedule(
           ]),
         ),
       );
-    await tx
-      .update(usagePackSubscriptionChanges)
-      .set({
-        status: "completed",
-        effectiveAt: hasDeferredChanges ? effectiveAt : root.effectiveAt,
-        completedAt: updatedAt,
-        updatedAt,
-      })
-      .where(eq(usagePackSubscriptionChanges.id, stored.root.id));
     if (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)) {
       await tx
         .update(orgMetadata)
@@ -2076,11 +2131,10 @@ async function storeDeferredScheduleRequest(
   request: UsagePackDeferredSchedule,
 ): Promise<UsagePackSubscriptionChangeRow> {
   return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, stored.root.orgId);
     const [root] = await tx
       .select()
       .from(usagePackSubscriptionChanges)
-      .where(eq(usagePackSubscriptionChanges.id, stored.root.id))
+      .where(subscriptionChangeIdentity(stored.root))
       .limit(1);
     if (!root || root.status === "failed") {
       throw new Error("Deferred subscription change is no longer applicable");
@@ -2091,12 +2145,26 @@ async function storeDeferredScheduleRequest(
     const [updated] = await tx
       .update(usagePackSubscriptionChanges)
       .set({ deferredSchedule: request })
-      .where(eq(usagePackSubscriptionChanges.id, root.id))
+      .where(
+        and(
+          subscriptionChangeIdentity(stored.root),
+          eq(usagePackSubscriptionChanges.status, root.status),
+          isNull(usagePackSubscriptionChanges.deferredSchedule),
+        ),
+      )
       .returning();
-    if (!updated) {
-      throw new Error("Deferred subscription change disappeared");
+    if (updated) {
+      return updated;
     }
-    return updated;
+    const [winner] = await tx
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(subscriptionChangeIdentity(stored.root))
+      .limit(1);
+    if (winner && (winner.status === "completed" || winner.deferredSchedule)) {
+      return winner;
+    }
+    throw new Error("Deferred subscription change disappeared");
   });
 }
 
@@ -2290,10 +2358,9 @@ const markPreparedChangeApplying$ = command(
   ): Promise<UsagePackSubscriptionChangeRow | null> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      // No row locks: every admission writer holds the retained
-      // usage_pack_billing key, and each transition below is conditional on
-      // the previewed state it was decided from.
-      await tx.execute(usagePackBillingLockSql(args.orgId));
+      // Accepted Plan intent is a real preview -> applying transition. The
+      // existing active-org unique index arbitrates Plan operations; observed
+      // other money work is checked again in the transition predicate.
       const [subscription] = await tx
         .select({ id: usagePackSubscriptions.id })
         .from(usagePackSubscriptions)
@@ -2339,7 +2406,7 @@ const markPreparedChangeApplying$ = command(
       }
       const at = nowDate();
       const previewedRoot = and(
-        eq(usagePackSubscriptionChanges.id, root.id),
+        subscriptionChangeIdentity(root),
         eq(usagePackSubscriptionChanges.status, "previewed"),
       );
       if (root.previewExpiresAt <= at) {
@@ -2371,7 +2438,12 @@ const markPreparedChangeApplying$ = command(
       const [updated] = await tx
         .update(usagePackSubscriptionChanges)
         .set({ status: "applying", updatedAt: at })
-        .where(previewedRoot)
+        .where(
+          and(
+            previewedRoot,
+            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: subscription.id, planChangeId: args.changeId })})`,
+          ),
+        )
         .returning();
       if (!updated) {
         return null;
@@ -2399,8 +2471,7 @@ async function failApplyingSubscriptionChange(
 ): Promise<void> {
   const completedAt = nowDate();
   await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, root.orgId);
-    await tx
+    const [failed] = await tx
       .update(usagePackSubscriptionChanges)
       .set({
         status: "failed",
@@ -2410,10 +2481,14 @@ async function failApplyingSubscriptionChange(
       })
       .where(
         and(
-          eq(usagePackSubscriptionChanges.id, root.id),
+          subscriptionChangeIdentity(root),
           eq(usagePackSubscriptionChanges.status, "applying"),
         ),
-      );
+      )
+      .returning({ id: usagePackSubscriptionChanges.id });
+    if (!failed) {
+      return;
+    }
     await tx
       .update(usagePackAllocationChanges)
       .set({
@@ -3201,12 +3276,7 @@ async function restoreScheduledSubscriptionChange(
   }
   const completedAt = nowDate();
   await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, stored.root.orgId);
-    await failScheduledUsagePackAllocationChangesForSchedule(tx, {
-      scheduleId,
-      completedAt,
-    });
-    await tx
+    const [completed] = await tx
       .update(usagePackSubscriptionChanges)
       .set({
         status: "completed",
@@ -3216,10 +3286,33 @@ async function restoreScheduledSubscriptionChange(
       })
       .where(
         and(
-          eq(usagePackSubscriptionChanges.id, stored.root.id),
+          subscriptionChangeIdentity(stored.root),
           eq(usagePackSubscriptionChanges.status, "applying"),
         ),
-      );
+      )
+      .returning({ id: usagePackSubscriptionChanges.id });
+    if (completed && scheduledChanges.length > 0) {
+      await tx
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "scheduled_change_restored",
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(
+          and(
+            inArray(
+              usagePackAllocationChanges.id,
+              scheduledChanges.map((change) => {
+                return change.id;
+              }),
+            ),
+            eq(usagePackAllocationChanges.status, "scheduled"),
+            eq(usagePackAllocationChanges.stripeScheduleId, scheduleId),
+          ),
+        );
+    }
   });
   return {
     status: "confirmed",

@@ -6718,6 +6718,58 @@ describe("legacy subscription usage pack migration", () => {
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
   });
 
+  it.each([0, 20_000])(
+    "publishes a migration payment of %s once across concurrent delivery and replay",
+    async (amountPaidCents) => {
+      const fixture = await seedLegacyMigrationFixture({
+        tier: "team",
+        invitation: true,
+      });
+      if (!fixture.invitation) {
+        throw new Error("Expected migration invitation");
+      }
+      const stripe = mockMigrationStripe({
+        fixture,
+        packageQuantity: 2,
+        currentRecurringAmountCents: 20_000,
+        amountDueCents: amountPaidCents,
+        amountPaidCents,
+      });
+      const preview = await previewMigration(fixture);
+      await accept(
+        migrationClient().confirm({
+          params: { migrationId: preview.migrationId },
+          body: {},
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      stripe.startScheduledPhase();
+      await Promise.all([
+        postMigrationInvoice(stripe.invoice()),
+        postMigrationInvoice(stripe.invoice()),
+      ]);
+      const committed = await readUsagePackState(
+        fixture.orgId,
+        preview.migrationId,
+      );
+      expect(committed.allocations).toHaveLength(2);
+      expect(committed.invitationPurchases).toHaveLength(1);
+      expect(committed.invitationPurchases[0]).toMatchObject({
+        status: "invitation_pending",
+        amountPaidCents: amountPaidCents === 0 ? 0 : 2000,
+      });
+      expect(committed.fulfillmentInvoiceIds).toHaveLength(1);
+      expect(committed.grants).toHaveLength(2);
+      await postMigrationInvoice(stripe.invoice());
+      const replayed = await readUsagePackState(
+        fixture.orgId,
+        preview.migrationId,
+      );
+      expect(replayed).toStrictEqual(committed);
+    },
+  );
+
   it("finishes a zero-amount Team conversion and invitation lifecycle", async () => {
     const fixture = await seedLegacyMigrationFixture({
       tier: "team",
@@ -17654,6 +17706,93 @@ describe("usage pack allocation management", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("reconciles a lost invitation refund response using the same payment and idempotency identity", async () => {
+    const clock = new Date("2035-05-15T00:00:00.000Z");
+    mockNow(clock);
+    onTestFinished(clearMockNow);
+    const purchase = await beginInvitationPurchase();
+    const invitationId = `inv_lost_refund_${randomUUID()}`;
+    await payInvitationPurchase(purchase, invitationId);
+    const creditsBefore = await readDeferredReplayCredits(purchase.fixture);
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [{ id: invitationId }] },
+    );
+    context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValue(
+      {},
+    );
+    const refunds = new Map<string, { id: string; status: "succeeded" }>();
+    let lost = true;
+    context.mocks.stripe.refunds.create.mockImplementation(
+      (_input: unknown, options: unknown) => {
+        const { idempotencyKey: key } = z
+          .object({ idempotencyKey: z.string() })
+          .parse(options);
+        let refund = refunds.get(key);
+        if (!refund) {
+          refund = { id: `re_${randomUUID()}`, status: "succeeded" };
+          refunds.set(key, refund);
+        }
+        if (lost) {
+          lost = false;
+          return Promise.reject(
+            new Error("Refund committed but response lost"),
+          );
+        }
+        return Promise.resolve(refund);
+      },
+    );
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+    await accept(
+      client.revoke({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { invitationId },
+      }),
+      [500],
+    );
+    const pending = await readUsagePackState(
+      purchase.fixture.orgId,
+      purchase.fixture.usagePackSubscriptionId,
+    );
+    expect(pending.invitationPurchases[0]).toMatchObject({
+      status: "refunding",
+      refundAttempt: 1,
+      stripeRefundId: null,
+    });
+    mockNow(new Date(clock.getTime() + 6 * 60_000));
+    await runBillingReconciliation(purchase.fixture.orgId);
+    const recovered = await readUsagePackState(
+      purchase.fixture.orgId,
+      purchase.fixture.usagePackSubscriptionId,
+    );
+    expect(refunds.size).toBe(1);
+    expect(recovered.invitationPurchases[0]).toMatchObject({
+      status: "refunded",
+      refundAttempt: 1,
+      stripeRefundId: [...refunds.values()][0]?.id,
+    });
+    expect(context.mocks.stripe.refunds.create).toHaveBeenCalledTimes(2);
+    for (const call of context.mocks.stripe.refunds.create.mock.calls) {
+      expect(call[1]).toMatchObject({
+        idempotencyKey: `usage-pack-invitation:${purchase.purchaseId}:refund:1`,
+      });
+    }
+    await expect(
+      readDeferredReplayCredits(purchase.fixture),
+    ).resolves.toStrictEqual(creditsBefore);
+    await runBillingReconciliation(purchase.fixture.orgId);
+    expect(
+      (
+        await readUsagePackState(
+          purchase.fixture.orgId,
+          purchase.fixture.usagePackSubscriptionId,
+        )
+      ).invitationPurchases,
+    ).toStrictEqual(recovered.invitationPurchases);
+    expect(refunds.size).toBe(1);
   });
 
   it("keeps a completed invitation refund when post-commit configuration sync fails", async () => {

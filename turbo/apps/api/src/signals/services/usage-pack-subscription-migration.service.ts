@@ -49,7 +49,6 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { usagePackBillingLockSql } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   handleUsagePackInvoicePaid$,
@@ -1437,7 +1436,6 @@ const persistMigrationRevisionIntent$ = command(
     const db = set(writeDb$);
 
     const result = await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [migration] = await tx
         .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
@@ -1883,6 +1881,85 @@ function migrationPlanRootConversion(
   };
 }
 
+async function validateMigrationAllocations(
+  db: Pick<Db, "select">,
+  migration: MigrationRow,
+  selections: readonly MigrationSelectionRow[],
+  scope: { readonly rootId: string; readonly requireSelections: boolean },
+  signal: AbortSignal,
+): Promise<void> {
+  const allocations = await db
+    .select()
+    .from(usagePackAllocations)
+    .where(eq(usagePackAllocations.usagePackSubscriptionId, scope.rootId));
+  signal.throwIfAborted();
+  const same = selections.every((selection) => {
+    return allocations.some((allocation) => {
+      return (
+        allocation.orgId === migration.orgId &&
+        allocation.userId === selection.userId &&
+        allocation.invitationId === selection.invitationId &&
+        allocation.usagePackUsd === selection.usagePackUsd &&
+        allocation.stripePriceId === selection.stripePriceId
+      );
+    });
+  });
+  if (
+    allocations.length !== selections.length ||
+    (scope.requireSelections && !same)
+  ) {
+    throw new Error(`Usage pack migration ${migration.id} allocations changed`);
+  }
+}
+
+async function committedMigrationMaterialization(
+  db: Db,
+  migration: MigrationRow,
+  selections: readonly MigrationSelectionRow[],
+  signal: AbortSignal,
+): Promise<string> {
+  const winner = await migrationSubscriptionRoot(db, migration);
+  signal.throwIfAborted();
+  if (
+    !winner ||
+    winner.tier !== migration.targetTier ||
+    winner.stripePlanPriceId !== migration.stripePlanPriceId
+  ) {
+    throw new Error(
+      `Usage pack migration ${migration.id} has no matching materialized root`,
+    );
+  }
+  await validateMigrationAllocations(
+    db,
+    migration,
+    selections,
+    { rootId: winner.id, requireSelections: true },
+    signal,
+  );
+  signal.throwIfAborted();
+  return winner.id;
+}
+
+function materializedMigrationAllocations(
+  migration: MigrationRow,
+  rootId: string,
+  selections: readonly MigrationSelectionRow[],
+) {
+  return selections.map((selection) => {
+    return {
+      usagePackSubscriptionId: rootId,
+      orgId: migration.orgId,
+      userId: selection.userId,
+      invitationId: selection.invitationId,
+      usagePackUsd: selection.usagePackUsd,
+      stripePriceId: selection.stripePriceId,
+      status: "pending_payment" as const,
+    };
+  });
+}
+
+class MigrationMaterializationChanged extends Error {}
+
 const materializeUsagePackSnapshot$ = command(
   async (
     { set },
@@ -1899,123 +1976,118 @@ const materializeUsagePackSnapshot$ = command(
       migration,
       selections,
     );
-    const usagePackSubscriptionId = await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingLockSql(migration.orgId));
-      // A Plan root already bound to this Stripe subscription keeps both
-      // identities. The migration UUID identifies the conversion operation,
-      // not a second root competing for the same unique provider binding.
-      const existing = await migrationSubscriptionRoot(tx, migration);
-      const [locked] = await tx
-        .select()
-        .from(usagePackSubscriptionMigrations)
-        .where(
-          and(
-            eq(usagePackSubscriptionMigrations.id, migration.id),
-            eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
-          ),
-        )
-        .limit(1);
-      if (!locked || locked.status === "failed") {
-        throw new Error(`Usage pack migration ${migration.id} is not active`);
-      }
-      const currentSelections = await tx
-        .select()
-        .from(usagePackSubscriptionMigrationSelections)
-        .where(
-          eq(
-            usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
-          ),
-        );
-      assertMigrationConfiguration(
-        expectedConfiguration,
-        locked,
-        currentSelections,
-      );
-      const rootId = existing?.id ?? migration.id;
-      const convertingPlanRoot =
-        existing !== null &&
-        existing.stripePlanPriceId !== migration.stripePlanPriceId;
-      if (!existing) {
-        // Historical rootless Plans retain their already-persisted conversion
-        // UUID. No new identity is generated at payment or reconciliation.
-        await tx.insert(usagePackSubscriptions).values({
-          id: rootId,
-          orgId: migration.orgId,
-          tier: migration.targetTier,
-          stripePlanPriceId: migration.stripePlanPriceId,
-          stripeCustomerId: migration.stripeCustomerId,
-          stripeSubscriptionId: migration.stripeSubscriptionId,
-          subscriptionStatus: subscription.status,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        });
-      } else if (convertingPlanRoot) {
-        const conversion = migrationPlanRootConversion(
-          migration,
-          existing,
-          subscription,
-        );
-        const [converted] = await tx
-          .update(usagePackSubscriptions)
-          .set(conversion.values)
-          .where(conversion.condition)
-          .returning({ id: usagePackSubscriptions.id });
-        if (!converted) {
-          throw new Error(
-            `Usage pack migration ${migration.id} source Plan changed`,
-          );
-        }
-      } else if (existing.tier !== migration.targetTier) {
-        throw new Error(
-          `Usage pack migration ${migration.id} snapshot changed`,
-        );
-      }
-      if (!existing || convertingPlanRoot) {
-        if (selections.length > 0) {
-          await tx.insert(usagePackAllocations).values(
-            selections.map((selection) => {
-              return {
-                usagePackSubscriptionId: rootId,
-                orgId: migration.orgId,
-                userId: selection.userId,
-                invitationId: selection.invitationId,
-                usagePackUsd: selection.usagePackUsd,
-                stripePriceId: selection.stripePriceId,
-                status: "pending_payment" as const,
-              };
-            }),
-          );
-        }
-      } else {
-        const allocations = await tx
+    const result = await settle(
+      db.transaction(async (tx) => {
+        // A Plan root already bound to this Stripe subscription keeps both
+        // identities. The migration UUID identifies the conversion operation,
+        // not a second root competing for the same unique provider binding.
+        const existing = await migrationSubscriptionRoot(tx, migration);
+        const [locked] = await tx
           .select()
-          .from(usagePackAllocations)
-          .where(eq(usagePackAllocations.usagePackSubscriptionId, rootId));
-        const sameSelections = selections.every((selection) => {
-          return allocations.some((allocation) => {
-            return (
-              allocation.orgId === migration.orgId &&
-              allocation.userId === selection.userId &&
-              allocation.invitationId === selection.invitationId &&
-              allocation.usagePackUsd === selection.usagePackUsd &&
-              allocation.stripePriceId === selection.stripePriceId
-            );
-          });
-        });
-        if (
-          allocations.length !== selections.length ||
-          (locked.status !== "completed" && !sameSelections)
-        ) {
+          .from(usagePackSubscriptionMigrations)
+          .where(
+            and(
+              eq(usagePackSubscriptionMigrations.id, migration.id),
+              eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
+            ),
+          )
+          .limit(1);
+        if (!locked || locked.status === "failed") {
+          throw new Error(`Usage pack migration ${migration.id} is not active`);
+        }
+        const currentSelections = await tx
+          .select()
+          .from(usagePackSubscriptionMigrationSelections)
+          .where(
+            eq(
+              usagePackSubscriptionMigrationSelections.migrationId,
+              migration.id,
+            ),
+          );
+        assertMigrationConfiguration(
+          expectedConfiguration,
+          locked,
+          currentSelections,
+        );
+        const rootId = existing?.id ?? migration.id;
+        const convertingPlanRoot =
+          existing !== null &&
+          existing.stripePlanPriceId !== migration.stripePlanPriceId;
+        if (!existing) {
+          // Historical rootless Plans retain their already-persisted conversion
+          // UUID. No new identity is generated at payment or reconciliation.
+          const [inserted] = await tx
+            .insert(usagePackSubscriptions)
+            .values({
+              id: rootId,
+              orgId: migration.orgId,
+              tier: migration.targetTier,
+              stripePlanPriceId: migration.stripePlanPriceId,
+              stripeCustomerId: migration.stripeCustomerId,
+              stripeSubscriptionId: migration.stripeSubscriptionId,
+              subscriptionStatus: subscription.status,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            })
+            .onConflictDoNothing()
+            .returning({ id: usagePackSubscriptions.id });
+          if (!inserted) {
+            throw new MigrationMaterializationChanged();
+          }
+        } else if (convertingPlanRoot) {
+          const conversion = migrationPlanRootConversion(
+            migration,
+            existing,
+            subscription,
+          );
+          const [converted] = await tx
+            .update(usagePackSubscriptions)
+            .set(conversion.values)
+            .where(conversion.condition)
+            .returning({ id: usagePackSubscriptions.id });
+          if (!converted) {
+            throw new MigrationMaterializationChanged();
+          }
+        } else if (existing.tier !== migration.targetTier) {
           throw new Error(
-            `Usage pack migration ${migration.id} allocations changed`,
+            `Usage pack migration ${migration.id} snapshot changed`,
           );
         }
-      }
-      signal.throwIfAborted();
-      return rootId;
-    });
+        if (!existing || convertingPlanRoot) {
+          if (selections.length > 0) {
+            await tx
+              .insert(usagePackAllocations)
+              .values(
+                materializedMigrationAllocations(migration, rootId, selections),
+              );
+          }
+        } else {
+          await validateMigrationAllocations(
+            tx,
+            migration,
+            selections,
+            { rootId, requireSelections: locked.status !== "completed" },
+            signal,
+          );
+        }
+        signal.throwIfAborted();
+        return rootId;
+      }),
+    );
     signal.throwIfAborted();
-    return usagePackSubscriptionId;
+    if (result.ok) {
+      return result.value;
+    }
+    if (!(result.error instanceof MigrationMaterializationChanged)) {
+      throw result.error;
+    }
+    // The losing transaction has rolled back. Resolve one committed canonical
+    // root once; neither generate another UUID nor rerun materialization.
+    return await committedMigrationMaterialization(
+      db,
+      migration,
+      selections,
+      signal,
+    );
   },
 );
 
@@ -2232,7 +2304,7 @@ async function completeLockedMigration(
     readonly invoice: StripeInvoice;
     readonly paymentIntentId: string | null;
   },
-): Promise<void> {
+): Promise<boolean> {
   const completedAt = nowDate();
   const [completed] = await tx
     .update(usagePackSubscriptionMigrations)
@@ -2251,11 +2323,7 @@ async function completeLockedMigration(
       ),
     )
     .returning({ id: usagePackSubscriptionMigrations.id });
-  if (!completed) {
-    throw new Error(
-      `Usage pack migration ${args.migrationId} changed during completion`,
-    );
-  }
+  return completed !== undefined;
 }
 
 function migrationInvitationValues(args: {
@@ -2351,7 +2419,6 @@ const completeMigrationInvitations$ = command(
       selections,
     );
     await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingLockSql(migration.orgId));
       const [locked] = await tx
         .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
@@ -2383,6 +2450,36 @@ const completeMigrationInvitations$ = command(
           `Usage pack migration ${migration.id} lost correlation`,
         );
       }
+      const completed = await completeLockedMigration(tx, {
+        migrationId: migration.id,
+        rowVersion: locked.rowVersion,
+        invoice,
+        paymentIntentId,
+      });
+      if (!completed) {
+        const [winner] = await tx
+          .select()
+          .from(usagePackSubscriptionMigrations)
+          .where(
+            and(
+              eq(usagePackSubscriptionMigrations.id, migration.id),
+              eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
+            ),
+          )
+          .limit(1);
+        if (
+          winner?.status === "completed" &&
+          winner.stripeInvoiceId === invoice.id &&
+          winner.stripePaymentIntentId === paymentIntentId
+        ) {
+          return;
+        }
+        throw new Error(
+          `Usage pack migration ${migration.id} changed during completion`,
+        );
+      }
+      // The real completed transition and invitation payment rows share this
+      // commit. Any failed ownership/amount/insertion check rolls it back too.
       const allocations = await tx
         .select()
         .from(usagePackAllocations)
@@ -2415,12 +2512,6 @@ const completeMigrationInvitations$ = command(
         });
         await tx.insert(usagePackInvitationPurchases).values(values);
       }
-      await completeLockedMigration(tx, {
-        migrationId: migration.id,
-        rowVersion: locked.rowVersion,
-        invoice,
-        paymentIntentId,
-      });
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
@@ -2849,9 +2940,8 @@ const claimMigrationConfirmation$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [migration] = await tx
-        .select()
+        .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
         .where(
           and(
@@ -2872,7 +2962,9 @@ const claimMigrationConfirmation$ = command(
         // was decided from; zero rows is a deterministic conflict.
         const previewedMigration = and(
           eq(usagePackSubscriptionMigrations.id, migration.id),
+          eq(usagePackSubscriptionMigrations.orgId, args.orgId),
           eq(usagePackSubscriptionMigrations.status, "previewed"),
+          migrationRowVersionIs(migration.rowVersion),
         );
         const selections = await tx
           .select()

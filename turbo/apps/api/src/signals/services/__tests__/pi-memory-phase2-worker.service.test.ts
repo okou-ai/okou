@@ -1,4 +1,5 @@
 import { readPiMemoryBuiltinQuota } from "../pi-memory-builtin-quota.service";
+import { captureFixtureRunBilling } from "../billing-run-fixture";
 import { checkPiMemoryQuota } from "../pi-memory-quota.service";
 import {
   orgUsageAllowanceEntitlements,
@@ -239,19 +240,22 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       userId: scope.userId,
       agentId,
     });
-    await db().insert(agentRuns).values({
-      id: sourceRunId,
-      sessionId: sourceSessionId,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      status: "completed",
-      prompt: "Remember this while the organization is busy.",
-      modelProvider: "built-in",
-      modelProviderId: null,
-      modelProviderCredentialScope: "org",
-      triggerSource: "agent",
-      autonomyBudget: 0,
-      completedAt: now,
+    await db().transaction(async (tx) => {
+      await tx.insert(agentRuns).values({
+        id: sourceRunId,
+        sessionId: sourceSessionId,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        status: "completed",
+        prompt: "Remember this while the organization is busy.",
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: "org",
+        triggerSource: "agent",
+        autonomyBudget: 0,
+        completedAt: now,
+      });
+      await captureFixtureRunBilling(tx, sourceRunId);
     });
     onTestFinished(async () => {
       await deleteRunSessionsForScope(scope);
@@ -577,20 +581,23 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       agentId,
       title: "Shared Pi source",
     });
-    await db().insert(agentRuns).values({
-      id: sourceRunId,
-      sessionId: sourceSessionId,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      status: "completed",
-      prompt: "Remember this from a shared public Agent.",
-      modelProvider: "built-in",
-      modelProviderId: null,
-      modelProviderCredentialScope: "org",
-      triggerSource: "agent",
-      autonomyBudget: 0,
-      chatThreadId: sourceThreadId,
-      completedAt: now,
+    await db().transaction(async (tx) => {
+      await tx.insert(agentRuns).values({
+        id: sourceRunId,
+        sessionId: sourceSessionId,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        status: "completed",
+        prompt: "Remember this from a shared public Agent.",
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: "org",
+        triggerSource: "agent",
+        autonomyBudget: 0,
+        chatThreadId: sourceThreadId,
+        completedAt: now,
+      });
+      await captureFixtureRunBilling(tx, sourceRunId);
     });
     await db()
       .update(chatThreads)

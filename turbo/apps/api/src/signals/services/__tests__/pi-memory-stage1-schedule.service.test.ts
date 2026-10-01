@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captureFixtureRunBilling } from "../billing-run-fixture";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import { createDeferredPromise, settle } from "../../utils";
 import { createHash, randomUUID } from "node:crypto";
@@ -152,31 +153,35 @@ async function harness(enabled = true) {
     await db
       .insert(agentSessions)
       .values({ id: sessionId, userId, orgId, agentId: thread.agentId });
-    const [run] = await db
-      .insert(agentRuns)
-      .values({
-        id,
-        sessionId,
-        orgId,
-        userId,
-        chatThreadId: threadId,
-        status: options.status ?? "completed",
-        prompt: "fixture",
-        triggerSource: options.triggerSource ?? "web",
-        autonomyBudget: 0,
-        launchSnapshot: {
-          schemaVersion: 3,
-          framework: "pi",
-          runnerProfile: DEFAULT_PROFILE,
-        },
-        createdAt: at,
-        completedAt:
-          options.status && options.status !== "completed" ? null : at,
-      })
-      .returning();
-    if (!run) {
-      throw new Error("Missing fixture run");
-    }
+    const run = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(agentRuns)
+        .values({
+          id,
+          sessionId,
+          orgId,
+          userId,
+          chatThreadId: threadId,
+          status: options.status ?? "completed",
+          prompt: "fixture",
+          triggerSource: options.triggerSource ?? "web",
+          autonomyBudget: 0,
+          launchSnapshot: {
+            schemaVersion: 3,
+            framework: "pi",
+            runnerProfile: DEFAULT_PROFILE,
+          },
+          createdAt: at,
+          completedAt:
+            options.status && options.status !== "completed" ? null : at,
+        })
+        .returning();
+      if (!inserted) {
+        throw new Error("Missing fixture run");
+      }
+      await captureFixtureRunBilling(tx, inserted.id);
+      return inserted;
+    });
     const piSessionId = options.piSessionId ?? randomUUID();
     const hash = options.hash ?? createHash("sha256").update(id).digest("hex");
     if (options.checkpoint !== false) {

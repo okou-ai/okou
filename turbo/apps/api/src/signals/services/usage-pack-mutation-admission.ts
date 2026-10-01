@@ -8,10 +8,10 @@ import { sql } from "drizzle-orm";
 
 /**
  * Existing business operations retain admission until their provider result is
- * reconciled. Execute only while holding the org's retained usage_pack_billing
- * key: every admission writer (plan, allocation and invitation) takes that key
- * before this check, so no parent row lock is needed. A completed or scheduled
- * result is not an in-flight mutation claim.
+ * reconciled. This is an observed financial eligibility predicate, not a
+ * cross-table mutex. Accepted transitions also qualify their real owned state;
+ * paid publication uses receipt identity and conditional source/grant writes.
+ * A completed or scheduled result is not an in-flight mutation claim.
  */
 export function conflictingUsagePackMutationSql(input: {
   readonly subscriptionId: string;
@@ -42,9 +42,9 @@ export function conflictingUsagePackMutationSql(input: {
 }
 
 /**
- * A plain SQL expression, executed inside the command's local transaction
- * after the retained usage_pack_billing key. It resolves the purchase's
- * subscription without a row lock; admission is serialized by that key.
+ * A plain owned-parent expression for an invitation's conditional status write.
+ * It validates subscription/organization reference integrity without a row lock
+ * or a global admission key.
  */
 export function invitationMutationSubscriptionSql(purchaseId: string) {
   return sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}

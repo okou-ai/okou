@@ -25,6 +25,7 @@ import {
   ne,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 
 import { command } from "ccstate";
@@ -48,7 +49,6 @@ import {
 } from "../external/stripe-client";
 import {
   calculateUsagePackAdditionCreditGrant,
-  usagePackBillingLockSql,
   previewUsagePackAllocationAddition$,
   syncUsagePackSubscriptionConfiguration$,
   type UsagePackAllocationAdditionChargePreview,
@@ -1465,25 +1465,6 @@ const refundPurchase$ = command(
       if (!identity) {
         return null;
       }
-      await tx.execute(usagePackBillingLockSql(identity.orgId));
-      const parentCount = (
-        await tx.execute(invitationMutationSubscriptionSql(purchaseId))
-      ).rowCount;
-      if (parentCount !== 1) {
-        return null;
-      }
-      if (
-        (
-          await tx.execute(
-            conflictingUsagePackMutationSql({
-              subscriptionId: identity.subscriptionId,
-              invitationPurchaseId: purchaseId,
-            }),
-          )
-        ).rowCount
-      ) {
-        return null;
-      }
       const staleBefore = new Date(
         nowDate().getTime() - RECONCILIATION_DELAY_MS,
       );
@@ -1493,6 +1474,13 @@ const refundPurchase$ = command(
         .where(
           and(
             eq(usagePackInvitationPurchases.id, purchaseId),
+            eq(usagePackInvitationPurchases.orgId, identity.orgId),
+            eq(
+              usagePackInvitationPurchases.usagePackSubscriptionId,
+              identity.subscriptionId,
+            ),
+            sql`EXISTS (${invitationMutationSubscriptionSql(purchaseId)})`,
+            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: identity.subscriptionId, invitationPurchaseId: purchaseId })})`,
             or(
               eq(usagePackInvitationPurchases.status, "refund_pending"),
               ...(allowRecovery
@@ -2245,25 +2233,6 @@ const claimAcceptedPurchaseActivation$ = command(
       if (!identity) {
         return null;
       }
-      await tx.execute(usagePackBillingLockSql(identity.orgId));
-      const parentCount = (
-        await tx.execute(invitationMutationSubscriptionSql(purchaseId))
-      ).rowCount;
-      if (parentCount !== 1) {
-        return null;
-      }
-      if (
-        (
-          await tx.execute(
-            conflictingUsagePackMutationSql({
-              subscriptionId: identity.subscriptionId,
-              invitationPurchaseId: purchaseId,
-            }),
-          )
-        ).rowCount
-      ) {
-        return null;
-      }
       const staleBefore = new Date(
         nowDate().getTime() - RECONCILIATION_DELAY_MS,
       );
@@ -2273,6 +2242,13 @@ const claimAcceptedPurchaseActivation$ = command(
         .where(
           and(
             eq(usagePackInvitationPurchases.id, purchaseId),
+            eq(usagePackInvitationPurchases.orgId, identity.orgId),
+            eq(
+              usagePackInvitationPurchases.usagePackSubscriptionId,
+              identity.subscriptionId,
+            ),
+            sql`EXISTS (${invitationMutationSubscriptionSql(purchaseId)})`,
+            sql`NOT EXISTS (${conflictingUsagePackMutationSql({ subscriptionId: identity.subscriptionId, invitationPurchaseId: purchaseId })})`,
             isNotNull(usagePackInvitationPurchases.acceptedUserId),
             isNotNull(usagePackInvitationPurchases.allocationId),
             or(

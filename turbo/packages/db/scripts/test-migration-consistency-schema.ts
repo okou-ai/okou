@@ -1253,56 +1253,7 @@ type PermanentFunction = {
 
 // Exported from a database built by the existing migration chain. Extension-owned
 // pgcrypto and vector functions are deliberately absent from the function list.
-const EXPECTED_PERMANENT_TRIGGERS = [
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
-    schemaName: "public",
-    tableName: "agent_runs",
-    triggerName: "capture_billing_run_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "capture_usage_billing_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_hourly_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "capture_hourly_billing_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_generation_billing_identity BEFORE INSERT OR UPDATE OF billing_run_id, billing_context ON public.built_in_generation_jobs FOR EACH ROW EXECUTE FUNCTION capture_generation_billing_identity()",
-    schemaName: "public",
-    tableName: "built_in_generation_jobs",
-    triggerName: "capture_generation_billing_identity",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER mark_raw_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "mark_raw_billing_usage_observed",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER mark_hourly_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "mark_hourly_billing_usage_observed",
-  },
-] as const satisfies readonly PermanentTrigger[];
+const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
   {

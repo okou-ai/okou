@@ -1,11 +1,11 @@
 # Release 1 billing capture and observation writer trace
 
-This source review uses the integrated R1 changes through `b8e1c9f` and main
-`3103651`, which retires both Cloudflare guards. It follows imported table
-bindings, their INSERT/UPDATE callers, raw SQL builders and the retained
-operator. It is not a production catalog or data-convergence report. The six
-capture/observation triggers remain installed; no retirement is authorized by
-this inventory alone.
+This source inventory follows imported table bindings, INSERT/UPDATE callers,
+raw SQL builders and the retained operator. R1 migration 1309 retires the six
+application capture/observation triggers after explicit current writer/fixture
+coverage. Their historical function definitions remain for migration-layer
+retirement only; no current producer invokes them. This is not a production
+catalog, production operation or data-convergence report.
 
 ## Production writers
 
@@ -31,7 +31,7 @@ must not be used as a current producer inventory without this trace.
 
 ## Six application trigger invariants
 
-| Installed trigger / table                                          | Invariant and explicit replacement                                                                                                                                                                                                                                   |
+| Retired trigger (1309) / table                                     | Invariant and explicit replacement                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `capture_billing_run_attribution` / `agent_runs`                   | Capture independent original Run ID, owner, exact stored start, normalized source/thread at Run insertion; launch/benchmark/converted fixtures publish `billingRunAttributionWrite` in the insertion transaction. Deleting live content must not delete attribution. |
 | `capture_generation_billing_identity` / `built_in_generation_jobs` | Preserve original billing Run ID/context independently of live Run FK, including late result after live deletion; the owning job creation supplies these values and lifecycle updates do not replace them.                                                           |
@@ -40,12 +40,13 @@ must not be used as a current producer inventory without this trace.
 | `capture_hourly_billing_attribution` / `usage_event_hourly_rollup` | Compaction preserves raw identity/context/exact anchor and rejects amount/identity disagreement before deleting the selected raw batch; explicit compaction SQL owns that commit.                                                                                    |
 | `mark_hourly_billing_usage_observed` / `usage_event_hourly_rollup` | Hourly publication monotonically marks known Run observation together with hourly insertion and raw deletion; compaction and the retained operator explicitly publish it.                                                                                            |
 
-The table is a source-contract mapping, not authorization to drop these triggers
-without finishing every current fixture and identity-mutation boundary below.
-All six remain installed in the shipped schema; only an isolated local test
-copy has them removed. Their remaining retirement is unfinished R1 work, not
-merely writer drain or an implementation deferred to R2. Credit issuance and
-settlement semantics are unchanged.
+The table is the current owning-command SQL replacement contract. Migration
+1309 drops all six application hooks in the normal R1 schema, with no replacement
+trigger/lock/state and no rolling-writer compatibility. Run/job/raw/hourly source
+and observation publish explicitly. Credit issuance and settlement semantics
+are unchanged. Only historical migration-layer function-definition retirement
+remains for the second release; reader fallback removal still needs its separate
+production convergence evidence.
 
 ## Retention and mutation transitions
 
@@ -82,10 +83,9 @@ locked batches of at most 500. Its loop is outside each transaction. These
 existing actions pass only business values and remove their implicit capture
 and observation dependency; no new fixture endpoint or sequencing gate was added.
 
-The following checked-in state producers still obtain attribution implicitly
-from the current schema. They are not evidence of a missing production entry
-point, but need explicit fixture values or migration to ordinary API setup
-before tests can run against a trigger-free schema.
+The formerly implicit checked-in state producers below now supply explicit
+attribution; their existing public API callers execute against the normal R1
+trigger-free schema. They are fixture coverage, not a new production endpoint.
 
 - `routes/test-cron-cleanup-sandboxes-state.ts` is now explicit: Run insertion
   and canonical capture share a short transaction using the exact returned
@@ -96,7 +96,7 @@ before tests can run against a trigger-free schema.
   A fresh isolated local database with all six application billing triggers
   removed passed the whole cleanup/cancellation API file (47 tests). This
   closes that fixture's source dependency, not every producer or production
-  convergence. Other fixture dependencies below remain unfinished.
+  convergence. The other current fixture conversions are listed below.
 - `test-computer-use-state.ts` now captures its Run's canonical identity in
   the insertion transaction using exact stored time/source/thread. Its existing
   Computer Use API file passes 26 tests against the same isolated trigger-free
@@ -113,15 +113,19 @@ before tests can run against a trigger-free schema.
   14 cases against a freshly migrated current-main database with all six billing
   triggers removed. Thread-bound and threadless setup preserve their own source;
   no new endpoint, fixture field, lock or coordination state is introduced.
-- Other direct Run setup remains in `test-pi-memory-stage1-state.ts` and several
-  service-local Pi fixtures. Their caller-specific billing expectations have
-  not all been migrated by this inventory.
-- `services/__tests__/pi-memory-stage1-usage.service.test.ts` contains direct
-  raw INSERTs without anchors and identity mutation assertions. Historical
-  database migration scripts separately construct historical schemas and
-  rows. Do not delete historical migration coverage or present it as current
-  application API coverage; assess each test's actual purpose when retiring
-  current-schema dependencies.
+- All three Run inserts in `test-pi-memory-stage1-state.ts` now capture in their
+  insertion transaction. Existing Pi candidate accounting (including 1002-Run
+  bulk setup), phase-2 job/worker and stage-1 schedule fixture inserts do the
+  same. The common fixture capture selects exact stored database time, uses the
+  production attribution builder and inserts at most 500 canonical rows per
+  statement; no no-op conflict UPDATE, trigger or new fixture API is used.
+- Stage-1 direct historical raw setup now explicitly supplies its retained
+  anchor. DB subtype/anchor CHECK assertions remain. The removed trigger-only
+  assertions that arbitrary SQL may not change owner/context are not claimed as
+  application protection: current owning publishers validate actor/Run ownership
+  and exact replay identity, and product APIs expose no raw identity UPDATE.
+  Existing original owner/time/response replay and untrusted-context collision
+  cases remain. Historical migration coverage is retained.
 
 These are real source dependencies, not permission to add a test trigger, lock
 waiter or artificial database gate. New behavior regression cases must continue
@@ -131,16 +135,15 @@ to construct state and assert results through the user's API.
 
 This trace found no additional production raw/hourly/Run/job INSERT producer
 outside the paths above. All identified production producers now supply the
-capture/observation values explicitly; transaction ownership remains unfinished
-in the identified launch, Pi and operator paths. The test-only producer audit
-and conversions above are unfinished work, rather than a deployment condition.
+capture/observation values explicitly. Db/tx handle propagation in the launch,
+Pi and operator paths is a non-goal of this capture retirement. The identified current producer and fixture conversions above now accompany
+actual application-trigger retirement, not a drain-only handoff.
 
 Older API versions relied on the installed triggers; that is historical context,
 not a requirement to build rolling-version coordination. Under the current R1
-scope, all current producer/fixture and identity-mutation boundaries must be
-finished and verified before the six application triggers are retired. These
-unfinished conversions and trigger removal remain R1 implementation, not an
-R2 or writer-drain-only deliverable. Historical migration-definition retirement
+scope, current producer/fixture and identity-mutation contracts are explicit,
+and migration 1309 retires the six application hooks in R1, not R2 or a
+writer-drain-only deliverable. Historical migration-definition retirement
 still follows the two-release fallback plan. Production-data convergence before
 removing reader fallbacks is a separate evidence gate; no production operator
 or erasure action is authorized here.

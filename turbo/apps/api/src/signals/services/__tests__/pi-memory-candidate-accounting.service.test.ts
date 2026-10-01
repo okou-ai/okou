@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  captureFixtureRunBilling,
+  captureFixtureRunBillings,
+} from "../billing-run-fixture";
 import { readFile } from "node:fs/promises";
 
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -237,16 +241,19 @@ async function source(
   await h.db
     .insert(chatThreads)
     .values({ id: threadId, agentId, userId: parent.userId });
-  await h.db.insert(agentRuns).values({
-    id: runId,
-    sessionId,
-    orgId: parent.orgId,
-    userId: parent.userId,
-    status: "completed",
-    prompt: "fixture",
-    chatThreadId: threadId,
-    triggerSource: "web",
-    autonomyBudget: 0,
+  await h.db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: runId,
+      sessionId,
+      orgId: parent.orgId,
+      userId: parent.userId,
+      status: "completed",
+      prompt: "fixture",
+      chatThreadId: threadId,
+      triggerSource: "web",
+      autonomyBudget: 0,
+    });
+    await captureFixtureRunBilling(tx, runId);
   });
   await h.db.insert(conversations).values({
     runId,
@@ -1211,18 +1218,21 @@ describe("conversation history deletion accounting", () => {
     const ids = Array.from({ length: 1002 }, () => {
       return randomUUID();
     });
-    await h.db.insert(agentRuns).values(
-      ids.map((id) => {
-        return {
-          id,
-          sessionId: run.sessionId,
-          userId: parent.userId,
-          orgId: parent.orgId,
-          status: "completed",
-          prompt: "",
-        };
-      }),
-    );
+    await h.db.transaction(async (tx) => {
+      await tx.insert(agentRuns).values(
+        ids.map((id) => {
+          return {
+            id,
+            sessionId: run.sessionId,
+            userId: parent.userId,
+            orgId: parent.orgId,
+            status: "completed",
+            prompt: "",
+          };
+        }),
+      );
+      await captureFixtureRunBillings(tx, ids);
+    });
     await h.db.insert(conversations).values(
       ids.map((id, index) => {
         return {
@@ -1403,14 +1413,17 @@ test("breaks the shared-blob and surviving-session checkpoint cycle without a de
     throw new Error("Expected target Run");
   }
   const writerRunId = randomUUID();
-  await h.db.insert(agentRuns).values({
-    id: writerRunId,
-    sessionId: targetRun.sessionId,
-    orgId: parent.orgId,
-    userId: parent.userId,
-    status: "failed",
-    prompt: "",
-    storageMounts: [],
+  await h.db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: writerRunId,
+      sessionId: targetRun.sessionId,
+      orgId: parent.orgId,
+      userId: parent.userId,
+      status: "failed",
+      prompt: "",
+      storageMounts: [],
+    });
+    await captureFixtureRunBilling(tx, writerRunId);
   });
   const gate = createDeferredPromise<void>(context.signal);
   const ready = createDeferredPromise<void>(context.signal);
