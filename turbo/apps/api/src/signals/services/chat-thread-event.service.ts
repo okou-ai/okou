@@ -6,7 +6,17 @@ import {
   type ModelSettings,
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { and, asc, eq, exists, gt, notExists, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  gt,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,
@@ -88,12 +98,29 @@ async function insertChatThreadEvent(
 
 /** Pure statement preparation; the owning command executes and commits it. */
 export function chatThreadEventInsertSql(
-  args: ChatThreadEventAppend & { readonly orgId: string },
+  args: Omit<ChatThreadEventAppend, "agentId"> & {
+    readonly orgId: string;
+    readonly agentId?: string;
+  },
+  source?: { readonly cte: SQL; readonly gate: SQL; readonly agentId: SQL },
 ) {
   const orgId = args.orgId;
-  return sql`WITH reserved AS (
+  let agentId: SQL;
+  if (source) {
+    agentId = source.agentId;
+  } else {
+    if (args.agentId === undefined) {
+      throw new Error("Chat thread event requires an agent identity");
+    }
+    agentId = sql`${args.agentId}`;
+  }
+  const beforeReservation = source ? sql`${source.cte},` : sql.empty();
+  const reservationInput = source
+    ? sql`SELECT ${args.userId}, ${orgId}, 1 WHERE ${source.gate}`
+    : sql`VALUES (${args.userId}, ${orgId}, 1)`;
+  return sql`WITH ${beforeReservation} reserved AS (
       INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
-      VALUES (${args.userId}, ${orgId}, 1)
+      ${reservationInput}
       ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
       RETURNING last_seq_id
@@ -106,7 +133,7 @@ export function chatThreadEventInsertSql(
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
       ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
-      ${args.agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
+      ${agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,

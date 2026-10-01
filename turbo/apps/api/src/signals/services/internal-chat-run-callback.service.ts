@@ -86,8 +86,8 @@ import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-eve
 import {
   generateChatNotificationSummary,
   generateChatThreadRecommendedFollowupsFromContext,
-  loadChatThreadRecommendedFollowupContext,
-  scheduleChatThreadTitleGeneration,
+  loadChatThreadRecommendedFollowupContext$,
+  generateAndPersistChatThreadTitle$,
   type ChatCompletionContextMessage,
 } from "./chat-title.service";
 import {
@@ -1610,25 +1610,27 @@ async function generateRecommendedFollowupsForCompletedRun(
   return suggestions.length > 0 ? suggestions : undefined;
 }
 
-async function loadRecommendedFollowupContextForCompletedRun(args: {
-  readonly db: Db;
-  readonly threadId: string;
-}): Promise<readonly ChatCompletionContextMessage[]> {
-  return (
-    (await tapError(
-      loadChatThreadRecommendedFollowupContext({
-        db: args.db,
-        threadId: args.threadId,
-      }),
-      (err) => {
-        log.warn("Recommended follow-up context load failed", {
-          threadId: args.threadId,
-          err,
-        });
-      },
-    )) ?? []
-  );
-}
+const loadRecommendedFollowupContextForCompletedRun$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly ChatCompletionContextMessage[]> => {
+    return (
+      (await tapError(
+        set(loadChatThreadRecommendedFollowupContext$, args, signal),
+        (err) => {
+          log.warn("Recommended follow-up context load failed", {
+            threadId: args.threadId,
+            err,
+          });
+        },
+      )) ?? []
+    );
+  },
+);
 
 const materializeCompletedChatResult$ = command(
   async (
@@ -1793,10 +1795,13 @@ const handleCompletedChatCallback$ = command(
       "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
       "nested",
       () => {
-        return loadRecommendedFollowupContextForCompletedRun({
-          db: args.db,
-          threadId: args.chatThread.chatThreadId,
-        });
+        return set(
+          loadRecommendedFollowupContextForCompletedRun$,
+          {
+            threadId: args.chatThread.chatThreadId,
+          },
+          signal,
+        );
       },
     );
     signal.throwIfAborted();
@@ -2665,14 +2670,19 @@ export const recordQueuedPromptRunLaunch$ = command(
       },
       runInput.generationTemplateIdentities,
     );
-    scheduleChatThreadTitleGeneration({
-      db,
-      threadId,
-      userId,
-      orgId: runInput.orgId,
-      prompt: runInput.prompt,
-      includePriorRounds: true,
-    });
+    waitUntil(
+      set(
+        generateAndPersistChatThreadTitle$,
+        {
+          threadId,
+          userId,
+          orgId: runInput.orgId,
+          prompt: runInput.prompt,
+          includePriorRounds: true,
+        },
+        signal,
+      ),
+    );
     if (runInput.discordDelivery) {
       set(scheduleDiscordRunTyping$, db, {
         runId,

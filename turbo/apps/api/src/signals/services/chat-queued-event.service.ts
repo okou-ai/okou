@@ -6,9 +6,8 @@ import {
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import { and, eq, exists, isNull, notExists, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ChildAutonomyBudget } from "./autonomy-budget.service";
 import {
@@ -150,9 +149,9 @@ export type QueueFirstRunSessionSnapshotState =
   | "unvalidated";
 
 /** Whether the outer ChatEvent row is an unclaimed, unrevoked prompt. */
-export function queuedUserMessageExists(db: Pick<Db, "select">): SQL {
+export function queuedUserMessageExists(): SQL {
   return exists(
-    db
+    new QueryBuilder()
       .select({ id: queuedChatEvent.id })
       .from(queuedChatEvent)
       .where(
@@ -161,7 +160,7 @@ export function queuedUserMessageExists(db: Pick<Db, "select">): SQL {
           eq(queuedChatEvent.eventType, "input.prompt" satisfies ChatEventType),
           isNull(queuedChatEvent.runId),
           notExists(
-            db
+            new QueryBuilder()
               .select({ id: queuedChatEventRevoker.id })
               .from(queuedChatEventRevoker)
               .where(

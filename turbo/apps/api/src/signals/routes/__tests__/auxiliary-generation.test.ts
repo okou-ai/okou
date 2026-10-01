@@ -87,6 +87,15 @@ async function prepareChatTitle() {
       threadId = sent.body.threadId;
     },
     events,
+    rename: async (value: string) => {
+      if (threadId === undefined) {
+        throw new Error("Create the conversation before renaming it");
+      }
+      await accept(
+        chat.requestRenameThread(actor, threadId, value, [204]),
+        [204],
+      );
+    },
     titles: async () => {
       return (await events()).flatMap((event) => {
         return event.kind === "renamed" ? [event.title] : [];
@@ -161,6 +170,40 @@ describe("auxiliary generation outcomes", () => {
     await title.create();
     await flushWaitUntilForTest();
     await expect(title.titles()).resolves.toStrictEqual(["A usable summary"]);
+  });
+
+  it("keeps a member rename when a held title completion arrives later", async () => {
+    const title = await prepareChatTitle();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
+    createChatCallbacksApi(context).mockOpenRouterCompletions(async (body) => {
+      if (
+        body.messages[0]?.content.includes(
+          "Generate a short, descriptive title",
+        )
+      ) {
+        entered.resolve(undefined);
+        await release.promise;
+        return "Stale generated title";
+      }
+      return "Thinking";
+    });
+    await title.create();
+    await entered.promise;
+    await title.rename("Member chosen title");
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
+    // The public ordered event stream must contain the member's write only:
+    // a generator that lost the conditional UPDATE cannot append a rename.
+    await expect(title.titles()).resolves.toStrictEqual([
+      "Member chosen title",
+    ]);
   });
 
   it.each(untitledCases)(
