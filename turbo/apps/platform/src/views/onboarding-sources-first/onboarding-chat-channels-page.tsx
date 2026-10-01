@@ -1,4 +1,10 @@
-import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
+import {
+  useGet,
+  useLoadable,
+  useLastLoadable,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
@@ -222,7 +228,8 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
 function InlineImessageConnection() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
-  const code = useGet(onboardingPhoneCode$);
+  const codeLoadable = useLoadable(onboardingPhoneCode$);
+  const code = codeLoadable.state === "hasData" ? codeLoadable.data : null;
   const requestCode = useSet(requestOnboardingPhoneCode$);
   const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
   const pageSignal = useGet(pageSignal$);
@@ -253,7 +260,7 @@ function InlineImessageConnection() {
             return $.onboarding.sourcesFirst.chatChannels.imessageConnected;
           })}
         </p>
-      ) : code.kind === "ready" && status?.agentPhoneNumber ? (
+      ) : code?.kind === "ready" && status?.agentPhoneNumber ? (
         <>
           <p className="mb-3 text-sm text-muted-foreground max-sm:hidden pointer-coarse:hidden">
             {t(($) => {
@@ -269,7 +276,7 @@ function InlineImessageConnection() {
             }}
           />
         </>
-      ) : code.kind === "expired" ? (
+      ) : code?.kind === "expired" ? (
         <div className="flex min-h-40 flex-col items-center justify-center gap-3">
           <p className="text-sm text-muted-foreground" role="status">
             {t(($) => {
@@ -282,9 +289,9 @@ function InlineImessageConnection() {
             })}
           </Button>
         </div>
-      ) : code.kind === "error" ? (
+      ) : codeLoadable.state === "hasError" ? (
         <AgentPhoneConnectionCodeError onRetry={onRetry} />
-      ) : code.kind === "unavailable" ? (
+      ) : code?.kind === "unavailable" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {t(
             ($) => {

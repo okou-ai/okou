@@ -27,7 +27,7 @@ import {
   startTelegramSettingsRealtime$,
   telegramBots$,
 } from "../okou-page/telegram.ts";
-import { requestOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
+import { enterOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
 import { page$, updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
@@ -300,7 +300,7 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
     watchOnboardingAgentPhone$,
     watchOnboardingTelegram$,
   ],
-  enter: requestOnboardingPhoneCode$,
+  enter: enterOnboardingPhoneCode$,
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

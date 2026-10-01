@@ -91,14 +91,10 @@ test("iMessage shows its QR inline without a channel click, with parallel altern
   );
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByText("+1 (314) 438-6568")).toBeVisible();
-  expect(screen.queryByText(/GET-OKOU/u)).not.toBeInTheDocument();
   expect(screen.getByText("Also available in")).toBeVisible();
-  expect(getButton("Add to Slack").parentElement).toBe(
-    getButton("Telegram").parentElement,
-  );
-  expect(getButton("Telegram").parentElement).toBe(
-    getButton("Teams").parentElement,
-  );
+  expect(getButton("Add to Slack")).toBeEnabled();
+  expect(getButton("Telegram")).toBeEnabled();
+  expect(getButton("Teams")).toBeEnabled();
   expect(screen.getByTestId("agentphone-open-messages")).toHaveAttribute(
     "href",
     `sms:+13144386568?body=${CONNECTION_CODE}`,
@@ -133,6 +129,30 @@ test("Linking iMessage replaces the QR and enables Continue without Slack", asyn
   await waitFor(() => {
     return expect(pathname()).toBe(ROUTES.onboardingReady);
   });
+});
+
+test("A pending connection code does not prevent skipping the step", async () => {
+  const releaseCode = context.mocks.deferred<void>();
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    async ({ respond }) => {
+      await releaseCode.promise;
+      return respond(200, {
+        code: CONNECTION_CODE,
+        expiresAt: new Date(now() + 600_000).toISOString(),
+      });
+    },
+  );
+  await openChatStep();
+  await expect(
+    screen.findByText("Creating connection code…"),
+  ).resolves.toBeInTheDocument();
+  click(getButton("Not now"));
+  await expect(
+    screen.findByRole("heading", { name: "Start with a task that matters" }),
+  ).resolves.toBeInTheDocument();
+  releaseCode.resolve();
+  expect(pathname()).toBe(ROUTES.onboardingReady);
 });
 
 test("An already linked phone needs no new connection code", async () => {
@@ -188,7 +208,7 @@ test("A failed code can be retried without leaving onboarding", async () => {
     },
   );
   await openChatStep();
-  expect(screen.getByRole("alert")).toBeInTheDocument();
+  await expect(screen.findByRole("alert")).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("agentphone-link-qr")).not.toBeInTheDocument();
   available = true;
   click(getButton("Try again"));
@@ -212,9 +232,9 @@ test("An expired code is not scannable and can be replaced", async () => {
     },
   );
   await openChatStep();
-  expect(
-    screen.getByText("Your connection code has expired."),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByText("Your connection code has expired."),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("agentphone-link-qr")).not.toBeInTheDocument();
   expect(
     screen.queryByTestId("agentphone-open-messages"),

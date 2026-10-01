@@ -6,61 +6,82 @@ import {
   agentPhoneLinkStatus$,
   createAgentPhoneLinkCode$,
 } from "../okou-page/agentphone.ts";
-import { detach, Reason, resetSignal, tapError } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 
-/** The inline code belongs to this visit, not to the shared connect dialog. */
+/** Transport lifecycle belongs to the promise; these are the domain outcomes. */
 type OnboardingPhoneCode =
-  | { readonly kind: "loading" }
   | { readonly kind: "unavailable" }
-  | { readonly kind: "error" }
   | { readonly kind: "expired" }
   | { readonly kind: "ready"; readonly code: AgentPhoneLinkCodeResponse };
 
-const internalPhoneCode$ = state<OnboardingPhoneCode>({ kind: "loading" });
+const internalPhoneCode$ = state<Promise<AgentPhoneLinkCodeResponse | null>>(
+  Promise.resolve(null),
+);
+const internalPhoneCodeExpired$ = state(false);
 const resetPhoneCodeSignal$ = resetSignal();
 
-export const onboardingPhoneCode$ = computed((get) => {
-  return get(internalPhoneCode$);
-});
+export const onboardingPhoneCode$ = computed(
+  async (get): Promise<OnboardingPhoneCode> => {
+    const expired = get(internalPhoneCodeExpired$);
+    const code = await get(internalPhoneCode$);
+    if (!code) {
+      return { kind: "unavailable" };
+    }
+    return expired ? { kind: "expired" } : { kind: "ready", code };
+  },
+);
 
 const expireOnboardingPhoneCode$ = command(
   async ({ set }, expiresAt: string, signal: AbortSignal): Promise<void> => {
     await delay(Math.max(0, Date.parse(expiresAt) - now()), { signal });
     signal.throwIfAborted();
-    set(internalPhoneCode$, { kind: "expired" });
+    set(internalPhoneCodeExpired$, true);
   },
 );
 
-/** Generate once on entry or explicit retry; replacement cancels the old expiry. */
-export const requestOnboardingPhoneCode$ = command(
-  async ({ get, set }, parentSignal: AbortSignal): Promise<void> => {
-    const signal = set(resetPhoneCodeSignal$, parentSignal);
-    set(internalPhoneCode$, { kind: "loading" });
-    const status = await tapError(get(agentPhoneLinkStatus$));
+const loadOnboardingPhoneCode$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<AgentPhoneLinkCodeResponse | null> => {
+    const status = await get(agentPhoneLinkStatus$);
     signal.throwIfAborted();
-    if (!status) {
-      set(internalPhoneCode$, { kind: "error" });
-      return;
-    }
     if (status.linked || !status.configured || !status.agentPhoneNumber) {
-      set(internalPhoneCode$, { kind: "unavailable" });
-      return;
+      return null;
     }
-    const code = await tapError(set(createAgentPhoneLinkCode$, signal));
+    const code = await set(createAgentPhoneLinkCode$, signal);
     signal.throwIfAborted();
-    if (!code) {
-      set(internalPhoneCode$, { kind: "error" });
-      return;
-    }
     if (Date.parse(code.expiresAt) <= now()) {
-      set(internalPhoneCode$, { kind: "expired" });
-      return;
+      set(internalPhoneCodeExpired$, true);
+    } else {
+      detach(
+        set(expireOnboardingPhoneCode$, code.expiresAt, signal),
+        Reason.Daemon,
+        "onboarding phone code expiry",
+      );
     }
-    set(internalPhoneCode$, { kind: "ready", code });
+    return code;
+  },
+);
+
+/** Retry replaces the promise and cancels the previous route-owned attempt. */
+export const requestOnboardingPhoneCode$ = command(
+  async ({ set }, parentSignal: AbortSignal): Promise<void> => {
+    const signal = set(resetPhoneCodeSignal$, parentSignal);
+    set(internalPhoneCodeExpired$, false);
+    const promise = set(loadOnboardingPhoneCode$, signal);
+    set(internalPhoneCode$, promise);
+    await promise;
+  },
+);
+
+/** Start the non-blocking route-owned generation; the view observes its loadable. */
+export const enterOnboardingPhoneCode$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     detach(
-      set(expireOnboardingPhoneCode$, code.expiresAt, signal),
+      set(requestOnboardingPhoneCode$, signal),
       Reason.Daemon,
-      "onboarding phone code expiry",
+      "onboarding phone code creation",
     );
   },
 );

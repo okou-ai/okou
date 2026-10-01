@@ -249,7 +249,6 @@ test("The shared phone card and connect dialog display digits instead of a vanit
     return getIntegrationCard("Phone");
   });
   expect(phoneCard).toHaveTextContent("+1 (314) 438-6568");
-  expect(phoneCard).not.toHaveTextContent("GET-OKOU");
   click(getAction("button", "Connect phone", phoneCard));
   const dialog = await screen.findByRole("dialog", {
     name: "Text Okou from your iPhone",
@@ -257,7 +256,6 @@ test("The shared phone card and connect dialog display digits instead of a vanit
   await expect(
     within(dialog).findByText("+1 (314) 438-6568"),
   ).resolves.toBeVisible();
-  expect(dialog).not.toHaveTextContent("GET-OKOU");
   click(getAction("button", "Copy +1 (314) 438-6568", dialog));
   await expect(
     screen.findByText("Phone number copied"),

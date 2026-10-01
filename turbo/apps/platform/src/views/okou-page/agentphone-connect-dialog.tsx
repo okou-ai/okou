@@ -199,13 +199,11 @@ export function AgentPhoneConnectionCodeContent({
           <a
             href={messageHref}
             onClick={onOpenMessages}
-            className={buttonVariants({
-              className: cn(
-                "w-full sm:w-auto",
-                inline &&
-                  "bg-foreground text-background hover:bg-foreground/90",
-              ),
-            })}
+            className={cn(
+              buttonVariants(),
+              "w-full sm:w-auto",
+              inline && "bg-foreground text-background hover:bg-foreground/90",
+            )}
             data-testid="agentphone-open-messages"
           >
             {t(($) => {
