@@ -666,7 +666,7 @@ function artifactsForRun(args: {
   };
 }
 
-function validateRunEnvironmentReferences(args: {
+export function validateRunEnvironmentReferences(args: {
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
@@ -802,7 +802,7 @@ export function prepareRunOutputMetadata(args: {
   };
 }
 
-function isImageRecognitionAvailableForRun(args: {
+export function isImageRecognitionAvailableForRun(args: {
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly selectedModel: string | undefined;
   readonly providerType: ModelProviderType | undefined;
@@ -820,7 +820,7 @@ export interface PrepareRunContextInput {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function resolveCompatibleDirectResumeSession(args: {
+export function resolveCompatibleDirectResumeSession(args: {
   readonly resolved: ResolvedRunExecution;
   readonly next: SessionExecutionIdentity;
 }): ResolvedRunExecution {

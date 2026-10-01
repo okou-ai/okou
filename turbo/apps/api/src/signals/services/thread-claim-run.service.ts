@@ -106,16 +106,15 @@ import {
 } from "./internal-chat-run-callback.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
-  composePreparedRunContext,
-  finalizePreparedRunContext,
   officialWorkflowRunCandidates,
   type PreparedOfficialWorkflow,
-  type PreparedRunBodyContext,
-  type PreparedRuntimeContext,
-  type PrepareRunContextInput,
   prepareRunOutputMetadata,
   type RunWorkflowModelState,
   type RunWorkflowReadInput,
+  resolveCompatibleDirectResumeSession,
+  validateRunEnvironmentReferences,
+  isImageRecognitionAvailableForRun,
+  withFinalRunAppendSystemPrompt,
 } from "./run-execution-context.service";
 import {
   type AgentRunAfterPreCreate,
@@ -134,7 +133,6 @@ import {
   measureAgentRunPreCreate,
   resolveProductAgentExecution,
   resolveRunBodyEnvironment,
-  type RunBootstrapContext,
   selectedAgentRunVariables,
   validateCompose,
 } from "./run-execution-body.service";
@@ -146,7 +144,6 @@ import {
   flushQueueFirstClaimLostTiming,
 } from "./execution-launch-admission.service";
 import {
-  atomicLaunchPayloadInput,
   type AtomicLaunchRunInput,
   buildPreparedPermissionManifest,
   buildStoredExecutionContextDraft,
@@ -157,6 +154,8 @@ import {
   prepareRunnerStorageInput,
   withoutLegacyAgentRunEnvironmentEntries,
   withPaidToolPlatformEnvironment,
+  type BuildRunnerJobPayloadInput,
+  runnerProfile,
 } from "./execution-runner-payload.service";
 import {
   assemblePiLaunchResources,
@@ -263,9 +262,9 @@ import {
   prepareAtomicLaunchPersistence,
   type CreateRunErrorResult,
   type EffectiveConnectorScope,
-  type PreparedRunContext,
   type ResolvedModelProviderEnvironment,
   type PendingRunArguments,
+  type PendingRunContext,
 } from "./execution-launch-persistence.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import { executeRawRows } from "../../lib/db-raw-rows";
@@ -1798,7 +1797,17 @@ function isDirectSendContext(contextType: string | null): boolean {
   return contextType === "web" || contextType === "agent_run";
 }
 
-type RunPlan = Omit<AtomicLaunchRunInput, "db" | "phaseTiming">;
+/** Runner payload facts the Thread assembles privately for one run. */
+type ThreadRunnerFacts = Omit<BuildRunnerJobPayloadInput, "run" | "timing">;
+
+interface RunPlan {
+  readonly args: AtomicLaunchRunInput["args"];
+  readonly timing: ApiDispatchTimingCollector;
+  readonly enforceBuiltInCredits: boolean;
+  readonly runner: ThreadRunnerFacts;
+  readonly persisted: PendingRunContext;
+  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
+}
 
 function unreadyQueueHeadRejection(
   head: ChatQueueHeadContext,
@@ -1841,15 +1850,10 @@ interface ClaimRunTiming {
 
 interface ThreadRunContext {
   readonly kind: "prepared";
-  readonly input: Omit<
-    RunPlan,
-    "args" | "context" | "timing" | "phaseTiming"
-  > & {
-    readonly context: CommitPreparedLaunchArgs["context"];
-    readonly args: Omit<
-      CommitPreparedLaunchArgs["createArgs"],
-      "persistProducerRunBinding"
-    >;
+  readonly input: {
+    readonly enforceBuiltInCredits: boolean;
+    readonly context: PendingRunContext;
+    readonly args: Omit<PendingRunArguments, "persistProducerRunBinding">;
   };
   readonly identity: CommitPreparedLaunchArgs["identity"];
   readonly callbackRows: CommitPreparedLaunchArgs["callbackRows"];
@@ -2370,31 +2374,10 @@ const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
 );
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
-  const args = claimCommitArguments(input.args);
   return {
-    args,
+    args: claimCommitArguments(input.args),
     enforceBuiltInCredits: input.enforceBuiltInCredits,
-    context: {
-      resolved: {
-        agentId: input.context.resolved.agentId,
-        continuedFromAgentSessionId:
-          input.context.resolved.continuedFromAgentSessionId,
-      },
-      body: input.context.body,
-      modelProvider: input.context.modelProvider
-        ? {
-            credentialOwner: input.context.modelProvider.credentialOwner,
-            id: input.context.modelProvider.id,
-            type: input.context.modelProvider.type,
-            selectedModel: input.context.modelProvider.selectedModel,
-            builtInModelRuntimeRoute:
-              input.context.modelProvider.builtInModelRuntimeRoute,
-          }
-        : null,
-      selectedImageModel: input.context.selectedImageModel,
-      launchSnapshot: input.context.launchSnapshot,
-      officialWorkflowRun: input.context.officialWorkflowRun,
-    },
+    context: input.persisted,
   };
 }
 
@@ -7684,70 +7667,68 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const preCreateBootstrapMetadata$ = computed(
-    async (get): Promise<RunBootstrapContext> => {
-      const [bootstrap, observed] = await Promise.all([
-        get(claimBootstrap$),
-        get(featureSwitchContext$),
-      ]);
-      const selection = bootstrap.connectorSelection;
-      const connectorScope = agentConnectorScopeFromRows({
-        connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
+  const preCreateBootstrapMetadata$ = computed(async (get) => {
+    const [bootstrap, observed] = await Promise.all([
+      get(claimBootstrap$),
+      get(featureSwitchContext$),
+    ]);
+    const selection = bootstrap.connectorSelection;
+    const connectorScope = agentConnectorScopeFromRows({
+      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
+        return {
+          connectorSlug,
+        };
+      }),
+      customConnectorRows: selection.customConnectors,
+    });
+    const context = bootstrap.featureSwitchContext;
+    if (
+      observed &&
+      (observed.orgId !== context.orgId || observed.userId !== context.userId)
+    ) {
+      throw new Error("Preloaded feature-switch context scope mismatch");
+    }
+    const featureSwitchContext = observed
+      ? { ...observed, email: observed.email ?? context.email }
+      : context;
+    const expirations = bootstrap.permissionGrants.flatMap((grant) => {
+      return grant.expiresAt === null ? [] : [grant.expiresAt.getTime()];
+    });
+    const metadataSlugs = new Set(
+      selection.customConnectors.flatMap((connector) => {
+        const ref = connector.permissionBundleRef;
+        const dependency =
+          ref === null
+            ? null
+            : customConnectorPermissionBundleDependencySlug(ref);
+        return dependency === null ? [] : [dependency];
+      }),
+    );
+    return {
+      ...connectorScope,
+      userInfo: {
+        name: bootstrap.memberMetadata.profile?.name ?? null,
+        email: bootstrap.memberMetadata.profile?.email ?? null,
+        timezone: bootstrap.memberMetadata.preferences?.timezone ?? null,
+      },
+      featureSwitchContext,
+      workflows: bootstrap.workflows,
+      permissionGrants: bootstrap.permissionGrants.map(
+        ({ connectorSlug, permission, action }) => {
           return {
             connectorSlug,
+            permission,
+            action,
           };
-        }),
-        customConnectorRows: selection.customConnectors,
-      });
-      const context = bootstrap.featureSwitchContext;
-      if (
-        observed &&
-        (observed.orgId !== context.orgId || observed.userId !== context.userId)
-      ) {
-        throw new Error("Preloaded feature-switch context scope mismatch");
-      }
-      const featureSwitchContext = observed
-        ? { ...observed, email: observed.email ?? context.email }
-        : context;
-      const expirations = bootstrap.permissionGrants.flatMap((grant) => {
-        return grant.expiresAt === null ? [] : [grant.expiresAt.getTime()];
-      });
-      const metadataSlugs = new Set(
-        selection.customConnectors.flatMap((connector) => {
-          const ref = connector.permissionBundleRef;
-          const dependency =
-            ref === null
-              ? null
-              : customConnectorPermissionBundleDependencySlug(ref);
-          return dependency === null ? [] : [dependency];
-        }),
-      );
-      return {
-        ...connectorScope,
-        userInfo: {
-          name: bootstrap.memberMetadata.profile?.name ?? null,
-          email: bootstrap.memberMetadata.profile?.email ?? null,
-          timezone: bootstrap.memberMetadata.preferences?.timezone ?? null,
         },
-        featureSwitchContext,
-        workflows: bootstrap.workflows,
-        permissionGrants: bootstrap.permissionGrants.map(
-          ({ connectorSlug, permission, action }) => {
-            return {
-              connectorSlug,
-              permission,
-              action,
-            };
-          },
-        ),
-        permissionValidityHorizon:
-          expirations.length === 0
-            ? null
-            : new Date(Math.min(...expirations)).toISOString(),
-        connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
-      };
-    },
-  );
+      ),
+      permissionValidityHorizon:
+        expirations.length === 0
+          ? null
+          : new Date(Math.min(...expirations)).toISOString(),
+      connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
+    };
+  });
   const preCreateBootstrapBootstrap$ = computed(async (get) => {
     const { timing } = await get(selectedIdentityInputIdentityInput$);
     const metadata = await get(preCreateBootstrapMetadata$);
@@ -10712,29 +10693,27 @@ export function createThreadClaimRunObjects(
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
   } = graph;
-  const contextInput$ = computed(
-    async (get): Promise<PrepareRunContextInput> => {
-      const selected = await get(selectedRunContextRunArgs$);
-      if (!selected || "status" in selected) {
-        throw new Error("Run context requires an authorized ready input");
-      }
-      const previewAutomationBypass = get(previewAutomationBypass$);
-      const args = previewAutomationBypass
-        ? {
-            ...selected.args,
-            platformEnvironment: {
-              ...selected.args.platformEnvironment,
-              [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass,
-            },
-          }
-        : selected.args;
-      return {
-        db: get(db$),
-        args,
-        timing: selected.input.timing,
-      };
-    },
-  );
+  const contextInput$ = computed(async (get) => {
+    const selected = await get(selectedRunContextRunArgs$);
+    if (!selected || "status" in selected) {
+      throw new Error("Run context requires an authorized ready input");
+    }
+    const previewAutomationBypass = get(previewAutomationBypass$);
+    const args = previewAutomationBypass
+      ? {
+          ...selected.args,
+          platformEnvironment: {
+            ...selected.args.platformEnvironment,
+            [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass,
+          },
+        }
+      : selected.args;
+    return {
+      db: get(db$),
+      args,
+      timing: selected.input.timing,
+    };
+  });
   const execution$ = computed(async (get) => {
     // Agent/session resolution has no dependency on connector firewall policies
     // or the completed runner body. Use the already-authorized identity and
@@ -10812,100 +10791,96 @@ export function createThreadClaimRunObjects(
       resolvedEnvironment,
     });
   });
-  const runBodyBodyContext$ = computed(
-    async (get): Promise<PreparedRunBodyContext | CreateRunErrorResult> => {
-      const [input, resolved, body, requestedFramework, featureSwitchContext] =
-        await Promise.all([
-          get(contextInput$),
-          get(execution$),
-          get(body$),
-          get(runFramework$),
-          get(preCreateModelFeatureSwitchContext$),
-        ]);
-      if (isRouteError(resolved)) {
-        return resolved;
-      }
-      if (isRouteError(body)) {
-        return body;
-      }
-      if (isRouteError(requestedFramework)) {
-        return requestedFramework;
-      }
-      return {
-        resolved,
-        body,
-        requestedFramework,
-        featureSwitchContext,
-        connectorScope: connectorScopeFromCreateArgs(input.args),
-      };
-    },
-  );
+  const runBodyBodyContext$ = computed(async (get) => {
+    const [input, resolved, body, requestedFramework, featureSwitchContext] =
+      await Promise.all([
+        get(contextInput$),
+        get(execution$),
+        get(body$),
+        get(runFramework$),
+        get(preCreateModelFeatureSwitchContext$),
+      ]);
+    if (isRouteError(resolved)) {
+      return resolved;
+    }
+    if (isRouteError(body)) {
+      return body;
+    }
+    if (isRouteError(requestedFramework)) {
+      return requestedFramework;
+    }
+    return {
+      resolved,
+      body,
+      requestedFramework,
+      featureSwitchContext,
+      connectorScope: connectorScopeFromCreateArgs(input.args),
+    };
+  });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
   const { connectorContext$: runRuntimeConnectorContext$ } =
     selectedRunContextShared;
-  const runRuntimeRuntimeContext$ = computed(
-    async (get): Promise<PreparedRuntimeContext | CreateRunErrorResult> => {
-      const [
-        bodyResult,
-        modelResult,
-        selectionResult,
-        snapshotResult,
-        connectorResult,
-      ] = await Promise.all([
-        get(runBodyBodyContext$),
-        get(modelRoute$),
-        get(connectorSelection$),
-        get(connectorSnapshot$),
-        get(runRuntimeConnectorContext$),
-      ]);
-      const selection = selectionResult;
-      const bodyContext = bodyResult;
-      const modelProvider = modelResult;
-      const snapshot = snapshotResult;
-      const connectors = connectorResult;
-      if (isRouteError(bodyContext)) {
-        return bodyContext;
-      }
-      if (isRouteError(modelProvider)) {
-        return modelProvider;
-      }
-      if (isRouteError(selection)) {
-        return selection;
-      }
-      if (isRouteError(snapshot)) {
-        return snapshot;
-      }
-      if (isRouteError(connectors)) {
-        return connectors;
-      }
-      const catalog = await get(claimCatalog$);
-      const usage = prepareModelUsageContext({
+  const runRuntimeRuntimeContext$ = computed(async (get) => {
+    const [
+      bodyResult,
+      modelResult,
+      selectionResult,
+      snapshotResult,
+      connectorResult,
+    ] = await Promise.all([
+      get(runBodyBodyContext$),
+      get(modelRoute$),
+      get(connectorSelection$),
+      get(connectorSnapshot$),
+      get(runRuntimeConnectorContext$),
+    ]);
+    const selection = selectionResult;
+    const bodyContext = bodyResult;
+    const modelProvider = modelResult;
+    const snapshot = snapshotResult;
+    const connectors = connectorResult;
+    if (isRouteError(bodyContext)) {
+      return bodyContext;
+    }
+    if (isRouteError(modelProvider)) {
+      return modelProvider;
+    }
+    if (isRouteError(selection)) {
+      return selection;
+    }
+    if (isRouteError(snapshot)) {
+      return snapshot;
+    }
+    if (isRouteError(connectors)) {
+      return connectors;
+    }
+    const catalog = await get(claimCatalog$);
+    const usage = prepareModelUsageContext({
+      catalog,
+      modelProvider,
+      permissionManifest: connectors.permissionManifest,
+      routePricing: await loadRunRoutePricing(get(db$), {
         catalog,
         modelProvider,
-        permissionManifest: connectors.permissionManifest,
-        routePricing: await loadRunRoutePricing(get(db$), {
-          catalog,
-          modelProvider,
-          serviceTier: (await get(contextInput$)).args.codexServiceTier,
-          resolution: get(usagePricingResolution$),
-        }),
-      });
-      if (isRouteError(usage)) {
-        return usage;
-      }
-      return {
-        framework: modelProvider
-          ? modelProviderFramework(modelProvider)
-          : bodyContext.requestedFramework,
-        modelProvider,
-        ...connectors,
-        customConnectorContext: snapshot.customConnectorContext,
-        ...usage,
-        connectorScope: selection.connectorScope,
-        connectorCatalogSelection: selection.connectorCatalogSelection,
-      };
-    },
-  );
+        serviceTier: (await get(contextInput$)).args.codexServiceTier,
+        resolution: get(usagePricingResolution$),
+      }),
+    });
+    if (isRouteError(usage)) {
+      return usage;
+    }
+    return {
+      framework: modelProvider
+        ? modelProviderFramework(modelProvider)
+        : bodyContext.requestedFramework,
+      modelProvider,
+      ...connectors,
+      customConnectorContext: snapshot.customConnectorContext,
+      ...usage,
+      connectorScope: selection.connectorScope,
+      connectorCatalogSelection: selection.connectorCatalogSelection,
+    };
+  });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
   const runMemberUserTimezone$ = computed(async (get) => {
     return selectedRunContextShared
@@ -10925,58 +10900,109 @@ export function createThreadClaimRunObjects(
     selectedRunContextShared;
   const { bodyContext$ } = body;
   const { runtimeContext$ } = runContextRuntime;
-  const executionPlan$ = computed(
-    async (get): Promise<PreparedRunContext | CreateRunErrorResult> => {
-      const { args } = await get(contextInput$);
-      const gate = enforceCaptureNetworkBodiesGate(
-        args.orgId,
-        initialRunBody(args).captureNetworkBodies,
-      );
-      if (gate) {
-        return gate;
-      }
-      const [
-        bodyResult,
-        runtimeResult,
-        timezoneResult,
-        imageResult,
-        workflowResult,
-        paidToolsResult,
-      ] = await Promise.all([
-        get(bodyContext$),
-        get(runtimeContext$),
-        get(runContextUserTimezone$),
-        get(imageModel$),
-        get(runContextOfficialWorkflow$),
-        get(disabledPaidTools$),
-      ]);
-      const bodyContext = bodyResult;
-      const runtimeContext = runtimeResult;
-      const userTimezone = timezoneResult;
-      const selectedImageModel = imageResult;
-      const officialWorkflowRun = workflowResult;
-      const disabledPaidTools = paidToolsResult;
-      if (isRouteError(bodyContext)) {
-        return bodyContext;
-      }
-      if (isRouteError(runtimeContext)) {
-        return runtimeContext;
-      }
-      if (isRouteError(officialWorkflowRun)) {
-        return officialWorkflowRun;
-      }
-      return composePreparedRunContext({
-        args,
-        bodyContext,
-        runtimeContext,
-        userTimezone,
-        selectedImageModel,
-        disabledPaidTools,
-        officialWorkflowRun,
-        systemSkillStorageResolution: get(systemSkillStorageResolution$),
-      });
-    },
-  );
+  const executionPlan$ = computed(async (get) => {
+    const { args } = await get(contextInput$);
+    const gate = enforceCaptureNetworkBodiesGate(
+      args.orgId,
+      initialRunBody(args).captureNetworkBodies,
+    );
+    if (gate) {
+      return gate;
+    }
+    const [
+      bodyResult,
+      runtimeResult,
+      timezoneResult,
+      imageResult,
+      workflowResult,
+      paidToolsResult,
+    ] = await Promise.all([
+      get(bodyContext$),
+      get(runtimeContext$),
+      get(runContextUserTimezone$),
+      get(imageModel$),
+      get(runContextOfficialWorkflow$),
+      get(disabledPaidTools$),
+    ]);
+    const bodyContext = bodyResult;
+    const runtimeContext = runtimeResult;
+    const userTimezone = timezoneResult;
+    const selectedImageModel = imageResult;
+    const officialWorkflowRun = workflowResult;
+    const disabledPaidTools = paidToolsResult;
+    if (isRouteError(bodyContext)) {
+      return bodyContext;
+    }
+    if (isRouteError(runtimeContext)) {
+      return runtimeContext;
+    }
+    if (isRouteError(officialWorkflowRun)) {
+      return officialWorkflowRun;
+    }
+    const { body } = bodyContext;
+    const { modelProvider, framework } = runtimeContext;
+    const piSandbox = resolvePreparedPiModelConfig({
+      createArgs: args,
+      modelProvider,
+    });
+    const resolved = resolveCompatibleDirectResumeSession({
+      resolved: bodyContext.resolved,
+      next: {
+        selectedModel: modelProvider?.selectedModel ?? null,
+        cliAgentType: piSandbox ? "pi" : framework,
+      },
+    });
+    const validation = validateRunEnvironmentReferences({
+      resolved,
+      body,
+      modelProvider,
+      connectorContext: runtimeContext.connectorContext,
+      customConnectorContext: runtimeContext.customConnectorContext,
+      permissionManifest: runtimeContext.permissionManifest,
+      validateEnvironmentReferences: args.validateEnvironmentReferences,
+    });
+    if (validation) {
+      return validation;
+    }
+    const metadata = prepareRunOutputMetadata({
+      createArgs: args,
+      systemSkillStorageResolution: get(systemSkillStorageResolution$),
+      connectorScope: runtimeContext.connectorScope,
+      connectorCatalogSelection: runtimeContext.connectorCatalogSelection,
+      customConnectorContext: runtimeContext.customConnectorContext,
+      framework,
+      piSandbox,
+      body,
+      resolved,
+      officialWorkflowRun,
+    });
+    return {
+      disabledPaidTools,
+      body,
+      resolved,
+      framework,
+      piSandbox,
+      modelProvider,
+      connectorContext: runtimeContext.connectorContext,
+      customConnectorContext: runtimeContext.customConnectorContext,
+      permissionManifest: runtimeContext.permissionManifest,
+      billableFirewalls: runtimeContext.billableFirewalls,
+      modelUsageProvider: runtimeContext.modelUsageProvider,
+      modelUsageLongContextMinTotalInputTokens:
+        runtimeContext.modelUsageLongContextMinTotalInputTokens,
+      ...metadata,
+      officialWorkflowRun,
+      userTimezone,
+      featureSwitchContext: bodyContext.featureSwitchContext,
+      selectedImageModel,
+      imageRecognitionAvailable: isImageRecognitionAvailableForRun({
+        includeOkouTokenSecret: args.includeOkouTokenSecret,
+        selectedModel:
+          modelProvider?.selectedModel ?? args.selectedModelOverride,
+        providerType: modelProvider?.concreteType ?? modelProvider?.type,
+      }),
+    };
+  });
   const preparedRunPlan$ = computed(async (get) => {
     const selected = await get(selectedRunContextRunArgs$);
     if (!selected || "status" in selected) {
@@ -11682,14 +11708,7 @@ export function createThreadClaimRunObjects(
       if (isRouteError(storagePlan)) {
         return storagePlan;
       }
-      const contextInput = await get(contextInput$);
-      const prepared = {
-        args: contextInput.args,
-        context,
-        contextInput,
-        timing: contextInput.timing,
-      };
-      const args = prepared.args;
+      const { args, timing } = await get(contextInput$);
       const finalAppendSystemPrompt =
         args.piExecution && args.piStableContext
           ? bindStableAppendSystemPrompt(
@@ -11698,13 +11717,69 @@ export function createThreadClaimRunObjects(
                 args.piStableContext.dynamicAppendSystemPrompt,
             )
           : args.body.appendSystemPrompt;
+      const launchSnapshot = {
+        schemaVersion: 3 as const,
+        framework:
+          context.piSandbox === undefined ? context.framework : ("pi" as const),
+        runnerProfile: runnerProfile(context.resolved.content),
+      };
+      const body = withFinalRunAppendSystemPrompt({
+        body: { ...context.body, appendSystemPrompt: finalAppendSystemPrompt },
+        framework: context.framework,
+        chatThreadId: args.chatThreadId,
+        imageRecognitionAvailable: context.imageRecognitionAvailable,
+        mcpConnectorSlugs: [
+          ...context.connectorContext.mcpConnectorSlugs,
+          ...context.customConnectorContext.mcpConnectorSlugs,
+        ],
+        selectedImageModel: context.selectedImageModel,
+        cliAvailable: args.includeOkouTokenSecret === true,
+      });
+      const { officialWorkflowRun, selectedImageModel, ...facts } = context;
+      const modelProvider = context.modelProvider;
       return {
         args,
-        context: finalizePreparedRunContext(prepared, finalAppendSystemPrompt),
-        timing: prepared.timing,
+        timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
-          isBuiltInModelProviderType(context.modelProvider?.type),
+          isBuiltInModelProviderType(modelProvider?.type),
+        officialWorkflowRun,
+        persisted: {
+          body,
+          selectedImageModel,
+          launchSnapshot,
+          officialWorkflowRun,
+          resolved: {
+            agentId: context.resolved.agentId,
+            continuedFromAgentSessionId:
+              context.resolved.continuedFromAgentSessionId,
+          },
+          modelProvider: modelProvider
+            ? {
+                credentialOwner: modelProvider.credentialOwner,
+                id: modelProvider.id,
+                type: modelProvider.type,
+                selectedModel: modelProvider.selectedModel,
+                builtInModelRuntimeRoute:
+                  modelProvider.builtInModelRuntimeRoute,
+              }
+            : null,
+        },
+        runner: {
+          ...facts,
+          body,
+          launchSnapshot,
+          userId: args.userId,
+          orgId: args.orgId,
+          apiStartTime: args.apiStartTime,
+          includeOkouTokenSecret: args.includeOkouTokenSecret,
+          okouTokenComputerUseHostId: args.okouTokenComputerUseHostId,
+          okouTokenCloudBrowserEnabled: args.okouTokenCloudBrowserEnabled,
+          chatThreadId: args.chatThreadId,
+          platformEnvironment: args.platformEnvironment,
+          piLaunchConfig: args.piLaunchConfig,
+          artifactMissingRootPolicy: args.artifactMissingRootPolicy,
+        },
       };
     },
   );
@@ -11733,16 +11808,15 @@ export function createThreadClaimRunObjects(
     if (!identity) {
       throw new Error("Selected claim has no run identity");
     }
-    return atomicLaunchPayloadInput({
-      createArgs: input.args,
-      context: input.context,
+    return {
+      ...input.runner,
       run: {
         id: identity.runId,
         sessionId: identity.sessionId,
         shouldCreateSession: identity.shouldCreateSession,
       },
       timing: input.timing,
-    });
+    };
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
