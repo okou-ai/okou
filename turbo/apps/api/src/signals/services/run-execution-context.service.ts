@@ -32,6 +32,8 @@ import {
 } from "./session-compatibility";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { RunWorkflowRef } from "./workflow-data.service";
+import type { RunModelProviderArgs } from "./run-model-provider-environment.service";
+
 import {
   type ImageModel,
   IMAGE_MODEL_CONFIGS,
@@ -51,7 +53,6 @@ import {
   AgentRunCreateContextArtifact,
   ArtifactMissingRootPolicy,
   BuiltinConnectorRuntimeContext,
-  CreateAgentRunArgs,
   CreateRunBody,
   CreateRunErrorResult,
   EffectiveConnectorScope,
@@ -68,6 +69,16 @@ import {
 import { RunConnectorCatalogSelection } from "./run-connector-context.service";
 import { buildStoredExecutionSecrets } from "./execution-runner-payload.service";
 import { isRouteError, validateCompose } from "./run-execution-body.service";
+
+/**
+ * When set, system + workflow skill volumes are built and prepended in run
+ * context preparation using the run's resolved (model-provider) framework.
+ * Each workflow's volume is keyed by its id (storage name), while the skill
+ * mounts at its slug. Slugs are not unique, so the id is required.
+ */
+export interface RunSkillVolumeInjection {
+  readonly workflows: readonly RunWorkflowRef[];
+}
 
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
@@ -405,7 +416,7 @@ function buildCustomConnectorSkillVolumes(
 
 function buildInjectedSkillVolumes(
   args: {
-    readonly injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"];
+    readonly injectSkillVolumes: RunSkillVolumeInjection | undefined;
     readonly systemSkillStorageResolution: SystemSkillStorageResolution;
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
     readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -688,7 +699,9 @@ export function validateRunEnvironmentReferences(args: {
 }
 
 function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
+  readonly createArgs: {
+    readonly injectSkillVolumes?: RunSkillVolumeInjection;
+  };
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -725,10 +738,10 @@ function preparedRunAdditionalVolumes(args: {
 }
 
 export function prepareRunOutputMetadata(args: {
-  readonly createArgs: Pick<
-    CreateAgentRunArgs,
-    "injectSkillVolumes" | "pinnedMemoryVersionId"
-  >;
+  readonly createArgs: {
+    readonly injectSkillVolumes?: RunSkillVolumeInjection;
+    readonly pinnedMemoryVersionId?: string;
+  };
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -795,16 +808,17 @@ export function resolveCompatibleDirectResumeSession(args: {
 export interface RunWorkflowReadInput {
   readonly db: ReadonlyDb;
   readonly args: Pick<
-    CreateAgentRunArgs,
+    RunModelProviderArgs,
     | "catalog"
     | "orgId"
     | "userId"
-    | "injectSkillVolumes"
-    | "requiredOfficialWorkflowIds"
     | "piExecution"
     | "codexServiceTier"
     | "agentRunMetadata"
-  >;
+  > & {
+    readonly injectSkillVolumes?: RunSkillVolumeInjection;
+    readonly requiredOfficialWorkflowIds?: readonly string[];
+  };
 }
 
 export type RunWorkflowModelState =

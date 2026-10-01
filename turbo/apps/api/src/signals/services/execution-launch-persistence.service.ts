@@ -19,7 +19,6 @@ import {
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   type PiModelConfig,
-  type PiLaunchConfig,
   type StoredExecutionContext,
   type StorageMountEntry,
   type SecretConnectorMetadata,
@@ -44,7 +43,6 @@ import type {
 import type {
   ModelProviderType,
   ModelProviderCodexRuntimeConfig,
-  ModelProviderCredentialScope,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
   AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
@@ -65,22 +63,12 @@ import type {
   NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import type { ModelCatalog } from "./model-catalog.service";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  PiStableContextPromptProjection,
-  PiStableContextOwner,
-  PiStableContextSemanticInput,
-  PiStableContextSourceVector,
-} from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
-  type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
   validatePersonalSubscriptionAdmission,
 } from "./model-provider-account.service";
 import type {
-  RunCallback,
-  DispatchFailedRunCallbacks,
   PersistProducerRunBinding,
   AgentRunModelPin,
 } from "./agent-run-contracts";
@@ -88,7 +76,6 @@ import type {
   ChatThreadSessionResolution,
   ChatThreadSessionResolutionAction,
 } from "./chat-session-continuity.service";
-import type { RunWorkflowRef } from "./workflow-data.service";
 import type {
   QueueFirstRunAssociation,
   QueueFirstRunClaimResult,
@@ -167,7 +154,7 @@ export type AdditionalVolumeSources =
   | readonly StorageManifestSource[]
   | undefined;
 
-interface AgentRunMetadata {
+export interface AgentRunMetadata {
   // Run provenance for workflow schedule automations.
   readonly workflowAutomationId?: string;
   readonly triggerBrief?: string;
@@ -228,7 +215,7 @@ export interface EffectiveConnectorScope {
   readonly source: ConnectorScopeSource;
 }
 
-interface ExplicitConnectorScope {
+export interface ExplicitConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants?: readonly AgentCustomConnectorGrant[];
@@ -481,101 +468,9 @@ export type CreateRunErrorResult = Exclude<
   { readonly status: 201 }
 >;
 
-interface PiStableContextCacheIdentity {
-  readonly owner: PiStableContextOwner;
-  readonly variantDigest: string;
-  readonly semantic: PiStableContextSemanticInput;
-  readonly source: Omit<
-    PiStableContextSourceVector,
-    "agentGeneration" | "userGeneration" | "extractorVersion"
-  >;
-}
-
-export interface CreateAgentRunArgs {
-  /**
-   * The run's model catalog snapshot. The entry point (or the queue pick,
-   * against the current catalog) loads it once; every model decision of this
-   * run reads it.
-   */
-  readonly catalog: ModelCatalog;
-  readonly retainedRunId?: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly body: CreateRunBody;
-  readonly apiStartTime: number;
-  /** Stable, nonsecret source bindings captured by the product entry point. */
-  readonly piStableContext?: {
-    /** Built only for a miss/dynamic path; ready artifacts supply this text. */
-    readonly buildPrompt: () => PiStableContextPromptProjection;
-    /** Built only by the durable stable-context consumer from captured input. */
-    readonly buildCacheIdentity: () => PiStableContextCacheIdentity;
-    /** Dynamic profile/channel text and explicit caller appendage, bound later. */
-    readonly dynamicAppendSystemPrompt: string;
-  };
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  /** Captured by the product entry point for this request only. This skips
-   * an identity lookup, never the fresh environment or admission checks. */
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly codexServiceTier?: "fast" | "ultrafast";
-  readonly callbacks?: readonly RunCallback[];
-  readonly chatThreadId?: string;
-  /** Exact connector that delivered this run's durable integration input. */
-  readonly connectorSourceId?: string;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly includeOkouTokenSecret?: boolean;
-  readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
-  /**
-   * Request-scoped Agent identity facts from an already authorized product
-   * entry point. This can replace the equivalent preparation lookup only.
-   */
-  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  /**
-   * Retired direct-run test support. Production callers must supply a canonical
-   * productAgentExecutionPlan; keeping legacy reads in the test fixture
-   * preserves historical runner coverage without restoring a runtime dual-read.
-   */
-  readonly okouTokenComputerUseHostId?: string;
-  readonly okouTokenCloudBrowserEnabled?: boolean;
-  readonly platformEnvironment?: Record<string, string>;
-  // When set, system + workflow skill volumes are built and prepended in
-  // prepareRunContext using the run's resolved (model-provider) framework.
-  readonly injectSkillVolumes?: {
-    // Each workflow's volume is keyed by its id (storage name), while the skill
-    // mounts at its slug. Slugs are not unique, so the id is required.
-    readonly workflows: readonly RunWorkflowRef[];
-  };
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly connectorScope: ExplicitConnectorScope;
-  readonly validateEnvironmentReferences?: boolean;
-  readonly agentRunMetadata?: AgentRunMetadata;
-  /** Require initial Built-in credits; this does not grant deficit continuation. */
-  readonly enforceBuiltInCredits?: boolean;
-  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
-  readonly queueFirstAssociation?: QueueFirstRunAssociation;
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
-  readonly agentRunModelPin?: AgentRunModelPin;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
-  /** Producer-supplied runtime options, independent of the thread context. */
-  readonly piLaunchConfig?: Omit<
-    PiLaunchConfig,
-    "schemaVersion" | "memoryRecall"
-  >;
-  /** Override the missing-root policy for this producer's artifact mounts. */
-  readonly artifactMissingRootPolicy?: ArtifactMissingRootPolicy;
-  /** Internal producer pin for the auto-injected memory mount baseline. */
-  readonly pinnedMemoryVersionId?: string;
-  readonly timing?: ApiDispatchTimingCollector;
+export function timingDimensionsForCreateArgs(args: {
   readonly timingDimensions?: ApiDispatchTimingDimensions;
-}
-
-export function timingDimensionsForCreateArgs(
-  args: Pick<CreateAgentRunArgs, "timingDimensions">,
-): ApiDispatchTimingDimensions {
+}): ApiDispatchTimingDimensions {
   return {
     api_start_source: "request",
     run_preparation_retry_count: "0",

@@ -104,7 +104,6 @@ import {
   ArtifactMissingRootPolicy,
   BuiltinConnectorRuntimeContext,
   BuiltinRuntimeTargetRegistration,
-  CreateAgentRunArgs,
   CreateRunBody,
   CreateRunErrorResult,
   PermissionManifest,
@@ -130,7 +129,10 @@ import {
   mergeRecords,
 } from "./run-connector-context.service";
 import { nativeCredentialEnvironment } from "./run-model-provider-environment.service";
-import { PreparedPiLaunchResources } from "./pi-launch-resources.service";
+import {
+  type PiLaunchConfigOverrides,
+  PreparedPiLaunchResources,
+} from "./pi-launch-resources.service";
 
 const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
   "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
@@ -1360,7 +1362,7 @@ export interface BuildRunnerJobPayloadInput {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
-  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
+  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
   readonly artifactMissingRootPolicy: ArtifactMissingRootPolicy | undefined;
 }
 

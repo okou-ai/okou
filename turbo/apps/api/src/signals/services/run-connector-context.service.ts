@@ -67,7 +67,7 @@ import {
 import {
   BuiltinConnectorRuntimeContext,
   ConnectorScopeSource,
-  CreateAgentRunArgs,
+  type ExplicitConnectorScope,
   CreateRunBody,
   EffectiveConnectorScope,
   PermissionManifest,
@@ -957,9 +957,9 @@ export function connectorScopeForRuntimeSnapshot(
   };
 }
 
-export function connectorScopeFromCreateArgs(
-  args: CreateAgentRunArgs,
-): EffectiveConnectorScope {
+export function connectorScopeFromCreateArgs(args: {
+  readonly connectorScope: ExplicitConnectorScope;
+}): EffectiveConnectorScope {
   const source = isEmptyRunConnectorScope(args.connectorScope)
     ? "empty"
     : (args.connectorScope.source ?? "explicit");
@@ -994,14 +994,14 @@ export interface RunConnectorSelection {
 export interface RunConnectorReadInput {
   readonly db: ReadonlyDb;
   readonly timing: ApiDispatchTimingCollector;
-  readonly args: Pick<
-    CreateAgentRunArgs,
-    | "orgId"
-    | "userId"
-    | "chatThreadId"
-    | "connectorSourceId"
-    | "includeOkouTokenSecret"
-  >;
+  readonly args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly chatThreadId?: string;
+    /** Exact connector that delivered this run's durable integration input. */
+    readonly connectorSourceId?: string;
+    readonly includeOkouTokenSecret?: boolean;
+  };
 }
 
 export interface RunConnectorContextSnapshot {

@@ -13,12 +13,17 @@ import {
   piMemoryRecallSelectionSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import type { PiStableContextPromptProjection } from "@okouai/db/jsonb-contracts/pi-stable-context";
-import { CreateAgentRunArgs } from "./execution-launch-persistence.service";
 import {
   ResolvedAgentRunStorage,
   StorageMountMetadata,
   canonicalPiMemoryMount,
 } from "./execution-storage-manifest.service";
+
+/** Producer-supplied Pi runtime options, independent of the thread context. */
+export type PiLaunchConfigOverrides = Omit<
+  PiLaunchConfig,
+  "schemaVersion" | "memoryRecall"
+>;
 
 export interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
@@ -77,7 +82,7 @@ export function priorPiMemoryRecall(args: {
 
 export function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
-  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
+  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
   readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
   readonly sessionId: string;
@@ -110,7 +115,7 @@ export interface PreparePiLaunchResourcesArgs {
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
-  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
+  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
 }
 
 export function bindStableAppendSystemPrompt(

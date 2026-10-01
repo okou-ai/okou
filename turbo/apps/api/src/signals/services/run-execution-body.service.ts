@@ -31,9 +31,25 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import type { ModelCatalog } from "./model-catalog.service";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { PiStableContextPromptProjection } from "@okouai/db/jsonb-contracts/pi-stable-context";
+import type {
+  PiStableContextOwner,
+  PiStableContextPromptProjection,
+  PiStableContextSemanticInput,
+  PiStableContextSourceVector,
+} from "@okouai/db/jsonb-contracts/pi-stable-context";
+import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
+
+import type { RunSkillVolumeInjection } from "./run-execution-context.service";
 import type { CapturedPersonalSubscriptionAccount } from "./model-provider-account.service";
-import type { AgentRunPreCreateSource } from "./agent-run-contracts";
+import type {
+  AgentRunModelPin,
+  AgentRunPreCreateSource,
+  DispatchFailedRunCallbacks,
+  PersistProducerRunBinding,
+  RunCallback,
+} from "./agent-run-contracts";
 import type {
   ChatThreadSessionResolution,
   ChatThreadExecutionSnapshot,
@@ -65,10 +81,11 @@ import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import {
   AgentExecutionRequestObservation,
+  type AgentRunMetadata,
   ApiErrorResponse,
-  CreateAgentRunArgs,
   CreateRunBody,
   CreateRunErrorResult,
+  type ExplicitConnectorScope,
   ProductAgentExecutionPlan,
   ResolvedAgentExecution,
   ResolvedRunExecution,
@@ -564,7 +581,10 @@ export function validateCompose(
   return { framework };
 }
 
-export function initialRunBody(args: CreateAgentRunArgs): CreateRunBody {
+export function initialRunBody(args: {
+  readonly body: CreateRunBody;
+  readonly includeOkouTokenSecret?: boolean;
+}): CreateRunBody {
   return args.includeOkouTokenSecret
     ? withPendingOkouTokenSecret(args.body)
     : args.body;
@@ -920,7 +940,7 @@ export interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
 
-interface BuildCreateAgentRunArgsInput {
+interface ProductRunArgsInput {
   /** One catalog snapshot per run, loaded by the entry point. */
   readonly catalog: ModelCatalog;
   readonly command: AnyCreateAgentRunCommandArgs;
@@ -957,7 +977,7 @@ function emptyStablePrompt(): PiStableContextPromptProjection {
  * instead. A run whose surface supplied an integration prompt already carries
  * the note inside that block.
  */
-function standaloneIntegrationNote(args: BuildCreateAgentRunArgsInput): string {
+function standaloneIntegrationNote(args: ProductRunArgsInput): string {
   if (args.command.appendSystemPrompt) {
     return "";
   }
@@ -967,10 +987,10 @@ function standaloneIntegrationNote(args: BuildCreateAgentRunArgsInput): string {
   });
 }
 
-function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
+function buildStableRunPromptContext(args: ProductRunArgsInput): {
   readonly userInfo: UserInfo;
   readonly initialStablePrompt: PiStableContextPromptProjection;
-  readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
+  readonly piStableContext: PiStableContextInput;
 } {
   const promptInputs = buildAgentToolsPromptInputs({
     featureSwitchContext: args.featureSwitchContext,
@@ -994,9 +1014,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     return stablePrompt;
   };
   let cacheIdentity:
-    | ReturnType<
-        NonNullable<CreateAgentRunArgs["piStableContext"]>["buildCacheIdentity"]
-      >
+    | ReturnType<PiStableContextInput["buildCacheIdentity"]>
     | undefined;
   const buildCacheIdentity = () => {
     if (cacheIdentity) {
@@ -1064,52 +1082,68 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   };
 }
 
+/** Stable, nonsecret source bindings captured by the product entry point. */
+export interface PiStableContextInput {
+  /** Built only for a miss/dynamic path; ready artifacts supply this text. */
+  readonly buildPrompt: () => PiStableContextPromptProjection;
+  /** Built only by the durable stable-context consumer from captured input. */
+  readonly buildCacheIdentity: () => {
+    readonly owner: PiStableContextOwner;
+    readonly variantDigest: string;
+    readonly semantic: PiStableContextSemanticInput;
+    readonly source: Omit<
+      PiStableContextSourceVector,
+      "agentGeneration" | "userGeneration" | "extractorVersion"
+    >;
+  };
+  /** Dynamic profile/channel text and explicit caller appendage, bound later. */
+  readonly dynamicAppendSystemPrompt: string;
+}
+
 /**
  * Explicit run arguments a product entry point (chat/automation) prepares for
  * Thread: exactly the facts this builder sets, no legacy direct-run knobs.
  */
 export interface ProductRunArgs {
-  readonly catalog: CreateAgentRunArgs["catalog"];
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: CreateAgentRunArgs["modelProviderCredentialScope"];
+  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
-  readonly capturedPersonalSubscriptionAccount?: CreateAgentRunArgs["capturedPersonalSubscriptionAccount"];
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: CreateAgentRunArgs["builtInModelRuntimeRoute"];
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly piExecution: boolean;
   readonly codexServiceTier?: "fast" | "ultrafast";
-  readonly agentRunMetadata?: CreateAgentRunArgs["agentRunMetadata"];
-  readonly queueFirstAssociation?: CreateAgentRunArgs["queueFirstAssociation"];
+  readonly agentRunMetadata?: AgentRunMetadata;
+  readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly piStableContext?: CreateAgentRunArgs["piStableContext"];
+  readonly piStableContext?: PiStableContextInput;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
-  readonly threadSessionResolution?: CreateAgentRunArgs["threadSessionResolution"];
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly platformEnvironment?: Record<string, string>;
-  readonly callbacks?: CreateAgentRunArgs["callbacks"];
+  readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
-  readonly productAgentExecutionPlan?: CreateAgentRunArgs["productAgentExecutionPlan"];
-  readonly preloadedAgentExecutionObservation?: CreateAgentRunArgs["preloadedAgentExecutionObservation"];
+  readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
+  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
   readonly enforceBuiltInCredits?: boolean;
-  readonly injectSkillVolumes?: CreateAgentRunArgs["injectSkillVolumes"];
+  readonly injectSkillVolumes?: RunSkillVolumeInjection;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly connectorScope: CreateAgentRunArgs["connectorScope"];
+  readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
-  readonly dispatchFailedCallbacks?: CreateAgentRunArgs["dispatchFailedCallbacks"];
-  readonly persistProducerRunBinding?: CreateAgentRunArgs["persistProducerRunBinding"];
-  readonly agentRunModelPin?: CreateAgentRunArgs["agentRunModelPin"];
-  readonly timing?: CreateAgentRunArgs["timing"];
-  readonly timingDimensions?: CreateAgentRunArgs["timingDimensions"];
+  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
+  readonly persistProducerRunBinding?: PersistProducerRunBinding;
+  readonly agentRunModelPin?: AgentRunModelPin;
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
 
-export function buildProductRunArgs(
-  args: BuildCreateAgentRunArgsInput,
-): ProductRunArgs {
+export function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   const command = args.command;
   const { userInfo, initialStablePrompt, piStableContext } =
     buildStableRunPromptContext(args);

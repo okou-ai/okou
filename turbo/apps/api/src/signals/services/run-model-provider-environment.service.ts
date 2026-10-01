@@ -83,7 +83,7 @@ import type { AuthContext } from "../../types/auth";
 import type { WebChatSessionPromptContext } from "./web-chat-session-prompt.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
-  CreateAgentRunArgs,
+  type AgentRunMetadata,
   CreateRunErrorResult,
   PermissionManifest,
   ResolvedModelProviderEnvironment,
@@ -574,7 +574,7 @@ export async function materializePreparedPiProvider(
 
 export function resolvePreparedPiModelConfig(args: {
   readonly createArgs: Pick<
-    CreateAgentRunArgs,
+    RunModelProviderArgs,
     "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
@@ -662,23 +662,27 @@ export function builtInModelProviderEnvironmentFromSnapshot(args: {
   };
 }
 
-export type RunModelProviderArgs = Pick<
-  CreateAgentRunArgs,
-  | "catalog"
-  | "orgId"
-  | "userId"
-  | "modelProviderId"
-  | "modelProviderCredentialScope"
-  | "modelProviderType"
-  | "capturedPersonalSubscriptionAccount"
-  | "selectedModelOverride"
-  | "builtInModelRuntimeRoute"
-  | "piExecution"
-  | "retainedRunId"
-  | "codexServiceTier"
-  | "agentRunMetadata"
-  | "queueFirstAssociation"
->;
+/** The model-selection facts of one run that its model environment reads. */
+export interface RunModelProviderArgs {
+  /** The run's single catalog snapshot; every model decision reads it. */
+  readonly catalog: ModelCatalog;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly modelProviderId?: string;
+  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
+  readonly modelProviderType?: string;
+  /** Captured by the product entry point for this request only. This skips
+   * an identity lookup, never the fresh environment or admission checks. */
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
+  readonly selectedModelOverride?: string;
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
+  readonly piExecution: boolean;
+  readonly retainedRunId?: string;
+  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly agentRunMetadata?: AgentRunMetadata;
+  readonly queueFirstAssociation?: QueueFirstRunAssociation;
+}
 
 export interface RunModelProviderReadInput {
   readonly db: ReadonlyDb;
