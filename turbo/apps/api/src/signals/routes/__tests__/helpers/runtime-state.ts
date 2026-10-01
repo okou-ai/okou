@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
+
 import type {
   TestRuntimeStateActionBody,
   TestRuntimeStateActionResponse,
@@ -203,20 +203,6 @@ export function registerBuiltInCandidateCooldownCleanup(
   });
 }
 
-export async function setCustomConnectorAuthTemplateFixture(
-  context: TestContext,
-  args: {
-    readonly connectorId: string;
-    readonly valueTemplate: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-custom-connector-auth-template-fixture",
-    connector_id: args.connectorId,
-    value_template: args.valueTemplate,
-  });
-}
-
 export async function readRunAutonomyBudgetFixture(
   context: TestContext,
   runId: string,
@@ -397,44 +383,6 @@ export async function readAgentRunFamilyCountsFixture(
   return response.agent_run_family_counts;
 }
 
-export async function readChatEventRowsAsPreviousApiFixture(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["previous_api_chat_event_rows"]>
-> {
-  const response = await postAction(context, {
-    action: "read-chat-event-rows-as-previous-api",
-    thread_id: threadId,
-  });
-  if (!("previous_api_chat_event_rows" in response)) {
-    throw new Error(
-      "readChatEventRowsAsPreviousApiFixture missing previous_api_chat_event_rows",
-    );
-  }
-  return response.previous_api_chat_event_rows ?? [];
-}
-
-export async function setOfficialWorkflowAutomationAdmissionStateFixture(
-  context: TestContext,
-  automationId: string,
-  reconciliationStatus:
-    | "current"
-    | "reconciling"
-    | "needs_reconfiguration"
-    | "failed",
-  appliedFingerprint?: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-official-workflow-automation-admission-state",
-    automation_id: automationId,
-    reconciliation_status: reconciliationStatus,
-    ...(appliedFingerprint === undefined
-      ? {}
-      : { applied_fingerprint: appliedFingerprint }),
-  });
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,
@@ -446,123 +394,6 @@ export async function stageOfficialWorkflowAutomationFixture(
     blueprint_key: blueprintKey,
     reconciliation_status: "reconciling",
   });
-}
-
-export async function setRunnerJobPiContextAsVersionedWriter(
-  context: TestContext,
-  runId: string,
-  piModelConfig: Readonly<Record<string, unknown>>,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-pi-context-as-versioned-writer",
-    run_id: runId,
-    pi_model_config: piModelConfig,
-  });
-}
-
-export async function mutateRunnerJobConnectorPermissionBaseline(
-  context: TestContext,
-  runId: string,
-  mode:
-    | "remove"
-    | "malformed"
-    | "capability-mismatch"
-    | "catalog-mismatch"
-    | "authority-mismatch"
-    | "inconsistent"
-    | "incomplete",
-): Promise<void> {
-  await postAction(context, {
-    action: "mutate-runner-job-connector-permission-baseline",
-    run_id: runId,
-    mode,
-  });
-}
-
-export async function setRunnerJobConnectorRuntimeTargets(
-  context: TestContext,
-  runId: string,
-  connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[],
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-connector-runtime-targets",
-    run_id: runId,
-    connector_runtime_targets: [...connectorRuntimeTargets],
-  });
-}
-
-export async function setRunnerJobContextProfileAsPreviousApi(
-  context: TestContext,
-  runId: string,
-  profile: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-runner-job-context-profile-as-previous-api",
-    run_id: runId,
-    profile,
-  });
-}
-
-export async function removeRunCanonicalStorageState(
-  context: TestContext,
-  runId: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "remove-run-canonical-storage-state",
-    run_id: runId,
-  });
-}
-
-export async function readRunnerJobStorageState(
-  context: TestContext,
-  runId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["runner_job_storage_state"]>
-> {
-  const response = await postAction(context, {
-    action: "read-runner-job-storage-state",
-    run_id: runId,
-  });
-  if (!response.runner_job_storage_state) {
-    throw new Error(
-      "readRunnerJobStorageState missing runner_job_storage_state",
-    );
-  }
-  return response.runner_job_storage_state;
-}
-
-export async function readRunClaimOwner(
-  context: TestContext,
-  runId: string,
-): Promise<NonNullable<TestRuntimeStateActionResponse["runner_claim_owner"]>> {
-  const response = await postAction(context, {
-    action: "read-run-claim-owner",
-    run_id: runId,
-  });
-  if (!response.runner_claim_owner) {
-    throw new Error("readRunClaimOwner missing runner_claim_owner");
-  }
-  return response.runner_claim_owner;
-}
-
-export async function readStoragePersistenceState(
-  context: TestContext,
-  ids: {
-    readonly runId: string;
-    readonly sessionId: string;
-    readonly checkpointId: string;
-  },
-): Promise<NonNullable<TestRuntimeStateActionResponse["storage_persistence"]>> {
-  const response = await postAction(context, {
-    action: "read-storage-persistence-state",
-    run_id: ids.runId,
-    session_id: ids.sessionId,
-    checkpoint_id: ids.checkpointId,
-  });
-  if (!response.storage_persistence) {
-    throw new Error("readStoragePersistenceState missing storage_persistence");
-  }
-  return response.storage_persistence;
 }
 
 export async function readRunUploadedFileSources(

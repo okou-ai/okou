@@ -2578,7 +2578,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const appendChatQueueHeadRejection$ = command(
     async (
-      { set },
+      { get, set },
       args: {
         readonly chatThreadId: string;
         readonly eventId: string;
@@ -2587,31 +2587,24 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       },
       signal: AbortSignal,
     ): Promise<{ readonly assistantEventId: string } | null> => {
+      const head = await get(pickedEvent$);
       signal.throwIfAborted();
+      if (
+        !head?.userMessage ||
+        head.id !== args.eventId ||
+        head.chatThreadId !== args.chatThreadId
+      ) {
+        throw new Error("Queued input event is missing userMessage");
+      }
+      const userMessage = head.userMessage;
       const result = await set(writeDb$).transaction(async (tx) => {
-        const [head] = await tx
-          .select({
-            userMessage: canonicalChatEventUserMessage(),
-            createdAt: chatEvents.createdAt,
-          })
-          .from(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.id, args.eventId),
-              eq(chatEvents.chatThreadId, args.chatThreadId),
-            ),
-          )
-          .limit(1);
-        if (!head?.userMessage) {
-          throw new Error("Queued input event is missing userMessage");
-        }
         const rejectedAt = new Date(
           Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
         );
         const rejected = await replaceChatEvent(tx, args.eventId, {
           chatThreadId: args.chatThreadId,
           eventType: "input.rejected",
-          userMessage: head.userMessage,
+          userMessage,
           runId: null,
           error: args.errorMarker,
           createdAt: rejectedAt,

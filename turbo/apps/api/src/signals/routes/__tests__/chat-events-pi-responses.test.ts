@@ -6,8 +6,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
-import { replacePiSessionHistoryJsonlFixture } from "../../../test-fixtures/chat-events";
 import {
   insertCatalogModelFixture,
   setModelPiRouteClassFixture,
@@ -130,7 +128,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "deepseek-v4-flash",
         "deepseek-v4.1-flash",
-        "gpt-6-sol",
         "gpt-6-luna",
         "gpt-5.6-sol",
       ] as const
@@ -154,13 +151,6 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
-      if (selectedModel === "gpt-6-sol") {
-        await stagePreAddabilityModelPolicyFixture({
-          orgId,
-          userId: actor.userId,
-          model: selectedModel,
-        });
-      }
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
@@ -329,17 +319,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await flushWaitUntilForTest();
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "seed answer replaced by migration fixture",
-      checkpointObjects,
-      claim: firstClaim,
-      prompt: seedPrompt,
-      run: first,
-      responsesModel: { provider: "openai", model: "gpt-6-luna" },
-      usagePricingResolution,
-    });
-
     const legacy = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: first.threadId,
@@ -401,14 +380,54 @@ describe("CHAT-02: model-first provider policies", () => {
       timestamp: 4,
     });
     const legacyJsonl = legacy.toJsonl();
-    const legacyHash = await replacePiSessionHistoryJsonlFixture({
-      runId: first.runId,
-      jsonl: legacyJsonl,
-    });
+    const legacyHash = createHash("sha256").update(legacyJsonl).digest("hex");
+    await webhooks.requestAgentCheckpointPrepareHistory(
+      {
+        runId: first.runId,
+        hash: legacyHash,
+        rawSize: Buffer.byteLength(legacyJsonl),
+        encodedSize: Buffer.byteLength(legacyJsonl),
+        encoding: "identity",
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+    );
     checkpointObjects.set(
       `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
       Buffer.from(legacyJsonl, "utf8"),
     );
+    await webhooks.requestAgentEvents(
+      {
+        runId: first.runId,
+        events: [
+          {
+            type: "result",
+            sequenceNumber: 1,
+            result: "legacy API tool conclusion",
+          },
+        ],
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId: first.runId,
+        exitCode: 0,
+        lastEventSequence: 1,
+        checkpoint: {
+          cliAgentType: "pi",
+          cliAgentSessionId: first.threadId,
+          cliAgentSessionHistoryHash: legacyHash,
+        },
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+      undefined,
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, first.runId, "completed");
+    await flushWaitUntilForTest();
 
     const prompt = "continue the migrated OpenRouter session";
     const second = await withOpenRouterRoute(async () => {

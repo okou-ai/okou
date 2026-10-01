@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
@@ -11,7 +11,7 @@ import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { blobs } from "@okouai/db/schema/blob";
+
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -20,7 +20,7 @@ import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { conversations } from "@okouai/db/schema/conversation";
+
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1243,57 +1243,6 @@ export async function releaseBddBuiltInModelKey(args: {
   readonly fixtureId: string;
 }): Promise<void> {
   await releaseBuiltInModelKeyFixture(db(), args.fixtureId);
-}
-
-/** Replaces a completed run's native session blob with exact test-owned bytes. */
-export async function replacePiSessionHistoryJsonlFixture(args: {
-  readonly runId: string;
-  readonly jsonl: string;
-}): Promise<string> {
-  const bytes = Buffer.from(args.jsonl, "utf8");
-  const hash = createHash("sha256").update(bytes).digest("hex");
-  await db().transaction(async (tx) => {
-    await tx
-      .insert(blobs)
-      .values({
-        hash,
-        rawSize: bytes.length,
-        encoding: "identity",
-        encodedSize: bytes.length,
-        refCount: 1,
-      })
-      .onConflictDoNothing();
-    const [updated] = await tx
-      .update(conversations)
-      .set({
-        cliAgentSessionHistory: null,
-        cliAgentSessionHistoryHash: hash,
-      })
-      .where(eq(conversations.runId, args.runId))
-      .returning({ id: conversations.id });
-    if (!updated) {
-      throw new Error("Expected one Pi session history fixture to be replaced");
-    }
-  });
-  return hash;
-}
-
-/** Restores the historical inline Pi session shape for a single completed run. */
-export async function replacePiSessionHistoryInlineFixture(args: {
-  readonly runId: string;
-  readonly jsonl: string;
-}): Promise<void> {
-  const [updated] = await db()
-    .update(conversations)
-    .set({
-      cliAgentSessionHistory: args.jsonl,
-      cliAgentSessionHistoryHash: null,
-    })
-    .where(eq(conversations.runId, args.runId))
-    .returning({ id: conversations.id });
-  if (!updated) {
-    throw new Error("Expected one Pi session history fixture to be replaced");
-  }
 }
 
 /**

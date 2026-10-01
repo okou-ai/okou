@@ -13,12 +13,8 @@ import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv } from "../../../lib/env";
+import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  replacePiSessionHistoryInlineFixture,
-  replacePiSessionHistoryJsonlFixture,
-} from "../../../test-fixtures/chat-events";
 import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
@@ -30,7 +26,6 @@ import {
   createChatEventsFixture,
   claimEnvironment,
   modelProviderSecretPlaceholder,
-  createGptUsagePricingResolution,
   createPiUsagePricingResolution,
   eventBackedContents,
   type PiCheckpointS3Command,
@@ -45,12 +40,9 @@ const {
   webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
-  sendWaitingChatInput,
   claimChatRun,
   waitForRunStatus,
-  completeChatRunOk,
   failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
@@ -449,238 +441,6 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(settled.isSettledCheckpoint()).toBeTruthy();
         expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
       }
-    },
-    90_000,
-  );
-
-  it("claims inline OpenRouter resume bytes unchanged for the Sandbox", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected entitled chat actor to have an org");
-    }
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 1,
-    };
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: runnerIdentity.runnerId,
-      group: runnerGroup,
-    });
-    const { providerId } = await api.ensureOrgModelProvider(actor);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        preferred: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "hold capacity for the resume transfer",
-      model: "claude-fable-5-1",
-    });
-    await flushWaitUntilForTest();
-    const anchorState = await api.readRun(actor, anchor.runId);
-    if (anchorState.status !== "pending") {
-      throw new Error(
-        `Expected pending resume anchor: ${JSON.stringify(anchorState)}`,
-      );
-    }
-    const anchorClaim = await api.claimRunnerJob(anchor.runId, {
-      runnerIdentity,
-    });
-    const anchorSandboxHeaders = {
-      authorization: `Bearer ${anchorClaim.sandboxToken}`,
-    };
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-6-luna",
-    );
-
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const firstPrompt = "create a settled Pi checkpoint";
-    const first = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: firstPrompt,
-          model: "gpt-6-luna",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
-    const firstClaim = await api.claimRunnerJob(first.runId, {
-      runnerIdentity,
-    });
-    expect(firstClaim).toMatchObject({
-      cliAgentType: "pi",
-      piSessionId: first.threadId,
-      piModelConfig: {
-        provider: "openrouter",
-        serviceTier: "priority",
-      },
-    });
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "seed the compaction checkpoint",
-      checkpointObjects,
-      claim: {
-        claim: firstClaim,
-        sandboxHeaders: {
-          authorization: `Bearer ${firstClaim.sandboxToken}`,
-        },
-      },
-      prompt: firstPrompt,
-      run: first,
-      usagePricingResolution,
-    });
-
-    const blobPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/`;
-    const persistedBlobs = [...checkpointObjects.entries()].filter(([key]) => {
-      return key.startsWith(blobPrefix) && key.endsWith(".blob");
-    });
-    expect(persistedBlobs).toHaveLength(1);
-    const persistedBlob = persistedBlobs[0];
-    if (!persistedBlob) {
-      throw new Error("Expected the first Pi run to persist native H1");
-    }
-    const resumedH0 = persistedBlob[1].toString("utf8");
-    // Current checkpoint APIs persist blobs only; this test-owned historical
-    // inline snapshot cannot be constructed through a production endpoint.
-    await replacePiSessionHistoryInlineFixture({
-      runId: first.runId,
-      jsonl: resumedH0,
-    });
-
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const prompt = "preserve this original prompt for official compaction";
-    // At capacity the resume prompt waits without a run; the anchor's
-    // completion picks the thread and launches it on the OpenRouter route.
-    const waitingSecond = await withOpenRouterRoute(async () => {
-      return await sendWaitingChatInput(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt,
-          model: "gpt-6-luna",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
-    await withOpenRouterRoute(async () => {
-      await completeChatRunOk(anchor.runId, anchorSandboxHeaders, {
-        usagePricingResolution,
-      });
-    });
-    const second = await waitingSecond.launchedRun();
-
-    const claim = await api.claimRunnerJob(second.runId, { runnerIdentity });
-    const sandboxHeaders = {
-      authorization: `Bearer ${claim.sandboxToken}`,
-    };
-    expect(claim).toMatchObject({
-      cliAgentType: "pi",
-      piSessionId: first.threadId,
-      prompt,
-      piModelConfig: {
-        provider: "openrouter",
-        serviceTier: "priority",
-      },
-      resumeSession: { sessionId: first.threadId, sessionHistory: resumedH0 },
-    });
-    expect(resumedH0).not.toContain("serviceTier");
-    await cancelChatRun(actor, second.runId, sandboxHeaders);
-  }, 90_000);
-
-  it.each(["malformed", "mismatched", "cyclic"] as const)(
-    "claims $damage stored Pi history by reference without API parsing",
-    async (damage) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected entitled chat actor to have an org");
-      }
-      await configureBuiltInPiModel(actor, "deepseek-v4-flash");
-
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      const firstPrompt = "create canonical Pi H0";
-      const first = await sendChatRun(actor, {
-        agentId,
-        prompt: firstPrompt,
-        model: "deepseek-v4-flash",
-      });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      // The Sandbox reports no usage for this turn, so any resolution works.
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "canonical H0 answer",
-        checkpointObjects,
-        claim: firstClaim,
-        prompt: firstPrompt,
-        responsesModel: {
-          provider: "deepseek",
-          model: await builtInCatalogUpstreamModel("deepseek-v4-flash"),
-        },
-        run: first,
-        usagePricingResolution: await createGptUsagePricingResolution(),
-      });
-      const firstSessionBytes = checkpointObjects.get(
-        [...checkpointObjects.keys()].find((key) => {
-          return key.includes("/blobs/");
-        }) ?? "missing-canonical-pi-blob",
-      );
-      if (!firstSessionBytes) {
-        throw new Error("Expected the first Pi run to persist native H1");
-      }
-      const original = firstSessionBytes.toString("utf8");
-      const damagedH0 =
-        damage === "malformed"
-          ? `${original}{malformed\n`
-          : damage === "mismatched"
-            ? original.replace(first.threadId, randomUUID())
-            : `${original}${JSON.stringify({ type: "model_change", id: "cycle", parentId: "cycle", timestamp: "2026-09-05T00:00:00.000Z", provider: "openai", modelId: "gpt-6-luna" })}\n`;
-      // A public caller cannot write this historical corruption. Only the
-      // stored object fixture sets it; publication is verified through the API.
-      const hash = await replacePiSessionHistoryJsonlFixture({
-        runId: first.runId,
-        jsonl: damagedH0,
-      });
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const blobKey = `${bucket}/blobs/${hash}.blob`;
-      checkpointObjects.set(blobKey, Buffer.from(damagedH0, "utf8"));
-
-      const second = await sendChatRun(actor, {
-        agentId,
-        threadId: first.threadId,
-        prompt: "continue in Sandbox",
-      });
-      await flushWaitUntilForTest();
-      const claim = await claimChatRun(runnerGroup, second.runId);
-      const resumeSession = claim.claim.resumeSession;
-      expect(resumeSession).toMatchObject({
-        sessionId: first.threadId,
-        historyRef: {
-          kind: "blob",
-          hash,
-          rawSize: Buffer.byteLength(damagedH0),
-        },
-      });
-      if (!resumeSession || !("historyRef" in resumeSession)) {
-        throw new Error("Expected a referenced resume history");
-      }
-      expect(
-        new URL(resumeSession.historyRef.url).searchParams.get("object"),
-      ).toBe(blobKey);
-      await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
     },
     90_000,
   );

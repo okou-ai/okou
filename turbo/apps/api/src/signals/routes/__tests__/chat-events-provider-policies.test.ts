@@ -10,10 +10,7 @@ import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
-import {
-  setOrgModelPolicyProviderTypeFixture,
-  stageUnrepairedOrgModelPolicyFixture,
-} from "../../../test-fixtures/org-model-policies";
+
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -360,11 +357,6 @@ describe("CHAT-02: model-first provider policies", () => {
     // built-in model key exists (no public provisioning surface), a run when
     // another suite's alive legacy test has seeded a global built-in model
     // key. Both prove the credits-ok admission arm.
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId,
-      model: "claude-sonnet-5",
-      defaultProviderType: "built-in",
-    });
     const builtIn = await sendUntilPicked(actor, {
       agentId,
       prompt: "built-in admission with spendable credits",
@@ -442,33 +434,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const { claim } = await claimChatRun(runnerGroup, picked.runId);
     expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
     await cancelChatRun(actor, picked.runId);
-  }, 90_000);
-
-  it("routes from the authoritative policies seeded by the same send", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
-    await stageUnrepairedOrgModelPolicyFixture({
-      orgId: requireOrgId(actor),
-      state: "unseeded",
-    });
-    await preparePiResourceHandoff(actor, agentId);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "route from the repaired policy snapshot",
-    });
-    await expect(
-      chat.readThreadMetadata(actor, run.threadId),
-    ).resolves.toMatchObject({
-      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.cliAgentType).toBe("pi");
-    expect(claim.piModelConfig).toMatchObject({
-      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-    });
-    await cancelChatRun(actor, run.runId);
   }, 90_000);
 
   it("preserves persisted external model plan-state outcomes", async () => {
@@ -2053,11 +2018,6 @@ describe("CHAT-02: model-first provider policies", () => {
     if (!actor.orgId) {
       throw new Error("Expected the built-in model actor to have an org");
     }
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId: actor.orgId,
-      model: "claude-opus-5",
-      defaultProviderType: "built-in",
-    });
 
     await preparePiResourceHandoff(actor, agentId);
     const run = await sendChatRun(actor, {

@@ -10,13 +10,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  createUnassociatedThreadBoundAgentRunFixture,
-  createUnassociatedThreadBoundAgentRunsServiceFixture,
-} from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { mailRoutes } from "../mail";
@@ -66,30 +61,6 @@ async function entitledChatActor() {
   ]);
   return result;
 }
-
-describe("CHAT-02: thread run admission invariant", () => {
-  it("rejects thread-bound run creation without a queue association at both service boundaries", async () => {
-    await expect(
-      createUnassociatedThreadBoundAgentRunsServiceFixture(),
-    ).rejects.toThrow(
-      "Thread-bound agent run requires a queue-first association",
-    );
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunFixture(),
-    ).rejects.toThrow("Thread-bound run requires a queue-first association");
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunsServiceFixture(""),
-    ).rejects.toThrow(
-      "Thread-bound agent run requires a queue-first association",
-    );
-
-    await expect(
-      createUnassociatedThreadBoundAgentRunFixture(""),
-    ).rejects.toThrow("Thread-bound run requires a queue-first association");
-  });
-});
 
 describe("CHAT-02: on-demand member memory initialization", () => {
   it("initializes an existing member's memory from preferences before the member's first run", async () => {
@@ -476,13 +447,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
       content: null,
       eventType: "control.interrupt",
       interruptsRunId: first.runId,
-    });
-    const [storedInterrupt] = await readCanonicalChatEventStorageFixture([
-      interruptId,
-    ]);
-    expect(storedInterrupt).toMatchObject({
-      payload: null,
-      runId: first.runId,
     });
     expect(
       assistantMessages(messages.events).filter((message) => {

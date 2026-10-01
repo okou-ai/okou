@@ -685,41 +685,6 @@ export async function corruptApiTestConnectorCatalogRuntimeProjectionDigest(
   requireSingleCatalogMutation(updated, "runtime projection digest corruption");
 }
 
-export async function corruptApiTestConnectorCatalogRuntimeProjectionPayload(
-  connectorSlug: string,
-  connectorPayload: Buffer = Buffer.from("{}", "utf8"),
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const projectionSet =
-    await requireCurrentApiTestConnectorCatalogRuntimeProjectionSet(
-      db,
-      identity,
-    );
-  const updated = await db
-    .update(connectorCatalogRuntimeProjections)
-    .set({
-      connectorDigest: sha256Digest(connectorPayload),
-      connectorPayload,
-    })
-    .where(
-      and(
-        eq(
-          connectorCatalogRuntimeProjections.projectionSetId,
-          projectionSet.id,
-        ),
-        eq(connectorCatalogRuntimeProjections.connectorSlug, connectorSlug),
-      ),
-    )
-    .returning({
-      connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
-    });
-  requireSingleCatalogMutation(
-    updated,
-    "runtime projection payload corruption",
-  );
-}
-
 export async function expireApiTestConnectorCatalogRuntimeProjectionAuthority(): Promise<void> {
   await setApiTestConnectorCatalogRuntimeProjectionAuthority({
     validatorVersion: "1.0.0",
