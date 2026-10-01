@@ -1245,53 +1245,6 @@ export async function releaseBddBuiltInModelKey(args: {
   await releaseBuiltInModelKeyFixture(db(), args.fixtureId);
 }
 
-/**
- * Replaces one canonical binding with an otherwise valid session/run pair.
- * Product APIs cannot bind a thread to another owner's session, so this is the
- * narrow state boundary for ownership-corruption coverage.
- */
-export async function replaceThreadSessionBindingFixture(args: {
-  readonly threadId: string;
-  readonly detachFromThreadId: string;
-  readonly sessionId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx
-      .update(chatThreads)
-      .set({ agentSessionId: null, agentSessionRunId: null })
-      .where(eq(chatThreads.id, args.detachFromThreadId));
-    const updated = await tx
-      .update(chatThreads)
-      .set({
-        agentSessionId: args.sessionId,
-        agentSessionRunId: args.runId,
-      })
-      .where(eq(chatThreads.id, args.threadId))
-      .returning({ id: chatThreads.id });
-    if (updated.length !== 1) {
-      throw new Error(
-        "Expected one chat thread session binding to be replaced",
-      );
-    }
-  });
-}
-
-/** Reproduces an existing thread reassignment before its next run is picked. */
-export async function reassignThreadAgentFixture(args: {
-  readonly threadId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(chatThreads)
-    .set({ agentId: args.agentId })
-    .where(eq(chatThreads.id, args.threadId))
-    .returning({ id: chatThreads.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one chat thread agent to be reassigned");
-  }
-}
-
 /** Replaces a completed run's native session blob with exact test-owned bytes. */
 export async function replacePiSessionHistoryJsonlFixture(args: {
   readonly runId: string;
