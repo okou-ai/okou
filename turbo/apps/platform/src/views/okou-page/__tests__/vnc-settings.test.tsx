@@ -87,6 +87,28 @@ const plainCredential = Object.freeze<PlainCredential>({
   createdAt: plainHost.createdAt,
   updatedAt: plainHost.updatedAt,
 });
+type QemuScramCredential = Extract<
+  VncCredentialResponse,
+  { authMethod: "qemu_scram_sha256" }
+>;
+const qemuHost = Object.freeze<CredentialedVncConnection>({
+  ...plainHost,
+  id: "b0000000-0000-4000-8000-000000000009",
+  displayName: "QEMU workstation",
+  credentialId: "d0000000-0000-4000-8000-000000000009",
+  credentialName: "QEMU SCRAM login",
+  security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+});
+const qemuCredential = Object.freeze<QemuScramCredential>({
+  id: qemuHost.credentialId,
+  name: qemuHost.credentialName,
+  authMethod: "qemu_scram_sha256",
+  username: "operator",
+  revision: 1,
+  hosts: [{ id: qemuHost.id, displayName: qemuHost.displayName }],
+  createdAt: qemuHost.createdAt,
+  updatedAt: qemuHost.updatedAt,
+});
 const caBundle =
   "-----BEGIN CERTIFICATE-----\nTEST-CA-CERTIFICATE\n-----END CERTIFICATE-----\n";
 const sshHost = Object.freeze<SshConnectionResponse>({
@@ -839,6 +861,66 @@ test("Inline X509Plain creation sends exact username/password and custom_ca trus
   expect(secret).toHaveValue("");
 });
 
+test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password out of state", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, qemuHost);
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(dialog, "Security profile", "QEMU SCRAM-SHA-256 (X509SASL)");
+  expect(within(dialog).getByText(/subtype 263 only/u)).toBeInTheDocument();
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "QEMU SCRAM login",
+  );
+  const username = within(dialog).getByLabelText("Username");
+  const password = within(dialog).getByLabelText("Password");
+  expect(username).toHaveAttribute("pattern", "(?!.*[,=])[!-~]{1,255}");
+  expect(password).toHaveAttribute("pattern", "[ -~]{1,1023}");
+  await fill(username, "operator");
+  await fill(password, " secret ");
+  await choose(
+    dialog,
+    "Server certificate trust",
+    "Custom certificate authorities",
+  );
+  await fill(within(dialog).getByLabelText("CA certificates (PEM)"), caBundle);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      credential: {
+        create: {
+          name: "QEMU SCRAM login",
+          authentication: {
+            method: "qemu_scram_sha256",
+            username: "operator",
+            password: " secret ",
+          },
+        },
+      },
+      security: {
+        type: "qemu_x509_sasl",
+        trust: { mode: "custom_ca", caBundle },
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+  expect(document.body.textContent).not.toContain(" secret ");
+});
+
 test("Profile selection filters credentials and clears incompatible choices", async () => {
   mockSettings({
     connections: [],
@@ -1091,6 +1173,63 @@ test.each([
     ]);
   },
 );
+
+test("QEMU SCRAM credential rotation preserves its exact profile without revealing secrets", async () => {
+  const data = mockSettings({
+    connections: [qemuHost],
+    credentials: [qemuCredential],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    const updated = {
+      ...qemuCredential,
+      revision: 2,
+      username:
+        body.authentication?.method === "qemu_scram_sha256"
+          ? body.authentication.username
+          : qemuCredential.username,
+    };
+    data.credentials = [updated];
+    return respond(200, updated);
+  });
+  await page();
+  await screen.findByText(qemuHost.displayName);
+  expect(
+    screen.getByText(
+      "QEMU SCRAM-SHA-256 (X509SASL) · QEMU SCRAM-SHA-256 (X509SASL) · System certificate authorities",
+    ),
+  ).toBeInTheDocument();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(qemuCredential.name);
+  click(getAction("button", "Edit credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
+  expect(within(dialog).queryByLabelText("Password")).toBeNull();
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  expect(within(dialog).getByLabelText("Username")).toHaveValue("operator");
+  const password = within(dialog).getByLabelText("Password");
+  expect(password).toHaveValue("");
+  await fill(password, "new-secret");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 1,
+      name: qemuCredential.name,
+      authentication: {
+        method: "qemu_scram_sha256",
+        username: "operator",
+        password: "new-secret",
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+  expect(document.body.textContent).not.toContain("new-secret");
+});
 
 test("Plain credential cards and edits expose only password-free metadata", async () => {
   const data = mockSettings({

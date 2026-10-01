@@ -91,6 +91,7 @@ try {
     "1253_unique_zarek.sql",
     "1289_thick_bruce_banner.sql",
     "1296_little_electro.sql",
+    "1304_bright_grim_reaper.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -449,6 +450,40 @@ try {
     "UPDATE vnc_credentials SET revision=2147483647 WHERE id='00000000-0000-4000-8000-000000000001'",
   );
 
+  // QEMU SCRAM is a distinct verified-TLS pair; the migration preserves old rows.
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000021','org','owner','QEMU SCRAM','operator','qemu_scram_sha256','scram-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode,x509_server_name)
+      VALUES ('00000000-0000-4000-8000-000000000022','org','owner','QEMU SCRAM','qemu.example.com','00000000-0000-4000-8000-000000000021','qemu_scram_sha256','qemu_x509_sasl','system','qemu.example.com');
+  `);
+  for (const assignment of [
+    "username='has space'",
+    "username='has,comma'",
+    "username='has=equal'",
+    "username='é'",
+    "username=''",
+  ]) {
+    await rejects(
+      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000021'`,
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('x',256) WHERE id='00000000-0000-4000-8000-000000000021'",
+    { code: "22001" },
+  );
+  for (const securityType of ["x509_plain", "x509_vnc", "x509_none"]) {
+    await rejects(
+      `UPDATE vnc_connections SET security_type='${securityType}' WHERE id='00000000-0000-4000-8000-000000000022'`,
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000002' WHERE id='00000000-0000-4000-8000-000000000022'",
+    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+  );
+
   // One existing classic password can be explicitly selected for either X509Vnc
   // or Mac type 2; the saved security remains a distinct, constrained profile.
   await client.query(`
@@ -572,7 +607,7 @@ try {
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 7 }],
+    [{ count: 8 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC preservation migrations and storage constraints passed");

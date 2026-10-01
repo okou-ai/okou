@@ -41,6 +41,10 @@ export interface PrepareVolumeServerSideInput {
   readonly storageName: string;
   readonly files: readonly VolumeFileInput[];
   readonly piResourceIndex?: true;
+  /** An explicitly owned generation, either already reserved or private and
+   * unregistered. The caller revalidates/creates its parent before publication;
+   * preparation must not resolve a different canonical parent. */
+  readonly storage?: ServerSideVolumeStorage;
 }
 
 export interface PreparedServerSideVolume {
@@ -50,6 +54,11 @@ export interface PreparedServerSideVolume {
   readonly piResourceIndex?: {
     readonly projection: PiResourceVersionIndex | undefined;
   };
+}
+
+export interface ServerSideVolumeStorage {
+  readonly id: string;
+  readonly s3Prefix: string;
 }
 
 interface PrepareVolumeServerSideWithDbInput {
@@ -325,7 +334,9 @@ export const prepareVolumeServerSideWithDb$ = command(
       };
     });
     const updatedAt = nowDate();
-    const storage = await resolveCanonicalVolumeStorage(writeDb, input, signal);
+    const storage =
+      input.storage ??
+      (await resolveCanonicalVolumeStorage(writeDb, input, signal));
 
     const versionId = computeContentHashFromHashes(storage.id, fileEntries);
     const s3Key = `${storage.s3Prefix}/${versionId}`;

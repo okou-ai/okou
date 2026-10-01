@@ -56,6 +56,12 @@ export const vncHostSchema = z.union([
     .strict(),
   vncHostBaseSchema
     .extend({
+      authMethod: z.literal("qemu_scram_sha256"),
+      securityType: z.literal("qemu_x509_sasl"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
       authMethod: z.literal("apple_dh_username_password"),
       securityType: z.literal("apple_dh"),
     })

@@ -52,6 +52,7 @@ export const vncTypeBindings = [
           ],
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
+          qemu_scram_sha256: ["QEMU-specific SCRAM-SHA-256 authentication."],
           apple_dh_username_password: [
             "Apple DH username/password authentication with 63-byte fields.",
           ],
@@ -76,6 +77,7 @@ export const vncTypeBindings = [
           x509_none: ["VeNCrypt X509None; no inner client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
+          qemu_x509_sasl: ["QEMU X509SASL subtype 263 with verified TLS."],
           apple_vnc_password: [
             "Apple bare type 2, requiring SSH to Mac loopback.",
           ],
@@ -190,6 +192,9 @@ export const vncTypeBindings = [
           username_password: [
             "Username/password authentication inside verified TLS.",
           ],
+          qemu_scram_sha256: [
+            "Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.",
+          ],
           apple_dh_username_password: [
             "Apple DH username/password fields; the Runner validates 63-byte bounds.",
           ],
@@ -217,6 +222,9 @@ export const vncTypeBindings = [
           x509_none: ["Verified TLS without inner RFB client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
+          qemu_x509_sasl: [
+            "QEMU X509SASL subtype 263 and SCRAM-SHA-256 over verified TLS.",
+          ],
           apple_vnc_password: [
             "Apple bare type 2; only the separately verified SSH channel protects the RFB session.",
           ],

@@ -36,6 +36,7 @@ fn supported_profiles() -> Value {
         {"authMethod":"none","securityType":"x509_none","transportType":"direct"},
         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
+        {"authMethod":"qemu_scram_sha256","securityType":"qemu_x509_sasl","transportType":"direct"},
         {"authMethod":"client_certificate","securityType":"x509_none","transportType":"direct"},
         {"authMethod":"client_certificate_vnc_password","securityType":"x509_vnc","transportType":"direct"},
     ])

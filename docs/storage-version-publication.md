@@ -23,6 +23,68 @@ registered logical version into a new upload.
 The existing initial empty memory/artifact version is an explicit archive-less
 contract (`fileCount=0`, `archiveSize=0`); it is not evidence of a missing upload.
 
+## Bootstrap seed publication
+
+Limited-free bootstrap prepares seed instructions against a fresh private Storage
+UUID and `{orgId}/{storageId}` prefix. Preparation does not create or resolve the
+canonical instructions parent. Archive creation, index extraction and both R2
+PUTs finish outside database transactions. The prepared logical version remains
+bound to that UUID/prefix; it is never translated to a peer's generation.
+
+A short READ COMMITTED transaction inserts the canonical owner/name identity
+with `ON CONFLICT DO NOTHING`, then reads its parent `FOR UPDATE` before a fresh
+default-Agent decision. The insert arbitrates an absent parent. The direct strong
+lock avoids a NO KEY UPDATE-to-UPDATE upgrade cycle with a version writer that
+already holds FK KEY SHARE before updating its parent. No provider work runs in
+this transaction.
+
+- A committed peer default wins. The losing candidate cannot rewrite HEAD or
+  edited seed instructions.
+- An incumbent registered HEAD is preserved even when default metadata needs
+  repair. Its version must belong to the locked canonical parent; a foreign HEAD
+  fails closed. Its content is not reseeded.
+- A parent with neither HEAD nor registered versions has never published content.
+  Under its strong row lock it may be retired by exact identity and replaced by
+  the already-uploaded private candidate in the same transaction. A null HEAD
+  with retained versions is an invariant error, not deletion authority.
+- Only the elected candidate registers its version/HEAD/index before the existing
+  Agent, metadata, entitlement and credit finalization. Storage and Agent unique
+  constraints retain canonical identity; onboarding grants retain their existing
+  idempotency key. Paid tiers, ownership/visibility and catalog-selected system
+  default are preserved. The free metadata upsert checks the conflicting row's
+  tier at write time: a concurrent paid writer wins without its entitlement being
+  replaced or receiving a free onboarding grant. That branch only completes the
+  default-Agent pointer; an earlier tier read is not write authority.
+  Configured non-default policies retain Custom even when
+  they precede metadata creation; on conflict they retain the stored mode.
+  Unconfigured new organizations still start in Auto.
+
+Only an `INSERT RETURNING` receipt owns retirement of a newly inserted,
+unpublished candidate; ID equality alone does not. A candidate's captured prefix
+must also match its selected parent before publication. An existing live
+same-identity generation is retained rather than treated as disposable work.
+
+Losing candidates and retired empty parents enqueue exact-prefix cleanup v1 in
+that transaction. Preparation or publication failure joins all started PUTs
+before bounded compensation. Compensation arbitrates the captured candidate's
+primary key with an insert probe and checks only its exact UUID/prefix. The probe
+uses a private name and is removed in the same transaction, so it cannot contend
+with or adopt a peer's canonical generation. This waits for an uncertain
+publication instead of mistaking an invisible in-flight insert for rollback.
+Recovery SQL has a one-second lock timeout and five-second statement timeout,
+independent of the cancelled request's signal.
+Any already-registered captured parent is retained. Compensation never resolves
+a replacement by canonical name and never deletes a live parent. Cleanup
+inventory uses an independently bounded signal after request cancellation; its
+failure cannot replace the original preparation/publication error. R2 work runs
+outside transactions, with the existing worker's durable retry/lease protocol.
+
+A crash before inventory persistence and a provider accepting a PUT after its
+cancelled response can still leave unreferenced bytes. Those require the wider
+parent's late-upload/grace-period sweep; this slice does not claim a complete
+physical-immutability or orphan-GC solution. See the
+[bootstrap scope and unchanged data contract](deployment-compatibility.md#bootstrap-private-generation-publication-and-advisory-retirement).
+
 ## Remove references before objects
 
 Clerk organization/user cleanup locks the owned Storage parents in UUID order.
@@ -68,8 +130,10 @@ This change does not make physical keys immutable: concurrent first uploads and
 already-issued presigned PUT URLs can still overwrite or create objects after a
 cleanup completed. It introduces no grace-period sweep for those late uploads
 or for uploads that never registered a version. Those physical-key, retention
-and GC boundaries remain in #37402. Agent-instruction publication inside its
-existing authorization transaction also remains unchanged.
+and GC boundaries remain in #37402. Ordinary Agent-instruction updates inside
+their existing authorization transaction remain unchanged by the bootstrap
+slice; the preparation and DB-only commit helpers are additive for that separate
+follow-up.
 
 ## Deployment compatibility
 

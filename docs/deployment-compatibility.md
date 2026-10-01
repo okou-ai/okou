@@ -39,6 +39,48 @@ their current handler/checkpoint contract and can resume through the new code.
 See [Storage version publication](storage-version-publication.md) for the bounded
 cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
 
+## Bootstrap private-generation publication and advisory retirement
+
+Bootstrap seed IO now finishes before canonical parent publication. Each new
+attempt prepares a disjoint Storage UUID/prefix without registering a row. A
+short transaction arbitrates the canonical owner/name, takes its parent directly
+`FOR UPDATE`, checks default freshly and publishes only the elected generation.
+An incumbent HEAD is preserved; only a versionless empty container may be
+retired. Agent/metadata/credits/index references commit atomically. Exact failed
+or losing generations reuse handler-v1 storage-object-cleanup inventory; no
+schema, version identity, Runner reader or public API contract changes.
+
+The initial metadata insert now checks configured policies, like the existing
+conflict-update branch: policies configured before a metadata row exists retain
+Custom instead of being switched to Auto. On conflict, configured policies retain
+the stored mode; an unconfigured new org still starts in Auto. The policy and
+catalog schemas and paid-tier behavior do not change.
+
+At the owner's direction, mixed old/new bootstrap API writers are outside this
+change's acceptance scope. No runtime version dispatch or legacy bootstrap path
+is retained, and the earlier preparation-stage writer-drain/rollback gate is not
+an acceptance requirement for this PR. This is a scope decision, not a claim that
+serving builds were inspected. Other deployment and retirement contracts are
+unchanged.
+
+Concurrent attempts using this implementation keep disjoint UUIDs/prefixes.
+Canonical parent ownership and uniqueness select one default; losers enqueue
+only their own prefixes. Existing canonical Storage/version/index rows retain
+their shape and key layout, with no persisted-state conversion or migration.
+Published instructions and legitimate versionless empty reservations remain
+part of the data contract, independent of writer-version coexistence.
+
+Compensation fences an uncertain publication by probing the same candidate's
+primary key under a private probe name, then reads only that captured UUID/prefix.
+It removes only a newly inserted, unpublished probe; any live captured parent is
+retained. Recovery SQL has one-second lock and five-second statement timeouts,
+independent of request cancellation, without lock retries. Cleanup failure does
+not reinterpret a successful publication or replace the original failure.
+Process crashes before inventory and provider late PUTs still need #37402's grace
+sweep. No grace period or complete orphan-GC guarantee is introduced here. The
+[publication protocol](storage-version-publication.md#bootstrap-seed-publication)
+details canonical election, empty-parent recovery and bounded cleanup.
+
 ## Astra Ultrafast temporarily disabled (2026-09-30)
 
 Ultrafast is no longer advertised in model run options. Both model pickers hide

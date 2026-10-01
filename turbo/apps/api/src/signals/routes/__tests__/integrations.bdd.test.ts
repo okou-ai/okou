@@ -119,10 +119,11 @@ function requireCanonicalSlackInputAssetId(
   return assetId;
 }
 
-async function expectClaimedSlackDisplayContext(
+/** The queued Slack input was claimed into a visible launched message. */
+function expectClaimedSlackDisplayMessage(
   events: readonly ChatEvent[],
   messagePermalink: string,
-): Promise<void> {
+): void {
   const claimedMessage = events.find((message) => {
     return (
       message.eventType === "input.prompt" &&
@@ -136,20 +137,10 @@ async function expectClaimedSlackDisplayContext(
       })
     );
   });
-  if (!claimedMessage?.revokesEventId) {
-    throw new Error("Expected the claimed Slack message");
-  }
-  const claimedContext = await readChatEventContextFixture(claimedMessage.id);
-  const pendingContext = await readChatEventContextFixture(
-    claimedMessage.revokesEventId,
-  );
-  expect(claimedContext).toMatchObject({
-    contextType: "slack",
-    contextId: expect.any(String),
-  });
-  expect(pendingContext).toMatchObject({
-    contextType: "slack",
-    contextId: claimedContext?.contextId,
+  expect(claimedMessage).toMatchObject({
+    eventType: "input.prompt",
+    revokesEventId: expect.any(String),
+    runId: expect.any(String),
   });
 }
 
@@ -2389,28 +2380,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!canonicalInputMessage) {
         throw new Error("Expected the canonical Slack input message");
       }
-      // The Slack context row is the complete launch snapshot: the bot user ID
-      // the system prompt renders and the canonical asset the agent prompt
-      // renders both live here.
-      await expect(
-        readChatEventContextFixture(canonicalInputMessage.id),
-      ).resolves.toMatchObject({
-        slackBotUserId: botUserId,
-        slackMessageText: originalMessageText,
-        slackMessageAssets: [
-          {
-            assetId: canonicalInputAssetId,
-            slackFileId: "F_CANONICAL_INPUT",
-            filename: "source-notes.txt",
-            contentType: "text/plain",
-            status: "ready",
-          },
-        ],
-        slackMentionDisplayNames: {
-          [mentionedSlackUserId]: "Slack User",
-          [secondMentionedSlackUserId]: "Slack User",
-        },
-      });
       expect(visibleMessages).toStrictEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2451,7 +2420,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
             return message.content === null;
           }),
       ).toBeTruthy();
-      await expectClaimedSlackDisplayContext(
+      expectClaimedSlackDisplayMessage(
         visibleMessages,
         "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
       );

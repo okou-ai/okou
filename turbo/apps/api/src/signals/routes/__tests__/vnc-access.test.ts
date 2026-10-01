@@ -145,6 +145,63 @@ describe("live chat VNC Run inventory", () => {
     expect(JSON.stringify(result.body)).not.toContain("certificateChain");
   });
 
+  it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {
+    const f = await api.fixture({
+      defaultEnabled: false,
+      runtime: { chat: true },
+    });
+    api.authenticate(f);
+    const password = "synthetic-scram-secret";
+    const created = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU SCRAM desktop",
+          host: "qemu.example.com",
+          security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "QEMU SCRAM login",
+              authentication: {
+                method: "qemu_scram_sha256",
+                username: "operator",
+                password,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    expect(
+      (await accept(inventory().list({ headers: token(f) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers,
+        params: { protocol: "vnc", connectionId: created.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const kms = useSecretKmsProbe();
+    const listed = await accept(inventory().list({ headers: token(f) }), [200]);
+    expect(listed.body.hosts).toContainEqual({
+      id: created.body.id,
+      displayName: "QEMU SCRAM desktop",
+      host: "qemu.example.com",
+      port: 5900,
+      authMethod: "qemu_scram_sha256",
+      securityType: "qemu_x509_sasl",
+      availability: { status: "ready" },
+    });
+    expect(JSON.stringify(listed.body)).not.toContain(password);
+    expect(kms.decryptCalls).toBe(0);
+  });
+
   it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
     const f = await api.fixture({
       defaultEnabled: false,

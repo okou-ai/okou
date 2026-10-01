@@ -28,12 +28,13 @@ function isX509Security(
   security: VncConnectionResponse["security"],
 ): security is Extract<
   VncConnectionResponse["security"],
-  { type: "x509_none" | "x509_vnc" | "x509_plain" }
+  { type: "x509_none" | "x509_vnc" | "x509_plain" | "qemu_x509_sasl" }
 > {
   return (
     security.type === "x509_none" ||
     security.type === "x509_vnc" ||
-    security.type === "x509_plain"
+    security.type === "x509_plain" ||
+    security.type === "qemu_x509_sasl"
   );
 }
 
@@ -63,6 +64,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
     case "x509_plain": {
       return t(($) => {
         return $.vnc.security.x509Plain;
+      });
+    }
+    case "qemu_x509_sasl": {
+      return t(($) => {
+        return $.vnc.security.qemuX509Sasl;
       });
     }
     case "apple_vnc_password": {
@@ -120,6 +126,11 @@ function VncAuthenticationLabel({
     case "username_password": {
       return t(($) => {
         return $.vnc.credential.usernamePasswordMethod;
+      });
+    }
+    case "qemu_scram_sha256": {
+      return t(($) => {
+        return $.vnc.security.qemuX509Sasl;
       });
     }
     case "apple_dh_username_password": {

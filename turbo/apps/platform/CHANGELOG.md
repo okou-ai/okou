@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.990.0](https://github.com/okou-ai/okou/compare/app-v0.989.5...app-v0.990.0) (2026-10-01)
+
+
+### Features
+
+* **vnc:** add owner-selected qemu scram profile ([#37486](https://github.com/okou-ai/okou/issues/37486)) ([8562a7a](https://github.com/okou-ai/okou/commit/8562a7a241033ae023a588e9ead5643e93990957))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.533.0
+    * @okouai/core bumped to 8.725.4
+
 ## [0.989.5](https://github.com/okou-ai/okou/compare/app-v0.989.4...app-v0.989.5) (2026-10-01)
 
 

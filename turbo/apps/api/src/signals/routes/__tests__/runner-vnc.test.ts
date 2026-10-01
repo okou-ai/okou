@@ -862,6 +862,159 @@ describe("private Runner VNC authority", () => {
     ).toStrictEqual({ outcome: "unavailable" });
   });
 
+  it("resolves QEMU SCRAM only for the exact Runner capability, before and after rotation", async () => {
+    const f = await api.fixture();
+    const scramSecurity = {
+      type: "qemu_x509_sasl" as const,
+      trust: { mode: "system" as const },
+      serverName: "qemu.example.com",
+    };
+    const saved = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          ...vncConnectionBody(),
+          id: randomUUID(),
+          host: "qemu.example.com",
+          credential: {
+            create: {
+              name: "QEMU SCRAM",
+              authentication: {
+                method: "qemu_scram_sha256" as const,
+                username: "operator",
+                password: " first-secret ",
+              },
+            },
+          },
+          security: scramSecurity,
+        },
+      }),
+      [201],
+    );
+    const target = { ...f, connectionId: saved.body.id };
+    await api.enableDefault(f, "vnc", target.connectionId);
+    const direct = {
+      authMethod: "qemu_scram_sha256" as const,
+      securityType: "qemu_x509_sasl" as const,
+      transportType: "direct" as const,
+    };
+    const kms = useSecretKmsProbe();
+    await expect(api.resolve(target)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    await expect(
+      api.resolve(target, {
+        supportedProfiles: [
+          {
+            authMethod: "username_password",
+            securityType: "x509_plain",
+            transportType: "direct",
+          },
+        ],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    await expect(
+      api.resolve(target, {
+        supportedProfiles: [{ ...direct, transportType: "ssh" }],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(
+      api.resolve(target, { supportedProfiles: [direct] }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved_transport",
+      host: "qemu.example.com",
+      port: 5900,
+      serverName: "qemu.example.com",
+      generation: 1,
+      transport: { type: "direct" },
+      authentication: {
+        method: "qemu_scram_sha256",
+        username: "operator",
+        password: " first-secret ",
+      },
+      security: { type: "qemu_x509_sasl", trust: { mode: "system" } },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    expect((await check(target, 1)).body).toStrictEqual({ outcome: "valid" });
+    const credentialId = requireVncCredentialId(saved.body);
+    const rotated = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "qemu_scram_sha256",
+            username: "operator",
+            password: "new-secret",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body.revision).toBe(2);
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
+    expect((await check(target, 1)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(target, { supportedProfiles: [direct] }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      generation: 2,
+      authentication: { password: "new-secret" },
+    });
+
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU SSH gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("operator", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await api.enableDefault(f, "ssh", ssh.body.id);
+    const throughSsh = await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: target.connectionId },
+        body: {
+          expectedGeneration: 2,
+          host: "127.0.0.1",
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { ...scramSecurity, serverName: "qemu.internal" },
+        },
+      }),
+      [200],
+    );
+    expect(throughSsh.body.generation).toBe(3);
+    await expect(
+      api.resolve(target, { supportedProfiles: [direct] }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    const sshProfile = { ...direct, transportType: "ssh" as const };
+    await expect(
+      api.resolve(target, { supportedProfiles: [sshProfile] }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      host: "127.0.0.1",
+      serverName: "qemu.internal",
+      generation: 3,
+      transport: { type: "ssh", connectionId: ssh.body.id, generation: 1 },
+      authentication: { method: "qemu_scram_sha256", password: "new-secret" },
+    });
+    await api.setDefault(f, "ssh", ssh.body.id, false);
+    await expect(
+      api.resolve(target, { supportedProfiles: [sshProfile] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+  });
+
   it("admits Mac classic password only for an exact authorized SSH loopback profile", async () => {
     const f = await api.fixture();
     const ssh = await accept(

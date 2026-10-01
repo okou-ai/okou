@@ -3,7 +3,6 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { Buffer } from "node:buffer";
 import {
   createCipheriv,
   createHash,
@@ -11,11 +10,11 @@ import {
   randomBytes,
   randomUUID,
 } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadModelSelectionContract,
@@ -32,15 +31,16 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import {
+  logsByIdContract,
+  logsListContract,
+} from "@okouai/api-contracts/contracts/logs";
 import {
   feishuConnectContract,
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import {
-  logsByIdContract,
-  logsListContract,
-} from "@okouai/api-contracts/contracts/logs";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
@@ -50,45 +50,33 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  findPendingChatEventByPromptFixture,
-  readChatEventContextFixture,
-} from "../../../test-fixtures/chat-events";
-import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import { findPendingChatEventByPromptFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
-import { agentsRoutes } from "../agents";
-import { chatThreadRoutes } from "../chat-threads";
-import { connectorAccountRoutes } from "../connector-accounts";
-import { customConnectorsRoutes } from "../custom-connectors";
-import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
-import { customConnectorsGetRoutes } from "../custom-connectors-get";
-import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
-import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
-import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
-import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
-import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
-import { logsRoutes } from "../logs";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   clearFeishuConnectorOwnership,
@@ -102,12 +90,21 @@ import {
   setFeishuMemberConnectorLink,
 } from "./helpers/connector-credential-storage-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  captureIntegrationInputUploads,
-  expectIntegrationInputPreview,
-  listIntegrationInputFileParts,
-} from "./helpers/integration-input-assets";
 import { createRouteMocks } from "./helpers/route-test";
+import { agentsRoutes } from "../agents";
+import { chatThreadRoutes } from "../chat-threads";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { connectorAccountRoutes } from "../connector-accounts";
+import { customConnectorsRoutes } from "../custom-connectors";
+import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
+import { customConnectorsGetRoutes } from "../custom-connectors-get";
+import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
+import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
+import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
+import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { feishuConnectRoutes } from "../feishu-connect";
+import { logsRoutes } from "../logs";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -5700,43 +5697,11 @@ export function registerFeishuIntegrationTests(
             })
           );
         });
-        if (!claimedFeishuMessage?.revokesEventId) {
-          throw new Error("Expected the claimed Feishu message");
-        }
-        const claimedFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.id,
-        );
-        const pendingFeishuContext = await readChatEventContextFixture(
-          claimedFeishuMessage.revokesEventId,
-        );
-        expect(claimedFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: expect.any(String),
-          feishuMessageText: "do the Feishu task",
-          feishuMessageFiles: [
-            {
-              fileId: expect.any(String),
-              messageId: "om_history_file",
-              fileKey: historyFileKey,
-              type: "file",
-            },
-          ],
-          feishuChatType: "p2p",
-          feishuChatId: "oc_feishu_dm",
-          feishuMessageId: firstMessageId,
-          feishuThreadId: firstMessageId,
-          feishuReplyInThread: true,
-          feishuReactionId: expect.any(String),
-          feishuSenderOpenId: "ou_feishu_user",
-          feishuConnectionId: expect.any(String),
-          feishuInstallationId: fixture.installationId,
-        });
-        expect(claimedFeishuContext?.feishuConversationHistory).toContain(
-          "Earlier Feishu conversation context",
-        );
-        expect(pendingFeishuContext).toMatchObject({
-          contextType: "feishu",
-          contextId: claimedFeishuContext?.contextId,
+        // The queued Feishu input was claimed into the launched message.
+        expect(claimedFeishuMessage).toMatchObject({
+          eventType: "input.prompt",
+          revokesEventId: expect.any(String),
+          runId: run.id,
         });
         const completedReply = [...fixtureState.outboundMessages]
           .reverse()

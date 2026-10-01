@@ -309,6 +309,7 @@ export function isVncProfileCompatible(
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
     (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
     (authMethod === "username_password" && securityType === "x509_plain") ||
+    (authMethod === "qemu_scram_sha256" && securityType === "qemu_x509_sasl") ||
     (authMethod === "apple_dh_username_password" &&
       securityType === "apple_dh") ||
     (authMethod === "apple_srp_username_password" &&

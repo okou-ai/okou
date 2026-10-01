@@ -1934,6 +1934,9 @@ pub mod runners {
             /// Plain username/password authentication.
             #[serde(rename = "username_password")]
             UsernamePassword,
+            /// QEMU-specific SCRAM-SHA-256 authentication.
+            #[serde(rename = "qemu_scram_sha256")]
+            QemuScramSha256,
             /// Apple DH username/password authentication with 63-byte fields.
             #[serde(rename = "apple_dh_username_password")]
             AppleDhUsernamePassword,
@@ -1963,6 +1966,9 @@ pub mod runners {
             /// VeNCrypt X509Plain.
             #[serde(rename = "x509_plain")]
             X509Plain,
+            /// QEMU X509SASL subtype 263 with verified TLS.
+            #[serde(rename = "qemu_x509_sasl")]
+            QemuX509Sasl,
             /// Apple bare type 2, requiring SSH to Mac loopback.
             #[serde(rename = "apple_vnc_password")]
             AppleVncPassword,
@@ -2142,6 +2148,13 @@ pub mod runners {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
                 password: crate::SecretUtf8Text<1023>,
             },
+            /// Bounded ASCII SCRAM-SHA-256 credential for QEMU X509SASL.
+            QemuScramSha256 {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
             /// No inner client authentication or secret.
             None,
             /// Required client identity; no inner RFB credential.
@@ -2177,6 +2190,8 @@ pub mod runners {
                     AppleSrpUsernamePassword,
                     #[serde(rename = "apple_rsa_srp_username_password")]
                     AppleRsaSrpUsernamePassword,
+                    #[serde(rename = "qemu_scram_sha256")]
+                    QemuScramSha256,
                     #[serde(rename = "none")]
                     None,
                     #[serde(rename = "client_certificate")]
@@ -2266,6 +2281,7 @@ pub mod runners {
                             (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
                             (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
                             (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::QemuScramSha256), Some(password), Some(username), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::QemuScramSha256 { username, password }),
                             (Some(Kind::None), None, None, None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
                             (Some(Kind::ClientCertificate), None, None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificate { certificate_chain_der, private_key_pkcs8_der }),
                             (Some(Kind::ClientCertificateVncPassword), Some(password), None, Some(certificate_chain_der), Some(private_key_pkcs8_der)) => Ok(ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword { certificate_chain_der, private_key_pkcs8_der, password }),
@@ -2375,6 +2391,11 @@ pub mod runners {
                 /// Required verified TLS trust policy.
                 trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
             },
+            /// QEMU X509SASL subtype 263 and SCRAM-SHA-256 over verified TLS.
+            QemuX509Sasl {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
             /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
             AppleVncPassword,
             /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
@@ -2396,6 +2417,8 @@ pub mod runners {
                     X509Plain,
                     #[serde(rename = "x509_none")]
                     X509None,
+                    #[serde(rename = "qemu_x509_sasl")]
+                    QemuX509Sasl,
                     #[serde(rename = "apple_vnc_password")]
                     AppleVncPassword,
                     #[serde(rename = "apple_dh")]
@@ -2459,6 +2482,9 @@ pub mod runners {
                             (Some(Kind::X509None), Some(trust)) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509None { trust })
                             }
+                            (Some(Kind::QemuX509Sasl), Some(trust)) => Ok(
+                                ResolveResponseResolvedTransportSecurity::QemuX509Sasl { trust },
+                            ),
                             (Some(Kind::AppleVncPassword), None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
                             }

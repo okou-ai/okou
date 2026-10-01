@@ -3,19 +3,27 @@ import {
   getInstructionsFilename,
   SUPPORTED_FRAMEWORKS,
 } from "@okouai/core/frameworks";
-import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { getInstructionsStorageName } from "@okouai/core/storage-names";
 
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
-import { prepareVolumeServerSide$ } from "./storage-volume-publication.service";
+import {
+  commitPreparedVolumeServerSide,
+  prepareVolumeServerSide$,
+  prepareVolumeServerSideWithDb$,
+  type PreparedServerSideVolume,
+  type ServerSideVolumeStorage,
+} from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
-import { storages } from "@okouai/db/schema/storage";
-import { and, eq } from "drizzle-orm";
-import type { PiStableContextPublicationFence } from "./pi-stable-context-generation.service";
+import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import {
+  completePiStableContextPublication,
+  lockPiStableContextPublication,
+  refreshPiStableContextStorageDemands,
+  type PiStableContextPublicationFence,
+} from "./pi-stable-context-generation.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
@@ -70,16 +78,88 @@ export const writeAgentInstructionsStorage$ = command(
   },
 );
 
-/** Build and verify immutable objects before the caller starts publication. */
+/** Prepare and upload instructions without holding a publication transaction. */
 export const prepareAgentInstructionsStorage$ = command(
   async (
     { set },
-    args: WriteAgentInstructionsStorageArgs,
+    args: WriteAgentInstructionsStorageArgs & {
+      readonly storage?: ServerSideVolumeStorage;
+    },
     signal: AbortSignal,
-  ) => {
+  ): Promise<PreparedServerSideVolume> => {
     return await set(
       prepareVolumeServerSide$,
-      instructionVolumeInput(args),
+      { ...instructionVolumeInput(args), storage: args.storage },
+      signal,
+    );
+  },
+);
+
+/** DB-only commit. The caller owns/revalidates the Agent and Storage parent. */
+export async function commitPreparedAgentInstructionsStorageInTransaction(
+  args: {
+    readonly tx: Tx;
+    readonly volume: PreparedServerSideVolume;
+    readonly stableContextPublication?: PiStableContextPublicationFence;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (
+    args.stableContextPublication &&
+    !(await lockPiStableContextPublication(
+      args.tx,
+      args.stableContextPublication,
+    ))
+  ) {
+    throw new Error(
+      "Stable-context publication was superseded before Storage HEAD commit",
+    );
+  }
+  await commitPreparedVolumeServerSide(
+    { db: args.tx, volume: args.volume },
+    signal,
+  );
+  if (args.stableContextPublication) {
+    await refreshPiStableContextStorageDemands(
+      args.tx,
+      args.stableContextPublication,
+      {
+        storageId: args.volume.version.storageId,
+        versionId: args.volume.version.versionId,
+        archiveSize: args.volume.version.archiveSize,
+        fileCount: args.volume.version.fileCount,
+      },
+    );
+    signal.throwIfAborted();
+    if (
+      !(await completePiStableContextPublication(
+        args.tx,
+        args.stableContextPublication,
+      ))
+    ) {
+      throw new Error("Stable-context publication fence changed while locked");
+    }
+  }
+  signal.throwIfAborted();
+}
+
+export const writeAgentInstructionsStorageInTransaction$ = command(
+  async (
+    { set },
+    args: WriteAgentInstructionsStorageArgs & { readonly tx: Tx },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const volume = await set(
+      prepareVolumeServerSideWithDb$,
+      { db: args.tx, input: instructionVolumeInput(args) },
+      signal,
+    );
+    await commitPreparedAgentInstructionsStorageInTransaction(
+      {
+        tx: args.tx,
+        volume,
+        stableContextPublication: args.stableContextPublication,
+      },
       signal,
     );
   },
@@ -92,20 +172,10 @@ export const deleteAgentInstructionsStorage$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    // One DELETE owns and removes the Storage row; a concurrent delete wins
-    // deterministically and this caller then has no prefix to clean up.
-    const [deleted] = await writeDb
-      .delete(storages)
-      .where(
-        and(
-          eq(storages.orgId, args.orgId),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-          eq(storages.name, getInstructionsStorageName(args.agentName)),
-        ),
-      )
-      .returning({ s3Prefix: storages.s3Prefix });
+    const s3Prefix = await writeDb.transaction(async (tx) => {
+      return await removeAgentInstructionsStorageInTransaction(tx, args);
+    });
     signal.throwIfAborted();
-    const s3Prefix = deleted?.s3Prefix ?? null;
 
     if (s3Prefix) {
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");

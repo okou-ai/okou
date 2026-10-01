@@ -5,7 +5,10 @@ import {
   type RunnerVncResolveRequest,
   type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { vncLegacyAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import {
+  vncLegacyAuthenticationSchema,
+  vncQemuScramAuthenticationSchema,
+} from "@okouai/api-contracts/contracts/vnc-credentials";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -210,6 +213,45 @@ function storedRunnerSecurity(
   return security.data;
 }
 
+function parseStoredPasswordAuthentication(
+  row: CurrentVncAuthority,
+  password: string,
+) {
+  if (row.authMethod === "qemu_scram_sha256") {
+    // Validate stored plaintext again after KMS, without reflecting secrets or
+    // schema diagnostics into the private endpoint's error observations.
+    const scram = vncQemuScramAuthenticationSchema.safeParse({
+      method: row.authMethod,
+      username: row.username,
+      password,
+    });
+    if (!scram.success) {
+      throw new Error(
+        "VNC credential has an invalid stored authentication shape",
+      );
+    }
+    return scram.data;
+  }
+  const authentication = vncLegacyAuthenticationSchema.safeParse(
+    row.authMethod === "username_password" ||
+      row.authMethod === "apple_dh_username_password" ||
+      row.authMethod === "apple_srp_username_password" ||
+      row.authMethod === "apple_rsa_srp_username_password"
+      ? {
+          method: row.authMethod,
+          username: row.username,
+          password,
+        }
+      : { method: row.authMethod, password },
+  );
+  if (!authentication.success) {
+    throw new Error(
+      "VNC credential has an invalid stored authentication shape",
+    );
+  }
+  return authentication.data;
+}
+
 async function decryptRunnerAuthentication(
   row: CurrentVncAuthority,
   signal: AbortSignal,
@@ -285,24 +327,7 @@ async function decryptRunnerAuthentication(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
-  const authentication = vncLegacyAuthenticationSchema.safeParse(
-    row.authMethod === "username_password" ||
-      row.authMethod === "apple_dh_username_password" ||
-      row.authMethod === "apple_srp_username_password" ||
-      row.authMethod === "apple_rsa_srp_username_password"
-      ? {
-          method: row.authMethod,
-          username: row.username,
-          password: decrypted.value,
-        }
-      : { method: row.authMethod, password: decrypted.value },
-  );
-  if (!authentication.success) {
-    throw new Error(
-      "VNC credential has an invalid stored authentication shape",
-    );
-  }
-  return authentication.data;
+  return parseStoredPasswordAuthentication(row, decrypted.value);
 }
 
 function resolvedRunnerResponse(
