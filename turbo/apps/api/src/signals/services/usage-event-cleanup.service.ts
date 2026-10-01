@@ -27,7 +27,8 @@ export async function deleteUserUsageData(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // User cleanup spans orgs. Retain legacy global exclusion first, then
-    // native relation protection; do not guess a stable owner set from IDs.
+    // the staged maintenance entry (inactive in PR1). Do not infer a closed
+    // owner set from IDs or claim native relation protection is active yet.
     await lockUsageEventCompaction(tx);
     await tx.delete(socialDataJobs).where(eq(socialDataJobs.userId, userId));
     await tx

@@ -120,10 +120,6 @@ const expectedVercelCrons = [
     schedule: "* * * * *",
   },
   {
-    path: cronCompactUsageEventsContract.compact.path,
-    schedule: "* * * * *",
-  },
-  {
     path: cronTelegramCleanupContract.cleanup.path,
     schedule: "0 1 * * *",
   },
@@ -195,7 +191,7 @@ const expectedVercelCrons = [
 ] satisfies readonly VercelCron[];
 
 describe("vercel cron config", () => {
-  it("matches API-owned cron schedules", () => {
+  it("matches active API-owned cron schedules", () => {
     const crons = readVercelConfig().crons ?? [];
 
     expect(crons).toStrictEqual(expectedVercelCrons);
@@ -219,6 +215,11 @@ describe("vercel cron config", () => {
         `${path} must be registered in API routes`,
       ).toBeTruthy();
     }
+
+    // Schedule pause does not remove the authenticated compaction handler.
+    expect(
+      routePaths.has(cronCompactUsageEventsContract.compact.path),
+    ).toBeTruthy();
 
     expect(
       crons.filter(({ path }) => {
