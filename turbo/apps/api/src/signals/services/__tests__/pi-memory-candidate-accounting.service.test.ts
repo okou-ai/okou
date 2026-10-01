@@ -35,7 +35,7 @@ import {
 } from "../conversation-history-deletion.service";
 import { testContext } from "../../../__tests__/test-context";
 import { executeRawRows } from "../../../lib/db-raw-rows";
-import type { ApiDb } from "../../../lib/db-types";
+import type { ApiDb, Tx } from "../../../lib/db-types";
 import { env, mockEnv } from "../../../lib/env";
 import {
   deleteFeatureSwitchesForUser,
