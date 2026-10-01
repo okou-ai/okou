@@ -466,8 +466,15 @@ condition is retained in a caller-owned names/identity query. It reads no creden
 values a second time. Builtin decryption now runs in a private effect-owned command;
 read nodes await its preparation Promise alongside the model/launch preparation.
 Unready input exits before either new effect reads full preparation context.
-Custom runtime/structured OAuth binding migration remains unfinished and is not
-represented as completed by the source reader's custom target support. This adds
+Thread custom connectors now read every candidate account through the same
+reader. Custom results unfold the structured connection facts (auth method,
+storage version, reconnect state, token expiry), credential row IDs, the
+custom definition revision observed in the same statement, and the automatic
+OAuth binding. Thread derives its existing credential-access rows from those
+facts, keeps the same compatible/current-version value filter and still picks
+the first admissible candidate. Custom OAuth reconnect state is returned rather
+than hidden as unavailable because runtime refresh owns it. Custom secrets stay
+runtime template references, so no preparation decryption is added. This adds
 explicit source/authority reads, without claiming a latency improvement or full
 connector-source parity.
 

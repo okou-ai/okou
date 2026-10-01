@@ -3,7 +3,10 @@ import { PiNativeConfigurationError } from "./pi-native-model-config";
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { resolveModelProviderCodexRuntimeConfig } from "./model-provider-codex-runtime";
-import { createConnectorSourceSnapshots } from "./execution-connector-sources.service";
+import {
+  createConnectorSourceSnapshots,
+  type ConnectorSourceSnapshot,
+} from "./execution-connector-sources.service";
 import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
@@ -233,9 +236,6 @@ import {
   type RunConnectorSelection,
   runConnectorTargetFromRow,
   runConnectorTargetIsAuthorized,
-  runCustomConnectorAccessTokenSecret,
-  runCustomConnectorConnectionColumns,
-  runCustomConnectorRefreshTokenSecret,
   type RunModelProviderReadInput,
   type RunPreparedConnectorInputs,
   runThreadConnectorCandidates,
@@ -269,7 +269,6 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   zodDriverValueDecoder,
-  zodEnumDriverValueDecoder,
   pgBooleanDecoder,
   pgInt8ToBigIntDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -425,7 +424,14 @@ import {
   resolveCustomConnectorBaseUrlVars,
 } from "./connector-runtime-preparation.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
+import {
+  customConnectorAccountAuthMethodIsCompatible,
+  type CustomConnectorRuntimeStorageRow,
+} from "./custom-connector-credential-access.service";
+import {
+  CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
+  CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+} from "./custom-connector.service";
 import {
   customConnectorPermissionBundleDependencySlug,
   type CustomConnectorPermissionBundle,
@@ -603,7 +609,6 @@ import {
 } from "@okouai/db/schema/connector-catalog";
 import { conversations } from "@okouai/db/schema/conversation";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
@@ -2401,9 +2406,6 @@ const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
 const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
   z.record(z.string(), z.string()),
 );
-const runCustomConnectorStoredValueKindDecoder = zodEnumDriverValueDecoder(
-  z.enum(["secret", "variable"]),
-);
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   const args = claimCommitArguments(input.args);
@@ -2536,6 +2538,69 @@ function selectedSourceUpstream(
     );
   }
   return upstream;
+}
+
+function customConnectorSourceStorageRows(
+  snapshot: ConnectorSourceSnapshot,
+): readonly CustomConnectorRuntimeStorageRow[] {
+  const { source, connection, customBinding: binding } = snapshot;
+  if (source.kind !== "custom" || !binding) {
+    return [];
+  }
+  const credentialId = (name: string) => {
+    return (
+      snapshot.credentials.find((credential) => {
+        return credential.name === name;
+      })?.id ?? null
+    );
+  };
+  const base = {
+    id: source.sourceId,
+    updatedAt: connection.updatedAt,
+    customConnectorId: source.customConnectorId,
+    storedAuthMethod: connection.authMethod,
+    storedStorageVersion: connection.storageVersion,
+    storedNeedsReconnect: connection.needsReconnect,
+    tokenExpiresAt: connection.tokenExpiresAt,
+    definitionAuthMethod: binding.definitionAuthMode,
+    definitionMcpTransport: binding.definitionMcpTransport,
+    definitionStorageVersion: binding.definitionStorageVersion,
+    oauthAccessTokenId: credentialId(
+      CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
+    ),
+    oauthRefreshTokenId: credentialId(
+      CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+    ),
+    automaticOAuthBindingId: binding.automaticOAuthBindingId,
+  };
+  // Saved values only count for a compatible auth method at the exact current
+  // definition storage version; secrets never apply to unauthenticated access.
+  const current =
+    customConnectorAccountAuthMethodIsCompatible(
+      binding.definitionAuthMode,
+      connection.authMethod,
+    ) && connection.storageVersion === binding.definitionStorageVersion;
+  const values = current
+    ? [
+        ...(connection.authMethod === "none"
+          ? []
+          : snapshot.credentials.map((credential) => {
+              return {
+                kind: "secret" as const,
+                key: credential.name,
+                storedValue: credential.encryptedValue,
+              };
+            })),
+        ...Object.entries(snapshot.variables).map(([key, storedValue]) => {
+          return { kind: "variable" as const, key, storedValue };
+        }),
+      ]
+    : [];
+  return values.length === 0
+    ? [{ ...base, kind: null, key: null, storedValue: null }]
+    : values.map((value) => {
+        return { ...base, ...value };
+      });
 }
 
 function capturesPiProviderSecret(
@@ -10040,177 +10105,49 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const runCustomConnectorConnectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
-    const candidates = await get(accountCandidates$);
-    const connectorIds = (await get(preCreateConnectorScope$))
-      .allowedCustomConnectorIds;
-    const memberConnectorIds = connectorIds.flatMap((customConnectorId) => {
-      return (
-        candidates.get(
-          connectorAccountTargetKey({ kind: "custom", customConnectorId }),
-        ) ?? []
-      );
-    });
-    if (memberConnectorIds.length === 0) {
-      return null;
-    }
-    return db.$with("custom_connector_runtime_connections").as(
-      db
-        .select({
-          ...runCustomConnectorConnectionColumns(),
-          // A native column keeps this ID qualified across both joined CTEs.
-          id: connectors.id,
-        })
-        .from(connectors)
-        .innerJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, connectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, connectors.orgId),
-          ),
-        )
-        .leftJoin(
-          runCustomConnectorAccessTokenSecret,
-          and(
-            eq(runCustomConnectorAccessTokenSecret.connectorId, connectors.id),
-            eq(runCustomConnectorAccessTokenSecret.name, "access_token"),
-          ),
-        )
-        .leftJoin(
-          runCustomConnectorRefreshTokenSecret,
-          and(
-            eq(runCustomConnectorRefreshTokenSecret.connectorId, connectors.id),
-            eq(runCustomConnectorRefreshTokenSecret.name, "refresh_token"),
-          ),
-        )
-        .leftJoin(
-          customConnectorAccountOauthBindings,
-          and(
-            eq(
-              customConnectorAccountOauthBindings.connectorAccountId,
-              connectors.id,
-            ),
-            eq(
-              customConnectorAccountOauthBindings.customConnectorId,
-              orgCustomConnectors.id,
-            ),
-          ),
-        )
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            inArray(connectors.customConnectorId, [...connectorIds]),
-            inArray(connectors.id, memberConnectorIds),
-          ),
-        ),
+  const runCustomConnectorSources$ = computed(async (get) => {
+    const { args } = await get(connectorInput$);
+    const [candidates, scope] = await Promise.all([
+      get(accountCandidates$),
+      get(preCreateConnectorScope$),
+    ]);
+    // Every candidate is an exact saved source; Thread still owns choosing the
+    // first admissible candidate per connector below.
+    const sources = scope.allowedCustomConnectorIds.flatMap(
+      (customConnectorId) => {
+        return (
+          candidates.get(
+            connectorAccountTargetKey({ kind: "custom", customConnectorId }),
+          ) ?? []
+        ).map((sourceId) => {
+          return { kind: "custom" as const, customConnectorId, sourceId };
+        });
+      },
     );
-  });
-  const runCustomConnectorValueView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
-    const connections = await get(runCustomConnectorConnectionView$);
-    if (!connections) {
-      return null;
-    }
-    const compatible = or(
-      eq(connections.definitionAuthMethod, connections.storedAuthMethod),
-      and(
-        eq(connections.definitionAuthMethod, "automatic"),
-        inArray(connections.storedAuthMethod, ["none", "oauth"]),
-      ),
+    return await get(
+      createConnectorSourceSnapshots({
+        orgId: args.orgId,
+        userId: args.userId,
+        sources,
+      }),
     );
-    const currentVersion = eq(
-      connections.storedStorageVersion,
-      connections.definitionStorageVersion,
-    );
-    const secretQuery = db
-      .select({
-        memberConnectorId: connections.id,
-        kind: sql`'secret'`
-          .mapWith(runCustomConnectorStoredValueKindDecoder)
-          .as("kind"),
-        key: secretsTable.name,
-        storedValue: secretsTable.encryptedValue,
-      })
-      .from(connections)
-      .innerJoin(secretsTable, eq(secretsTable.connectorId, connections.id))
-      .where(
-        and(
-          eq(secretsTable.type, "connector"),
-          eq(secretsTable.orgId, args.orgId),
-          eq(secretsTable.userId, args.userId),
-          compatible,
-          currentVersion,
-          ne(connections.storedAuthMethod, "none"),
-        ),
-      );
-    const variableQuery = db
-      .select({
-        memberConnectorId: connections.id,
-        kind: sql`'variable'`
-          .mapWith(runCustomConnectorStoredValueKindDecoder)
-          .as("kind"),
-        key: variables.name,
-        storedValue: variables.value,
-      })
-      .from(connections)
-      .innerJoin(variables, eq(variables.connectorId, connections.id))
-      .where(
-        and(
-          eq(variables.type, "connector"),
-          eq(variables.orgId, args.orgId),
-          eq(variables.userId, args.userId),
-          compatible,
-          currentVersion,
-        ),
-      );
-    // The member ID is only used by the outer JOIN, not decoded in its result.
-    // Keep the first branch's kind decoder for the returned UNION fields.
-    return db
-      .$with("custom_connector_runtime_values")
-      .as(unionAll(secretQuery, variableQuery));
   });
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { db, timing } = await get(connectorInput$);
-      const [connections, values] = await Promise.all([
-        get(runCustomConnectorConnectionView$),
-        get(runCustomConnectorValueView$),
-      ]);
-      if (!connections || !values) {
-        return [];
-      }
+      const { timing } = await get(connectorInput$);
       const startedAt = now();
-      const rows = await db
-        .with(connections, values)
-        .select({
-          id: connections.id,
-          updatedAt: connections.updatedAt,
-          customConnectorId: connections.customConnectorId,
-          storedAuthMethod: connections.storedAuthMethod,
-          storedStorageVersion: connections.storedStorageVersion,
-          storedNeedsReconnect: connections.storedNeedsReconnect,
-          tokenExpiresAt: connections.tokenExpiresAt,
-          definitionAuthMethod: connections.definitionAuthMethod,
-          definitionMcpTransport: connections.definitionMcpTransport,
-          definitionStorageVersion: connections.definitionStorageVersion,
-          oauthAccessTokenId: connections.oauthAccessTokenId,
-          oauthRefreshTokenId: connections.oauthRefreshTokenId,
-          automaticOAuthBindingId: connections.automaticOAuthBindingId,
-          kind: values.kind,
-          key: values.key,
-          storedValue: values.storedValue,
-        })
-        .from(connections)
-        .leftJoin(values, eq(values.memberConnectorId, connections.id));
+      const results = await get(runCustomConnectorSources$);
       timing.recordElapsed(
         "api_dispatch_prepare_context_load_custom_connector_value_rows",
         "nested",
         startedAt,
         now(),
       );
-      return rows;
+      return results.flatMap((result) => {
+        return result.kind === "available"
+          ? customConnectorSourceStorageRows(result.snapshot)
+          : [];
+      });
     },
   );
   const runCustomConnectorPermissionBundles$ = computed(async (get) => {
