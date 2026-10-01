@@ -4,6 +4,7 @@ import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integ
 import { http, HttpResponse } from "msw";
 
 import { createApp } from "../../../app-factory";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
@@ -71,6 +72,8 @@ async function connectSecondMember(install: PublicSlackInstall): Promise<{
     slackUserId,
     channelId: "C_BDD_SECOND_MEMBER",
   });
+  // The connect notification refreshes App Home in owned background work.
+  await flushWaitUntilForTest();
   return { member, slackUserId };
 }
 
