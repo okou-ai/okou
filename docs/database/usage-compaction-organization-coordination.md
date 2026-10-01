@@ -10,6 +10,8 @@ After obtaining the existing compaction lock, the transaction recomputes the cut
 
 An empty eligible discovery snapshot, including held-error-only data, does no financial work and does not acquire the compaction lock. A late or backdated processed row is reconsidered by a later invocation. Error-held rows are not compacted; the existing bounded probe still reports them. Explicitly scoped test requests use owned organization IDs rather than sweeping other tests' rows. The Cron's `hasMore` means **global** eligible raw work, checked within the mutating transaction after its rewrite, not just the chosen organization's remainder. A failure of that receipt read rolls back the rewrite; no required database query is added after commit. On no-work calls `hasMore: false` describes the discovery snapshot, not a fence against later arrivals.
 
+Mutating-batch counters and the bounded held-error probe now describe the **selected organization**. On no-work calls the probe describes the discovery scope (all organizations for Cron, owned IDs for a test request). Only Cron `hasMore` is a global remainder. Do not compare those scoped counters with old cross-org probe values as if their observation scope were unchanged.
+
 Readers and settlement retain quantities, charged credits, allowance-window totals, the original time anchor, synchronous final receipts, FEFO and transactional rollback. No schema, historical migration, Cron configuration, pricing or balance-update change is included.
 
 ## Coordination at this head
