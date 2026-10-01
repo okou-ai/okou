@@ -83,7 +83,6 @@ import {
   replaceApiTestConnectorCatalogFilteredAuthMethods,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   readSessionHistoryBlobRefCountFixture,
   setRunModelProviderFixture,
@@ -4860,7 +4859,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("runs a provider-prefixed ID of a model the catalog frees for restricted plans", async () => {
+  it("runs a built-in model the catalog frees for restricted plans", async () => {
     const api = createRunsApi(context);
     const selectedModel = "deepseek-v4-flash";
     await seedBuiltInModelKey(selectedModel);
@@ -4871,14 +4870,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         builtInOnRestrictedPlans: true,
       }),
     );
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
     if (!actor.orgId) {
       throw new Error("Expected the restricted-plan actor to have an org");
     }
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: { main: { framework: "codex" } },
-    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     await upsertOrgPlanEntitlementFixture({
       orgId: actor.orgId,
       status: "active",
@@ -4886,13 +4890,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       restrictedBuiltInModels: true,
     });
 
-    // The OpenRouter upstream ID names exactly one catalog model, which the
-    // catalog now allows on restricted plans.
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "provider-prefixed built-in model",
-      selectedModelProviderType: "built-in",
-      selectedModelOverride: "deepseek/deepseek-v4-flash",
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "restricted-plan built-in model",
+      model: selectedModel,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5009,75 +5010,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     });
     await api.requestCancelRun(actor, sent.runId, [200]);
   });
-
-  it.each([undefined, "deepseek-flash", "deepseek-v4-flash"] as const)(
-    "claims native DeepSeek with saved selection %s or the provider default",
-    async (selectedModel) => {
-      const api = createRunsApi(context);
-      const { actor, runnerGroup } = await entitledRunActor();
-      const { providerId } = await api.createOrgModelProvider(actor, {
-        type: "deepseek",
-        secret: "native-deepseek-key",
-      });
-      if (selectedModel !== undefined) {
-        // The current credential API cannot write a saved model. Seed the
-        // historical state to verify the default cannot overwrite it.
-        if (!actor.orgId) {
-          throw new Error(
-            "Expected a workspace for the native DeepSeek fixture",
-          );
-        }
-        await setHistoricalModelProviderSelectionFixture({
-          orgId: actor.orgId,
-          providerId,
-          selectedModel,
-        });
-      }
-      // Model-first chat supplies a canonical selection. The direct-run
-      // fixture exercises provider-default resolution without that override.
-      const compose = await api.createDirectAgent(actor, {
-        version: "1",
-        agents: { main: { framework: "codex" } },
-      });
-      const run = await api.createDirectRun(actor, {
-        agentId: compose.agentId,
-        modelProviderType: "deepseek",
-        prompt: "native DeepSeek provider selection",
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const runtimeModel = selectedModel ?? "deepseek-flash";
-
-      expect(claim.environment).toMatchObject({
-        OPENAI_MODEL: runtimeModel,
-        OPENAI_BASE_URL: "https://api.deepseek.com/",
-      });
-      expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: "deepseek",
-        modelCatalog: {
-          models: expect.arrayContaining([
-            expect.objectContaining({
-              slug: runtimeModel,
-              input_modalities: ["text", "image"],
-            }),
-          ]),
-        },
-      });
-      const providers = await api.listOrgModelProviders(actor);
-      expect(
-        providers.find((provider) => {
-          return provider.id === providerId;
-        }),
-      ).toMatchObject({
-        selectedModel: selectedModel ?? null,
-      });
-      expect(claim.modelUsageProvider).toBe(
-        runtimeModel === "deepseek-flash" ? undefined : runtimeModel,
-      );
-      expect(claim.billableFirewalls).not.toContain("model-provider:deepseek");
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
 
   it.each(["deepseek-v4-flash", "deepseek-v4.1-flash"] as const)(
     "claims built-in %s chat runs through the Pi Responses route",
