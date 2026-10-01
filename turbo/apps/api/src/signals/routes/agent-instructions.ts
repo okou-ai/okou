@@ -208,7 +208,8 @@ const reserveAgentInstructionPublication$ = command(
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
-    return await writeDb.transaction(async (tx) => {
+    let reservedFence: PiStableContextPublicationFence | undefined;
+    const reservation = writeDb.transaction(async (tx) => {
       const current = await lockInstructionAgent(tx, args.orgId, args.agentId);
       signal.throwIfAborted();
       if (!current) {
@@ -250,6 +251,7 @@ const reserveAgentInstructionPublication$ = command(
         { orgId: args.orgId, agentId: current.id },
         PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
       );
+      reservedFence = fence;
       signal.throwIfAborted();
       return {
         kind: "reserved" as const,
@@ -261,6 +263,13 @@ const reserveAgentInstructionPublication$ = command(
           fence,
         },
       };
+    });
+    return await onRejection(reservation, async () => {
+      // The COMMIT receipt can fail after the token was written. Settle only
+      // the fence we observed, whether the reservation committed or rolled back.
+      if (reservedFence) {
+        await settleInstructionPublication(writeDb, reservedFence);
+      }
     });
   },
 );
