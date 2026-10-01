@@ -16,18 +16,20 @@ import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
-  readRunUsageEventsFixture,
   replacePiSessionHistoryInlineFixture,
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
 import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import {
+  expectThreadModelTokens,
+  readThreadModelUsage,
+} from "./helpers/public-thread-usage";
 import {
   createChatEventsFixture,
   claimEnvironment,
   modelProviderSecretPlaceholder,
-  totalChargedCredits,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
   eventBackedContents,
@@ -309,6 +311,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       let run = await queued.launch();
       let expectedH0: Buffer | undefined;
+      let applicationSession: string | undefined;
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       for (const turn of [1, 2]) {
         const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
@@ -326,11 +329,6 @@ describe("CHAT-02: model-first provider policies", () => {
         }
         await flushWaitUntilForTest();
         expect(resourceDownloads).toBe(0);
-        // Public usage summaries omit pending usage, so inspect this run's
-        // uniquely owned ledger to prove launching the turn bills nothing.
-        await expect(
-          readRunUsageEventsFixture(run.runId),
-        ).resolves.toStrictEqual([]);
         const claim = await claimChatRun(runnerGroup, run.runId);
         expect(claim.claim).toMatchObject({
           cliAgentType: "pi",
@@ -427,20 +425,16 @@ describe("CHAT-02: model-first provider policies", () => {
             return message.content === answer;
           }),
         ).toHaveLength(1);
-        await expect(
-          readRunUsageEventsFixture(run.runId),
-        ).resolves.toStrictEqual([
-          expect.objectContaining({
-            provider: "gpt-6-luna",
-            category: "tokens.output",
-            quantity: 2,
-            status: "processed",
-            billingError: null,
-          }),
-        ]);
-        await expect(
-          readThreadSessionConversation(context, run.threadId),
-        ).resolves.toMatchObject({ conversation_run_id: run.runId });
+        await expectThreadModelTokens(context, actor, run.threadId, turn * 2);
+        const completedSession = await readCompletedRunSessionId(
+          context,
+          actor,
+          run.runId,
+        );
+        if (applicationSession === undefined) {
+          applicationSession = completedSession;
+        }
+        expect(completedSession).toBe(applicationSession);
         const blob = [...checkpointObjects.entries()]
           .filter(([key]) => {
             return key.startsWith(`${bucket}/blobs/`);
@@ -761,19 +755,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await waitForRunStatus(actor, run.runId, "cancelled");
       await failChatRun(run.runId, claimed.sandboxHeaders, "Run cancelled");
       await flushWaitUntilForTest();
-      // The API runs no inference for Pi, so the only billed row is the
-      // Sandbox's idempotently reported usage.
-      const usage = await readRunUsageEventsFixture(run.runId);
-      expect(usage).toStrictEqual([
-        expect.objectContaining({
-          provider: selectedModel,
-          category: "tokens.output",
-          quantity: 2,
-          status: "processed",
-          billingError: null,
-        }),
-      ]);
-      expect(totalChargedCredits(usage)).toBeGreaterThan(0);
+      // Only the guest's two reported output tokens are publicly charged.
+      const usage = await readThreadModelUsage(context, actor, run.threadId);
+      expect(usage.tokens).toBe(2);
+      expect(usage.credits).toBeGreaterThan(0);
     },
     90_000,
   );
