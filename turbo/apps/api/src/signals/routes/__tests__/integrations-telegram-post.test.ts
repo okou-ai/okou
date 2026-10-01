@@ -37,7 +37,13 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import {
+  seedBuiltInDefaultModelKey,
+  seedBuiltInModelKey,
+} from "./helpers/runtime-state";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 
@@ -48,6 +54,7 @@ const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
+const runReadsApi = createRunReadsApi(context);
 
 const OFFICIAL_BOT_TOKEN = "987654:official-bot-token";
 const OFFICIAL_BOT_USERNAME = "official_okou_bot";
@@ -60,7 +67,6 @@ interface TelegramPostFixture {
   readonly orgId: string;
   readonly userId: string;
   readonly composeId: string;
-  readonly versionId: string;
   readonly telegramBotId: string;
   readonly webhookSecret: string;
   readonly telegramUserId?: string;
@@ -244,7 +250,6 @@ async function seedTelegramPostFixture(
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
     composeId: String(fixture.compose_id),
-    versionId: String(fixture.version_id),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     webhookSecret: OFFICIAL_WEBHOOK_SECRET,
     telegramUserId: args.seedOfficialLink
@@ -278,6 +283,139 @@ function actorForFixture(fixture: TelegramPostFixture): ApiTestUser {
     orgRole: "org:admin",
     email: `${fixture.userId}@example.test`,
   };
+}
+
+/** Links a unique Telegram user to the actor through the signed link API. */
+async function linkOfficialTelegramUser(actor: ApiTestUser): Promise<string> {
+  const telegramAuth = {
+    id: Number(newTelegramBotId()),
+    auth_date: Math.floor(nowDate().getTime() / 1000),
+    first_name: "Alice",
+  };
+  const authData = Object.entries(telegramAuth)
+    .sort(([left], [right]) => {
+      return left.localeCompare(right);
+    })
+    .map(([key, value]) => {
+      return `${key}=${value}`;
+    })
+    .join("\n");
+  const secretKey = createHash("sha256").update(OFFICIAL_BOT_TOKEN).digest();
+  await accept(
+    telegramClient().link({
+      headers: authOrgApi.authenticate(actor),
+      body: {
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        telegramAuth: {
+          ...telegramAuth,
+          hash: createHmac("sha256", secretKey).update(authData).digest("hex"),
+        },
+      },
+    }),
+    [200],
+  );
+  return String(telegramAuth.id);
+}
+
+/**
+ * Builds a Telegram poster through production APIs: onboarding creates the
+ * org, member and default agent; an optional signed official-bot link binds a
+ * unique Telegram user to that member.
+ */
+async function createTelegramPostFixture(
+  options: { readonly linkOfficial?: boolean } = {},
+): Promise<TelegramPostFixture> {
+  configureOfficialBotEnv();
+  const actor = authOrgApi.user();
+  if (!actor.orgId) {
+    throw new Error("Expected an organization for the Telegram poster");
+  }
+  await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
+    displayName: "Telegram post agent",
+  });
+  const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+  if (!defaultAgentId) {
+    throw new Error("Expected onboarding to create a default agent");
+  }
+  return {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    composeId: defaultAgentId,
+    telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+    webhookSecret: OFFICIAL_WEBHOOK_SECRET,
+    ...(options.linkOfficial === true
+      ? { telegramUserId: await linkOfficialTelegramUser(actor) }
+      : {}),
+  };
+}
+
+/**
+ * Routes the org to built-in Fable through the public policy API. Fable stays
+ * on the Claude Code harness, so Telegram runs remain claimable native Runner
+ * jobs; built-in Fable needs a paid plan and an operator model key.
+ */
+async function useNativeFablePolicies(
+  fixture: TelegramPostFixture,
+): Promise<void> {
+  const actor = actorForFixture(fixture);
+  await runsApi.grantProEntitlement(actor);
+  await seedBuiltInModelKey(context, "claude-fable-5-1");
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      preferred: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
+}
+
+/** The poster's newest run whose launch prompt contains `text`. */
+async function runForPrompt(fixture: TelegramPostFixture, text: string) {
+  return (
+    await runsApi.listAgentRuns(actorForFixture(fixture), { limit: 20 })
+  ).runs.find((run) => {
+    return run.prompt?.includes(text) === true;
+  });
+}
+
+/** The poster's chat thread that holds the input which launched the run. */
+async function threadIdForRun(
+  fixture: TelegramPostFixture,
+  runId: string,
+): Promise<string> {
+  const actor = actorForFixture(fixture);
+  const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+  if (lifecycle.status !== 200) {
+    throw new Error("Expected Telegram thread lifecycle events");
+  }
+  const matched: string[] = [];
+  for (const event of lifecycle.body.events) {
+    if (event.kind !== "created") {
+      continue;
+    }
+    const { events } = await chatApi.listThreadEvents(
+      actor,
+      event.chatThreadId,
+    );
+    if (
+      events.some((threadEvent) => {
+        return (
+          threadEvent.eventType === "input.prompt" &&
+          threadEvent.runId === runId
+        );
+      })
+    ) {
+      matched.push(event.chatThreadId);
+    }
+  }
+  expect(matched).toHaveLength(1);
+  const [threadId] = matched;
+  if (!threadId) {
+    throw new Error("Expected the Telegram run's chat thread");
+  }
+  return threadId;
 }
 
 beforeEach(() => {
@@ -545,12 +683,6 @@ async function readTelegramSourcePart(
     : undefined;
 }
 
-async function latestAgentRunForFixture(
-  fixture: TelegramPostFixture,
-): Promise<TelegramAgentRunSnapshot | null> {
-  return (await telegramPostRunState(fixture)).agentRun;
-}
-
 function mentionEntity(username: string) {
   return { type: "mention", offset: 0, length: username.length + 1 };
 }
@@ -617,22 +749,28 @@ async function seedNativeFablePolicies(
   ]);
 }
 
-async function selectedModelFor(
+function userModelPreferenceClient() {
+  return setupApp({ context, routes: userModelPreferenceRoutes })(
+    userModelPreferenceContract,
+  );
+}
+
+/** The member's default model from the public preference endpoint. */
+async function memberDefaultModel(
   fixture: TelegramPostFixture,
 ): Promise<string | null> {
-  const response = await postTelegramStateAction({
-    action: "get-selected-model",
-    org_id: fixture.orgId,
-    user_id: fixture.userId,
-  });
-  return typeof response.selected_model === "string"
-    ? response.selected_model
-    : null;
+  const response = await accept(
+    userModelPreferenceClient().get({
+      headers: authOrgApi.authenticate(actorForFixture(fixture)),
+    }),
+    [200],
+  );
+  return response.body.selectedModel;
 }
 
 describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("validates bot ownership, webhook secret, and JSON payload", async () => {
-    const fixture = await trackFixture(seedTelegramPostFixture({}));
+    const fixture = await createTelegramPostFixture();
 
     const missing = await postWebhook({
       telegramBotId: newTelegramBotId(),
@@ -661,10 +799,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
-    await seedNativeFablePolicies(fixture);
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    await useNativeFablePolicies(fixture);
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
     expect(
@@ -690,12 +826,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toBe(200);
     await flushWaitUntilForTest();
 
-    const state = await telegramPostRunState(fixture, prompt);
-    const runId = state.run?.id;
-    const threadId = state.agentRun?.chatThreadId;
-    if (!runId || !threadId) {
+    const runId = (await runForPrompt(fixture, prompt))?.id;
+    if (!runId) {
       throw new Error("Expected a thread-bound Telegram run");
     }
+    const threadId = await threadIdForRun(fixture, runId);
     const reuseKey = `thread:${threadId}`;
     const runnerId = randomUUID();
     await runsApi.requestHeartbeatRunner(true, [200], {
@@ -1433,10 +1568,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     { timeout: 120_000 },
     async () => {
       const runnerGroup = configureCanonicalTelegramRunner();
-      const fixture = await trackFixture(
-        seedTelegramPostFixture({ seedOfficialLink: true }),
-      );
-      await seedNativeFablePolicies(fixture);
+      const fixture = await createTelegramPostFixture({ linkOfficial: true });
+      await useNativeFablePolicies(fixture);
       const actor = actorForFixture(fixture);
       const telegramMocks = telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -1502,7 +1635,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!removed.ok) {
         throw removed.error;
       }
-      expect((await telegramPostRunState(fixture)).run).toBeNull();
       expect(
         (await runsApi.listAgentRuns(actor, { limit: 20 })).runs,
       ).toStrictEqual([]);
@@ -1518,11 +1650,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         ).status,
       ).toBe(200);
       await flushWaitUntilForTest();
-      const acceptedState = await telegramPostRunState(fixture);
-      if (!acceptedState.run) {
+      const acceptedRun = await runForPrompt(fixture, firstPrompt);
+      if (!acceptedRun) {
         throw new Error("Expected the redelivered Telegram topic run");
       }
-      const claim = await claimTelegramRun(acceptedState.run.id, runnerGroup);
+      const claim = await claimTelegramRun(acceptedRun.id, runnerGroup);
       expect(claim.prompt).toContain(firstPrompt);
       expect(claim.prompt).toContain("topic-note.txt");
       const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
@@ -1538,7 +1670,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         okouToken: claim.platformEnvironment.OKOU_TOKEN,
       });
       expectExactSystemPromptFragment(
-        acceptedState.run.appendSystemPrompt,
+        acceptedRun.appendSystemPrompt,
         [
           `Chat ID: ${chatId}`,
           "Chat type: supergroup",
@@ -1547,7 +1679,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         ].join("\n"),
       );
       await completeCanonicalChatRun({
-        runId: acceptedState.run.id,
+        runId: acceptedRun.id,
         sandboxToken: claim.sandboxToken,
       });
       expect(telegramMocks.sentMessages).toHaveLength(1);
@@ -1562,13 +1694,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
-    // A native run stays queued, so its registered callback is still
-    // readable; a Pi API-first run can finish and settle it first.
-    await seedNativeFablePolicies(fixture);
-    telegramApiMocks();
+    const runnerGroup = configureCanonicalTelegramRunner();
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    await useNativeFablePolicies(fixture);
+    const telegramMocks = telegramApiMocks();
 
     const response = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1591,18 +1720,26 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(response.status).toBe(200);
     await flushWaitUntilForTest();
 
-    const runState = await telegramPostRunState(fixture);
-    expect(runState.run).toBeDefined();
-    expect(runState.callbacks[0]).toMatchObject({
-      url: null,
-      internalKind: "chat",
+    // The completion is delivered by the typed Telegram chat callback, not
+    // through an HTTP callback to the configured backend URL.
+    const run = await runForPrompt(fixture, "hello from telegram");
+    if (!run) {
+      throw new Error("Expected the Telegram run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup);
+    await completeCanonicalChatRun({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+    });
+    expect(telegramMocks.sentMessages).toHaveLength(1);
+    expect(telegramMocks.sentMessages[0]).toMatchObject({
+      chat_id: "77001",
     });
   });
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    await useNativeFablePolicies(fixture);
     const botUsername = OFFICIAL_BOT_USERNAME;
     telegramApiMocks();
 
@@ -1643,7 +1780,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(response.status).toBe(200);
     await flushWaitUntilForTest();
 
-    const run = await latestRunForFixture(fixture);
+    const run = await runForPrompt(fixture, `@${botUsername}`);
     expect(run?.prompt).toBe(`@${botUsername}`);
     await expect(
       readTelegramSourcePart(fixture, `@${botUsername}`),
@@ -1675,12 +1812,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("creates an agent run for a linked official-bot private message", async () => {
-    configureOfficialBotEnv();
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
-    );
-
-    await seedNativeFablePolicies(fixture);
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    await useNativeFablePolicies(fixture);
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({
@@ -1693,7 +1826,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           message_id: 51,
           chat: { id: 88_002, type: "private" },
           from: {
-            id: 99_002,
+            id: Number(fixture.telegramUserId),
             username: "bob",
             first_name: "Bob",
             language_code: "en",
@@ -1706,7 +1839,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(response.status).toBe(200);
     await flushWaitUntilForTest();
 
-    const run = await latestRunForFixture(fixture);
+    const run = await runForPrompt(fixture, "run through official bot");
     expect(run?.prompt).toBe("run through official bot");
     await expect(
       readTelegramSourcePart(fixture, "run through official bot"),
@@ -1734,14 +1867,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     // The admitted sender identity reaches the agent's user info.
     expect(run?.appendSystemPrompt).toContain("Telegram display name: Bob");
     expect(run?.appendSystemPrompt).toContain("Telegram username: @bob");
-    expect(run?.appendSystemPrompt).toContain("Telegram user ID: 99002");
+    expect(run?.appendSystemPrompt).toContain(
+      `Telegram user ID: ${fixture.telegramUserId}`,
+    );
     expect(run?.appendSystemPrompt).toContain("Telegram language: en");
-    await expect(latestAgentRunForFixture(fixture)).resolves.toMatchObject({
-      triggerSource: "telegram",
-    });
-    expect((await telegramPostRunState(fixture)).callbacks[0]).toMatchObject({
-      internalKind: "chat",
-    });
+    if (!run) {
+      throw new Error("Expected the official-bot Telegram run");
+    }
+    const log = await runReadsApi.requestReadLogById(
+      actorForFixture(fixture),
+      run.id,
+      [200],
+    );
+    expect(log.body.triggerSource).toBe("telegram");
   });
 
   it("keeps an official-bot group mention routable after an overlapping model-key fixture releases", async () => {
@@ -1783,13 +1921,31 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("does not change the member default before a Telegram conversation exists", async () => {
-    const fixture = await trackFixture(
-      seedTelegramPostFixture({ seedOfficialLink: true }),
+    const fixture = await createTelegramPostFixture({ linkOfficial: true });
+    const actor = actorForFixture(fixture);
+    await runsApi.grantProEntitlement(actor);
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "deepseek-v4-flash",
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: "claude-sonnet-5",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    await accept(
+      userModelPreferenceClient().update({
+        headers: authOrgApi.authenticate(actor),
+        body: { selectedModel: "deepseek-v4-flash", serviceTier: null },
+      }),
+      [200],
     );
-    await seedModelPolicies({
-      fixture,
-      selectedModel: "deepseek-v4-flash",
-    });
     const telegramMocks = telegramApiMocks();
 
     const list = await postWebhook({
@@ -1837,7 +1993,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(telegramMocks.sentMessages[1]?.text).toContain(
       "existing Okou conversation",
     );
-    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
+    await expect(memberDefaultModel(fixture)).resolves.toBe(
+      "deepseek-v4-flash",
+    );
 
     const defaultModel = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1861,17 +2019,17 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(telegramMocks.sentMessages[2]?.text).toContain(
       "existing Okou conversation",
     );
-    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
+    await expect(memberDefaultModel(fixture)).resolves.toBe(
+      "deepseek-v4-flash",
+    );
   });
 
   it.each(["photo", "document"] as const)(
     "imports Telegram %s into canonical storage before dispatch",
     async (type) => {
-      const fixture = await trackFixture(
-        seedTelegramPostFixture({ seedOfficialLink: true }),
-      );
+      const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await seedNativeFablePolicies(fixture);
+      await useNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2027,11 +2185,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           return telegramClient.getFile(token, fileId, signal);
         },
       );
-      const fixture = await trackFixture(
-        seedTelegramPostFixture({ seedOfficialLink: true }),
-      );
+      const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await seedNativeFablePolicies(fixture);
+      await useNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
@@ -2138,11 +2294,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it.each(["declared size", "streamed size", "upstream error"] as const)(
     "retains Telegram file references after an import fails on %s",
     async (failure) => {
-      const fixture = await trackFixture(
-        seedTelegramPostFixture({ seedOfficialLink: true }),
-      );
+      const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      await seedNativeFablePolicies(fixture);
+      await useNativeFablePolicies(fixture);
       const runnerGroup = configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
