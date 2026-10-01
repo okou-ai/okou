@@ -1434,10 +1434,10 @@ describe("okou workflow automations", () => {
     const createdUrl = new URL(created.body.webhookUrl);
     expect(createdUrl.hostname).toBe("api.okou.ai");
 
-    const sourceRun = await runs.createRun(actor, {
+    runs.configureRunnerGroup();
+    const sourceRun = await runs.createThreadRun(actor, {
       agentId,
       prompt: "read configured webhook credentials",
-      modelProvider: "anthropic-api-key",
     });
 
     const token = runs.okouTokenForRunWithCapabilities(actor, sourceRun.runId, [
