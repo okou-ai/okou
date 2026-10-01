@@ -66,6 +66,16 @@ export async function readThreadModelCredits(
   return (await readThreadModelUsage(context, actor, threadId)).credits;
 }
 
+export async function expectThreadModelTokens(
+  context: TestContext,
+  actor: ApiTestUser,
+  threadId: string,
+  expectedTokens: number,
+): Promise<void> {
+  const usage = await readThreadModelUsage(context, actor, threadId);
+  expect(usage.tokens).toBe(expectedTokens);
+}
+
 export async function expectThreadModelCredits(
   context: TestContext,
   actor: ApiTestUser,

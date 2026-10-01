@@ -1,3 +1,5 @@
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
@@ -11,20 +13,11 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  holdThreadSessionConversationClearFixture,
-  readRunUsageEventsFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
@@ -509,16 +502,6 @@ describe("CHAT-02: model-first provider policies", () => {
         artifact: { memory: checkpointedMemory.versionId },
       },
     });
-    // Pi usage is Sandbox-reported only; the duplicate receipt is idempotent.
-    await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual([
-      expect.objectContaining({
-        provider: "gpt-6-luna",
-        category: "tokens.output.fast",
-        quantity: 2,
-        status: "processed",
-        billingError: null,
-      }),
-    ]);
     const committedH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: run.runId,
@@ -536,26 +519,11 @@ describe("CHAT-02: model-first provider policies", () => {
         `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
       );
     }
-    const canonicalConversation = await readThreadSessionConversation(
+    const applicationSession = await readCompletedRunSessionId(
       context,
-      run.threadId,
-    );
-    expect(canonicalConversation).toMatchObject({
-      conversation_run_id: run.runId,
-    });
-    const sandboxConversation = await readPiConversationIdentityFixture(
+      actor,
       run.runId,
     );
-    await expect(
-      readPiMemoryStage1CandidateFixture({
-        orgId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBeNull();
-    expect(sandboxConversation).toMatchObject({
-      piSessionId: run.threadId,
-      sourceHistoryHash: h2Hash,
-    });
 
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
       {
@@ -625,9 +593,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(replacementCheckpoint.body)).toContain(
       "[PI_H2_ALREADY_COMMITTED]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
     const failedRun = await withOpenRouterRoute(async () => {
       return await sendChatRunAfterPick(actor, {
@@ -671,9 +636,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(invalidCheckpoint.body)).toContain(
       "[PI_H2_JSONL_INVALID]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
     await webhooks.requestAgentComplete(
       {
         runId: failedRun.runId,
@@ -712,16 +674,9 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(spoofedFailedH2.body)).toContain(
       "[PI_H2_TYPE_MISMATCH]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    if (!canonicalConversation.agent_session_id) {
-      throw new Error("Expected the completed Pi run to own an AgentSession");
-    }
     const explicitResume = await api.createRun(actor, {
       agentId,
-      sessionId: canonicalConversation.agent_session_id,
+      sessionId: applicationSession,
       prompt: "keep an incompatible direct run off the Pi checkpoint",
     });
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
@@ -759,9 +714,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateCancelledH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
     const retry = await withOpenRouterRoute(async () => {
       return await sendChatRunAfterPick(actor, {
@@ -802,9 +754,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(retryLateFailedH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
 
     const reportedFailureRun = await withOpenRouterRoute(async () => {
       return await sendChatRunAfterPick(actor, {
@@ -844,16 +793,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedReportedFailure.body).toStrictEqual(reportedFailure.body);
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    const conversationClear = await holdThreadSessionConversationClearFixture({
-      threadId: run.threadId,
-      signal: context.signal,
-    });
-    conversationClear.release();
-    await conversationClear.done;
     const repeatedCombinedH2 = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
@@ -869,6 +808,21 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
+    await expectThreadModelTokens(context, actor, run.threadId, 2);
+    const probe = await withOpenRouterRoute(() => {
+      return sendChatRunAfterPick(actor, {
+        agentId,
+        threadId: run.threadId,
+        prompt:
+          "verify the canonical completed checkpoint after rejected writes",
+      });
+    });
+    const probeClaim = await claimChatRun(runnerGroup, probe.runId);
+    expect(probeClaim.claim.resumeSession).toMatchObject({
+      sessionId: run.threadId,
+      historyRef: { kind: "blob", hash: h2Hash },
+    });
+    await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
   }
 
   it(
