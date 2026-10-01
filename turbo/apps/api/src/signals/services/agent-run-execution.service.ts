@@ -10207,7 +10207,6 @@ function finalizedRunnerLaunch({
 }
 
 interface StorageMaterializationInput {
-  readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
   readonly storageManifestStats: StorageManifestBuildStats;
 }
@@ -10224,10 +10223,9 @@ function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
 }
 
 export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
-  const { db, args, storageManifestStats } = input;
+  const { args, storageManifestStats } = input;
   const body = preparedRunnerJobBody(args);
   return {
-    db,
     args,
     storageManifestStats,
     body,
@@ -15516,7 +15514,6 @@ function createLaunchObjects(
       const storageInput = set(
         initializeStorageInput$,
         {
-          db: input.db,
           args: atomicLaunchPayloadInput({
             createArgs: input.args,
             context: input.context,
