@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.102.2"
+version = "0.103.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3392,7 +3392,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3530,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.218.4"
+version = "0.219.0"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3764,7 +3764,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "api-contracts",
  "async-trait",
