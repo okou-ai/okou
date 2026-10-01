@@ -14,12 +14,8 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import {
-  deleteSlackIntegrationFixture$,
-  seedSlackOrgInstallation$,
-  type SlackIntegrationFixture,
-} from "./helpers/integrations-slack";
+import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { integrationsSlackRoutes } from "../integrations-slack";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
@@ -28,6 +24,7 @@ const store = createStore();
 
 const bdd = createBddApi(context);
 const integrations = createBddIntegrationApi(context);
+const slackOrgs = createPublicSlackOrgApi(context);
 
 function uniqueSlackUserId(): string {
   return `U_${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
@@ -415,11 +412,6 @@ async function expectErrorResponse(
 }
 
 describe("GET /api/integrations/slack/download-file", () => {
-  const trackSlackFixture = createFixtureTracker<SlackIntegrationFixture>(
-    (fixture) => {
-      return store.set(deleteSlackIntegrationFixture$, fixture, context.signal);
-    },
-  );
   const mocks = createRouteMocks(context);
 
   async function seedDownloadContext(
@@ -429,13 +421,12 @@ describe("GET /api/integrations/slack/download-file", () => {
   ): Promise<{ readonly token: string }> {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
-
     if (args.withInstallation !== false) {
-      await trackSlackFixture(
-        store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
-      );
+      await slackOrgs.installForOrg({ orgId });
     }
+    // The OAuth install authenticates its installing admin; the Okou token
+    // authenticates this member.
+    await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
 
     return {
       token: okouToken({ userId, orgId, capabilities: ["slack:write"] }),
@@ -636,9 +627,7 @@ describe("GET /api/integrations/slack/download-file", () => {
   it("accepts a Clerk session with an active organization", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    await trackSlackFixture(
-      store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
-    );
+    await slackOrgs.installForOrg({ orgId });
     mocks.clerk.session(userId, orgId);
     mockSlackFilesInfo({ ok: true, file: defaultSlackFile() });
     context.mocks.slack.fetchFile.mockResolvedValue(

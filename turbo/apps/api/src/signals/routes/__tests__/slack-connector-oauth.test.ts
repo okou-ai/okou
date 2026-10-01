@@ -5,7 +5,6 @@ import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/con
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 
@@ -22,11 +21,9 @@ import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
-import { countSlackOrgConnections$ } from "./helpers/slack-connect";
 import { readGetStartedStatus } from "./helpers/get-started";
 
 const context = testContext({ connectorCatalog: true });
-const store = createStore();
 const mocks = createRouteMocks(context);
 const API_ORIGIN = "https://api.okou.ai";
 const headers = { authorization: "Bearer clerk-session" } as const;
@@ -675,9 +672,20 @@ test("an explicit Slack account switch replaces the previous identity after OAut
     currentSlackUserId: nextSlackUserId,
     requestedSlackUserId: current.slackUserId,
   });
-  await expect(
-    store.set(countSlackOrgConnections$, current.workspaceId, context.signal),
-  ).resolves.toBe(1);
+  // The replaced account no longer belongs to anyone: another member of the
+  // org may link it.
+  actor({ orgId: current.orgId, workspaceId: current.workspaceId });
+  const freedStatus = await accept(
+    client.getLinkStatus({
+      headers,
+      query: {
+        workspaceId: current.workspaceId,
+        slackUserId: current.slackUserId,
+      },
+    }),
+    [200],
+  );
+  expect(freedStatus.body.linkStatus).toStrictEqual({ kind: "connect" });
 });
 
 test("a Slack connect OAuth callback recovers a failed channel confirmation by DM", async () => {
