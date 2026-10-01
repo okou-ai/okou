@@ -121,10 +121,9 @@ async function seedBankingFixture(
         vars: { OKOU_AGENT_ID: agent.agentId },
         secrets: { OKOU_TOKEN: "bdd-banking-okou-token" },
       })
-    : await api.createRun(actor, {
+    : await api.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "banking precondition",
-        modelProvider: "anthropic-api-key",
       });
 
   const providerCustomerId = randomProviderId("customer");

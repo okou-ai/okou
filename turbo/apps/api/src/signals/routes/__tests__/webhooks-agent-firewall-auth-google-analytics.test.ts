@@ -34,10 +34,9 @@ async function setupAnalyticsFirewall() {
     description: "Exercises Analytics refresh and reconnect.",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   const headers = fw.sandboxHeaders(actor, run.runId);
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");

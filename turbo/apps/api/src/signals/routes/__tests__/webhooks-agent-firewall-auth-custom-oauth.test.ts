@@ -67,10 +67,9 @@ async function setupCustomOAuthFirewall(
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   const headers = fw.sandboxHeaders(actor, run.runId);
   const connector = await connectors.createCustomConnector(

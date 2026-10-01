@@ -643,10 +643,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
         connector.id,
       ]);
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await runs.heartbeatRunner(runnerGroup);
@@ -771,10 +770,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
       connector.id,
     ]);
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
     await runs.heartbeatRunner(runnerGroup);

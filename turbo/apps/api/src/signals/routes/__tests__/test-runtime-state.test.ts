@@ -1060,10 +1060,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         expectApiError(invalid.body);
       }
 
-      const byokRun = await runs.createRun(claimed.actor, {
+      const byokRun = await runs.createThreadRun(claimed.actor, {
         agentId: claimed.agentId,
         prompt: "ignore a BYOK model provider failure",
-        modelProvider: "anthropic-api-key",
       });
       const byokRunnerIdentity = {
         runnerId: randomUUID(),

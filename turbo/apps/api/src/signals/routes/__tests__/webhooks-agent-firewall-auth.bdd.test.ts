@@ -103,10 +103,9 @@ async function firewallRun(existingActor?: ApiTestUser): Promise<{
     description: "Exercises firewall auth resolution.",
     visibility: "private",
   });
-  const run = await runsApi.createRun(actor, {
+  const run = await runsApi.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,
@@ -754,10 +753,9 @@ describe("FW-3: billable firewall lease", () => {
       displayName: "BDD billable suspension agent",
       visibility: "private",
     });
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "billable auth across a subscription deletion",
-      modelProvider: "anthropic-api-key",
     });
     const headers = fw.sandboxHeaders(actor, run.runId);
     const body = {
@@ -828,10 +826,9 @@ describe("FW-3: billable firewall lease", () => {
       displayName: "BDD expired-credit billable agent",
       visibility: "private",
     });
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "billable auth with expired credits",
-      modelProvider: "anthropic-api-key",
     });
 
     const denied = await fw.requestFirewallAuth(

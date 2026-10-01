@@ -1,5 +1,7 @@
 import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 
 import type StripeSDK from "stripe";
 import type { z } from "zod";
@@ -310,6 +312,52 @@ export function createRunsApi(
   context: TestContext,
   systemSkillStorageResolution?: SystemSkillStorageResolution,
 ) {
+  /**
+   * A run started through the real Thread entrypoint: a chat send on a new
+   * thread, picked once its enqueue-owned background work completes.
+   */
+  async function createThreadRun(
+    actor: ApiTestUser,
+    body: { readonly agentId: string; readonly prompt: string },
+  ) {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId: body.agentId, prompt: body.prompt, clientEventId },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the Thread run send to be accepted");
+    }
+    let runId = sent.body.runId;
+    if (runId === null) {
+      await flushWaitUntilForTest();
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      runId =
+        events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        })?.runId ?? null;
+    }
+    if (!runId) {
+      throw new Error("Expected the Thread run send to launch a run");
+    }
+    const run = await accept(
+      runApp(context)(runsByIdContract).getById({
+        headers: authenticate(context, actor),
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return {
+      runId,
+      threadId: sent.body.threadId,
+      status: run.body.status,
+      createdAt: run.body.createdAt,
+      ...(run.body.error === undefined ? {} : { error: run.body.error }),
+    };
+  }
+
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
@@ -537,6 +585,9 @@ export function createRunsApi(
 
       return { customerId, subscriptionId, invoiceId };
     },
+
+    /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
+    createThreadRun,
 
     async createRun(actor: ApiTestUser, body: AgentRunRequest) {
       const response = await accept(

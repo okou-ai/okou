@@ -663,10 +663,9 @@ describe("shared SDK ingestion", () => {
       displayName: `Archive mismatch telemetry ${randomUUID()}`,
       visibility: "private",
     });
-    const { runId } = await runs.createRun(actor, {
+    const { runId } = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "check archive startup",
-      modelProvider: "anthropic-api-key",
     });
     const token = runs.sandboxTokenForRun(actor, runId);
     const operation = {
@@ -777,10 +776,9 @@ describe("shared SDK ingestion", () => {
       displayName: `Workspace history telemetry ${randomUUID()}`,
       visibility: "private",
     });
-    const { runId } = await runs.createRun(actor, {
+    const { runId } = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "restore workspace history",
-      modelProvider: "anthropic-api-key",
     });
     const token = runs.sandboxTokenForRun(actor, runId);
     const ts = "2026-09-15T00:00:00Z";
