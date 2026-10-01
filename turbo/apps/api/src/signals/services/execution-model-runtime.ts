@@ -160,8 +160,7 @@ function compileRegisteredRuntime(
   if (
     !("secretName" in config) ||
     !("envBindings" in config) ||
-    type === "deepseek" ||
-    type === "claude-code-oauth-token"
+    type === "deepseek"
   ) {
     throw new Error(
       "This registered protocol has not migrated to the pure runtime contract",

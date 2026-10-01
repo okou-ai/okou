@@ -699,7 +699,11 @@ function isMemberSubscriptionSource(
 function isMigratedAccountSource(
   args: ResolveModelProviderEnvironmentArgs,
 ): boolean {
-  return args.modelProviderType === "codex-oauth-token" && !args.piExecution;
+  return (
+    (args.modelProviderType === "codex-oauth-token" ||
+      args.modelProviderType === "claude-code-oauth-token") &&
+    !args.piExecution
+  );
 }
 
 function isMigratedOrgAccountSource(
@@ -8915,6 +8919,7 @@ export function createThreadClaimRunObjects(
         environment: { ...compiled.environment },
         secrets: deferred && !capture ? {} : { ...compiled.secrets },
         selectedModel: compiled.selectedModel,
+        upstreamModel: compiled.upstreamModel,
         ...(source.configuration.kind === "registered-provider" &&
         source.configuration.authMethod
           ? { authMethod: source.configuration.authMethod }
@@ -9018,6 +9023,7 @@ export function createThreadClaimRunObjects(
       return {
         ...protocol,
         selectedModel: compiled.selectedModel,
+        upstreamModel: compiled.upstreamModel,
         environment,
         secrets: { ...compiled.secrets },
       };
@@ -9130,6 +9136,7 @@ export function createThreadClaimRunObjects(
         environment: { ...compiled.environment },
         secrets: { ...compiled.secrets },
         selectedModel: compiled.selectedModel,
+        upstreamModel: compiled.upstreamModel,
         firewall: protocol.firewall,
         inlineFirewall: true,
         credentialHeader: {
