@@ -981,17 +981,18 @@ async function scopedRuntimeScenario() {
   const catalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
   await installApiTestConnectorCatalog({ catalogVersion });
   const { actor, agentId, runnerGroup } = await entitledRunActor();
+  let enabledSlugs: readonly string[] = [];
   const createScopedRun = async (
     prompt: string,
     allowedConnectorSlugs: readonly string[],
   ) => {
-    return await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({ agentId, prompt }),
-      connectorScope: {
-        allowedConnectorSlugs,
-        allowedCustomConnectorIds: [],
-      },
-    });
+    // The Agent's enabled connectors are the Thread run's connector scope;
+    // they are validated when enabled, not again after catalog rotation.
+    const slugs = [...new Set(allowedConnectorSlugs)].sort();
+    if (slugs.join(",") !== enabledSlugs.join(",")) {
+      enabledSlugs = await api.enableAgentConnectors(actor, agentId, slugs);
+    }
+    return await api.createThreadRun(actor, { agentId, prompt });
   };
   return { api, actor, runnerGroup, catalogVersion, createScopedRun };
 }
@@ -1152,14 +1153,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const firstRun = await createScopedRun("cold scoped connector runtime", [
       "x",
-      "x",
-      "catalog-runtime-unknown",
     ]);
     await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     const repeatedRun = await createScopedRun(
       "warm repeated scoped connector runtime",
-      ["x", "x", "catalog-runtime-unknown"],
+      ["x"],
     );
     await api.requestCancelRun(actor, repeatedRun.runId, [200]);
 
@@ -1291,15 +1290,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       refreshToken: "x-reusable-authority-refresh",
     });
 
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "reuse unchanged catalog validation authority",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
+    await api.enableAgentConnectors(actor, agentId, ["x"]);
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "reuse unchanged catalog validation authority",
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -1322,21 +1316,18 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
       runtimeProjection: true,
     });
-    await invalidateApiTestConnectorCatalogCompatibility();
     const { actor, agentId } = await entitledRunActor();
+    await api.enableAgentConnectors(actor, agentId, ["x"]);
+    // A rotated catalog that no request has read yet becomes incompatible.
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
+      runtimeProjection: true,
+    });
+    await invalidateApiTestConnectorCatalogCompatibility();
     const rejectedPrompt = "invalid projection compatibility rejection";
 
     await expect(
-      api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({
-          agentId,
-          prompt: rejectedPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
+      api.createThreadRun(actor, { agentId, prompt: rejectedPrompt }),
     ).rejects.toThrow("Accepted external connector catalog is unavailable");
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
@@ -6153,24 +6144,17 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       accessToken: "test-oauth-bdd-access",
       refreshToken: "test-oauth-bdd-refresh",
     });
-    const composeName = `bdd-connector-var-alias-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD test-oauth connector agent",
+      description: "Uses the test-oauth connector.",
+      visibility: "private",
     });
+    await api.enableAgentConnectors(actor, agent.agentId, ["test-oauth"]);
 
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "use stored connector variable aliases",
-      connectorScope: {
-        allowedConnectorSlugs: ["test-oauth"],
-        allowedCustomConnectorIds: [],
-      },
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -11855,7 +11839,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(overridden.unknownPolicy).toBe("allow");
   });
 
-  it("loads stored connectors and applies default named policies to direct runs without explicit policies", async () => {
+  it("loads stored connectors and applies default named policies to runs without explicit policies", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -11871,24 +11855,17 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authMethod: "oauth",
       accessToken: "cloudflare-direct-bdd-token",
     });
-    const composeName = `bdd-cloudflare-direct-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD cloudflare connector agent",
+      description: "Uses the cloudflare connector.",
+      visibility: "private",
     });
+    await api.enableAgentConnectors(actor, agent.agentId, ["cloudflare"]);
 
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "direct run cloudflare defaults",
-      connectorScope: {
-        allowedConnectorSlugs: ["cloudflare"],
-        allowedCustomConnectorIds: [],
-      },
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "thread run cloudflare defaults",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
