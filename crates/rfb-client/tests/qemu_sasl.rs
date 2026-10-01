@@ -6,14 +6,11 @@ use std::{fs, time::Duration};
 
 use base64::Engine;
 use rfb_client::{
-    Authenticated, Error, QemuScramCredentials, TrustRoots, X509Authentication, authenticate,
+    Authenticated, Error, QemuScramCredentials, SharingMode, TrustRoots, X509Authentication,
+    authenticate,
 };
 use rustls::pki_types::CertificateDer;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    time::Instant,
-};
+use tokio::{net::TcpStream, time::Instant};
 
 const NAME: &str = "localhost";
 const USER: &str = "fixture37465";
@@ -56,13 +53,13 @@ async fn connect(
 }
 
 async fn attempt(name: &str, password: &str, roots: TrustRoots) -> Result<(), Error> {
-    let mut stream = connect(name, password, roots).await?.into_stream();
-    // Real ServerInit, not just an offered SASL mechanism or TLS handshake.
-    stream.write_u8(1).await?;
-    stream.flush().await?;
-    let width = stream.read_u16().await?;
-    let height = stream.read_u16().await?;
-    assert!(width > 0 && height > 0);
+    // Consume the *complete* ServerInit and initialize the public framebuffer
+    // path, not just the first four geometry bytes or a TLS/SASL success flag.
+    let frame = connect(name, password, roots)
+        .await?
+        .initialize(SharingMode::Shared, Instant::now() + Duration::from_secs(8))
+        .await?;
+    assert!(frame.width() > 0 && frame.height() > 0);
     Ok(())
 }
 
