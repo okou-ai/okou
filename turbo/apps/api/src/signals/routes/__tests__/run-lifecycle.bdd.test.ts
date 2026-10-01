@@ -1,3 +1,4 @@
+import nativePiFixtures from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
@@ -22,6 +23,7 @@ import {
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
   type Job as RunnerJob,
+  type PiModelConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -137,6 +139,8 @@ import {
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setRunModelProviderStateFixture,
+  setRunnerJobContextProfileAsPreviousApi,
+  setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
@@ -2665,6 +2669,38 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       runnerHeartbeatGeneration: null,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
+  // Historical persisted-state exception (docs/testing.md rollout coexistence;
+  // testing-external-behavior.md historical states): current admission no
+  // longer writes these runner-job contexts, which
+  // pi-model-config-claim-capability.ts and the claim path still read during
+  // the #29908 compatibility window. Delete with that reader when it closes.
+  it("polls and claims context written by the previous profile API", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+
+    const created = await api.createRun(actor, {
+      agentId,
+      prompt: "claim previous profile context",
+      modelProvider: "anthropic-api-key",
+    });
+    await setRunnerJobContextProfileAsPreviousApi(
+      context,
+      created.runId,
+      "vm0/large",
+    );
+
+    const poll = await api.pollRunner(runnerGroup);
+    expect(poll.body.job).toMatchObject({
+      runId: created.runId,
+      experimentalProfile: "vm0/default",
+    });
+    const claim = await api.claimRunnerJob(created.runId);
+    expect(claim.prompt).toBe("claim previous profile context");
+    expect(claim).not.toHaveProperty("experimentalProfile");
+
+    await api.requestCancelRun(actor, created.runId, [200]);
   });
 
   it("filters runner polls by supported profiles without widening malformed polls", async () => {
@@ -6929,6 +6965,184 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
   });
+
+  // Historical persisted-state exception (docs/testing.md rollout coexistence;
+  // testing-external-behavior.md historical states): current admission no
+  // longer writes these runner-job contexts, which
+  // pi-model-config-claim-capability.ts and the claim path still read during
+  // the #29908 compatibility window. Delete with that reader when it closes.
+  it.each(nativePiFixtures)(
+    "claims stored native $name only with generation 4 capability",
+    async ({ config: piModelConfig }) => {
+      const api = createRunsApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "read a future native context",
+        modelProvider: "anthropic-api-key",
+      });
+      await setRunnerJobPiContextAsVersionedWriter(
+        context,
+        run.runId,
+        piModelConfig,
+      );
+      await api.heartbeatRunner(runnerGroup);
+      await api.requestClaimRunnerJob(true, run.runId, [404], {
+        capabilities: { piModelConfigGenerations: [1, 2, 3] },
+      });
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+      const claim = await api.claimRunnerJob(run.runId, {
+        capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+      });
+      expect(claim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: run.runId,
+        piModelConfig,
+      });
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
+  // Current admission cannot produce generation 3 or future/invalid rows.
+  // The explicit stored-writer fixture exercises claim/read API behavior first.
+  it.each([1, 2, 3] as const)(
+    "claims stored Pi generation %s only with compatible capabilities",
+    async (generation) => {
+      const api = createRunsApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "claim a dialect-aware Pi route",
+        modelProvider: "anthropic-api-key",
+      });
+      const piModelConfig: PiModelConfig =
+        generation === 1
+          ? {
+              provider: "openai",
+              baseUrl: "https://api.openai.com/v1",
+              model: "gpt-6-luna",
+              apiKeyEnv: "OPENAI_API_KEY",
+              credentialSecretName: "OPENAI_API_KEY",
+            }
+          : generation === 3
+            ? {
+                schemaVersion: 3,
+                dialect: "openai-codex-responses",
+                transport: "sse",
+                provider: "openai-codex",
+                baseUrl: "https://chatgpt.com/backend-api",
+                model: "gpt-6-luna",
+                serviceTier: "fast",
+                credentialBindings: [
+                  {
+                    kind: "access-token",
+                    environment: "CHATGPT_ACCESS_TOKEN",
+                    secretName: "CHATGPT_ACCESS_TOKEN",
+                  },
+                  {
+                    kind: "account-id",
+                    environment: "CHATGPT_ACCOUNT_ID",
+                    secretName: "CHATGPT_ACCOUNT_ID",
+                  },
+                ],
+              }
+            : {
+                schemaVersion: 2,
+                dialect: "openai-responses",
+                transport: "sse",
+                provider: "openai",
+                baseUrl: "https://api.openai.com/v1",
+                model: "gpt-5.4",
+                credentialBindings: [
+                  {
+                    kind: "api-key",
+                    environment: "OPENAI_API_KEY",
+                    secretName: "OPENAI_API_KEY",
+                  },
+                ],
+              };
+      await setRunnerJobPiContextAsVersionedWriter(
+        context,
+        run.runId,
+        piModelConfig,
+      );
+      await api.heartbeatRunner(runnerGroup);
+
+      if (generation === 3) {
+        const legacyClaim = await api.requestClaimRunnerJob(
+          true,
+          run.runId,
+          [404],
+          { capabilities: { piModelConfigGenerations: [1, 2] } },
+        );
+        expectApiError(legacyClaim.body);
+        expect(legacyClaim.body.error.message).toBe("Job not found in queue");
+        await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+          status: "pending",
+        });
+      }
+
+      const capableClaim = await api.claimRunnerJob(run.runId, {
+        capabilities: { piModelConfigGenerations: [1, 2, 3] },
+      });
+      expect(capableClaim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: run.runId,
+        piModelConfig,
+      });
+
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
+  it.each([
+    {
+      schemaVersion: 5,
+      serviceTier: "priority",
+      status: 404,
+      runStatus: "pending",
+    },
+    { schemaVersion: 3, serviceTier: "fast", status: 400, runStatus: "failed" },
+  ] as const)(
+    "handles stored Pi generation $schemaVersion with $serviceTier without downgrading",
+    async (route) => {
+      const api = createRunsApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "claim only a supported exact Pi route",
+        modelProvider: "anthropic-api-key",
+      });
+      await setRunnerJobPiContextAsVersionedWriter(context, run.runId, {
+        schemaVersion: route.schemaVersion,
+        serviceTier: route.serviceTier,
+        dialect: "openai-responses",
+        transport: "sse",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-6-luna",
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENAI_API_KEY",
+          },
+        ],
+      });
+      await api.heartbeatRunner(runnerGroup);
+      await api.requestClaimRunnerJob(true, run.runId, [route.status], {
+        capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5] },
+      });
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: route.runStatus,
+      });
+      if (route.runStatus === "pending") {
+        await api.requestCancelRun(actor, run.runId, [200]);
+      }
+    },
+  );
 
   it("restores prepared masking values from direct run environments", async () => {
     const bdd = createBddApi(context);

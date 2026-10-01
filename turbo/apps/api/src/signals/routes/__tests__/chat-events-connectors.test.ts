@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -190,11 +190,10 @@ describe("CHAT-02: thread connector account selection", () => {
     },
   );
 
-  it("uses a selected builtin account without reading the full catalog", async () => {
+  it("inspects and runs with the thread's selected builtin account", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Scoped thread catalog selection",
     );
-    onTestFinished(() => {});
 
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -248,10 +247,9 @@ describe("CHAT-02: thread connector account selection", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("preserves an out-of-scope choice without requiring its catalog", async () => {
+    it("keeps an out-of-scope thread choice and uses it again after reauthorization", async () => {
       const { fixture } = preparedScenario;
       await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
-      onTestFinished(() => {});
       const run = await sendChatRun(fixture.actor, {
         agentId: fixture.agentId,
         threadId: fixture.threadId,
@@ -555,7 +553,6 @@ describe("CHAT-02: thread connector account selection", () => {
       agentId,
       prompt: "Use my default custom connector account",
     });
-    onTestFinished(() => {});
     await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: sessionHeaders(actor),

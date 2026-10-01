@@ -49,6 +49,10 @@ import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
+import {
+  appendOfficialWorkflowQueueInputFixture,
+  readOfficialWorkflowQueueInputFixture,
+} from "../../../test-fixtures/official-workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -1468,6 +1472,16 @@ const officialQueueEncodings: readonly OfficialQueueEncoding[] = [
 ];
 
 // Pin the persisted protocol independently of the production encoder.
+const officialQueueContextIds = {
+  legacy: {
+    vm0: "d4f079af-190a-4a32-bf49-73175aa2d727",
+    okou: "3f713f81-d611-47ec-a427-5a4844078890",
+  },
+  canonical: {
+    vm0: "e1884e98-ab77-4eca-a420-90e591078804",
+    okou: "0bdfae9e-63be-43dd-8193-a96e07787c20",
+  },
+} as const;
 
 function officialQueueHeaders(
   actor: ApiTestUser,
@@ -1485,6 +1499,54 @@ function officialQueueHeaders(
           ["agent:write"],
         )}`,
       };
+}
+
+async function prepareOfficialQueueEncoding(
+  args: OfficialQueueEncoding & {
+    readonly eventId: string;
+    readonly workflowId: string;
+    readonly sourceRunId: string;
+    readonly sourceThreadId: string;
+    readonly agentId: string;
+  },
+): Promise<string> {
+  const source = await readOfficialWorkflowQueueInputFixture(args.eventId);
+  expect(source).toMatchObject({
+    contextType: args.origin,
+    contextId: officialQueueContextIds.legacy.okou,
+    requiredOfficialWorkflowIds: [args.workflowId],
+  });
+  const userMessage = source.payload?.userMessage;
+  if (!userMessage) {
+    throw new Error("Expected queued Official document");
+  }
+  if (args.origin === "agent_run") {
+    expect(userMessage.parts).toContainEqual(
+      expect.objectContaining({
+        type: "source",
+        kind: "agent",
+        runId: args.sourceRunId,
+        threadId: args.sourceThreadId,
+        agentId: args.agentId,
+      }),
+    );
+  }
+  if (args.encoding === "legacy" && args.storedBrand === "okou") {
+    return source.id;
+  }
+  // New API requests always write Okou. Historical brand markers and the
+  // canonical encoding require a persisted fixture to exercise older rows.
+  const encoded = await appendOfficialWorkflowQueueInputFixture({
+    eventId: source.id,
+    contextId: officialQueueContextIds[args.encoding][args.storedBrand],
+    contextType: args.origin,
+    claim: source.requiredOfficialWorkflowIds,
+    userMessage,
+  });
+  await expect(
+    readOfficialWorkflowQueueInputFixture(source.id),
+  ).resolves.toStrictEqual(source);
+  return encoded.id;
 }
 
 async function assertOfficialQueueRawHistory(
@@ -8904,8 +8966,16 @@ describe("Official Workflow Run admission", () => {
     });
   });
 
-  it.each([{ origin: "web" }, { origin: "agent_run" }] as const)(
-    "starts a queued Official source with its accepted revision and caller identity ($origin)",
+  // Historical persisted-state exception (docs/testing.md rollout coexistence;
+  // testing-external-behavior.md historical states): the canonical encoding is
+  // only written by older APIs and is still read by
+  // web-chat-queue-context.service.ts during the #29908 compatibility window.
+  // Delete this case with that reader when the window closes.
+  it.each([
+    { encoding: "canonical", origin: "web", storedBrand: "okou" },
+    { encoding: "legacy", origin: "agent_run", storedBrand: "okou" },
+  ] as const)(
+    "starts a queued Official source with its accepted revision and caller identity ($encoding $origin)",
     async (queueCase) => {
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = `api-test-queued-success-${suffix}`;
@@ -8993,7 +9063,14 @@ describe("Official Workflow Run admission", () => {
       if (!queuedEvent) {
         throw new Error("Expected persisted Official queued message");
       }
-      const queuedEventId = queuedEvent.id;
+      const queuedEventId = await prepareOfficialQueueEncoding({
+        eventId: queuedEvent.id,
+        workflowId: installation.body.workflow.id,
+        sourceRunId: firstRunId,
+        sourceThreadId: first.body.chatThreadId,
+        agentId,
+        ...queueCase,
+      });
 
       await webhooks.requestAgentComplete(
         { runId: firstRunId, exitCode: 1 },
