@@ -2750,25 +2750,71 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("resumes the previous session when a run is created with the same sessionId", async () => {
+  it("resumes the previous session when a run continues the same thread", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const chat = createChatFilesBddApi(context);
+    const webhooks = createWebhookCallbackApi(context);
+    const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    // A public Agent, so other members reach the thread ownership check.
+    const { agentId } = await bdd.createAgent(actor, {
+      displayName: "Shared continuation Agent",
+      visibility: "public",
+    });
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a session",
-      modelProvider: "anthropic-api-key",
     });
-    const resumed = await api.createRun(actor, {
+    const checkpointed = async (
+      runId: string,
+      sandboxToken: string,
+    ): Promise<{ readonly cliSessionId: string; readonly hash: string }> => {
+      const history = `bdd continued session history ${runId}`;
+      const hash = createHash("sha256").update(history).digest("hex");
+      mockSessionHistoryBlob(hash, history);
+      const cliSessionId = `bdd-continued-cli-${runId}`;
+      await webhooks.requestAgentComplete(
+        {
+          runId,
+          exitCode: 0,
+          lastEventSequence: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: cliSessionId,
+            cliAgentSessionHistoryHash: hash,
+          },
+        },
+        { authorization: `Bearer ${sandboxToken}` },
+        [200],
+      );
+      return { cliSessionId, hash };
+    };
+    const firstClaim = await api.claimRunnerJob(first.runId);
+    const firstCheckpoint = await checkpointed(
+      first.runId,
+      firstClaim.sandboxToken,
+    );
+    await flushWaitUntilForTest();
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue the session",
-      modelProvider: "anthropic-api-key",
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
-    expect(resumedClaim.resumeSession).toBeNull();
+    expect(resumedClaim.resumeSession).toMatchObject({
+      sessionId: firstCheckpoint.cliSessionId,
+      historyRef: { kind: "blob", hash: firstCheckpoint.hash },
+    });
+    await checkpointed(resumed.runId, resumedClaim.sandboxToken);
+    await flushWaitUntilForTest();
+    // Both runs complete in the thread's single Agent session.
+    const firstSession = (await api.readRun(actor, first.runId)).result
+      ?.agentSessionId;
+    expect(firstSession).toStrictEqual(expect.any(String));
+    expect(
+      (await api.readRun(actor, resumed.runId)).result?.agentSessionId,
+    ).toBe(firstSession);
 
     if (!actor.orgId) {
       throw new Error("Expected session owner to have an organization");
@@ -2778,25 +2824,18 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       description: "Must not continue a Session owned by another Agent.",
       visibility: "private",
     });
-    // The public create response and Run listing prove the rejected launch.
-    // Private callback, checkpoint and Runner-job row counts are not inspected.
-
     const mismatchPrompt = `reject mismatched Agent Session ${randomUUID()}`;
-    const mismatch = await api.requestCreateRun(
+    const mismatch = await chat.requestSendEvent(
       actor,
       {
         agentId: otherAgent.agentId,
-        sessionId: first.sessionId,
+        threadId: first.threadId,
         prompt: mismatchPrompt,
-        modelProvider: "anthropic-api-key",
       },
-      [400],
+      [404],
     );
     expectApiError(mismatch.body);
-    expect(mismatch.body.error.message).toBe(
-      "agentId does not match sessionId",
-    );
-
+    expect(mismatch.body.error.message).toBe("Chat thread not found");
     const ownedRuns = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -2808,12 +2847,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
 
     const sameOrgUser = bdd.user({ orgId: actor.orgId });
-    const crossUser = await api.requestDirectRun(
+    const crossUser = await chat.requestSendEvent(
       sameOrgUser,
-      {
-        sessionId: first.sessionId,
-        prompt: "steal the session",
-      },
+      { agentId, threadId: first.threadId, prompt: "steal the session" },
       [404],
     );
     expectApiError(crossUser.body);
@@ -2821,10 +2857,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const otherOrgUser = createBddApi(context).user();
     await api.grantProEntitlement(otherOrgUser);
-    const crossOrg = await api.requestDirectRun(
+    const crossOrg = await chat.requestSendEvent(
       otherOrgUser,
       {
-        sessionId: first.sessionId,
+        agentId,
+        threadId: first.threadId,
         prompt: "steal the session from another organization",
       },
       [404],
@@ -2832,10 +2869,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
 
-    await api.requestCancelRun(actor, resumed.runId, [200]);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    const cancelled = await api.readRun(actor, first.runId);
-    expect(cancelled.status).toBe("cancelled");
+    expect((await api.readRun(actor, first.runId)).status).toBe("completed");
   });
 
   it("resumes direct sessions only on the same runtime and family", async () => {
