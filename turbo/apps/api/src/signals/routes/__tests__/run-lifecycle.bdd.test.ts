@@ -4956,10 +4956,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       [FeatureSwitchKey.OpenRouterUsRouting]: true,
     });
 
-    const run = await api.createRun(actor, {
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "built-in model provider",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -14311,7 +14320,16 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await seedBuiltInDefaultModelKey();
+    const builtInModel = await seedBuiltInDefaultModelKey();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: builtInModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const modelProvider = `bdd-model-pricing-${randomUUID()}`;
     onTestFinished(async () => {
       await deleteUsagePricingRows({
@@ -14330,10 +14348,10 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       },
     ]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate server-priced model usage",
-      modelProvider: "built-in",
+      model: builtInModel,
     });
     await setRunModelProviderFixture({
       runId: run.runId,
@@ -14363,7 +14381,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     expect(usageRecord.body.totalCredits).toBe(17);
     expect(usageRecord.body.rows).toContainEqual(
       expect.objectContaining({
-        title: "Unavailable thread",
+        threadId: run.threadId,
         credits: 17,
       }),
     );
