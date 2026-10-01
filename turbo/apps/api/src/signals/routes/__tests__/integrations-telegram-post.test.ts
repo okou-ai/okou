@@ -756,16 +756,22 @@ function userModelPreferenceClient() {
 }
 
 /** The member's default model from the public preference endpoint. */
-async function memberDefaultModel(
-  fixture: TelegramPostFixture,
+async function memberDefaultModelOf(
+  actor: ApiTestUser,
 ): Promise<string | null> {
   const response = await accept(
     userModelPreferenceClient().get({
-      headers: authOrgApi.authenticate(actorForFixture(fixture)),
+      headers: authOrgApi.authenticate(actor),
     }),
     [200],
   );
   return response.body.selectedModel;
+}
+
+async function memberDefaultModel(
+  fixture: TelegramPostFixture,
+): Promise<string | null> {
+  return await memberDefaultModelOf(actorForFixture(fixture));
 }
 
 describe("POST /api/telegram/webhook/:telegramBotId", () => {
@@ -1176,8 +1182,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       };
     }
     const main = await completeDm("start the main DM", 3501);
-    const member = { orgId: actor.orgId, userId: actor.userId };
-    return { member, sendDm, completeDm, main };
+    return { actor, sendDm, completeDm, main };
   }
 
   describe.each([
@@ -1263,13 +1268,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
       await sendDm("/model gpt-6-astra", 3506);
       // `/model` leaves the member preference the fixture configured.
-      await expect(
-        postTelegramStateAction({
-          action: "get-selected-model",
-          org_id: dm.member.orgId,
-          user_id: dm.member.userId,
-        }),
-      ).resolves.toMatchObject({ selected_model: "claude-fable-5-1" });
+      await expect(memberDefaultModelOf(dm.actor)).resolves.toBe(
+        "claude-fable-5-1",
+      );
       const alternate = await completeDm("switch the main DM model", 3507);
       expect(alternate.claim.cliAgentType).toBe("codex");
       expect(alternate.chatThread.id).toBe(main.chatThread.id);
