@@ -44,7 +44,6 @@ export const completeProcessedOrgUsage$ = command(
               pending_events: work.pendingEvents,
               pricing_rows: work.pricingRows,
               compaction_lock_wait_ms: work.lockWaitMs,
-              org_lock_wait_ms: work.orgLockWaitMs,
               // These SQL operations now run in shared batches. Report the
               // measured owner duration, never invented zero phase timings.
               statement_grouping: "command_local_batch",
@@ -57,12 +56,6 @@ export const completeProcessedOrgUsage$ = command(
           {
             actionType: "api_billing_settlement_compaction_lock_wait",
             durationMs: work.lockWaitMs,
-            success: true,
-            dimensions: { timing_scope: timingScope },
-          },
-          {
-            actionType: "api_billing_settlement_org_lock_wait",
-            durationMs: work.orgLockWaitMs,
             success: true,
             dimensions: { timing_scope: timingScope },
           },

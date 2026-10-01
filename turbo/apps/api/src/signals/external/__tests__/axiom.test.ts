@@ -138,7 +138,6 @@ describe("shared SDK ingestion", () => {
           timing_scope: "inline",
           pending_events: 3,
           compaction_lock_wait_ms: 0,
-          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -164,11 +163,6 @@ describe("shared SDK ingestion", () => {
         durationMs: 0,
         success: true,
       },
-      {
-        actionType: "api_billing_settlement_org_lock_wait",
-        durationMs: 0,
-        success: true,
-      },
     ]);
     expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
       "vm0-sandbox-op-log-dev",
@@ -183,7 +177,6 @@ describe("shared SDK ingestion", () => {
           timing_scope: "inline",
           pending_events: 3,
           compaction_lock_wait_ms: 0,
-          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -207,14 +200,6 @@ describe("shared SDK ingestion", () => {
           _time: expect.any(String),
           source: "api",
           op_type: "api_billing_settlement_compaction_lock_wait",
-          operation_domain: "billing",
-          duration_ms: 0,
-          success: true,
-        },
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "api_billing_settlement_org_lock_wait",
           operation_domain: "billing",
           duration_ms: 0,
           success: true,
@@ -515,7 +500,6 @@ describe("shared SDK ingestion", () => {
         timing_scope: "standalone",
         pending_events: 1,
         compaction_lock_wait_ms: expect.any(Number),
-        org_lock_wait_ms: expect.any(Number),
         statement_grouping: "command_local_batch",
         grant_rows: 0,
         expired_rows: 0,
@@ -546,13 +530,12 @@ describe("shared SDK ingestion", () => {
     if (!Array.isArray(committedBatch)) {
       throw new Error("Expected a committed settlement timing batch");
     }
-    expect(committedBatch).toHaveLength(4);
+    expect(committedBatch).toHaveLength(3);
     for (const [dimension, opType] of [
       [
         "compaction_lock_wait_ms",
         "api_billing_settlement_compaction_lock_wait",
       ],
-      ["org_lock_wait_ms", "api_billing_settlement_org_lock_wait"],
     ] as const) {
       const lockEvent: unknown = committedBatch.find((event: unknown) => {
         return (

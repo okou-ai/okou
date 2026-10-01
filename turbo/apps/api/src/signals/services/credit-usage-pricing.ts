@@ -12,7 +12,6 @@ const L = logger("CreditUsage");
 
 export interface SettlementWorkObservation {
   readonly lockWaitMs: number;
-  readonly orgLockWaitMs: number;
   readonly settlementWorkMs: number;
   readonly transactionDurationMs?: number;
   readonly pendingEvents: number;

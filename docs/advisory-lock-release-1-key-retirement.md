@@ -59,7 +59,7 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 ## Per-key inventory
 
 Initial inventory: **17 API + 1 operator** definitions. At `0ea5f20d`:
-**6 API + 0 operator**. Now: **2 API + 0 operator** (`billing_purchase`, `credit_`) after the unsafe credit retirement was withdrawn and `usage_pack_billing` retired; invitation and serving
+**6 API + 0 operator**. Now: **0 API + 0 operator**: `usage_pack_billing`, `billing_purchase` and `credit_` are retired; invitation and serving
 compaction retirement; shared/exclusive compaction counted separately before
 removal. A later main integration must recheck any imported definitions. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
@@ -71,8 +71,8 @@ removed; that simplification remains explicit R1 implementation work below.
 | `stripe_concurrency_subscription:<id>`     | **Deleted.** Timestamp/xmin publication and invoice-line uniqueness remain; daily 24-bucket observation repair uses the existing hourly billing cron. This does not complete desired concurrency configuration or duplicate-charge recovery.                                                                                                                                                                                                |
 | `usage_pack_billing:<org>`                 | **Deleted.** Every acquisition and the SQL builder are removed. Paid invoice publication uses invoice receipts and conditional change/root status; open standalone changes stay single through `uq_usage_pack_changes_active_org`; member grants/refunds through status-conditional refund preparation; quantity/schedule sync is declarative outside SQL.                                                                                  |
 | `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
-| `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
-| `credit_<org>`                             | **Unfinished R1 financial work.** Attempted issuance retirement was withdrawn after distinct-Run overissue. Same-identity unique insertion and conditional financial writes remain, but cannot alone prevent contemporary first-window duplication; see the diagnostic and decision boundary below.                                                                                                                                         |
+| `billing_purchase:<org>`                   | **Deleted.** Plan and pack initial purchases keep both paths (saved card and Checkout) and are not serialized; Stripe may hold a second paid subscription. Entitlement binds once: see "Initial purchase: bind once, refund the extra".                                                                                                                                                                                                     |
+| `credit_<org>`                             | **Deleted; known bounded over-issue accepted by Ethan (2026-10-01).** A Run created early but admitted late, or concurrent first admissions, may open one extra overlapping window (one window of free allowance). The 5h window logic will be removed as a whole later; no window selection or ordering logic was added.                                                                                                                   |
 | `usage_event_compaction` shared            | **Deleted.** Settlement claims pending rows conditionally; compaction consumes only actual version-matching DELETE RETURNING rows and publishes their immutable totals in the same transaction. Raw-first cleanup sees committed rollups in its next SQL snapshot.                                                                                                                                                                          |
 | `usage_event_compaction` exclusive         | **Deleted.** No compactor reads/replaces old hourly fragments or selects rows FOR UPDATE. A competing batch may consume zero; the next normal cron visit handles the remainder without an in-process retry.                                                                                                                                                                                                                                 |
 | `usage_event_compaction` operator          | **Deleted.** Existing `--migrate --ack-writer-drain` operator opt-in and one conditional business-checkpoint UPDATE; rejected batch rolls back once, without retry. No serving compatibility acquisition remains in the script.                                                                                                                                                                                                             |
@@ -307,6 +307,53 @@ Pre-existing gap, unchanged by this retirement and listed for decision: when the
 deletion transition wins, the change is failed and the later `invoice.paid` for
 that upgrade returns 500 ("not ready for fulfillment") on every redelivery. The
 serial order behaves the same with or without the key.
+
+## Initial purchase: bind once, refund the extra
+
+Decided by Ethan (2026-10-01): keep both initial purchase paths, grant locally
+once, refund the extra payment afterwards; no strong consistency on the Stripe
+side. `billing_purchase` is deleted with all seven acquisitions; the existing
+claim UPDATEs remain best-effort checks.
+
+- **Only once.** The organization row's subscription binding is the single
+  entitlement. Usage-pack activation and paid-invoice fulfillment project the
+  org Plan with `orgAcceptsSubscriptionWhere` (usage-pack-fulfillment-plan.ts):
+  binding empty, equal to this subscription, not live
+  (`active`/`trialing`/`past_due`), or past its period end. A losing pack
+  rolls back its whole fulfillment transaction (member grants included). Plan
+  invoices keep the existing conditional wallet publication
+  (`legacyPlanInvoiceWalletWhere`) and admission, which rejects a different
+  subscription of the same or lower tier; `uq_credit_expires_invoice` and the
+  pack invoice receipt/grant idempotency keep each invoice single.
+- **Refund.** `refundDuplicateSubscriptionInvoice`
+  (billing-duplicate-subscription.service.ts) runs outside SQL on the losing
+  `invoice.paid`: a credit note refunding `amount_paid`, then cancellation
+  without proration. It is triggered by the pack fulfillment loss
+  (`commitOrRefundUsagePackFulfillment$`) and by a rejected Plan invoice whose
+  org is bound to another live subscription (`planInvoiceLostToLiveSubscription`).
+  Timing: on that webhook delivery; missed deliveries are replayed by the
+  hourly `/api/cron/reconcile-billing-entitlements` paid-invoice replay.
+- **Exactly one refund.** Stripe idempotency keys
+  `duplicate-subscription:<invoice>:refund` / `:<subscription>:cancel`, plus a
+  credit-note lookup by metadata purpose on that invoice before creating, so
+  redelivery after the 24h idempotency window still refunds once. No local
+  state is added.
+- Tests (usage-pack-subscription-lifecycle): Plan first then pack, pack first
+  then Plan, and concurrent delivery: one entitlement, one credit note and
+  cancellation for the loser, replay does not grant or refund again.
+- Bound: a higher-tier second subscription is still an upgrade under the
+  existing replacement rules (granted, old subscription canceled without
+  refund), exactly as before.
+
+## Paid invoice for a canceled change (option 2)
+
+`invoice.paid` for a pending upgrade whose change was failed by subscription
+deletion returns 200, grants nothing and refunds through a credit note
+(`refundCanceledUsagePackChangeInvoice`). The change row's existing unique
+`stripe_invoice_id` identifies it; idempotency key
+`usage-pack-change:<change>:<invoice>:canceled-refund`, a credit-note metadata
+lookup and a conditional `failure_reason` transition
+(`subscription_canceled` -> `subscription_canceled_refunded`) keep it single.
 
 ## Serving compaction retirement
 

@@ -241,6 +241,8 @@ export interface UsagePackChangeInvoiceInput {
   readonly metadata: Record<string, string> | null;
   readonly status?: string | null;
   readonly paid?: boolean;
+  readonly total?: number;
+  readonly amount_paid?: number;
   readonly hosted_invoice_url?: string | null;
   readonly lines: { readonly data: readonly UsagePackChangeInvoiceLineInput[] };
   readonly parent: {
@@ -4128,6 +4130,164 @@ export async function fulfillUsagePackSubscriptionChangeInvoice(
   });
 }
 
+const CANCELED_CHANGE_FAILURE_REASON = "subscription_canceled";
+const CANCELED_CHANGE_REFUNDED_FAILURE_REASON =
+  "subscription_canceled_refunded";
+const CANCELED_CHANGE_REFUND_PURPOSE = "usage_pack_change_canceled_refund";
+
+function isCanceledChangeForInvoice(
+  change: UsagePackAllocationChangeRow,
+  invoiceId: string,
+): boolean {
+  return (
+    change.status === "failed" &&
+    change.stripeInvoiceId === invoiceId &&
+    (change.failureReason === CANCELED_CHANGE_FAILURE_REASON ||
+      change.failureReason === CANCELED_CHANGE_REFUNDED_FAILURE_REASON)
+  );
+}
+
+async function existingCanceledChangeCreditNote(
+  stripe: StripeClient,
+  invoiceId: string,
+  changeId: string,
+): Promise<boolean> {
+  const page = await stripe.creditNotes.list({
+    invoice: invoiceId,
+    limit: 100,
+  });
+  const existing = page.data.some((creditNote) => {
+    return (
+      creditNote.metadata?.purpose === CANCELED_CHANGE_REFUND_PURPOSE &&
+      creditNote.metadata.changeId === changeId
+    );
+  });
+  if (!existing && page.has_more) {
+    throw new Error(`Stripe invoice ${invoiceId} has too many credit notes`);
+  }
+  return existing;
+}
+
+/**
+ * A pending upgrade whose subscription was deleted before its invoice was
+ * paid can never be fulfilled. Credit the whole paid invoice back instead of
+ * granting. The bound change row (unique stripe_invoice_id) identifies the
+ * invoice; the Stripe idempotency key and the credit note metadata keep the
+ * refund single even when the local record below is lost.
+ */
+async function refundCanceledUsagePackChangeInvoice(
+  db: Db,
+  change: UsagePackAllocationChangeRow,
+  invoice: UsagePackChangeInvoiceInput,
+): Promise<void> {
+  if (change.failureReason === CANCELED_CHANGE_REFUNDED_FAILURE_REASON) {
+    return;
+  }
+  const total = invoice.total;
+  const amountPaid = invoice.amount_paid;
+  if (
+    total === undefined ||
+    amountPaid === undefined ||
+    !Number.isSafeInteger(total) ||
+    !Number.isSafeInteger(amountPaid) ||
+    amountPaid < 0 ||
+    amountPaid > total
+  ) {
+    throw new Error(
+      `Usage pack change invoice ${invoice.id} has invalid paid amounts`,
+    );
+  }
+  if (total > 0) {
+    const stripe = getStripeClient();
+    if (
+      !(await existingCanceledChangeCreditNote(stripe, invoice.id, change.id))
+    ) {
+      // Customer-balance funded parts return to the balance; the charged part
+      // is refunded to the original payment method.
+      await stripe.creditNotes.create(
+        {
+          invoice: invoice.id,
+          amount: total,
+          refund_amount: amountPaid,
+          ...(total > amountPaid ? { credit_amount: total - amountPaid } : {}),
+          reason: "order_change",
+          metadata: {
+            purpose: CANCELED_CHANGE_REFUND_PURPOSE,
+            changeId: change.id,
+            invoiceId: invoice.id,
+          },
+        },
+        {
+          idempotencyKey: `usage-pack-change:${change.id}:${invoice.id}:canceled-refund`,
+        },
+      );
+    }
+  }
+  const at = nowDate();
+  await db
+    .update(usagePackAllocationChanges)
+    .set({
+      failureReason: CANCELED_CHANGE_REFUNDED_FAILURE_REASON,
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(usagePackAllocationChanges.id, change.id),
+        eq(usagePackAllocationChanges.status, "failed"),
+        eq(usagePackAllocationChanges.stripeInvoiceId, invoice.id),
+        eq(
+          usagePackAllocationChanges.failureReason,
+          CANCELED_CHANGE_FAILURE_REASON,
+        ),
+      ),
+    );
+}
+
+/**
+ * Subscription deletion makes the usage pack record terminal, so its paid
+ * pending-upgrade invoice no longer resolves through the active binding. The
+ * change row's unique stripe_invoice_id still identifies the canceled change.
+ */
+async function refundCanceledChangeOfTerminalSubscription(
+  db: Db,
+  invoice: UsagePackChangeInvoiceInput,
+): Promise<UsagePackChangeInvoiceOutcome> {
+  const [change] = await db
+    .select()
+    .from(usagePackAllocationChanges)
+    .where(
+      and(
+        eq(usagePackAllocationChanges.stripeInvoiceId, invoice.id),
+        isNull(usagePackAllocationChanges.subscriptionChangeId),
+      ),
+    )
+    .limit(1);
+  if (!change || !isCanceledChangeForInvoice(change, invoice.id)) {
+    return { handled: false, orgId: null };
+  }
+  const [subscription] = await db
+    .select()
+    .from(usagePackSubscriptions)
+    .where(eq(usagePackSubscriptions.id, change.usagePackSubscriptionId))
+    .limit(1);
+  if (
+    !subscription ||
+    subscription.orgId !== change.orgId ||
+    !subscription.stripeSubscriptionId ||
+    subscription.stripeSubscriptionId !== invoiceSubscriptionId(invoice) ||
+    subscription.stripeCustomerId !== stripeObjectId(invoice.customer)
+  ) {
+    throw new Error(
+      `Usage pack change invoice ${invoice.id} does not match its change owner`,
+    );
+  }
+  if (invoice.status !== "paid" && invoice.paid !== true) {
+    throw new Error(`Usage pack change invoice ${invoice.id} is not paid`);
+  }
+  await refundCanceledUsagePackChangeInvoice(db, change, invoice);
+  return { handled: true, orgId: change.orgId };
+}
+
 export async function handleUsagePackAllocationChangeInvoicePaid(
   db: Db,
   invoice: UsagePackChangeInvoiceInput,
@@ -4137,7 +4297,7 @@ export async function handleUsagePackAllocationChangeInvoicePaid(
     invoice,
   );
   if (!usagePackSubscriptionId) {
-    return { handled: false, orgId: null };
+    return await refundCanceledChangeOfTerminalSubscription(db, invoice);
   }
   const context = await loadUsagePackChangeContextBySubscriptionId(
     db,
@@ -4211,6 +4371,10 @@ export async function handleUsagePackAllocationChangeInvoicePaid(
   const sourceAllocation = sourceAllocations[0];
   if (!reconciledChange || !sourceAllocation) {
     throw new Error(`Usage pack change ${change.id} disappeared`);
+  }
+  if (isCanceledChangeForInvoice(reconciledChange, invoice.id)) {
+    await refundCanceledUsagePackChangeInvoice(db, reconciledChange, invoice);
+    return { handled: true, orgId: context.subscription.orgId };
   }
   const prorationPeriod = upgradeProrationPeriod(invoice, reconciledChange);
   if (!prorationPeriod) {

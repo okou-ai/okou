@@ -9,21 +9,10 @@ import {
   ne,
   notInArray,
   or,
-  sql,
 } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { BILLING_PURCHASE_PREVIEW_TTL_MS } from "./billing-purchase-preview-token.service";
-
-/**
- * Unfinished R1 financial purchase arbitration. Plan and pack need shared
- * durable business identity and recoverable provider outcomes before removal.
- * This is not an outgoing-version compatibility or R2 drain exemption.
- */
-export function billingPurchaseLockSql(orgId: string) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`billing_purchase:${orgId}`}, 0))`;
-}
 
 /**
  * Existing "subscription payment not complete" status reused as the claim

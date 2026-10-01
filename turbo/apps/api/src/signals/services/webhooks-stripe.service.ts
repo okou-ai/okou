@@ -1,5 +1,6 @@
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
 import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
+import { refundDuplicateSubscriptionInvoice } from "./billing-duplicate-subscription.service";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
 import {
@@ -3069,6 +3070,31 @@ type BindSubscriptionToCustomerOrgArgs = {
     }
 );
 
+/**
+ * A rejected Plan invoice whose organization entitlement is held by another
+ * live subscription is a duplicate initial purchase: it is refunded instead of
+ * granted. Read after the rejected publication so the winner is committed.
+ */
+async function planInvoiceLostToLiveSubscription(
+  db: Db,
+  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
+): Promise<boolean> {
+  const [wallet] = await db
+    .select()
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, publication.orgId));
+  return (
+    !!wallet?.stripeSubscriptionId &&
+    wallet.stripeSubscriptionId !== publication.subscriptionId &&
+    wallet.lastProcessedInvoiceId !== publication.invoiceId &&
+    (wallet.subscriptionStatus === "active" ||
+      wallet.subscriptionStatus === "trialing" ||
+      wallet.subscriptionStatus === "past_due") &&
+    (wallet.currentPeriodEnd === null || wallet.currentPeriodEnd > nowDate()) &&
+    legacyPlanInvoiceAdmission(wallet, publication) === "rejected"
+  );
+}
+
 async function bindSubscriptionToCustomerOrg(
   db: Db,
   args: BindSubscriptionToCustomerOrgArgs,
@@ -3666,6 +3692,14 @@ const handlePlanSubscriptionInvoicePaid$ = command(
     signal.throwIfAborted();
     const result = await set(publishLegacyPlanInvoice$, publication, signal);
     signal.throwIfAborted();
+    if (
+      !result.processed &&
+      (await planInvoiceLostToLiveSubscription(db, publication))
+    ) {
+      await refundDuplicateSubscriptionInvoice(invoice, subscriptionId);
+      signal.throwIfAborted();
+      return org.orgId;
+    }
     if (result.processed && result.cancelReplaced) {
       await cancelReplacedPlanSubscriptions({
         orgId: org.orgId,

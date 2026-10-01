@@ -5,7 +5,9 @@ import {
 import { and, eq, inArray, or } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
-import { billingPurchaseLockSql } from "./billing-purchase-lock.service";
+
+/** A concurrent pending-snapshot transition committed first; nothing was written. */
+export class UsagePackPendingSnapshotConflict extends Error {}
 
 function isPending(status: string): boolean {
   return status === "checkout_pending" || status === "purchase_pending";
@@ -19,12 +21,6 @@ async function preparePendingSnapshotScope(
   const orderedOrgIds = [...new Set(orgIds)].sort();
   if (orderedOrgIds.length === 0) {
     throw new Error("Usage pack writes require an organization scope");
-  }
-  for (const orgId of orderedOrgIds) {
-    // Initial Plan/pack admission still needs a shared recoverable purchase
-    // identity. Retain the existing key until that financial mapping is done;
-    // the count writes below must not become a replacement mutex.
-    await tx.execute(billingPurchaseLockSql(orgId));
   }
   const roots = await tx
     .select({
@@ -107,7 +103,7 @@ export async function publishUsagePackPendingSnapshotCount(
     )
     .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
   if (!published) {
-    throw new Error(
+    throw new UsagePackPendingSnapshotConflict(
       "Usage pack pending snapshot count changed during publication",
     );
   }

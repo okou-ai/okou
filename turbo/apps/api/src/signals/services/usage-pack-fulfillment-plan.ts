@@ -14,6 +14,7 @@ import {
   isNull,
   lt,
   notExists,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -30,6 +31,29 @@ export function fulfillmentRootsWhere(args: CommitUsagePackFulfillmentArgs) {
   return or(
     eq(usagePackSubscriptions.orgId, args.context.subscription.orgId),
     eq(usagePackSubscriptions.id, args.context.subscription.id),
+  );
+}
+
+const LIVE_ORG_SUBSCRIPTION_STATUSES = [
+  "active",
+  "trialing",
+  "past_due",
+] as const;
+
+/**
+ * An organization binds its paid entitlement once. A different live
+ * subscription already bound to it (another initial purchase that won, of
+ * either family) keeps the binding; the losing payment is refunded instead.
+ */
+export function orgAcceptsSubscriptionWhere(subscriptionId: string, at: Date) {
+  return or(
+    isNull(orgMetadata.stripeSubscriptionId),
+    eq(orgMetadata.stripeSubscriptionId, subscriptionId),
+    isNull(orgMetadata.subscriptionStatus),
+    notInArray(orgMetadata.subscriptionStatus, [
+      ...LIVE_ORG_SUBSCRIPTION_STATUSES,
+    ]),
+    lt(orgMetadata.currentPeriodEnd, at),
   );
 }
 
@@ -231,6 +255,7 @@ export function fulfillmentProjection(
     orgWhere: and(
       eq(orgMetadata.orgId, subscription.orgId),
       eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+      orgAcceptsSubscriptionWhere(args.subscription.id, at),
     ),
     orgValues: {
       tier: values.tier,

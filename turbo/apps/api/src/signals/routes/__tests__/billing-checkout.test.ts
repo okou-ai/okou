@@ -7117,6 +7117,15 @@ describe("usage pack allocation management", () => {
       start: current - 15 * 86_400,
       end: current + 15 * 86_400,
     };
+    // The shared staff organization may still hold another test's live
+    // subscription binding, which would make this first purchase a duplicate.
+    await usagePackStateAction({
+      action: "cleanup",
+      orgId: fixture.orgId,
+      usagePackSubscriptionId: randomUUID(),
+      deleteGrants: false,
+      deleteOrgMetadata: true,
+    });
     await seedOrgMetadata({
       orgId: fixture.orgId,
       tier: "limited-free-1",
@@ -13104,11 +13113,7 @@ describe("usage pack allocation management", () => {
     ]);
   });
 
-  it("settles a paid upgrade and its subscription deletion in exactly one order", async () => {
-    mockNow(new Date("2035-01-17T00:00:00.000Z"));
-    onTestFinished(() => {
-      clearMockNow();
-    });
+  async function confirmPendingUsagePackUpgrade() {
     const fixture = await seedManagedUsagePack([
       { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
     ]);
@@ -13155,68 +13160,201 @@ describe("usage pack allocation management", () => {
       [200],
     );
     expect(confirmed.body.status).toBe("pending_payment");
-
-    const paidInvoice = managedUsagePackUpgradeInvoice(fixture, {
-      invoiceId: pendingInvoiceId,
-      sourcePriceId: TEST_PRICE_USAGE_PACK_20,
-      targetPriceId: TEST_PRICE_USAGE_PACK_50,
-      prorationTimestamp,
+    const paidInvoice = {
+      ...managedUsagePackUpgradeInvoice(fixture, {
+        invoiceId: pendingInvoiceId,
+        sourcePriceId: TEST_PRICE_USAGE_PACK_20,
+        targetPriceId: TEST_PRICE_USAGE_PACK_50,
+        prorationTimestamp,
+      }),
+      total: 1500,
+      amount_paid: 1500,
+    };
+    context.mocks.stripe.creditNotes.list.mockResolvedValue({
+      data: [],
+      has_more: false,
     });
-    const canceledSubscription = { ...oldSubscription, status: "canceled" };
+    context.mocks.stripe.creditNotes.create.mockResolvedValue({
+      id: `cn_${randomUUID()}`,
+      status: "issued",
+    });
+    return {
+      fixture,
+      changeId: preview.body.changeId,
+      oldSubscription,
+      canceledSubscription: { ...oldSubscription, status: "canceled" },
+      paidInvoice,
+    };
+  }
+
+  function expectCanceledUpgradeRefund(changeId: string, invoiceId: string) {
+    expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledOnce();
+    expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice: invoiceId,
+        amount: 1500,
+        refund_amount: 1500,
+      }),
+      {
+        idempotencyKey: `usage-pack-change:${changeId}:${invoiceId}:canceled-refund`,
+      },
+    );
+  }
+
+  it("settles a paid upgrade and its subscription deletion in exactly one order", async () => {
+    mockNow(new Date("2035-01-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const { fixture, changeId, canceledSubscription, paidInvoice } =
+      await confirmPendingUsagePackUpgrade();
+    const grantsBefore = (
+      await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId)
+    ).grants;
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       canceledSubscription,
     );
-    const [paid, deleted] = await Promise.allSettled([
+
+    await Promise.all([
       postManagedUsagePackEvent("invoice.paid", paidInvoice),
       postManagedUsagePackEvent(
         "customer.subscription.deleted",
         canceledSubscription,
       ),
     ]);
-    expect(deleted.status).toBe("fulfilled");
-    const settled = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
-    );
-    const replayedPaid = await Promise.allSettled([
-      postManagedUsagePackEvent("invoice.paid", paidInvoice),
-    ]);
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
     await postManagedUsagePackEvent(
       "customer.subscription.deleted",
       canceledSubscription,
     );
-    const replayed = await readUsagePackState(
+
+    // The canceled subscription can never reflect the upgrade, so whichever
+    // delivery wins, the paid invoice is refunded exactly once instead of
+    // granting credits or failing the webhook forever.
+    const settled = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+    expect(
+      settled.changes.find((candidate) => {
+        return candidate.id === changeId;
+      })?.status,
+    ).toBe("failed");
+    expect(settled.grants).toStrictEqual(grantsBefore);
+    expect(settled.fulfillmentInvoiceIds).not.toContain(paidInvoice.id);
+    expectCanceledUpgradeRefund(changeId, paidInvoice.id);
+  });
+
+  it("refunds a paid upgrade invoice delivered after its subscription deletion", async () => {
+    mockNow(new Date("2035-01-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const { fixture, changeId, canceledSubscription, paidInvoice } =
+      await confirmPendingUsagePackUpgrade();
+    const grantsBefore = (
+      await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId)
+    ).grants;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      canceledSubscription,
+    );
+
+    await postManagedUsagePackEvent(
+      "customer.subscription.deleted",
+      canceledSubscription,
+    );
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+
+    const refunded = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+    expect(
+      refunded.changes.find((candidate) => {
+        return candidate.id === changeId;
+      })?.status,
+    ).toBe("failed");
+    expect(refunded.grants).toStrictEqual(grantsBefore);
+    expect(refunded.fulfillmentInvoiceIds).not.toContain(paidInvoice.id);
+    expectCanceledUpgradeRefund(changeId, paidInvoice.id);
+  });
+
+  it("does not refund a redelivered paid invoice of a canceled upgrade twice", async () => {
+    mockNow(new Date("2035-01-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const { fixture, changeId, canceledSubscription, paidInvoice } =
+      await confirmPendingUsagePackUpgrade();
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      canceledSubscription,
+    );
+    await postManagedUsagePackEvent(
+      "customer.subscription.deleted",
+      canceledSubscription,
+    );
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    const refunded = await readUsagePackState(
       fixture.orgId,
       fixture.usagePackSubscriptionId,
     );
 
-    const change = settled.changes.find((candidate) => {
-      return candidate.id === preview.body.changeId;
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+
+    const redelivered = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
+    );
+    expect(redelivered.grants).toStrictEqual(refunded.grants);
+    expect(redelivered.changes).toStrictEqual(refunded.changes);
+    expect(context.mocks.stripe.creditNotes.list).toHaveBeenCalledOnce();
+    expectCanceledUpgradeRefund(changeId, paidInvoice.id);
+  });
+
+  it("fulfills a paid upgrade once without a refund before its subscription deletion", async () => {
+    mockNow(new Date("2035-01-17T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
     });
-    // Either the paid publication or the cancellation transition wins; the
-    // loser rolls back instead of publishing a second grant or overwriting.
-    if (change?.status === "failed") {
-      expect(settled.grants).toHaveLength(2);
-      expect(settled.fulfillmentInvoiceIds).not.toContain(pendingInvoiceId);
-    } else {
-      expect(paid.status).toBe("fulfilled");
-      expect(replayedPaid[0]?.status).toBe("fulfilled");
-      expect(change?.status).toMatch(/^(applied|completed)$/);
-      expect(
-        settled.grants.filter((grant) => {
-          return grant.originalAmount === 15_000;
-        }),
-      ).toHaveLength(1);
-    }
-    expect(replayed.grants).toStrictEqual(settled.grants);
-    expect(replayed.fulfillmentInvoiceIds).toStrictEqual(
-      settled.fulfillmentInvoiceIds,
+    const { fixture, changeId, canceledSubscription, paidInvoice } =
+      await confirmPendingUsagePackUpgrade();
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+      ),
+    );
+
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      canceledSubscription,
+    );
+    await postManagedUsagePackEvent(
+      "customer.subscription.deleted",
+      canceledSubscription,
+    );
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+
+    const settled = await readUsagePackState(
+      fixture.orgId,
+      fixture.usagePackSubscriptionId,
     );
     expect(
-      replayed.changes.find((candidate) => {
-        return candidate.id === preview.body.changeId;
+      settled.changes.find((candidate) => {
+        return candidate.id === changeId;
       })?.status,
-    ).toBe(change?.status);
+    ).toBe("completed");
+    expect(
+      settled.grants.filter((grant) => {
+        return grant.originalAmount === 15_000;
+      }),
+    ).toHaveLength(1);
+    expect(
+      settled.fulfillmentInvoiceIds.filter((id) => {
+        return id === paidInvoice.id;
+      }),
+    ).toHaveLength(1);
+    expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
   });
 
   it("completes an immediately paid upgrade during confirmation", async () => {

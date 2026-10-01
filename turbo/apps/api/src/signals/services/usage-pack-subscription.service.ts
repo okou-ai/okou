@@ -19,6 +19,7 @@ import {
   fulfillmentProjection,
   fulfillmentRootSnapshot,
   fulfillmentRootsWhere,
+  orgAcceptsSubscriptionWhere,
   requireFulfillmentAllocationSnapshot,
 } from "./usage-pack-fulfillment-plan";
 import {
@@ -73,6 +74,7 @@ import {
 } from "../external/stripe-client";
 import { onRejection, settle } from "../utils";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
+import { refundDuplicateSubscriptionInvoice } from "./billing-duplicate-subscription.service";
 import { upsertOrgPlanEntitlement } from "./org-plan-entitlements.service";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
@@ -89,16 +91,16 @@ import type { BillingReconciliationScope } from "./billing-reconciliation-scope"
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
 import {
   publishUsagePackPendingSnapshotCount,
+  UsagePackPendingSnapshotConflict,
   writeUsagePackPendingSnapshots,
 } from "./usage-pack-pending-snapshot.service";
 import {
-  billingPurchaseLockSql,
   inFlightPlanPurchaseQuery,
   inFlightUsagePackPurchaseQuery,
   PLAN_PURCHASE_CLAIM_STALE_MS,
   USAGE_PACK_PURCHASE_CLAIM_STALE_MS,
   USAGE_PACK_PURCHASE_CLAIM_STATUS,
-} from "./billing-purchase-lock.service";
+} from "./billing-purchase-claim.service";
 import {
   BILLING_PURCHASE_PREVIEW_TTL_MS,
   billingPreviewExpiresAt,
@@ -285,6 +287,7 @@ interface UsagePackInvoiceLineInput {
 
 export interface UsagePackInvoiceInput {
   readonly id: string;
+  readonly amount_paid?: number;
   readonly customer: StripeObjectReference | null;
   readonly metadata: Record<string, string> | null;
   readonly status?: string | null;
@@ -1623,44 +1626,53 @@ async function claimUsagePackPurchase(
   const planClaimStaleBefore = new Date(
     at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS,
   );
-  // writeUsagePackPendingSnapshots still acquires billing_purchase as
-  // unfinished R1 work: Plan and usage-pack initial purchases do not yet share
-  // one recoverable claim on an existing record. It is retained only until the
-  // pending first-purchase protocol decision lands, not for older versions.
-  return await writeUsagePackPendingSnapshots(
-    db,
-    [orgId],
-    async (tx) => {
-      const claimed = await tx
-        .update(usagePackSubscriptions)
-        .set({
-          subscriptionStatus: USAGE_PACK_PURCHASE_CLAIM_STATUS,
-          updatedAt: at,
-        })
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId),
-            eq(usagePackSubscriptions.orgId, orgId),
-            eq(usagePackSubscriptions.subscriptionStatus, "purchase_pending"),
-            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-            notExists(
-              inFlightUsagePackPurchaseQuery(tx, {
-                orgId,
-                sourceSubscriptionId: null,
-                excludeUsagePackSubscriptionId: preview.usagePackSubscriptionId,
-              }),
+  // Best effort: a concurrent Plan claim may still pass the NOT EXISTS checks.
+  // Local entitlement then binds once and the extra payment is refunded. A
+  // concurrent pending-count transition that committed first is a conflict.
+  const claimed = await settle(
+    writeUsagePackPendingSnapshots(
+      db,
+      [orgId],
+      async (tx) => {
+        const claimed = await tx
+          .update(usagePackSubscriptions)
+          .set({
+            subscriptionStatus: USAGE_PACK_PURCHASE_CLAIM_STATUS,
+            updatedAt: at,
+          })
+          .where(
+            and(
+              eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId),
+              eq(usagePackSubscriptions.orgId, orgId),
+              eq(usagePackSubscriptions.subscriptionStatus, "purchase_pending"),
+              isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+              isNull(usagePackSubscriptions.stripeSubscriptionId),
+              notExists(
+                inFlightUsagePackPurchaseQuery(tx, {
+                  orgId,
+                  sourceSubscriptionId: null,
+                  excludeUsagePackSubscriptionId:
+                    preview.usagePackSubscriptionId,
+                }),
+              ),
+              notExists(
+                inFlightPlanPurchaseQuery(tx, orgId, planClaimStaleBefore),
+              ),
             ),
-            notExists(
-              inFlightPlanPurchaseQuery(tx, orgId, planClaimStaleBefore),
-            ),
-          ),
-        )
-        .returning({ id: usagePackSubscriptions.id });
-      return claimed.length === 1;
-    },
-    [preview.usagePackSubscriptionId],
+          )
+          .returning({ id: usagePackSubscriptions.id });
+        return claimed.length === 1;
+      },
+      [preview.usagePackSubscriptionId],
+    ),
   );
+  if (claimed.ok) {
+    return claimed.value;
+  }
+  if (claimed.error instanceof UsagePackPendingSnapshotConflict) {
+    return false;
+  }
+  throw claimed.error;
 }
 
 /**
@@ -2775,9 +2787,7 @@ const publishUsagePackCheckoutState$ = command(
     const db = set(writeDb$);
     const { subscription } = args;
     await db.transaction(async (tx) => {
-      // The unfinished purchase protocol also conditions this snapshot on
-      // the root state this decision was made from.
-      await tx.execute(billingPurchaseLockSql(args.orgId));
+      // Conditioned on the root state this decision was made from.
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3523,6 +3533,33 @@ async function usagePackInvoiceAlreadyFulfilled(
   return true;
 }
 
+/** Another live subscription already holds the organization entitlement. */
+class DuplicateUsagePackEntitlement extends Error {}
+
+async function requireOrgBillingRecord(
+  tx: Pick<Db, "select">,
+  orgId: string,
+  subscription: UsagePackSubscriptionRow,
+): Promise<never> {
+  const [org] = await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(
+      and(
+        eq(orgMetadata.orgId, orgId),
+        eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+      ),
+    );
+  if (org) {
+    throw new DuplicateUsagePackEntitlement(
+      `Organization ${orgId} entitlement belongs to another live subscription`,
+    );
+  }
+  throw new Error(
+    `Usage pack subscription ${subscription.id} has no matching organization billing record`,
+  );
+}
+
 const commitUsagePackPlanActivation$ = command(
   async (
     { set },
@@ -3535,9 +3572,7 @@ const commitUsagePackPlanActivation$ = command(
       // The subscription write below is conditional on the root status and
       // prepared allocation set it was decided from, and the pending count is
       // published conditionally on the count read here. Allocation writers only
-      // admit active roots, so none races this pending root. billing_purchase
-      // stays with the undecided initial purchase protocol.
-      await tx.execute(billingPurchaseLockSql(orgId));
+      // admit active roots, so none races this pending root.
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3604,13 +3639,15 @@ const commitUsagePackPlanActivation$ = command(
             and(
               eq(orgMetadata.orgId, orgId),
               eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+              orgAcceptsSubscriptionWhere(
+                args.subscription.id,
+                values.updatedAt,
+              ),
             ),
           )
           .returning({ orgId: orgMetadata.orgId });
         if (orgRows.length !== 1) {
-          throw new Error(
-            `Usage pack subscription ${subscription.id} has no matching organization billing record`,
-          );
+          await requireOrgBillingRecord(tx, orgId, subscription);
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
@@ -3698,14 +3735,24 @@ const activateUsagePackPlanFromSubscription$ = command(
         ),
       );
     signal.throwIfAborted();
-    await set(
-      commitUsagePackPlanActivation$,
-      {
-        context: { subscription: local, allocations },
-        subscription,
-      },
-      signal,
+    const activated = await settle(
+      set(
+        commitUsagePackPlanActivation$,
+        {
+          context: { subscription: local, allocations },
+          subscription,
+        },
+        signal,
+      ),
     );
+    signal.throwIfAborted();
+    if (
+      !activated.ok &&
+      !(activated.error instanceof DuplicateUsagePackEntitlement)
+    ) {
+      throw activated.error;
+    }
+    // A losing duplicate stays unactivated; its paid invoice is refunded.
     signal.throwIfAborted();
     return { handled: true, orgId: local.orgId, subscription };
   },
@@ -3738,9 +3785,7 @@ const commitUsagePackFulfillment$ = command(
     await db.transaction(async (tx) => {
       // Duplicate invoice deliveries queue on the root rows below and then see
       // the committed receipt; allocation rows read for the grant snapshot are
-      // likewise held. billing_purchase stays with the undecided initial
-      // purchase protocol.
-      await tx.execute(billingPurchaseLockSql(orgId));
+      // likewise held.
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3825,9 +3870,7 @@ const commitUsagePackFulfillment$ = command(
           .where(projection.orgWhere)
           .returning({ orgId: orgMetadata.orgId });
         if (orgs.length !== 1) {
-          throw new Error(
-            `Usage pack subscription ${subscription.id} has no matching organization billing record`,
-          );
+          await requireOrgBillingRecord(tx, orgId, subscription);
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
@@ -3852,6 +3895,36 @@ const commitUsagePackFulfillment$ = command(
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
+  },
+);
+
+/** Commit a fulfillment, or refund it when another live subscription won. */
+const commitOrRefundUsagePackFulfillment$ = command(
+  async (
+    { set },
+    args: CommitUsagePackFulfillmentArgs,
+    signal: AbortSignal,
+  ): Promise<"committed" | "refunded"> => {
+    const committed = await settle(
+      set(commitUsagePackFulfillment$, args, signal),
+    );
+    signal.throwIfAborted();
+    if (committed.ok) {
+      return "committed";
+    }
+    if (!(committed.error instanceof DuplicateUsagePackEntitlement)) {
+      throw committed.error;
+    }
+    await refundDuplicateSubscriptionInvoice(
+      args.invoice,
+      args.subscription.id,
+    );
+    signal.throwIfAborted();
+    L.warn("usage pack duplicate purchase refunded", {
+      invoiceId: args.invoice.id,
+      usagePackSubscriptionId: args.context.subscription.id,
+    });
+    return "refunded";
   },
 );
 
@@ -3961,8 +4034,8 @@ export const handleUsagePackInvoicePaid$ = command(
       invoice,
     );
     signal.throwIfAborted();
-    await set(
-      commitUsagePackFulfillment$,
+    const outcome = await set(
+      commitOrRefundUsagePackFulfillment$,
       {
         context: reconciledContext,
         subscription,
@@ -3971,6 +4044,10 @@ export const handleUsagePackInvoicePaid$ = command(
       },
       signal,
     );
+    signal.throwIfAborted();
+    if (outcome === "refunded") {
+      return { handled: true, orgId: reconciledContext.subscription.orgId };
+    }
 
     L.debug("usage pack invoice fulfilled", {
       invoiceId: invoice.id,
@@ -4002,9 +4079,7 @@ const retireReconciledUsagePackSnapshot$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      // No row locks: guard writers hold the retained billing_purchase key and
-      // the retirement below is a conditional status transition.
-      await tx.execute(billingPurchaseLockSql(args.orgId));
+      // The retirement below is a conditional status transition.
       const roots = await tx
         .select({
           id: usagePackSubscriptions.id,

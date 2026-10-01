@@ -38,11 +38,10 @@ import {
   completeBillingOperationInvoiceWithInvoice,
 } from "./billing-operation-invoice.service";
 import {
-  billingPurchaseLockSql,
   inFlightUsagePackPurchaseQuery,
   PLAN_PURCHASE_CLAIM_STALE_MS,
   PLAN_PURCHASE_CLAIM_STATUS,
-} from "./billing-purchase-lock.service";
+} from "./billing-purchase-claim.service";
 import { onRejection } from "../utils";
 import {
   createBillingPreviewToken,
@@ -1198,11 +1197,9 @@ async function claimPlanPurchase(
   const staleBefore = new Date(at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS);
   const persistsClaim = preview.sourceSubscriptionId === null;
   return await db.transaction(async (tx) => {
-    // Unfinished R1 work, not a rolling-version exemption: initial Plan and
-    // usage-pack purchases do not yet share one recoverable claim on an
-    // existing record. This key stays only until the pending first-purchase
-    // protocol decision lands; it is not kept for any older API version.
-    await tx.execute(billingPurchaseLockSql(orgId));
+    // Best effort only: a concurrent Plan or pack purchase may still create a
+    // second Stripe subscription. Local entitlement binds once (conditional
+    // organization binding) and reconciliation refunds the extra payment.
     const claimed = await tx
       .update(orgMetadata)
       .set({

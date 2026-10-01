@@ -22,7 +22,6 @@ import type {
 function initialSettlementObservation(): SettlementWorkObservation {
   return {
     lockWaitMs: 0,
-    orgLockWaitMs: 0,
     settlementWorkMs: 0,
     pendingEvents: 0,
     pricingRows: 0,
@@ -38,13 +37,6 @@ export function settlementObservation(pricingRows: number) {
     startedAt: performance.now(),
     work: { ...initialSettlementObservation(), pricingRows },
   };
-}
-
-export function settlementOrgLockWaitMs(
-  startedAt: number,
-  compactionWaitMs: number,
-) {
-  return Math.round(performance.now() - startedAt) - compactionWaitMs;
 }
 
 export function planUsageCharges(

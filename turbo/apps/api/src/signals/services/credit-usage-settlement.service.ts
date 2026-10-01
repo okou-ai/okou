@@ -57,7 +57,6 @@ import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   claimUsageWhere,
   settlementObservation,
-  settlementOrgLockWaitMs,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
   planUsageCharges,
@@ -81,7 +80,6 @@ import {
   requireAllowanceWrite,
 } from "./usage-allowance-settlement-plan";
 import {
-  orgCreditLockSql,
   prepareUsageAllowanceRefresh$,
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
@@ -132,7 +130,6 @@ const commitUsageBatch$ = command(
         return null;
       }
       const { usage: managed, processPending } = socialPlan(batch.social, job);
-      await tx.execute(orgCreditLockSql(orgId));
       if (managed) {
         const [run] = await tx
           .select()
@@ -154,7 +151,6 @@ const commitUsageBatch$ = command(
       const key = managed?.idempotencyKey;
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       const at = nowDate();
-      work.orgLockWaitMs = settlementOrgLockWaitMs(startedAt, work.lockWaitMs);
       const events = processPending
         ? await tx
             .update(usageEvent)
