@@ -11,7 +11,7 @@ import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { handleChatInternalCallback$ } from "./internal-chat-run-callback.service";
 import { handleFeishuOrgInternalCallback$ } from "./internal-feishu-org-run-callback.service";
 import {
@@ -302,10 +302,11 @@ export const dispatchRunCallbacks$ = command(
     if (!run) {
       return [];
     }
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
       run.orgId,
       run.userId,
+      signal,
     );
     signal.throwIfAborted();
     const callbacks = await db
