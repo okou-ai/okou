@@ -41,6 +41,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
+  VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import {
   UNKNOWN_PERMISSION_GRANT,
@@ -755,19 +756,6 @@ async function entitledRunActor(
   return { actor, agentId: agent.agentId, runnerGroup, granted };
 }
 
-function agentBackedDirectRunBody(args: {
-  readonly agentId: string;
-  readonly prompt: string;
-}) {
-  return {
-    agentId: args.agentId,
-    prompt: args.prompt,
-    modelProviderType: "anthropic-api-key" as const,
-    vars: { OKOU_AGENT_ID: args.agentId },
-    secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
-  };
-}
-
 const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
 
 function failIfChatCallbackRouteIsFetched(): void {
@@ -1341,24 +1329,19 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("returns a context encryption failure while storage presigning is still pending", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const storageName = `bdd-overlap-${randomUUID().slice(0, 8)}`;
-    const storageFile = storageTextFile(
-      "overlap.txt",
-      `overlap payload ${storageName}`,
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    // An Agent workflow gives the run a Storage mount to presign.
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      `overlap-${randomUUID().slice(0, 8)}`,
+      { content: "# Overlap\nUse for preparation overlap." },
+      [201],
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const prompt = `storage and context preparation should overlap ${randomUUID()}`;
 
     const kmsStarted = createDeferredPromise<void>(context.signal);
     const storageStarted = createDeferredPromise<void>(context.signal);
@@ -1391,43 +1374,41 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw contextError;
     });
 
-    const failed = await api.createRun(actor, {
-      agentId,
-      prompt: "storage and context preparation should overlap",
-      modelProvider: "anthropic-api-key",
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath: "/overlap",
-        },
-      ],
-    });
-
-    expect(kmsStarted.settled()).toBeTruthy();
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(contextError.message);
-    expect(storageStarted.settled()).toBeTruthy();
+    // A Thread launch failure creates no run and surfaces from the pick;
+    // the first preparation failure wins over the later storage failure.
+    const failed = api.createThreadRun(actor, { agentId, prompt });
+    await kmsStarted.promise;
+    await storageStarted.promise;
     releaseStorage.resolve(undefined);
+    await expect(failed).rejects.toThrow(contextError.message);
     await storageFinished.promise;
-    const stored = await api.readRun(actor, failed.runId);
-    expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(contextError.message);
-    await api.requestClaimRunnerJob(true, failed.runId, [404]);
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === prompt;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("returns a session storage failure while large request storage is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped actor");
+    }
     await api.heartbeatRunner(runnerGroup);
 
-    const initialRun = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "establish canonical storage for overlap",
-      }),
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "establish canonical storage for overlap",
     });
     const initialClaim = await api.claimRunnerJob(initialRun.runId);
     const initialMemory = expectCanonicalStorageManifest(
@@ -1439,6 +1420,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the canonical memory mount");
     }
 
+    storages.mockStorageObjectsExist(4096);
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `session overlap ${initialRun.runId}`,
@@ -1446,6 +1428,8 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const preparedMemory = await storages.prepareStorage(actor, {
       storageName: "memory",
       storageOwner: "user",
+      baseVersion: initialMemory.versionId,
+      changes: { added: [memoryFile.path], modified: [], deleted: [] },
       files: [memoryFile],
     });
     const sessionArchiveKey = preparedMemory.uploads?.archive.key;
@@ -1482,26 +1466,43 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       [200],
     );
 
-    const requestStorageName = `bdd-request-overlap-${randomUUID().slice(0, 8)}`;
-    const requestFile = storageTextFile(
-      "request.txt",
-      `request overlap ${requestStorageName}`,
-    );
-    const preparedRequest = await storages.prepareStorage(actor, {
-      storageName: requestStorageName,
-      storageOwner: "organization",
-      files: [requestFile],
-    });
-    const requestArchiveKey = preparedRequest.uploads?.archive.key;
-    if (!requestArchiveKey) {
-      throw new Error("Expected a request storage archive upload");
+    // Seventeen Agent workflows are the run's large set of read-only Storages.
+    const misc = createMiscRoutesApi(context);
+    const requestMounts: {
+      readonly name: string;
+      readonly mountPath: string;
+      readonly versionId: string;
+    }[] = [];
+    const requestArchiveKeys = new Set<string>();
+    for (let index = 0; index < 17; index += 1) {
+      const workflowName = `request-overlap-${String(index)}-${randomUUID().slice(0, 8)}`;
+      const workflow = await misc.createWorkflow(
+        actor,
+        agentId,
+        workflowName,
+        { content: `# Request overlap ${String(index)}\nUse for overlap.` },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      const name = getCustomSkillStorageName(workflow.body.id);
+      const stored = await storages.downloadStorage(actor, {
+        name,
+        owner: "organization",
+      });
+      const prefix = await readStorageS3PrefixFixture({
+        orgId: actor.orgId,
+        userId: VOLUME_ORG_USER_ID,
+        name,
+      });
+      requestArchiveKeys.add(`${prefix}/${stored.versionId}/archive.tar.gz`);
+      requestMounts.push({
+        name,
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+        versionId: stored.versionId,
+      });
     }
-    await storages.commitStorage(actor, {
-      storageName: requestStorageName,
-      storageOwner: "organization",
-      versionId: preparedRequest.versionId,
-      files: [requestFile],
-    });
 
     const requestPresignStarted = createDeferredPromise<void>(context.signal);
     const sessionPresignStarted = createDeferredPromise<void>(context.signal);
@@ -1517,7 +1518,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     context.mocks.s3.getSignedUrl.mockImplementation(
       async (_client: unknown, command: unknown) => {
         const key = s3CommandKey(command);
-        if (key === requestArchiveKey) {
+        if (key !== undefined && requestArchiveKeys.has(key)) {
           if (!requestPresignStarted.settled()) {
             requestPresignStarted.resolve(undefined);
           }
@@ -1537,35 +1538,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     );
 
-    const requestMountPaths = Array.from({ length: 17 }, (_, index) => {
-      return `/request-overlap-${index}`;
-    });
-    const continuationBody = {
-      sessionId: initialRun.sessionId,
-      prompt: "overlap request and canonical session storage",
-      secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
-      additionalVolumes: requestMountPaths.map((mountPath) => {
-        return {
-          name: requestStorageName,
-          version: preparedRequest.versionId,
-          mountPath,
-        };
-      }),
+    // A Thread launch failure creates no run and surfaces from the pick; the
+    // session failure wins while the large Storage presigns are pending.
+    const continueSession = (prompt: string) => {
+      return api.createThreadRun(actor, {
+        agentId,
+        threadId: initialRun.threadId,
+        prompt,
+      });
     };
-    const continuedRunPromise = api.createDirectRun(actor, continuationBody);
+    const overlapPrompt = `overlap request and canonical session storage ${randomUUID()}`;
+    const overlapped = continueSession(overlapPrompt);
     await Promise.all([
       requestPresignStarted.promise,
       sessionPresignStarted.promise,
     ]);
-    const failed = await continuedRunPromise;
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(sessionError.message);
     releaseRequestPresign.resolve(undefined);
+    await expect(overlapped).rejects.toThrow(sessionError.message);
     await requestPresignFinished.promise;
-    const stored = await api.readRun(actor, failed.runId);
-    expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(sessionError.message);
-    await api.requestClaimRunnerJob(true, failed.runId, [404]);
 
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {
@@ -1577,14 +1567,23 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         );
       },
     );
-    const sessionFailed = await api.createDirectRun(actor, continuationBody);
-    expect(sessionFailed.status).toBe("failed");
-    expect(sessionFailed.error).toBe(sessionError.message);
+    await expect(
+      continueSession("session storage alone fails"),
+    ).rejects.toThrow(sessionError.message);
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === overlapPrompt;
+      }),
+    ).toStrictEqual([]);
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
     );
-    const largeRun = await api.createDirectRun(actor, continuationBody);
+    const largeRun = await continueSession("large Storage continuation");
     const largeClaim = await api.claimRunnerJob(largeRun.runId);
     const largeManifest = expectCanonicalStorageManifest(
       largeClaim.storageManifest,
@@ -1592,20 +1591,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!largeManifest) {
       throw new Error("Expected a canonical large Storage manifest");
     }
-    const requestMounts = largeManifest.storageMounts.filter((mount) => {
-      return mount.name === requestStorageName;
-    });
-    expect(
-      requestMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).toStrictEqual(requestMountPaths);
-    expect(requestMounts).toHaveLength(17);
     for (const mount of requestMounts) {
-      expect(mount).toMatchObject({
-        storageId: expect.any(String),
-        versionId: preparedRequest.versionId,
-      });
+      expect(largeManifest.storageMounts).toContainEqual(
+        expect.objectContaining({ ...mount, storageId: expect.any(String) }),
+      );
     }
     expect(largeManifest.storageMounts).toContainEqual(
       expect.objectContaining({
@@ -13773,53 +13762,34 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    // A committed volume version backs the versioned additional volume; the
-    // scratch volume stays versionless and storage-less on purpose.
-    const cacheVolume = `bdd-cache-${randomUUID().slice(0, 8)}`;
-    const scratchVolume = `bdd-scratch-${randomUUID().slice(0, 8)}`;
-    const cacheFile = {
-      path: "cache.txt",
-      hash: createHash("sha256")
-        .update(`bdd cache ${cacheVolume}`)
-        .digest("hex"),
-      size: 9,
-    };
-    const cachePrepared = await storages.prepareStorage(actor, {
-      storageName: cacheVolume,
-      storageOwner: "organization",
-      files: [cacheFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: cacheVolume,
-      storageOwner: "organization",
-      versionId: cachePrepared.versionId,
-      files: [cacheFile],
-    });
-
-    const createdResponse = await api.requestCreateRunUnchecked(
+    // An Agent workflow's Storage is the run's versioned read-only volume.
+    const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
       actor,
-      {
-        agentId,
-        prompt: "report snapshots and telemetry",
-        modelProvider: "anthropic-api-key",
-        additionalVolumes: [
-          {
-            name: cacheVolume,
-            version: cachePrepared.versionId,
-            mountPath: "/cache",
-            baselineCandidate: true,
-          },
-          { name: scratchVolume, mountPath: "/scratch" },
-        ],
-      },
+      agentId,
+      workflowName,
+      { content: "# Cache\nUse for snapshot reporting." },
       [201],
     );
-    if (createdResponse.status !== 201) {
-      throw new Error("Expected unchecked run creation to succeed");
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
     }
-    const created = createdResponse.body;
+    const cacheVolume = getCustomSkillStorageName(workflow.body.id);
+    const cachePrepared = await storages.downloadStorage(actor, {
+      name: cacheVolume,
+      owner: "organization",
+    });
+    const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
+
+    const created = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "report snapshots and telemetry",
+    });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
     const storageMounts =
@@ -13828,7 +13798,7 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     const mountPaths = storageMounts.map((storage) => {
       return storage.mountPath;
     });
-    expect(mountPaths).toContain("/cache");
+    expect(mountPaths).toContain(cacheMountPath);
     const seedMountPaths = new Set(
       SEED_SKILLS.map((skillName) => {
         return `/home/user/.claude/skills/${skillName}`;
@@ -14152,14 +14122,27 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
       const modelProvider = args.modelProvider ?? "anthropic-api-key";
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
+      let model: string = NATIVE_RUNNER_ROUTE.model;
       if (modelProvider === "built-in") {
-        await seedBuiltInDefaultModelKey();
+        model = await seedBuiltInDefaultModelKey();
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model,
+            preferred: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
       }
-      const { actor, agentId } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `fail ${modelProvider} with ${args.failureReason ?? "no reason"}`,
-        modelProvider,
+        model,
       });
       if (args.persistedModelProvider !== undefined) {
         await setRunModelProviderStateFixture(

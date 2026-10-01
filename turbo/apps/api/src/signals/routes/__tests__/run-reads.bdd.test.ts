@@ -1,3 +1,4 @@
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 
@@ -28,6 +29,7 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -1155,7 +1157,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     mockEnv("S3_PUBLIC_ENDPOINT", undefined);
     const storages = createStoragesBddApi(context);
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const volumeArchiveSize = 12_345;
     storages.mockStoragePresignedUrls();
     storages.mockStorageObjectsExist(volumeArchiveSize);
@@ -1199,19 +1201,31 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
     storages.mockStorageObjectsExist(volumeArchiveSize);
 
-    const composeName = `bdd-resume-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["data:/data"],
-        },
-      },
-      volumes: {
-        data: { name: volumeName, version: `\${{ vars.VOL_VERSION }}` },
-      },
+    // An Agent workflow's exact Storage version is the run's volume; its
+    // archive is recorded at the mocked object size.
+    storages.mockStorageObjectsExist(volumeArchiveSize);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD resume agent",
+      visibility: "private",
     });
+    const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agent.agentId,
+      workflowName,
+      { content: "# Resume\nUse for session continuation." },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
+    const workflowVersion = (
+      await storages.downloadStorage(actor, {
+        name: workflowStorageName,
+        owner: "organization",
+      })
+    ).versionId;
 
     // The session-history blob for checkpointed conversations is hash-only
     // in R2 — answer the GetObject for it while keeping other s3 sends inert.
@@ -1237,14 +1251,11 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const versionPrefix = volumeVersion.slice(0, 16);
     const presignCallsBeforeRun =
       context.mocks.s3.getSignedUrl.mock.calls.length;
-    const r1 = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "pin the volume by version prefix",
-      modelProviderType: "anthropic-api-key",
-      vars: { VOL_VERSION: versionPrefix },
+    const r1 = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "pin the workflow Storage version",
     });
     const claim1 = await api.claimRunnerJob(r1.runId);
     expect(
@@ -1252,13 +1263,21 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     ).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: volumeName,
-          mountPath: "/data",
-          versionId: volumeVersion,
-          archiveSize: volumeArchiveSize,
+          name: workflowStorageName,
+          mountPath: `/home/user/.claude/skills/${workflowName}`,
+          versionId: workflowVersion,
+          // The server packages the workflow, so its archive size is the one
+          // recorded for that version rather than a mocked object size.
+          archiveSize: expect.any(Number),
         }),
       ]),
     );
+    const workflowMount = expectCanonicalStorageManifest(
+      claim1.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === workflowStorageName;
+    });
+    expect(workflowMount?.archiveSize).toBeGreaterThan(0);
     const memory1 = expectCanonicalStorageManifest(
       claim1.storageManifest,
     )?.storageMounts.find((mount) => {
@@ -1297,53 +1316,23 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
               mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
             },
           ],
-          volumeVersionsSnapshot: { versions: { data: volumeVersion } },
+          volumeVersionsSnapshot: {
+            versions: { [workflowStorageName]: workflowVersion },
+          },
         },
       },
       headers1,
       [200],
     );
 
-    const latestCompose = await api.createDirectAgent(actor, {
-      version: "2",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["data:/data"],
-        },
-      },
-      volumes: {
-        data: { name: volumeName, version: `\${{ vars.VOL_VERSION }}` },
-      },
-    });
-    expect(latestCompose.agentId).toBe(compose.agentId);
-
-    const byAgent = await reads.requestCreateDirectRun(
-      actor,
-      {
-        agentId: compose.agentId,
-        prompt: "run the latest Agent head",
-        vars: { VOL_VERSION: volumeVersion },
-      },
-      [201],
-    );
-    if (byAgent.status !== 201) {
-      throw new Error("Expected the Agent-backed run create to succeed");
-    }
-    const byAgentClaim = await api.claimRunnerJob(byAgent.body.runId);
-    await api.requestCancelRun(actor, byAgent.body.runId, [200]);
-    await finishCancelledRun(byAgent.body.runId, byAgentClaim.sandboxToken);
-
-    const continued = await api.createDirectRun(actor, {
-      sessionId: r1.sessionId,
+    await flushWaitUntilForTest();
+    const continued = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      threadId: r1.threadId,
       prompt: "continue the checkpointed session",
-      modelProviderType: "anthropic-api-key",
     });
-    expect(continued.sessionId).toBe(r1.sessionId);
     const continuedClaim = await api.claimRunnerJob(continued.runId);
-    expect(continuedClaim.vars).toStrictEqual({
-      VOL_VERSION: versionPrefix,
-    });
+    expect(continuedClaim.vars).toStrictEqual(claim1.vars);
     expect(continuedClaim.resumeSession).toStrictEqual({
       sessionId: `bdd-cli-${r1.runId}`,
       historyRef: {
