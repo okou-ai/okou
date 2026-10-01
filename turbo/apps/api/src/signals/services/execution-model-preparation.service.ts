@@ -106,6 +106,20 @@ function capturesPiProviderSecret(
   );
 }
 
+/** Firewall-resolved credentials: each stored secret's runtime reference. */
+function deferredCredentialReferences(
+  source: ModelSourceSnapshot,
+): ModelCredentialValues | null {
+  const values: Record<string, string> = {};
+  for (const credential of source.credentials) {
+    if (credential.kind !== "encrypted") {
+      return null;
+    }
+    values[credential.name] = `\${{ secrets.${credential.name} }}`;
+  }
+  return values;
+}
+
 export async function resolveModelCredentialValues(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
@@ -162,7 +176,14 @@ export async function prepareRegisteredModelEnvironment(
 ): Promise<ResolvedModelProviderEnvironment | null> {
   const { catalog, userId, sourceId, piExecution } = options;
   const type = modelProviderTypeSchema.parse(source.configuration.providerType);
-  const credentials = await resolveModelCredentialValues(db, source, signal);
+  const deferred = getModelProviderFirewall(type) !== undefined;
+  const capture = capturesPiProviderSecret(catalog, selectedModel, piExecution);
+  // As on main, a firewall-injected single-secret credential that Pi does not
+  // capture stays encrypted: the runtime only sees its secret reference.
+  const credentials =
+    (deferred && !capture && !hasAuthMethods(type)
+      ? deferredCredentialReferences(source)
+      : null) ?? (await resolveModelCredentialValues(db, source, signal));
   if (!credentials) {
     return null;
   }
@@ -184,8 +205,6 @@ export async function prepareRegisteredModelEnvironment(
     selection: { kind: "configured", selectedModel, upstreamModel },
     credentials,
   });
-  const deferred = getModelProviderFirewall(type) !== undefined;
-  const capture = capturesPiProviderSecret(catalog, selectedModel, piExecution);
   const names = Object.keys(compiled.secrets);
   const sourceUserId =
     source.credentialOwner === "organization" ? ORG_SENTINEL_USER_ID : userId;

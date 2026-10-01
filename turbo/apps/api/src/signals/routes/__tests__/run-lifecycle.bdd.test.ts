@@ -6239,7 +6239,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
     await fw.seedTestConnector(actor, {
       connectorSlug: "x",
@@ -6257,10 +6257,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
     const kms = useSecretKmsProbe();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use lazy connector auth credentials",
-      modelProvider: "anthropic-api-key",
     });
     expect(kms.decryptCalls).toBe(0);
 
@@ -10249,7 +10248,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped run actor");
     }
@@ -10306,10 +10308,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     const kms = useSecretKmsProbe();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the proposed custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(kms.decryptCalls).toBe(0);
     await api.heartbeatRunner(runnerGroup);
@@ -10419,10 +10420,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       scope: "later-scope",
     });
 
-    const laterRun = await api.createRun(actor, {
+    const laterRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the updated custom connector route",
-      modelProvider: "anthropic-api-key",
     });
     const laterClaim = await api.claimRunnerJob(laterRun.runId);
     expect(laterClaim.connectorRuntimeTargets).toContainEqual({
