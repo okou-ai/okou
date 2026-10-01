@@ -63,6 +63,12 @@ interface AgentPhoneInboundMessage {
   readonly conversationId?: string;
   readonly isGroup?: boolean;
   readonly groupId?: string | null;
+  readonly participants?: readonly {
+    readonly identifier: string;
+    readonly name?: string | null;
+  }[];
+  readonly senderIdentifier?: string;
+  readonly receivedAt?: string;
   readonly mediaUrl?: string;
   readonly mentions?: readonly Readonly<Record<string, unknown>>[];
   readonly recentHistory?: readonly Readonly<Record<string, unknown>>[];
@@ -155,6 +161,7 @@ function authenticate(
 
 export function createAgentPhoneBddApi(context: TestContext) {
   const integrations = createBddIntegrationApi(context);
+  const conversationParticipants = new Map<string, readonly string[]>();
 
   function harvestConnectBody(capture: AgentPhoneSendCapture): {
     readonly phoneHandle: string;
@@ -194,6 +201,17 @@ export function createAgentPhoneBddApi(context: TestContext) {
       message.isGroup && message.groupId !== null
         ? (message.groupId ?? bddGroupId(message.conversationId ?? messageId))
         : null;
+    const participants = message.participants ?? [
+      { identifier: message.senderIdentifier ?? message.from },
+    ];
+    if (groupId && message.conversationId) {
+      conversationParticipants.set(
+        message.conversationId,
+        participants.map((participant) => {
+          return participant.identifier;
+        }),
+      );
+    }
     const rawBody = JSON.stringify({
       event: "agent.message",
       channel: message.channel,
@@ -206,11 +224,21 @@ export function createAgentPhoneBddApi(context: TestContext) {
         from: message.from,
         to: AGENTPHONE_BDD_PHONE_NUMBER,
         body: message.body,
+        ...(message.receivedAt ? { receivedAt: message.receivedAt } : {}),
         ...(message.conversationId
           ? { conversationId: message.conversationId }
           : {}),
         ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
-        ...(groupId ? { group: { isGroup: true, groupId } } : {}),
+        ...(groupId
+          ? {
+              group: {
+                isGroup: true,
+                groupId,
+                participants,
+              },
+              senderIdentifier: message.senderIdentifier ?? message.from,
+            }
+          : {}),
         ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
         ...(message.mentions ? { mentions: message.mentions } : {}),
       },
@@ -273,6 +301,20 @@ export function createAgentPhoneBddApi(context: TestContext) {
           ({ params }) => {
             typing.push(typeof params.id === "string" ? params.id : "");
             return HttpResponse.json({ status: "typing indicator sent" });
+          },
+        ),
+        http.get(
+          `${AGENTPHONE_API_BASE_URL}/v1/conversations/:id`,
+          ({ params }) => {
+            const conversationId =
+              typeof params.id === "string" ? params.id : "";
+            return HttpResponse.json({
+              participants: (
+                conversationParticipants.get(conversationId) ?? []
+              ).map((identifier) => {
+                return { identifier, name: null };
+              }),
+            });
           },
         ),
       );

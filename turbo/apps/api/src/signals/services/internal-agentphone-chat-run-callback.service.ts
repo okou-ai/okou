@@ -7,7 +7,10 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { sendAgentPhoneMessage } from "../external/agentphone-client";
+import {
+  getAgentPhoneConversationParticipants,
+  sendAgentPhoneMessage,
+} from "../external/agentphone-client";
 import type { Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
@@ -19,6 +22,7 @@ import {
 import {
   agentPhoneReplyDestination,
   markdownToImessagePlain,
+  resolveAgentPhoneMessageVisibilityRecipients,
   resolveAgentPhoneReplyFooterText,
   storeOutboundAgentPhoneMessage,
 } from "./agentphone-shared.service";
@@ -219,19 +223,44 @@ function buildAgentPhoneResponseText(args: {
     .join("\n\n");
 }
 
+interface AgentPhoneChatSendResult {
+  readonly message: AgentPhoneSendResult;
+  readonly visibilityRecipients: readonly {
+    readonly orgId: string;
+    readonly userId: string;
+  }[];
+}
+
 async function sendAgentPhoneReply(
   args: {
+    readonly db: Db;
     readonly target: AgentPhoneDeliveryTarget;
     readonly body: string;
   },
   signal: AbortSignal,
-): Promise<AgentPhoneSendResult> {
+): Promise<AgentPhoneChatSendResult> {
   const toNumber = agentPhoneReplyDestination({
     isGroup: args.target.isGroup,
     groupId: args.target.groupId,
     phoneHandle: args.target.phoneHandle,
   });
-  const result = await sendAgentPhoneMessage(
+  if (args.target.isGroup && !args.target.conversationId) {
+    throw new Error("AgentPhone group reply is missing a conversation id");
+  }
+  const visibilityRecipients = args.target.isGroup
+    ? await resolveAgentPhoneMessageVisibilityRecipients(
+        args.db,
+        await getAgentPhoneConversationParticipants(
+          { conversationId: args.target.conversationId! },
+          signal,
+        ),
+        "imessage",
+        nowDate(),
+      )
+    : [];
+  signal.throwIfAborted();
+
+  const message = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: args.target.agentphoneAgentId,
       toNumber,
@@ -243,32 +272,34 @@ async function sendAgentPhoneReply(
     signal,
   );
   signal.throwIfAborted();
-  return result;
+  return { message, visibilityRecipients };
 }
 
 async function recordAgentPhoneChatDelivery(args: {
   readonly db: Db;
   readonly target: AgentPhoneDeliveryTarget;
-  readonly sent: AgentPhoneSendResult;
+  readonly sent: AgentPhoneChatSendResult;
   readonly body: string;
 }): Promise<void> {
   await storeOutboundAgentPhoneMessage(args.db, {
-    agentphoneMessageId: args.sent.id,
+    agentphoneMessageId: args.sent.message.id,
     conversationId: args.target.conversationId,
+    groupId: args.target.isGroup ? args.target.groupId : null,
     agentphoneAgentId: args.target.agentphoneAgentId,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: args.sent.fromNumber ?? args.target.toNumber,
+    fromNumber: args.sent.message.fromNumber ?? args.target.toNumber,
     toNumber:
-      args.sent.toNumber ??
+      args.sent.message.toNumber ??
       agentPhoneReplyDestination({
         isGroup: args.target.isGroup,
         groupId: args.target.groupId,
         phoneHandle: args.target.phoneHandle,
       }),
     body: args.body,
-    channel: args.sent.channel,
+    channel: args.sent.message.channel ?? args.target.channel,
     userChannel: args.target.channel,
+    visibilityRecipients: args.sent.visibilityRecipients,
   });
 }
 
@@ -297,6 +328,7 @@ async function deliverClaimedAgentPhoneChatCallback(
   });
   const sent = await sendAgentPhoneReply(
     {
+      db: args.db,
       target: payload,
       body,
     },
@@ -414,27 +446,30 @@ export async function deliverAgentPhoneChatAdmissionFailure(
   const body = markdownToImessagePlain(event.content);
   const sent = await sendAgentPhoneReply(
     {
+      db: args.db,
       target: args.target,
       body,
     },
     signal,
   );
   await storeOutboundAgentPhoneMessage(args.db, {
-    agentphoneMessageId: sent.id,
+    agentphoneMessageId: sent.message.id,
     conversationId: args.target.conversationId,
+    groupId: args.target.isGroup ? args.target.groupId : null,
     agentphoneAgentId: args.target.agentphoneAgentId,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: sent.fromNumber ?? args.target.toNumber,
+    fromNumber: sent.message.fromNumber ?? args.target.toNumber,
     toNumber:
-      sent.toNumber ??
+      sent.message.toNumber ??
       agentPhoneReplyDestination({
         isGroup: args.target.isGroup,
         groupId: args.target.groupId,
         phoneHandle: args.target.phoneHandle,
       }),
     body,
-    channel: sent.channel,
+    channel: sent.message.channel,
     userChannel: args.target.channel,
+    visibilityRecipients: sent.visibilityRecipients,
   });
 }

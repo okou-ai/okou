@@ -23,6 +23,7 @@ export const agentphoneMessages = pgTable(
       length: 255,
     }).notNull(),
     conversationId: varchar("conversation_id", { length: 255 }),
+    groupId: varchar("group_id", { length: 255 }),
     agentphoneAgentId: varchar("agentphone_agent_id", {
       length: 255,
     }).notNull(),
@@ -53,6 +54,12 @@ export const agentphoneMessages = pgTable(
         .where(sql`webhook_id IS NOT NULL`),
       index("idx_agentphone_messages_handle_created").on(
         table.phoneHandle,
+        table.createdAt,
+      ),
+      index("idx_agentphone_messages_group_time").on(
+        table.agentphoneAgentId,
+        table.groupId,
+        table.receivedAt,
         table.createdAt,
       ),
       index("idx_agentphone_messages_user_link").on(table.agentphoneUserLinkId),

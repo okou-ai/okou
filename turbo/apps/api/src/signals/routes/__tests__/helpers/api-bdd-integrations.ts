@@ -38,6 +38,7 @@ import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-sla
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
+  type AgentPhoneGroupHistoryQuery,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -1659,6 +1660,24 @@ export function createBddIntegrationApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    async requestAgentPhoneGroupHistory(
+      actor: ApiTestUser | null,
+      query: AgentPhoneGroupHistoryQuery,
+      statuses: readonly (200 | 400 | 401 | 404)[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.groupHistory({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
     },
 
     async requestStartAgentPhoneLink(

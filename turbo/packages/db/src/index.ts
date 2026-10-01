@@ -63,6 +63,7 @@ import * as telegramMessageSchema from "./schema/telegram-message";
 import * as agentphoneUserLinkSchema from "./schema/agentphone-user-link";
 import * as agentphoneChatThreadRouteSchema from "./schema/agentphone-chat-thread-route";
 import * as agentphoneMessageSchema from "./schema/agentphone-message";
+import * as agentphoneMessageVisibilitySchema from "./schema/agentphone-message-visibility";
 import * as agentphoneVerificationSendCooldownSchema from "./schema/agentphone-verification-send-cooldown";
 import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
@@ -243,6 +244,7 @@ export const schema = {
   ...agentphoneUserLinkSchema,
   ...agentphoneChatThreadRouteSchema,
   ...agentphoneMessageSchema,
+  ...agentphoneMessageVisibilitySchema,
   ...agentphoneVerificationSendCooldownSchema,
   ...orgSchema,
   ...orgPlanEntitlementSchema,

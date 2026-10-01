@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { testContext } from "../../../__tests__/test-context";
@@ -39,6 +40,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
@@ -1920,6 +1922,150 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(plainPromptUnlinked).not.toContain(SMS_RISK_WARNING);
   });
 
+  it("limits archived group history to linked participants captured for each message", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+
+    const first = bdd.user();
+    const second = bdd.user();
+    const linkedLater = bdd.user();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const laterPhone = uniquePhoneHandle();
+    await ap.linkViaWebhookConnectPrompt(first, firstPhone, sends);
+    await ap.linkViaWebhookConnectPrompt(second, secondPhone, sends);
+
+    const conversationId = uniqueConversationId();
+    const stableGroupId = bddGroupId(conversationId);
+    await expect(
+      integrations.requestAgentPhoneGroupHistory(
+        first,
+        { groupId: stableGroupId, limit: 100 },
+        [404],
+      ),
+    ).resolves.toMatchObject({ status: 404 });
+
+    for (const actor of [first, second, linkedLater]) {
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.AgentPhoneGroupHistory]: true,
+      });
+    }
+
+    const noMatchConversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: laterPhone,
+      body: "not archived before linking",
+      conversationId: noMatchConversationId,
+      isGroup: true,
+      participants: [{ identifier: laterPhone }],
+    });
+
+    const firstMessageId = "ap-group-history-first";
+    const participants = [
+      { identifier: firstPhone },
+      { identifier: secondPhone },
+      { identifier: laterPhone },
+    ];
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "first group note",
+      messageId: firstMessageId,
+      conversationId,
+      isGroup: true,
+      participants,
+    });
+
+    await ap.linkViaWebhookConnectPrompt(linkedLater, laterPhone, sends);
+    const noMatchHistory = await integrations.requestAgentPhoneGroupHistory(
+      linkedLater,
+      { groupId: bddGroupId(noMatchConversationId), limit: 100 },
+      [200],
+    );
+    expect(
+      noMatchHistory.status === 200 ? noMatchHistory.body.messages : [],
+    ).toHaveLength(0);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "first group note",
+      messageId: firstMessageId,
+      conversationId,
+      isGroup: true,
+      participants,
+    });
+    const secondMessageId = "ap-group-history-second";
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: firstPhone,
+      body: "second group note",
+      messageId: secondMessageId,
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: firstPhone }, { identifier: laterPhone }],
+    });
+
+    async function visibleIds(actor: ApiTestUser) {
+      const result = await integrations.requestAgentPhoneGroupHistory(
+        actor,
+        { groupId: stableGroupId, limit: 100 },
+        [200],
+      );
+      if (result.status !== 200) {
+        throw new Error("Expected visible iMessage group history");
+      }
+      return result.body.messages.map((message) => {
+        return message.id;
+      });
+    }
+
+    await expect(visibleIds(first)).resolves.toStrictEqual([
+      firstMessageId,
+      secondMessageId,
+    ]);
+    await expect(visibleIds(second)).resolves.toStrictEqual([firstMessageId]);
+    await expect(visibleIds(linkedLater)).resolves.toStrictEqual([
+      secondMessageId,
+    ]);
+
+    const filtered = await integrations.requestAgentPhoneGroupHistory(
+      first,
+      { groupId: stableGroupId, query: "second", limit: 100 },
+      [200],
+    );
+    expect(filtered.status === 200 ? filtered.body.messages : []).toMatchObject(
+      [{ id: secondMessageId }],
+    );
+
+    const firstPage = await integrations.requestAgentPhoneGroupHistory(
+      first,
+      { groupId: stableGroupId, limit: 1 },
+      [200],
+    );
+    if (firstPage.status !== 200) {
+      throw new Error("Expected first group history page");
+    }
+    expect(firstPage.body.hasMore).toBeTruthy();
+    expect(firstPage.body.nextCursor).toBeTruthy();
+    const secondPage = await integrations.requestAgentPhoneGroupHistory(
+      first,
+      {
+        groupId: stableGroupId,
+        limit: 1,
+        cursor: firstPage.body.nextCursor ?? undefined,
+      },
+      [200],
+    );
+    expect(
+      secondPage.status === 200 ? secondPage.body.messages : [],
+    ).toMatchObject([{ id: secondMessageId }]);
+  });
+
   it("handles the iMessage group lifecycle: mentions, stored context, ambient silence, and account-command guards", async () => {
     const runs = createRunsApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -1929,8 +2075,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(conversationId.length).toBeLessThanOrEqual(255);
     expect(`group:${conversationId}`.length).toBeGreaterThan(255);
 
-    // A mentioned group message preserves the mention and carries provider
-    // history into the group run context.
+    // A mentioned group message preserves the mention; group context is read
+    // only from locally archived messages with an explicit visibility grant.
     const groupMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
@@ -1995,8 +2141,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         `Message ID: ${groupMessageId}`,
       ].join("\n"),
     );
-    // Provider history admitted with the mention reaches the group launch.
-    expect(groupThreadContext).toContain("Earlier group context");
+    // The provider's unfiltered group history is not trusted as local context.
+    expect(groupThreadContext).not.toContain("Earlier group context");
 
     // The provider requires the group id as to_number for a group reply.
     const beforeGroupCompletion = sends.messages.length;

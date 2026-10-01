@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   PersonalModelProviderAccounts = "multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
+  AgentPhoneGroupHistory = "agentPhoneGroupHistory",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",

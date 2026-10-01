@@ -1,9 +1,12 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -12,12 +15,13 @@ import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$, type Db } from "../external/db";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   consumeAgentPhoneConnectionCode,
   createAgentPhoneConnectionCode,
@@ -67,16 +71,26 @@ const agentPhoneAuthOptions = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
+const agentPhoneGroupHistoryAuthOptions = {
+  ...agentPhoneAuthOptions,
+  requiredCapability: "phone:read",
+} as const;
 
 const VERIFICATION_SEND_COOLDOWN_MS = 60_000;
 const log = logger("api:agentphone:link");
 
 const startLinkBody$ = bodyResultOf(integrationsAgentPhoneContract.startLink);
+const groupHistoryQuery$ = queryOf(integrationsAgentPhoneContract.groupHistory);
 const connectBody$ = bodyResultOf(
   integrationsAgentPhoneContract.connectAgentPhone,
 );
 
 const webhookBodySchema = z.record(z.string(), z.unknown());
+const groupHistoryCursorSchema = z.object({
+  groupId: z.string(),
+  receivedAt: z.iso.datetime(),
+  id: z.string().uuid(),
+});
 
 type VerificationSendCooldownScope = "phone" | "user_org";
 
@@ -792,6 +806,37 @@ function extractAgentPhoneIsGroup(
   );
 }
 
+function extractAgentPhoneParticipants(
+  body: Record<string, unknown>,
+  data: Record<string, unknown>,
+): readonly string[] {
+  const groups = [valueObject(data.group), data, body];
+  const participants = groups.flatMap((source) => {
+    return arrayValue(source, [
+      "participants",
+      "participantNumbers",
+      "participant_numbers",
+    ])
+      .map((participant) => {
+        if (typeof participant === "string") {
+          return participant;
+        }
+        return stringValue(valueObject(participant), [
+          "identifier",
+          "phoneHandle",
+          "phone_handle",
+          "handle",
+          "phone",
+          "number",
+        ]);
+      })
+      .filter((participant): participant is string => {
+        return Boolean(participant?.trim());
+      });
+  });
+  return [...new Set(participants)];
+}
+
 function extractAgentPhoneMentioned(
   body: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -867,12 +912,11 @@ function extractAgentPhoneRecentHistory(
     });
 }
 
-function extractAgentPhoneEvent(
+function extractAgentPhoneMessageFields(
   body: Record<string, unknown>,
+  data: Record<string, unknown>,
   webhookId: string | null,
-  channel: AgentPhoneChannel,
-): AgentPhoneMessageEvent | null {
-  const data = valueObject(body.data);
+) {
   const messageId =
     stringValue(data, ["messageId", "id"]) ??
     stringValue(body, ["messageId", "id"]) ??
@@ -880,12 +924,41 @@ function extractAgentPhoneEvent(
   const agentphoneAgentId =
     stringValue(body, ["agentId", "agent_id"]) ??
     stringValue(data, ["agentId", "agent_id"]);
-  const fromNumber = stringValue(data, ["from", "fromNumber", "from_number"]);
+  const isGroup = extractAgentPhoneIsGroup(body, data);
+  const senderIdentifier = stringValue(data, [
+    "senderIdentifier",
+    "sender_identifier",
+  ]);
+  const fromNumber =
+    (isGroup ? senderIdentifier : undefined) ??
+    stringValue(data, ["from", "fromNumber", "from_number"]);
   const toNumber = stringValue(data, ["to", "toNumber", "to_number"]);
   const messageBody =
     stringValue(data, ["message", "body", "text"]) ??
     stringValue(body, ["message", "body", "text"]) ??
     "";
+
+  return {
+    messageId,
+    agentphoneAgentId,
+    isGroup,
+    senderIdentifier,
+    fromNumber,
+    toNumber,
+    messageBody,
+  };
+}
+
+function extractAgentPhoneEvent(
+  body: Record<string, unknown>,
+  webhookId: string | null,
+  channel: AgentPhoneChannel,
+): AgentPhoneMessageEvent | null {
+  const data = valueObject(body.data);
+  const fields = extractAgentPhoneMessageFields(body, data, webhookId);
+  const { messageId, agentphoneAgentId, fromNumber, toNumber, messageBody } =
+    fields;
+  const group = valueObject(data.group);
   const mediaUrl =
     stringValue(data, ["mediaUrl", "media_url"]) ??
     stringValue(body, ["mediaUrl", "media_url"]) ??
@@ -895,10 +968,10 @@ function extractAgentPhoneEvent(
     stringValue(body, ["conversationId", "conversation_id"]) ??
     null;
   const groupId =
-    stringValue(valueObject(data.group), ["groupId", "group_id"]) ??
+    stringValue(group, ["groupId", "group_id"]) ??
     stringValue(data, ["groupId", "group_id"]) ??
     null;
-  const isGroup = extractAgentPhoneIsGroup(body, data);
+  const participants = extractAgentPhoneParticipants(body, data);
   const mentioned = extractAgentPhoneMentioned(body, data, messageBody);
   const recentHistory = extractAgentPhoneRecentHistory(body, data);
 
@@ -921,7 +994,9 @@ function extractAgentPhoneEvent(
     messageId,
     conversationId,
     groupId,
-    isGroup,
+    isGroup: fields.isGroup,
+    participants,
+    senderIdentifier: fields.senderIdentifier ?? null,
     mentioned,
     agentphoneAgentId,
     fromNumber,
@@ -1070,6 +1145,7 @@ async function handleAgentPhoneConnectionCode(
           event,
           agentPhoneConnectionCodeFailureReply(result),
           signal,
+          db,
         ),
     (error) => {
       log.warn("Handled AgentPhone connection code but reply failed", {
@@ -1158,7 +1234,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     userLinkId: userLink?.id ?? null,
   });
   signal.throwIfAborted();
-  if (!stored.inserted) {
+  if (!stored.dispatch) {
     return okText();
   }
 
@@ -1182,6 +1258,117 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   return okText();
 });
 
+const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(groupHistoryQuery$);
+  const featureContext = await get(
+    userFeatureSwitchContext(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.AgentPhoneGroupHistory, featureContext)
+  ) {
+    return notFound("iMessage group history is not available");
+  }
+
+  const config = getAgentPhoneConfig();
+  if (!config.agentphoneAgentId) {
+    return notFound("iMessage group history is not available");
+  }
+
+  const messageAt =
+    sql`COALESCE(${agentphoneMessages.receivedAt}, ${agentphoneMessages.createdAt})`.mapWith(
+      agentphoneMessages.createdAt,
+    );
+  const conditions = [
+    eq(agentphoneMessages.agentphoneAgentId, config.agentphoneAgentId),
+    eq(agentphoneMessages.groupId, query.groupId),
+    eq(agentphoneMessages.channel, "imessage"),
+    eq(agentphoneMessageVisibility.orgId, auth.orgId),
+    eq(agentphoneMessageVisibility.userId, auth.userId),
+  ];
+  let cursor: z.infer<typeof groupHistoryCursorSchema> | undefined;
+  if (query.cursor) {
+    const parsed = groupHistoryCursorSchema.safeParse(
+      safeJsonParse(Buffer.from(query.cursor, "base64url").toString("utf8")),
+    );
+    if (parsed.success && parsed.data.groupId === query.groupId) {
+      cursor = parsed.data;
+    }
+    if (!cursor) {
+      return badRequestMessage("Invalid history cursor");
+    }
+    const cursorAt = new Date(cursor.receivedAt);
+    const cursorCondition = or(
+      gt(messageAt, cursorAt),
+      and(eq(messageAt, cursorAt), gt(agentphoneMessages.id, cursor.id)),
+    );
+    if (cursorCondition) {
+      conditions.push(cursorCondition);
+    }
+  }
+  if (query.after) {
+    conditions.push(gte(messageAt, new Date(query.after)));
+  }
+  if (query.before) {
+    conditions.push(lte(messageAt, new Date(query.before)));
+  }
+  if (query.query) {
+    const pattern = `%${query.query.replace(/[\\%_]/gu, String.raw`\$&`)}%`;
+    conditions.push(ilike(agentphoneMessages.body, pattern));
+  }
+
+  const rows = await get(db$)
+    .select({
+      id: agentphoneMessages.agentphoneMessageId,
+      cursorId: agentphoneMessages.id,
+      conversationId: agentphoneMessages.conversationId,
+      fromNumber: agentphoneMessages.fromNumber,
+      toNumber: agentphoneMessages.toNumber,
+      direction: agentphoneMessages.direction,
+      channel: agentphoneMessages.channel,
+      body: agentphoneMessages.body,
+      mediaUrl: agentphoneMessages.mediaUrl,
+      receivedAt: messageAt,
+    })
+    .from(agentphoneMessages)
+    .innerJoin(
+      agentphoneMessageVisibility,
+      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+    )
+    .where(and(...conditions))
+    .orderBy(asc(messageAt), asc(agentphoneMessages.id))
+    .limit(query.limit + 1);
+  signal.throwIfAborted();
+
+  const page = rows.slice(0, query.limit);
+  const last = page.at(-1);
+  const nextCursor =
+    rows.length > query.limit && last
+      ? Buffer.from(
+          JSON.stringify({
+            groupId: query.groupId,
+            receivedAt: last.receivedAt.toISOString(),
+            id: last.cursorId,
+          }),
+        ).toString("base64url")
+      : null;
+  return {
+    status: 200 as const,
+    body: {
+      groupId: query.groupId,
+      messages: page.map(({ cursorId: _cursorId, ...message }) => {
+        return {
+          ...message,
+          receivedAt: message.receivedAt.toISOString(),
+        };
+      }),
+      hasMore: rows.length > query.limit,
+      nextCursor,
+    },
+  };
+});
+
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.connectAgentPhone,
@@ -1190,6 +1377,10 @@ export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.webhook,
     handler: webhook$,
+  },
+  {
+    route: integrationsAgentPhoneContract.groupHistory,
+    handler: authRoute(agentPhoneGroupHistoryAuthOptions, groupHistory$),
   },
   {
     route: integrationsAgentPhoneContract.getLinkStatus,

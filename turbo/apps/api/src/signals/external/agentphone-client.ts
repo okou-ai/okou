@@ -113,6 +113,66 @@ export async function sendAgentPhoneMessage(
   };
 }
 
+export async function getAgentPhoneConversationParticipants(
+  opts: { readonly conversationId: string },
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const response = await fetch(
+    `${agentPhoneApiBase()}/v1/conversations/${encodeURIComponent(
+      opts.conversationId,
+    )}`,
+    {
+      headers: { Authorization: `Bearer ${agentPhoneApiKey()}` },
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    log.warn("AgentPhone conversation lookup failed", {
+      status: response.status,
+    });
+    throw makeAgentPhoneApiError(response.status, "");
+  }
+
+  const result = (await response.json()) as Record<string, unknown>;
+  const data = valueObject(result.data);
+  const conversation =
+    valueObject(result.conversation).participants !== undefined
+      ? valueObject(result.conversation)
+      : valueObject(data.conversation);
+  const source =
+    Object.keys(conversation).length > 0
+      ? conversation
+      : Object.keys(data).length > 0
+        ? data
+        : result;
+  const participants = Array.isArray(source.participants)
+    ? source.participants
+    : [];
+
+  return participants
+    .map((participant) => {
+      if (typeof participant === "string") {
+        return participant;
+      }
+      return typeof participant === "object" &&
+        participant !== null &&
+        "identifier" in participant &&
+        typeof participant.identifier === "string"
+        ? participant.identifier
+        : null;
+    })
+    .filter((identifier): identifier is string => {
+      return Boolean(identifier);
+    });
+}
+
+function valueObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export async function sendAgentPhoneTypingIndicator(
   opts: { readonly conversationId: string },
   signal?: AbortSignal,

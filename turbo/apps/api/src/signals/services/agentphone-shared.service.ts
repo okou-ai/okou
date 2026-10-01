@@ -1,8 +1,9 @@
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -92,6 +93,54 @@ export function describeAgentPhoneHandleShape(
   return "other";
 }
 
+export interface AgentPhoneMessageVisibilityRecipient {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export async function resolveAgentPhoneMessageVisibilityRecipients(
+  db: Pick<ReadonlyDb, "select">,
+  handles: readonly string[],
+  channel: AgentPhoneChannel,
+  asOf: Date = nowDate(),
+): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> {
+  const normalizedHandles = [
+    ...new Set(
+      handles
+        .map((handle) => {
+          return normalizeAgentPhoneHandle(handle, channel);
+        })
+        .filter((handle) => {
+          return isValidAgentPhoneHandle(handle, channel);
+        }),
+    ),
+  ];
+  if (normalizedHandles.length === 0) {
+    return [];
+  }
+
+  const links = await db
+    .select({
+      orgId: agentphoneUserLinks.orgId,
+      userId: agentphoneUserLinks.userId,
+    })
+    .from(agentphoneUserLinks)
+    .where(
+      and(
+        inArray(agentphoneUserLinks.phoneHandle, normalizedHandles),
+        lte(agentphoneUserLinks.createdAt, asOf),
+      ),
+    );
+
+  return [
+    ...new Map(
+      links.map((link) => {
+        return [`${link.orgId}:${link.userId}`, link] as const;
+      }),
+    ).values(),
+  ];
+}
+
 export async function touchAgentPhoneUserLink(
   db: Db,
   userLink: AgentPhoneUserLink,
@@ -141,8 +190,9 @@ export async function storeOutboundAgentPhoneMessage(
   params: {
     readonly agentphoneMessageId: string;
     readonly conversationId: string | null;
+    readonly groupId?: string | null;
     readonly agentphoneAgentId: string;
-    readonly userLinkId: string;
+    readonly userLinkId?: string | null;
     readonly phoneHandle: string;
     readonly fromNumber: string;
     readonly toNumber: string;
@@ -150,30 +200,57 @@ export async function storeOutboundAgentPhoneMessage(
     readonly channel: string | null;
     readonly userChannel: AgentPhoneChannel;
     readonly mediaUrl?: string | null;
+    readonly visibilityRecipients?: readonly AgentPhoneMessageVisibilityRecipient[];
   },
 ): Promise<void> {
-  await db
-    .insert(agentphoneMessages)
-    .values({
-      agentphoneMessageId: params.agentphoneMessageId,
-      conversationId: params.conversationId,
-      agentphoneAgentId: params.agentphoneAgentId,
-      agentphoneUserLinkId: params.userLinkId,
-      phoneHandle: normalizeAgentPhoneHandle(
-        params.phoneHandle,
-        params.userChannel,
-      ),
-      fromNumber: normalizeAgentPhoneHandle(params.fromNumber, "sms"),
-      toNumber: params.toNumber.startsWith("grp_")
-        ? params.toNumber
-        : normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
-      direction: "outbound",
-      channel: params.channel ?? "unknown",
-      body: params.body ?? null,
-      mediaUrl: params.mediaUrl ?? null,
-      isBot: true,
-    })
-    .onConflictDoNothing();
+  const isGroup = Boolean(params.groupId);
+  const visibilityRecipients = params.visibilityRecipients ?? [];
+  if (isGroup && visibilityRecipients.length === 0) {
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(agentphoneMessages)
+      .values({
+        agentphoneMessageId: params.agentphoneMessageId,
+        conversationId: params.conversationId,
+        groupId: params.groupId ?? null,
+        agentphoneAgentId: params.agentphoneAgentId,
+        agentphoneUserLinkId: params.userLinkId ?? null,
+        phoneHandle: normalizeAgentPhoneHandle(
+          params.phoneHandle,
+          params.userChannel,
+        ),
+        fromNumber: normalizeAgentPhoneHandle(params.fromNumber, "sms"),
+        toNumber: params.toNumber.startsWith("grp_")
+          ? params.toNumber
+          : normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
+        direction: "outbound",
+        channel: params.channel ?? "unknown",
+        body: params.body ?? null,
+        mediaUrl: params.mediaUrl ?? null,
+        isBot: true,
+        receivedAt: nowDate(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: agentphoneMessages.id });
+
+    if (inserted && isGroup) {
+      await tx
+        .insert(agentphoneMessageVisibility)
+        .values(
+          visibilityRecipients.map((recipient) => {
+            return {
+              messageId: inserted.id,
+              orgId: recipient.orgId,
+              userId: recipient.userId,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+    }
+  });
 }
 
 export function markdownToImessagePlain(markdown: string): string {
