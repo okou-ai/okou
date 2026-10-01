@@ -6,7 +6,10 @@ import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { now } from "../../lib/time";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
@@ -57,7 +60,11 @@ import {
   committedAtomicLaunchResponse,
   persistPendingAtomicLaunch,
   prepareAtomicLaunchPersistence,
+  launchRunMetadataValues,
+  launchRunValues,
+  launchSessionValues,
   type CommitPreparedLaunchArgs,
+  type LaunchRunRowsArgs,
   type CreateRunBody,
   type PreparedCommitPreparedLaunchArgs,
   type ResolvedModelProviderEnvironment,
@@ -511,9 +518,9 @@ function maintenanceCommitArgs(args: {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly selectionDigest: string;
-  readonly launch: CommitPreparedLaunchArgs["launch"];
+  readonly launch: CommitPreparedLaunchArgs["launch"] | undefined;
   readonly timing: ApiDispatchTimingCollector;
-}): Omit<CommitPreparedLaunchArgs, "db"> {
+}) {
   const { job, runId, body } = args;
   return {
     createArgs: {
@@ -551,6 +558,13 @@ function maintenanceCommitArgs(args: {
     launch: args.launch,
     timing: args.timing,
   };
+}
+
+function withLaunch(
+  commit: ReturnType<typeof maintenanceCommitArgs>,
+  launch: CommitPreparedLaunchArgs["launch"],
+): Omit<CommitPreparedLaunchArgs, "db"> {
+  return { ...commit, launch };
 }
 
 interface MaintenanceLaunchArgs {
@@ -716,6 +730,105 @@ const activateMaintenanceRun$ = command(
   },
 );
 
+interface MaintenanceRunFacts {
+  readonly job: ClaimedPiMemoryPhase2Job;
+  readonly runId: string;
+  readonly apiStartTime: number;
+  readonly body: CreateRunBody;
+  readonly selectedImageModel: CommitPreparedLaunchArgs["context"]["selectedImageModel"];
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
+  readonly modelProvider: ResolvedModelProviderEnvironment;
+  readonly selectionDigest: string;
+  readonly timing: ApiDispatchTimingCollector;
+}
+
+/** Storage, encrypted secrets and the Pi runner payload for one run. */
+const prepareMaintenanceLaunch$ = command(
+  async (
+    { set },
+    args: MaintenanceRunFacts &
+      Omit<
+        MaintenanceLaunchArgs,
+        "encryptedSecrets" | "storage" | "artifact"
+      > & {
+        readonly preparedMounts: Parameters<
+          typeof prepareMaintenanceStorage
+        >[1];
+      },
+    signal: AbortSignal,
+  ) => {
+    const { artifact, storage } = await prepareMaintenanceStorage(
+      args.job,
+      args.preparedMounts,
+      args.timing,
+    );
+    signal.throwIfAborted();
+    const encryptedSecrets = await set(
+      encryptExecutionSecrets$,
+      buildStoredExecutionSecrets({
+        connectorContext: emptyBuiltinConnectorContext(),
+        modelProvider: args.modelProvider,
+        bodySecrets: args.body.secrets,
+        customConnectorContext: emptyCustomConnectorRuntimeContext(),
+      }).secrets ?? null,
+      signal,
+    );
+    signal.throwIfAborted();
+    return buildMaintenanceRunnerLaunch({
+      ...args,
+      encryptedSecrets,
+      storage,
+      artifact,
+    });
+  },
+);
+
+/** The failed run record, callback rows and claim fence re-validation. */
+async function recordFailedMaintenanceLaunch(
+  db: Db,
+  args: MaintenanceRunFacts & {
+    readonly credential: PiMaintenanceCredential;
+    readonly error: unknown;
+  },
+): Promise<void> {
+  const commit = maintenanceCommitArgs({
+    ...args,
+    pin: args.credential.pin,
+    launch: undefined,
+  });
+  const rows: LaunchRunRowsArgs = {
+    userId: args.job.userId,
+    orgId: args.job.orgId,
+    identity: commit.identity,
+    status: "failed",
+    resolved: commit.context.resolved,
+    body: args.body,
+    runStorageMounts: undefined,
+    sessionStorageMounts: undefined,
+    modelProvider: args.modelProvider,
+    agentRunModelPin: args.credential.pin,
+    selectedImageModel: args.selectedImageModel,
+    callbackRows: commit.callbackRows,
+    chatThreadId: undefined,
+    agentRunMetadata: undefined,
+    apiStartTime: args.apiStartTime,
+    runnerGroup: undefined,
+    launchSnapshot: args.launchSnapshot,
+    langfuseTraceEnabled: false,
+    officialWorkflowProvenance: undefined,
+    error: args.error instanceof Error ? args.error.message : "Run failed",
+    creditAdmitted: false,
+  };
+  await db.transaction(async (tx) => {
+    await tx.insert(agentSessions).values(launchSessionValues(rows));
+    await tx
+      .insert(agentRuns)
+      .values(launchRunValues(rows, nowDate(), launchRunMetadataValues(rows)));
+    await tx.insert(agentRunCallbacks).values([...commit.callbackRows]);
+    await args.credential.validate(tx);
+  });
+}
+
 /**
  * Independent memory-maintenance sandbox execution for one claimed Pi
  * Phase 2 job. It prepares the exact memory mount, the selected model
@@ -779,51 +892,14 @@ export const startMaintenanceRun$ = command(
       timing,
     });
     signal.throwIfAborted();
-    const { artifact, storage } = await prepareMaintenanceStorage(
-      job,
-      preparedMounts,
-      timing,
-    );
-    signal.throwIfAborted();
     const runId = randomUUID();
     const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
     const { body, launchSnapshot, selectedImageModel } = maintenanceRunBody(
       framework,
       member.preferences?.selectedImageModel,
     );
-    const encryptedSecrets = await set(
-      encryptExecutionSecrets$,
-      buildStoredExecutionSecrets({
-        connectorContext: emptyBuiltinConnectorContext(),
-        modelProvider,
-        bodySecrets: body.secrets,
-        customConnectorContext: emptyCustomConnectorRuntimeContext(),
-      }).secrets ?? null,
-      signal,
-    );
-    signal.throwIfAborted();
-    const launch = buildMaintenanceRunnerLaunch({
+    const runFacts = {
       job,
-      runId,
-      body,
-      framework,
-      piSandbox,
-      modelProvider,
-      permissionManifest,
-      usage,
-      apiStartTime,
-      disabledPaidTools,
-      userTimezone: member.preferences?.timezone ?? undefined,
-      featureSwitchContext: admitted.featureSwitchContext,
-      encryptedSecrets,
-      launchSnapshot,
-      storage,
-      artifact,
-      selectionDigest,
-    });
-    const commit = maintenanceCommitArgs({
-      job,
-      pin: admitted.credential.pin,
       runId,
       apiStartTime,
       body,
@@ -831,9 +907,46 @@ export const startMaintenanceRun$ = command(
       launchSnapshot,
       modelProvider,
       selectionDigest,
-      launch,
       timing,
-    });
+    };
+    const prepared = await settle(
+      set(
+        prepareMaintenanceLaunch$,
+        {
+          ...runFacts,
+          framework,
+          piSandbox,
+          permissionManifest,
+          usage,
+          disabledPaidTools,
+          userTimezone: member.preferences?.timezone ?? undefined,
+          featureSwitchContext: admitted.featureSwitchContext,
+          preparedMounts,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!prepared.ok) {
+      // Launch preparation failed after admission: keep the failed run record
+      // (with its callback rows) and re-validate the claim fence, binding nothing.
+      await recordFailedMaintenanceLaunch(db, {
+        ...runFacts,
+        credential: admitted.credential,
+        error: prepared.error,
+      });
+      signal.throwIfAborted();
+      throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
+    }
+    const launch = prepared.value;
+    const commit = withLaunch(
+      maintenanceCommitArgs({
+        ...runFacts,
+        pin: admitted.credential.pin,
+        launch,
+      }),
+      launch,
+    );
     const committed = await commitMaintenanceRun(db, {
       job,
       credential: admitted.credential,
