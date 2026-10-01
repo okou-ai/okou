@@ -19,6 +19,7 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readBankingAuditEventsState,
@@ -105,26 +106,27 @@ async function seedBankingFixture(
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
+  // Webhook automations require a Team workspace.
+  await api.grantProEntitlement(actor, {
+    tier: args.triggerSource === "automation-event" ? "team" : "pro",
+  });
   await api.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Banking Agent",
     visibility: "private",
   });
 
-  const run = args.triggerSource
-    ? await api.createDirectRun(actor, {
-        agentId: agent.agentId,
-        prompt: "banking automation precondition",
-        modelProviderType: "anthropic-api-key",
-        triggerSource: args.triggerSource,
-        vars: { OKOU_AGENT_ID: agent.agentId },
-        secrets: { OKOU_TOKEN: "bdd-banking-okou-token" },
-      })
-    : await api.createThreadRun(actor, {
-        agentId: agent.agentId,
-        prompt: "banking precondition",
-      });
+  // Unattended runs fire through the real schedule or webhook automation.
+  const workflows = createWorkflowsBddApi(context);
+  const run =
+    args.triggerSource === "automation-schedule"
+      ? await workflows.startScheduledAutomationRun(actor, agent.agentId)
+      : args.triggerSource === "automation-event"
+        ? await workflows.startEventAutomationRun(actor, agent.agentId)
+        : await api.createThreadRun(actor, {
+            agentId: agent.agentId,
+            prompt: "banking precondition",
+          });
 
   const providerCustomerId = randomProviderId("customer");
   const enabledAccountId = randomProviderId("acct-enabled");
