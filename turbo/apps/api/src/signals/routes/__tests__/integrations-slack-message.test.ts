@@ -100,9 +100,7 @@ describe("POST /api/integrations/slack/message", () => {
   /**
    * Creates a real run for an agent named "My Assistant" through the product
    * agent + run APIs, so the message footer can resolve the agent label from
-   * the run. Run admission needs org credits (Stripe webhook grant); the
-   * provider-only fixture keeps the run free of a selected model, matching
-   * providers without model selection without reading legacy Compose content.
+   * the run. Run admission needs org credits (Stripe webhook grant).
    */
   async function seedAgentRun(base: {
     readonly orgId: string;
@@ -120,16 +118,13 @@ describe("POST /api/integrations/slack/message", () => {
       displayName: "My Assistant",
       visibility: "private",
     });
-    await api.createOrgModelProvider(actor, {
-      type: "openrouter-api-key",
-      secret: "test-openrouter-key",
-    });
+    await api.ensureOrgModelProvider(actor);
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    const run = await api.createRun(actor, {
+    api.configureRunnerGroup();
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "send slack message",
-      modelProvider: "openrouter-api-key",
     });
     // Product run creation authenticates through the Clerk session mocks;
     // restore the membership-list mock the Okou-token auth path relies on.
@@ -393,7 +388,9 @@ describe("POST /api/integrations/slack/message", () => {
     expect(blocks[blocks.length - 2]!.type).toBe("divider");
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
-    expect(footerCtx.elements![0]!.text).toBe("Sent via My Assistant");
+    expect(footerCtx.elements![0]!.text).toBe(
+      "Sent via My Assistant · Claude Sonnet 5",
+    );
   });
 
   it("appends user attribution footer when run is user-triggered (not scheduled)", async () => {
@@ -436,7 +433,7 @@ describe("POST /api/integrations/slack/message", () => {
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
     expect(footerCtx.elements![0]!.text).toBe(
-      `Sent via My Assistant · Triggered by <@${slackUserId}>`,
+      `Sent via My Assistant · Triggered by <@${slackUserId}> · Claude Sonnet 5`,
     );
   });
 });
