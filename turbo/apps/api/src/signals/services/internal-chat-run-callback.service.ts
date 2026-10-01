@@ -100,7 +100,7 @@ import {
 } from "./discord-chat-callback-payload";
 import { loadDiscordQueuedLaunchMaterial$ } from "./discord-queued-launch-context.service";
 import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
@@ -3479,10 +3479,11 @@ const loadQueuedRejectionChannel$ = command(
       return undefined;
     }
     const db = set(writeDb$);
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
       head.orgId,
       head.userId,
+      signal,
     );
     signal.throwIfAborted();
     const source = {

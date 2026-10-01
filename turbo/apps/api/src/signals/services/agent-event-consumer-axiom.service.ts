@@ -7,8 +7,7 @@ import type {
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
 import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
-import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 const AGENT_RUN_EVENTS_DATASET = "agent-run-events";
 const AXIOM_EVENT_INGEST_TIMEOUT_MS = 10_000;
@@ -229,15 +228,16 @@ function eventDataForAxiom(
 
 export const ingestAxiomEvents$ = command(
   async (
-    { get },
+    { set },
     payload: EventConsumerPayload,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const context = await loadUserFeatureSwitchContext(
-      get(db$),
+    const context = await set(
+      loadUserFeatureSwitchContext$,
       payload.context.orgId,
       payload.context.userId,
+      signal,
     );
     signal.throwIfAborted();
     // Raw events are diagnostic data, not the persisted chat transcript.

@@ -46,7 +46,7 @@ import {
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
@@ -718,10 +718,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
     const orgId = ingress.orgId;
     const event = requireMatchingEvent(ingress.payload, ingress);
     const threadTs = slackPhysicalThreadTs(event);
-    const featureContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
       orgId,
       ingress.userId,
+      signal,
     );
     signal.throwIfAborted();
     const botToken = await decryptPersistentSecretValue(

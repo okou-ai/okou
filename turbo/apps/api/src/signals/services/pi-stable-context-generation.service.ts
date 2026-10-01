@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { command } from "ccstate";
 
 import { PI_SKILLS_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
@@ -16,6 +17,7 @@ import {
   exists,
   inArray,
   isNotNull,
+  ne,
   or,
   sql,
   type SQL,
@@ -23,7 +25,7 @@ import {
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   piStableContextInputDigest,
   piStableContextVariantDigest,
@@ -450,6 +452,128 @@ async function advanceGenerationSet(db: Db, condition: SQL): Promise<void> {
       );
   }
 }
+
+/**
+ * Low-frequency overrides commit independently of their disposable projections.
+ * Generation advancement fences old builders immediately; canonical demand
+ * registration recaptures the latest configuration on the next use. No stale
+ * captured input is republished and no source transaction owns rebuild work.
+ */
+export const invalidateFeatureSwitchPiStableContexts$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId?: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const generationCondition = and(
+      eq(piStableContextGenerations.orgId, args.orgId),
+      args.userId === undefined
+        ? undefined
+        : eq(piStableContextGenerations.subject, args.userId),
+    );
+    await db
+      .update(piStableContextGenerations)
+      .set({
+        generation: sql`${piStableContextGenerations.generation} + 1`,
+        updatedAt: nowDate(),
+      })
+      .where(generationCondition);
+    signal.throwIfAborted();
+
+    const staleGeneration = exists(
+      db
+        .select({ subject: piStableContextGenerations.subject })
+        .from(piStableContextGenerations)
+        .where(
+          and(
+            eq(piStableContextGenerations.orgId, piStableContextHeads.orgId),
+            eq(
+              piStableContextGenerations.agentId,
+              piStableContextHeads.agentId,
+            ),
+            or(
+              and(
+                eq(
+                  piStableContextGenerations.subject,
+                  PI_STABLE_CONTEXT_AGENT_SUBJECT,
+                ),
+                ne(
+                  piStableContextGenerations.generation,
+                  piStableContextHeads.agentGeneration,
+                ),
+              ),
+              and(
+                eq(
+                  piStableContextGenerations.subject,
+                  piStableContextHeads.userId,
+                ),
+                ne(
+                  piStableContextGenerations.generation,
+                  piStableContextHeads.userGeneration,
+                ),
+              ),
+            ),
+          ),
+        ),
+    );
+    const heads = await db
+      .select({
+        id: piStableContextHeads.id,
+        generation: piStableContextHeads.generation,
+      })
+      .from(piStableContextHeads)
+      .where(
+        and(
+          eq(piStableContextHeads.orgId, args.orgId),
+          args.userId === undefined
+            ? undefined
+            : eq(piStableContextHeads.userId, args.userId),
+          staleGeneration,
+        ),
+      )
+      .orderBy(asc(piStableContextHeads.id));
+    signal.throwIfAborted();
+    const invalidatedAt = nowDate();
+    for (
+      let offset = 0;
+      offset < heads.length;
+      offset += HEAD_INVALIDATION_BATCH_SIZE
+    ) {
+      const batch = heads.slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE);
+      await db
+        .update(piStableContextHeads)
+        .set({
+          generation: sql`${piStableContextHeads.generation} + 1`,
+          status: "missing",
+          input: null,
+          inputDigest: null,
+          artifactDigest: null,
+          validityHorizon: null,
+          leaseId: null,
+          leaseExpiresAt: null,
+          availableAt: invalidatedAt,
+          attemptCount: 0,
+          lastErrorClass: null,
+          updatedAt: invalidatedAt,
+        })
+        .where(
+          and(
+            staleGeneration,
+            or(
+              ...batch.map((head) => {
+                return and(
+                  eq(piStableContextHeads.id, head.id),
+                  eq(piStableContextHeads.generation, head.generation),
+                );
+              }),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+    }
+  },
+);
 
 /** Bulk invalidation for a user-scoped feature/profile source writer. */
 export async function invalidatePiStableContextsForUser(

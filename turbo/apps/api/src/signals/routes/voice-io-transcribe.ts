@@ -14,9 +14,8 @@ import { command, computed } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
-import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { audioInputLifetimeQuota } from "../services/voice-io.service";
 import {
   badRequest,
@@ -36,7 +35,7 @@ const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
 
 const voiceIoFeatureContext$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  return await loadUserFeatureSwitchContext(get(db$), auth.orgId, auth.userId);
+  return await get(userFeatureSwitchContext(auth.orgId, auth.userId));
 });
 
 function isAllowedVoiceDraftMimeType(value: string): boolean {

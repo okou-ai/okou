@@ -22,7 +22,7 @@ import {
   PiMemoryPhase2CredentialError,
   resolvePiMemoryPhase2Credential,
 } from "./pi-memory-phase2-credential.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   claimPiMemoryPhase2Job,
@@ -253,10 +253,11 @@ const dispatchClaim$ = command(
     const { db, claim } = input;
     // The claimed job's owner decides, never the cron caller. Off releases
     // the lease with an explicit disposition and dispatches no maintenance run.
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
       claim.orgId,
       claim.userId,
+      signal,
     );
     signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {

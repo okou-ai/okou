@@ -47,7 +47,7 @@ import {
 } from "../services/uploaded-artifact.service";
 import { feishuOrgCallbackPayloadSchema } from "../services/feishu-org-callback-payload";
 import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode, settle } from "../utils";
 
@@ -424,10 +424,11 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
 const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (get(feishuRequestPlatform$) === "lark") {
-    const context = await loadUserFeatureSwitchContext(
-      set(writeDb$),
+    const context = await set(
+      loadUserFeatureSwitchContext$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context)) {

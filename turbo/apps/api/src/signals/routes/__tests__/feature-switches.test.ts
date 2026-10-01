@@ -83,6 +83,125 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
+  it("merges concurrent unrelated personal keys without losing either override", async () => {
+    createRouteMocks(context).clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:member",
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    const api = client();
+    await Promise.all([
+      accept(
+        api.update({
+          headers,
+          body: {
+            switches: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: true },
+          },
+        }),
+        [200],
+      ),
+      accept(
+        api.update({
+          headers,
+          body: { switches: { [FeatureSwitchKey.OpenRouterUsRouting]: false } },
+        }),
+        [200],
+      ),
+    ]);
+    const current = await accept(api.get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual({
+      [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+      [FeatureSwitchKey.OpenRouterUsRouting]: false,
+    });
+  });
+
+  it("filters unknown keys while preserving unrelated overrides and replacing a requested key", async () => {
+    createRouteMocks(context).clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:member",
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+            [FeatureSwitchKey.OpenRouterUsRouting]: false,
+          },
+        },
+      }),
+      [200],
+    );
+    const updated = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
+            unregisteredFeature: true,
+          },
+        },
+      }),
+      [200],
+    );
+    const expected = {
+      [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
+      [FeatureSwitchKey.OpenRouterUsRouting]: false,
+    };
+    expect(updated.body.switches).toStrictEqual(expected);
+    const current = await accept(client().get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual(expected);
+  });
+
+  it("deletes the caller's overrides and organization keys without deleting a peer's personal override", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const orgId = `org_${randomUUID()}`;
+    const caller = `user_${randomUUID()}`;
+    const peer = `user_${randomUUID()}`;
+    const headers = { authorization: "Bearer clerk-session" };
+    clerk.session(caller, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.LarkIntegration]: true,
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(peer, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.OpenRouterUsRouting]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(caller, orgId, "org:member");
+    const deleted = await accept(client().delete({ headers }), [200]);
+    expect(deleted.body.deleted).toBeTruthy();
+    const callerState = await accept(client().get({ headers }), [200]);
+    expect(callerState.body.switches).toStrictEqual({});
+    clerk.session(peer, orgId, "org:member");
+    const peerState = await accept(client().get({ headers }), [200]);
+    expect(peerState.body.switches).toStrictEqual({
+      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+    });
+    expect(
+      peerState.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
+    ).toBeFalsy();
+  });
+
   it("rejects the retired native override without applying other changes", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

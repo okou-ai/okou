@@ -3,7 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 export const ORG_SENTINEL_USER_ID = "__org__";
 
-const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
+export const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
   // Bot setup and native command availability must agree for all members.
   FeatureSwitchKey.LarkIntegration,
 ];
@@ -67,14 +67,4 @@ export function userFeatureSwitchOverridesFromRows(
     }
   }
   return merged;
-}
-
-export function withoutOrgScopedFeatureSwitches(
-  switches: Record<string, boolean>,
-): Record<string, boolean> {
-  const next = { ...switches };
-  for (const key of ORG_SCOPED_FEATURE_SWITCH_KEYS) {
-    delete next[key];
-  }
-  return next;
 }
