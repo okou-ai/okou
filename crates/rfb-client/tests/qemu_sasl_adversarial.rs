@@ -2,10 +2,13 @@
 #![cfg(test)]
 use std::{io, sync::Arc, time::Duration};
 
+use base64::Engine;
+use hmac::{Hmac, KeyInit, Mac};
 use rfb_client::{
     AuthenticationStage, Error, QemuScramCredentials, TrustRoots, X509Authentication, authenticate,
 };
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
+use sha2::Sha256;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
     sync::oneshot,
@@ -28,6 +31,7 @@ enum Peer {
     EarlyComplete,
     WrongServerProof,
     FragmentedWrongServerProof,
+    RejectedSecurityResult,
     Silent,
 }
 
@@ -199,14 +203,43 @@ async fn peer(
     let mut final_message = vec![0; n as usize];
     stream.read_exact(&mut final_message).await.unwrap();
     assert_eq!(final_message.last(), Some(&0));
-    blob(
-        &mut stream,
-        Some(b"v=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
-        1,
-    )
-    .await;
-    // A malicious success status cannot bypass the client-side server proof.
-    stream.write_u32(0).await.unwrap();
+    let server_final = if matches!(mode, Peer::RejectedSecurityResult) {
+        // A valid server proof must not override a later negative RFB status.
+        // Compute it independently from the observed SCRAM transcript rather
+        // than relying on the production SASL client as the test oracle.
+        let final_bare = &final_message[..final_message.len() - 1];
+        let proof_at = final_bare
+            .windows(3)
+            .rposition(|part| part == b",p=")
+            .unwrap();
+        let mut transcript = first.strip_prefix(b"n,,").unwrap().to_vec();
+        transcript.push(b',');
+        transcript.extend_from_slice(&server_first);
+        transcript.push(b',');
+        transcript.extend_from_slice(&final_bare[..proof_at]);
+        let mut salted = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<Sha256>(b"test-only-password", b"saltsaltsalt", 4096, &mut salted);
+        let mut key = Hmac::<Sha256>::new_from_slice(&salted).unwrap();
+        key.update(b"Server Key");
+        let mut signature = Hmac::<Sha256>::new_from_slice(&key.finalize().into_bytes()).unwrap();
+        signature.update(&transcript);
+        format!(
+            "v={}",
+            base64::engine::general_purpose::STANDARD.encode(signature.finalize().into_bytes())
+        )
+        .into_bytes()
+    } else {
+        b"v=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_vec()
+    };
+    blob(&mut stream, Some(&server_final), 1).await;
+    // A malicious success status cannot bypass a forged server proof; a valid
+    // proof cannot bypass a rejection status either.
+    if matches!(mode, Peer::RejectedSecurityResult) {
+        stream.write_u32(1).await.unwrap();
+        stream.write_u32(0).await.unwrap(); // empty, bounded rejection reason
+    } else {
+        stream.write_u32(0).await.unwrap();
+    }
     stream.flush().await.unwrap();
 }
 
@@ -289,6 +322,14 @@ async fn forged_server_proof_fails_even_with_successful_security_result() {
             Err(Error::InvalidScramExchange)
         ));
     }
+}
+
+#[tokio::test]
+async fn valid_server_proof_cannot_override_rejected_security_result() {
+    assert!(matches!(
+        run(Peer::RejectedSecurityResult, Duration::from_secs(4)).await,
+        Err(Error::AuthenticationFailed)
+    ));
 }
 
 #[tokio::test]

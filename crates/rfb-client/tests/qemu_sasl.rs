@@ -66,6 +66,13 @@ async fn attempt(name: &str, password: &str, roots: TrustRoots) -> Result<(), Er
 #[tokio::test]
 #[ignore = "requires synthetic loopback-only QEMU/Cyrus fixture per QEMU_SASL.md"]
 async fn pinned_qemu_scram_valid_and_invalid() {
+    if std::env::var_os("QEMU_SASL_EXPECT_MISSING_SCRAM").is_some() {
+        assert!(matches!(
+            connect(NAME, PASSWORD, roots()).await,
+            Err(Error::UnsupportedScramMechanism)
+        ));
+        return;
+    }
     attempt(NAME, PASSWORD, roots()).await.unwrap();
     assert!(matches!(
         connect(NAME, "wrong-test-only-password", roots()).await,
