@@ -5,7 +5,10 @@
  * Lifted from Thread's private commands so the Pi maintenance entrypoint can
  * reuse the same boundary; owners keep their own commands and selection.
  */
-import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
+import {
+  compileModelProviderGatewayRuntime,
+  GATEWAY_RUNTIME_SECRET_NAME,
+} from "./model-provider-gateway-runtime";
 import { providerTypeForSurfaceProtocol } from "./effective-model-route.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
@@ -378,7 +381,8 @@ export async function prepareGatewayModelEnvironment(
     return null;
   }
   const credentials = await resolveModelCredentialValues(db, source, signal);
-  if (!credentials) {
+  // A blank stored gateway key is an unavailable source, as on main.
+  if (!credentials?.[GATEWAY_RUNTIME_SECRET_NAME]?.trim()) {
     return null;
   }
   const compiled = compileModelRuntime({

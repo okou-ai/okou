@@ -57,6 +57,13 @@ describe("runner environment ownership", () => {
     for (const key of Object.keys(claim.platformEnvironment)) {
       expect(claim.environment).not.toHaveProperty(key);
     }
+    // The product Agent declares OKOU_* bindings; the reserved namespace is
+    // stripped from the untrusted environment entirely.
+    expect(
+      Object.keys(claim.environment ?? {}).filter((key) => {
+        return key.startsWith("OKOU_");
+      }),
+    ).toStrictEqual([]);
 
     // The run snapshot names its secret references but never holds the issued
     // token value.

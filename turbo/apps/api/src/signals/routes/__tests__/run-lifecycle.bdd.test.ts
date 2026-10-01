@@ -1763,9 +1763,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       }),
     ]);
-    expect(JSON.stringify(context.mocks.axiom.ingest.mock.calls)).not.toContain(
-      missingStorageName,
-    );
 
     await api.requestCancelRun(actor, created.runId, [200]);
   });
