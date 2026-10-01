@@ -70,6 +70,10 @@ import {
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
+import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createMiscRoutesApi } from "../../routes/__tests__/helpers/api-bdd-misc";
 import { http, HttpResponse } from "msw";
@@ -646,6 +650,41 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     expect(run).toMatchObject({ status: "pending", error: null });
     expect(run?.triggerSource).toBe("agent");
     expect(run?.chatThreadId).toBeNull();
+    // Assistant text from the threadless maintenance run changes no thread.
+    const owner = {
+      userId: scope.userId,
+      orgId: scope.orgId,
+      orgRole: "org:admin" as const,
+      email: `${scope.userId}@example.test`,
+    };
+    const chatApi = createChatFilesBddApi(testContext());
+    const threadEventsBefore = await chatApi.listThreadEvents(
+      owner,
+      sourceThreadId,
+    );
+    await createWebhookCallbackApi(testContext()).requestAgentEvents(
+      {
+        runId: result.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 1,
+            message: {
+              id: "msg_maintenance_detached",
+              content: [{ type: "text", text: "No thread receives this" }],
+            },
+          },
+        ],
+      },
+      {
+        authorization: `Bearer ${createRunsApi(testContext()).sandboxTokenForRun(owner, result.runId)}`,
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      chatApi.listThreadEvents(owner, sourceThreadId),
+    ).resolves.toStrictEqual(threadEventsBefore);
     expect(run?.prompt).not.toContain("candidate stays inside");
     expect(run?.storageMounts).toStrictEqual([
       expect.objectContaining({

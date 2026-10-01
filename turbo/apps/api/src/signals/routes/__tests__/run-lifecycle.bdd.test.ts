@@ -2341,15 +2341,17 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("creates, dispatches, claims, reports, and completes a run through public APIs", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "summarize the repository",
-      modelProvider: "anthropic-api-key",
     });
     expect(created.status).toBe("pending");
-    expect(created.sessionId).toMatch(/[0-9a-f-]{36}/);
+    expect(created.threadId).toMatch(/[0-9a-f-]{36}/);
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.tier).toBe("pro");
@@ -8734,7 +8736,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       context,
       routes: testCustomConnectorSkillVersionAssociationRoutes,
     })(testCustomConnectorSkillVersionAssociationContract);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
     const suffix = randomUUID().slice(0, 8);
     const target = await connectors.createCustomConnector(actor, {
       displayName: "BDD Exact Skill Target",
@@ -8797,15 +8799,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }),
       [200],
     );
-    const wrongStorageRun = await api.createRun(actor, {
-      agentId,
-      prompt: "reject the wrong custom skill storage owner",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(wrongStorageRun).toMatchObject({
-      status: "failed",
-      error: "Custom connector skill registration is unavailable",
-    });
+    // A Thread launch failure creates no run and surfaces from the pick.
+    await expect(
+      api.createThreadRun(actor, {
+        agentId,
+        prompt: "reject the wrong custom skill storage owner",
+      }),
+    ).rejects.toThrow("Custom connector skill registration is unavailable");
   });
 
   it("fails expired custom OAuth without a refresh token at matched auth", async () => {
@@ -12382,7 +12382,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   it("uses the executing member's paid tool preferences for a shared agent", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const agent = await bdd.createAgent(actor, {
       displayName: "Shared paid tool preferences agent",
       visibility: "public",
@@ -12391,10 +12394,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await bdd.completeOnboarding(member);
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
-    const run = await api.createRun(member, {
+    const run = await api.createThreadRun(member, {
       agentId: agent.agentId,
       prompt: "respect the executing member's paid tool preferences",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -13987,44 +13990,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     expect(matchingDuplicateRows).toHaveLength(1);
     expect(matchingDuplicateRows[0]?.content).toBe("Hello from BDD events");
 
-    // Assistant text on a run without a chat thread changes no thread state.
-    const eventsBefore = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(eventsBefore.status).toBe(200);
-    if (eventsBefore.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    const detachedRun = await api.createRun(actor, {
-      agentId,
-      prompt: "report events without a thread",
-      modelProvider: "anthropic-api-key",
-    });
-    const detachedClaim = await api.claimRunnerJob(detachedRun.runId);
-    await webhooks.requestAgentEvents(
-      {
-        runId: detachedRun.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 1,
-            message: {
-              id: "msg_bdd_detached",
-              content: [{ type: "text", text: "No thread receives this" }],
-            },
-          },
-        ],
-      },
-      { authorization: `Bearer ${detachedClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const eventsAfter = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(eventsAfter.status).toBe(200);
-    if (eventsAfter.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(eventsAfter.body.events).toStrictEqual(eventsBefore.body.events);
-
-    await api.requestCancelRun(actor, detachedRun.runId, [200]);
+    // Threadless assistant text is covered by the Pi maintenance run in
+    // pi-memory-phase2-worker.service.test.ts, the only threadless producer.
     await api.requestCancelRun(actor, runId, [200]);
     const cancelled = await api.readRun(actor, runId);
     expect(cancelled.status).toBe("cancelled");
@@ -14458,7 +14425,10 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const api = createRunsApi(context);
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const nonAdmin = bdd.user({
       orgId: actor.orgId,
       orgRole: "org:member",
@@ -14505,15 +14475,14 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       visibility: "private",
     });
 
-    const actorRun = await api.createRun(actor, {
+    const actorRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "actor usage",
-      modelProvider: "anthropic-api-key",
     });
-    const memberRun = await api.createRun(member, {
+    const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member usage",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
 
     await api.heartbeatRunner(runnerGroup);
