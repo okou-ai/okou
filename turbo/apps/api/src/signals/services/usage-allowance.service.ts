@@ -5,7 +5,7 @@ import {
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   desc,
@@ -24,7 +24,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { getStripeClient } from "../external/stripe-client";
@@ -304,33 +304,32 @@ export const prepareUsageAllowanceRefresh$ = command(
     },
     signal?: AbortSignal,
   ) => {
-    return await prepareUsageAllowanceRefresh(set(writeDb$), args, signal);
+    const database = set(writeDb$);
+    if (args.requirePendingUsage) {
+      const [pending] = await database
+        .select()
+        .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
+      signal?.throwIfAborted();
+      if (!pending) {
+        return undefined;
+      }
+    }
+    const [row] = await database
+      .select()
+      .from(allowanceRefreshQuery(args.orgId));
+    signal?.throwIfAborted();
+    const prepared = await prepareAllowanceRefresh(row);
+    signal?.throwIfAborted();
+    return prepared;
   },
 );
 
-export async function prepareUsageAllowanceRefresh(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly requirePendingUsage?: boolean;
-    readonly idempotencyKeys?: readonly string[];
-  },
-  signal?: AbortSignal,
-): Promise<PreparedUsageAllowanceRefresh | undefined> {
-  if (args.requirePendingUsage) {
-    const [pending] = await db
-      .select()
-      .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
-    signal?.throwIfAborted();
-    if (!pending) {
-      return undefined;
-    }
-  }
-  const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
-  signal?.throwIfAborted();
-  const prepared = await prepareAllowanceRefresh(row);
-  signal?.throwIfAborted();
-  return prepared;
+/** One claim prepares Stripe state once, outside all SQL transactions. */
+export function createUsageAllowanceRefreshObject(orgId: string) {
+  return computed(async (get) => {
+    const [row] = await get(db$).select().from(allowanceRefreshQuery(orgId));
+    return await prepareAllowanceRefresh(row);
+  });
 }
 
 async function applyPreparedUsageAllowanceRefresh(
@@ -709,29 +708,214 @@ export async function resolveAvailabilityInTransaction(
   };
 }
 
+function activeAllowanceWindowCondition(orgId: string, at: Date) {
+  return and(
+    eq(orgUsageAllowanceWindows.orgId, orgId),
+    eq(orgUsageAllowanceEntitlements.orgId, orgId),
+    inArray(orgUsageAllowanceEntitlements.status, [
+      ...ACTIVE_ALLOWANCE_STATUSES,
+    ]),
+    lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+    or(
+      isNull(orgUsageAllowanceEntitlements.expiresAt),
+      gt(orgUsageAllowanceEntitlements.expiresAt, at),
+    ),
+    gte(
+      orgUsageAllowanceWindows.startsAt,
+      orgUsageAllowanceEntitlements.effectiveAt,
+    ),
+    inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+    lte(orgUsageAllowanceWindows.startsAt, at),
+    gt(orgUsageAllowanceWindows.expiresAt, at),
+  );
+}
+
+/** Refresh admission availability without reserving credit or opening a transaction. */
+function allowanceAdmissionRefreshPlan(
+  orgId: string,
+  entitlement: {
+    readonly id: string;
+    readonly snapshot: string;
+    readonly stripeSubscriptionId: string | null;
+  },
+  refresh: PreparedUsageAllowanceRefresh | undefined,
+  at: Date,
+) {
+  if (!entitlement.stripeSubscriptionId) {
+    return null;
+  }
+  if (
+    refresh?.entitlementId !== entitlement.id ||
+    refresh.snapshot !== entitlement.snapshot
+  ) {
+    throw new Error(
+      "Usage allowance entitlement changed before prepared Stripe refresh",
+    );
+  }
+  const subscription = refresh.subscription;
+  const periodEnd = subscriptionScheduledEnd(subscription);
+  const terminal = subscriptionIsTerminalAllowance(subscription);
+  if (!terminal && !subscriptionCanBackUsageAllowance(subscription)) {
+    L.warn("usage allowance subscription has unexpected Stripe status", {
+      orgId: orgId,
+      entitlementId: entitlement.id,
+      stripeSubscriptionId: entitlement.stripeSubscriptionId,
+      status: subscription.status,
+    });
+    return null;
+  }
+  if (
+    !terminal &&
+    (!periodEnd || periodEnd <= activeAllowanceCutoff(subscription.status, at))
+  ) {
+    L.warn("usage allowance subscription has no future paid-through period", {
+      orgId: orgId,
+      entitlementId: entitlement.id,
+      stripeSubscriptionId: entitlement.stripeSubscriptionId,
+      status: subscription.status,
+      periodEnd,
+    });
+    return null;
+  }
+
+  return {
+    terminal,
+    status: terminal ? "canceled" : subscription.status,
+    expiresAt: terminal ? at : periodEnd,
+  };
+}
+
+export const refreshUsageAllowanceAvailability$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly refresh?: PreparedUsageAllowanceRefresh;
+    },
+    signal: AbortSignal,
+  ): Promise<UsageAllowanceAvailability | null> => {
+    const database = set(writeDb$);
+    const at = nowDate();
+    const [entitlement] = await database
+      .select({
+        id: orgUsageAllowanceEntitlements.id,
+        status: orgUsageAllowanceEntitlements.status,
+        expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+        shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+        weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+        stripeSubscriptionId:
+          orgUsageAllowanceEntitlements.stripeSubscriptionId,
+        snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(orgUsageAllowanceEntitlements)
+      .where(
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
+          inArray(orgUsageAllowanceEntitlements.status, [
+            ...ACTIVE_ALLOWANCE_STATUSES,
+          ]),
+          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!entitlement) {
+      return null;
+    }
+    if (
+      entitlement.expiresAt &&
+      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+    ) {
+      const plan = allowanceAdmissionRefreshPlan(
+        args.orgId,
+        entitlement,
+        args.refresh,
+        at,
+      );
+      if (!plan) {
+        return null;
+      }
+      const [updated] = await database
+        .update(orgUsageAllowanceEntitlements)
+        .set({
+          status: plan.status,
+          expiresAt: plan.expiresAt,
+          updatedAt: at,
+        })
+        .where(
+          and(
+            eq(orgUsageAllowanceEntitlements.id, entitlement.id),
+            eq(
+              sql`${orgUsageAllowanceEntitlements}::text`,
+              entitlement.snapshot,
+            ),
+          ),
+        )
+        .returning({ id: orgUsageAllowanceEntitlements.id });
+      signal.throwIfAborted();
+      if (!updated) {
+        throw new Error(
+          "Usage allowance entitlement changed during Stripe refresh",
+        );
+      }
+      if (plan.terminal) {
+        return null;
+      }
+    }
+    // Admission is an observation, never a reservation. A later entitlement
+    // change is still checked by the financial write's exact snapshot predicate.
+    const windows = await database
+      .select({
+        kind: orgUsageAllowanceWindows.kind,
+        unitLimit: orgUsageAllowanceWindows.unitLimit,
+        consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+      })
+      .from(orgUsageAllowanceWindows)
+      .innerJoin(
+        orgUsageAllowanceEntitlements,
+        eq(
+          orgUsageAllowanceEntitlements.id,
+          orgUsageAllowanceWindows.entitlementId,
+        ),
+      )
+      .where(activeAllowanceWindowCondition(args.orgId, at))
+      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+    signal.throwIfAborted();
+    const short = windows.find((window) => {
+      return window.kind === "short";
+    });
+    const weekly = windows.find((window) => {
+      return window.kind === "weekly";
+    });
+    const shortRemainingUnits = short
+      ? remainingUnits(short)
+      : entitlement.shortWindowUnits;
+    const weeklyRemainingUnits = weekly
+      ? remainingUnits(weekly)
+      : entitlement.weeklyWindowUnits;
+    return {
+      shortRemainingUnits,
+      weeklyRemainingUnits,
+      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+    };
+  },
+);
+
 export type UsageAllowanceAvailabilitySnapshot =
   | UsageAllowanceAvailability
   | "allowance_refresh_required"
   | null;
 
-interface UsageAllowanceReadScope {
-  readonly orgId: string;
-  readonly db?: Db;
-}
-
-type UsageAllowanceInputObject = Computed<
-  UsageAllowanceReadScope | Promise<UsageAllowanceReadScope>
->;
-type UsageAllowanceSnapshotObject = Computed<
-  | UsageAllowanceAvailabilitySnapshot
-  | Promise<UsageAllowanceAvailabilitySnapshot>
->;
-
-function createUsageAllowanceSnapshotObject(input$: UsageAllowanceInputObject) {
+function createUsageAllowanceSnapshotObject(orgId: string) {
   return computed(async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
-    const input = await get(input$);
-    const db = input.db ?? get(db$);
-    const { orgId } = input;
+    const db = get(db$);
     const at = nowDate();
     const rows = await db
       .select({
@@ -814,62 +998,42 @@ function createUsageAllowanceSnapshotObject(input$: UsageAllowanceInputObject) {
   });
 }
 
-function createResolveUsageAllowanceCommand(
-  input$: UsageAllowanceInputObject,
-  availabilitySnapshot$: UsageAllowanceSnapshotObject,
-) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    const startedAt = performance.now();
-    const [input, snapshot] = await Promise.all([
-      get(input$),
-      get(availabilitySnapshot$),
-    ]);
-    signal.throwIfAborted();
-    let availability = snapshot;
-    if (availability === "allowance_refresh_required") {
-      const db = input.db ?? set(writeDb$);
-      const refresh = await prepareUsageAllowanceRefresh(
-        db,
-        { orgId: input.orgId },
-        signal,
-      );
-      availability = await db.transaction(async (tx) => {
-        const refreshed = await resolveAvailabilityInTransaction(
-          tx,
-          input.orgId,
-          refresh,
+/** One organization owns its closed availability read and explicit refresh graph. */
+export function createUsageAllowanceObjects(orgId: string) {
+  const availabilitySnapshot$ = createUsageAllowanceSnapshotObject(orgId);
+  const resolveAvailability$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const startedAt = performance.now();
+      const snapshot = await get(availabilitySnapshot$);
+      signal.throwIfAborted();
+      let availability = snapshot;
+      if (availability === "allowance_refresh_required") {
+        const refresh = await set(
+          prepareUsageAllowanceRefresh$,
+          { orgId },
+          signal,
+        );
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId, refresh },
+          signal,
         );
         signal.throwIfAborted();
-        return refreshed;
+      }
+      // This is an availability snapshot, not a reservation. Preserve refresh
+      // commit timing and the original best-effort telemetry contract.
+      safeSync(() => {
+        recordBillingOperationTimings([
+          {
+            actionType: "api_billing_allowance_availability",
+            durationMs: Math.round(performance.now() - startedAt),
+            success: true,
+            dimensions: { available: availability !== null },
+          },
+        ]);
       });
-      signal.throwIfAborted();
-    }
-    // This is an availability snapshot, not a reservation. Preserve refresh
-    // commit timing and the original best-effort telemetry contract.
-    safeSync(() => {
-      recordBillingOperationTimings([
-        {
-          actionType: "api_billing_allowance_availability",
-          durationMs: Math.round(performance.now() - startedAt),
-          success: true,
-          dimensions: { available: availability !== null },
-        },
-      ]);
-    });
-    return availability;
-  });
-}
-
-/** Compose one allowance snapshot and its explicit refresh command. */
-export function createUsageAllowanceObjects(
-  input$: UsageAllowanceInputObject,
-  suppliedSnapshot$?: UsageAllowanceSnapshotObject,
-) {
-  const availabilitySnapshot$ =
-    suppliedSnapshot$ ?? createUsageAllowanceSnapshotObject(input$);
-  const resolveAvailability$ = createResolveUsageAllowanceCommand(
-    input$,
-    availabilitySnapshot$,
+      return availability;
+    },
   );
   return { availabilitySnapshot$, resolveAvailability$ };
 }

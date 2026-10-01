@@ -27,8 +27,8 @@ import {
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import { createPickObjects } from "./pick-chat-run.service";
 import {
-  listQueuedChatThreadOrgIds,
-  markChatThreadQueued,
+  listQueuedChatThreadOrgIds$,
+  queuedChatThreadEnqueuePlan,
 } from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
@@ -89,10 +89,14 @@ export async function enqueueChatInput(
         }
         await input.persistSourceTransition?.(tx, eventId);
         await measureEnqueueStep(input, "queue_upsert", async () => {
-          await markChatThreadQueued(tx, {
+          const plan = queuedChatThreadEnqueuePlan({
             chatThreadId: input.chatThreadId,
             orgId: input.orgId,
           });
+          await tx
+            .insert(queuedChatThreads)
+            .values(plan.values)
+            .onConflictDoUpdate(plan.conflict);
         });
         return eventId;
       });
@@ -301,14 +305,17 @@ export const pickOrgQueuedChatThreads$ = command(
  */
 export const pickAllQueuedOrgs$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
-    const db = set(writeDb$);
     let launched = 0;
     let after: string | undefined;
     while (true) {
-      const orgIds = await listQueuedChatThreadOrgIds(db, {
-        limit: PICK_PAGE_SIZE,
-        ...(after === undefined ? {} : { after }),
-      });
+      const orgIds = await set(
+        listQueuedChatThreadOrgIds$,
+        {
+          limit: PICK_PAGE_SIZE,
+          ...(after === undefined ? {} : { after }),
+        },
+        signal,
+      );
       signal.throwIfAborted();
       for (const orgId of orgIds) {
         const picked = await settle(
