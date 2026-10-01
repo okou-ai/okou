@@ -615,9 +615,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import {
-  modelProviderAccounts,
-} from "@okouai/db/schema/model-provider-account";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import {
   modelProviderConnections,
   modelProviderSurfaces,
