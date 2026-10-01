@@ -43,7 +43,7 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
         import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
         import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
         const api = createRunsApi(context);
-        const run = await api.createRun(actor, request);
+        const run = await api.createThreadRun(actor, request);
         function requestState(body) {
           return createAppWithRoutes({ routes: testCronCleanupSandboxesStateRoutes }).request("/state", { body: JSON.stringify(body) });
         }
@@ -226,8 +226,8 @@ ruleTester.run("no-unowned-usage-pricing", noUnownedUsagePricing, {
       code: `
         import { seedUsagePricingRows } from "${fixtureModule}";
         import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
-        const fake = { createRun() { return { runId: "google-maps" }; } };
-        const run = fake.createRun();
+        const fake = { createThreadRun() { return { runId: "google-maps" }; } };
+        const run = fake.createThreadRun();
         function insertRunFixture() {
           void testCronCleanupSandboxesStateRoutes;
           return { runId: "google-maps" };
