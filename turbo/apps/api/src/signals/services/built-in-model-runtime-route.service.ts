@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   type BuiltInModelRouteProviderType,
@@ -13,7 +12,6 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { computed, type Computed } from "ccstate";
 import { and, eq, gt, inArray } from "drizzle-orm";
 
-import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
@@ -113,76 +111,6 @@ export interface BuiltInModelRuntimeRoute {
   readonly providerType: BuiltInModelRouteProviderType;
   readonly upstreamModel: string;
   readonly modelKeyId: string;
-}
-
-interface BuiltInModelRuntimeRouteIdentity {
-  readonly selectedModel: string;
-  readonly providerType: string;
-  readonly upstreamModel: string;
-}
-
-interface UnavailableRuntimeRoutesForTest {
-  readonly selectedModels: ReadonlySet<string>;
-  readonly candidates: readonly BuiltInModelRuntimeRouteIdentity[];
-}
-
-const unavailableRuntimeRoutesForTest = singleton(() => {
-  return new AsyncLocalStorage<UnavailableRuntimeRoutesForTest>();
-});
-
-/**
- * Operator-managed model keys are global rows, so a missing-key API test cannot
- * safely delete them while other test workers are running. Keep that impossible
- * external state scoped to the calling async chain instead of mutating shared
- * database state.
- */
-export async function withBuiltInModelRuntimeRouteUnavailableForTest<T>(
-  selectedModel: string,
-  work: () => Promise<T>,
-): Promise<T> {
-  const inherited = unavailableRuntimeRoutesForTest.peek()?.getStore();
-  return await unavailableRuntimeRoutesForTest().run(
-    {
-      selectedModels: new Set([
-        ...(inherited?.selectedModels ?? []),
-        selectedModel,
-      ]),
-      candidates: inherited?.candidates ?? [],
-    },
-    work,
-  );
-}
-
-export async function withBuiltInModelRuntimeRouteCandidateUnavailableForTest<
-  T,
->(
-  candidate: BuiltInModelRuntimeRouteIdentity,
-  work: () => Promise<T>,
-): Promise<T> {
-  const inherited = unavailableRuntimeRoutesForTest.peek()?.getStore();
-  return await unavailableRuntimeRoutesForTest().run(
-    {
-      selectedModels: inherited?.selectedModels ?? new Set(),
-      candidates: [...(inherited?.candidates ?? []), candidate],
-    },
-    work,
-  );
-}
-
-function runtimeRouteUnavailableForTest(
-  target: BuiltInModelRouteTarget,
-): boolean {
-  const unavailable = unavailableRuntimeRoutesForTest.peek()?.getStore();
-  return (
-    unavailable?.selectedModels.has(target.selectedModel) === true ||
-    unavailable?.candidates.some((candidate) => {
-      return (
-        candidate.selectedModel === target.selectedModel &&
-        candidate.providerType === target.providerType &&
-        candidate.upstreamModel === target.upstreamModel
-      );
-    }) === true
-  );
 }
 
 function routeFromTarget(
@@ -332,10 +260,7 @@ async function firstAvailableBuiltInModelRoute(
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const candidates = eligible.filter((target) => {
-    return (
-      !runtimeRouteUnavailableForTest(target) &&
-      keyIdsByVendor.has(target.vendor)
-    );
+    return keyIdsByVendor.has(target.vendor);
   });
   if (candidates.length === 0) {
     return null;
@@ -393,9 +318,6 @@ export function builtInModelRuntimeRouteFromSnapshot(args: {
     args.featureSwitchContext,
     args.routePricing,
   )) {
-    if (runtimeRouteUnavailableForTest(target)) {
-      continue;
-    }
     const id = args.keyIdsByVendor.get(target.vendor);
     if (
       id === undefined ||

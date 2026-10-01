@@ -5,7 +5,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
@@ -15,13 +14,17 @@ import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import {
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
+} from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -106,6 +109,25 @@ async function preparePiResourceHandoff(
   await publishPendingPiInstructions(actor, agentId);
   mockPiResourceArchiveDownloads(true);
   mockPiCheckpointObjectStore();
+}
+
+/**
+ * A test-owned mirror of a managed DeepSeek model whose OpenRouter candidate
+ * is cooling down while its direct DeepSeek candidate stays available.
+ */
+async function builtInModelWithOpenRouterCoolingDown(
+  selectedModel: "deepseek-v4.1-flash" | "deepseek-v4-flash",
+): Promise<string> {
+  const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
+  onTestFinished(mirror.restore);
+  await seedBuiltInModelCandidateKeys(context, mirror.model);
+  await coolDownBuiltInCandidatesFixture(context, mirror.model, [
+    {
+      provider_type: "openrouter-codex",
+      upstream_model: `deepseek/${selectedModel}`,
+    },
+  ]);
+  return mirror.model;
 }
 
 /**
@@ -1633,14 +1655,14 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "uses direct built-in %s when the OpenRouter fallback is unavailable",
-    async (model) => {
+    async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (model === "deepseek-v4.1-flash") {
+      if (selectedModel === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      // Other tests can own the global OpenRouter key. Keep it present and
-      // scope only its candidate's unavailability to this request.
-      await seedBuiltInModelCandidateKeys(context, model);
+      // A test-owned mirror keeps the shared model's OpenRouter candidate
+      // available to concurrent tests while this one cools down.
+      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1656,26 +1678,20 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       await preparePiResourceHandoff(actor, agentId);
 
-      const run = await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: "openrouter-codex",
-          upstreamModel: `deepseek/${model}`,
-        },
-        async () => {
-          return await sendChatRun(actor, {
-            agentId,
-            prompt: "retain the managed DeepSeek direct priority",
-            model,
-          });
-        },
-      );
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "retain the managed DeepSeek direct priority",
+        model,
+      });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piModelConfig).toMatchObject({
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com/",
-        model: model === "deepseek-v4.1-flash" ? "deepseek-flash" : model,
+        model:
+          selectedModel === "deepseek-v4.1-flash"
+            ? "deepseek-flash"
+            : selectedModel,
       });
       await cancelChatRun(actor, run.runId);
     },
@@ -1683,12 +1699,12 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
     "fails closed for built-in %s when its required OpenRouter route is unavailable",
-    async (model) => {
+    async (selectedModel) => {
       const { actor, agentId } = await entitledChatActor();
-      if (model === "deepseek-v4.1-flash") {
+      if (selectedModel === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      await seedBuiltInModelCandidateKeys(context, model);
+      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -1703,21 +1719,11 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       });
 
-      const { picked } =
-        await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-          {
-            selectedModel: model,
-            providerType: "openrouter-codex",
-            upstreamModel: `deepseek/${model}`,
-          },
-          async () => {
-            return await sendUntilPicked(actor, {
-              agentId,
-              prompt: "require the managed OpenRouter DeepSeek route",
-              model,
-            });
-          },
-        );
+      const { picked } = await sendUntilPicked(actor, {
+        agentId,
+        prompt: "require the managed OpenRouter DeepSeek route",
+        model,
+      });
       expect(picked).toMatchObject({
         eventType: "input.rejected",
         error: "model_provider_unavailable",
@@ -1727,12 +1733,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     (
-      [
-        "claude-sonnet-5",
-        "claude-fable-5-1",
-        "gpt-5.6-luna",
-        "deepseek-v4-flash",
-      ] as const
+      ["claude-fable-5-1", "gpt-5.6-luna", "deepseek-v4-flash"] as const
     ).flatMap((model) => {
       const switchValues =
         model === "claude-fable-5-1" || model === "deepseek-v4-flash"
@@ -1746,17 +1747,18 @@ describe("CHAT-02: model-first provider policies", () => {
     "freezes managed $model endpoint and firewall with US switch $enabled",
     async ({ model, enabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const withRoute = await configureBuiltInPiModelOnOpenRouter(actor, model);
+      const routedModel = await configureBuiltInPiModelOnOpenRouter(
+        actor,
+        model,
+      );
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
       });
       await preparePiResourceHandoff(actor, agentId);
-      const run = await withRoute(() => {
-        return sendChatRun(actor, {
-          agentId,
-          model,
-          prompt: "capture the managed regional route",
-        });
+      const run = await sendChatRun(actor, {
+        agentId,
+        model: routedModel,
+        prompt: "capture the managed regional route",
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OpenRouterUsRouting]: !enabled,

@@ -91,7 +91,7 @@ import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { modelPoliciesRoutes } from "../model-policies";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import {
   completeRunWithoutCallbacksFixture,
   setQueuedUserMessageCreatedAtFixture,
@@ -126,6 +126,7 @@ import {
 } from "./helpers/discord-fixture";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import {
+  coolDownBuiltInCandidatesFixture,
   seedBuiltInModelCandidateKeys,
   updateChatEventSnapshotHead,
 } from "./helpers/runtime-state";
@@ -1219,7 +1220,11 @@ describe("MCP chat discovery and creation", () => {
   it("projects the owner's DeepSeek alternative routing in model discovery", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
-    const model = "deepseek-v4-flash";
+    // A test-owned mirror of DeepSeek V4 Flash keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("deepseek-v4-flash");
+    onTestFinished(restore);
     await runs.grantProEntitlement(f.actor);
     await seedBuiltInModelCandidateKeys(context, model);
     await runs.updateOrgModelPolicies(f.actor, [
@@ -1249,17 +1254,15 @@ describe("MCP chat discovery and creation", () => {
       { userId: f.auth.userId, orgId: f.auth.orgId },
       { [FeatureSwitchKey.DeepSeekAlternativeRouting]: true },
     );
-    const models =
-      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: "openrouter-codex",
-          upstreamModel: `deepseek/${model}`,
-        },
-        async () => {
-          return await listModels(token);
-        },
-      );
+    // Alternative routing leaves only the OpenRouter candidate; a provider
+    // failure cools it down.
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      {
+        provider_type: "openrouter-codex",
+        upstream_model: "deepseek/deepseek-v4-flash",
+      },
+    ]);
+    const models = await listModels(token);
     expect(models.models).toContainEqual(
       expect.objectContaining({
         id: model,

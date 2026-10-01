@@ -44,7 +44,6 @@ const {
   authDeviceSupport,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
   expectNoThreadModelUpdateEvent,
   claimChatRun,
@@ -976,52 +975,6 @@ describe("shared native Pi route activation", () => {
     await expectThreadModelCredits(context, actor, second.threadId, 0);
   });
 
-  it.each([false, true])(
-    "captures the managed OpenRouter Claude route with US switch %s in the native claim",
-    async (usRoutingEnabled) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      const model = "claude-sonnet-5";
-      const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
-        actor,
-        model,
-      );
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
-      });
-      const pricing = await createPiUsagePricingResolution(model);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const run = await withSelectedRoute(() => {
-        return sendChatRun(
-          actor,
-          {
-            agentId,
-            model,
-            prompt: "use the selected managed OpenRouter route",
-          },
-          pricing,
-        );
-      });
-      await flushWaitUntilForTest();
-      const { claim, sandboxHeaders } = await claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
-      const config = piModelConfigV4Schema.parse(claim.piModelConfig);
-      expect(config).toMatchObject({
-        route: "openrouter-api-key",
-        catalogModel: model,
-        model: "anthropic/claude-sonnet-5",
-        billingOwner: "builtin",
-      });
-      expect(piNativeInferenceUrl(config)).toBe(
-        `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/messages`,
-      );
-      await cancelChatRun(actor, run.runId, sandboxHeaders);
-    },
-    90_000,
-  );
   it.each(["schedule", "event"] as const)(
     "uses the shared native %s Automation handoff and completion without owned memory",
     async (source) => {

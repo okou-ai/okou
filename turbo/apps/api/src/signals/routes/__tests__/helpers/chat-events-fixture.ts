@@ -41,12 +41,12 @@ import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
 } from "../../../../test-fixtures/pi-memory-stage1-candidates";
+import { insertBuiltInModelMirrorFixture } from "../../../../test-fixtures/model-catalog";
 import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
 import {
   createUsagePricingFixture,
@@ -81,6 +81,7 @@ import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
+  coolDownBuiltInCandidatesFixture,
   readRunLaunchSnapshotFixture,
   resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
@@ -759,56 +760,56 @@ export function createChatEventsFixture(context: TestContext) {
     return { oauth, accountSourceId: completed.body.provider.id };
   }
 
+  /**
+   * Makes the managed OpenRouter route the one a new Built-in run of
+   * `selectedModel` launches on, and returns the model ID to send. DeepSeek
+   * models reach it through the public alternative-routing switch; other models
+   * run as a test-owned catalog mirror whose primary candidate is cooling down,
+   * so concurrent tests keep the shared model's routes. Claude native models
+   * cannot use a mirror: Pi resolves them by the selected model ID.
+   */
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
     selectedModel: PiUsageProvider,
-  ): Promise<<T>(work: () => Promise<T>) => Promise<T>> {
+  ): Promise<string> {
+    const openRouterType = piNativeCatalogModelSchema.safeParse(selectedModel)
+      .success
+      ? "openrouter-api-key"
+      : "openrouter-codex";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
       context,
       selectedModel,
     );
-    const openRouterType = piNativeCatalogModelSchema.safeParse(selectedModel)
-      .success
-      ? "openrouter-api-key"
-      : "openrouter-codex";
     if (!primary || primary.provider_type === openRouterType) {
       throw new Error(`Expected a primary managed route for ${selectedModel}`);
     }
-    const unavailableCandidate = {
-      selectedModel,
-      providerType: primary.provider_type,
-      upstreamModel: primary.upstream_model,
-    };
-    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-      unavailableCandidate,
-      async () => {
-        const fallback = await resolveBuiltInModelRouteFixture(
-          context,
-          selectedModel,
-        );
-        if (!fallback || fallback.provider_type !== openRouterType) {
-          throw new Error(
-            `Expected an OpenRouter fallback for ${selectedModel}`,
-          );
-        }
-      },
-    );
+    let model: string = selectedModel;
+    if (primary.provider_type === "deepseek") {
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+      });
+    } else {
+      const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
+      onTestFinished(mirror.restore);
+      model = mirror.model;
+      await seedBuiltInModelCandidateKeys(context, model);
+      await coolDownBuiltInCandidatesFixture(context, model, [primary]);
+      const fallback = await resolveBuiltInModelRouteFixture(context, model);
+      if (!fallback || fallback.provider_type !== openRouterType) {
+        throw new Error(`Expected an OpenRouter fallback for ${selectedModel}`);
+      }
+    }
     await api.updateOrgModelPolicies(actor, [
       {
-        model: selectedModel,
+        model,
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    return async <T>(work: () => Promise<T>): Promise<T> => {
-      return await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        unavailableCandidate,
-        work,
-      );
-    };
+    return model;
   }
 
   async function sendChatRun(
@@ -1725,11 +1726,9 @@ export function createChatEventsFixture(context: TestContext) {
     }
     const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
     const selectedModel = args.selectedModel ?? "gpt-6-luna";
-    let withModelRoute = async <T>(work: () => Promise<T>): Promise<T> => {
-      return await work();
-    };
+    let model: string = selectedModel;
     if (args.gptRoute === "openrouter") {
-      withModelRoute = await configureBuiltInPiModelOnOpenRouter(
+      model = await configureBuiltInPiModelOnOpenRouter(
         args.actor,
         selectedModel,
       );
@@ -1739,20 +1738,18 @@ export function createChatEventsFixture(context: TestContext) {
 
     const usagePricingResolution =
       await createPiUsagePricingResolution(selectedModel);
-    const waiting = await withModelRoute(async () => {
-      return await sendWaitingChatInput(
-        args.actor,
-        {
-          agentId: args.agentId,
-          prompt: args.prompt,
-          model: selectedModel,
-          ...(args.codexServiceTier === undefined
-            ? {}
-            : { runOptions: { codexServiceTier: args.codexServiceTier } }),
-        },
-        usagePricingResolution,
-      );
-    });
+    const waiting = await sendWaitingChatInput(
+      args.actor,
+      {
+        agentId: args.agentId,
+        prompt: args.prompt,
+        model,
+        ...(args.codexServiceTier === undefined
+          ? {}
+          : { runOptions: { codexServiceTier: args.codexServiceTier } }),
+      },
+      usagePricingResolution,
+    );
     const threadId = waiting.threadId;
 
     const launch = async (
@@ -1760,11 +1757,9 @@ export function createChatEventsFixture(context: TestContext) {
     ): Promise<{ readonly runId: string; readonly threadId: string }> => {
       // Do not flush background work here: callers may block the launched
       // run's preparation and release it only after this returns.
-      await withModelRoute(async () => {
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-          usagePricingResolution,
-          ...options,
-        });
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
+        usagePricingResolution,
+        ...options,
       });
       return await waiting.launchedRun();
     };

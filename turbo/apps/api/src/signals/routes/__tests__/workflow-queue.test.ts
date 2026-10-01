@@ -4,21 +4,20 @@ import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/mo
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach } from "vitest";
+import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
-import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
   readChatEventContextFixture,
   setQueuedUserMessageCreatedAtFixture,
   setWorkflowQueueEventCreatedAtFixture,
 } from "../../../test-fixtures/chat-events";
-import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -41,7 +40,11 @@ import {
 } from "./helpers/chat-event";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
+import {
+  coolDownBuiltInCandidatesFixture,
+  seedBuiltInModelCandidateKeys,
+  seedBuiltInModelKey,
+} from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -492,31 +495,38 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
 describe("workflow queue", () => {
   it("rejects a workflow automation when every built-in route is unavailable", async () => {
     const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    // The automation thread keeps its model; only its route turns built-in.
+    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
     await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
       {
-        model: "claude-fable-5-1",
+        model,
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    await setOrgModelPolicyProviderTypeFixture({
-      orgId: scenario.orgId,
-      model: "claude-fable-5-1",
-      defaultProviderType: "built-in",
-    });
-
-    const response = await withBuiltInModelRuntimeRouteUnavailableForTest(
-      "claude-fable-5-1",
-      async () => {
-        return await postWorkflowWebhook(
-          automation,
-          "launch without a built-in model key",
-        );
+    // The automation thread pins the preferred Built-in model.
+    const automation = await createWebhookAutomation(scenario);
+    // Provider failures cool down every Built-in candidate of the model.
+    await coolDownBuiltInCandidatesFixture(context, model, [
+      {
+        provider_type: "anthropic-api-key",
+        upstream_model: "claude-fable-5-1",
       },
+      {
+        provider_type: "openrouter-api-key",
+        upstream_model: "anthropic/claude-fable-5.1",
+      },
+    ]);
+
+    const response = await postWorkflowWebhook(
+      automation,
+      "launch without a built-in model key",
     );
     // The trigger is accepted; the launch rejection appears in the thread.
     expectAccepted(response);

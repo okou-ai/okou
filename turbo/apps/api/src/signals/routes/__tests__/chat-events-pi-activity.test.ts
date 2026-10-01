@@ -175,7 +175,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+    const model = await configureBuiltInPiModelOnOpenRouter(
       actor,
       "gpt-6-luna",
     );
@@ -193,18 +193,16 @@ describe("CHAT-02: model-first provider policies", () => {
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
-    const run = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(
-        actor,
-        {
-          agentId,
-          prompt,
-          model: "gpt-6-luna",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
+    const run = await sendChatRunAfterPick(
+      actor,
+      {
+        agentId,
+        prompt,
+        model,
+        runOptions: { codexServiceTier: "fast" },
+      },
+      usagePricingResolution,
+    );
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
@@ -594,12 +592,10 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_ALREADY_COMMITTED]",
     );
 
-    const failedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject a non-native Sandbox H2",
-      });
+    const failedRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "reject a non-native Sandbox H2",
     });
     const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
@@ -685,12 +681,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.requestCancelRun(actor, explicitResume.runId, [200]);
     await waitForRunStatus(actor, explicitResume.runId, "cancelled");
 
-    const cancelledRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject H2 after an explicit Pi run is cancelled",
-      });
+    const cancelledRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "reject H2 after an explicit Pi run is cancelled",
     });
     const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
@@ -715,12 +709,10 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_RUN_TERMINAL]",
     );
 
-    const retry = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "resume only the last completed Pi checkpoint",
-      });
+    const retry = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "resume only the last completed Pi checkpoint",
     });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
     expect(retryClaim.claim.resumeSession).toMatchObject({
@@ -755,12 +747,10 @@ describe("CHAT-02: model-first provider policies", () => {
       "[PI_H2_RUN_TERMINAL]",
     );
 
-    const reportedFailureRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "retry one atomically reported Pi failure",
-      });
+    const reportedFailureRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "retry one atomically reported Pi failure",
     });
     const reportedFailureClaim = await claimChatRun(
       runnerGroup,
@@ -809,13 +799,10 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
     await expectThreadModelTokens(context, actor, run.threadId, 2);
-    const probe = await withOpenRouterRoute(() => {
-      return sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt:
-          "verify the canonical completed checkpoint after rejected writes",
-      });
+    const probe = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "verify the canonical completed checkpoint after rejected writes",
     });
     const probeClaim = await claimChatRun(runnerGroup, probe.runId);
     expect(probeClaim.claim.resumeSession).toMatchObject({

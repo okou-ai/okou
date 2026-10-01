@@ -32,8 +32,8 @@ import {
   readRunModelRuntimeRouteFixture,
   setRunModelRuntimeRouteFixture,
 } from "../../../test-fixtures/agent-runs";
-import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -53,6 +53,7 @@ import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
+  coolDownBuiltInCandidatesFixture,
   registerBuiltInCandidateCooldownCleanup,
   resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
@@ -81,6 +82,14 @@ const chatCallbacks = createChatCallbacksApi(context);
 const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
+// Built-in candidates of claude-fable-5-1 in the global model catalog.
+const CLAUDE_FABLE_5_1_CANDIDATES = [
+  { provider_type: "anthropic-api-key", upstream_model: "claude-fable-5-1" },
+  {
+    provider_type: "openrouter-api-key",
+    upstream_model: "anthropic/claude-fable-5.1",
+  },
+] as const;
 type UserMessage = Extract<
   ChatEvent,
   {
@@ -3281,6 +3290,12 @@ describe("CHAT-02: drain-time admission failure", () => {
   it("terminalizes a queued Web message with neutral copy when every built-in route is unavailable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    // A test-owned mirror of Claude Fable 5.1 keeps candidate cooldowns
+    // isolated from concurrent tests that route the real model.
+    const { model, restore } =
+      await insertBuiltInModelMirrorFixture("claude-fable-5-1");
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
 
     const anchor = await startChatRun(actor, {
       agentId,
@@ -3295,27 +3310,24 @@ describe("CHAT-02: drain-time admission failure", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-fable-5-1",
+        model,
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    await chat.updateThreadModelSelection(
-      actor,
-      anchor.threadId,
-      "claude-fable-5-1",
-    );
+    await chat.updateThreadModelSelection(actor, anchor.threadId, model);
     chatCallbacks.mockChatOutputEvents([]);
-
-    await withBuiltInModelRuntimeRouteUnavailableForTest(
-      "claude-fable-5-1",
-      async () => {
-        await completeChatRunOk(anchor.runId, anchorHeaders);
-        await flushWaitUntilForTest();
-      },
+    // Provider failures cool down every Built-in candidate of the model.
+    await coolDownBuiltInCandidatesFixture(
+      context,
+      model,
+      CLAUDE_FABLE_5_1_CANDIDATES,
     );
+
+    await completeChatRunOk(anchor.runId, anchorHeaders);
+    await flushWaitUntilForTest();
 
     const terminal = await waitForThreadMessages(
       actor,

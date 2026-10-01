@@ -11,6 +11,7 @@ import { onTestFinished } from "vitest";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import type { TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
+import { now } from "../../../../lib/time";
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
 
 const RUNTIME_STATE_ROUTE = "/api/test/runtime-state";
@@ -153,6 +154,11 @@ type BuiltInModelRuntimeRouteFixture = NonNullable<
   TestRuntimeStateActionResponse["built_in_model_route"]
 >;
 
+type BuiltInModelCandidateFixture = Pick<
+  BuiltInModelRuntimeRouteFixture,
+  "provider_type" | "upstream_model"
+>;
+
 export async function resolveBuiltInModelRouteFixture(
   context: TestContext,
   selectedModel: string,
@@ -167,7 +173,7 @@ export async function resolveBuiltInModelRouteFixture(
 export async function setBuiltInCandidateCooldownFixture(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
   unavailableUntil: Date,
 ): Promise<void> {
   await postAction(context, {
@@ -180,10 +186,30 @@ export async function setBuiltInCandidateCooldownFixture(
   registerBuiltInCandidateCooldownCleanup(context, selectedModel, route);
 }
 
+/**
+ * Puts the given Built-in candidates of a test-owned model into cooldown for
+ * the rest of the test, as the provider-failure path does in production.
+ */
+export async function coolDownBuiltInCandidatesFixture(
+  context: TestContext,
+  selectedModel: string,
+  candidates: readonly BuiltInModelCandidateFixture[],
+): Promise<void> {
+  const unavailableUntil = new Date(now() + 60 * 60 * 1000);
+  for (const candidate of candidates) {
+    await setBuiltInCandidateCooldownFixture(
+      context,
+      selectedModel,
+      candidate,
+      unavailableUntil,
+    );
+  }
+}
+
 export async function deleteBuiltInCandidateCooldownFixture(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
 ): Promise<void> {
   await postAction(context, {
     action: "delete-built-in-candidate-cooldown",
@@ -196,7 +222,7 @@ export async function deleteBuiltInCandidateCooldownFixture(
 export function registerBuiltInCandidateCooldownCleanup(
   context: TestContext,
   selectedModel: string,
-  route: BuiltInModelRuntimeRouteFixture,
+  route: BuiltInModelCandidateFixture,
 ): void {
   onTestFinished(async () => {
     await deleteBuiltInCandidateCooldownFixture(context, selectedModel, route);
