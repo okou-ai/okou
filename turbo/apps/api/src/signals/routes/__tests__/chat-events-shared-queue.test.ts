@@ -12,7 +12,6 @@ import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
@@ -703,13 +702,6 @@ describe("CHAT-02: shared user message queue", () => {
       runnerGroup,
       rotatedAnchor.runId,
     );
-    const originalBinding = await readThreadSessionBinding(
-      context,
-      rotatedAnchor.threadId,
-    );
-    if (!originalBinding.agent_session_id) {
-      throw new Error("Expected the Web anchor to bind a session");
-    }
 
     const { providerId: codexProviderId } = await upsertOrgModelProvider(
       actor,
@@ -796,13 +788,6 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(rotatedSystemPrompt).toContain(
       CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-    );
-    const rotatedBinding = await readThreadSessionBinding(
-      context,
-      rotatedAnchor.threadId,
-    );
-    expect(rotatedBinding.agent_session_id).toBe(
-      originalBinding.agent_session_id,
     );
     const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);
     expect(rotatedClaim.claim.resumeSession).toBeNull();

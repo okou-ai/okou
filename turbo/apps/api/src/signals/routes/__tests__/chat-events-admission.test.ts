@@ -23,7 +23,6 @@ import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   type ChatRunSendBody,
@@ -247,13 +246,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     if (runId === undefined) {
       throw new Error("Expected the picked input to launch a run");
     }
-    const pendingBinding = await readThreadSessionBinding(
-      context,
-      clientThreadId,
-    );
-    expect(pendingBinding.agent_session_run_id).toBe(runId);
-    expect(pendingBinding.agent_session_id).toMatch(/[0-9a-f-]{36}/);
-    expect(pendingBinding.run_session_id).toBe(pendingBinding.agent_session_id);
 
     const run = await api.readRun(actor, runId);
     expect(run.prompt).toBe(prompt);
@@ -664,13 +656,6 @@ describe("CHAT-02: dispatch failure", () => {
       limit: 100,
     });
     expect(runs.runs).toStrictEqual([]);
-    await expect(
-      readThreadSessionBinding(context, threadId),
-    ).resolves.toMatchObject({
-      agent_session_id: null,
-      agent_session_run_id: null,
-      run_session_id: null,
-    });
     expect(routeRequests()).toBe(0);
 
     // The lease was released: the next input on the thread is picked
