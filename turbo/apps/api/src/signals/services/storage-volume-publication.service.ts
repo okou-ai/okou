@@ -21,6 +21,7 @@ import { preparePiResourceIndex } from "../../lib/pi-resource-index";
 import {
   enqueuePiResourceVersionIndexes,
   publishPiResourceVersionIndex,
+  readPiResourceVersionIndexes,
 } from "./pi-resource-version-index.service";
 import { writeDb$, type Db } from "../external/db";
 import { putS3Object } from "../external/s3";
@@ -56,9 +57,12 @@ export interface PreparedServerSideVolume {
   readonly storageName: string;
   readonly version: PreparedStorageVersion;
   readonly updatedAt: Date;
-  readonly piResourceIndex?: {
-    readonly projection: PiResourceVersionIndex | undefined;
-  };
+  readonly piResourceIndex?:
+    | {
+        readonly kind: "prepared";
+        readonly projection: PiResourceVersionIndex | undefined;
+      }
+    | { readonly kind: "reused" };
 }
 
 export interface ServerSideVolumeStorage {
@@ -355,19 +359,42 @@ export const prepareVolumeServerSideWithDb$ = command(
       message: null,
       createdBy: SERVER_SIDE_STORAGE_VERSION_CREATOR,
     };
-    const bucketName = env("R2_USER_STORAGES_BUCKET_NAME");
-    // Use the canonical archive encoder even on deduplicated writes so path
-    // normalization and duplicate entries have exactly the published semantics.
-    const preparedArchive = input.piResourceIndex
-      ? await createVolumeArchive(files, signal)
-      : undefined;
-    const piResourceIndex =
-      preparedArchive === undefined
-        ? undefined
-        : { projection: preparePiResourceIndex(preparedArchive) };
     const existing = await readStorageVersion(writeDb, versionId, signal);
     if (existing) {
       assertServerSideVersionIdentity(existing, expectedVersion);
+      if (input.piResourceIndex) {
+        const { indexes } = await readPiResourceVersionIndexes(
+          writeDb,
+          [versionId],
+          signal,
+        );
+        const indexed = indexes.get(versionId);
+        if (indexed && indexed.storageId !== storage.id) {
+          throw new StorageVersionIdentityConflictError(versionId);
+        }
+        if (indexed) {
+          return {
+            storageName: input.storageName,
+            version: existing,
+            updatedAt,
+            piResourceIndex: { kind: "reused" },
+          };
+        }
+      } else {
+        return { storageName: input.storageName, version: existing, updatedAt };
+      }
+    }
+
+    // Misses still use the published encoder: normalized/duplicate paths and
+    // archive limits cannot be reproduced by indexing the raw input files.
+    const archiveBuffer = await createVolumeArchive(files, signal);
+    const piResourceIndex = input.piResourceIndex
+      ? {
+          kind: "prepared" as const,
+          projection: preparePiResourceIndex(archiveBuffer),
+        }
+      : undefined;
+    if (existing) {
       return {
         storageName: input.storageName,
         version: existing,
@@ -376,8 +403,7 @@ export const prepareVolumeServerSideWithDb$ = command(
       };
     }
 
-    const archiveBuffer =
-      preparedArchive ?? (await createVolumeArchive(files, signal));
+    const bucketName = env("R2_USER_STORAGES_BUCKET_NAME");
     const manifest: S3StorageManifest = {
       version: versionId,
       createdAt: updatedAt.toISOString(),
@@ -443,7 +469,9 @@ export async function commitPreparedVolumeServerSide(
   signal.throwIfAborted();
   // Keep Storage-before-index lock ordering across all publication paths. Both
   // references become visible together when the caller commits its transaction.
-  if (args.volume.piResourceIndex) {
+  // Reused ready indexes are already durable: do not rewrite them or interfere
+  // with index ownership. The registered version was revalidated above.
+  if (args.volume.piResourceIndex?.kind === "prepared") {
     await publishPiResourceVersionIndex(
       {
         db: args.db,
@@ -453,7 +481,7 @@ export async function commitPreparedVolumeServerSide(
       },
       signal,
     );
-  } else {
+  } else if (!args.volume.piResourceIndex) {
     await enqueuePiResourceVersionIndexes(
       args.db,
       [args.volume.version.versionId],

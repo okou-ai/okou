@@ -112,6 +112,34 @@ crash-recoverable upload job. Ordinary updates and bootstrap now use the shared
 preparation/DB-only publication helpers. The old transaction wrapper has no
 remaining caller and is retired.
 
+## Reuse indexed server-side volumes
+
+Server-side preparation validates input paths and logical hashes, uses the caller's
+explicitly captured Storage generation when supplied (otherwise resolves the
+canonical identity), and checks registered version metadata before encoding an
+archive. For an indexed registered version, a current-extractor ready
+projection is read through the runtime schema/hash validation boundary and must
+belong to that exact Storage. A valid hit needs no temporary files, tar/gzip or
+archive decode. Corrupt ready data fails preparation instead of becoming a miss.
+The index's gzip-size hint does not change logical content identity or the
+registered archive size.
+
+`PreparedServerSideVolume.piResourceIndex` distinguishes `prepared` projection
+work from `reused` readiness. Commit still revalidates/registers the version and
+moves HEAD in its existing transaction; a reused receipt neither upserts the
+index nor requeues or clears worker ownership. Unindexed publication still
+queues durable work. Missing, pending, running, unindexable or other-extractor
+indexes keep canonical archive preparation and synchronous index publication,
+without HEAD/PUT probes on a registered version. This preserves normalized and
+duplicate-path semantics, binary/text discovery and archive/projection limits;
+raw input files are never used as a substitute for the canonical decoder.
+
+Official catalog historical preparation and A-B-A publication use the same
+boundary. This is an in-process receipt change only, with no migration or public
+API/Runner format change. Old/new APIs keep the existing extractor schema and
+source/lease fences. The skipped work is code-verified; production latency
+improvement has not been measured.
+
 ## Remove references before objects
 
 Clerk organization/user cleanup locks the owned Storage parents in UUID order.
