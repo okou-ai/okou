@@ -4,7 +4,11 @@ import type {
   TestSystemStoragePresignedUrlCacheStateActionBody,
   TestSystemStoragePresignedUrlCacheStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import {
+  getCustomSkillStorageName,
+  SYSTEM_ORG_ID,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -13,8 +17,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import { seedReadOnlyPresignedUrlCacheFixture } from "../../../test-fixtures/storage-presigned-url-cache";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -99,6 +103,13 @@ async function stateAction(
   return (await response.json()) as TestSystemStoragePresignedUrlCacheStateActionResponse;
 }
 
+/**
+ * Every run mounts the seed system skills from the system organization. The
+ * request-owned resolution points one seed skill at the synthetic storage.
+ */
+const SYSTEM_SKILL = "gen";
+const SYSTEM_SKILL_MOUNT_PATH = `/home/user/.claude/skills/${SYSTEM_SKILL}`;
+
 function createOwnedSystemStorageFixture(
   label: string,
 ): OwnedSystemStorageFixture {
@@ -108,7 +119,7 @@ function createOwnedSystemStorageFixture(
     storageId,
     storageName: `system-cache-${label}-${suffix}`,
     s3Prefix: `${SYSTEM_ORG_ID}/${storageId}`,
-    mountPath: `/system-cache/${label}-${suffix}`,
+    mountPath: SYSTEM_SKILL_MOUNT_PATH,
   };
 }
 
@@ -304,22 +315,13 @@ async function entitledDirectRunActor(): Promise<{
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
-  const composeName = `system-cache-${randomUUID().slice(0, 8)}`;
-  const compose = await api.createDirectAgent(actor, {
-    version: "1",
-    agents: {
-      [composeName]: {
-        framework: "claude-code",
-        environment: { ANTHROPIC_API_KEY: "system-cache-test-key" },
-      },
-    },
+  // The Claude Code route mounts skills under /home/user/.claude/skills.
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "System storage cache agent",
+    visibility: "private",
   });
-  return {
-    actor,
-    agentId: compose.agentId,
-    runnerGroup,
-  };
+  return { actor, agentId: agent.agentId, runnerGroup };
 }
 
 async function createAndClaimOwnedSystemStorage(args: {
@@ -331,16 +333,12 @@ async function createAndClaimOwnedSystemStorage(args: {
 }): Promise<{
   readonly mount: ClaimedStorageMount;
 }> {
-  const api = createRunsApi(context);
-  const run = await api.createDirectRun(args.actor, {
+  const api = createRunsApi(context, {
+    [SYSTEM_SKILL]: args.fixture.storageName,
+  });
+  const run = await api.createThreadRun(args.actor, {
     agentId: args.agentId,
     prompt: args.prompt,
-    ownedSystemStorageMounts: [
-      {
-        storageId: args.fixture.storageId,
-        mountPath: args.fixture.mountPath,
-      },
-    ],
   });
   onTestFinished(async () => {
     await api.requestCancelRun(args.actor, run.runId, [200, 404]);
@@ -487,28 +485,25 @@ describe("system storage presigned URL cache", () => {
     const runFixture = await entitledDirectRunActor();
     const storages = createStoragesBddApi(context);
     storages.mockStorageObjectsExist(2048);
-    const storageName = `mixed-batch-${randomUUID()}`;
-    const file = storageTextFile("payload.txt", "mixed cache batch payload");
-    const prepared = await storages.prepareStorage(runFixture.actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [file],
-    });
-    await storages.commitStorage(runFixture.actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [file],
-    });
-    const readOnlyObjectKey = prepared.uploads?.archive.key;
-    if (!readOnlyObjectKey) {
-      throw new Error("Expected an organization storage archive upload");
+    // 51 Agent workflow skill Storages and the seed system skill make 52
+    // mounts across the workflow-skill and system cache scopes.
+    const misc = createMiscRoutesApi(context);
+    const workflowStorageNames = new Set<string>();
+    for (let index = 0; index < 51; index += 1) {
+      const workflow = await misc.createWorkflow(
+        runFixture.actor,
+        runFixture.agentId,
+        `mixed-batch-${String(index)}-${randomUUID().slice(0, 8)}`,
+        { content: `# Mixed batch ${String(index)}\nUse for cache tests.` },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      workflowStorageNames.add(getCustomSkillStorageName(workflow.body.id));
     }
     const systemObjectKey = storageArchiveKey(fixture, versionId);
     const signedCount = mockUniquePresignedUrls();
-    const mountPaths = Array.from({ length: 51 }, (_, index) => {
-      return `/mixed-batch/${String(index)}`;
-    });
     await seedOwnedStorageCacheRow({
       fixture,
       versionId,
@@ -516,37 +511,13 @@ describe("system storage presigned URL cache", () => {
       expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
       refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
     });
-    if (!runFixture.actor.orgId) {
-      throw new Error("Expected an organization-scoped cache actor");
-    }
-    onTestFinished(
-      await seedReadOnlyPresignedUrlCacheFixture(
-        {
-          bucket: BUCKET,
-          objectKey: readOnlyObjectKey,
-          storageVersionId: prepared.versionId,
-          resolvedOrgId: runFixture.actor.orgId,
-          publicEndpoint: true,
-        },
-        expectedPresignedUrl(readOnlyObjectKey, 1),
-        context.signal,
-      ),
-    );
-    const api = createRunsApi(context);
+    const api = createRunsApi(context, {
+      [SYSTEM_SKILL]: fixture.storageName,
+    });
     const createAndClaim = async (prompt: string) => {
-      const run = await api.createDirectRun(runFixture.actor, {
+      const run = await api.createThreadRun(runFixture.actor, {
         agentId: runFixture.agentId,
         prompt,
-        additionalVolumes: mountPaths.map((mountPath) => {
-          return {
-            name: storageName,
-            version: prepared.versionId,
-            mountPath,
-          };
-        }),
-        ownedSystemStorageMounts: [
-          { storageId: fixture.storageId, mountPath: fixture.mountPath },
-        ],
       });
       onTestFinished(async () => {
         await api.requestCancelRun(runFixture.actor, run.runId, [200, 404]);
@@ -558,43 +529,44 @@ describe("system storage presigned URL cache", () => {
           claim.storageManifest,
         )?.storageMounts.filter((mount) => {
           return (
-            mount.name === storageName || mount.name === fixture.storageName
+            workflowStorageNames.has(mount.name) ||
+            mount.name === fixture.storageName
           );
         }) ?? [];
       await api.requestCancelRun(runFixture.actor, run.runId, [200]);
-      return mounts.map((mount) => {
-        return {
-          name: mount.name,
-          mountPath: mount.mountPath,
-          versionId: mount.versionId,
-          archiveUrl: mount.archiveUrl,
-        };
-      });
+      return mounts
+        .map((mount) => {
+          return {
+            name: mount.name,
+            mountPath: mount.mountPath,
+            versionId: mount.versionId,
+            archiveUrl: mount.archiveUrl,
+          };
+        })
+        .sort((left, right) => {
+          return left.name.localeCompare(right.name);
+        });
     };
 
-    const expected = [
-      ...mountPaths.map((mountPath) => {
-        return {
-          name: storageName,
-          mountPath,
-          versionId: prepared.versionId,
-          archiveUrl: expectedPresignedUrl(readOnlyObjectKey, 1),
-        };
+    const first = await createAndClaim("use the mixed-scope storage URL cache");
+    expect(first).toHaveLength(52);
+    expect(
+      first.find((mount) => {
+        return mount.name === fixture.storageName;
       }),
-      {
-        name: fixture.storageName,
-        mountPath: fixture.mountPath,
-        versionId,
-        archiveUrl: expectedPresignedUrl(systemObjectKey, 1),
-      },
-    ];
-    await expect(
-      createAndClaim("use the mixed-scope storage URL cache"),
-    ).resolves.toStrictEqual(expected);
+    ).toStrictEqual({
+      name: fixture.storageName,
+      mountPath: fixture.mountPath,
+      versionId,
+      archiveUrl: expectedPresignedUrl(systemObjectKey, 1),
+    });
+    for (const mount of first) {
+      expect(mount.archiveUrl).toStrictEqual(expect.any(String));
+    }
+    // Every URL is reused: a new signing would yield a different URL.
     await expect(
       createAndClaim("reuse the mixed-scope storage URL cache"),
-    ).resolves.toStrictEqual(expected);
-    expect(signedCount(readOnlyObjectKey)).toBe(0);
+    ).resolves.toStrictEqual(first);
     expect(signedCount(systemObjectKey)).toBe(0);
   });
 

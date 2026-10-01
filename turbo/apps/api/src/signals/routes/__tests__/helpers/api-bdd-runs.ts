@@ -339,6 +339,9 @@ export function createRunsApi(
         ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
       },
       [201],
+      systemSkillStorageResolution === undefined
+        ? {}
+        : { systemSkillStorageResolution },
     );
     if (sent.status !== 201) {
       throw new Error("Expected the Thread run send to be accepted");

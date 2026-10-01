@@ -1,13 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
-import { nowDate } from "../lib/time";
-import {
-  readOnlyStoragePresignedUrlCacheKey,
-  type ReadOnlyStoragePresignedUrlRequest,
-} from "../signals/services/system-storage-presigned-url-cache.service";
 
 /**
  * No product API can fail a cache insert after a particular pending commit.
@@ -58,33 +52,5 @@ export async function rejectPresignedCacheWriteAfterPendingFixture(
       `);
       await tx.execute(sql`DROP FUNCTION ${sql.identifier(name)}()`);
     });
-  };
-}
-
-/** Cache-hit setup for fixture-only mounts that have no chat event equivalent. */
-export async function seedReadOnlyPresignedUrlCacheFixture(
-  request: ReadOnlyStoragePresignedUrlRequest,
-  presignedUrl: string,
-  signal: AbortSignal,
-): Promise<() => Promise<void>> {
-  const cacheKey = readOnlyStoragePresignedUrlCacheKey(request);
-  const now = nowDate();
-  await db()
-    .insert(systemStoragePresignedUrlCache)
-    .values({
-      ...request,
-      cacheKey,
-      scope: "readonly_storage",
-      ttlSeconds: 2 * 24 * 60 * 60,
-      presignedUrl,
-      expiresAt: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000),
-      refreshAfter: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      lastRequestedAt: now,
-    });
-  signal.throwIfAborted();
-  return async () => {
-    await db()
-      .delete(systemStoragePresignedUrlCache)
-      .where(eq(systemStoragePresignedUrlCache.cacheKey, cacheKey));
   };
 }

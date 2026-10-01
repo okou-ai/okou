@@ -5,6 +5,7 @@ import type {
   TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-workflow-skill-storage-presigned-url-cache-state";
 import {
+  getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
@@ -12,18 +13,16 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import {
-  rejectPresignedCacheWriteAfterPendingFixture,
-  seedReadOnlyPresignedUrlCacheFixture,
-} from "../../../test-fixtures/storage-presigned-url-cache";
+import { rejectPresignedCacheWriteAfterPendingFixture } from "../../../test-fixtures/storage-presigned-url-cache";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
@@ -313,36 +312,39 @@ describe("workflow skill storage presigned URL cache", () => {
   });
 
   it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
-    const { actor, runnerGroup } = await entitledWorkflowActor();
+    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
       throw new Error("Expected readonly cache test actor to have an org");
     }
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     storages.mockStorageObjectsExist(2048);
-    const volumeName = `readonly-cache-${randomUUID().slice(0, 8)}`;
-    const file = storageTextFile("payload.txt", "readonly cache payload");
-    const prepared = await storages.prepareStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      files: [file],
+    // A custom connector's skill Storage is an ordinary organization-owned
+    // read-only mount (readonly_storage scope) of the Agent's runs.
+    const connectors = createConnectorBddApi(context);
+    const custom = await connectors.createCustomConnector(actor, {
+      displayName: "Readonly cache connector",
+      prefixTemplates: [
+        `https://readonly-cache-${randomUUID().slice(0, 8)}.example.test/api/`,
+      ],
+      fields: [
+        { key: "secret", label: "API token", kind: "secret", required: true },
+      ],
+      headerInjections: [
+        { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
+      ],
+      queryInjections: [],
+      authMode: "manual",
+      skillMarkdown: "Use the readonly cache connector.",
     });
-    await storages.commitStorage(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [file],
+    onTestFinished(async () => {
+      await connectors.deleteCustomConnector(actor, custom.id);
     });
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        cache: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "readonly-cache-key" },
-          volumes: ["data:/data"],
-        },
-      },
-      volumes: { data: { name: volumeName, version: prepared.versionId } },
+    await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
+    const volumeName = getCustomConnectorSkillStorageName(custom.id);
+    const skill = await storages.downloadStorage(actor, {
+      name: volumeName,
+      owner: "organization",
     });
     const objectKeyPrefix = await readStorageS3PrefixFixture({
       orgId: actor.orgId,
@@ -355,8 +357,8 @@ describe("workflow skill storage presigned URL cache", () => {
       async () => {
         mockUniquePresignedUrls();
         const createAndClaim = async (prompt: string) => {
-          const run = await api.createDirectRun(actor, {
-            agentId: compose.agentId,
+          const run = await api.createThreadRun(actor, {
+            agentId,
             prompt,
           });
           await api.heartbeatRunner(runnerGroup);
@@ -376,31 +378,20 @@ describe("workflow skill storage presigned URL cache", () => {
         expect(
           new URL(first.archiveUrl).searchParams.get("X-Amz-Expires"),
         ).toBe("172800");
-        const archiveObjectKey = prepared.uploads?.archive.key;
-        if (!archiveObjectKey || !actor.orgId) {
-          throw new Error("Expected an organization storage archive upload");
+        if (!actor.orgId) {
+          throw new Error("Expected an organization-scoped actor");
         }
-        onTestFinished(
-          await seedReadOnlyPresignedUrlCacheFixture(
-            {
-              bucket: BUCKET,
-              objectKey: archiveObjectKey,
-              storageVersionId: prepared.versionId,
-              resolvedOrgId: actor.orgId,
-              publicEndpoint: true,
-            },
-            first.archiveUrl,
-            context.signal,
-          ),
-        );
+        // The first run's post-commit write stores the exact URL it signed.
+        await flushWaitUntilForTest();
         const rows = await readCacheRowsByObjectKeyPrefix(
           objectKeyPrefix,
           "readonly_storage",
         );
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({
+          object_key: `${objectKeyPrefix}/${skill.versionId}/archive.tar.gz`,
           resolved_org_id: actor.orgId,
-          storage_version_id: prepared.versionId,
+          storage_version_id: skill.versionId,
           ttl_seconds: 2 * 24 * 60 * 60,
           presigned_url: first.archiveUrl,
         });
