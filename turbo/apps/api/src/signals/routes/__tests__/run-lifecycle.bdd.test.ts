@@ -1728,54 +1728,36 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   });
 
   it("preserves missing-volume and artifact resolution with exact candidates", async () => {
-    const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const storageName = `bdd-exact-candidate-${randomUUID().slice(0, 8)}`;
-    const missingComposeName = `bdd-missing-compose-${randomUUID().slice(0, 8)}`;
-    const missingAdditionalName = `bdd-missing-additional-${randomUUID().slice(0, 8)}`;
-    const storageFile = storageTextFile(
-      "candidate.txt",
-      `exact candidate ${storageName}`,
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
+    // An Agent workflow is an exact Storage candidate; a seed system skill
+    // resolved to a Storage that does not exist is a missing volume, which
+    // production skips instead of failing the run.
+    const workflowName = `exact-candidate-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      { content: "# Exact candidate\nUse only exact Storage candidates." },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
+    const workflowStorage = await storages.downloadStorage(actor, {
+      name: workflowStorageName,
+      owner: "organization",
     });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
-
-    const composeName = `bdd-exact-candidate-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        primary: { name: storageName, version: prepared.versionId },
-        optional: {
-          name: missingComposeName,
-          version: "latest",
-          optional: true,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["primary:/primary", "optional:/optional"],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    const missingStorageName = `bdd-missing-system-${randomUUID().slice(0, 8)}`;
+    const api = createRunsApi(context, { gen: missingStorageName });
     await api.heartbeatRunner(runnerGroup);
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const created = await api.createThreadRun(actor, {
+      agentId,
       prompt: "resolve only exact storage candidates",
-      additionalVolumes: [
-        { name: missingAdditionalName, mountPath: "/additional" },
-      ],
     });
     expect(created.status).toBe("pending");
 
@@ -1784,15 +1766,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!manifest) {
       throw new Error("Expected canonical Storage mounts");
     }
+    const workflowMountPath = `/home/user/.claude/skills/${workflowName}`;
     expect(manifest.storageMounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          mountPath: "/primary",
-          name: storageName,
-          versionId: prepared.versionId,
+          mountPath: workflowMountPath,
+          name: workflowStorageName,
+          versionId: workflowStorage.versionId,
         }),
       ]),
     );
+    expect(
+      manifest.storageMounts.filter((mount) => {
+        return (
+          mount.name === missingStorageName ||
+          mount.mountPath === "/home/user/.claude/skills/gen"
+        );
+      }),
+    ).toStrictEqual([]);
     const memoryMount = manifest.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
@@ -1805,10 +1796,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         runId: created.runId,
         volumes: expect.arrayContaining([
           {
-            name: "primary",
-            mountPath: "/primary",
-            vasStorageName: storageName,
-            vasVersionId: prepared.versionId,
+            name: workflowStorageName,
+            mountPath: workflowMountPath,
+            vasStorageName: workflowStorageName,
+            vasVersionId: workflowStorage.versionId,
           },
         ]),
         artifact: {
@@ -1818,6 +1809,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       }),
     ]);
+    expect(JSON.stringify(context.mocks.axiom.ingest.mock.calls)).not.toContain(
+      missingStorageName,
+    );
 
     await api.requestCancelRun(actor, created.runId, [200]);
   });
