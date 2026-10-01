@@ -3467,10 +3467,9 @@ describe("connector catalog valid lifecycle", () => {
     }
 
     const createAndClaimRun = async (prompt: string) => {
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       activeRunIds.add(run.runId);
       expect(run.status).not.toBe("failed");
@@ -3502,7 +3501,7 @@ describe("connector catalog valid lifecycle", () => {
         expect(storageMounts).toContainEqual(
           expect.objectContaining({
             name: skill.skill.storageName,
-            mountPath: `/home/user/.claude/skills/${skill.connectorSlug}`,
+            mountPath: `/home/user/.pi/agent/skills/${skill.connectorSlug}`,
             versionId: skill.selectedVersionId,
             archiveSize: 321,
             archiveUrl: expect.any(String),
