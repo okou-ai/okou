@@ -346,8 +346,16 @@ jq -e '
     .run == ".github/scripts/prepare-runner-image.sh" and
     .env.RUNNER_PATH == "runner-binary-transport/${{ matrix.target }}/runner" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}"
+  ) and
+  any(.jobs.build.steps[];
+    .name == "Upload runner image manifest" and
+    .uses == "actions/upload-artifact@v7" and
+    .with.name == "${{ steps.artifact.outputs.artifact-name }}" and
+    .with.path == "runner-image-manifest/manifest.json" and
+    .with.overwrite == true and
+    .with["retention-days"] == 7
   )
-' <<<"$workflow_json" >/dev/null || fail "build must preserve the all-target host readiness contract for hits and misses"
+' <<<"$workflow_json" >/dev/null || fail "build must preserve host readiness and republish its verified manifest on retry"
 
 jq -e '
   (.jobs.asset.needs | sort) == ["compile", "prepare"] and

@@ -597,6 +597,9 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.artifact-name }}
           path: runner-image-manifest/manifest.json
+          # A retried image job rebuilds any collected host files and republishes
+          # this same target/head/namespace identity within the workflow run.
+          overwrite: true
           retention-days: 7
 
   asset:
