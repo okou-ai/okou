@@ -705,6 +705,7 @@ test("Show the system default row locked and write only org-configured policies"
     );
     return respond(200, {
       revision: "next",
+      modelMode: "custom",
       writePreconditionRequired: false,
       policies: [],
       modelsAvailableToAdd: [],
@@ -1620,6 +1621,7 @@ test("Complete a stale workspace Codex reconnection", async () => {
 function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   return {
     revision: "administrative-snapshot-one",
+    modelMode: "custom",
     writePreconditionRequired: true,
     modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
       return (
@@ -1678,6 +1680,7 @@ function mockPriorityPolicyWrites() {
     });
     snapshot = {
       revision: crypto.randomUUID(),
+      modelMode: "custom",
       writePreconditionRequired: true,
       modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
         return (

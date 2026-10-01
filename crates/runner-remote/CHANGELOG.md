@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.7.0...runner-remote-v0.8.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+* **vnc:** add owner-selected qemu client certificate profiles ([#37408](https://github.com/okou-ai/okou/issues/37408)) ([56ca824](https://github.com/okou-ai/okou/commit/56ca824a5ee3673a06c8fb122fadac0fe6a0b83b))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.6.6...runner-remote-v0.7.0) (2026-09-30)
 
 

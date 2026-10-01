@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.725.0](https://github.com/okou-ai/okou/compare/core-v8.724.4...core-v8.725.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.532.0
+
 ## [8.724.4](https://github.com/okou-ai/okou/compare/core-v8.724.3...core-v8.724.4) (2026-09-30)
 
 

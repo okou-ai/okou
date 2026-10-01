@@ -241,6 +241,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     const currentPolicy = policy(switched ? "reconnect_required" : "available");
     return respond(200, {
       revision: "revision-1",
+      modelMode: "custom",
       writePreconditionRequired: false,
       modelsAvailableToAdd: [],
       policies: [

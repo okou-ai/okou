@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/runner-types-v0.3.4...runner-types-v0.4.0) (2026-09-30)
+
+
+### Features
+
+* make the database model catalog the model authority ([#37416](https://github.com/okou-ai/okou/issues/37416)) ([7a8cf4d](https://github.com/okou-ai/okou/commit/7a8cf4d005dea492e0375b91ac46bcf3201d902d))
+
 ## [0.3.4](https://github.com/okou-ai/okou/compare/runner-types-v0.3.3...runner-types-v0.3.4) (2026-09-30)
 
 ## [0.3.3](https://github.com/okou-ai/okou/compare/runner-types-v0.3.2...runner-types-v0.3.3) (2026-09-30)
