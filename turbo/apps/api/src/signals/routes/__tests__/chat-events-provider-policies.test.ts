@@ -706,12 +706,13 @@ describe("CHAT-02: model-first provider policies", () => {
               );
             }
             barrier.release();
+            // Own the entire source/credential read before the DB fixture closes its pool.
+            await flushWaitUntilForTest();
             return sent;
           },
         },
         context.signal,
       );
-      await flushWaitUntilForTest();
       const events = (await chat.listThreadEvents(actor, sent.body.threadId))
         .events;
       const picked = userMessages(events).find((message) => {

@@ -529,6 +529,7 @@ import {
   getBuiltInConcreteProviderType,
   getFrameworkForType,
   getSecretNameForType,
+  getSecretsForAuthMethod,
   getModelProviderFirewall,
   getRunModelAccess,
   hasAuthMethods,
@@ -687,6 +688,35 @@ function isMemberSubscriptionSource(
   scope: string | undefined,
 ): boolean {
   return isPersonalSubscriptionProviderType(type) && scope !== "org";
+}
+
+function isMigratedAccountSource(
+  args: ResolveModelProviderEnvironmentArgs,
+): boolean {
+  return args.modelProviderType === "codex-oauth-token" && !args.piExecution;
+}
+
+function isMigratedOrgAccountSource(
+  args: ResolveModelProviderEnvironmentArgs | undefined,
+): boolean {
+  return (
+    args !== undefined &&
+    args.modelProviderCredentialScope === "org" &&
+    isMigratedAccountSource(args)
+  );
+}
+
+function isPreparedRegisteredSource(
+  args: ResolveModelProviderEnvironmentArgs | undefined,
+): boolean {
+  return (
+    args !== undefined &&
+    (isMigratedRegisteredSource(
+      args.modelProviderType,
+      args.modelProviderCredentialScope,
+    ) ||
+      isMigratedOrgAccountSource(args))
+  );
 }
 
 export interface ThreadClaim {
@@ -8661,6 +8691,22 @@ export function createThreadClaimRunObjects(
         }),
       );
     }
+    if (args.modelProviderId && isMigratedAccountSource(args)) {
+      const source =
+        args.modelProviderCredentialScope === "org"
+          ? {
+              kind: "organization" as const,
+              modelProviderId: args.modelProviderId,
+            }
+          : { kind: "member" as const, accountId: args.modelProviderId };
+      return await get(
+        createModelSourceSnapshot({
+          orgId: args.orgId,
+          userId: args.userId,
+          source,
+        }),
+      );
+    }
     if (
       !args.modelProviderId ||
       !args.selectedModelOverride ||
@@ -8771,7 +8817,23 @@ export function createThreadClaimRunObjects(
         return null;
       }
       const credentialName = getSecretNameForType(type);
-      if (!credentialName || !credentials[credentialName]?.trim()) {
+      if (type === "codex-oauth-token") {
+        const authMethod =
+          source.configuration.kind === "registered-provider"
+            ? source.configuration.authMethod
+            : null;
+        const rules = authMethod
+          ? getSecretsForAuthMethod(type, authMethod)
+          : undefined;
+        if (
+          !rules ||
+          Object.entries(rules).some(([name, rule]) => {
+            return rule.required && !credentials[name];
+          })
+        ) {
+          return null;
+        }
+      } else if (!credentialName || !credentials[credentialName]?.trim()) {
         return null;
       }
       const compiled = compileModelRuntime({
@@ -8801,6 +8863,10 @@ export function createThreadClaimRunObjects(
         environment: { ...compiled.environment },
         secrets: deferred && !capture ? {} : { ...compiled.secrets },
         selectedModel: compiled.selectedModel,
+        ...(source.configuration.kind === "registered-provider" &&
+        source.configuration.authMethod
+          ? { authMethod: source.configuration.authMethod }
+          : {}),
         ...(deferred
           ? {
               secretConnectorMap: Object.fromEntries(
@@ -8815,6 +8881,9 @@ export function createThreadClaimRunObjects(
                     {
                       sourceType: "model-provider" as const,
                       sourceUserId,
+                      ...(source.identity.kind === "member"
+                        ? { sourceId: source.identity.accountId }
+                        : {}),
                       metadataKey: type,
                     },
                   ];
@@ -9094,7 +9163,7 @@ export function createThreadClaimRunObjects(
     ]);
     const args = context?.environmentArgs;
     const type = args?.modelProviderType;
-    if (isMigratedRegisteredSource(type, args?.modelProviderCredentialScope)) {
+    if (isPreparedRegisteredSource(args)) {
       return null;
     }
 
@@ -9185,6 +9254,12 @@ export function createThreadClaimRunObjects(
         isPersonalSubscriptionProviderType(args.modelProviderType) &&
         args.modelProviderCredentialScope !== "org"
       ) {
+        if (
+          args.modelProviderType === "codex-oauth-token" &&
+          !args.piExecution
+        ) {
+          return await get(internalPreparedConfiguredEnvironment$);
+        }
         const personal = await get(pinnedPersonalProviderSnapshot$);
         return personal
           ? await personalProviderEnvironmentFromSnapshot(

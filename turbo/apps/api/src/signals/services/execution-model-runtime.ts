@@ -6,6 +6,7 @@ import {
   getProviderRuntimeModel,
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   getSecretNameForType,
+  getSecretsForAuthMethod,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
@@ -64,6 +65,84 @@ export interface CompiledModelRuntime {
   readonly authentication: ModelAuthentication;
   readonly environment: Readonly<Record<string, string>>;
   readonly secrets: Readonly<Record<string, string>>;
+}
+
+function compileAccountRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
+  const { source, selection, credentials } = input;
+  if (
+    selection.kind !== "configured" ||
+    source.configuration.kind !== "registered-provider" ||
+    source.configuration.providerType !== "codex-oauth-token"
+  ) {
+    throw new Error("Account runtime requires its selected Codex source");
+  }
+  const authMethod = source.configuration.authMethod;
+  const required = authMethod
+    ? getSecretsForAuthMethod("codex-oauth-token", authMethod)
+    : undefined;
+  if (!required) {
+    throw new Error("Codex account authentication method is unavailable");
+  }
+  const forwardable: Record<string, string> = {};
+  for (const [name, rule] of Object.entries(required)) {
+    const value = credentials[name];
+    if (!value) {
+      if (rule.required) {
+        throw new Error(`Account credential ${name} is missing`);
+      }
+      continue;
+    }
+    if (!rule.serverOnly) {
+      forwardable[name] = value;
+    }
+  }
+  const upstreamModel = getProviderRuntimeModel(
+    "codex-oauth-token",
+    selection.selectedModel,
+  );
+  const bindings = getModelProviderEnvBindings("codex-oauth-token");
+  if (!bindings) {
+    throw new Error("Codex account runtime bindings are unavailable");
+  }
+  const environment = Object.fromEntries(
+    Object.entries(bindings).flatMap(([name, value]) => {
+      if (value === "$model") {
+        return [[name, upstreamModel]];
+      }
+      if (value.startsWith("$secrets.")) {
+        const secretName = value.slice("$secrets.".length);
+        return forwardable[secretName]
+          ? [[name, `\${{ secrets.${secretName} }}`]]
+          : [];
+      }
+      return [[name, value]];
+    }),
+  );
+  // This identifier is routing evidence, not a bearer/refresh credential.
+  const accountId = credentials.CHATGPT_ACCOUNT_ID;
+  if (!accountId) {
+    throw new Error("Codex account routing identity is missing");
+  }
+  environment.CODEX_OAUTH_ACCOUNT_ID = accountId;
+  return {
+    selectedModel: selection.selectedModel,
+    upstreamModel,
+    providerType: "codex-oauth-token",
+    credentialOwner: source.credentialOwner,
+    transport: {
+      kind: "http",
+      protocol: "openai-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+    },
+    authentication: {
+      kind: "header",
+      headerName: "Authorization",
+      valueTemplate: "Bearer {{secret}}",
+      secretName: "CHATGPT_ACCESS_TOKEN",
+    },
+    environment,
+    secrets: forwardable,
+  };
 }
 
 function compileRegisteredRuntime(
@@ -238,7 +317,9 @@ export function compileModelRuntime(
     return compileManagedRuntime(input);
   }
   if (config.kind === "registered-provider") {
-    return compileRegisteredRuntime(input);
+    return config.providerType === "codex-oauth-token"
+      ? compileAccountRuntime(input)
+      : compileRegisteredRuntime(input);
   }
   if (
     selection.kind !== "configured" ||
