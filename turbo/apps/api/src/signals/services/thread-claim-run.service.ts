@@ -232,15 +232,10 @@ import {
   type AgentRunStoragePlan,
   type AgentRunStorageSelection,
   assertUniquePersistedMountPaths,
-  buildStorageIndex,
-  storagePrefixVersionRequests,
-  storageIndexWithPrefixVersions,
   canonicalPiMemoryMount,
   combinePreparedStorageEntries,
   countBucket,
-  exactStorageVersions,
   finalizePreparedStorage,
-  headStorageVersions,
   type MaterializedAgentRunStorage,
   OfficialWorkflowArtifactResolutionError,
   persistedStorageMountRequests,
@@ -253,11 +248,10 @@ import {
   selectedRunStorageExecution,
   skillsRootForRun,
   storageEntriesMetadata,
-  type StorageIndexEntry,
   storageIndexKey,
-  type StorageIndexRow,
   StorageManifestBuildStats,
-  uniqueStorageIndexRequests,
+  loadStorageBaseIndex,
+  withStoragePrefixVersions,
 } from "./execution-storage-manifest.service";
 import {
   type AtomicLaunchCommitResult,
@@ -657,7 +651,7 @@ import { userTemplates } from "@okouai/db/schema/user-template";
 import { variables } from "@okouai/db/schema/variable";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { isValidVersionPrefix } from "@okouai/core/version-id";
+
 import {
   and,
   asc,
@@ -671,7 +665,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  like,
   lte,
   max,
   min,
@@ -680,7 +673,7 @@ import {
   sql,
   sum,
 } from "drizzle-orm";
-import { alias, unionAll } from "drizzle-orm/pg-core";
+import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
@@ -10595,74 +10588,10 @@ export function createThreadClaimRunObjects(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const index = await measureApiDispatchTiming(
+    const index = await loadStorageBaseIndex(
+      input.db,
+      input.requests,
       input.timing,
-      "api_dispatch_prepare_storage_manifest_load_storage_index",
-      "nested",
-      async () => {
-        const uniqueRequests = uniqueStorageIndexRequests(input.requests);
-        if (uniqueRequests.length === 0) {
-          return new Map<string, StorageIndexEntry>();
-        }
-        const orgIds = uniqueRequests.map((request) => {
-          return request.lookup.orgId;
-        });
-        const userIds = uniqueRequests.map((request) => {
-          return request.lookup.userId;
-        });
-        const names = uniqueRequests.map((request) => {
-          return request.lookup.name;
-        });
-        const exactVersionIds = uniqueRequests.map((request) => {
-          return request.exactVersionId;
-        });
-        const rows: StorageIndexRow[] = await input.db
-          .select({
-            orgId: storages.orgId,
-            userId: storages.userId,
-            name: storages.name,
-            storageId: storages.id,
-            headVersionId: storages.headVersionId,
-            s3Prefix: storages.s3Prefix,
-            headId: headStorageVersions.id,
-            headS3Key: headStorageVersions.s3Key,
-            headArchiveSize: headStorageVersions.archiveSize,
-            headFileCount: headStorageVersions.fileCount,
-            exactId: exactStorageVersions.id,
-            exactS3Key: exactStorageVersions.s3Key,
-            exactArchiveSize: exactStorageVersions.archiveSize,
-            exactFileCount: exactStorageVersions.fileCount,
-          })
-          .from(storages)
-          .innerJoin(
-            sql`unnest(
-        ${sql.param(orgIds)}::text[],
-        ${sql.param(userIds)}::text[],
-        ${sql.param(names)}::varchar(256)[],
-        ${sql.param(exactVersionIds)}::varchar(64)[]
-      ) AS requested(org_id, user_id, name, version_id)`,
-            and(
-              eq(storages.orgId, sql`requested.org_id`),
-              eq(storages.userId, sql`requested.user_id`),
-              eq(storages.name, sql`requested.name`),
-            ),
-          )
-          .leftJoin(
-            headStorageVersions,
-            eq(storages.headVersionId, headStorageVersions.id),
-          )
-          .leftJoin(
-            exactStorageVersions,
-            and(
-              eq(
-                exactStorageVersions.id,
-                sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
-              ),
-              eq(exactStorageVersions.storageId, storages.id),
-            ),
-          );
-        return buildStorageIndex(rows);
-      },
     );
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.
@@ -10670,38 +10599,13 @@ export function createThreadClaimRunObjects(
   });
   const capturedStorageIndex$ = computed(async (get) => {
     const { selection, input, index } = await get(capturedStorageBaseIndex$);
-    const requests = storagePrefixVersionRequests(input.requests, index);
-    const queries = requests.map((request) => {
-      return input.db
-        .select({
-          storageId: storageVersions.storageId,
-          id: storageVersions.id,
-          s3Key: storageVersions.s3Key,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
-        })
-        .from(storageVersions)
-        .where(
-          and(
-            eq(storageVersions.storageId, request.storageId),
-            or(
-              eq(storageVersions.id, request.version),
-              isValidVersionPrefix(request.version)
-                ? like(storageVersions.id, `${request.version}%`)
-                : undefined,
-            ),
-          ),
-        )
-        .orderBy(desc(eq(storageVersions.id, request.version)))
-        .limit(2);
-    });
-    const [first, second, ...remaining] = queries;
-    const versions = first
-      ? await (second ? unionAll(first, second, ...remaining) : first)
-      : [];
     return {
       selection,
-      storageIndex: storageIndexWithPrefixVersions(index, versions),
+      storageIndex: await withStoragePrefixVersions(
+        input.db,
+        input.requests,
+        index,
+      ),
     };
   });
   const agentRunStorageStoragePlan$ = computed(

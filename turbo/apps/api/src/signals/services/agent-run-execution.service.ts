@@ -54,21 +54,19 @@ import {
   type SecretConnectorMetadata,
   piMemoryRecallSelectionSchema,
 } from "@okouai/api-contracts/contracts/runners";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
+
 import {
   sql,
   and,
   eq,
-  like,
   isNull,
   inArray,
   or,
   asc,
-  desc,
   isNotNull,
   ne,
 } from "drizzle-orm";
-import { isValidVersionPrefix } from "@okouai/core/version-id";
+
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import {
   createMemorySummaryProjectionObjects,
@@ -316,22 +314,16 @@ import {
   ResolvedStorageEntries,
   ResolvedStorageManifestEntryPlans,
   StorageIndex,
-  StorageIndexEntry,
-  StorageIndexRequest,
-  StorageIndexRow,
   StorageManifestBuildStats,
   StorageManifestEntryKind,
   StorageManifestEntryPhaseTimings,
   StorageRequest,
   StorageResolution,
   assertUniquePersistedMountPaths,
-  buildStorageIndex,
   canonicalPiMemoryMount,
   combinePreparedStorageEntries,
   countBucket,
-  exactStorageVersions,
   finalizePreparedStorage,
-  headStorageVersions,
   mergeStorageEntries,
   persistedStorageMountRequests,
   prepareRequestStorageResolution,
@@ -345,11 +337,10 @@ import {
   skillsRootForRun,
   storageEntriesMetadata,
   storageIndexKey,
-  storageIndexWithPrefixVersions,
   storageManifestCountBucket,
-  storagePrefixVersionRequests,
-  uniqueStorageIndexRequests,
   writebackStorageEntryMetadata,
+  loadStorageBaseIndex,
+  withStoragePrefixVersions,
 } from "./execution-storage-manifest.service";
 import {
   PreparedConnectorContext,
@@ -529,121 +520,17 @@ export interface StorageIndexInput {
   readonly timing: ApiDispatchTimingCollector | undefined;
 }
 
-function storageIndexRequestColumns(requests: readonly StorageIndexRequest[]) {
-  return {
-    orgIds: requests.map((request) => {
-      return request.lookup.orgId;
-    }),
-    userIds: requests.map((request) => {
-      return request.lookup.userId;
-    }),
-    names: requests.map((request) => {
-      return request.lookup.name;
-    }),
-    exactVersionIds: requests.map((request) => {
-      return request.exactVersionId;
-    }),
-  };
-}
-
 function createStorageIndexObject(
   input$: Computed<Promise<StorageIndexInput>>,
 ): Computed<Promise<StorageIndex>> {
   return computed(async (get) => {
     const input = await get(input$);
-    return await measureApiDispatchTiming(
+    const index = await loadStorageBaseIndex(
+      input.db,
+      input.requests,
       input.timing,
-      "api_dispatch_prepare_storage_manifest_load_storage_index",
-      "nested",
-      async () => {
-        const uniqueRequests = uniqueStorageIndexRequests(input.requests);
-        if (uniqueRequests.length === 0) {
-          return new Map<string, StorageIndexEntry>();
-        }
-
-        const { orgIds, userIds, names, exactVersionIds } =
-          storageIndexRequestColumns(uniqueRequests);
-        // Raw array interpolation expands to a SQL tuple in Drizzle. Keep each
-        // zipped array in one driver parameter so the statement shape stays fixed.
-        const rows: StorageIndexRow[] = await input.db
-          .select({
-            orgId: storages.orgId,
-            userId: storages.userId,
-            name: storages.name,
-            storageId: storages.id,
-            headVersionId: storages.headVersionId,
-            s3Prefix: storages.s3Prefix,
-            headId: headStorageVersions.id,
-            headS3Key: headStorageVersions.s3Key,
-            headArchiveSize: headStorageVersions.archiveSize,
-            headFileCount: headStorageVersions.fileCount,
-            exactId: exactStorageVersions.id,
-            exactS3Key: exactStorageVersions.s3Key,
-            exactArchiveSize: exactStorageVersions.archiveSize,
-            exactFileCount: exactStorageVersions.fileCount,
-          })
-          .from(storages)
-          .innerJoin(
-            sql`unnest(
-        ${sql.param(orgIds)}::text[],
-        ${sql.param(userIds)}::text[],
-        ${sql.param(names)}::varchar(256)[],
-        ${sql.param(exactVersionIds)}::varchar(64)[]
-      ) AS requested(org_id, user_id, name, version_id)`,
-            and(
-              eq(storages.orgId, sql`requested.org_id`),
-              eq(storages.userId, sql`requested.user_id`),
-              eq(storages.name, sql`requested.name`),
-            ),
-          )
-          .leftJoin(
-            headStorageVersions,
-            eq(storages.headVersionId, headStorageVersions.id),
-          )
-          .leftJoin(
-            exactStorageVersions,
-            and(
-              eq(
-                exactStorageVersions.id,
-                sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
-              ),
-              eq(exactStorageVersions.storageId, storages.id),
-            ),
-          );
-
-        const index = buildStorageIndex(rows);
-        const prefixes = storagePrefixVersionRequests(input.requests, index);
-        const queries = prefixes.map((request) => {
-          return input.db
-            .select({
-              storageId: storageVersions.storageId,
-              id: storageVersions.id,
-              s3Key: storageVersions.s3Key,
-              archiveSize: storageVersions.archiveSize,
-              fileCount: storageVersions.fileCount,
-            })
-            .from(storageVersions)
-            .where(
-              and(
-                eq(storageVersions.storageId, request.storageId),
-                or(
-                  eq(storageVersions.id, request.version),
-                  isValidVersionPrefix(request.version)
-                    ? like(storageVersions.id, `${request.version}%`)
-                    : undefined,
-                ),
-              ),
-            )
-            .orderBy(desc(eq(storageVersions.id, request.version)))
-            .limit(2);
-        });
-        const [first, second, ...remaining] = queries;
-        const versions = first
-          ? await (second ? unionAll(first, second, ...remaining) : first)
-          : [];
-        return storageIndexWithPrefixVersions(index, versions);
-      },
     );
+    return await withStoragePrefixVersions(input.db, input.requests, index);
   });
 }
 
