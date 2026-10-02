@@ -13463,15 +13463,15 @@ export interface RunConnectorReadInput {
   >;
 }
 
+type RunConnectorSelectionObject = Computed<
+  Promise<RunConnectorSelection | CreateRunErrorResult>
+>;
+
 export interface RunConnectorContextSnapshot {
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
 }
-
-type RunConnectorSelectionObject = Computed<
-  Promise<RunConnectorSelection | CreateRunErrorResult>
->;
 
 export interface RunConnectorPreparation {
   readonly selection: RunConnectorSelection;
@@ -13935,12 +13935,13 @@ export function runConnectorAccountCandidatesFromRows(args: {
 }
 
 function createRunCustomConnectorDefinitionRowsObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
+  input: Omit<RunConnectorReadInput, "db">,
+  scope: EffectiveConnectorScope,
 ) {
   return computed(async (get) => {
-    const { db, args, timing } = await get(input$);
-    const ids = (await get(scope$)).allowedCustomConnectorIds;
+    const { args, timing } = input;
+    const db = get(db$);
+    const ids = scope.allowedCustomConnectorIds;
     if (ids.length === 0) {
       return [];
     }
@@ -14066,41 +14067,6 @@ export function customConnectorCandidateRuntimeRows(args: {
       }),
     };
   });
-}
-
-function createRunConnectorSelectionObject(
-  input$: AsyncRead<RunConnectorReadInput>,
-  scope$: RunConnectorScopeObject,
-  definitionRows$: RunCustomConnectorDefinitionRowsObject,
-  threadSelections$: Computed<
-    Promise<ThreadConnectorSelectionIds | CreateRunErrorResult | undefined>
-  >,
-  selectedCatalog$?: Computed<Promise<RunConnectorCatalogSelection>>,
-) {
-  const catalog$ =
-    selectedCatalog$ ??
-    createRunConnectorCatalogObjects(input$, scope$, definitionRows$).catalog$;
-  return computed(
-    async (get): Promise<RunConnectorSelection | CreateRunErrorResult> => {
-      const [connectorCatalogSelection, threadConnectorSelectionIds] =
-        await Promise.all([get(catalog$), get(threadSelections$)]);
-      if (isRouteError(threadConnectorSelectionIds)) {
-        return threadConnectorSelectionIds;
-      }
-      const scope = await get(scope$);
-      return {
-        connectorCatalogSelection,
-        threadConnectorSelectionIds,
-        connectorScope:
-          connectorCatalogSelection.kind === "scoped"
-            ? connectorScopeForRuntimeSnapshot(
-                scope,
-                connectorCatalogSelection.selection,
-              )
-            : scope,
-      };
-    },
-  );
 }
 
 interface RunConnectorMaterializationFacts {
@@ -14779,70 +14745,61 @@ function createRunConnectorMaterializationObject(
 ) {
   return new RunConnectorMaterializationOwner(facts).connectorSnapshot$;
 }
+interface CapturedRunConnectorSelectionFacts {
+  readonly input: Omit<RunConnectorReadInput, "db">;
+  readonly scope: EffectiveConnectorScope;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly catalog: RunConnectorCatalogSelection;
+  readonly definitionRows: readonly ReturnType<
+    typeof normaliseCustomConnectorRow
+  >[];
+  readonly accounts: {
+    readonly threadSelections:
+      | ThreadConnectorSelectionIds
+      | CreateRunErrorResult
+      | undefined;
+    readonly accountCandidates: ReadonlyMap<string, readonly string[]>;
+  };
+}
+
 function createRunConnectorReadObjects(
-  input$: AsyncRead<RunConnectorReadInput>,
-  {
-    featureSwitchContext$,
-  }: Pick<ReturnType<typeof createRunIdentityObjects>, "featureSwitchContext$">,
-  scope$: RunConnectorScopeObject,
-  selectedCatalog$?: Computed<Promise<RunConnectorCatalogSelection>>,
+  facts: CapturedRunConnectorSelectionFacts,
 ) {
-  const definitionRows$ = createRunCustomConnectorDefinitionRowsObject(
-    input$,
-    scope$,
-  );
-  const accountSelection$ = computed(async (get) => {
-    const [input, scope] = await Promise.all([get(input$), get(scope$)]);
-    return await get(
-      createRunConnectorAccountSelectionObject(
-        { args: input.args, timing: input.timing },
-        scope,
-      ),
-    );
-  });
-  const threadSelections$ = computed(async (get) => {
-    return (await get(accountSelection$)).threadSelections;
-  });
-  const accountCandidates$ = computed(async (get) => {
-    return (await get(accountSelection$)).accountCandidates;
-  });
-  const connectorSelection$ = createRunConnectorSelectionObject(
-    input$,
-    scope$,
-    definitionRows$,
-    threadSelections$,
-    selectedCatalog$,
+  const connectorSelection$ = computed(
+    (): RunConnectorSelection | CreateRunErrorResult => {
+      const threadConnectorSelectionIds = facts.accounts.threadSelections;
+      if (isRouteError(threadConnectorSelectionIds)) {
+        return threadConnectorSelectionIds;
+      }
+      return {
+        connectorCatalogSelection: facts.catalog,
+        threadConnectorSelectionIds,
+        connectorScope:
+          facts.catalog.kind === "scoped"
+            ? connectorScopeForRuntimeSnapshot(
+                facts.scope,
+                facts.catalog.selection,
+              )
+            : facts.scope,
+      };
+    },
   );
   const connectorSnapshot$ = computed(
     async (
       get,
     ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const [
-        input,
-        scope,
-        selection,
-        accountCandidates,
-        definitionRows,
-        featureSwitchContext,
-      ] = await Promise.all([
-        get(input$),
-        get(scope$),
-        get(connectorSelection$),
-        get(accountCandidates$),
-        get(definitionRows$),
-        get(featureSwitchContext$),
-      ]);
+      const selection = get(connectorSelection$);
       if (isRouteError(selection)) {
         return selection;
       }
       return await get(
         createRunConnectorMaterializationObject({
-          input: { args: input.args, timing: input.timing },
-          scope,
+          input: facts.input,
+          scope: facts.scope,
           selection,
-          accountCandidates,
-          definitionRows,
-          featureSwitchContext,
+          accountCandidates: facts.accounts.accountCandidates,
+          definitionRows: facts.definitionRows,
+          featureSwitchContext: facts.featureSwitchContext,
         }),
       );
     },
@@ -14857,7 +14814,66 @@ function createRunConnectorSelectionObjects(
   const scope$ = computed(async (get) => {
     return connectorScopeFromCreateArgs((await get(input$)).args);
   });
-  return createRunConnectorReadObjects(input$, identity, scope$);
+  const definitionRows$ = computed(async (get) => {
+    const [input, scope] = await Promise.all([get(input$), get(scope$)]);
+    return await get(
+      createRunCustomConnectorDefinitionRowsObject(
+        {
+          args: {
+            orgId: input.args.orgId,
+            userId: input.args.userId,
+            chatThreadId: input.args.chatThreadId,
+            connectorSourceId: input.args.connectorSourceId,
+            includeOkouTokenSecret: input.args.includeOkouTokenSecret,
+          },
+          timing: input.timing,
+        },
+        scope,
+      ),
+    );
+  });
+  const catalog$ = createRunConnectorCatalogObjects(
+    input$,
+    scope$,
+    definitionRows$,
+  ).catalog$;
+  const graph$ = computed(async (get) => {
+    const [input, scope, featureSwitchContext] = await Promise.all([
+      get(input$),
+      get(scope$),
+      get(identity.featureSwitchContext$),
+    ]);
+    const facts = {
+      args: {
+        orgId: input.args.orgId,
+        userId: input.args.userId,
+        chatThreadId: input.args.chatThreadId,
+        connectorSourceId: input.args.connectorSourceId,
+        includeOkouTokenSecret: input.args.includeOkouTokenSecret,
+      },
+      timing: input.timing,
+    };
+    const [accounts, definitionRows, catalog] = await Promise.all([
+      get(createRunConnectorAccountSelectionObject(facts, scope)),
+      get(definitionRows$),
+      get(catalog$),
+    ]);
+    return createRunConnectorReadObjects({
+      input: facts,
+      scope,
+      featureSwitchContext,
+      accounts,
+      definitionRows,
+      catalog,
+    });
+  });
+  const connectorSelection$ = computed(async (get) => {
+    return await get((await get(graph$)).connectorSelection$);
+  });
+  const connectorSnapshot$ = computed(async (get) => {
+    return await get((await get(graph$)).connectorSnapshot$);
+  });
+  return { connectorSelection$, connectorSnapshot$ };
 }
 
 function createRunRuntimeObjects(
@@ -18294,13 +18310,42 @@ function createPreCreateConnectorObjects(
   const featureSwitchContext$ = computed(async (get) => {
     return (await get(bootstrapMetadata$)).featureSwitchContext;
   });
-  const { connectorSelection$, connectorSnapshot$ } =
-    createRunConnectorReadObjects(
-      connectorInput$,
-      { featureSwitchContext$ },
-      scope$,
-      connectorCatalog$,
-    );
+  const graph$ = computed(async (get) => {
+    const [input, scope, featureSwitchContext] = await Promise.all([
+      get(connectorInput$),
+      get(scope$),
+      get(featureSwitchContext$),
+    ]);
+    const facts = {
+      args: {
+        orgId: input.args.orgId,
+        userId: input.args.userId,
+        chatThreadId: input.args.chatThreadId,
+        connectorSourceId: input.args.connectorSourceId,
+        includeOkouTokenSecret: input.args.includeOkouTokenSecret,
+      },
+      timing: input.timing,
+    };
+    const [accounts, definitionRows, catalog] = await Promise.all([
+      get(createRunConnectorAccountSelectionObject(facts, scope)),
+      get(createRunCustomConnectorDefinitionRowsObject(facts, scope)),
+      get(connectorCatalog$),
+    ]);
+    return createRunConnectorReadObjects({
+      input: facts,
+      scope,
+      featureSwitchContext,
+      accounts,
+      definitionRows,
+      catalog,
+    });
+  });
+  const connectorSelection$ = computed(async (get) => {
+    return await get((await get(graph$)).connectorSelection$);
+  });
+  const connectorSnapshot$ = computed(async (get) => {
+    return await get((await get(graph$)).connectorSnapshot$);
+  });
   return { connectorSelection$, connectorSnapshot$ };
 }
 
