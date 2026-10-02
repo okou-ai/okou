@@ -649,19 +649,25 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("isolates a shared Agent's inventory by the Run owner", async () => {
+    const bdd = createBddApi(context);
     const creatorOwner = await claimed.paidOwner();
-    await visibility(creatorOwner.agentId, "public");
+    const sharedAgent = await bdd.createAgent(bdd.user(creatorOwner), {
+      displayName: "Shared VNC Agent",
+      visibility: "public",
+    });
     const creatorHost = await accept(
       api.connections().create({ headers, body: vncConnectionBody() }),
       [201],
     );
     await api.enableDefault(creatorOwner, "vnc", creatorHost.body.id);
     const creator = {
-      ...(await claimed.runtime(creatorOwner)),
+      ...(await claimed.runtime({
+        ...creatorOwner,
+        agentId: sharedAgent.agentId,
+      })),
       connectionId: creatorHost.body.id,
     };
     const consumer = await owner({ orgId: creator.orgId });
-    const bdd = createBddApi(context);
     const consumerActor = bdd.user(consumer);
     // Memory initialization and model selection are personal to each Run owner.
     await bdd.completeOnboarding(consumerActor);
