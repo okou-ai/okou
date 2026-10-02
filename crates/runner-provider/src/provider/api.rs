@@ -987,7 +987,7 @@ impl JobProvider for ApiProvider {
             }
         };
 
-        const MAX_ATTEMPTS: usize = 2;
+        const MAX_ATTEMPTS: usize = 4;
         const RETRY_DELAY: Duration = Duration::from_secs(2);
 
         for attempt in 1..=MAX_ATTEMPTS {
@@ -6655,7 +6655,7 @@ mod tests {
         let event = captured_event(&events, "failed to report completion");
         assert_eq!(event.level, Level::ERROR);
         assert_eq!(event_field(event, "attempt"), "1");
-        assert_eq!(event_field(event, "max_attempts"), "2");
+        assert_eq!(event_field(event, "max_attempts"), "4");
         assert_eq!(event_field(event, "will_retry"), "false");
         assert_eq!(event_field(event, "status"), "400");
         assert_eq!(event_field(event, "failure_kind"), "http_status");
@@ -6670,11 +6670,64 @@ mod tests {
             StatusCode::TOO_MANY_REQUESTS,
             StatusCode::INTERNAL_SERVER_ERROR,
         ] {
-            let mut server = complete_sequence_server(vec![status.as_u16(), 200]).await;
-            let api_url = server.url();
+            for success_attempt in 2..=4 {
+                let mut statuses = vec![status.as_u16(); success_attempt - 1];
+                statuses.push(200);
+                let mut server = complete_sequence_server(statuses).await;
+                let run_id = RunId::from(uuid::Uuid::nil());
+                let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
+                let provider = api_provider_for_test(
+                    server.url(),
+                    CancellationToken::new(),
+                    Arc::new(PollWakeups::new(false)),
+                );
+                let complete_task = tokio::spawn(async move {
+                    provider
+                        .complete(
+                            complete_request(run_id),
+                            CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
+                        )
+                        .await;
+                });
+
+                for attempt in 1..=success_attempt {
+                    let request = server.next_request("transient completion request").await;
+                    assert_complete_authorization(&request, "sandbox-token");
+                    assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                    if attempt < success_attempt {
+                        tokio::task::yield_now().await;
+                        assert!(
+                            server.try_next_request().is_err(),
+                            "status {status} should wait before retry {attempt}"
+                        );
+                        tokio::time::advance(Duration::from_secs(2)).await;
+                    }
+                }
+
+                complete_task.await.unwrap();
+                server.assert_finished().await;
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn api_provider_complete_retries_transport_failure() {
+        for reset_connection in [false, true] {
+            let mut actions: Vec<_> = (0..3)
+                .map(|_| {
+                    if reset_connection {
+                        RawHttpAction::ResetConnection
+                    } else {
+                        RawHttpAction::Disconnect
+                    }
+                })
+                .collect();
+            actions.push(RawHttpAction::Respond(status_response(200)));
+            let mut server = RawHttpTestServer::spawn(actions).await;
             let run_id = RunId::from(uuid::Uuid::nil());
+            let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
             let provider = api_provider_for_test(
-                api_url,
+                server.url(),
                 CancellationToken::new(),
                 Arc::new(PollWakeups::new(false)),
             );
@@ -6687,20 +6740,19 @@ mod tests {
                     .await;
             });
 
-            let first_request = server
-                .next_request("first transient completion request")
-                .await;
-            assert_complete_authorization(&first_request, "sandbox-token");
-            tokio::task::yield_now().await;
-            assert!(
-                server.try_next_request().is_err(),
-                "status {status} should wait before the retry"
-            );
-            tokio::time::advance(Duration::from_secs(2)).await;
-            let second_request = server
-                .next_request("retried transient completion request")
-                .await;
-            assert_complete_authorization(&second_request, "sandbox-token");
+            for attempt in 1..=4 {
+                let request = server.next_request("completion transport request").await;
+                assert_complete_authorization(&request, "sandbox-token");
+                assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                if attempt < 4 {
+                    tokio::task::yield_now().await;
+                    assert!(
+                        server.try_next_request().is_err(),
+                        "transport failure should wait before retry {attempt}"
+                    );
+                    tokio::time::advance(Duration::from_secs(2)).await;
+                }
+            }
 
             complete_task.await.unwrap();
             server.assert_finished().await;
@@ -6708,64 +6760,26 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn api_provider_complete_retries_transport_failure() {
-        let mut server = RawHttpTestServer::spawn(vec![
-            RawHttpAction::Disconnect,
-            RawHttpAction::Respond(status_response(200)),
-        ])
-        .await;
-        let api_url = server.url();
-        let run_id = RunId::from(uuid::Uuid::nil());
-        let provider = api_provider_for_test(
-            api_url,
-            CancellationToken::new(),
-            Arc::new(PollWakeups::new(false)),
-        );
-        let complete_task = tokio::spawn(async move {
-            provider
-                .complete(
-                    complete_request(run_id),
-                    CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
-                )
-                .await;
-        });
-
-        let first_request = server.next_request("first completion request").await;
-        assert_complete_authorization(&first_request, "sandbox-token");
-        tokio::task::yield_now().await;
-        assert!(
-            server.try_next_request().is_err(),
-            "transport failure should wait before the retry"
-        );
-        tokio::time::advance(Duration::from_secs(2)).await;
-        let second_request = server.next_request("retried completion request").await;
-        assert_complete_authorization(&second_request, "sandbox-token");
-
-        complete_task.await.unwrap();
-        server.assert_finished().await;
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
         for repeated_timeout in [false, true] {
-            let (first_release, first_response) = tokio::sync::oneshot::channel();
-            let (second_release, second_response) = tokio::sync::oneshot::channel();
-            let mut server = RawHttpTestServer::spawn(vec![
-                RawHttpAction::WaitThenRespond {
-                    release: first_response,
-                    response: Vec::new(),
-                },
-                RawHttpAction::WaitThenRespond {
-                    release: second_response,
-                    response: if repeated_timeout {
-                        Vec::new()
-                    } else {
+            let attempt_count = if repeated_timeout { 4 } else { 2 };
+            let mut releases = Vec::new();
+            let mut actions = Vec::new();
+            for attempt in 1..=attempt_count {
+                let (release, response) = tokio::sync::oneshot::channel();
+                releases.push(release);
+                actions.push(RawHttpAction::WaitThenRespond {
+                    release: response,
+                    response: if !repeated_timeout && attempt == attempt_count {
                         status_response(200)
+                    } else {
+                        Vec::new()
                     },
-                },
-            ])
-            .await;
+                });
+            }
+            let mut server = RawHttpTestServer::spawn(actions).await;
             let run_id = RunId::from(uuid::Uuid::nil());
+            let expected_body = serde_json::to_string(&complete_request(run_id)).unwrap();
             let provider = api_provider_for_test(
                 server.url(),
                 CancellationToken::new(),
@@ -6781,46 +6795,44 @@ mod tests {
                 .with_subscriber(subscriber);
             tokio::pin!(completion);
 
-            let first_request = tokio::select! {
-                () = &mut completion => panic!("completion returned before the first request"),
-                request = server.next_request("completion request to time out") => request,
-            };
-            assert_complete_authorization(&first_request, "sandbox-token");
-            // Expire the real HTTP client's deadline after the server receives the request.
-            tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
-            std::future::poll_fn(|cx| {
-                assert!(completion.as_mut().poll(cx).is_pending());
-                if captured.entries().iter().any(|event| {
-                    event
-                        .fields
-                        .get("message")
-                        .is_some_and(|message| message == "completion report failed, retrying")
-                }) {
-                    std::task::Poll::Ready(())
-                } else {
-                    std::task::Poll::Pending
+            for (index, release) in releases.into_iter().enumerate() {
+                let attempt = index + 1;
+                let request = tokio::select! {
+                    () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                    request = server.next_request("completion timeout request") => request,
+                };
+                assert_complete_authorization(&request, "sandbox-token");
+                assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+                if !repeated_timeout && attempt == attempt_count {
+                    release.send(()).unwrap();
+                    completion.as_mut().await;
+                    break;
                 }
-            })
-            .await;
-            // Close the timed-out connection without sending a response.
-            first_release.send(()).unwrap();
-            tokio::time::advance(Duration::from_secs(2)).await;
-            let second_request = tokio::select! {
-                () = &mut completion => panic!("completion returned before the retry request"),
-                request = server.next_request("retried completion request") => request,
-            };
-            assert_complete_authorization(&second_request, "sandbox-token");
-            assert_eq!(
-                first_request.split_once("\r\n\r\n").unwrap().1,
-                second_request.split_once("\r\n\r\n").unwrap().1,
-            );
-            if repeated_timeout {
+                // Expire the real HTTP client's deadline after receiving the request.
                 tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
-                completion.await;
-                second_release.send(()).unwrap();
-            } else {
-                second_release.send(()).unwrap();
-                completion.await;
+                if attempt == attempt_count {
+                    completion.as_mut().await;
+                    release.send(()).unwrap();
+                    break;
+                }
+                std::future::poll_fn(|cx| {
+                    assert!(completion.as_mut().poll(cx).is_pending());
+                    if captured.entries().iter().any(|event| {
+                        event.fields.get("attempt") == Some(&attempt.to_string())
+                            && event.fields.get("message").is_some_and(|message| {
+                                message == "completion report failed, retrying"
+                            })
+                    }) {
+                        std::task::Poll::Ready(())
+                    } else {
+                        std::task::Poll::Pending
+                    }
+                })
+                .await;
+                // Close the timed-out connection without sending a response.
+                release.send(()).unwrap();
+                assert!(server.try_next_request().is_err());
+                tokio::time::advance(Duration::from_secs(2)).await;
             }
             server.assert_finished().await;
 
@@ -6828,6 +6840,7 @@ mod tests {
             let retry_event = captured_event(&events, "completion report failed, retrying");
             assert_eq!(retry_event.level, Level::INFO);
             assert_eq!(event_field(retry_event, "attempt"), "1");
+            assert_eq!(event_field(retry_event, "max_attempts"), "4");
             assert_eq!(event_field(retry_event, "will_retry"), "true");
             assert_eq!(event_field(retry_event, "failure_kind"), "timeout");
             let terminal_events: Vec<_> = events
@@ -6839,7 +6852,7 @@ mod tests {
                 let final_event =
                     captured_event(&events, "failed to report completion after retry");
                 assert_eq!(final_event.level, Level::ERROR);
-                assert_eq!(event_field(final_event, "attempt"), "2");
+                assert_eq!(event_field(final_event, "attempt"), "4");
                 assert_eq!(event_field(final_event, "will_retry"), "false");
                 assert_eq!(event_field(final_event, "failure_kind"), "timeout");
             } else {
@@ -6875,12 +6888,17 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn api_provider_complete_stops_after_two_transient_failures() {
-        let mut server = complete_sequence_server(vec![500, 500]).await;
-        let api_url = server.url();
+    async fn api_provider_complete_stops_after_four_transient_failures() {
+        let mut server = complete_sequence_server(vec![500; 4]).await;
         let run_id = RunId::from(uuid::Uuid::nil());
+        let request = CompleteRequest {
+            exit_code: 1,
+            error: Some("boom".to_string()),
+            ..complete_request(run_id)
+        };
+        let expected_body = serde_json::to_string(&request).unwrap();
         let provider = api_provider_for_test(
-            api_url,
+            server.url(),
             CancellationToken::new(),
             Arc::new(PollWakeups::new(false)),
         );
@@ -6889,49 +6907,48 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(captured.clone());
         let completion = provider
             .complete(
-                CompleteRequest {
-                    exit_code: 1,
-                    error: Some("boom".to_string()),
-                    ..complete_request(run_id)
-                },
+                request,
                 CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
             )
             .with_subscriber(subscriber);
         tokio::pin!(completion);
 
-        let first_request = tokio::select! {
-            () = &mut completion => panic!("completion should wait before the retry"),
-            request = server.next_request("first failed completion request") => request,
-        };
-        assert_complete_authorization(&first_request, "sandbox-token");
-        // Establish the retry timer before advancing paused time.
-        std::future::poll_fn(|cx| {
-            assert!(
-                completion.as_mut().poll(cx).is_pending(),
-                "completion should wait before the retry"
-            );
-            if captured.entries().iter().any(|event| {
-                event
-                    .fields
-                    .get("message")
-                    .is_some_and(|message| message == "completion report failed, retrying")
-            }) {
-                std::task::Poll::Ready(())
-            } else {
-                std::task::Poll::Pending
+        for attempt in 1..=4 {
+            let request = tokio::select! {
+                () = &mut completion => panic!("completion returned before attempt {attempt}"),
+                request = server.next_request("failed completion request") => request,
+            };
+            assert_complete_authorization(&request, "sandbox-token");
+            assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
+            if attempt == 4 {
+                completion.as_mut().await;
+                break;
             }
-        })
-        .await;
-        assert!(
-            server.try_next_request().is_err(),
-            "completion should wait before the retry"
-        );
-        tokio::time::advance(Duration::from_secs(2)).await;
-        let ((), second_request) = tokio::join!(
-            &mut completion,
-            server.next_request("second failed completion request")
-        );
-        assert_complete_authorization(&second_request, "sandbox-token");
+            // Establish each retry timer before advancing paused time.
+            std::future::poll_fn(|cx| {
+                assert!(
+                    completion.as_mut().poll(cx).is_pending(),
+                    "completion should wait before retry {attempt}"
+                );
+                if captured.entries().iter().any(|event| {
+                    event.fields.get("attempt") == Some(&attempt.to_string())
+                        && event
+                            .fields
+                            .get("message")
+                            .is_some_and(|message| message == "completion report failed, retrying")
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            assert!(
+                server.try_next_request().is_err(),
+                "completion should wait before retry {attempt}"
+            );
+            tokio::time::advance(Duration::from_secs(2)).await;
+        }
         server.assert_finished().await;
 
         let events = captured.entries();
@@ -6941,19 +6958,20 @@ mod tests {
                 .iter()
                 .filter(|event| event.fields.get("run_id") == Some(&run_id))
                 .count(),
-            2,
-            "two failed requests should produce two provider events: {events:#?}"
+            4,
+            "four failed requests should produce four provider events: {events:#?}"
         );
         let retry_event = captured_event(&events, "completion report failed, retrying");
         assert_eq!(retry_event.level, Level::WARN);
         assert_eq!(event_field(retry_event, "attempt"), "1");
+        assert_eq!(event_field(retry_event, "max_attempts"), "4");
         assert_eq!(event_field(retry_event, "will_retry"), "true");
         assert_eq!(event_field(retry_event, "status"), "500");
         assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
 
         let final_event = captured_event(&events, "failed to report completion after retry");
         assert_eq!(final_event.level, Level::ERROR);
-        assert_eq!(event_field(final_event, "attempt"), "2");
+        assert_eq!(event_field(final_event, "attempt"), "4");
         assert_eq!(event_field(final_event, "will_retry"), "false");
         assert_eq!(event_field(final_event, "status"), "500");
         assert_eq!(event_field(final_event, "failure_kind"), "http_status");
