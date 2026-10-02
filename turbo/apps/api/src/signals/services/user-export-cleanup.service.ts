@@ -112,7 +112,7 @@ const claimCleanupJob$ = command(
     }
     return {
       job,
-      claimedAt: current,
+      claimedAt: job.updatedAt,
       preserveArchive:
         ownerStatus === "completed" &&
         ownerExpiresAt !== null &&
@@ -182,9 +182,8 @@ const cleanupJobResources$ = command(
       await get(deleteS3Objects(bucket, [resultKey], signal));
       signal.throwIfAborted();
     }
-    const owned = db
-      .select({ id: backgroundJobs.id })
-      .from(backgroundJobs)
+    const removed = db
+      .delete(backgroundJobs)
       .where(
         and(
           eq(backgroundJobs.id, job.id),
@@ -192,8 +191,10 @@ const cleanupJobResources$ = command(
           inArray(backgroundJobs.status, terminalStatuses),
         ),
       )
-      .limit(1)
-      .for("update", { skipLocked: true });
+      .returning({ id: backgroundJobs.id });
+    // The actual owner DELETE, rather than a preceding locked read, gates all
+    // inventory deletion. A changed owner deletes nothing; successful ownership
+    // removal and pin release commit together in this one statement.
     const admitted = sql`exists (select 1 from export_cleanup_owner)`;
     // Original snapshot/memory keys are references, not deletion targets.
     // Release their GC pins only after every external cleanup page succeeded.
@@ -205,12 +206,8 @@ const cleanupJobResources$ = command(
       .delete(userExportParts)
       .where(and(eq(userExportParts.jobId, job.id), admitted))
       .returning({ partNumber: userExportParts.partNumber });
-    const removed = db
-      .delete(backgroundJobs)
-      .where(and(eq(backgroundJobs.id, job.id), admitted))
-      .returning({ id: backgroundJobs.id });
-    await db.execute(sql`with export_cleanup_owner as materialized (${owned}),
-      export_cleanup_entries as (${entries}), export_cleanup_parts as (${parts}) ${removed}`);
+    await db.execute(sql`with export_cleanup_owner as (${removed.getSQL()}),
+      export_cleanup_entries as (${entries.getSQL()}) ${parts.getSQL()}`);
     signal.throwIfAborted();
   },
 );
