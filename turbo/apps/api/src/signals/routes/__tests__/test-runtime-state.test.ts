@@ -24,6 +24,7 @@ import {
   setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -74,10 +75,12 @@ interface ClaimedBuiltInRun {
   readonly selectedModel: string;
 }
 
-async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
+async function createClaimedBuiltInRun(
+  selectedModel: string = SEEDED_SYSTEM_DEFAULT_MODEL,
+): Promise<ClaimedBuiltInRun> {
   const keyFixture = await seedBuiltInModelCandidateKeys(
     context,
-    SEEDED_SYSTEM_DEFAULT_MODEL,
+    selectedModel,
   );
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -86,7 +89,7 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const { providerId } = await runs.ensureOrgModelProvider(actor);
-  // A BYOK default route and a selectable built-in route.
+  // A BYOK default route and an explicitly selectable built-in fixture route.
   await runs.updateOrgModelPolicies(actor, [
     {
       model: "claude-sonnet-5",
@@ -96,7 +99,7 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
       modelProviderId: providerId,
     },
     {
-      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      model: selectedModel,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -492,9 +495,13 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     },
   );
 
-  it("keeps the longest deadline when immediate failure reports compete", async () => {
+  it("keeps the intervention deadline against a competing bounded report on an owned model", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 10, 0);
-    const claimed = await createClaimedBuiltInRun();
+    const mirror = await insertBuiltInModelMirrorFixture(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
+    onTestFinished(mirror.restore);
+    const claimed = await createClaimedBuiltInRun(mirror.model);
     const primary = await resolveBuiltInModelRouteFixture(
       context,
       claimed.selectedModel,
