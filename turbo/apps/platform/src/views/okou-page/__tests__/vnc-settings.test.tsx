@@ -1851,11 +1851,11 @@ test("Changing owner while token acquisition is pending cancels the save and cle
 });
 
 test.each(
-  VNC_RSA_AES_SECURITY_TYPES.flatMap((type) =>
-    {return ["rsa_aes_password", "rsa_aes_username_password"].map(
-      (method) => {return { type, method } as const},
-    )},
-  ),
+  VNC_RSA_AES_SECURITY_TYPES.flatMap((type) => {
+    return ["rsa_aes_password", "rsa_aes_username_password"].map((method) => {
+      return { type, method } as const;
+    });
+  }),
 )(
   "RSA-AES $type/$method saves an independent pin and exact route",
   async ({ type, method }) => {
@@ -1936,7 +1936,9 @@ test.each(
     expect(password).toHaveAttribute("maxlength", "255");
     await fill(password, "界".repeat(85));
     click(getAction("button", "Save", dialog));
-    await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
     expect(requests).toStrictEqual([
       {
         id: expect.any(String),
@@ -1984,11 +1986,11 @@ test("Trusted RSA public-key import only fills the pin and does not save or esta
     "synthetic-trusted-public-pem",
   );
   click(getAction("button", "Import trusted public key", dialog));
-  await waitFor(() =>
-    {return expect(
+  await waitFor(() => {
+    return expect(
       within(dialog).getByLabelText("Server RSA wire-key SHA256"),
-    ).toHaveValue("cd".repeat(32))},
-  );
+    ).toHaveValue("cd".repeat(32));
+  });
   expect(
     within(dialog).getByText("Imported public-key size: 2048 bits"),
   ).toBeInTheDocument();
@@ -1999,4 +2001,40 @@ test("Trusted RSA public-key import only fills the pin and does not save or esta
     { publicKeyPem: "synthetic-trusted-public-pem" },
   ]);
   expect(dialog).toBeInTheDocument();
+});
+
+test("A late RSA import cannot associate its old pin with a newer public-key draft", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    async ({ respond }) => {
+      started.resolve();
+      await release.promise;
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await choose(dialog, "Security profile", "RA2 · AES-128 · password");
+  const pin = within(dialog).getByLabelText("Server RSA wire-key SHA256");
+  const pem = within(dialog).getByLabelText(
+    "Independently trusted RSA public PEM (optional)",
+  );
+  await fill(pin, "ab".repeat(32));
+  await fill(pem, "old-public-pem");
+  click(getAction("button", "Import trusted public key", dialog));
+  await started.promise;
+  await fill(pem, "new-public-pem");
+  release.resolve();
+  await within(dialog).findByRole("alert");
+  expect(pin).toHaveValue("ab".repeat(32));
+  expect(pem).toHaveValue("new-public-pem");
+  expect(
+    within(dialog).queryByText("Imported public-key size: 2048 bits"),
+  ).toBeNull();
 });

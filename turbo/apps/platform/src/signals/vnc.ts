@@ -475,7 +475,12 @@ export const importVncRsaKey$ = command(
       return;
     }
     signal.throwIfAborted();
-    if (result.status !== 200) {
+    if (
+      result.status !== 200 ||
+      textField(form, "serverPublicKeyPem") !== publicKeyPem
+    ) {
+      // The displayed public-key draft must still be the material inspected.
+      // Do not associate a late old fingerprint with a newly edited PEM.
       set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
       return;
     }
