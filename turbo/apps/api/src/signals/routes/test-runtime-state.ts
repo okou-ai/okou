@@ -125,11 +125,12 @@ async function seedBuiltInModelKey(
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const [vendor] = await builtInCandidateVendors(
+  const vendor = getCatalogBuiltInModelRouteCandidates(
     catalogSnapshot,
-    db,
     selectedModel,
-  );
+  ).find((candidate) => {
+    return candidate.providerType !== "deepseek";
+  })?.vendor;
   if (vendor === undefined) {
     throw new Error(`Expected a Built-in catalog route for ${selectedModel}`);
   }
@@ -328,7 +329,6 @@ async function builtInModelActionResponse(
         catalogSnapshot,
         db,
         body.selected_model,
-        {},
       );
       signal.throwIfAborted();
       return {

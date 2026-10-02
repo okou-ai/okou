@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -47,15 +47,6 @@ const {
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
-
-async function builtInCatalogUpstreamModel(model: string): Promise<string> {
-  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
-    ?.upstreamModel;
-  if (upstreamModel === undefined) {
-    throw new Error(`Expected a Built-in catalog route for ${model}`);
-  }
-  return upstreamModel;
-}
 
 describe("thread-bound Pi Automation execution", () => {
   it.each(
@@ -160,6 +151,10 @@ describe("thread-bound Pi Automation execution", () => {
       );
 
       await configureBuiltInPiModel(actor, selectedModel);
+      const { upstreamModel } =
+        await readPrimaryBuiltInRouteFixture(selectedModel);
+      const runtimeProvider =
+        selectedModel === "deepseek-v4.1-flash" ? "openrouter" : "openai";
       await chat.updateThreadModelSelection(actor, threadId, selectedModel);
       await updateFeatureSwitchesForUser(
         context,
@@ -215,7 +210,8 @@ describe("thread-bound Pi Automation execution", () => {
       const piClaim = await claimChatRun(runnerGroup, piRunId);
       expect(piClaim.claim).toMatchObject({
         piModelConfig: {
-          model: await builtInCatalogUpstreamModel(selectedModel),
+          provider: runtimeProvider,
+          model: upstreamModel,
         },
       });
       const sandboxUsage = {
@@ -242,9 +238,8 @@ describe("thread-bound Pi Automation execution", () => {
         answer: `owned ${source} answer`,
         outputTokens: 3,
         responsesModel: {
-          provider:
-            selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
-          model: await builtInCatalogUpstreamModel(selectedModel),
+          provider: runtimeProvider,
+          model: upstreamModel,
         },
         usagePricingResolution,
       });
@@ -286,7 +281,8 @@ describe("thread-bound Pi Automation execution", () => {
       await flushWaitUntilForTest();
       const userClaim = await claimChatRun(runnerGroup, user.runId);
       expect(userClaim.claim.piModelConfig).toMatchObject({
-        model: await builtInCatalogUpstreamModel(selectedModel),
+        provider: runtimeProvider,
+        model: upstreamModel,
       });
       await completeSandboxFirstPiRun({
         actor,
@@ -297,9 +293,8 @@ describe("thread-bound Pi Automation execution", () => {
         answer: `owned user answer for ${source}`,
         outputTokens: 3,
         responsesModel: {
-          provider:
-            selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
-          model: await builtInCatalogUpstreamModel(selectedModel),
+          provider: runtimeProvider,
+          model: upstreamModel,
         },
         usagePricingResolution,
       });

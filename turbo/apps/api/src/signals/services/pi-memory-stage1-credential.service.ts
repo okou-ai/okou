@@ -211,23 +211,11 @@ function availableCredential(
     },
   };
 }
-/**
- * Pi provider identity for every built-in route that can serve extraction.
- *
- * The built-in extraction route resolves the native `deepseek` candidate first,
- * so omitting it would skip every built-in Stage 1 run as
- * `provider_model_unsupported`. `openrouter` is the secondary candidate of that
- * same model and must stay mapped, otherwise extraction cannot fall through
- * when the native candidate has no key or is in cooldown. This maps route
- * provider types only; it does not widen which providers may serve the model.
- */
+/** Pi provider identity for eligible built-in extraction routes. */
 function builtInStage1PiProvider(
   type: BuiltInModelRouteProviderType,
-): "deepseek" | "openai" | "openrouter" | null {
+): "openai" | "openrouter" | null {
   switch (type) {
-    case "deepseek": {
-      return "deepseek";
-    }
     case "openai-api-key": {
       return "openai";
     }
@@ -258,7 +246,6 @@ async function builtinCredential(
     db,
     args.catalog,
     PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-    context,
   );
   signal.throwIfAborted();
   const provider = route ? builtInStage1PiProvider(route.providerType) : null;

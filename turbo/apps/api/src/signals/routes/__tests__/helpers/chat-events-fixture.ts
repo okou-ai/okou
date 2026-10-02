@@ -761,8 +761,8 @@ export function createChatEventsFixture(context: TestContext) {
 
   /**
    * Makes the managed OpenRouter route the one a new Built-in run of
-   * `selectedModel` launches on, and returns the model ID to send. DeepSeek
-   * models reach it through the public alternative-routing switch; other models
+   * `selectedModel` launches on, and returns the model ID to send. Built-in
+   * DeepSeek models use it by default; other models
    * run as a test-owned catalog mirror whose primary candidate is cooling down,
    * so concurrent tests keep the shared model's routes. Claude native models
    * cannot use a mirror: Pi resolves them by the selected model ID.
@@ -780,15 +780,11 @@ export function createChatEventsFixture(context: TestContext) {
       context,
       selectedModel,
     );
-    if (!primary || primary.provider_type === openRouterType) {
+    if (!primary) {
       throw new Error(`Expected a primary managed route for ${selectedModel}`);
     }
     let model: string = selectedModel;
-    if (primary.provider_type === "deepseek") {
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-      });
-    } else {
+    if (primary.provider_type !== openRouterType) {
       const mirror = await insertBuiltInModelMirrorFixture(selectedModel);
       onTestFinished(mirror.restore);
       model = mirror.model;
@@ -1584,7 +1580,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly outputTokens?: number;
     readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
     readonly responsesModel?: {
-      readonly provider: "openai" | "openai-codex" | "deepseek";
+      readonly provider: "openai" | "openai-codex" | "deepseek" | "openrouter";
       readonly model: string;
     };
     readonly checkpointObjects: Map<string, Buffer>;

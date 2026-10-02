@@ -3148,17 +3148,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         resolution: get(usagePricingResolution$),
       }),
     );
-    const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
-      [
-        get(queuedModelRuntimeFeatureSwitchContext$),
-        get(keyIdsByVendor$),
-        get(cooldowns$),
-      ],
-    );
+    const [keyIdsByVendor, cooldowns] = await Promise.all([
+      get(keyIdsByVendor$),
+      get(cooldowns$),
+    ]);
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: pin.selectedModel,
-      featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
       routePricing,
@@ -6036,17 +6032,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         resolution: get(usagePricingResolution$),
       }),
     );
-    const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
-      [
-        get(queuedModelRuntimeFeatureSwitchContext$2),
-        get(queuedModelRuntimeKeyIdsByVendor$),
-        get(queuedModelRuntimeCooldowns$),
-      ],
-    );
+    const [keyIdsByVendor, cooldowns] = await Promise.all([
+      get(queuedModelRuntimeKeyIdsByVendor$),
+      get(queuedModelRuntimeCooldowns$),
+    ]);
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: pin.selectedModel,
-      featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
       routePricing,

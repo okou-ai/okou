@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
-import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -110,15 +110,6 @@ function s3GetObjectCommandCalls(): readonly unknown[] {
   });
 }
 
-async function builtInCatalogUpstreamModel(model: string): Promise<string> {
-  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
-    ?.upstreamModel;
-  if (upstreamModel === undefined) {
-    throw new Error(`Expected a Built-in catalog route for ${model}`);
-  }
-  return upstreamModel;
-}
-
 describe("CHAT-02: model-first provider policies", () => {
   it.each([
     "deepseek-v4-flash",
@@ -135,7 +126,11 @@ describe("CHAT-02: model-first provider policies", () => {
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const runtimeModel = await builtInCatalogUpstreamModel(selectedModel);
+      const { upstreamModel: runtimeModel } =
+        await readPrimaryBuiltInRouteFixture(selectedModel);
+      const runtimeProvider = selectedModel.startsWith("gpt-")
+        ? "openai"
+        : "openrouter";
       const firstPrompt = "persist this turn in the native Pi session";
       const first = await sendChatRun(
         actor,
@@ -155,6 +150,7 @@ describe("CHAT-02: model-first provider policies", () => {
         piSessionId: first.threadId,
         resumeSession: null,
         piModelConfig: {
+          provider: runtimeProvider,
           model: runtimeModel,
           ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
         },
@@ -167,7 +163,7 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: firstPrompt,
         answer: `first Sandbox answer for ${selectedModel}`,
         responsesModel: {
-          provider: selectedModel.startsWith("gpt-") ? "openai" : "deepseek",
+          provider: runtimeProvider,
           model: runtimeModel,
         },
         usagePricingResolution,

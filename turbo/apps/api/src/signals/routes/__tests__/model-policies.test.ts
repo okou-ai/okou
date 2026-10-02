@@ -54,15 +54,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...userModelPreferenceRoutes,
 ]);
 
-// Built-in candidates of deepseek-v4-flash in the global model catalog.
-const DEEPSEEK_V4_FLASH_CANDIDATES = {
-  deepseek: { provider_type: "deepseek", upstream_model: "deepseek-v4-flash" },
-  openrouterCodex: {
-    provider_type: "openrouter-codex",
-    upstream_model: "deepseek/deepseek-v4-flash",
-  },
-} as const;
-
 type ModelPolicyFixture = ApiTestUser & { readonly orgId: string };
 
 const context = testContext();
@@ -920,30 +911,12 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model === model;
       })?.runtimeProviderType;
     };
-    expect(runtimeProviderType(response.body)).toBe("deepseek");
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-    });
-    const alternativeRoute = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(runtimeProviderType(alternativeRoute.body)).toBe("openrouter-codex");
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
-    });
-    // A provider failure cools the DeepSeek candidate down; the OpenRouter
-    // candidate keeps serving the model.
+    expect(runtimeProviderType(response.body)).toBe("openrouter-codex");
     await coolDownBuiltInCandidatesFixture(context, model, [
-      DEEPSEEK_V4_FLASH_CANDIDATES.deepseek,
-    ]);
-    const fallback = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(runtimeProviderType(fallback.body)).toBe("openrouter-codex");
-    await coolDownBuiltInCandidatesFixture(context, model, [
-      DEEPSEEK_V4_FLASH_CANDIDATES.openrouterCodex,
+      {
+        provider_type: "openrouter-codex",
+        upstream_model: "deepseek/deepseek-v4-flash",
+      },
     ]);
     const unavailable = await accept(
       client.list({ headers: authHeaders() }),

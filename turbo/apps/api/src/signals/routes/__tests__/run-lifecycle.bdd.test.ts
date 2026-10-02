@@ -5256,12 +5256,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       const claim = await api.claimRunnerJob(sent.runId);
       await expectBuiltInModelRunRuntimeRoute(actor, sent.runId, selectedModel);
 
-      // DeepSeek is Pi-eligible: chat runs use Pi's Responses dialect rather
-      // than the native Codex Responses adapter.
+      // Built-in DeepSeek uses Pi's OpenRouter Responses route.
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piModelConfig).toMatchObject({
-        provider: "deepseek",
-        baseUrl: "https://api.deepseek.com/",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
         model: (await readPrimaryBuiltInRouteFixture(selectedModel))
           .upstreamModel,
       });
@@ -5269,8 +5268,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         claim.firewalls?.map((firewall) => {
           return firewallEntryName(firewall);
         }),
-      ).toContain("model-provider:deepseek");
-      expect(claim.billableFirewalls).toContain("model-provider:deepseek");
+      ).toContain("model-provider:openrouter-codex");
+      expect(claim.billableFirewalls).toContain(
+        "model-provider:openrouter-codex",
+      );
       expect(claim.modelUsageProvider).toBe(selectedModel);
       const token = claim.platformEnvironment.OKOU_TOKEN;
       if (!token) {
@@ -5278,12 +5279,22 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           "Expected the built-in DeepSeek run to expose OKOU_TOKEN",
         );
       }
-      expect(claim.appendSystemPrompt ?? "").not.toContain(
-        "okou image-recognition",
-      );
-      expect(verifyOkouToken(token)?.capabilities).not.toContain(
-        "image-recognition:write",
-      );
+      if (selectedModel === "deepseek-v4-flash") {
+        // This OpenRouter route needs the existing image-recognition tool.
+        expect(claim.appendSystemPrompt ?? "").toContain(
+          "okou image-recognition",
+        );
+        expect(verifyOkouToken(token)?.capabilities).toContain(
+          "image-recognition:write",
+        );
+      } else {
+        expect(claim.appendSystemPrompt ?? "").not.toContain(
+          "okou image-recognition",
+        );
+        expect(verifyOkouToken(token)?.capabilities).not.toContain(
+          "image-recognition:write",
+        );
+      }
 
       await api.requestCancelRun(actor, sent.runId, [200]);
     },

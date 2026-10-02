@@ -6271,7 +6271,6 @@ function personalRunAccount(args: {
 function directBuiltInRuntimeRoute(args: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly routePricing: BuiltInRoutePricing | undefined;
 }) {
   return computed(async (get) => {
@@ -6281,17 +6280,9 @@ function directBuiltInRuntimeRoute(args: {
       args.selectedModel,
       args.routePricing,
     );
-    const alternativeRouting =
-      isFeatureEnabled(
-        FeatureSwitchKey.DeepSeekAlternativeRouting,
-        args.featureSwitchContext,
-      ) &&
-      candidates.some((candidate) => {
-        return candidate.providerType === "deepseek";
-      });
     const eligible = candidates.filter((candidate) => {
       return (
-        (!alternativeRouting || candidate.providerType !== "deepseek") &&
+        candidate.providerType !== "deepseek" &&
         keyIdsByVendor.has(candidate.vendor)
       );
     });
@@ -6357,7 +6348,6 @@ function builtInModelProviderEnvironment(
           directBuiltInRuntimeRoute({
             catalog: catalog,
             selectedModel: selectedModel,
-            featureSwitchContext: featureSwitchContext,
             routePricing: newRunPricing
               ? await get(
                   builtInRoutePricing({

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import {
   getBuiltInRouteProviderVendor,
   modelProviderTypeSchema,
@@ -58,7 +58,7 @@ export async function updateRestrictedPlanAccessFixture(args: {
   };
 }
 
-/** The model's first-priority enabled Built-in route in the catalog. */
+/** The model's first-priority eligible Built-in route in the catalog. */
 export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
   readonly concreteProviderType: ModelProviderType;
   readonly upstreamModel: string;
@@ -75,6 +75,7 @@ export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
         eq(modelRoutes.model, model),
         eq(modelRoutes.providerType, "built-in"),
         eq(modelRoutes.enabled, true),
+        ne(modelRoutes.concreteProviderType, "deepseek"),
       ),
     )
     .orderBy(asc(modelRoutes.priority))
