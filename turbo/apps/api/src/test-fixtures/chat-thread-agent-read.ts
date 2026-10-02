@@ -65,24 +65,9 @@ export async function appendTerminalChatEventsFixture(args: {
     .where(inArray(chatThreads.id, threadIds));
 }
 
-/**
- * Moves seeded threads' sort time into the past. Infrastructure exception: no
- * API sets `last_message_at` to an arbitrary time, and the bulk read cursor's
- * seven-day window can only be exercised with a thread that old.
- */
-export async function ageChatThreadsFixture(args: {
-  readonly threadIds: readonly string[];
-  readonly lastMessageAt: Date;
-}): Promise<void> {
-  await db()
-    .update(chatThreads)
-    .set({ lastMessageAt: args.lastMessageAt })
-    .where(inArray(chatThreads.id, [...args.threadIds]));
-}
-
 /** Every persisted read cursor of one thread set, as a size-independent
  * snapshot a test can compare before and after a denied or failed write. */
-export async function readChatThreadCursorsFixture(
+async function readChatThreadCursorsFixture(
   threadIds: readonly string[],
 ): Promise<ReadonlyMap<string, string | null>> {
   if (threadIds.length === 0) {

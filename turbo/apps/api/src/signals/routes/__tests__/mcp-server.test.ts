@@ -3648,14 +3648,6 @@ describe("MCP chat mutations", () => {
     );
 
     await projectSearchMessages([thread.id]);
-    const sourceEventTime = new Date(Date.parse(result.acceptedAt) + 10_000);
-    // Infrastructure exception: the public API cannot choose an indexed
-    // sub-millisecond source coordinate. This centralized fixture changes only
-    // that coordinate so the authenticated search boundary can prove its clock.
-    await setChatSearchEventTimestampPrecisionFixture({
-      eventId: message.ref.eventId,
-      createdAt: sourceEventTime.toISOString(),
-    });
     const searched = await searchMessages(token, { query: "whitespace" });
     expect(searched.matches).toHaveLength(1);
     const [match] = searched.matches;
@@ -3663,9 +3655,14 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the indexed visible message");
     }
     expect(match.ref).toStrictEqual(message.ref);
-    expect(match.sourceEventAt).toBe(fixedMcpTimestamp(sourceEventTime));
-    expect(match.sourceEventAt).not.toBe(message.messageAt);
     expectFixedMcpTimestamp(match.sourceEventAt);
+    // The visible rejection replaces the accepted input, so its source event
+    // is strictly later than the message time it keeps.
+    expect(Date.parse(match.sourceEventAt)).toBeGreaterThan(
+      Date.parse(message.messageAt),
+    );
+    expect(match.sourceEventAt).not.toBe(message.messageAt);
+    const sourceEventTime = new Date(match.sourceEventAt);
     await expect(
       searchMessages(token, {
         query: "whitespace",
@@ -4368,12 +4365,19 @@ describe("MCP chat mutations", () => {
       disposition: "queued",
       runId: null,
     });
+    // Declare the steer on a later app clock so the associated source event
+    // has a distinct, known time from the accepted input it replaces.
+    const associatedSourceTime = new Date(Date.parse(sent.acceptedAt) + 10_000);
     await expect(
-      f.api.declareSteeredInput(
-        claimed.claim.sandboxToken,
-        active.runId,
-        args.requestId,
-      ),
+      withMockNowForTest(associatedSourceTime, async () => {
+        const declared = await f.api.declareSteeredInput(
+          claimed.claim.sandboxToken,
+          active.runId,
+          args.requestId,
+        );
+        await flushWaitUntilForTest();
+        return declared;
+      }),
     ).resolves.toStrictEqual({ outcome: "steered" });
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
@@ -4415,13 +4419,6 @@ describe("MCP chat mutations", () => {
     expect(associatedMessage.messageAt).toBe(sent.acceptedAt);
     expectFixedMcpTimestamp(associatedMessage.messageAt);
     await projectSearchMessages([args.threadId]);
-    const associatedSourceTime = new Date(Date.parse(sent.acceptedAt) + 10_000);
-    // Infrastructure exception: product writes cannot select an exact indexed
-    // source coordinate; the centralized fixture preserves every other route.
-    await setChatSearchEventTimestampPrecisionFixture({
-      eventId: associatedMessage.ref.eventId,
-      createdAt: associatedSourceTime.toISOString(),
-    });
     const associatedSearch = await searchMessages(token, {
       query: "Steer the current run",
       threadId: args.threadId,
@@ -6033,34 +6030,10 @@ describe("MCP message search", () => {
     onTestFinished(async () => {
       await f.cancelChatRun(actor.actor, other.runId);
     });
+    // Every source event above was written under its scoped app clock: the
+    // launched inputs at baseTime and +3s (plus the 1ms replacement step), the
+    // assistant answer at +1s and the queued input at exactly +2s.
     await projectSearchMessages([sent.threadId, other.threadId]);
-    // Infrastructure exception: event timestamps come from the PostgreSQL
-    // clock, so the public API cannot select exact inclusive/exclusive bounds.
-    // Only timestamp placement uses the centralized historical fixture.
-    const sourceMessages = await getMessages(auth.token(), {
-      threadId: sent.threadId,
-    });
-    for (const message of sourceMessages.messages) {
-      const offset =
-        message.role === "assistant"
-          ? 1000
-          : message.text.endsWith("queued after")
-            ? 2000
-            : 0;
-      await setChatSearchEventTimestampPrecisionFixture({
-        eventId: message.ref.eventId,
-        createdAt: new Date(baseTime + offset).toISOString(),
-      });
-    }
-    const otherMessages = await getMessages(auth.token(), {
-      threadId: other.threadId,
-    });
-    for (const message of otherMessages.messages) {
-      await setChatSearchEventTimestampPrecisionFixture({
-        eventId: message.ref.eventId,
-        createdAt: new Date(baseTime + 3000).toISOString(),
-      });
-    }
     const token = auth.token();
     const args = { query, limit: 1 };
     return { actor, args, baseTime, other, query, sent, token };

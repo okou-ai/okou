@@ -14,7 +14,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
-import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -32,6 +31,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import {
   deleteUsageStateFixture$,
@@ -63,6 +63,7 @@ const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const reads = createRunReadsApi(context);
 const chat = createChatFilesBddApi(context);
+const workflows = createWorkflowsBddApi(context);
 const store = createStore();
 
 function mustOk<TResponse extends { readonly status: number }>(
@@ -74,13 +75,16 @@ function mustOk<TResponse extends { readonly status: number }>(
   }
 }
 
-async function entitledActor(customerId?: string): Promise<ApiTestUser> {
+async function entitledActor(
+  customerId?: string,
+  tier?: "pro" | "team",
+): Promise<ApiTestUser> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   api.configureRunnerGroup();
-  await api.grantProEntitlement(actor, { customerId });
+  await api.grantProEntitlement(actor, { customerId, tier });
   return actor;
 }
 
@@ -344,39 +348,30 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     );
   });
 
-  it("reads legacy and expanded unattended trigger sources from logs", async () => {
-    const actor = await entitledActor();
+  it("reads unattended automation trigger sources from logs", async () => {
+    // Webhook automations require a Team workspace.
+    const actor = await entitledActor(undefined, "team");
     const compose = await createThreadAgent(actor, "bdd-trigger-sources");
-    if (!actor.orgId) {
-      throw new Error("Trigger source reads require an org-scoped actor");
-    }
 
-    const triggerSources = [
-      "automation-schedule",
-      "automation-event",
-      "automation-schedule",
-      "automation-event",
+    // Each run fires through the real schedule or webhook automation entry.
+    const scheduled = await workflows.startScheduledAutomationRun(
+      actor,
+      compose.agentId,
+    );
+    await api.requestCancelRun(actor, scheduled.runId, [200]);
+    const event = await workflows.startEventAutomationRun(
+      actor,
+      compose.agentId,
+    );
+    await api.requestCancelRun(actor, event.runId, [200]);
+
+    const sourceRuns = [
+      { runId: scheduled.runId, triggerSource: "automation-schedule" },
+      { runId: event.runId, triggerSource: "automation-event" },
     ] as const;
-    const sourceRuns = [];
-    for (const triggerSource of triggerSources) {
-      const run = await store.set(
-        seedRun$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          composeId: compose.agentId,
-          prompt: `${triggerSource} read compatibility`,
-          status: "pending",
-          triggerSource,
-        },
-        context.signal,
-      );
-      sourceRuns.push({ runId: run.runId, triggerSource });
-    }
-
-    for (const run of sourceRuns) {
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
+    const triggerSources = sourceRuns.map((run) => {
+      return run.triggerSource;
+    });
 
     const listed = await reads.requestListLogs(actor, {}, [200]);
     mustOk(listed, "the trigger source logs list");
@@ -477,10 +472,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
         displayName,
         visibility: "private",
       });
-      return {
-        agentId: created.agentId,
-        name: await readCanonicalAgentNameFixture(created.agentId),
-      };
+      // Public creation names an Agent by its canonical id, the value run
+      // reads report as agentName.
+      return { agentId: created.agentId, name: created.agentId };
     };
     const target = await namedAgent(actor, "bdd-target");
     const other = await namedAgent(actor, "bdd-other");
@@ -3006,11 +3000,12 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const testCompose = await bdd.createAgent(actor, {
-      displayName: "BDD historical test-source agent",
+    const automationCompose = await bdd.createAgent(actor, {
+      displayName: "BDD logs automation agent",
       visibility: "private",
     });
-    const agentOneName = await readCanonicalAgentNameFixture(agentOne.agentId);
+    // Public creation names an Agent by its canonical id.
+    const agentOneName = agentOne.agentId;
 
     const webRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
@@ -3022,23 +3017,12 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       prompt: "web run on agent two",
     });
     await api.requestCancelRun(actor, secondAgentRun.runId, [200]);
-    if (!actor.orgId) {
-      throw new Error("Run log fixtures require an org-scoped actor");
-    }
-    // A persisted historical direct run supplies the second log source.
-    const testRun = await store.set(
-      seedRun$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        composeId: testCompose.agentId,
-        prompt: "direct test run",
-        status: "pending",
-        triggerSource: "test",
-      },
-      context.signal,
+    // A real schedule automation run supplies the second log source.
+    const automationRun = await workflows.startScheduledAutomationRun(
+      actor,
+      automationCompose.agentId,
     );
-    await api.requestCancelRun(actor, testRun.runId, [200]);
+    await api.requestCancelRun(actor, automationRun.runId, [200]);
 
     const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
@@ -3053,8 +3037,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       agentOneName,
       agentTwo,
       secondAgentRun,
-      testCompose,
-      testRun,
+      automationCompose,
+      automationRun,
       webRun,
     };
   }
@@ -3065,8 +3049,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       agentOne,
       agentTwo,
       secondAgentRun,
-      testCompose,
-      testRun,
+      automationCompose,
+      automationRun,
       webRun,
     } = await setupRunLogFixture();
     const listed = await reads.requestListLogs(actor, {}, [200]);
@@ -3075,7 +3059,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id;
     });
     expect([...listedIds].sort()).toStrictEqual(
-      [webRun.runId, secondAgentRun.runId, testRun.runId].sort(),
+      [webRun.runId, secondAgentRun.runId, automationRun.runId].sort(),
     );
 
     const invalidListSince = await reads.requestListLogs(
@@ -3096,17 +3080,17 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       status: "cancelled",
       prompt: "web run on agent one",
     });
-    const testEntry = listed.body.data.find((entry) => {
-      return entry.id === testRun.runId;
+    const automationEntry = listed.body.data.find((entry) => {
+      return entry.id === automationRun.runId;
     });
-    expect(testEntry).toMatchObject({
-      agentId: testCompose.agentId,
-      displayName: "BDD historical test-source agent",
-      triggerSource: "test",
+    expect(automationEntry).toMatchObject({
+      agentId: automationCompose.agentId,
+      displayName: "BDD logs automation agent",
+      triggerSource: "automation-schedule",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
     expect([...listed.body.filters.sources].sort()).toStrictEqual([
-      "test",
+      "automation-schedule",
       "web",
     ]);
     expect(listed.body.filters.agents).toContain(agentOne.agentId);

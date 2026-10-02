@@ -12,20 +12,15 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
-import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
+import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
-import { readUsageAllowanceEntitlementFixture } from "../../../test-fixtures/usage-allowance";
 import {
   createBddApi,
   expectApiError,
@@ -84,6 +79,30 @@ const store = createStore();
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
+
+// Billing-status capability projections of the limited-free and Team plans.
+const LIMITED_FREE_BILLING_CAPABILITIES = {
+  tier: "limited-free-1",
+  status: "active",
+  canBuyConcurrency: false,
+  autoRechargeAllowed: false,
+  supportByok: true,
+  restrictedBuiltInModels: true,
+  videoGenerationAllowed: false,
+  workflowWebhookAutomationAllowed: false,
+  concurrencyLimit: 2,
+} as const;
+const TEAM_BILLING_CAPABILITIES = {
+  tier: "team",
+  status: "active",
+  canBuyConcurrency: true,
+  autoRechargeAllowed: true,
+  supportByok: true,
+  restrictedBuiltInModels: false,
+  videoGenerationAllowed: true,
+  workflowWebhookAutomationAllowed: true,
+  concurrencyLimit: 10,
+} as const;
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -338,18 +357,71 @@ function expectExpiresAboutThirtyDaysFromNow(value: unknown): void {
   expect(expiresInMs).toBeLessThanOrEqual(THIRTY_DAYS_MS + 5000);
 }
 
-function expectIsoTimestampBetween(
-  value: string | null | undefined,
-  before: Date,
-  after: Date,
+interface UsageAllowanceLimits {
+  readonly shortWindowSeconds: number;
+  readonly shortWindowUnits: number;
+  readonly weeklyWindowSeconds: number;
+  readonly weeklyWindowUnits: number;
+}
+
+function expectUsageAllowanceLimits(
+  usageAllowance: unknown,
+  limits: UsageAllowanceLimits,
 ): void {
-  expect(typeof value).toBe("string");
-  if (typeof value !== "string") {
-    throw new Error("Expected an ISO timestamp");
+  expect(usageAllowance).toMatchObject({
+    windows: [
+      {
+        kind: "short",
+        windowSeconds: limits.shortWindowSeconds,
+        unitLimit: limits.shortWindowUnits,
+      },
+      {
+        kind: "weekly",
+        windowSeconds: limits.weeklyWindowSeconds,
+        unitLimit: limits.weeklyWindowUnits,
+      },
+    ],
+  });
+}
+
+async function readUsageAllowanceAt(
+  actor: ApiTestUser,
+  at: number,
+): Promise<unknown> {
+  mockNow(at);
+  const status = await createBillingMediaApi(context).readBillingStatus(actor);
+  return status.usageAllowance ?? null;
+}
+
+/**
+ * Reads the public usage allowance on both sides of its expiry (and
+ * optionally its effective start), then restores the real clock.
+ */
+async function expectUsageAllowanceActiveWindow(
+  actor: ApiTestUser,
+  args: {
+    readonly effectiveAtUnix?: number;
+    readonly expiresAtUnix: number;
+    readonly limits: UsageAllowanceLimits;
+  },
+): Promise<void> {
+  if (args.effectiveAtUnix !== undefined) {
+    await expect(
+      readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000 - 1),
+    ).resolves.toBeNull();
+    expectUsageAllowanceLimits(
+      await readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000),
+      args.limits,
+    );
   }
-  const timestamp = Date.parse(value);
-  expect(timestamp).toBeGreaterThanOrEqual(before.getTime());
-  expect(timestamp).toBeLessThanOrEqual(after.getTime() + 1000);
+  expectUsageAllowanceLimits(
+    await readUsageAllowanceAt(actor, args.expiresAtUnix * 1000 - 1),
+    args.limits,
+  );
+  await expect(
+    readUsageAllowanceAt(actor, args.expiresAtUnix * 1000),
+  ).resolves.toBeNull();
+  clearMockNow();
 }
 
 async function waitForExpectation(
@@ -756,28 +828,16 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
-    await expect(
-      readOrgPlanEntitlementFixture(orgOf(admin)),
-    ).resolves.toMatchObject({
-      orgId: orgOf(admin),
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "org_metadata_bootstrap",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
+    expect(billing).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(billing).toMatchObject({
+      subscriptionStatus: null,
       currentPeriodEnd: null,
-      expiresAt: null,
+      hasSubscription: false,
+    });
+    await expect(
+      createBillingMediaApi(context).readVoiceQuota(admin),
+    ).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
     const onboardingCreditGrant = billing.creditGrants.find((grant) => {
       return grant.source === "onboarding";
@@ -3149,26 +3209,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         source: "subscription_renewal",
       }),
     ]);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_atom_grant",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: null,
-      stripePriceId: "price_bdd_atom_grant",
-      currentPeriodEnd: isoOf(grantExpiresAtUnix),
-      expiresAt: isoOf(grantExpiresAtUnix),
+    expect(granted).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
     await api.postStripeEvent(
@@ -3226,16 +3269,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         }),
       ]),
     );
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      currentPeriodStart: isoOf(grantExpiresAtUnix),
-      currentPeriodEnd: isoOf(renewedGrantExpiresAtUnix),
-      expiresAt: isoOf(renewedGrantExpiresAtUnix),
-    });
+    expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
 
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
-
+    // The app clock passes the renewed grant end before reconciliation runs.
+    mockNow(renewedGrantExpiresAtUnix * 1000 + 1000);
     await runs.reconcileBillingOrganizations([orgId]);
 
     const downgraded = await billing.readBillingStatus(actor);
@@ -3243,16 +3280,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(downgraded.credits).toBe(0);
     expect(downgraded.hasSubscription).toBeFalsy();
     expect(downgraded.creditGrants).toHaveLength(0);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_atom_grant",
-      status: "active",
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodEnd: null,
-      expiresAt: null,
+    expect(downgraded).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(downgraded.subscriptionStatus).toBe("expired");
+    expect(downgraded.currentPeriodEnd).toBeNull();
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
   });
 
@@ -3307,19 +3339,24 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "active",
+    const billing = createBillingMediaApi(context);
+    const invoiced = await billing.readBillingStatus(actor);
+    expect(invoiced.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(invoiced.usageAllowance, {
       shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
       weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      effectiveAt: isoOf(effectiveAtUnix),
-      expiresAt: isoOf(expiresAtUnix),
-      stripeCustomerId: `cus_bdd_allowance_${suffix}`,
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-      stripeInvoiceId: `in_bdd_usage_allowance_${suffix}`,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      effectiveAtUnix,
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
 
     const subscriptionPeriodEndUnix = epochSeconds(21);
@@ -3347,17 +3384,18 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const canceledAtPeriod = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceledAtPeriod).toMatchObject({
-      orgId,
-      status: "active",
-      shortWindowUnits: 9000,
-      weeklyWindowUnits: 90_000,
-      expiresAt: isoOf(subscriptionPeriodEndUnix),
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
+    const canceledAtPeriod = await billing.readBillingStatus(actor);
+    expect(canceledAtPeriod.hasSubscription).toBeTruthy();
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: subscriptionPeriodEndUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 9000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 90_000,
+      },
     });
 
-    const beforeCancel = nowDate();
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.updated",
@@ -3371,15 +3409,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterCancel = nowDate();
 
-    const canceled = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceled).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-    });
-    expectIsoTimestampBetween(canceled?.expiresAt, beforeCancel, afterCancel);
+    const canceled = await billing.readBillingStatus(actor);
+    expect(canceled.usageAllowance ?? null).toBeNull();
+    expect(canceled.hasSubscription).toBeFalsy();
   });
 
   it("ignores a canceled usage allowance invoice from an obsolete subscription", async () => {
@@ -3449,14 +3482,23 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
+    const status =
+      await createBillingMediaApi(context).readBillingStatus(actor);
+    expect(status.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(status.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      expiresAt: isoOf(expiresAtUnix),
-      stripeSubscriptionId: currentSubscriptionId,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
   });
 
@@ -3509,7 +3551,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const beforeDelete = nowDate();
+    const billing = createBillingMediaApi(context);
+    const active = await billing.readBillingStatus(actor);
+    expect(active.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(active.usageAllowance, {
+      shortWindowSeconds: 3600,
+      shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
+      weeklyWindowUnits: 50_000,
+    });
+
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.deleted",
@@ -3517,19 +3568,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterDelete = nowDate();
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: subscriptionId,
-    });
-    expectIsoTimestampBetween(
-      entitlement?.expiresAt,
-      beforeDelete,
-      afterDelete,
-    );
+    const deleted = await billing.readBillingStatus(actor);
+    expect(deleted.usageAllowance ?? null).toBeNull();
+    expect(deleted.hasSubscription).toBeFalsy();
   });
 
   it("expires Atom day-grant subscription credits at the Atom grant end", async () => {
@@ -3843,11 +3885,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const status = await billing.readBillingStatus(actor);
     expect(status.tier).toBe("custom");
     expect(status.hasSubscription).toBeTruthy();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      stripeSubscriptionId: sharedSubscriptionId,
-      stripePriceId: customPriceId,
-    });
     expect((await billing.readUsageMembers(actor)).body.period).toStrictEqual({
       start: isoOf(allowanceStartsAtUnix),
       end: isoOf(allowanceEndsAtUnix),
@@ -3889,14 +3926,14 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      shortWindowUnits: 625_000,
-      weeklyWindowUnits: 5_000_000,
-      expiresAt: isoOf(allowanceEndsAtUnix),
-      stripeSubscriptionId: sharedSubscriptionId,
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: allowanceEndsAtUnix,
+      limits: {
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 625_000,
+        weeklyWindowSeconds: 7 * 86_400,
+        weeklyWindowUnits: 5_000_000,
+      },
     });
   });
 
@@ -3987,8 +4024,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect((await billing.readBillingStatus(actor)).tier).toBe("custom");
 
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
+    // The app clock passes the Custom grant end before reconciliation runs.
+    mockNow(grantExpiresAtUnix * 1000 + 1000);
     await runs.reconcileBillingOrganizations([orgId]);
 
     const downgraded = await billing.readBillingStatus(actor);
@@ -4508,27 +4545,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         return grant.amount === 120_000;
       }),
     ).toHaveLength(1);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: teamSubscriptionId,
-      stripePriceId: "price_bdd_team",
+    expect(upgraded).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(upgraded).toMatchObject({
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(teamPeriodEnd),
-      cancelAt: null,
-      expiresAt: null,
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      hasSubscription: true,
+    });
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
     const pickedRunId = await waitForPickedThreadRun(actor, queuedThreadId);
@@ -4548,11 +4574,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(
       context.mocks.stripe.subscriptions.cancel.mock.calls.length,
     ).toBeGreaterThan(cancelCallsBefore);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      stripeSubscriptionId: teamSubscriptionId,
-    });
-    expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+    const repaired = await billing.readBillingStatus(actor);
+    expect(repaired).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(repaired.credits).toBe(140_000);
 
     // A lower-tier subscription invoice cannot replace the team subscription.
     await api.postStripeEvent(
@@ -4682,28 +4706,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.subscriptionStatus).toBe("canceled");
     expect(suspended.hasSubscription).toBeFalsy();
     expect(suspended.scheduledChange).toBeNull();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      cancelAt: null,
-      expiresAt: null,
+    expect(suspended).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(suspended.currentPeriodEnd).toBeNull();
+    expect(suspended.cancelAtPeriodEnd).toBeFalsy();
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
 
     await runs.requestCancelRun(actor, first.runId, [200]);
@@ -4843,22 +4850,22 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         quantity: 3,
       }),
     ]);
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      stripeSubscriptionId: customSubscriptionId,
+    expectUsageAllowanceLimits(customStatus.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
     });
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      source: "stripe_subscription",
-      stripeSubscriptionId: customSubscriptionId,
-      stripePriceId: customPriceId,
+    expect(customStatus).toMatchObject({
+      status: "active",
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(periodEnd),
-      cancelAt: isoOf(periodEnd),
-      expiresAt: isoOf(periodEnd),
+      cancelAtPeriodEnd: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: isoOf(periodEnd),
+      },
     });
 
     await api.postStripeEvent(

@@ -15,23 +15,3 @@ export async function advanceRunActivityClockFixture(
     })
     .where(eq(activeAgentRuns.runId, runId));
 }
-
-/** Simulate a run whose active row has already been released. */
-export async function deleteActiveAgentRunFixture(runId: string) {
-  await db().delete(activeAgentRuns).where(eq(activeAgentRuns.runId, runId));
-}
-
-/** Active-row bookkeeping is not exposed through public responses. */
-export async function readActiveAgentRunFixture(runId: string) {
-  const [row] = await db()
-    .select({
-      activityEntries: activeAgentRuns.activityEntries,
-      summary: activeAgentRuns.summary,
-      claimId: activeAgentRuns.claimId,
-      chatThreadId: activeAgentRuns.chatThreadId,
-      lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
-    })
-    .from(activeAgentRuns)
-    .where(eq(activeAgentRuns.runId, runId));
-  return row;
-}
