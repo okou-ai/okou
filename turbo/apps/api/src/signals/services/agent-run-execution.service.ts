@@ -16937,11 +16937,8 @@ export function emptyBootstrapMetadataFields() {
   };
 }
 
-function agentRunCustomConnectorMetadataQuery(
-  db: ReadonlyDb,
-  args: RunBootstrapSnapshotArgs,
-) {
-  return db
+function agentRunCustomConnectorMetadataQuery(args: RunBootstrapSnapshotArgs) {
+  return new QueryBuilder()
     .select({
       kind: sql`'custom_connector'`
         .mapWith(bootstrapMetadataRowKindDecoder)
@@ -17441,10 +17438,13 @@ function createPreCreateBootstrapMetadataRows(
             eq(userBuiltinConnectors.agentId, args.agentId),
           ),
         );
-      const customConnectorQuery = agentRunCustomConnectorMetadataQuery(
-        db,
-        args,
-      );
+      const customConnectorQuery = db
+        .select()
+        .from(
+          agentRunCustomConnectorMetadataQuery(args).as(
+            "custom_connector_metadata",
+          ),
+        );
       const permissionGrantQuery = db
         .select({
           kind: sql`'permission_grant'`
