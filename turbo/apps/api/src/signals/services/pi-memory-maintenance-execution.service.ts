@@ -951,6 +951,46 @@ function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
 }
 
 /**
+ * Activates a committed run. An abort still propagates, but any other failure
+ * is logged and never rejects: a committed execution is never reported as a
+ * no-run.
+ */
+const activateCommittedMaintenanceRun$ = command(
+  async (
+    { set },
+    commitInput: MaintenanceCommitInput,
+    committed: CommittedMaintenanceRun,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const activated = await settle(
+      (async () => {
+        const activation = await finishCommittedMaintenanceRun(
+          commitInput,
+          committed,
+        );
+        signal.throwIfAborted();
+        await set(
+          activatePendingRun$,
+          {
+            notification: activation.runnerNotification,
+            timing: activation.timing,
+            activationScheduledAt: now(),
+          },
+          signal,
+        );
+      })(),
+      signal,
+    );
+    if (!activated.ok) {
+      log.error("Pi maintenance run activation failed after commit", {
+        runId: commitInput.record.runId,
+        error: activated.error,
+      });
+    }
+  },
+);
+
+/**
  * Launch one claimed job: admit it (which may refresh a subscription),
  * prepare the exact memory mount, the pinned model and the Pi launch,
  * atomically commit the run with its job binding, then activate it and write
@@ -1044,34 +1084,7 @@ const launchMaintenanceRun$ = command(
     };
     const committed = await commitMaintenanceRun(db, commitInput);
     signal.throwIfAborted();
-    // The run is committed. An abort still propagates, but any other failure
-    // from here is logged and the committed run is reported: a committed
-    // execution is never reported as a no-run.
-    const activated = await settle(
-      (async () => {
-        const activation = await finishCommittedMaintenanceRun(
-          commitInput,
-          committed,
-        );
-        signal.throwIfAborted();
-        await set(
-          activatePendingRun$,
-          {
-            notification: activation.runnerNotification,
-            timing: activation.timing,
-            activationScheduledAt: now(),
-          },
-          signal,
-        );
-      })(),
-      signal,
-    );
-    if (!activated.ok) {
-      log.error("Pi maintenance run activation failed after commit", {
-        runId: record.runId,
-        error: activated.error,
-      });
-    }
+    await set(activateCommittedMaintenanceRun$, commitInput, committed, signal);
     // The approved log-only presigned URL cache write, after commit.
     if (preparedMounts.ok) {
       const cache = await settle(
