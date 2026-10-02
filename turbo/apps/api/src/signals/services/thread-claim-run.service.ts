@@ -10384,24 +10384,21 @@ export function createThreadClaimRunObjects(
     }
     return get(executionPlan$);
   });
-  const authorizeSelectedAgentRun$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const [{ command: args }, agent] = await Promise.all([
-        get(selectedIdentityInputIdentityInput$),
-        get(preCreateAgentAgent$),
-      ]);
-      signal.throwIfAborted();
-      if (!agent || agent.orgId !== args.owner.orgId) {
-        return notFound("Agent not found");
-      }
-      if (agent.visibility === "private" && agent.owner !== args.owner.userId) {
-        return agentRunsCreateForbidden(
-          "Only the private agent owner can run this agent",
-        );
-      }
-      return undefined;
-    },
-  );
+  const authorizeSelectedAgentRun$ = computed(async (get) => {
+    const [{ command: args }, agent] = await Promise.all([
+      get(selectedIdentityInputIdentityInput$),
+      get(preCreateAgentAgent$),
+    ]);
+    if (!agent || agent.orgId !== args.owner.orgId) {
+      return notFound("Agent not found");
+    }
+    if (agent.visibility === "private" && agent.owner !== args.owner.userId) {
+      return agentRunsCreateForbidden(
+        "Only the private agent owner can run this agent",
+      );
+    }
+    return undefined;
+  });
   const resolveAdmissionUsageAllowance$ = command(
     async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
       const startedAt = performance.now();
@@ -11133,37 +11130,6 @@ export function createThreadClaimRunObjects(
       return { encryptedSecrets };
     },
   );
-  const claimRunPrepareStoredContextDraft$ = command(
-    (
-      _store,
-      input: RunnerInputResult,
-      encrypted: Awaited<ReturnType<typeof prepareEncryptedSecrets$.write>>,
-      signal: AbortSignal,
-    ) => {
-      signal.throwIfAborted();
-      if (!input || isRouteError(input)) {
-        return input;
-      }
-      if (!encrypted || isRouteError(encrypted)) {
-        return encrypted;
-      }
-      const { args, body, platformEnvironment } = input;
-      const result = buildStoredExecutionContextDraft(
-        {
-          ...args,
-          body,
-          platformEnvironment: withPaidToolPlatformEnvironment(
-            args,
-            platformEnvironment,
-          ),
-          runId: args.run.id,
-        },
-        encrypted.encryptedSecrets,
-      );
-      signal.throwIfAborted();
-      return result;
-    },
-  );
   const checkClaimAdmission$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (!(await get(selectionInput$))) {
@@ -11213,21 +11179,19 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const authorizeIdentity$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const identityInput = await get(identityInput$);
-      signal.throwIfAborted();
-      if (!identityInput) {
-        return { identityInput, authorization: undefined };
-      }
-      const authorization = await set(authorizeSelectedAgentRun$, signal);
-      signal.throwIfAborted();
-      return { identityInput, authorization };
-    },
-  );
+  const authorizeIdentity$ = computed(async (get) => {
+    const identityInput = await get(identityInput$);
+    if (!identityInput) {
+      return { identityInput, authorization: undefined };
+    }
+    return {
+      identityInput,
+      authorization: await get(authorizeSelectedAgentRun$),
+    };
+  });
   const authorizeClaimIdentity$ = command(
     async (
-      { set },
+      { get, set },
       resolvePromptInputs: boolean,
       head: ChatQueueHeadContext,
       signal: AbortSignal,
@@ -11236,7 +11200,7 @@ export function createThreadClaimRunObjects(
         resolvePromptInputs
           ? set(resolvePromptLaunchInputs$, head, signal)
           : undefined,
-        set(authorizeIdentity$, signal),
+        get(authorizeIdentity$),
       ]);
       signal.throwIfAborted();
       return authorized;
@@ -11382,12 +11346,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const contextDraft = set(
-        claimRunPrepareStoredContextDraft$,
-        runnerInput,
-        encrypted,
-        signal,
-      );
+      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -16464,6 +16423,38 @@ function modelUsageExecutionFields(args: {
     modelUsageLongContextMinTotalInputTokens:
       args.modelUsageLongContextMinTotalInputTokens,
   };
+}
+
+/** The stored execution context draft from the runner input and its encrypted secrets. */
+function claimRunStoredContextDraft<
+  TEncrypted extends {
+    readonly encryptedSecrets: Parameters<
+      typeof buildStoredExecutionContextDraft
+    >[1];
+  },
+>(
+  input: RunnerInputResult,
+  encrypted: TEncrypted | CreateRunErrorResult | null | undefined,
+) {
+  if (!input || isRouteError(input)) {
+    return input;
+  }
+  if (!encrypted || isRouteError(encrypted)) {
+    return encrypted;
+  }
+  const { args, body, platformEnvironment } = input;
+  return buildStoredExecutionContextDraft(
+    {
+      ...args,
+      body,
+      platformEnvironment: withPaidToolPlatformEnvironment(
+        args,
+        platformEnvironment,
+      ),
+      runId: args.run.id,
+    },
+    encrypted.encryptedSecrets,
+  );
 }
 
 function buildStoredExecutionContextDraft(
