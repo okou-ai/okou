@@ -23,7 +23,7 @@ import { z } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
@@ -599,7 +599,7 @@ export async function createPublicAnnotationInputs(
   mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", botToken);
   mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", webhookSecret);
   // The public account-link endpoint requires the configured bot username.
-  mockOptionalEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "annotation_bot");
+  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "annotation_bot");
   let replyId = 700;
   server.use(
     http.post(`https://api.telegram.org/bot${botToken}/sendChatAction`, () => {
@@ -671,7 +671,7 @@ export async function createPublicAnnotationInputs(
   });
   // Ingress still has the token, numeric bot ID and webhook secret. Only the
   // optional username is now absent, preserving the private-chat no-href case.
-  mockOptionalEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
+  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", undefined);
   async function telegramInput(
     type: "supergroup" | "private" | "group",
     chatId: number,
