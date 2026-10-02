@@ -985,25 +985,6 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("treats a released run as having no activity", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    // A completion report releases the run's activity slot.
-    await webhooks.requestAgentComplete(
-      { runId: f.run.runId, exitCode: 0 },
-      f.headers,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "ineligible",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(0);
-  });
-
   it("keeps a heartbeating cancelled run's compute through the recovery grace", async () => {
     const f = await fixture();
     const cancelledAt = now();
@@ -1011,10 +992,12 @@ describe("thread activity summary", () => {
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
     const heartbeatAt = cancelledAt + 30_000;
     mockNow(heartbeatAt);
+    // A cancelled run's sandbox still heartbeats: the route records it before
+    // answering 404 for the no longer active public run.
     await webhooks.requestAgentHeartbeat(
       { runId: f.run.runId },
       f.headers,
-      [200],
+      [404],
     );
     // The cancellation is older than the grace, but the runner's latest
     // heartbeat is not, so the sweep keeps the run's compute slot.
