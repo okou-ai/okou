@@ -47,7 +47,9 @@ import { pathname } from "../../../signals/location.ts";
 import {
   changeChatThreadList,
   changeChatThreadReadCursor,
+  createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
+import { mockNow } from "../../../lib/time.ts";
 
 test("Move to the next relevant agent with a shortcut", async () => {
   prepareAgents();
@@ -547,6 +549,67 @@ test.each(["thread list", "read cursor"] as const)(
         "Remote running conversation Unread",
       );
     });
+  },
+);
+
+test.each([false, true])(
+  "Coalesce message bursts and refresh unread indicators after a failed fetch: %s",
+  async (failLeadingRefresh) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Burst conversation"),
+    ]);
+    mockNow(0, context.signal);
+    const refreshStarted = context.mocks.deferred<void>();
+    const releaseRefresh = context.mocks.deferred<void>();
+    let indicatorRequests = 0;
+    context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
+      indicatorRequests += 1;
+      if (indicatorRequests === 2) {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+        if (failLeadingRefresh) {
+          return respond(503, { error: "Indicators temporarily unavailable" });
+        }
+        return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+      }
+      const unread = indicatorRequests > 2;
+      return respond(200, {
+        agents: unread ? { [AGENT_ID]: "unread" } : {},
+        threads: unread ? { [EXISTING_THREAD_ID]: "unread" } : {},
+        unreadAt: unread
+          ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
+          : {},
+      });
+    });
+
+    // The direct transport runs the production Worker handler synchronously,
+    // so the entire burst is delivered before releasing the in-flight fetch.
+    await setupSidebarPage({ context, path: "/agents" });
+    const threadLink = () => {
+      return threadLinkByTitle("Burst conversation", mobileSidebar());
+    };
+    await waitFor(() => {
+      expect(threadLink()).toHaveAccessibleName("Burst conversation");
+    });
+    expect(indicatorRequests).toBe(1);
+
+    createChatEvent(EXISTING_THREAD_ID);
+    await refreshStarted.promise;
+    for (let index = 0; index < 20; index++) {
+      createChatEvent(EXISTING_THREAD_ID);
+    }
+    expect(indicatorRequests).toBe(2);
+
+    // Advance the scheduling clock before unblocking the request: no sleeps
+    // or timer mocks are needed to exercise the single trailing execution.
+    mockNow(1000, context.signal);
+    releaseRefresh.resolve();
+    await waitFor(() => {
+      expect(threadLink()).toHaveAccessibleName("Burst conversation Unread");
+    });
+    expect(indicatorRequests).toBe(3);
   },
 );
 

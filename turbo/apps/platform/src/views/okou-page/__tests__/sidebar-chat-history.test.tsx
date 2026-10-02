@@ -1023,9 +1023,15 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   const markedThrough: string[] = [];
   const secondMarkStarted = context.mocks.deferred<void>();
   const releaseSecondMark = context.mocks.deferred<void>();
+  const thirdIndicatorsStarted = context.mocks.deferred<void>();
+  const releaseThirdIndicators = context.mocks.deferred<void>();
 
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
     unreadRequests += 1;
+    if (unreadAt === thirdAt) {
+      thirdIndicatorsStarted.resolve();
+      await releaseThirdIndicators.promise;
+    }
     return respond(200, {
       agents: unreadAt === null ? {} : { [AGENT_ID]: "unread" },
       threads: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: "unread" },
@@ -1074,6 +1080,7 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
+    sharedWorkerTestTransport: "message-port",
   });
   await expect(screen.findByText("First native brief")).resolves.toBeVisible();
   await waitFor(() => {
@@ -1110,6 +1117,7 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
     });
   await expect(screen.findByText("Second native brief")).resolves.toBeVisible();
 
+  mockNow(Date.parse("2026-03-10T00:06:30Z"), context.signal);
   unreadAt = thirdAt;
   rows.push(
     ...mockChatEventRows([
@@ -1124,9 +1132,12 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
     ]),
   );
   createChatEvent(EXISTING_THREAD_ID);
+  await thirdIndicatorsStarted.promise;
   releaseSecondMark.resolve();
 
+  // A pending indicator refresh must not block the actual message delivery.
   await expect(screen.findByText("Third native brief")).resolves.toBeVisible();
+  releaseThirdIndicators.resolve();
   await waitFor(() => {
     expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
     expect(unreadRequests).toBeGreaterThanOrEqual(3);
