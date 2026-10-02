@@ -47,10 +47,7 @@ import {
   ExternalConnectorCatalogUnavailableError,
 } from "./connector-catalog-external-reader.service";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
-import {
-  type CustomConnectorExecutionDefinition,
-  customConnectorDefinitionSelection,
-} from "./custom-connector-definition-selection";
+import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
@@ -70,14 +67,11 @@ import {
   createAgentWorkflowSelection,
   type SelectedAgentWorkflow,
 } from "./execution-agent-workflows.service";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { variables } from "@okouai/db/schema/variable";
-import { and, asc, eq, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { db$, type ReadonlyDb } from "../external/db";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
-import { normaliseCustomConnectorRow } from "./custom-connector.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -185,15 +179,7 @@ export function createAgentBootstrap(
     return { variables: snapshot.variables };
   });
   const customConnectorDefinitions$ = computed(async (get) => {
-    const selection = await get(connectorSelection$);
-    return await get(
-      createAgentCustomConnectorDefinitions(
-        orgId,
-        selection.customConnectors.map((connector) => {
-          return connector.customConnectorId;
-        }),
-      ),
-    );
+    return (await get(connectorSelection$)).customConnectorDefinitions;
   });
   const connectorSnapshot$ = createBootstrapConnectorSnapshot(
     userId,
@@ -256,8 +242,8 @@ function createBootstrapConnectorSnapshot(
   userId: string,
   orgId: string,
   environmentSnapshot$: ReturnType<typeof createAgentEnvironment>,
-  customConnectorDefinitions$: ReturnType<
-    typeof createAgentCustomConnectorDefinitions
+  customConnectorDefinitions$: Computed<
+    Promise<readonly CustomConnectorExecutionDefinition[]>
   >,
 ) {
   return computed(async (get) => {
@@ -494,87 +480,6 @@ function createAgentDisabledPaidTools(userId: string, orgId: string) {
       .orderBy(asc(userDisabledPaidTools.toolId));
     return rows.map((row) => {
       return row.toolId;
-    });
-  });
-}
-
-function createAgentCustomConnectorDefinitions(
-  orgId: string,
-  ids: readonly string[],
-) {
-  return computed(async (get) => {
-    if (ids.length === 0) {
-      return [];
-    }
-    const rows = await get(db$)
-      .select({
-        connector: customConnectorDefinitionSelection(),
-        oauthConfig: orgCustomConnectorOauthConfigs,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgCustomConnectors.orgId, orgId),
-          eq(orgCustomConnectors.enabled, true),
-          inArray(orgCustomConnectors.id, [...ids]),
-        ),
-      );
-    return rows.map((row): CustomConnectorExecutionDefinition => {
-      const definition = normaliseCustomConnectorRow(
-        row.connector,
-        row.oauthConfig,
-      );
-      const config = definition.oauthConfig;
-      const shared = {
-        id: definition.id,
-        orgId: definition.orgId,
-        slug: definition.slug,
-        displayName: definition.displayName,
-        fields: definition.fields,
-        headerInjections: definition.headerInjections,
-        queryInjections: definition.queryInjections,
-        authMode: definition.authMode,
-        skillMarkdown: definition.skillMarkdown,
-        skillStorageVersionId: definition.skillStorageVersionId,
-        storageVersion: definition.storageVersion,
-        oauthConfig:
-          config === null
-            ? null
-            : {
-                providerAdapter: config.providerAdapter,
-                clientId: config.clientId,
-                encryptedClientSecret: config.encryptedClientSecret,
-                authorizationUrl: config.authorizationUrl,
-                tokenUrl: config.tokenUrl,
-                tokenEndpointAuthMethod: config.tokenEndpointAuthMethod,
-                pkceMethod: config.pkceMethod,
-                scopes: config.scopes,
-                authorizationParams: config.authorizationParams,
-              },
-      };
-      return definition.kind === "http"
-        ? {
-            ...shared,
-            kind: "http",
-            prefixTemplates: definition.prefixTemplates,
-            permissionBundleRef: definition.permissionBundleRef,
-          }
-        : {
-            ...shared,
-            kind: "mcp",
-            endpoint: definition.endpoint,
-            transport: definition.transport,
-          };
     });
   });
 }
