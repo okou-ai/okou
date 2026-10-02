@@ -1,6 +1,9 @@
+import "./env";
+import { createStore } from "ccstate";
+import { closeDbPool } from "../../src/lib/db";
+import { mockEnv, clearMockedEnv } from "../../src/lib/env";
 import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
 import { parseRawRows } from "../../src/lib/db-raw-rows";
-import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -17,7 +20,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatEventInsertSql } from "../../src/signals/services/chat-event.service";
-import { touchChatThreadLastMessageAtIndependently } from "../../src/signals/services/chat-event-shared.service";
+import { touchChatThreadLastMessageAtIndependently$ } from "../../src/signals/services/chat-event-shared.service";
 import { flushLogs } from "../../src/lib/log";
 import { flushWaitUntilForTest } from "../../src/signals/context/wait-until";
 
@@ -35,6 +38,8 @@ const pool = new Pool({
   options: "-c lock_timeout=1000 -c statement_timeout=5000",
 });
 const db = drizzle(pool);
+const commandStore = createStore();
+const commandController = new AbortController();
 const telemetry = setupServer(
   http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
     return HttpResponse.json({ ingested: 1, failed: 0, processedBytes: 1 });
@@ -82,6 +87,9 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   });
 
+  mockEnv("DATABASE_URL", url.toString());
+  mockEnv("DB_POOL_MAX", 1);
+
   await test("timestamp failure still attempts sort; sort failure keeps timestamp and committed input", async () => {
     const f = await fixture();
     const event = await f.append();
@@ -89,10 +97,15 @@ try {
     await pool.query(`CREATE FUNCTION fail_thread_touch() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN IF NEW.id = '${f.threadId}' THEN RAISE EXCEPTION 'synthetic timestamp fault'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER fail_thread_touch BEFORE UPDATE OF last_message_at ON chat_threads FOR EACH ROW EXECUTE FUNCTION fail_thread_touch()`);
-    await touchChatThreadLastMessageAtIndependently(db, f.threadId, {
-      touchedAt: new Date("2030-01-02T00:00:00Z"),
-      authorizedScope: f,
-    });
+    await commandStore.set(
+      touchChatThreadLastMessageAtIndependently$,
+      f.threadId,
+      {
+        touchedAt: new Date("2030-01-02T00:00:00Z"),
+        authorizedScope: f,
+      },
+      commandController.signal,
+    );
     assert.equal(
       (
         await db
@@ -109,10 +122,15 @@ try {
       BEGIN IF NEW.chat_thread_id = '${f.threadId}' THEN RAISE EXCEPTION 'synthetic sort fault'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER fail_sort_touch BEFORE INSERT ON chat_thread_events FOR EACH ROW EXECUTE FUNCTION fail_sort_touch()`);
     const newest = new Date("2030-01-03T00:00:00Z");
-    await touchChatThreadLastMessageAtIndependently(db, f.threadId, {
-      touchedAt: newest,
-      authorizedScope: f,
-    });
+    await commandStore.set(
+      touchChatThreadLastMessageAtIndependently$,
+      f.threadId,
+      {
+        touchedAt: newest,
+        authorizedScope: f,
+      },
+      commandController.signal,
+    );
     const [thread] = await db
       .select({ at: chatThreads.lastMessageAt })
       .from(chatThreads)
@@ -128,6 +146,9 @@ try {
     );
   });
 } finally {
+  commandController.abort();
+  await closeDbPool();
+  clearMockedEnv();
   await flushWaitUntilForTest();
   await flushLogs();
   telemetry.close();
