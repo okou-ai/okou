@@ -191,6 +191,17 @@ describe("SSH connection routes", () => {
     expect(created.body).not.toHaveProperty("account");
     expect(JSON.stringify(created.body)).not.toContain("vm0secret:");
 
+    const summary = await accept(
+      client().summary({ headers: authHeaders() }),
+      [200],
+    );
+    expect(summary.body).toStrictEqual({ configuredCount: 1 });
+    const listed = await accept(
+      client().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listed.body.connections).toStrictEqual([created.body]);
+
     await accept(
       setupApp({ context, routes: chatRemoteAccessRoutes })(
         chatRemoteAccessContract,
@@ -220,17 +231,6 @@ describe("SSH connection routes", () => {
       privateKey,
       passphrase,
     });
-
-    const summary = await accept(
-      client().summary({ headers: authHeaders() }),
-      [200],
-    );
-    expect(summary.body).toStrictEqual({ configuredCount: 1 });
-    const listed = await accept(
-      client().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(listed.body.connections).toStrictEqual([created.body]);
 
     const hostKey = {
       algorithm: "ssh-ed25519" as const,

@@ -16,6 +16,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -648,8 +649,26 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("isolates a shared Agent's inventory by the Run owner", async () => {
-    const creator = await claimed.fixture();
+    const creatorOwner = await claimed.paidOwner();
+    await visibility(creatorOwner.agentId, "public");
+    const creatorHost = await accept(
+      api.connections().create({ headers, body: vncConnectionBody() }),
+      [201],
+    );
+    await api.enableDefault(creatorOwner, "vnc", creatorHost.body.id);
+    const creator = {
+      ...(await claimed.runtime(creatorOwner)),
+      connectionId: creatorHost.body.id,
+    };
     const consumer = await owner({ orgId: creator.orgId });
+    const bdd = createBddApi(context);
+    const consumerActor = bdd.user(consumer);
+    // Memory initialization and model selection are personal to each Run owner.
+    await bdd.completeOnboarding(consumerActor);
+    await createRunsApi(context).updateUserModelPreference(
+      consumerActor,
+      "claude-fable-5-1",
+    );
     const runtime = {
       ...consumer,
       ...(await claimed.runtime({ ...consumer, agentId: creator.agentId })),

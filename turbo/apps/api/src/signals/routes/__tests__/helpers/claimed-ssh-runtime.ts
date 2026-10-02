@@ -54,6 +54,8 @@ export function createClaimedSshRuntimeApi(
       paidOrganizations.add(owner.orgId);
     }
     const actor = bdd.user({ ...owner, orgRole: "org:member" });
+    // The paid organization is shared, but each Run owner needs their own memory.
+    await bdd.completeOnboarding(actor);
     // Each omitted Agent is a distinct public Agent, matching the ordinary fixture.
     const agentId =
       runtimeOptions.agentId ??
