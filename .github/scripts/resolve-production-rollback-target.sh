@@ -244,7 +244,7 @@ if ! git merge-base --is-ancestor "$image_model_thread_columns_drop_commit" "$TA
   fail "Rollback target predates the image model thread column drop: ${image_model_thread_columns_drop_commit}."
 fi
 
-# Migration 1314 drops the retired video entitlement. Earlier APIs still name
+# Migration 1315 drops the retired video entitlement. Earlier APIs still name
 # it in entitlement reads/writes, model bootstrap and reward wallet creation.
 video_entitlement_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$VIDEO_ENTITLEMENT_DROP_PATH" | sed -n '1p')
