@@ -1,6 +1,11 @@
 import { computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import {
+  storageVersionCacheKeySql,
+  cacheRowsFromProjection,
+} from "./execution-storage-cache-read.service";
 import { officialWorkflowDefinitionRevisions } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
@@ -67,6 +72,10 @@ export function createOfficialWorkflowFacts(
         s3Key: storageVersions.s3Key,
         archiveSize: storageVersions.archiveSize,
         fileCount: storageVersions.fileCount,
+        cacheKey: systemStoragePresignedUrlCache.cacheKey,
+        cacheScope: systemStoragePresignedUrlCache.scope,
+        presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+        expiresAt: systemStoragePresignedUrlCache.expiresAt,
       })
       .from(officialWorkflowDefinitionRevisions)
       .innerJoin(
@@ -89,6 +98,19 @@ export function createOfficialWorkflowFacts(
             storageVersions.storageId,
             officialWorkflowDefinitionRevisions.storageId,
           ),
+        ),
+      )
+      .leftJoin(
+        systemStoragePresignedUrlCache,
+        eq(
+          systemStoragePresignedUrlCache.cacheKey,
+          storageVersionCacheKeySql({
+            orgId: sql`${storages.orgId}`,
+            userId: sql`${storages.userId}`,
+            name: sql`${storages.name}`,
+            versionId: sql`${storageVersions.id}`,
+            s3Key: sql`${storageVersions.s3Key}`,
+          }),
         ),
       )
       .where(
@@ -134,7 +156,8 @@ type PublishedRevisionStorage = Pick<
   Pick<
     typeof storageVersions.$inferSelect,
     "s3Key" | "archiveSize" | "fileCount"
-  >;
+  > &
+  Parameters<typeof cacheRowsFromProjection>[0];
 
 function publishedStorageIndex(
   rows: readonly PublishedRevisionStorage[],
@@ -160,6 +183,7 @@ function publishedStorageIndex(
           headVersion:
             revision.headVersionId === revision.storageVersion ? version : null,
           exactVersions: new Map([[revision.storageVersion, version]]),
+          cachedUrls: cacheRowsFromProjection(revision),
         },
       ];
     }),

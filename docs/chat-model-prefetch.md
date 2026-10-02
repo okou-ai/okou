@@ -28,8 +28,9 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   Storage rows, selected from mounted Workflow identities without model routing.
 - `storage$`: Agent-owned skill/Connector mount lookup keys and the shared
   HEAD/exact-version index. Published Official rows are reused from revisions.
-- `storageCache$`: all three read-only URL-cache scopes for those exact objects.
-  Missing cache rows are authoritative; local signing does not reread them.
+- `storageCache$`: a pure projection of all three read-only URL-cache scopes
+  returned by index/revision JOINs. It issues no separate SQL. Missing cache
+  rows are authoritative; local signing does not reread them.
 - `memberMetadata$`, `permissionGrants$`, `workflows$`, `featureSwitches$`,
   `disabledPaidTools$`, `environment$`, `connectorSelection$`,
   `customConnectorDefinitions$` and `catalog$`: individually consumable groups.
@@ -100,10 +101,13 @@ The accepted catalog reuses its global authority key. Selected revision facts
 and Agent mount groups reuse only the complete org/user/Agent identity. Revision selection has no model/CLI/path dependency: Thread assembles
 framework-specific mount paths later from the captured accepted definitions.
 Thread/session memory, previous-session versions and request-owned mount keys
-stay local. Their keys use the same index loader once; an absent Agent row or a
+stay local. Their keys use the same index/cache JOIN loader once; an absent Agent row or a
 failed Agent snapshot is never retried by the thread loader. The exact Storage
-rows resolved for the manifest also feed execution signing, eliminating its
-second `readExactVersions` call. Pi maintenance keeps its own standalone loader.
+rows and joined URL-cache rows resolved for the manifest also feed execution
+signing, eliminating both the second `readExactVersions` call and a standalone
+cache SELECT. A thread-owned historical/prefix version lookup likewise joins
+its cache row without reloading the Storage identity. SQL cache keys use the
+same policy constants and canonical JSON representation as the JS signer. Pi maintenance keeps its own standalone loader.
 
 `official-workflow-catalog-sync.service.ts` is the production publisher for
 release/revision rows. Both persistence functions use `onConflictDoNothing`,

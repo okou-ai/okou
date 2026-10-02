@@ -6,10 +6,7 @@ import {
   type AgentStorageContext,
 } from "./agent-storage-context.service";
 import { executionStorageCachePairs } from "./execution-storage.service";
-import {
-  readExecutionStorageCacheRows,
-  type ExecutionStorageCacheRows,
-} from "./execution-storage-cache-read.service";
+import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import {
   readStorageBaseIndex,
   mergeStorageIndexes,
@@ -282,10 +279,35 @@ function createStorageContextGroups(
           return JSON.stringify([pair.scope, pair.cacheKey]);
         }),
       ),
-      rows: await readExecutionStorageCacheRows(get(db$), pairs),
+      rows: [...(await get(storage$)).index.values()].flatMap((entry) => {
+        return entry.cachedUrls ?? [];
+      }),
     };
   });
   return { storage$, storageCache$ };
+}
+
+function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
+  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
+}
+
+function createSelectedOfficialFacts(
+  workflows$: AgentRunContextSignals["workflows$"],
+  officialCatalog$: AgentRunContextSignals["officialCatalog$"],
+) {
+  return computed(async (get) => {
+    const workflows = await get(workflows$);
+    if (
+      !workflows.some((workflow) => {
+        return workflow.officialDefinitionName !== null;
+      })
+    ) {
+      return null;
+    }
+    return await get(
+      createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
+    );
+  });
 }
 
 function createIdentityContext(
@@ -348,21 +370,11 @@ function createIdentityContext(
   } = createConnectorContextGroups(userId, orgId, agentId);
   const permissionGrants$ = createConnectorPermissionGrants(scope);
   const workflows$ = createAgentWorkflowSelection(scope);
-  const officialCatalog$ =
-    supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
-  const officialWorkflows$ = computed(async (get) => {
-    const workflows = await get(workflows$);
-    if (
-      !workflows.some((workflow) => {
-        return workflow.officialDefinitionName !== null;
-      })
-    ) {
-      return null;
-    }
-    return await get(
-      createOfficialWorkflowFacts(workflows, await get(officialCatalog$)),
-    );
-  });
+  const officialCatalog$ = reusedOfficialCatalog(supplied);
+  const officialWorkflows$ = createSelectedOfficialFacts(
+    workflows$,
+    officialCatalog$,
+  );
   const { storage$, storageCache$ } = createStorageContextGroups(orgId, {
     workflows$,
     connectorSelection$,

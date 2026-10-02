@@ -43,7 +43,6 @@ import {
 } from "./pi-sandbox-config";
 import {
   createResolvedExecutionStorageObjects,
-  executionStorageCachePairs,
   updateExecutionStoragePresignedUrlCache$,
   type ExecutionStorageRequest,
   PreparedExecutionStorageMount,
@@ -696,7 +695,11 @@ import {
   type StorageIndexEntry,
   type StorageIndex,
 } from "./storage-index.service";
-import { readExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
+import {
+  storageVersionCacheKeySql,
+  cacheRowsFromProjection,
+} from "./execution-storage-cache-read.service";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
@@ -8559,13 +8562,11 @@ export function createThreadClaimRunObjects(
     );
     const cache = await get((await get(executionContext$)).storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
-    const { pairs } = executionStorageCachePairs(mounts, versions);
-    const ownedPairs = pairs.filter((pair) => {
-      return !cache.keys.has(JSON.stringify([pair.scope, pair.cacheKey]));
-    });
     const rows = [
       ...cache.rows,
-      ...(await readExecutionStorageCacheRows(get(db$), ownedPairs)),
+      ...[...storageIndex.values()].flatMap((entry) => {
+        return entry.cachedUrls ?? [];
+      }),
     ];
     return {
       mounts,
@@ -10940,10 +10941,15 @@ function isFullStorageVersionId(version: string): boolean {
 interface StoragePrefixVersionRequest {
   readonly storageId: string;
   readonly version: string;
+  readonly lookup: StorageLookup;
 }
 
 interface StoragePrefixVersionRow extends StorageVersionIndexEntry {
   readonly storageId: string;
+  readonly cacheKey: string | null;
+  readonly cacheScope: string | null;
+  readonly presignedUrl: string | null;
+  readonly expiresAt: Date | null;
 }
 
 function storagePrefixVersionRequests(
@@ -10971,6 +10977,7 @@ function storagePrefixVersionRequests(
       unique.set(JSON.stringify([storage.storageId, version]), {
         storageId: storage.storageId,
         version,
+        lookup: request.lookup,
       });
     }
   }
@@ -11001,6 +11008,14 @@ function storageIndexWithPrefixVersions(
           ? {
               ...entry,
               exactVersions: new Map([...entry.exactVersions, ...added]),
+              cachedUrls: [
+                ...(entry.cachedUrls ?? []),
+                ...versions
+                  .filter((version) => {
+                    return version.storageId === entry.storageId;
+                  })
+                  .flatMap(cacheRowsFromProjection),
+              ],
             }
           : entry,
       ];
@@ -12238,8 +12253,25 @@ async function withStoragePrefixVersions(
           s3Key: storageVersions.s3Key,
           archiveSize: storageVersions.archiveSize,
           fileCount: storageVersions.fileCount,
+          cacheKey: systemStoragePresignedUrlCache.cacheKey,
+          cacheScope: systemStoragePresignedUrlCache.scope,
+          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+          expiresAt: systemStoragePresignedUrlCache.expiresAt,
         })
         .from(storageVersions)
+        .leftJoin(
+          systemStoragePresignedUrlCache,
+          eq(
+            systemStoragePresignedUrlCache.cacheKey,
+            storageVersionCacheKeySql({
+              orgId: sql`${request.lookup.orgId}`,
+              userId: sql`${request.lookup.userId}`,
+              name: sql`${request.lookup.name}`,
+              versionId: sql`${storageVersions.id}`,
+              s3Key: sql`${storageVersions.s3Key}`,
+            }),
+          ),
+        )
         .where(
           and(
             eq(storageVersions.storageId, request.storageId),

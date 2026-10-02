@@ -2,7 +2,7 @@ import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -395,6 +395,42 @@ class StorageManifestCacheTiming {
     this.windows.set(actionType, window);
     return window;
   }
+}
+
+/** The same canonical JSON key as the JS signer's key, for index/cache JOINs. */
+export function storagePresignedUrlCacheKeySql(
+  scope: StorageManifestPresignedUrlCacheScope,
+  request: {
+    readonly bucket: string;
+    readonly objectKey: SQL;
+    readonly storageVersionId: SQL;
+    readonly resolvedOrgId: SQL;
+  },
+): SQL {
+  const policy =
+    scope === "system_storage"
+      ? SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY
+      : scope === "workflow_skill_storage"
+        ? WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_CACHE_POLICY
+        : READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY;
+  const ttl =
+    scope === "system_storage"
+      ? SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS
+      : scope === "workflow_skill_storage"
+        ? WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS
+        : READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS;
+  const values = [
+    sql`to_json(${policy}::text)::text`,
+    sql`to_json(${request.bucket}::text)::text`,
+    sql`to_json(${request.objectKey}::text)::text`,
+    sql`to_json(${request.storageVersionId}::text)::text`,
+    ...(scope === "system_storage"
+      ? []
+      : [sql`to_json(${request.resolvedOrgId}::text)::text`]),
+    sql`to_json(${"public"}::text)::text`,
+    sql`to_json(${ttl}::integer)::text`,
+  ];
+  return sql`encode(sha256(convert_to('[' || ${sql.join(values, sql` || ',' || `)} || ']', 'UTF8')), 'hex')`;
 }
 
 export function systemStoragePresignedUrlCacheKey(

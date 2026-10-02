@@ -1,6 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import {
+  storageVersionCacheKeySql,
+  cacheRowsFromProjection,
+  type ExecutionStorageCacheRows,
+} from "./execution-storage-cache-read.service";
 import type { ReadonlyDb } from "../external/db";
 import type { ExecutionStorageRequest } from "./execution-storage.service";
 
@@ -25,6 +31,7 @@ export interface StorageIndexEntry {
   readonly s3Prefix: string;
   readonly headVersion: StorageVersionIndexEntry | null;
   readonly exactVersions: ReadonlyMap<string, StorageVersionIndexEntry>;
+  readonly cachedUrls?: ExecutionStorageCacheRows;
 }
 export type StorageIndex = ReadonlyMap<string, StorageIndexEntry>;
 export function storageIndexKey(
@@ -71,6 +78,16 @@ function uniqueStorageRequests(requests: readonly StorageRequest[]) {
   ];
 }
 
+function requestedVersionCacheKeySql() {
+  return storageVersionCacheKeySql({
+    orgId: sql`${storages.orgId}`,
+    userId: sql`${storages.userId}`,
+    name: sql`${storages.name}`,
+    versionId: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.id} ELSE ${exact.id} END`,
+    s3Key: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.s3Key} ELSE ${exact.s3Key} END`,
+  });
+}
+
 /** Shared fixed-shape loader for Agent prefetch and thread/request-owned mounts. */
 export async function readStorageBaseIndex(
   db: ReadonlyDb,
@@ -96,6 +113,10 @@ export async function readStorageBaseIndex(
       exactS3Key: exact.s3Key,
       exactArchiveSize: exact.archiveSize,
       exactFileCount: exact.fileCount,
+      cacheKey: systemStoragePresignedUrlCache.cacheKey,
+      cacheScope: systemStoragePresignedUrlCache.scope,
+      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+      expiresAt: systemStoragePresignedUrlCache.expiresAt,
     })
     .from(storages)
     .innerJoin(
@@ -136,6 +157,13 @@ export async function readStorageBaseIndex(
           sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
         ),
         eq(exact.storageId, storages.id),
+      ),
+    )
+    .leftJoin(
+      systemStoragePresignedUrlCache,
+      eq(
+        systemStoragePresignedUrlCache.cacheKey,
+        requestedVersionCacheKeySql(),
       ),
     );
   const versions = new Map<string, Map<string, StorageVersionIndexEntry>>();
@@ -180,6 +208,11 @@ export async function readStorageBaseIndex(
       exactVersions:
         versions.get(row.storageId) ??
         new Map<string, StorageVersionIndexEntry>(),
+      cachedUrls: [
+        ...(index.get(storageIndexKey(row.orgId, row.userId, row.name))
+          ?.cachedUrls ?? []),
+        ...cacheRowsFromProjection(row),
+      ],
     });
   }
   return index;
@@ -240,6 +273,10 @@ export function mergeStorageIndexes(
               ...previous.exactVersions,
               ...entry.exactVersions,
             ]),
+            cachedUrls: [
+              ...(previous.cachedUrls ?? []),
+              ...(entry.cachedUrls ?? []),
+            ],
           }
         : entry,
     );
