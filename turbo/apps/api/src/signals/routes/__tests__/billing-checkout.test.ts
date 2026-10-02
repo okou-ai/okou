@@ -39,7 +39,7 @@ import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import {
@@ -7285,6 +7285,7 @@ describe("usage pack allocation management", () => {
       id: checkoutSessionId,
       url: `https://checkout.stripe.test/${checkoutSessionId}`,
     });
+    const appOrigin = new URL(env("APP_URL")).origin;
     const checkout = await accept(
       setupApp({ context, routes: billingCheckoutRoutes })(
         billingUsagePackCheckoutContract,
@@ -7293,6 +7294,8 @@ describe("usage pack allocation management", () => {
         body: {
           ...usagePackCheckoutBody(fixture.userId),
           tier,
+          successUrl: `${appOrigin}/billing?billing=success`,
+          cancelUrl: `${appOrigin}/billing?billing=canceled`,
           memberUsagePacks: memberIds.map((memberId) => {
             return {
               memberId,
