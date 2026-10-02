@@ -66,7 +66,7 @@ export interface OfficialWorkflowRunObservation {
   readonly provenance: AgentRunOfficialWorkflowProvenance;
 }
 
-function artifactMatches(
+export function artifactMatches(
   provenance: AgentRunOfficialWorkflowDefinitionProvenance["artifact"],
   artifact: OfficialWorkflowArtifactReference,
 ): boolean {
@@ -90,7 +90,7 @@ function acceptedArtifactsMatch(
   );
 }
 
-function blueprintIdentities(
+export function blueprintIdentities(
   definition: OfficialWorkflowAcceptedDefinition,
 ): readonly OfficialWorkflowRunBlueprintIdentity[] {
   return definition.blueprints.map((blueprint) => {
@@ -98,7 +98,7 @@ function blueprintIdentities(
   });
 }
 
-function blueprintIdentitiesMatch(
+export function blueprintIdentitiesMatch(
   left: readonly OfficialWorkflowRunBlueprintIdentity[],
   right: readonly OfficialWorkflowRunBlueprintIdentity[],
 ): boolean {
@@ -132,7 +132,7 @@ function acceptedRevisionMatchesDefinition(
   );
 }
 
-function acceptedRevisionsMatchDefinitions(
+export function acceptedRevisionsMatchDefinitions(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
 ): boolean {
@@ -146,7 +146,7 @@ function acceptedRevisionsMatchDefinitions(
   });
 }
 
-function acceptedDefinitionForName(
+export function acceptedDefinitionForName(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   name: string,
 ): OfficialWorkflowAcceptedDefinition | null {
@@ -423,17 +423,17 @@ export async function acquireOfficialWorkflowRunCatalogAdmissionLock(
   await lockAcceptedOfficialWorkflowCatalog(tx);
 }
 
-function lockedInstallationMatches(
+export function lockedInstallationMatches(
   expected: ResolvedOfficialWorkflowRunDefinition,
   row: {
     readonly id: string;
     readonly orgId: string;
     readonly agentId: string;
     readonly name: string;
-    readonly visibility: "public" | "private";
+    readonly visibility: string;
     readonly ownerUserId: string;
     readonly officialDefinitionName: string | null;
-    readonly officialInstallationState: "installing" | "installed" | null;
+    readonly officialInstallationState: string | null;
   },
   args: {
     readonly orgId: string;
@@ -453,7 +453,7 @@ function lockedInstallationMatches(
   );
 }
 
-function exactMountsMatch(
+export function exactMountsMatch(
   observation: OfficialWorkflowRunObservation,
   mounts: readonly PersistedStorageMount[] | undefined,
 ): boolean {

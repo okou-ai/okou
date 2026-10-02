@@ -331,17 +331,26 @@ import {
   type AdmissionAttemptOutcome,
 } from "./api-dispatch-admission-timing.service";
 import {
-  loadOrgPlanCapabilities,
   loadOrgPlanCapabilities$,
+  type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import type { Tx } from "../../lib/db-types";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
-  pendingLaunchAdmissionStart,
-  advancePendingLaunchAdmission,
-  pendingAdmissionRecordSchema as admissionRow,
-  type PendingAdmissionProgress,
-} from "./pending-launch-admission-plan";
+  pendingOfficialAdmissionStart,
+  advancePendingOfficialAdmission,
+  pendingLaunchAdmissionRowSchema as admissionRow,
+} from "./pending-launch-official-plan";
+import {
+  pendingCreditPlanSql,
+  pendingCreditPlanResult,
+  pendingCreditPlanRowSchema as creditRow,
+} from "./pending-launch-credit-plan";
+import {
+  pendingLaunchTailStart,
+  advancePendingLaunchTail,
+  pendingLaunchTailRowSchema as tailRow,
+  type PendingLaunchTailInput,
+} from "./pending-launch-tail-plan";
 import {
   isFreePlanForCreditAdmission,
   checkRunAdmission$,
@@ -4052,8 +4061,6 @@ type CreateRunBody = Omit<
 > & {
   readonly triggerSource: TriggerSource;
 };
-
-type DbTransaction = Tx;
 
 const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
   "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
@@ -10853,106 +10860,9 @@ function threadSessionBindingAction(args: {
   );
 }
 
-async function persistThreadSessionBinding(
-  tx: DbTransaction,
-  args: {
-    readonly chatThreadId: string;
-    readonly identity: LaunchRunIdentity;
-    readonly resolution: PendingThreadSessionResolution | undefined;
-    readonly timing: ApiDispatchTimingCollector;
-    readonly validatedThreadSession?: ValidatedThreadSessionSnapshot;
-  },
-): Promise<ThreadSessionBindingWrite> {
-  const chatThreadId = args.chatThreadId;
-  const validatedThreadSession =
-    args.validatedThreadSession?.chatThreadId === chatThreadId
-      ? args.validatedThreadSession
-      : undefined;
-  const thread = validatedThreadSession
-    ? { agentSessionId: validatedThreadSession.agentSessionId }
-    : await args.timing.measure(
-        "api_dispatch_load_thread_session_binding",
-        "nested",
-        async () => {
-          const [loaded] = await tx
-            .select({ agentSessionId: chatThreads.agentSessionId })
-            .from(chatThreads)
-            .where(eq(chatThreads.id, chatThreadId))
-            .limit(1);
-          return loaded;
-        },
-      );
-  if (!thread) {
-    throw new Error("Chat thread not found while persisting session binding");
-  }
-
-  const action = threadSessionBindingAction({
-    identity: args.identity,
-    previousAgentSessionId: thread.agentSessionId,
-    resolution: args.resolution,
-  });
-  const [updated] = await args.timing.measure(
-    "api_dispatch_update_thread_session_binding",
-    "nested",
-    async () => {
-      return await tx
-        .update(chatThreads)
-        .set({
-          agentSessionId: args.identity.sessionId,
-          agentSessionRunId: args.identity.runId,
-        })
-        .where(eq(chatThreads.id, chatThreadId))
-        .returning({ id: chatThreads.id });
-    },
-  );
-  if (!updated) {
-    throw new Error("Failed to persist chat thread session binding");
-  }
-
-  return {
-    chatThreadId: updated.id,
-    agentSessionId: args.identity.sessionId,
-    agentSessionRunId: args.identity.runId,
-    action,
-  };
-}
-
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
   readonly kind: "admitted";
   readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
-}
-
-async function commitPreparedLaunchAdmission(
-  tx: DbTransaction,
-  args: PreparedCommitPreparedLaunchArgs,
-): Promise<PendingAdmissionProgress> {
-  const validateOfficialAdmission = () => {
-    return args.timing.measure(
-      "api_dispatch_validate_official_workflow_admission",
-      "nested",
-      async () => {
-        return await validateOfficialWorkflowRunForInsert(tx, {
-          observation: args.context.officialWorkflowRun,
-          orgId: args.createArgs.orgId,
-          userId: args.createArgs.userId,
-          agentId: args.context.resolved.agentId,
-          automationId: args.createArgs.agentRunMetadata?.workflowAutomationId,
-          runStorageMounts: args.launch.runStorageMounts,
-          allowMissingMountsForFailedRun: false,
-        });
-      },
-    );
-  };
-  const officialAdmissionFailure = args.context.officialWorkflowRun
-    ? await args.admissionTiming.measureLeaf(
-        "official_workflow",
-        validateOfficialAdmission,
-      )
-    : await validateOfficialAdmission();
-  if (officialAdmissionFailure) {
-    return conflict(officialAdmissionFailure.message);
-  }
-  return pendingLaunchAdmissionStart(args);
 }
 
 /** The thread's session binding changed after the launch read its snapshot. */
@@ -10966,7 +10876,7 @@ class ChatThreadBindingChanged extends Error {
 function pendingLaunchRowsPlan(
   commit: PreparedCommitPreparedLaunchArgs,
   admission: ValidatedPreparedLaunchAdmission,
-  capabilities: Awaited<ReturnType<typeof loadOrgPlanCapabilities>> | null,
+  capabilities: OrgPlanCapabilities | null,
 ) {
   const creditAdmitted =
     commit.enforceBuiltInCredits &&
@@ -11054,16 +10964,28 @@ function pendingLaunchAllowanceInput(
   };
 }
 
-function pendingThreadBindingArgs(args: PreparedCommitPreparedLaunchArgs) {
-  const chatThreadId = args.createArgs.chatThreadId;
-  if (!chatThreadId) {
-    throw new Error("Pending session binding requires a chat thread");
-  }
+function tailFacts(
+  args: PreparedCommitPreparedLaunchArgs,
+  claim: PendingLaunchClaim | undefined,
+  admission: AdmittedPreparedLaunch,
+  persisted: PersistedAtomicLaunchRows,
+): PendingLaunchTailInput {
   return {
-    chatThreadId,
-    identity: args.identity,
-    resolution: args.createArgs.threadSessionResolution,
-    timing: args.timing,
+    orgId: args.createArgs.orgId,
+    userId: args.createArgs.userId,
+    runId: persisted.run.id,
+    sessionId: args.identity.sessionId,
+    runCreatedAt: persisted.run.createdAt,
+    snapshot: args.persistence.rows.rowsArgs.launchSnapshot,
+    triggerSource: args.persistence.rows.metadata.triggerSource,
+    chatThreadId: args.persistence.rows.metadata.chatThreadId,
+    bindingThreadId: args.createArgs.chatThreadId,
+    action: args.createArgs.threadSessionResolution?.action,
+    requestMemory: Boolean(claim),
+    needsBinding:
+      Boolean(args.createArgs.chatThreadId) &&
+      !admission.validatedThreadSession,
+    binding: persisted.threadSessionBinding,
   };
 }
 
@@ -11089,26 +11011,24 @@ export const commitPreparedPendingLaunch$ = command(
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
+    const orgId = args.createArgs.orgId;
+    const creditSql = pendingCreditPlanSql(orgId);
     assertPendingLaunchClaim(args, claim);
     const committed = await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();
-        await acquireOfficialWorkflowRunCatalogAdmissionLock(
-          tx,
-          args.context.officialWorkflowRun,
-        );
-        if (args.context.officialWorkflowRun && args.enforceBuiltInCredits) {
-          await loadOrgPlanCapabilities(tx, args.createArgs.orgId, {
-            forUpdate: true,
-          });
+        let admission = pendingOfficialAdmissionStart(args);
+        if (!args.context.officialWorkflowRun) {
+          admissionTiming.admissionStarted();
         }
-        admissionTiming.admissionStarted();
-        let admission = await commitPreparedLaunchAdmission(tx, args);
         while ("kind" in admission && admission.kind === "statement") {
           const step = admission;
+          if (step.phase === "catalog") {
+            admissionTiming.admissionStarted();
+          }
           const rows = parseRawRows(admissionRow, await tx.execute(step.sql));
           signal.throwIfAborted();
-          admission = advancePendingLaunchAdmission(args, step, rows);
+          admission = advancePendingOfficialAdmission(args, step, rows);
         }
         if (!("kind" in admission) || admission.kind !== "admitted") {
           admissionTiming.callbackFinished();
@@ -11124,10 +11044,12 @@ export const commitPreparedPendingLaunch$ = command(
           "persistence",
           async () => {
             const capabilities = args.enforceBuiltInCredits
-              ? await loadOrgPlanCapabilities(tx, args.createArgs.orgId, {
-                  forUpdate: true,
-                })
+              ? pendingCreditPlanResult(
+                  parseRawRows(creditRow, await tx.execute(creditSql)),
+                  orgId,
+                )
               : null;
+            signal.throwIfAborted();
             for (const reset of preparedNativeSessionResetStatements(args)) {
               await tx.execute(reset);
             }
@@ -11156,24 +11078,21 @@ export const commitPreparedPendingLaunch$ = command(
               )) {
                 await tx.execute(statement);
               }
-              await requestPiMemoryStage1DayForAdmittedRun(
-                tx,
-                rowsPersisted.run.id,
-              );
             } else {
               await args.createArgs.persistProducerRunBinding?.(tx, {
                 runId: rowsPersisted.run.id,
                 status: "pending",
               });
             }
-            const threadSessionBinding =
-              args.createArgs.chatThreadId && !admission.validatedThreadSession
-                ? await persistThreadSessionBinding(
-                    tx,
-                    pendingThreadBindingArgs(args),
-                  )
-                : rowsPersisted.threadSessionBinding;
-            return { ...rowsPersisted, threadSessionBinding };
+            const input = tailFacts(args, claim, admission, rowsPersisted);
+            let tail = pendingLaunchTailStart(input);
+            while (tail.kind === "statement") {
+              const step = tail;
+              const rows = parseRawRows(tailRow, await tx.execute(step.sql));
+              signal.throwIfAborted();
+              tail = advancePendingLaunchTail(input, step, rows);
+            }
+            return { ...rowsPersisted, threadSessionBinding: tail.binding };
           },
         );
         if (isBuiltInModelProviderType(args.context.modelProvider?.type)) {
