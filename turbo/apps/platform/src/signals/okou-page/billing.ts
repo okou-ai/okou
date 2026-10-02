@@ -26,6 +26,7 @@ import {
   type UsagePackPurchasePreviewResponse,
   type UsagePackMigrationStateResponse,
 } from "@okouai/api-contracts/contracts/billing";
+import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { apiClient$ } from "../api-client.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
@@ -55,7 +56,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type BillingTier = "limited-free-1" | "pro" | "team" | "custom";
+export type BillingTier = OrgTier;
 type DowngradeTargetTier = "limited-free-1" | "pro";
 export type CreditCheckoutSelection =
   | { readonly credits: number; readonly customAmount?: false }
@@ -92,15 +93,7 @@ function formatEffectiveDate(effectiveDate: string | null): string | null {
 }
 
 export function apiTierToBillingTier(tier: string | undefined): BillingTier {
-  if (
-    tier === "limited-free-1" ||
-    tier === "pro" ||
-    tier === "team" ||
-    tier === "custom"
-  ) {
-    return tier;
-  }
-  return "limited-free-1";
+  return isOrgTier(tier) ? tier : "limited-free-1";
 }
 
 const rememberPendingRestorePayment$ = command(({ set }) => {
