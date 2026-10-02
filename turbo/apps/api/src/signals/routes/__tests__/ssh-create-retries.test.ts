@@ -5,7 +5,7 @@ import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-cred
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, joinAll } from "../../utils";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -107,6 +107,75 @@ test.each<Kind>(["host", "credential", "access"])(
     const repeated = await accept(create(kind, id, "Changed input"), [204]);
     expect(repeated.body).toBeUndefined();
     await expect(resources()).resolves.toStrictEqual(before);
+  },
+);
+
+test.each(["same owner", "another user in the same org"] as const)(
+  "a delayed credential create preserves the winning create from %s",
+  async (scope) => {
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request, call) => {
+      if (call === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from(`encrypted-data-key:${request.keyId}`),
+      };
+    });
+    const first = owner();
+    const id = randomUUID();
+    const delayed = create("credential", id, "Delayed original");
+    await joinAll([
+      (async () => {
+        await entered.promise;
+        if (scope !== "same owner") {
+          owner({ orgId: first.orgId });
+        }
+        const winner = await accept(
+          create("credential", id.toUpperCase(), "Winning create"),
+          [201],
+        );
+        release.resolve();
+        const result = await accept(
+          delayed,
+          scope === "same owner" ? [204] : [409],
+        );
+        if (result.status === 409) {
+          expect(result.body).toStrictEqual({
+            error: {
+              code: "SSH_RESOURCE_ID_CONFLICT",
+              message:
+                "This resource ID cannot be used for this SSH configuration.",
+            },
+          });
+        }
+        const current = await accept(credentials().list({ headers }), [200]);
+        expect(current.body.credentials).toStrictEqual([winner.body]);
+        expect(current.body.credentials[0]).toMatchObject({
+          id,
+          name: "Winning create",
+          revision: 1,
+          hosts: [],
+        });
+        if (scope !== "same owner") {
+          mocks.clerk.session(first.userId, first.orgId);
+          const originalOwner = await accept(
+            credentials().list({ headers }),
+            [200],
+          );
+          expect(originalOwner.body.credentials).toStrictEqual([]);
+        }
+      })().finally(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
+      }),
+      delayed,
+    ]);
   },
 );
 

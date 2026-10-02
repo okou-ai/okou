@@ -42,7 +42,7 @@ import {
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { writeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { saveRunSummary } from "../services/run-summary.service";
-import { resolveRunnerWssTarget } from "../services/runner-wss-target.service";
+import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
 import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
 import { steerRunNearTimeBudgetForTest$ } from "../services/cron-steer-run-time-budget.service";
@@ -1207,12 +1207,16 @@ const specializedRuntimeFixtureAction$ = command(
       };
     }
     if (body.action === "resolve-runner-wss-target") {
-      const target = await resolveRunnerWssTarget(db, {
-        runId: body.run_id,
-        owner: { userId: body.user_id, orgId: body.org_id },
-        now: body.now ? new Date(body.now) : nowDate(),
-        purpose: "issue",
-      });
+      const target = await set(
+        resolveRunnerWssTarget$,
+        {
+          runId: body.run_id,
+          owner: { userId: body.user_id, orgId: body.org_id },
+          now: body.now ? new Date(body.now) : nowDate(),
+          purpose: "issue",
+        },
+        signal,
+      );
       signal.throwIfAborted();
       return {
         status: 200 as const,

@@ -4708,7 +4708,6 @@
         },
         "model": {
           "autoDescription": "Okou 為每項任務選擇模型。",
-          "autoLabel": "自動選模",
           "description": "選擇工作區和執行使用哪些AI模型。",
           "title": "模型"
         },
@@ -4897,17 +4896,23 @@
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",
+        "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
+        "autoTitle": "使用更多模型",
         "claudeDescription": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。",
         "claudeTitle": "Claude",
         "codexDescription": "連接你的 ChatGPT 帳號，使用 GPT 系列模型。",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "連接帳號",
         "description": "僅在你的執行中使用，走你自己的憑據。",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從Okou中移除，但不會取消你在該服務商處的訂閱。",
         "disconnecting": "正在斷開…",
         "disconnectTitle": "斷開{{account}}？",
+        "loadError": "無法載入你的帳號。",
+        "loadingAccounts": "正在載入帳號…",
         "noAccounts": "還沒有連線任何帳號。",
         "reconnectAccount": "重新連線",
+        "retry": "重試",
         "sectionTitle": "個人",
         "status": {
           "connected": "已連線",
@@ -4917,7 +4922,6 @@
           "stale": "需處理",
           "week": "本週"
         },
-        "subscriptionsSectionTitle": "個人模型訂閱",
         "useAccount": "使用"
       },
       "picker": {

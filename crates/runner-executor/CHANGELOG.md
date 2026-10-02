@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.6...runner-executor-v0.4.7) (2026-10-02)
+
+## [0.4.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.5...runner-executor-v0.4.6) (2026-10-01)
+
+
+### Bug Fixes
+
+* **runner:** restore bounded session history download retries ([#37504](https://github.com/okou-ai/okou/issues/37504)) ([7b5e240](https://github.com/okou-ai/okou/commit/7b5e240ed1fdaaa14755c364c667218d373c9250))
+
 ## [0.4.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.4...runner-executor-v0.4.5) (2026-10-01)
 
 ## [0.4.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.3...runner-executor-v0.4.4) (2026-10-01)

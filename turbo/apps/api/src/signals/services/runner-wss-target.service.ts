@@ -1,10 +1,11 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
+import { command } from "ccstate";
 import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 
 // Three missed 10-second routine heartbeats. Host-local WSS ingress service
 // status filters only new ticket issuance, NOT public WSS health or redemption:
@@ -23,21 +24,16 @@ export interface RunnerWssTarget {
   readonly observedAt: Date;
 }
 
-/**
- * The caller supplies an already authenticated owner. This is deliberately an
- * internal read-only service, not an HTTP discovery endpoint or ticket issuer.
- * Null includes unauthorized and ineligible runs; DB outages propagate.
- */
-export async function resolveRunnerWssTarget(
-  db: ReadonlyDb,
-  args: {
-    readonly runId: string;
-    readonly owner: { readonly orgId: string; readonly userId: string };
-    readonly now: Date;
-    /** Local ingress service availability filters issuance, not redemption. */
-    readonly purpose: "issue" | "consume";
-  },
-): Promise<RunnerWssTarget | null> {
+interface RunnerWssTargetQueryArgs {
+  readonly runId: string;
+  readonly owner: { readonly orgId: string; readonly userId: string };
+  readonly now: Date;
+  /** Local ingress service availability filters issuance, not redemption. */
+  readonly purpose: "issue" | "consume";
+}
+
+/** Pure query pieces; the owning command executes the SELECT on its connection. */
+export function buildRunnerWssTargetQuery(args: RunnerWssTargetQueryArgs) {
   // The sole writer stores status and lastSeenAt in the same ordered heartbeat
   // upsert; missing or untrusted observations clear status. The lastSeenAt
   // bounds below therefore also bound the age of a positive observation.
@@ -45,50 +41,54 @@ export async function resolveRunnerWssTarget(
     args.purpose === "issue"
       ? eq(runnerState.wssIngressServiceActive, true)
       : undefined;
-  const [row] = await db
-    .select({
+  return {
+    selection: {
       runId: agentRuns.id,
       runnerId: agentRuns.runnerId,
       runnerHostname: agentRuns.runnerHostname,
       mode: runnerState.mode,
       lastSeenAt: runnerState.lastSeenAt,
-    })
-    .from(agentRuns)
-    .innerJoin(
-      activeAgentRuns,
-      and(
-        eq(activeAgentRuns.runId, agentRuns.id),
-        eq(activeAgentRuns.userId, agentRuns.userId),
-        eq(activeAgentRuns.orgId, agentRuns.orgId),
+    },
+    activeRunJoin: and(
+      eq(activeAgentRuns.runId, agentRuns.id),
+      eq(activeAgentRuns.userId, agentRuns.userId),
+      eq(activeAgentRuns.orgId, agentRuns.orgId),
+    ),
+    runnerStateJoin: and(
+      eq(runnerState.runnerId, agentRuns.runnerId),
+      eq(runnerState.runnerGroup, agentRuns.runnerGroup),
+    ),
+    where: and(
+      eq(agentRuns.id, args.runId),
+      eq(agentRuns.orgId, args.owner.orgId),
+      eq(agentRuns.userId, args.owner.userId),
+      eq(agentRuns.status, "running"),
+      like(agentRuns.runnerGroup, "vm0/%"),
+      inArray(runnerState.mode, ["running", "draining"]),
+      ingressServiceAvailability,
+      gt(
+        runnerState.lastSeenAt,
+        new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
       ),
-    )
-    .innerJoin(
-      runnerState,
-      and(
-        eq(runnerState.runnerId, agentRuns.runnerId),
-        eq(runnerState.runnerGroup, agentRuns.runnerGroup),
+      lte(
+        runnerState.lastSeenAt,
+        new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
       ),
-    )
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.orgId, args.owner.orgId),
-        eq(agentRuns.userId, args.owner.userId),
-        eq(agentRuns.status, "running"),
-        like(agentRuns.runnerGroup, "vm0/%"),
-        inArray(runnerState.mode, ["running", "draining"]),
-        ingressServiceAvailability,
-        gt(
-          runnerState.lastSeenAt,
-          new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
-        ),
-        lte(
-          runnerState.lastSeenAt,
-          new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
-        ),
-      ),
-    );
+    ),
+  };
+}
 
+interface RunnerWssTargetRow {
+  readonly runId: (typeof agentRuns.$inferSelect)["id"];
+  readonly runnerId: (typeof agentRuns.$inferSelect)["runnerId"];
+  readonly runnerHostname: (typeof agentRuns.$inferSelect)["runnerHostname"];
+  readonly mode: (typeof runnerState.$inferSelect)["mode"];
+  readonly lastSeenAt: (typeof runnerState.$inferSelect)["lastSeenAt"];
+}
+
+export function runnerWssTargetFromRow(
+  row: RunnerWssTargetRow | undefined,
+): RunnerWssTarget | null {
   if (
     !row ||
     !row.runnerId ||
@@ -112,3 +112,26 @@ export async function resolveRunnerWssTarget(
     observedAt: row.lastSeenAt,
   };
 }
+
+/**
+ * The caller supplies an already authenticated owner. This is deliberately an
+ * internal read command, not an HTTP discovery endpoint or ticket issuer.
+ * Null includes unauthorized and ineligible runs; DB outages propagate.
+ */
+export const resolveRunnerWssTarget$ = command(
+  async (
+    { get },
+    args: RunnerWssTargetQueryArgs,
+    signal: AbortSignal,
+  ): Promise<RunnerWssTarget | null> => {
+    const query = buildRunnerWssTargetQuery(args);
+    const [row] = await get(db$)
+      .select(query.selection)
+      .from(agentRuns)
+      .innerJoin(activeAgentRuns, query.activeRunJoin)
+      .innerJoin(runnerState, query.runnerStateJoin)
+      .where(query.where);
+    signal.throwIfAborted();
+    return runnerWssTargetFromRow(row);
+  },
+);

@@ -41,36 +41,47 @@ async function preparePendingSnapshotScope(
   ) {
     throw new Error("Usage pack subscription moved outside its locked scope");
   }
-  const guards: (typeof usagePackPendingSnapshotGuards.$inferSelect)[] = [];
   for (const orgId of orderedOrgIds) {
     await tx
       .insert(usagePackPendingSnapshotGuards)
       .values({ orgId, pendingSnapshotCount: 0 })
       .onConflictDoNothing();
-    const [guard] = await tx
-      .select()
-      .from(usagePackPendingSnapshotGuards)
-      .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
-    if (!guard) {
+  }
+  // READ COMMITTED gives each statement a new snapshot. Read the guard and
+  // business rows together so a committed transition cannot look like damage.
+  const scope = await tx
+    .select({
+      guard: usagePackPendingSnapshotGuards,
+      snapshot: {
+        id: usagePackSubscriptions.id,
+        orgId: usagePackSubscriptions.orgId,
+        status: usagePackSubscriptions.subscriptionStatus,
+      },
+    })
+    .from(usagePackPendingSnapshotGuards)
+    .leftJoin(
+      usagePackSubscriptions,
+      eq(usagePackSubscriptions.orgId, usagePackPendingSnapshotGuards.orgId),
+    )
+    .where(inArray(usagePackPendingSnapshotGuards.orgId, orderedOrgIds));
+  const guards = orderedOrgIds.map((orgId) => {
+    const row = scope.find(({ guard }) => {
+      return guard.orgId === orgId;
+    });
+    if (!row) {
       throw new Error("Usage pack pending snapshot count disappeared");
     }
-    guards.push(guard);
-  }
-  return { orderedOrgIds, guards };
+    return row.guard;
+  });
+  const snapshots = scope.flatMap(({ snapshot }) => {
+    return snapshot ? [snapshot] : [];
+  });
+  return { orderedOrgIds, guards, snapshots };
 }
 
-async function snapshotRows(tx: Tx, orgIds: readonly string[]) {
-  return await tx
-    .select({
-      id: usagePackSubscriptions.id,
-      orgId: usagePackSubscriptions.orgId,
-      status: usagePackSubscriptions.subscriptionStatus,
-    })
-    .from(usagePackSubscriptions)
-    .where(inArray(usagePackSubscriptions.orgId, orgIds));
-}
-
-type SnapshotRow = Awaited<ReturnType<typeof snapshotRows>>[number];
+type SnapshotRow = Awaited<
+  ReturnType<typeof preparePendingSnapshotScope>
+>["snapshots"][number];
 
 function pendingRows(rows: readonly SnapshotRow[], orgId: string) {
   return rows.filter((row) => {
@@ -123,12 +134,15 @@ export async function writeUsagePackPendingSnapshots<T>(
   referencedSubscriptionIds: readonly string[] = [],
 ): Promise<T> {
   return await db.transaction(async (tx) => {
-    const { orderedOrgIds, guards } = await preparePendingSnapshotScope(
+    const {
+      orderedOrgIds,
+      guards,
+      snapshots: before,
+    } = await preparePendingSnapshotScope(
       tx,
       orgIds,
       referencedSubscriptionIds,
     );
-    const before = await snapshotRows(tx, orderedOrgIds);
     for (const guard of guards) {
       if (
         guard.pendingSnapshotCount !== pendingRows(before, guard.orgId).length
@@ -197,18 +211,17 @@ export async function repairUsagePackPendingSnapshotGuards(
   orgIds: readonly string[],
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const { orderedOrgIds, guards } = await preparePendingSnapshotScope(
+    const { guards, snapshots } = await preparePendingSnapshotScope(
       tx,
       orgIds,
       [],
     );
-    const rows = await snapshotRows(tx, orderedOrgIds);
     for (const guard of guards) {
       await publishUsagePackPendingSnapshotCount(
         tx,
         guard.orgId,
         guard.pendingSnapshotCount,
-        pendingRows(rows, guard.orgId).length,
+        pendingRows(snapshots, guard.orgId).length,
       );
     }
   });

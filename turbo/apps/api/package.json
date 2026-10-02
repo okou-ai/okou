@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.702.3",
+  "version": "1.702.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -55,7 +55,7 @@
     "@okouai/pi-agent-runtime": "workspace:*",
     "ably": "^2.28.0",
     "archiver": "^8.0.0",
-    "ccstate": "^5.7.0",
+    "ccstate": "^6.0.0",
     "croner": "^9.1.0",
     "drizzle-orm": "^0.45.2",
     "google-auth-library": "^10.9.0",

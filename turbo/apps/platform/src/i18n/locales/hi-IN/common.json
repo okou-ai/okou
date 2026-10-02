@@ -4726,7 +4726,6 @@
         },
         "model": {
           "autoDescription": "Okou हर कार्य के लिए मॉडल चुनता है।",
-          "autoLabel": "स्वचालित मॉडल चयन",
           "description": "चुनें कि आपका वर्कस्पेस और आपके रन किस AI मॉडल का उपयोग करते हैं।",
           "title": "मॉडल"
         },
@@ -4915,17 +4914,23 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
         "addAccount": "खाता जोड़ें",
+        "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
+        "autoTitle": "और मॉडल इस्तेमाल करें",
         "claudeDescription": "Claude Code पर आधारित एजेंटों के साथ Claude मॉडल इस्तेमाल करने के लिए अपनी Claude सदस्यता से साइन इन करें।",
         "claudeTitle": "Claude",
         "codexDescription": "GPT मॉडल इस्तेमाल करने के लिए अपना ChatGPT खाता कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "खाता कनेक्ट करें",
         "description": "केवल आपके रनों में, आपकी अपनी साख के साथ उपयोग किया जाता है।",
         "disconnectAccount": "खाता डिस्कनेक्ट करें",
         "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
         "disconnecting": "डिस्कनेक्ट हो रहा है…",
         "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
+        "loadError": "आपके खाते लोड नहीं हो सके।",
+        "loadingAccounts": "खाते लोड हो रहे हैं…",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
         "reconnectAccount": "फिर से कनेक्ट करें",
+        "retry": "फिर से कोशिश करें",
         "sectionTitle": "निजी",
         "status": {
           "connected": "जुड़े हुए",
@@ -4935,7 +4940,6 @@
           "stale": "ध्यान",
           "week": "सप्ताह"
         },
-        "subscriptionsSectionTitle": "व्यक्तिगत मॉडल सदस्यताएँ",
         "useAccount": "उपयोग करें"
       },
       "picker": {

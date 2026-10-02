@@ -146,7 +146,7 @@ const headColumns = Object.freeze({
 });
 
 function preparedProjection(volume: PreparedServerSideVolume) {
-  return volume.piResourceIndex
+  return volume.piResourceIndex?.kind === "prepared"
     ? piResourceProjectionValues(
         volume.piResourceIndex.projection,
         volume.version.archiveSize,
@@ -208,7 +208,7 @@ const commitPreparedVolumeUpload$ = command(
             ],
             set: projection,
           });
-      } else {
+      } else if (!args.volume.piResourceIndex) {
         await tx
           .insert(piResourceVersionIndexes)
           .values({
