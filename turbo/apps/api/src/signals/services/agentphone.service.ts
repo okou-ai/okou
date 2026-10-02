@@ -841,8 +841,8 @@ function appendAgentPhoneSlashCommandRiskWarning(
 export async function sendAgentPhoneText(
   event: AgentPhoneMessageEvent,
   body: string,
+  db: Db | undefined,
   signal: AbortSignal,
-  db?: Db,
 ): Promise<void> {
   const isGroup = isAgentPhoneGroupEvent(event);
   if (isGroup && !db) {
@@ -897,14 +897,14 @@ export async function sendAgentPhoneText(
 async function sendAgentPhoneSlashCommandText(
   event: AgentPhoneMessageEvent,
   body: string,
+  db: Db | undefined,
   signal: AbortSignal,
-  db?: Db,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     appendAgentPhoneSlashCommandRiskWarning(body, event.channel),
-    signal,
     db,
+    signal,
   );
 }
 
@@ -965,8 +965,8 @@ function formatHelpMessage(): string {
 async function sendConnectPrompt(
   event: AgentPhoneMessageEvent,
   options: { readonly slashCommand: boolean } | undefined,
+  db: Db | undefined,
   signal: AbortSignal,
-  db?: Db,
 ): Promise<void> {
   const body = formatConnectPrompt(event);
   await sendAgentPhoneText(
@@ -974,34 +974,34 @@ async function sendConnectPrompt(
     options?.slashCommand
       ? appendAgentPhoneSlashCommandRiskWarning(body, event.channel)
       : body,
-    signal,
     db,
+    signal,
   );
 }
 
 async function sendGroupConnectInDmPrompt(
   event: AgentPhoneMessageEvent,
+  db: Db | undefined,
   signal: AbortSignal,
-  db?: Db,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     AGENTPHONE_GROUP_CONNECT_IN_DM_MESSAGE,
-    signal,
     db,
+    signal,
   );
 }
 
 async function sendGroupAccountCommandBlockedMessage(
   event: AgentPhoneMessageEvent,
+  db: Db | undefined,
   signal: AbortSignal,
-  db?: Db,
 ): Promise<void> {
   await sendAgentPhoneText(
     event,
     AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE,
-    signal,
     db,
+    signal,
   );
 }
 
@@ -1021,7 +1021,7 @@ async function blockUnauthorizedGroupAccountCommand(
     return false;
   }
 
-  await sendGroupAccountCommandBlockedMessage(args.event, signal, args.db);
+  await sendGroupAccountCommandBlockedMessage(args.event, args.db, signal);
   return true;
 }
 
@@ -1038,12 +1038,12 @@ async function handleConnectCommand(
     await sendAgentPhoneSlashCommandText(
       args.event,
       `You are already connected. Send a message here to start using ${brandName}.`,
-      signal,
       args.db,
+      signal,
     );
     return;
   }
-  await sendConnectPrompt(args.event, { slashCommand: true }, signal, args.db);
+  await sendConnectPrompt(args.event, { slashCommand: true }, args.db, signal);
 }
 
 async function handleDisconnectCommand(
@@ -1058,8 +1058,8 @@ async function handleDisconnectCommand(
     await sendAgentPhoneSlashCommandText(
       args.event,
       "Error: This phone number is not connected.",
-      signal,
       args.db,
+      signal,
     );
     return;
   }
@@ -1072,8 +1072,8 @@ async function handleDisconnectCommand(
   await sendAgentPhoneSlashCommandText(
     args.event,
     `This phone number has been disconnected from ${BRAND_PRESENTATION.brandName}.`,
-    signal,
     args.db,
+    signal,
   );
 }
 
@@ -1199,8 +1199,8 @@ const handleModelCommand$ = command(
       await sendAgentPhoneSlashCommandText(
         args.event,
         "Error: Start or enter an existing Okou conversation before using /model.",
-        signal,
         args.db,
+        signal,
       );
       return;
     }
@@ -1226,8 +1226,8 @@ const handleModelCommand$ = command(
       await sendAgentPhoneSlashCommandText(
         args.event,
         "Error: No models are configured for this workspace.",
-        signal,
         args.db,
+        signal,
       );
       return;
     }
@@ -1237,8 +1237,8 @@ const handleModelCommand$ = command(
       await sendAgentPhoneSlashCommandText(
         args.event,
         formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
-        signal,
         args.db,
+        signal,
       );
       return;
     }
@@ -1252,8 +1252,8 @@ const handleModelCommand$ = command(
           "",
           formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
         ].join("\n"),
-        signal,
         args.db,
+        signal,
       );
       return;
     }
@@ -1274,8 +1274,8 @@ const handleModelCommand$ = command(
         threadModel.kind === "no_thread"
           ? "Error: Start or enter an existing Okou conversation before using /model."
           : "Error: You don't have access to that model.",
-        signal,
         args.db,
+        signal,
       );
       return;
     }
@@ -1283,8 +1283,8 @@ const handleModelCommand$ = command(
     await sendAgentPhoneSlashCommandText(
       args.event,
       `Switched to ${option.label}.`,
-      signal,
       args.db,
+      signal,
     );
   },
 );
@@ -1327,8 +1327,8 @@ const dispatchAgentPhoneCommand$ = command(
         await sendAgentPhoneSlashCommandText(
           args.event,
           formatHelpMessage(),
-          signal,
           args.db,
+          signal,
         );
         return true;
       }
@@ -1337,8 +1337,8 @@ const dispatchAgentPhoneCommand$ = command(
           await sendConnectPrompt(
             args.event,
             { slashCommand: true },
-            signal,
             args.db,
+            signal,
           );
           return true;
         }
@@ -1573,7 +1573,7 @@ const replyAgentPhoneChatQueueWait$ = command(
   ): Promise<void> => {
     const notice = chatQueueWaitNotice(reason);
     if (notice) {
-      await sendAgentPhoneText(event, notice, signal, set(writeDb$));
+      await sendAgentPhoneText(event, notice, set(writeDb$), signal);
     }
   },
 );
@@ -1706,11 +1706,11 @@ export const handleAgentPhoneMessage$ = command(
     const userLink = params.userLink;
     if (!userLink) {
       if (isAgentPhoneGroupEvent(params.event)) {
-        await sendGroupConnectInDmPrompt(params.event, signal, db);
+        await sendGroupConnectInDmPrompt(params.event, db, signal);
         return;
       }
 
-      await sendConnectPrompt(params.event, undefined, signal, db);
+      await sendConnectPrompt(params.event, undefined, db, signal);
       return;
     }
 
@@ -1720,8 +1720,8 @@ export const handleAgentPhoneMessage$ = command(
       await sendAgentPhoneText(
         params.event,
         `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-        signal,
         db,
+        signal,
       );
       return;
     }

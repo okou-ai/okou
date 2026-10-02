@@ -1325,6 +1325,7 @@ const handleAgentPhoneConnectionCode$ = command(
         : sendAgentPhoneText(
             event,
             agentPhoneConnectionCodeFailureReply(result),
+            undefined,
             signal,
           ),
       (error) => {

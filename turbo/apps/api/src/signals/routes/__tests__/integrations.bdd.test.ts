@@ -6117,6 +6117,26 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       toNumber: phoneHandle,
     });
 
+    server.use(
+      http.post("https://api.agentphone.test/v1/messages", () => {
+        return HttpResponse.json({ status: "sent" });
+      }),
+    );
+    // The real endpoint must fail instead of reporting a fabricated message ID.
+    // The typed client exposes an undeclared server-error response as an error.
+    await expect(
+      integrations.requestSendPhoneMessage(
+        actor,
+        {
+          agentphoneAgentId: connectBody.agentphoneAgentId,
+          text: "BDD AgentPhone send without a provider message id",
+        },
+        [200],
+      ),
+    ).rejects.toThrow(
+      "Unknown response status 500 for POST /api/integrations/phone/message",
+    );
+
     server.use(agentPhoneVerificationSend(503));
     const failedPhoneMessage = await integrations.requestSendPhoneMessage(
       actor,
