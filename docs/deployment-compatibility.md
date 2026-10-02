@@ -54,7 +54,7 @@ CLI packages are run-captured; this change does not rewrite an existing Run's
 package or payload. This is source-level compatibility evidence, not deployed
 mixed-client verification.
 
-The rollback resolver uses the canonical main commit introducing migration 1314
+The rollback resolver uses the canonical main commit introducing migration 1315
 as the API floor. Pre-cleanup APIs are not compatible with the contracted schema.
 Rollback promotes artifacts, not database columns: recovery below this floor
 requires a reviewed forward restoration migration before the old API serves.
