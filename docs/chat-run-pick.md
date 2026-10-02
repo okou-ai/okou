@@ -173,8 +173,11 @@ there are no database-row/log assertions, elapsed polling or production hooks.
 
 ## One pick and one organization pass
 
-Each call invalidates organization capacity/candidate reads. There is no shared
-`internalClaim$`; the acquired claim is a local immutable value. The candidate query and conditional claim update both exclude
+Each call invalidates organization capacity/candidate reads (`internalReloadPick$`
+revision). The conditional claim update's result is stored in
+`internalSelectedClaim$`, a write result from which the computed
+`selectedClaimRunObjects$` builds the claim's child graph
+(`createThreadClaimRunObjects`); the claim itself is an immutable value. The candidate query and conditional claim update both exclude
 threads with an active run. That slot also covers cancellation recovery until
 Runner completion or the existing stale-run cleanup releases it. A claim contains
 the organization, thread and a random token, with a fixed 10-second lease. Capacity and the FIFO head are read
