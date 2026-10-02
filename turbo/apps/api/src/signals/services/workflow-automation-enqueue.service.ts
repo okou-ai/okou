@@ -2,8 +2,8 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, eq, isNull, ne, notExists, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, isNull, ne, notExists, or } from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { PreparedChatEventRow } from "./chat-event-append.service";
 import { randomUUID } from "node:crypto";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -225,7 +225,10 @@ export function pendingWorkflowScheduleTickCondition(args: {
     ),
     ne(chatEvents.id, args.eventId),
     notExists(
-      sql`SELECT 1 FROM ${chatEvents} AS workflow_tick_revoker WHERE ${eq(revoker.revokesEventId, chatEvents.id)}`,
+      new QueryBuilder()
+        .select({ id: revoker.id })
+        .from(revoker)
+        .where(eq(revoker.revokesEventId, chatEvents.id)),
     ),
   );
 }
