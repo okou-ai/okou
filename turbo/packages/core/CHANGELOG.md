@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.726.0](https://github.com/okou-ai/okou/compare/core-v8.725.7...core-v8.726.0) (2026-10-02)
+
+
+### Features
+
+* archive imessage group history with per-message access control ([#37516](https://github.com/okou-ai/okou/issues/37516)) ([c7bd6af](https://github.com/okou-ai/okou/commit/c7bd6af7f99afe1ed700315993cbab38ce68dbbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.534.0
+
 ## [8.725.7](https://github.com/okou-ai/okou/compare/core-v8.725.6...core-v8.725.7) (2026-10-02)
 
 

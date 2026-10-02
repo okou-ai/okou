@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.375.0](https://github.com/okou-ai/okou/compare/cli-v9.374.7...cli-v9.375.0) (2026-10-02)
+
+
+### Features
+
+* archive imessage group history with per-message access control ([#37516](https://github.com/okou-ai/okou/issues/37516)) ([c7bd6af](https://github.com/okou-ai/okou/commit/c7bd6af7f99afe1ed700315993cbab38ce68dbbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.534.0
+    * @okouai/core bumped to 8.726.0
+    * @okouai/pi-agent-runtime bumped to 1.45.8
+
 ## [9.374.7](https://github.com/okou-ai/okou/compare/cli-v9.374.6...cli-v9.374.7) (2026-10-02)
 
 
