@@ -531,7 +531,9 @@ async function mutationTool<T extends Record<string, unknown>>(
   }
   if (result.value.kind === "error") {
     return toolError({
-      code: result.value.code,
+      // Common Web commands use uppercase API codes; MCP's existing wire
+      // contract uses lowercase snake_case while retaining the business meaning.
+      code: result.value.code.toLowerCase(),
       message: result.value.message,
       retryable: result.value.retryable,
     });
@@ -560,14 +562,14 @@ function registerManageTools(
         openWorldHint: false,
       },
     },
-    (input, context) => {
+    (input) => {
       return mutationTool(
         access,
         "okou:chat:manage",
         (signal) => {
           return access.updateThread(input, signal);
         },
-        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        requestSignal,
         {
           summarize(data) {
             return `Updated chat thread ${data.threadId}.`;
@@ -585,6 +587,10 @@ function registerMutationTools(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  // The SDK aborts mcpReq.signal when a successful exchange closes, including
+  // normal JSON response completion. Ordinary Web mutation commands schedule
+  // finite background work with their caller's HTTP/application lifetime, so
+  // keep that real request signal rather than the shorter SDK exchange signal.
   if (access.scopes.includes("okou:chat:manage")) {
     registerManageTools(server, access, requestSignal);
   }
@@ -605,14 +611,14 @@ function registerMutationTools(
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:chat:send",
           (signal) => {
             return access.sendMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
               return `Accepted input in chat thread ${data.threadId}.`;
@@ -639,14 +645,14 @@ function registerMutationTools(
           openWorldHint: false,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.revokeQueuedMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
               return `Recalled queued input in chat thread ${data.threadId}.`;
@@ -671,14 +677,14 @@ function registerMutationTools(
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.cancelRun(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
               return `Run ${data.runId} is cancelled${data.alreadyCancelled ? " (already cancelled)" : ""}.`;
