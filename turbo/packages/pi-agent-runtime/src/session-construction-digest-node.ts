@@ -65,7 +65,8 @@ export interface PiSessionConstructionDocument {
 /**
  * Capture verified model-limit corrections alongside the constructed prompt
  * and ordered tool schemas. Limits-only changes must also invalidate stale
- * installed CLIs, even when their prompt/tool profiles are identical.
+ * installed CLIs, even when their prompt/tool profiles are identical. The
+ * returned document owns its limit snapshot, not the live runtime registry.
  */
 export async function computePiSessionConstructionDocument(): Promise<PiSessionConstructionDocument> {
   const profiles: PiSessionConstructionProfileDocument[] = [];
@@ -100,7 +101,7 @@ export async function computePiSessionConstructionDocument(): Promise<PiSessionC
   }
   return {
     version: 2,
-    modelLimitOverrides: PI_MODEL_LIMIT_OVERRIDES,
+    modelLimitOverrides: structuredClone(PI_MODEL_LIMIT_OVERRIDES),
     profiles,
   };
 }
