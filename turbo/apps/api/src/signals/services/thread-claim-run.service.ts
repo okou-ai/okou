@@ -18,7 +18,6 @@ import {
   prepareRegisteredModelEnvironment,
   loadRunRoutePricing,
   frameworkForProviderSelection,
-  isModelProviderType,
   materializePreparedPiProvider,
   prepareModelUsageContext,
   type ResolveModelProviderEnvironmentArgs,
@@ -479,6 +478,7 @@ import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
+  MODEL_PROVIDER_TYPES,
   getFrameworkForType,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
@@ -12778,6 +12778,10 @@ export function createThreadClaimRunObjects(
     },
   );
   return { hasFirstPickableChatEvent$, startRun$ };
+}
+
+function isModelProviderType(type: string): type is ModelProviderType {
+  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }
 
 // --- Thread-private implementation: storage manifest ---

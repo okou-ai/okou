@@ -543,7 +543,7 @@ export function frameworkForProviderSelection(
     : null;
 }
 
-export function isModelProviderType(type: string): type is ModelProviderType {
+function isModelProviderType(type: string): type is ModelProviderType {
   return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }
 
