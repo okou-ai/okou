@@ -325,11 +325,10 @@ type MaintenanceAdmission = Awaited<ReturnType<typeof admitMaintenance>>;
 
 /** Exact pinned source → effect-resolved runtime → Pi model configuration. */
 async function prepareMaintenanceModel(
-  db: Db,
+  db: ReadonlyDb,
   admitted: MaintenanceAdmission,
   job: ClaimedPiMemoryPhase2Job,
   source: Parameters<typeof prepareManagedModelEnvironment>[1],
-  signal: AbortSignal,
 ) {
   const { catalog, credential, selectedModel, framework } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
@@ -353,7 +352,6 @@ async function prepareMaintenanceModel(
             sourceId: credential.pin.modelProviderId ?? "",
             piExecution: true,
           });
-  signal.throwIfAborted();
   const piInput = { catalog, piExecution: true };
   const modelProvider = resolvedProvider
     ? await materializePreparedPiProvider(piInput, resolvedProvider)
@@ -559,40 +557,6 @@ async function prepareMaintenanceUsage(args: {
     throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
   }
   return { permissionManifest, usage };
-}
-
-/** The selected model's runtime, then its usage pricing and permissions. */
-async function prepareMaintenanceModelAndUsage(
-  args: {
-    readonly db: Db;
-    readonly readDb: ReadonlyDb;
-    readonly resolution: Parameters<
-      typeof prepareMaintenanceUsage
-    >[0]["resolution"];
-    readonly admitted: MaintenanceAdmission;
-    readonly job: ClaimedPiMemoryPhase2Job;
-    readonly source: NonNullable<Parameters<typeof prepareMaintenanceModel>[3]>;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-  signal: AbortSignal,
-) {
-  const { modelProvider, piSandbox } = await prepareMaintenanceModel(
-    args.db,
-    args.admitted,
-    args.job,
-    args.source,
-    signal,
-  );
-  signal.throwIfAborted();
-  const { permissionManifest, usage } = await prepareMaintenanceUsage({
-    db: args.readDb,
-    resolution: args.resolution,
-    catalog: args.admitted.catalog,
-    modelProvider,
-    timing: args.timing,
-  });
-  signal.throwIfAborted();
-  return { modelProvider, piSandbox, permissionManifest, usage };
 }
 
 /** Pi's own record of one maintenance run: identity, prompt and model. */
@@ -915,6 +879,41 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
  * preparation, the member metadata and the disabled paid tools. Construction
  * builds computed reads only, so the launch command may build it per job.
  */
+/**
+ * The admitted job's model reads: the pinned source snapshot, its runtime
+ * (side-effect-free decryption or managed-key read, Ethan 2026-10-02) and its
+ * usage pricing and permissions. Built from plain values after admission.
+ */
+function createMaintenanceModelReads(
+  job: ClaimedPiMemoryPhase2Job,
+  admitted: MaintenanceAdmission,
+  timing: ApiDispatchTimingCollector,
+) {
+  const source$ = createModelSourceSnapshot({
+    orgId: job.orgId,
+    userId: job.userId,
+    source: pinnedSourceIdentity(admitted.credential),
+  });
+  const model$ = computed(async (get) => {
+    const source = await get(source$);
+    if (!source) {
+      throw new PiMaintenanceDispositionError("credential_unavailable");
+    }
+    return await prepareMaintenanceModel(get(db$), admitted, job, source);
+  });
+  const usage$ = computed(async (get) => {
+    const { modelProvider } = await get(model$);
+    return await prepareMaintenanceUsage({
+      db: get(db$),
+      resolution: get(usagePricingResolution$),
+      catalog: admitted.catalog,
+      modelProvider,
+      timing,
+    });
+  });
+  return { source$, model$, usage$ };
+}
+
 function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
   const owner = { orgId: job.orgId, userId: job.userId };
   const memoryMounts = [maintenanceMemoryMount(job)];
@@ -982,20 +981,16 @@ const launchMaintenanceRun$ = command(
     job: ClaimedPiMemoryPhase2Job,
     signal: AbortSignal,
   ): Promise<string> => {
-    const { owner, memoryMounts, storage, member$, disabledPaidTools$ } =
+    const { memoryMounts, storage, member$, disabledPaidTools$ } =
       createMaintenanceRunReads(job);
     const db = set(writeDb$);
     const apiStartTime = now();
     const admitted = await admitMaintenance(db, job, signal);
     const timing = new ApiDispatchTimingCollector();
+    const modelReads = createMaintenanceModelReads(job, admitted, timing);
     const [source, member, disabledPaidTools, preparedMounts] =
       await Promise.all([
-        get(
-          createModelSourceSnapshot({
-            ...owner,
-            source: pinnedSourceIdentity(admitted.credential),
-          }),
-        ),
+        get(modelReads.source$),
         get(member$),
         get(disabledPaidTools$),
         settle(get(storage.preparedMounts$), signal),
@@ -1004,19 +999,9 @@ const launchMaintenanceRun$ = command(
     if (!source) {
       throw new PiMaintenanceDispositionError("credential_unavailable");
     }
-    const { modelProvider, piSandbox, permissionManifest, usage } =
-      await prepareMaintenanceModelAndUsage(
-        {
-          db,
-          readDb: get(db$),
-          resolution: get(usagePricingResolution$),
-          admitted,
-          job,
-          source,
-          timing,
-        },
-        signal,
-      );
+    const [{ modelProvider, piSandbox }, { permissionManifest, usage }] =
+      await Promise.all([get(modelReads.model$), get(modelReads.usage$)]);
+    signal.throwIfAborted();
     const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
     const record = maintenanceRunRecord({
       job,
