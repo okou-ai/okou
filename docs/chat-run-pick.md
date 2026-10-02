@@ -455,11 +455,13 @@ compatibility behavior. Catalog publication locks remain unchanged.
 
 Gateway Thread execution now consumes `createModelSourceSnapshot` for the exact
 selected surface. Configuration, mappings and encrypted credentials share one
-read snapshot. Its prepared runtime Promise is started by a private effect-owned
-command alongside launch/resource preparation, not by a read computed. That
-command decrypts once and calls synchronous `compileModelRuntime`; downstream
-model reads await that actual preparation fact. Official reconciliation and
-independent reads are not serialized behind an early full-command await.
+read snapshot. KMS decryption and the exact managed-key read have no side
+effects, so (Ethan, 2026-10-02) the prepared runtime is the computed
+`preparedConfiguredEnvironment$`: it decrypts once per claim graph and calls
+synchronous `compileModelRuntime`, and downstream model reads get it directly.
+Side effects (OAuth refresh, encryption with database writes, Stripe and cache
+writes) stay in commands. Official reconciliation and independent reads are not
+serialized behind it.
 
 The pure converter has no query, KMS or provider call. Thread privately assembles
 supplementary firewall and Codex protocol from the same configuration snapshot;
@@ -507,8 +509,8 @@ credential names; eager decryption consumes the snapshot's credential values.
 
 The existing catalog-declared-name and captured connection-revision authority
 condition is retained in a caller-owned names/identity query. It reads no credential
-values a second time. Builtin decryption now runs in a private effect-owned command;
-read nodes await its preparation Promise alongside the model/launch preparation.
+values a second time. Builtin decryption is the side-effect-free computed
+`decryptedSecrets$`, resolved once per claim graph, as on main.
 Unready input exits before either new effect reads full preparation context.
 Thread custom connectors now read every candidate account through the same
 reader. Custom results unfold the structured connection facts (auth method,

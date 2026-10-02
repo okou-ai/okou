@@ -1610,7 +1610,7 @@ async function resolveModelCredentialValues(
   return values;
 }
 
-/** Exact registered/account source → effect-resolved credentials → runtime. */
+/** Exact registered/account source → resolved credentials → runtime. */
 export async function prepareRegisteredModelEnvironment(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
@@ -1796,7 +1796,7 @@ export async function prepareManagedModelEnvironment(
   };
 }
 
-/** Exact selected gateway surface → effect-resolved key → gateway runtime. */
+/** Exact selected gateway surface → resolved key → gateway runtime. */
 export async function prepareGatewayModelEnvironment(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,

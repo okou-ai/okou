@@ -162,7 +162,11 @@ tasks; one was dropped and later restored during #37430.
   When the signal aborts, the remaining steps are skipped. This is the intended
   abort semantics, not a bug to compensate for.
 - A `computed` cannot capture a signal (`ccstate/no-computed-signal`). External
-  reads started from a computed are owned by their own request timeout. If such
+  reads started from a computed are owned by their own request timeout.
+  Side-effect-free reads, including KMS decryption and an exact managed-key
+  read, may run in a computed (Ethan, 2026-10-02); side effects such as OAuth
+  refresh, encryption followed by a database write, Stripe or cache writes stay
+  in commands. If such
   a read must follow the caller's cancellation, move it into a command that
   receives the signal.
 
