@@ -369,7 +369,10 @@ import {
   customConnectorPermissionBundleDependencySlug,
   type CustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
-import { discordConversationAccess } from "./discord-access.service";
+import {
+  discordConversationAccess,
+  type DiscordConversationAccess,
+} from "./discord-access.service";
 import {
   type DiscordDeliveryTarget,
   discordDeliveryTargetSchema,
@@ -1421,6 +1424,22 @@ function queuedPromptRunInput(args: {
     ...queuedIntegrationLaunchFields(launch, input.agent.id),
     autonomyBudget: input.queuedMessage.autonomyBudget.autonomyBudget,
   };
+}
+
+function checkedQueuedDiscordAccess(
+  access: DiscordConversationAccess,
+  target: DiscordDeliveryTarget,
+) {
+  if (access.kind === "denied") {
+    if (access.response.status === 403 || access.response.status === 404) {
+      return null;
+    }
+    throw new Error(`Discord access check failed: ${access.response.status}`);
+  }
+  return access.binding.connectionId === target.connectionId &&
+    access.binding.discordUserId === target.discordUserId
+    ? access
+    : null;
 }
 
 function renderPromptDiscordMaterial({
@@ -4252,9 +4271,6 @@ export function createThreadClaimRunObjects(
   const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
   const promptInternalModelInternalModel$ =
     state<QueuedMessageModelRouteResolution | null>(null);
-  const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
-    readonly material: QueuedLaunchMaterial | null;
-  } | null>(null);
   const promptInputInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
       const head = await get(head$);
@@ -5049,13 +5065,7 @@ export function createThreadClaimRunObjects(
           break;
         }
         case "discord": {
-          const resolved = get(
-            promptInternalDiscordMaterialInternalDiscordMaterial$,
-          );
-          if (!resolved) {
-            throw new Error("Discord material has not been resolved");
-          }
-          const { material } = resolved;
+          const material = await get(promptDiscordMaterial$);
           if (material) {
             return material;
           }
@@ -5725,107 +5735,77 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptCheckPromptDiscordAccessCheckPromptDiscordAccess$ = command(
-    async (
-      { get },
-      input: {
-        readonly channelId: string;
-        readonly mode: "view" | "read" | "write";
-      },
-      signal: AbortSignal,
-    ) => {
-      const [args, target] = await Promise.all([
+  const promptDiscordMaterial$ = computed(
+    async (get): Promise<QueuedLaunchMaterial | null> => {
+      const [args, context, target] = await Promise.all([
         get(promptLoaderArgsLoaderArgs$),
+        get(promptDiscordContextDiscordContext$),
         get(promptDiscordRouteDiscordRoute$),
       ]);
-      signal.throwIfAborted();
-      if (!target) {
+      if (args.contextType !== "discord" || !context || !target) {
         return null;
       }
-      const access = await get(
-        discordConversationAccess({
-          orgId: args.orgId,
-          userId: args.userId,
-          guildId: target.guildId,
-          ...input,
-        }),
+      const identity = {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: target.guildId,
+      };
+      // Preserve each fresh authority boundary and its order: source view,
+      // optional history read, then destination write permission. No POST occurs.
+      const sourceAccess = checkedQueuedDiscordAccess(
+        await get(
+          discordConversationAccess({
+            ...identity,
+            channelId: context.sourceChannelId,
+            mode: "view",
+          }),
+        ),
+        target,
       );
-      signal.throwIfAborted();
-      if (access.kind === "denied") {
-        if (access.response.status === 403 || access.response.status === 404) {
-          return null;
-        }
-        throw new Error(
-          `Discord access check failed: ${access.response.status}`,
-        );
-      }
-      if (
-        access.binding.connectionId !== target.connectionId ||
-        access.binding.discordUserId !== target.discordUserId
-      ) {
+      if (!sourceAccess) {
         return null;
       }
-      return access;
+      let conversationContextAllowed =
+        sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+      if (context.conversationContext !== null && conversationContextAllowed) {
+        conversationContextAllowed =
+          checkedQueuedDiscordAccess(
+            await get(
+              discordConversationAccess({
+                ...identity,
+                channelId: context.sourceChannelId,
+                mode: "read",
+              }),
+            ),
+            target,
+          ) !== null;
+      }
+      const destinationAccess = checkedQueuedDiscordAccess(
+        await get(
+          discordConversationAccess({
+            ...identity,
+            channelId: target.channelId,
+            mode: "write",
+          }),
+        ),
+        target,
+      );
+      if (!destinationAccess) {
+        return null;
+      }
+      const material = renderPromptDiscordMaterial({
+        context,
+        target,
+        args,
+        access: { ...destinationAccess, conversationContextAllowed },
+      });
+      return {
+        ...material,
+        triggerSource: "discord",
+        delivery: { discordDelivery: material.discordDelivery },
+      };
     },
   );
-  const promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$ =
-    command(
-      async (
-        { get, set },
-        signal: AbortSignal,
-      ): Promise<QueuedLaunchMaterial | null> => {
-        const [args, context, target] = await Promise.all([
-          get(promptLoaderArgsLoaderArgs$),
-          get(promptDiscordContextDiscordContext$),
-          get(promptDiscordRouteDiscordRoute$),
-        ]);
-        signal.throwIfAborted();
-        if (args.contextType !== "discord" || !context || !target) {
-          return null;
-        }
-        const sourceAccess = await set(
-          promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-          { channelId: context.sourceChannelId, mode: "view" },
-          signal,
-        );
-        if (!sourceAccess) {
-          return null;
-        }
-        let conversationContextAllowed =
-          sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
-        if (
-          context.conversationContext !== null &&
-          conversationContextAllowed
-        ) {
-          conversationContextAllowed =
-            (await set(
-              promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-              { channelId: context.sourceChannelId, mode: "read" },
-              signal,
-            )) !== null;
-        }
-        const destinationAccess = await set(
-          promptCheckPromptDiscordAccessCheckPromptDiscordAccess$,
-          { channelId: target.channelId, mode: "write" },
-          signal,
-        );
-        if (!destinationAccess) {
-          return null;
-        }
-        const access = { ...destinationAccess, conversationContextAllowed };
-        const material = renderPromptDiscordMaterial({
-          context,
-          target,
-          access,
-          args,
-        });
-        return {
-          ...material,
-          triggerSource: "discord",
-          delivery: { discordDelivery: material.discordDelivery },
-        };
-      },
-    );
   const internalEarlyAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       const head = await get(head$);
@@ -5880,18 +5860,12 @@ export function createThreadClaimRunObjects(
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<void> => {
-      const [model, material] = await Promise.all([
-        set(promptResolvePromptModelResolvePromptModel$, signal),
-        head.contextType === "discord"
-          ? set(
-              promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$,
-              signal,
-            )
-          : null,
-      ]);
+      const model = await set(
+        promptResolvePromptModelResolvePromptModel$,
+        signal,
+      );
       signal.throwIfAborted();
       set(promptInternalModelInternalModel$, model);
-      set(promptInternalDiscordMaterialInternalDiscordMaterial$, { material });
     },
   );
   const promptAssembleQueuedPromptRunAssembly$ = computed(
