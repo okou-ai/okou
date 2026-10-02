@@ -492,6 +492,54 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     },
   );
 
+  it("keeps the longest deadline when immediate failure reports compete", async () => {
+    const startedAt = Date.UTC(2026, 7, 21, 0, 10, 0);
+    const claimed = await createClaimedBuiltInRun();
+    const primary = await resolveBuiltInModelRouteFixture(
+      context,
+      claimed.selectedModel,
+    );
+    if (!primary) {
+      throw new Error("Expected a built-in model primary route");
+    }
+    registerBuiltInCandidateCooldownCleanup(
+      context,
+      claimed.selectedModel,
+      primary,
+    );
+    await withMockNowForTest(startedAt, async () => {
+      const outcomes = await Promise.all([
+        runs.reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "authentication",
+        }),
+        runs.reportRunnerModelProviderFailure(claimed.runId, {
+          failureKind: "rate_limit",
+          retryAfterSeconds: 120,
+        }),
+      ]);
+      expect(outcomes).toStrictEqual([
+        { outcome: "recorded" },
+        { outcome: "recorded" },
+      ]);
+    });
+    await withMockNowForTest(startedAt + 30 * 60_000 - 1, async () => {
+      await expect(
+        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
+      ).resolves.not.toMatchObject({
+        provider_type: primary.provider_type,
+        upstream_model: primary.upstream_model,
+      });
+    });
+    await withMockNowForTest(startedAt + 30 * 60_000, async () => {
+      await expect(
+        resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
+      ).resolves.toMatchObject({
+        provider_type: primary.provider_type,
+        upstream_model: primary.upstream_model,
+      });
+    });
+  });
+
   it("requires an inclusive 60-second upstream transport streak", async () => {
     const startedAt = Date.UTC(2026, 7, 21, 0, 15, 0);
     const claimed = await createClaimedBuiltInRun();
