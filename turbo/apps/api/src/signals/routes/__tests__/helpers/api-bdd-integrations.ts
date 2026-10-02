@@ -190,7 +190,7 @@ type SlackIngressPath =
   | "/api/webhooks/slack/interactive";
 type SlackIngressStatus = 200 | 400 | 401 | 500 | 503;
 type SlackDownloadStatus = 200 | 400 | 401 | 404 | 413 | 502;
-type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404;
+type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404 | 500;
 type TelegramWebhookStatus = 200 | 400 | 401 | 404;
 
 type SlackIngressResponse = {
@@ -500,6 +500,9 @@ async function requestRawAgentPhoneWebhook(
     }
     case 404: {
       return { status: 404, ...result };
+    }
+    case 500: {
+      return { status: 500, ...result };
     }
     default: {
       throw new Error(

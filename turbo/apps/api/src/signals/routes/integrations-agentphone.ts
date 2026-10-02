@@ -814,33 +814,15 @@ function extractAgentPhoneIsGroup(
 }
 
 function extractAgentPhoneParticipants(
-  body: Record<string, unknown>,
   data: Record<string, unknown>,
 ): readonly string[] {
-  const groups = [valueObject(data.group), data, body];
-  const participants = groups.flatMap((source) => {
-    return arrayValue(source, [
-      "participants",
-      "participantNumbers",
-      "participant_numbers",
-    ])
-      .map((participant) => {
-        if (typeof participant === "string") {
-          return participant;
-        }
-        return stringValue(valueObject(participant), [
-          "identifier",
-          "phoneHandle",
-          "phone_handle",
-          "handle",
-          "phone",
-          "number",
-        ]);
-      })
-      .filter((participant): participant is string => {
-        return Boolean(participant?.trim());
-      });
-  });
+  const participants = arrayValue(valueObject(data.group), ["participants"])
+    .map((participant) => {
+      return stringValue(valueObject(participant), ["identifier"]);
+    })
+    .filter((participant): participant is string => {
+      return Boolean(participant?.trim());
+    });
   return [...new Set(participants)];
 }
 
@@ -922,16 +904,14 @@ function extractAgentPhoneRecentHistory(
 function extractAgentPhoneMessageFields(
   body: Record<string, unknown>,
   data: Record<string, unknown>,
-  webhookId: string | null,
 ) {
+  const isGroup = extractAgentPhoneIsGroup(body, data);
   const messageId =
     stringValue(data, ["messageId", "id"]) ??
-    stringValue(body, ["messageId", "id"]) ??
-    webhookId;
+    stringValue(body, ["messageId", "id"]);
   const agentphoneAgentId =
     stringValue(body, ["agentId", "agent_id"]) ??
     stringValue(data, ["agentId", "agent_id"]);
-  const isGroup = extractAgentPhoneIsGroup(body, data);
   const senderIdentifier = stringValue(data, [
     "senderIdentifier",
     "sender_identifier",
@@ -962,7 +942,7 @@ function extractAgentPhoneEvent(
   channel: AgentPhoneChannel,
 ): AgentPhoneMessageEvent | null {
   const data = valueObject(body.data);
-  const fields = extractAgentPhoneMessageFields(body, data, webhookId);
+  const fields = extractAgentPhoneMessageFields(body, data);
   const { messageId, agentphoneAgentId, fromNumber, toNumber, messageBody } =
     fields;
   const group = valueObject(data.group);
@@ -978,7 +958,7 @@ function extractAgentPhoneEvent(
     stringValue(group, ["groupId", "group_id"]) ??
     stringValue(data, ["groupId", "group_id"]) ??
     null;
-  const participantHandles = extractAgentPhoneParticipants(body, data);
+  const participantHandles = extractAgentPhoneParticipants(data);
   const senderHandle = fields.senderIdentifier ?? fields.fromNumber;
   const participants =
     fields.isGroup && senderHandle
@@ -1023,6 +1003,61 @@ function extractAgentPhoneEvent(
   };
 }
 
+function missingAgentPhoneRequiredFieldResponse(
+  body: Record<string, unknown>,
+  channel: AgentPhoneChannel,
+  officialPhoneNumber: string,
+) {
+  const fields = extractAgentPhoneMessageFields(body, valueObject(body.data));
+  const normalizedToNumber = fields.toNumber
+    ? normalizeAgentPhoneHandle(fields.toNumber, "sms")
+    : null;
+  const normalizedOfficialNumber = normalizeAgentPhoneHandle(
+    officialPhoneNumber,
+    "sms",
+  );
+  if (
+    normalizedToNumber &&
+    normalizedOfficialNumber &&
+    normalizedToNumber !== normalizedOfficialNumber
+  ) {
+    return null;
+  }
+
+  const missingField = !fields.messageId
+    ? "message id"
+    : !fields.agentphoneAgentId
+      ? "agent id"
+      : !fields.fromNumber
+        ? "sender identity"
+        : !normalizedToNumber
+          ? "recipient"
+          : null;
+  if (!missingField) {
+    return null;
+  }
+
+  const eventKind =
+    channel === "imessage" && fields.isGroup
+      ? "iMessage group"
+      : "AgentPhone message";
+  return textResponse(`${eventKind} webhook is missing ${missingField}`, 500);
+}
+
+function agentPhoneInvalidEventResponse(
+  body: Record<string, unknown>,
+  channel: AgentPhoneChannel,
+  officialPhoneNumber: string,
+) {
+  return (
+    missingAgentPhoneRequiredFieldResponse(
+      body,
+      channel,
+      officialPhoneNumber,
+    ) ?? okText()
+  );
+}
+
 interface AgentPhoneWebhookConfig {
   readonly webhookSecret: string;
   readonly officialPhoneNumber: string;
@@ -1037,17 +1072,23 @@ function agentPhoneWebhookConfig(): AgentPhoneWebhookConfig | undefined {
   return { webhookSecret, officialPhoneNumber };
 }
 
-function shouldAcceptAgentPhoneEvent(args: {
+type AgentPhoneEventAcceptance =
+  | "accept"
+  | "ignore"
+  | "missing-group-id"
+  | "missing-conversation-id";
+
+function classifyAgentPhoneEvent(args: {
   readonly event: AgentPhoneMessageEvent;
   readonly config: AgentPhoneWebhookConfig;
   readonly channel: AgentPhoneChannel;
   readonly webhookId: string | null;
-}): boolean {
+}): AgentPhoneEventAcceptance {
   if (
     normalizeAgentPhoneHandle(args.event.toNumber, "sms") !==
     normalizeAgentPhoneHandle(args.config.officialPhoneNumber, "sms")
   ) {
-    return false;
+    return "ignore";
   }
 
   const normalizedFrom = normalizeAgentPhoneHandle(
@@ -1071,7 +1112,7 @@ function shouldAcceptAgentPhoneEvent(args: {
       channel: args.channel,
       fromShape: describeAgentPhoneHandleShape(args.event.fromNumber),
     });
-    return false;
+    return "ignore";
   }
 
   if (
@@ -1082,7 +1123,7 @@ function shouldAcceptAgentPhoneEvent(args: {
     log.warn("AgentPhone group webhook is missing a provider group id", {
       webhookId: args.webhookId,
     });
-    return false;
+    return "missing-group-id";
   }
 
   if (
@@ -1093,10 +1134,10 @@ function shouldAcceptAgentPhoneEvent(args: {
     log.warn("AgentPhone group webhook is missing a provider conversation id", {
       webhookId: args.webhookId,
     });
-    return false;
+    return "missing-conversation-id";
   }
 
-  return true;
+  return "accept";
 }
 
 function agentPhoneWebhookAdmissionResponse(args: {
@@ -1105,13 +1146,25 @@ function agentPhoneWebhookAdmissionResponse(args: {
   readonly channel: AgentPhoneChannel;
   readonly webhookId: string | null;
 }) {
-  if (!shouldAcceptAgentPhoneEvent(args)) {
-    return okText();
+  switch (classifyAgentPhoneEvent(args)) {
+    case "ignore": {
+      return okText();
+    }
+    case "missing-group-id": {
+      return textResponse("iMessage group webhook is missing groupId", 500);
+    }
+    case "missing-conversation-id": {
+      return textResponse(
+        "iMessage group webhook is missing conversationId",
+        500,
+      );
+    }
+    case "accept": {
+      return isMissingAgentPhoneGroupTimestamp(args.event)
+        ? textResponse("iMessage group webhook is missing receivedAt", 500)
+        : null;
+    }
   }
-  if (isMissingAgentPhoneGroupTimestamp(args.event)) {
-    return textResponse("iMessage group webhook is missing receivedAt", 500);
-  }
-  return null;
 }
 
 function shouldDispatchAgentPhoneEvent(event: AgentPhoneMessageEvent): boolean {
@@ -1262,7 +1315,11 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const webhookId = request.header("x-webhook-id") ?? null;
   const event = extractAgentPhoneEvent(body, webhookId, rawChannel);
   if (!event) {
-    return okText();
+    return agentPhoneInvalidEventResponse(
+      body,
+      rawChannel,
+      config.officialPhoneNumber,
+    );
   }
 
   const admissionResponse = agentPhoneWebhookAdmissionResponse({

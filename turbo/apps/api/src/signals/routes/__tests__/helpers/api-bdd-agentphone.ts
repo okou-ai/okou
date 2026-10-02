@@ -59,7 +59,7 @@ interface AgentPhoneInboundMessage {
   readonly channel: "imessage" | "sms" | "mms";
   readonly from: string;
   readonly body: string;
-  readonly messageId?: string;
+  readonly messageId?: string | null;
   readonly conversationId?: string;
   readonly isGroup?: boolean;
   readonly groupId?: string | null;
@@ -139,7 +139,7 @@ export function bddGroupId(conversationId: string): string {
 
 function buildAgentPhoneInboundWebhookBody(args: {
   readonly message: AgentPhoneInboundMessage;
-  readonly messageId: string;
+  readonly messageId: string | undefined;
   readonly groupId: string | null;
   readonly receivedAt: string | undefined;
 }): string {
@@ -149,7 +149,7 @@ function buildAgentPhoneInboundWebhookBody(args: {
     channel: message.channel,
     ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
     data: {
-      id: messageId,
+      ...(messageId === undefined ? {} : { id: messageId }),
       agentId: AGENTPHONE_BDD_AGENT_ID,
       from: message.from,
       to: AGENTPHONE_BDD_PHONE_NUMBER,
@@ -237,9 +237,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
 
   async function postAgentPhoneInboundMessage(
     message: AgentPhoneInboundMessage,
-    statuses: readonly (200 | 500)[] = [200],
+    statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
   ): Promise<string> {
     const messageId = message.messageId ?? `ap-msg-${randomUUID()}`;
+    const providerMessageId =
+      message.messageId === null ? undefined : messageId;
     const groupId =
       message.isGroup && message.groupId !== null
         ? (message.groupId ?? bddGroupId(message.conversationId ?? messageId))
@@ -262,7 +264,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
     }
     const rawBody = buildAgentPhoneInboundWebhookBody({
       message,
-      messageId,
+      messageId: providerMessageId,
       groupId,
       receivedAt,
     });

@@ -5,7 +5,6 @@ const log = logger("api:agentphone");
 
 interface AgentPhoneSentMessage {
   readonly id: string;
-  readonly status: string;
   readonly channel: string | null;
   readonly fromNumber: string | null;
   readonly toNumber: string;
@@ -94,7 +93,11 @@ export async function sendAgentPhoneMessage(
     throw makeAgentPhoneApiError(response.status, text);
   }
 
-  const result = (await response.json()) as Record<string, unknown>;
+  const result = valueObject(await response.json());
+  const id = typeof result.id === "string" ? result.id : undefined;
+  if (!id?.trim()) {
+    throw new Error("AgentPhone send response is missing a message id");
+  }
   const mediaUrls = Array.isArray(result.media_urls)
     ? result.media_urls.filter((item): item is string => {
         return typeof item === "string";
@@ -102,8 +105,7 @@ export async function sendAgentPhoneMessage(
     : [];
 
   return {
-    id: typeof result.id === "string" ? result.id : "unknown",
-    status: typeof result.status === "string" ? result.status : "sent",
+    id,
     channel: typeof result.channel === "string" ? result.channel : null,
     fromNumber:
       typeof result.from_number === "string" ? result.from_number : null,

@@ -2031,16 +2031,19 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     const missingTimestampConversationId = uniqueConversationId();
     const missingTimestampMessageId = `ap-group-history-missing-time-${randomUUID()}`;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: firstPhone,
-      body: "group event without provider message time",
-      messageId: missingTimestampMessageId,
-      conversationId: missingTimestampConversationId,
-      isGroup: true,
-      participants: [{ identifier: firstPhone }],
-      receivedAt: null,
-    });
+    await ap.postAgentPhoneInboundMessage(
+      {
+        channel: "imessage",
+        from: firstPhone,
+        body: "group event without provider message time",
+        messageId: missingTimestampMessageId,
+        conversationId: missingTimestampConversationId,
+        isGroup: true,
+        participants: [{ identifier: firstPhone }],
+        receivedAt: null,
+      },
+      [500],
+    );
     const missingTimestampHistory =
       await integrations.requestAgentPhoneGroupHistory(
         first,
@@ -2206,6 +2209,74 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     await ap.postAgentPhoneInboundMessage(message, [500]);
     await ap.postAgentPhoneInboundMessage(message, [500]);
+    await ap.postAgentPhoneInboundMessage(
+      {
+        ...message,
+        messageId: `ap-group-invalid-time-${randomUUID()}`,
+        receivedAt: "not-a-date",
+      },
+      [500],
+    );
+    expect(sends.messages).toHaveLength(0);
+  });
+
+  it("returns 500 for direct message webhooks without provider message ids", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+
+    for (const channel of ["imessage", "sms"] as const) {
+      await ap.postAgentPhoneInboundMessage(
+        {
+          channel,
+          from: uniquePhoneHandle(),
+          body: "@Okou please help me connect",
+          messageId: null,
+          conversationId: uniqueConversationId(),
+        },
+        [500],
+      );
+    }
+    expect(sends.messages).toHaveLength(0);
+  });
+
+  it("returns 500 for group webhooks without stable provider identities", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const baseMessage = {
+      channel: "imessage" as const,
+      from: uniquePhoneHandle(),
+      body: "@Okou please help me connect",
+      conversationId: uniqueConversationId(),
+      isGroup: true,
+    };
+
+    await ap.postAgentPhoneInboundMessage(
+      { ...baseMessage, messageId: null },
+      [500],
+    );
+    await ap.postAgentPhoneInboundMessage(
+      {
+        ...baseMessage,
+        messageId: `ap-group-no-id-${randomUUID()}`,
+        groupId: null,
+      },
+      [500],
+    );
+    await ap.postAgentPhoneInboundMessage(
+      {
+        channel: baseMessage.channel,
+        from: baseMessage.from,
+        body: baseMessage.body,
+        messageId: `ap-group-no-conversation-${randomUUID()}`,
+        isGroup: true,
+      },
+      [500],
+    );
+
     expect(sends.messages).toHaveLength(0);
   });
 
