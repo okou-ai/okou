@@ -18,6 +18,25 @@ rollback and keep VncAccess disabled; source/CI/engine interop do not prove a re
 product PNG or authorize production activation. Parent delivery and activation
 remain separate from this child PR.
 
+## Pi official model-limit corrections (2026-10-02)
+
+The shared Pi resolver applies verified context/output corrections by exact
+catalog provider and model; see the
+[model-limit audit](../turbo/packages/pi-agent-runtime/src/model-limits-audit.md).
+It preserves source admission, opaque deployments, dialect compatibility,
+credentials, pricing and reasoning defaults. Public API capacity, subscription
+runtime defaults and gateway primary-provider limits remain distinct.
+
+The internal session-construction hash document now includes the correction
+table as well as prompt/tool profiles. Its format is internal; the public launch
+and installed manifest still carry the same opaque SHA-256 string. This changes
+parity for a limits-only fix, so a new API cannot silently reuse an old installed
+CLI with stale corrected limits. New API/old CLI and old API/new CLI use the
+existing task-captured immutable package on a mismatch; matching versions can
+reuse the installed bundle. Older captured contexts retain their digest/package.
+No DDL, event or launch generation, historical rewrite, deployment activation,
+or independent compaction/summary policy change is part of this correction.
+
 ## Long-context threshold in the Runner payload (2026-10-01)
 
 The long-context pricing threshold is catalog data:
@@ -4773,9 +4792,10 @@ Compatibility is negotiated per run rather than by deployment order:
 
 - `piLaunchConfig.apiFirstTurn` also accepts the optional
   `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
-  code-determined session construction (the system prompt template and the
-  ordered tool schemas for fixed inputs, one profile without and one with the
-  memory tools) that `@okouai/pi-agent-runtime` commits in
+  code-determined session construction (the system prompt template, ordered
+  tool schemas for fixed inputs, and verified model-limit corrections; one
+  profile without and one with the memory tools) that
+  `@okouai/pi-agent-runtime` commits in
   `session-construction-digest.json` and whose test fails while it is stale.
   Every CLI artifact manifest carries the same value as
   `sessionConstruction.digest`, and the runner build copies it into the

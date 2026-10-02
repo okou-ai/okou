@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PI_MODEL_LIMIT_OVERRIDES } from "./model-limits";
 import { PI_SESSION_CONSTRUCTION_DIGEST } from "./session-construction-digest";
 import {
   computePiSessionConstructionDigest,
@@ -18,6 +19,14 @@ describe("Pi session construction digest", () => {
     expect(plain?.systemPrompt).toContain("/home/user/workspace");
     expect(plain?.tools.length).toBeGreaterThan(0);
     expect(memory?.tools.length).toBeGreaterThan(plain?.tools.length ?? 0);
+  });
+
+  it("covers verified limit corrections as well as prompt and tool profiles", async () => {
+    const document = await computePiSessionConstructionDocument();
+    expect(document.version).toBe(2);
+    expect(document.modelLimitOverrides).toStrictEqual(
+      PI_MODEL_LIMIT_OVERRIDES,
+    );
   });
 
   it("is stable across constructions", async () => {

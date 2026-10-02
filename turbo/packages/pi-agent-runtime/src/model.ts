@@ -25,6 +25,7 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
+import { piModelLimitOverride } from "./model-limits";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 import {
   observePiResponseStatus,
@@ -127,7 +128,10 @@ function isCodexResponsesModel(
   return model.api === "openai-codex-responses";
 }
 
-function sourceModel(provider: string, model: string): Model<Api> | undefined {
+function catalogSourceModel(
+  provider: string,
+  model: string,
+): Model<Api> | undefined {
   const okouModel = okouSourceModel(provider, model);
   if (okouModel) {
     return okouModel;
@@ -258,6 +262,13 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
   return providerModels(provider).find((candidate) => {
     return candidate.id === model;
   });
+}
+
+function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  const source = catalogSourceModel(provider, model);
+  if (!source) return undefined;
+  const limits = piModelLimitOverride(provider, model);
+  return limits ? { ...source, ...limits } : source;
 }
 
 function streamSimpleResponsesWithPolicy(
