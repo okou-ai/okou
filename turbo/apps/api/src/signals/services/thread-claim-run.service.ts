@@ -3,17 +3,18 @@ import type {
   AgentRunRequestAgent,
   AgentRunModelPin,
   AgentRunPreCreateSource,
-  ResolveModelProviderEnvironmentArgs,
   ResolvedModelProviderEnvironment,
   PermissionManifest,
-  BuiltinRuntimeTargetRegistration,
 } from "./agent-run-contracts";
 import {
   loadBuiltInRoutePricing,
   loadRunRoutePricing,
   prepareModelUsageContext,
 } from "./built-in-route-pricing";
-import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
+import {
+  usagePricingResolution$,
+  type UsagePricingResolution,
+} from "../context/usage-pricing-resolution";
 import {
   createConnectorSourceSnapshots,
   type ConnectorSourceSnapshot,
@@ -19639,7 +19640,7 @@ function applyBuiltinConnectorMetadataPolicies(
 
 function builtinRuntimeTargetRegistration(
   firewall: ExecutionFirewallEntry,
-): BuiltinRuntimeTargetRegistration {
+): NonNullable<PermissionManifest["builtinRuntimeTargets"]>[number] {
   if (firewall.kind !== "builtin") {
     throw new Error("Builtin connector manifest contains an inline firewall");
   }
@@ -20887,4 +20888,31 @@ interface RunModelProviderArgs {
   readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
+}
+
+/**
+ * A new run's Built-in route selection skips candidates whose billable
+ * categories for the requested service tier lack usage_pricing.
+ */
+interface NewRunRoutePricingRequest {
+  readonly serviceTier: CodexServiceTier | undefined;
+  readonly resolution: UsagePricingResolution;
+}
+
+interface ResolveModelProviderEnvironmentArgs {
+  /** Loaded once per run and shared by every candidate route. */
+  readonly catalog: ModelCatalog;
+  readonly newRunPricing?: NewRunRoutePricingRequest;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly framework: SupportedFramework;
+  readonly modelProviderId?: string;
+  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
+  readonly modelProviderType?: string;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
+  readonly selectedModelOverride?: string;
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  readonly retainedRunId?: string;
+  readonly piExecution: boolean;
+  readonly featureSwitchContext: FeatureSwitchContext;
 }

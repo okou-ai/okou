@@ -18,12 +18,6 @@ import type {
   NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import type { SupportedFramework } from "@okouai/core/frameworks";
-import type { ModelCatalog } from "./model-catalog.service";
-import type { UsagePricingResolution } from "../context/usage-pricing-resolution";
-import type { CapturedPersonalSubscriptionAccount } from "./model-provider-account.service";
 
 export interface AgentRunModelPin {
   readonly modelProvider: string | null;
@@ -86,7 +80,7 @@ export interface ResolvedModelProviderEnvironment {
   >;
 }
 
-export type BuiltinRuntimeTargetRegistration = Extract<
+type BuiltinRuntimeTargetRegistration = Extract<
   ConnectorRuntimeTargetRegistration,
   { readonly kind: "builtin" }
 >;
@@ -100,31 +94,4 @@ export interface PermissionManifest {
     | Readonly<Record<string, string>>
     | undefined;
   readonly billableFirewalls: readonly string[];
-}
-
-/**
- * A new run's Built-in route selection skips candidates whose billable
- * categories for the requested service tier lack usage_pricing.
- */
-interface NewRunRoutePricingRequest {
-  readonly serviceTier: CodexServiceTier | undefined;
-  readonly resolution: UsagePricingResolution;
-}
-
-export interface ResolveModelProviderEnvironmentArgs {
-  /** Loaded once per run and shared by every candidate route. */
-  readonly catalog: ModelCatalog;
-  readonly newRunPricing?: NewRunRoutePricingRequest;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly framework: SupportedFramework;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly retainedRunId?: string;
-  readonly piExecution: boolean;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }
