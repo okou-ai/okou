@@ -8517,9 +8517,7 @@ export function createThreadClaimRunObjects(
     return {
       orgId: identity.orgId,
       userId: identity.userId,
-      secretNames: bootstrap.environment.requestedSecretNames,
       variables: bootstrap.environment.variables,
-      secrets: bootstrap.environment.secrets,
     };
   });
   const resources = {
@@ -17865,12 +17863,6 @@ interface ResolveAgentExecutionOptions {
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
-interface PersistedRunEnvironmentSecret {
-  readonly name: string;
-  readonly encryptedValue: string;
-  readonly userId: string;
-}
-
 interface PersistedRunEnvironmentVariable {
   readonly name: string;
   readonly value: string;
@@ -17878,7 +17870,6 @@ interface PersistedRunEnvironmentVariable {
 }
 
 interface PersistedRunEnvironmentSnapshot {
-  readonly secrets: readonly PersistedRunEnvironmentSecret[];
   readonly variables: readonly PersistedRunEnvironmentVariable[];
 }
 

@@ -1,9 +1,5 @@
 import { computed, type Computed } from "ccstate";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  agentEnvironmentSecretNames,
-  buildAgentExecutionConfig,
-} from "./agent-execution-config";
 import { createBootstrapAgent } from "./agent-bootstrap-agent";
 import {
   createAgentDisabledPaidTools,
@@ -67,16 +63,8 @@ export interface BootstrapVariable {
   readonly userId: string;
 }
 
-export interface BootstrapEncryptedSecret {
-  readonly name: string;
-  readonly encryptedValue: string;
-  readonly userId: string;
-}
-
 export interface BootstrapEnvironment {
-  readonly requestedSecretNames: readonly string[];
   readonly variables: readonly BootstrapVariable[];
-  readonly secrets: readonly BootstrapEncryptedSecret[];
 }
 
 export interface AgentBootstrap {
@@ -165,18 +153,8 @@ export function createAgentBootstrap(
     if (!agent) {
       throw new Error("Agent disappeared after preparation authorization");
     }
-    const snapshot = await get(
-      createAgentEnvironment(
-        userId,
-        orgId,
-        agentEnvironmentSecretNames(buildAgentExecutionConfig(agent.name)),
-      ),
-    );
-    return {
-      requestedSecretNames: snapshot.requestedSecretNames,
-      variables: snapshot.variables,
-      secrets: snapshot.secrets,
-    };
+    const snapshot = await get(createAgentEnvironment(userId, orgId));
+    return { variables: snapshot.variables };
   });
   const customConnectorDefinitions$ = computed(async (get) => {
     const selection = await get(connectorSelection$);

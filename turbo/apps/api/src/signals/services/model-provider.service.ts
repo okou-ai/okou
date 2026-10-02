@@ -1513,15 +1513,15 @@ function capturesPiProviderSecret(
 
 /**
  * Firewall-resolved credentials: each stored secret's runtime reference. A
- * missing or empty stored value yields no reference, so the usability check
- * rejects the source as unavailable (fail-closed, as on main).
+ * missing secret row yields no reference, so the usability check rejects the
+ * source as unavailable (fail-closed, as on main).
  */
 function deferredCredentialReferences(
   source: ModelSourceSnapshot,
 ): ModelCredentialValues {
   const values: Record<string, string> = {};
   for (const credential of source.credentials) {
-    if (credential.kind === "encrypted" && credential.encryptedValue) {
+    if (credential.kind === "encrypted") {
       values[credential.name] = `\${{ secrets.${credential.name} }}`;
     }
   }

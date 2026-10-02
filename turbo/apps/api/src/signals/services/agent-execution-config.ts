@@ -51,27 +51,6 @@ export function buildAgentExecutionConfig(
   };
 }
 
-/** Names only: preserve the execution config's first-Agent selection semantics. */
-export function agentEnvironmentSecretNames(
-  content: AgentExecutionConfig,
-): readonly string[] {
-  let agent = content.agent;
-  if (!agent && content.agents) {
-    const firstKey = Object.keys(content.agents)[0];
-    agent = firstKey ? content.agents[firstKey] : undefined;
-  }
-  const environment = agent?.environment;
-  return [
-    ...new Set(
-      environment
-        ? extractAndGroupVariables(environment).secrets.map((ref) => {
-            return ref.name;
-          })
-        : [],
-    ),
-  ].sort();
-}
-
 function isApplicationRuntimeEnvironmentKey(name: string): boolean {
   return APPLICATION_OWNED_AGENT_EXECUTION_PLAN.environment.runtimeOverrideKeys.some(
     (runtimeKey) => {
