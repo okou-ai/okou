@@ -555,7 +555,7 @@ describe("email outbox provider replay", () => {
     // row's key, so Resend can never collapse one email into the other.
     const keysByRecipient = new Map(
       context.mocks.resend.send.mock.calls.map(([payload, options]) => {
-        return [payload.to, options];
+        return [z.object({ to: z.string() }).parse(payload).to, options];
       }),
     );
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
