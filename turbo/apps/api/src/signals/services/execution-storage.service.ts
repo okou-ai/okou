@@ -1,4 +1,4 @@
-import { computed, command, type Computed, type Command } from "ccstate";
+import { computed, command, type Computed } from "ccstate";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -48,10 +48,17 @@ export type ExecutionStorageRequest =
   | WritebackStorageRequest;
 export type PreparedStorageIdentity = ExecutionStorageIdentity;
 
+/**
+ * A URL this preparation signed fresh rather than read from the cache. Only
+ * the post-commit cache write reads it.
+ */
+export type PresignedUrlCacheWrite = FreshCacheValues[number];
+
 export interface PreparedReadOnlyMount extends PreparedStorageIdentity {
   readonly writeback: false;
   readonly archiveUrl: string;
   readonly archiveSize: number;
+  readonly presignedUrlCacheWrite?: PresignedUrlCacheWrite;
   readonly baselineCandidate?: true;
   readonly instructionsTargetFilename?: string;
 }
@@ -61,6 +68,7 @@ export interface PreparedArchivedWritebackMount extends PreparedStorageIdentity 
   readonly empty: false;
   readonly archiveUrl: string;
   readonly archiveSize: number;
+  readonly presignedUrlCacheWrite?: PresignedUrlCacheWrite;
   readonly missingRootPolicy: "fail" | "preserveParentVersion";
 }
 
@@ -77,10 +85,6 @@ export type PreparedExecutionStorageMount =
 export interface ExecutionStorageObjects {
   readonly preparedMounts$: Computed<
     Promise<readonly PreparedExecutionStorageMount[]>
-  >;
-  readonly updatePresignedUrlCache$: Command<
-    Promise<void>,
-    [signal: AbortSignal]
   >;
 }
 
@@ -326,6 +330,11 @@ function preparedMounts(
   requests: ReturnType<typeof signingRequests>,
   signed: Awaited<ReturnType<typeof signStorageManifestPresignedUrls>>,
 ): readonly PreparedExecutionStorageMount[] {
+  const freshByKey = new Map(
+    signed.freshValues.map((value) => {
+      return [value.cacheKey, value];
+    }),
+  );
   return requests.selected.map(
     ({ mount, version, cache }): PreparedExecutionStorageMount => {
       const identity = {
@@ -345,9 +354,11 @@ function preparedMounts(
         };
       }
       const archiveUrl = cache ? signed.results.get(cache.key)?.url : undefined;
-      if (!archiveUrl) {
+      if (!archiveUrl || !cache) {
         throw new Error("Prepared storage URL is missing");
       }
+      const fresh = freshByKey.get(cache.key);
+      const cacheWrite = fresh ? { presignedUrlCacheWrite: fresh } : {};
       if (mount.mode === "writeback") {
         return {
           ...identity,
@@ -356,6 +367,7 @@ function preparedMounts(
           archiveUrl,
           archiveSize: version.archiveSize,
           missingRootPolicy: mount.missingRootPolicy,
+          ...cacheWrite,
         };
       }
       return {
@@ -369,6 +381,7 @@ function preparedMounts(
         ...(mount.instructionsTargetFilename === undefined
           ? {}
           : { instructionsTargetFilename: mount.instructionsTargetFilename }),
+        ...cacheWrite,
       };
     },
   );
@@ -522,16 +535,30 @@ export function createExecutionStorageObjects(
     ]);
     return preparedMounts(requests, signed);
   });
-  const updatePresignedUrlCache$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      if (mounts.length === 0) {
-        return;
-      }
-      const signed = await get(signed$);
-      signal.throwIfAborted();
-      await set(persistPresignedUrlCache$, signed.freshValues, signal);
-    },
-  );
-  return { preparedMounts$, updatePresignedUrlCache$ };
+  return { preparedMounts$ };
 }
+
+/**
+ * The approved log-only exception, run by the owner after its commit: stores
+ * the URLs a preparation of `mounts` signed fresh, so later executions reuse
+ * them. A failed write is logged and never fails the committed run.
+ */
+export const updateExecutionStoragePresignedUrlCache$ = command(
+  async (
+    { set },
+    mounts: readonly ExecutionStorageRequest[],
+    prepared: readonly PreparedExecutionStorageMount[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    if (mounts.length === 0) {
+      return;
+    }
+    const values = prepared.flatMap((mount) => {
+      return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
+        ? [mount.presignedUrlCacheWrite]
+        : [];
+    });
+    await set(persistPresignedUrlCache$, values, signal);
+  },
+);

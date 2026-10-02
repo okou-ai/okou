@@ -15,12 +15,14 @@ import {
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -30,11 +32,12 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { conversations } from "@okouai/db/schema/agent-run-session-conversation";
 import { createStore } from "ccstate";
 import { createDeferredPromise } from "../../utils";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
+import { executeRawRows } from "../../../lib/db-raw-rows";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
@@ -2138,6 +2141,52 @@ test.each([
     expect(quotaReads).toBe(0);
   },
 );
+
+test("writes the memory archive URL cache only after committing the run", async () => {
+  const job = await createPhase2WorkerFixture("cache-after-commit", false);
+  const provider = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "openai-api-key",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    provider.binding,
+  );
+  // The non-empty memory archive is signed fresh, so the run caches its URL.
+  onMemoryArchivePresign(job, () => {});
+  const versionId = job.scope.baseVersion.versionId;
+  onTestFinished(async () => {
+    await db()
+      .delete(systemStoragePresignedUrlCache)
+      .where(eq(systemStoragePresignedUrlCache.storageVersionId, versionId));
+  });
+
+  const result = await job.work();
+  if (result.outcome !== "dispatched") {
+    throw new Error("Expected maintenance run");
+  }
+
+  // Transaction IDs order the writes: the run's callback row is written once,
+  // by the commit transaction, and the cache row by a later transaction.
+  const [xids] = await executeRawRows(
+    db(),
+    sql`
+      select
+        (select xmin::text from ${agentRunCallbacks}
+          where ${agentRunCallbacks.runId} = ${result.runId}) as "commitXid",
+        (select xmin::text from ${systemStoragePresignedUrlCache}
+          where ${systemStoragePresignedUrlCache.storageVersionId} = ${versionId})
+          as "cacheXid"
+    `,
+    z.object({ commitXid: z.string(), cacheXid: z.string() }),
+  );
+  if (!xids) {
+    throw new Error("Expected the run and cache rows");
+  }
+  expect(BigInt(xids.cacheXid)).toBeGreaterThan(BigInt(xids.commitXid));
+});
 
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const job = await createPhase2WorkerFixture("quota-max3");

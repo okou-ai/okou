@@ -724,6 +724,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
@@ -904,6 +908,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",

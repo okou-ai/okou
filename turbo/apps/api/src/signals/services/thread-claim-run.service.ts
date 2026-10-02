@@ -36,6 +36,7 @@ import {
 } from "./execution-model-source.service";
 import {
   createExecutionStorageObjects,
+  updateExecutionStoragePresignedUrlCache$,
   type ExecutionStorageRequest,
   PreparedExecutionStorageMount,
 } from "./execution-storage.service";
@@ -10637,7 +10638,7 @@ export function createThreadClaimRunObjects(
             };
       },
     );
-    return createExecutionStorageObjects(mounts);
+    return { mounts, objects: createExecutionStorageObjects(mounts) };
   });
   const preparedStorage$ = computed(
     async (
@@ -10661,7 +10662,7 @@ export function createThreadClaimRunObjects(
         "api_dispatch_prepare_storage_manifest_generate_compose_urls",
         "nested",
         () => {
-          return get(storage.preparedMounts$);
+          return get(storage.objects.preparedMounts$);
         },
         { storage_manifest_signing_owner: "execution_storage" },
       );
@@ -10727,7 +10728,14 @@ export function createThreadClaimRunObjects(
           "Committed execution is missing its storage preparation",
         );
       }
-      await set(storage.updatePresignedUrlCache$, signal);
+      const prepared = await get(storage.objects.preparedMounts$);
+      signal.throwIfAborted();
+      await set(
+        updateExecutionStoragePresignedUrlCache$,
+        storage.mounts,
+        prepared,
+        signal,
+      );
     },
   );
   const storagePlan$ = computed(async (get) => {

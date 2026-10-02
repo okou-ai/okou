@@ -62,6 +62,7 @@ import {
 } from "./execution-model-source.service";
 import {
   createExecutionStorageObjects,
+  updateExecutionStoragePresignedUrlCache$,
   type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
@@ -864,115 +865,133 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
 }
 
 /**
- * One claimed job's maintenance graph. Construction captures the plain job
- * and builds the storage (with its cache command), member and paid-tool nodes
- * once; launch$ admits the job (which may refresh a subscription), prepares
- * the exact memory mount, the pinned model and the Pi launch, atomically
- * commits the run with its job binding, then activates it. The pinned source
- * is known only after admission; its snapshot is a pure computed read.
+ * One claimed job's read-only resources: the exact memory mount's storage
+ * preparation, the member metadata and the disabled paid tools. Construction
+ * builds computed reads only, so the launch command may build it per job.
  */
-function createMaintenanceRunObjects(job: ClaimedPiMemoryPhase2Job) {
+function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
   const owner = { orgId: job.orgId, userId: job.userId };
-  const storageObjects = createExecutionStorageObjects([
-    maintenanceMemoryMount(job),
-  ]);
-  const member$ = createExecutionMemberMetadata(owner);
-  const disabledPaidTools$ = createAgentDisabledPaidTools(
-    job.userId,
-    job.orgId,
-  );
-  const launch$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string> => {
-      const db = set(writeDb$);
-      const apiStartTime = now();
-      const admitted = await admitMaintenance(db, job, signal);
-      const timing = new ApiDispatchTimingCollector();
-      const [source, member, disabledPaidTools, preparedMounts] =
-        await Promise.all([
-          get(
-            createModelSourceSnapshot({
-              ...owner,
-              source: pinnedSourceIdentity(admitted.credential),
-            }),
-          ),
-          get(member$),
-          get(disabledPaidTools$),
-          settle(get(storageObjects.preparedMounts$), signal),
-        ]);
-      signal.throwIfAborted();
-      if (!source) {
-        throw new PiMaintenanceDispositionError("credential_unavailable");
-      }
-      const { modelProvider, piSandbox, permissionManifest, usage } =
-        await prepareMaintenanceModelAndUsage(
-          {
-            db,
-            readDb: get(db$),
-            resolution: get(usagePricingResolution$),
-            admitted,
-            job,
-            source,
-            timing,
-          },
-          signal,
-        );
-      const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
-      const record = maintenanceRunRecord({
-        job,
-        runId: randomUUID(),
-        apiStartTime,
-        selectionDigest,
-        modelProvider,
-        credential: admitted.credential,
-        storedImageModel: member.preferences?.selectedImageModel,
-      });
-      const prepared = await set(
-        prepareMaintenanceLaunchAndAllowance$,
+  const memoryMounts = [maintenanceMemoryMount(job)];
+  return {
+    owner,
+    memoryMounts,
+    storage: createExecutionStorageObjects(memoryMounts),
+    member$: createExecutionMemberMetadata(owner),
+    disabledPaidTools$: createAgentDisabledPaidTools(job.userId, job.orgId),
+  };
+}
+
+/**
+ * Launch one claimed job: admit it (which may refresh a subscription),
+ * prepare the exact memory mount, the pinned model and the Pi launch,
+ * atomically commit the run with its job binding, then activate it and write
+ * the presigned URL cache. The pinned source is known only after admission;
+ * its snapshot is a pure computed read.
+ */
+const launchMaintenanceRun$ = command(
+  async (
+    { get, set },
+    job: ClaimedPiMemoryPhase2Job,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const { owner, memoryMounts, storage, member$, disabledPaidTools$ } =
+      createMaintenanceRunReads(job);
+    const db = set(writeDb$);
+    const apiStartTime = now();
+    const admitted = await admitMaintenance(db, job, signal);
+    const timing = new ApiDispatchTimingCollector();
+    const [source, member, disabledPaidTools, preparedMounts] =
+      await Promise.all([
+        get(
+          createModelSourceSnapshot({
+            ...owner,
+            source: pinnedSourceIdentity(admitted.credential),
+          }),
+        ),
+        get(member$),
+        get(disabledPaidTools$),
+        settle(get(storage.preparedMounts$), signal),
+      ]);
+    signal.throwIfAborted();
+    if (!source) {
+      throw new PiMaintenanceDispositionError("credential_unavailable");
+    }
+    const { modelProvider, piSandbox, permissionManifest, usage } =
+      await prepareMaintenanceModelAndUsage(
         {
-          job,
-          record,
-          selectionDigest,
-          piSandbox,
-          permissionManifest,
-          usage,
-          disabledPaidTools,
-          userTimezone: member.preferences?.timezone ?? undefined,
-          featureSwitchContext: admitted.featureSwitchContext,
-          timing,
-          preparedMounts,
-        },
-        signal,
-      );
-      if (!prepared.ok) {
-        return await failMaintenanceLaunch(
           db,
-          { record, credential: admitted.credential, error: prepared.error },
-          signal,
-        );
-      }
-      const [launch, allowanceRefresh] = prepared.value;
-      const activation = await commitMaintenanceRun(db, {
-        job,
-        credential: admitted.credential,
-        selectionDigest,
-        record,
-        launch,
-        allowanceRefresh,
-        timing,
-      });
-      signal.throwIfAborted();
-      await set(
-        activatePendingRun$,
-        {
-          notification: activation.runnerNotification,
-          timing: activation.timing,
-          activationScheduledAt: now(),
+          readDb: get(db$),
+          resolution: get(usagePricingResolution$),
+          admitted,
+          job,
+          source,
+          timing,
         },
         signal,
       );
-      // The approved log-only presigned URL cache write.
+    const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
+    const record = maintenanceRunRecord({
+      job,
+      runId: randomUUID(),
+      apiStartTime,
+      selectionDigest,
+      modelProvider,
+      credential: admitted.credential,
+      storedImageModel: member.preferences?.selectedImageModel,
+    });
+    const prepared = await set(
+      prepareMaintenanceLaunchAndAllowance$,
+      {
+        job,
+        record,
+        selectionDigest,
+        piSandbox,
+        permissionManifest,
+        usage,
+        disabledPaidTools,
+        userTimezone: member.preferences?.timezone ?? undefined,
+        featureSwitchContext: admitted.featureSwitchContext,
+        timing,
+        preparedMounts,
+      },
+      signal,
+    );
+    if (!prepared.ok) {
+      return await failMaintenanceLaunch(
+        db,
+        { record, credential: admitted.credential, error: prepared.error },
+        signal,
+      );
+    }
+    const [launch, allowanceRefresh] = prepared.value;
+    const activation = await commitMaintenanceRun(db, {
+      job,
+      credential: admitted.credential,
+      selectionDigest,
+      record,
+      launch,
+      allowanceRefresh,
+      timing,
+    });
+    signal.throwIfAborted();
+    await set(
+      activatePendingRun$,
+      {
+        notification: activation.runnerNotification,
+        timing: activation.timing,
+        activationScheduledAt: now(),
+      },
+      signal,
+    );
+    // The approved log-only presigned URL cache write, after commit.
+    if (preparedMounts.ok) {
       const cache = await settle(
-        set(storageObjects.updatePresignedUrlCache$, signal),
+        set(
+          updateExecutionStoragePresignedUrlCache$,
+          memoryMounts,
+          preparedMounts.value,
+          signal,
+        ),
         signal,
       );
       if (!cache.ok) {
@@ -980,11 +999,10 @@ function createMaintenanceRunObjects(job: ClaimedPiMemoryPhase2Job) {
           runId: record.runId,
         });
       }
-      return record.runId;
-    },
-  );
-  return { launch$ };
-}
+    }
+    return record.runId;
+  },
+);
 
 /** An explicit worker disposition for a claim that launched nothing. */
 interface MaintenanceDisposition {
@@ -1003,7 +1021,7 @@ export const startMaintenanceRun$ = command(
     signal: AbortSignal,
   ): Promise<string | MaintenanceDisposition> => {
     const launched = await settle(
-      set(createMaintenanceRunObjects(job).launch$, signal),
+      set(launchMaintenanceRun$, job, signal),
       signal,
     );
     if (launched.ok) {
