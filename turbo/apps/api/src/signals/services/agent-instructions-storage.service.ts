@@ -1,20 +1,4 @@
-import { nowDate } from "../../lib/time";
-import { and, eq, asc, isNotNull } from "drizzle-orm";
-import {
-  piStableContextHeads,
-  piStableContextPublications,
-  piStableContextGenerations,
-} from "@okouai/db/schema/pi-stable-context";
-import {
-  publicationScopeCondition,
-  publicationScopePendingSql,
-  publicationReadinessSql,
-  piStableContextDemandInputSql,
-  piStableContextStorageDemandValues,
-  headScopeCondition,
-  completePiStableContextPublicationSql,
-  type PiStableContextPublicationFence,
-} from "./pi-stable-context-generation.service";
+import type { PiStableContextPublicationFence } from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 import {
   getInstructionsFilename,
@@ -22,12 +6,10 @@ import {
 } from "@okouai/core/frameworks";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
 
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
   type ServerSideVolumeStorage,
@@ -112,122 +94,6 @@ export const prepareAgentInstructionsStorage$ = command(
 );
 
 /** DB-only publication; the caller revalidates source authority and Storage. */
-export async function commitPreparedAgentInstructionsStorageInTransaction(
-  args: {
-    readonly tx: Tx;
-    readonly volume: PreparedServerSideVolume;
-    readonly stableContextPublication?: PiStableContextPublicationFence;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  // Own the immutable Storage parent before generation/index lifecycle locks.
-  await commitPreparedVolumeServerSide(
-    { db: args.tx, volume: args.volume },
-    signal,
-  );
-  if (args.stableContextPublication) {
-    await args.tx.execute(
-      publicationScopePendingSql(
-        args.stableContextPublication.scope,
-        nowDate(),
-      ),
-    );
-    signal.throwIfAborted();
-    const [piMutation0Publication] = await args.tx
-      .select({ token: piStableContextPublications.token })
-      .from(piStableContextPublications)
-      .innerJoin(
-        piStableContextGenerations,
-        and(
-          eq(
-            piStableContextGenerations.orgId,
-            piStableContextPublications.orgId,
-          ),
-          eq(
-            piStableContextGenerations.agentId,
-            piStableContextPublications.agentId,
-          ),
-          eq(
-            piStableContextGenerations.subject,
-            piStableContextPublications.subject,
-          ),
-        ),
-      )
-      .where(publicationScopeCondition(args.stableContextPublication))
-      .limit(1);
-    signal.throwIfAborted();
-    await args.tx.execute(
-      publicationReadinessSql(args.stableContextPublication.scope, nowDate()),
-    );
-    signal.throwIfAborted();
-
-    if (!(piMutation0Publication !== undefined)) {
-      throw new Error(
-        "Stable-context publication was superseded before Storage HEAD commit",
-      );
-    }
-    const piMutation1Resource = args.volume.version;
-    const piMutation1Heads = await args.tx
-      .select({
-        id: piStableContextHeads.id,
-        generation: piStableContextHeads.generation,
-        input: piStableContextDemandInputSql().mapWith(
-          piStableContextHeads.input,
-        ),
-      })
-      .from(piStableContextHeads)
-      .where(
-        and(
-          headScopeCondition(args.stableContextPublication.scope),
-          isNotNull(piStableContextHeads.input),
-          isNotNull(piStableContextHeads.inputDigest),
-        ),
-      )
-      .orderBy(asc(piStableContextHeads.id))
-      .limit(16);
-    signal.throwIfAborted();
-    const piMutation1At = nowDate();
-    for (const head of piMutation1Heads) {
-      await args.tx
-        .update(piStableContextHeads)
-        .set(
-          piStableContextStorageDemandValues(
-            head,
-            piMutation1Resource,
-            piMutation1At,
-          ),
-        )
-        .where(
-          and(
-            eq(piStableContextHeads.id, head.id),
-            eq(piStableContextHeads.generation, head.generation),
-          ),
-        );
-      signal.throwIfAborted();
-    }
-    signal.throwIfAborted();
-    await args.tx.execute(
-      publicationScopePendingSql(
-        args.stableContextPublication.scope,
-        nowDate(),
-      ),
-    );
-    signal.throwIfAborted();
-    const piMutation2Completed = await args.tx.execute(
-      completePiStableContextPublicationSql(args.stableContextPublication),
-    );
-    signal.throwIfAborted();
-    await args.tx.execute(
-      publicationReadinessSql(args.stableContextPublication.scope, nowDate()),
-    );
-    signal.throwIfAborted();
-
-    if (!(piMutation2Completed.rowCount === 1)) {
-      throw new Error("Stable-context publication fence changed while locked");
-    }
-  }
-  signal.throwIfAborted();
-}
 
 export const deleteAgentInstructionsStorage$ = command(
   async (

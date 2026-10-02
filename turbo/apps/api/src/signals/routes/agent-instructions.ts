@@ -1,19 +1,20 @@
-import { parseRawRows } from "../../lib/db-raw-rows";
 import {
+  completePiStableContextPublicationSql,
   piStableContextGenerationReceiptSchema,
   publicationScopeCondition,
   publicationScopePendingSql,
   publicationReadinessSql,
   beginPiStableContextPublicationSql,
   piStableContextPublicationFromReceipt,
-  completePiStableContextPublicationSql,
   PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
   type PiStableContextPublicationFence,
 } from "../services/pi-stable-context-generation.service";
-import {
-  piStableContextPublications,
-  piStableContextGenerations,
-} from "@okouai/db/schema/pi-stable-context";
+import { piStableContextPublications } from "@okouai/db/schema/pi-stable-context";
+import { and, eq, sql } from "drizzle-orm";
+import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
+
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -25,24 +26,20 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
-import type { Tx } from "../../lib/db-types";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
 
-import {
-  commitPreparedAgentInstructionsStorageInTransaction,
-  prepareAgentInstructionsStorage$,
-} from "../services/agent-instructions-storage.service";
+import { prepareAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
 import {
   resolveCanonicalVolumeStorage,
+  type PreparedServerSideVolume,
   type ServerSideVolumeStorage,
 } from "../services/storage-volume-publication.service";
 import { agentInstructions } from "../services/agent-instructions.service";
@@ -89,42 +86,29 @@ interface ReservedInstructionPublication {
   readonly fence: PiStableContextPublicationFence;
 }
 
-async function lockInstructionAgent(tx: Tx, orgId: string, agentId: string) {
-  const [agent] = await tx
-    .select({
-      id: agents.id,
-      name: agents.name,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, orgId), eq(agents.id, agentId)))
-    .for("update")
-    .limit(1);
-  return agent;
-}
+const instructionAgentColumns = Object.freeze({
+  id: agents.id,
+  name: agents.name,
+  owner: agents.owner,
+  visibility: agents.visibility,
+});
+const instructionStorageColumns = Object.freeze({
+  id: storages.id,
+  s3Prefix: storages.s3Prefix,
+});
 
-async function lockInstructionStorage(
-  tx: Tx,
-  orgId: string,
-  agentName: string,
-) {
-  // This route owns one unique (org, user, name) Storage, after its Agent and
-  // before Pi locks. Keep publication independent of bulk deletion helpers.
-  const [storage] = await tx
-    .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getInstructionsStorageName(agentName)),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return storage;
-}
+const instructionResponseColumns = Object.freeze({
+  agentId: agents.id,
+  owner: agents.owner,
+  displayName: agents.displayName,
+  description: agents.description,
+  sound: agents.sound,
+  avatarUrl: agents.avatarUrl,
+  modelProviderId: agents.modelProviderId,
+  selectedModel: agents.selectedModel,
+  preferPersonalProvider: agents.preferPersonalProvider,
+  visibility: agents.visibility,
+});
 
 interface PublishInstructionArgs {
   readonly reservation: ReservedInstructionPublication;
@@ -132,52 +116,82 @@ interface PublishInstructionArgs {
   readonly instructions: string;
 }
 
-const prepareAndPublishAgentInstructions$ = command(
-  async ({ set }, args: PublishInstructionArgs, signal: AbortSignal) => {
-    signal.throwIfAborted();
+function instructionPublicationAdmission(
+  current:
+    | Pick<typeof agents.$inferSelect, "id" | "name" | "owner" | "visibility">
+    | undefined,
+  member: PublishInstructionArgs["member"],
+  agentName: string,
+) {
+  if (!current) {
+    return { kind: "missing" as const };
+  }
+  const permissionError = requireAgentPermission(
+    current.owner,
+    member,
+    "update agent instructions",
+    { visibility: current.visibility },
+  );
+  if (permissionError) {
+    return { kind: "forbidden" as const, response: permissionError };
+  }
+  if (current.name !== agentName) {
+    return { kind: "conflict" as const };
+  }
+
+  return { kind: "admitted" as const, current };
+}
+
+const publishPreparedAgentInstructions$ = command(
+  async (
+    { set },
+    args: Omit<PublishInstructionArgs, "instructions"> & {
+      readonly volume: PreparedServerSideVolume;
+    },
+    signal: AbortSignal,
+  ) => {
     const reservation = args.reservation;
-    // The reservation transaction has committed. No transaction is borrowed
-    // while materializing files, building the archive/index or uploading bytes.
-    const volume = await set(
-      prepareAgentInstructionsStorage$,
-      {
-        orgId: reservation.orgId,
-        agentName: reservation.agentName,
-        instructions: args.instructions,
-        storage: reservation.storage,
-      },
-      signal,
-    );
+    const volume = args.volume;
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      const current = await lockInstructionAgent(
-        tx,
-        reservation.orgId,
-        reservation.agentId,
-      );
+      const current = (
+        await tx
+          .select(instructionAgentColumns)
+          .from(agents)
+          .where(
+            and(
+              eq(agents.orgId, reservation.orgId),
+              eq(agents.id, reservation.agentId),
+            ),
+          )
+          .for("update")
+          .limit(1)
+      )[0];
       signal.throwIfAborted();
-      if (!current) {
-        return { kind: "missing" as const };
-      }
-      const permissionError = requireAgentPermission(
-        current.owner,
+      const admission = instructionPublicationAdmission(
+        current,
         args.member,
-        "update agent instructions",
-        { visibility: current.visibility },
+        reservation.agentName,
       );
-      if (permissionError) {
-        return { kind: "forbidden" as const, response: permissionError };
+      if (admission.kind !== "admitted") {
+        return admission;
       }
-      if (current.name !== reservation.agentName) {
-        return { kind: "conflict" as const };
-      }
-
+      const admittedAgent = admission.current;
       // Source deletion and publication both take Storage before Pi locks.
-      const storage = await lockInstructionStorage(
-        tx,
-        reservation.orgId,
-        current.name,
-      );
+      const storage = (
+        await tx
+          .select(instructionStorageColumns)
+          .from(storages)
+          .where(
+            and(
+              eq(storages.orgId, reservation.orgId),
+              eq(storages.userId, VOLUME_ORG_USER_ID),
+              eq(storages.name, getInstructionsStorageName(admittedAgent.name)),
+            ),
+          )
+          .for("update")
+          .limit(1)
+      )[0];
       signal.throwIfAborted();
       if (
         storage?.id !== reservation.storage.id ||
@@ -188,30 +202,16 @@ const prepareAndPublishAgentInstructions$ = command(
       ) {
         return { kind: "conflict" as const };
       }
-      await tx.execute(
+      const { rowCount: admittedScope } = await tx.execute(
         publicationScopePendingSql(reservation.fence.scope, nowDate()),
       );
       signal.throwIfAborted();
+      if (admittedScope !== 1) {
+        return { kind: "conflict" as const };
+      }
       const [piMutation0Publication] = await tx
         .select({ token: piStableContextPublications.token })
         .from(piStableContextPublications)
-        .innerJoin(
-          piStableContextGenerations,
-          and(
-            eq(
-              piStableContextGenerations.orgId,
-              piStableContextPublications.orgId,
-            ),
-            eq(
-              piStableContextGenerations.agentId,
-              piStableContextPublications.agentId,
-            ),
-            eq(
-              piStableContextGenerations.subject,
-              piStableContextPublications.subject,
-            ),
-          ),
-        )
         .where(publicationScopeCondition(reservation.fence))
         .limit(1);
       signal.throwIfAborted();
@@ -225,46 +225,77 @@ const prepareAndPublishAgentInstructions$ = command(
         return { kind: "conflict" as const };
       }
       signal.throwIfAborted();
-      await commitPreparedAgentInstructionsStorageInTransaction(
-        { tx, volume, stableContextPublication: reservation.fence },
-        signal,
+      const { rowCount: publishedStorageCount } = await tx.execute(
+        preparedVolumePublicationSql(volume, nowDate()),
       );
-      await tx
+      signal.throwIfAborted();
+      if (publishedStorageCount !== 1) {
+        throw new StorageVersionIdentityConflictError(volume.version.versionId);
+      }
+      // Reservation invalidates every scoped input. No demand can register while
+      // this scope is pending; next use recaptures the newly committed source.
+      const { rowCount: completedPublicationCount } = await tx.execute(
+        completePiStableContextPublicationSql(reservation.fence),
+      );
+      signal.throwIfAborted();
+      await tx.execute(
+        publicationReadinessSql(reservation.fence.scope, nowDate()),
+      );
+      signal.throwIfAborted();
+      if (!(completedPublicationCount === 1)) {
+        throw new Error(
+          "Stable-context publication fence changed while locked",
+        );
+      }
+      const [updated] = await tx
         .update(agents)
         .set({ updatedAt: nowDate() })
         .where(
-          and(eq(agents.orgId, reservation.orgId), eq(agents.id, current.id)),
-        );
-      signal.throwIfAborted();
-
-      const [updated] = await tx
-        .select({
-          agentId: agents.id,
-          defaultAgentId: orgMetadata.defaultAgentId,
-          owner: agents.owner,
-          displayName: agents.displayName,
-          description: agents.description,
-          sound: agents.sound,
-          avatarUrl: agents.avatarUrl,
-          modelProviderId: agents.modelProviderId,
-          selectedModel: agents.selectedModel,
-          preferPersonalProvider: agents.preferPersonalProvider,
-          visibility: agents.visibility,
-        })
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(
-          and(eq(agents.orgId, reservation.orgId), eq(agents.id, current.id)),
+          and(
+            eq(agents.orgId, reservation.orgId),
+            eq(agents.id, admittedAgent.id),
+          ),
         )
-        .limit(1);
+        .returning({
+          ...instructionResponseColumns,
+          defaultAgentId:
+            sql`(${tx.select({ defaultAgentId: orgMetadata.defaultAgentId }).from(orgMetadata).where(eq(orgMetadata.orgId, reservation.orgId))})`.mapWith(
+              orgMetadata.defaultAgentId,
+            ),
+        });
+      signal.throwIfAborted();
       signal.throwIfAborted();
       if (!updated) {
-        throw new Error(`Canonical Agent missing after update: ${current.id}`);
+        throw new Error(
+          `Canonical Agent missing after update: ${admittedAgent.id}`,
+        );
       }
       return { kind: "updated" as const, agent: updated };
     });
     signal.throwIfAborted();
     return result;
+  },
+);
+
+const prepareAndPublishAgentInstructions$ = command(
+  async ({ set }, args: PublishInstructionArgs, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const reservation = args.reservation;
+    const volume = await set(
+      prepareAgentInstructionsStorage$,
+      {
+        orgId: reservation.orgId,
+        agentName: reservation.agentName,
+        instructions: args.instructions,
+        storage: reservation.storage,
+      },
+      signal,
+    );
+    return await set(
+      publishPreparedAgentInstructions$,
+      { reservation, member: args.member, volume },
+      signal,
+    );
   },
 );
 
@@ -281,7 +312,14 @@ const reserveAgentInstructionPublication$ = command(
     const writeDb = set(writeDb$);
     let reservedFence: PiStableContextPublicationFence | undefined;
     const reservation = writeDb.transaction(async (tx) => {
-      const current = await lockInstructionAgent(tx, args.orgId, args.agentId);
+      const current = (
+        await tx
+          .select(instructionAgentColumns)
+          .from(agents)
+          .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+          .for("update")
+          .limit(1)
+      )[0];
       signal.throwIfAborted();
       if (!current) {
         return { kind: "missing" as const };
@@ -303,11 +341,20 @@ const reserveAgentInstructionPublication$ = command(
         },
         signal,
       );
-      const storage = await lockInstructionStorage(
-        tx,
-        args.orgId,
-        current.name,
-      );
+      const storage = (
+        await tx
+          .select(instructionStorageColumns)
+          .from(storages)
+          .where(
+            and(
+              eq(storages.orgId, args.orgId),
+              eq(storages.userId, VOLUME_ORG_USER_ID),
+              eq(storages.name, getInstructionsStorageName(current.name)),
+            ),
+          )
+          .for("update")
+          .limit(1)
+      )[0];
       signal.throwIfAborted();
       if (
         storage?.id !== reservedStorage.id ||

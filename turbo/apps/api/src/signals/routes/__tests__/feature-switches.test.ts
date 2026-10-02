@@ -202,6 +202,48 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
+  it("merges a mixed-scope update without exposing the caller's personal override to a peer", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const orgId = `org_${randomUUID()}`;
+    const peerId = `user_${randomUUID()}`;
+    const headers = { authorization: "Bearer clerk-session" };
+    clerk.session(peerId, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.OpenRouterUsRouting]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const updated = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.LarkIntegration]: true,
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(updated.body.switches).toStrictEqual({
+      [FeatureSwitchKey.LarkIntegration]: true,
+      [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
+    });
+    clerk.session(peerId, orgId, "org:member");
+    const current = await accept(client().get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual({
+      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+      [FeatureSwitchKey.LarkIntegration]: true,
+    });
+  });
+
   it("rejects the retired native override without applying other changes", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

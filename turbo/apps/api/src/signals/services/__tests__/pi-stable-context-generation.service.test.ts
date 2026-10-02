@@ -379,6 +379,27 @@ describe("Pi stable context generation fences", () => {
 
     await expect(piMutation9Completed.rowCount === 1).toBeTruthy();
 
+    // Invalidation deliberately leaves a cold projection. A normal next use
+    // registers a fresh immutable input and can repair an empty-resource variant.
+    await createStore().get(
+      preparePiStableContext(
+        {
+          db,
+          owner: fixture.input.owner,
+          variantDigest: "a".repeat(64),
+          buildPrompt: () => {
+            return fixture.input.prompt;
+          },
+          source: fixture.input.source,
+          mounts: [],
+          persistedStorageMounts: [],
+          eligible: true,
+          checkedAt: nowDate(),
+        },
+        AbortSignal.timeout(5000),
+      ),
+    );
+
     const [head] = await db
       .select({
         status: piStableContextHeads.status,
@@ -388,11 +409,11 @@ describe("Pi stable context generation fences", () => {
       .from(piStableContextHeads)
       .where(eq(piStableContextHeads.id, fixture.headId));
     expect(head).toMatchObject({
-      status: "pending",
+      status: "ready",
       input: {
         source: { agentGeneration: second.generation, userGeneration: 1 },
       },
-      artifactDigest: null,
+      artifactDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
 
     await db.execute(
@@ -773,7 +794,7 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("coalesces concurrent first-run demand and reuses write-time worker output", async () => {
+  it("coalesces concurrent demand and reuses next-use repair output", async () => {
     const fixture = await seed();
     await db
       .delete(piStableContextHeads)
@@ -869,8 +890,15 @@ describe("Pi stable context generation fences", () => {
       ),
     );
     await expect(
+      createStore().get(
+        preparePiStableContext(updatedArgs, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "missing", prompt: updatedPrompt });
+    // Canonical next use already repaired this indexable variant, so no
+    // duplicate background build should be admitted.
+    await expect(
       executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
-    ).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    ).resolves.toMatchObject({ claimed: 0, ready: 0 });
     await expect(
       createStore().get(
         preparePiStableContext(updatedArgs, AbortSignal.timeout(5000)),
@@ -1839,10 +1867,16 @@ describe("Pi stable context generation fences", () => {
         nowDate(),
       ),
     );
+    // The generation transition cleared the old input. Re-enter through normal
+    // demand registration before arranging the existing expired-lease fixture.
+    await createStore().get(
+      preparePiStableContext(args, AbortSignal.timeout(5000)),
+    );
     await db
       .update(piStableContextHeads)
       .set({
         status: "running",
+        artifactDigest: null,
         leaseId: randomUUID(),
         leaseExpiresAt: new Date(0),
         attemptCount: 5,
@@ -1924,6 +1958,22 @@ describe("Pi stable context generation fences", () => {
       ),
     );
 
+    // Next use creates the valid current-generation input; invalidation alone
+    // no longer creates eager worker demand. Preserve the existing claimed-build
+    // race by arranging an unbuilt cache entry from that real captured input.
+    await createStore().get(
+      preparePiStableContext(args, AbortSignal.timeout(5000)),
+    );
+    await db
+      .update(piStableContextHeads)
+      .set({ status: "pending", artifactDigest: null })
+      .where(
+        and(
+          eq(piStableContextHeads.agentId, fixture.agentId),
+          eq(piStableContextHeads.userId, fixture.userId),
+          eq(piStableContextHeads.variantDigest, args.variantDigest),
+        ),
+      );
     const barrierSignal = AbortSignal.timeout(5000);
     const buildEntered = createDeferredPromise<void>(barrierSignal);
     const buildReleased = createDeferredPromise<void>(barrierSignal);

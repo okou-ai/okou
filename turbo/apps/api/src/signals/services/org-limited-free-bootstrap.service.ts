@@ -1,3 +1,5 @@
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { randomUUID } from "node:crypto";
 
@@ -19,10 +21,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import {
-  commitPreparedAgentInstructionsStorageInTransaction,
-  prepareAgentInstructionsStorage$,
-} from "./agent-instructions-storage.service";
+import { prepareAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import {
   storageObjectCleanupJobValues,
@@ -244,10 +243,15 @@ async function publishBootstrap(
     );
   }
 
-  await commitPreparedAgentInstructionsStorageInTransaction(
-    { tx, volume: args.volume },
-    signal,
+  const publishedStorage = await tx.execute(
+    preparedVolumePublicationSql(args.volume, nowDate()),
   );
+  signal.throwIfAborted();
+  if (publishedStorage.rowCount !== 1) {
+    throw new StorageVersionIdentityConflictError(
+      args.volume.version.versionId,
+    );
+  }
   const result = await finalizeBootstrap(catalogSnapshot, tx, args);
   signal.throwIfAborted();
   return { result, cleanupJobIds };
