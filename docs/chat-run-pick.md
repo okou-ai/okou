@@ -322,8 +322,8 @@ creating a Store inside the pick's work.
 
 Thread owns HEAD/prefix resolution, session/Official selection and display/persisted
 mount projections. It derives one `createExecutionStorageObjects(exactMounts)`
-instance from the selected ordinary identities. The resource exposes only
-`preparedMounts$` and `updatePresignedUrlCache$`: it batches exact-version reads,
+instance from the selected ordinary identities. The resource exposes only the
+read-only `preparedMounts$`: it batches exact-version reads,
 verifies actual owner/name/storage/version membership, validates mount configuration,
 and prepares URLs in request order. It does not select HEAD, initialize storage,
 repair versions, update a session or write a cache during preparation. Empty
@@ -335,10 +335,13 @@ root policy.
 A valid cached URL is reused; a miss or expired row is signed locally, without an
 R2 request. Existing system/workflow/readonly namespaces, cache keys and TTLs are
 reused; workflow-cache classification follows the reserved organization skill
-storage namespace, not a supplied business context. The resource shares private
-signing results and fresh cache rows with its command. Only a successfully
-committed run schedules that command through request-owned `waitUntil`; rejected
-inputs and lost commits do not. The write does not delay activation. Failure is
+storage namespace, not a supplied business context. A freshly signed URL travels
+on its prepared mount as `presignedUrlCacheWrite`. The cache write is the
+module-level command `updateExecutionStoragePresignedUrlCache$(mounts, prepared,
+signal)` (interface #4 as revised by Ethan, 2026-10-02): only a successfully
+committed run passes it its requests and prepared mounts through request-owned
+`waitUntil`; rejected inputs and lost commits do not. Pi maintenance calls the
+same command after its commit and activation. The write does not delay activation. Failure is
 logged without retry or changing the admitted run: the existing explicit exception
 to preparation fail-fast remains intact.
 
