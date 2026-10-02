@@ -3425,7 +3425,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.5"
+version = "0.219.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3632,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3799,7 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3914,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "api-contracts",
  "async-trait",

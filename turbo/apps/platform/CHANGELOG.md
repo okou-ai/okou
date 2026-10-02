@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.990.4](https://github.com/okou-ai/okou/compare/app-v0.990.3...app-v0.990.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **platform:** throttle worker indicator refreshes ([#37538](https://github.com/okou-ai/okou/issues/37538)) ([142747e](https://github.com/okou-ai/okou/commit/142747eece04d8346b23764911c862f357a5658f))
+
 ## [0.990.3](https://github.com/okou-ai/okou/compare/app-v0.990.2...app-v0.990.3) (2026-10-01)
 
 
