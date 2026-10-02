@@ -78,6 +78,7 @@ interface CronSyncSkillsFixture {
   readonly skillNamePrefix: string;
   readonly requiredSeedSkillNames: readonly string[];
   readonly existingSkillName: string;
+  readonly sentinelSkillNamePrefix: string;
   readonly sentinelSkillName: string;
   readonly alphaSkill: MockSkillEntry;
   readonly betaSkill: MockSkillEntry;
@@ -88,6 +89,7 @@ interface CronSyncSkillsFixture {
 function createCronSyncSkillsFixture(): CronSyncSkillsFixture {
   const fixtureId = randomUUID().replaceAll("-", "");
   const skillNamePrefix = `api-test-skill-${fixtureId}-`;
+  const sentinelSkillNamePrefix = `api-test-skill-${randomUUID().replaceAll("-", "")}-`;
   const alphaName = `${skillNamePrefix}alpha`;
   const betaName = `${skillNamePrefix}beta`;
   return {
@@ -96,7 +98,8 @@ function createCronSyncSkillsFixture(): CronSyncSkillsFixture {
       return `${skillNamePrefix}${name}`;
     }),
     existingSkillName: `${skillNamePrefix}existing`,
-    sentinelSkillName: `api-test-sentinel-${fixtureId}-existing`,
+    sentinelSkillNamePrefix,
+    sentinelSkillName: `${sentinelSkillNamePrefix}existing`,
     alphaSkill: {
       name: alphaName,
       files: [
@@ -400,8 +403,8 @@ async function publishSentinelSkill(
   );
   await expect(
     syncOwnedSkillsState(context, {
-      skillNamePrefix: name,
-      requiredSkillNames: [],
+      skillNamePrefix: fixture.sentinelSkillNamePrefix,
+      requiredSkillNames: [name],
     }),
   ).resolves.toStrictEqual({
     success: true,
@@ -611,8 +614,8 @@ describe("GET /api/cron/sync-skills", () => {
     setupGitRefsHandler(sentinelCommitSha);
     await expect(
       syncOwnedSkillsState(context, {
-        skillNamePrefix: fixture.sentinelSkillName,
-        requiredSkillNames: [],
+        skillNamePrefix: fixture.sentinelSkillNamePrefix,
+        requiredSkillNames: [fixture.sentinelSkillName],
       }),
     ).resolves.toStrictEqual({
       success: true,

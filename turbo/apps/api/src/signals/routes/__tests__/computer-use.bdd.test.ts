@@ -336,7 +336,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     });
 
     await expect(
-      createChatFilesBddApi(context).readThread(actor, run.threadId),
+      createChatFilesBddApi(context).readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({ computerUseHostId: onlineHost.hostId });
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
