@@ -96,7 +96,7 @@ import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   activateUsageAllowanceWindowsForRun,
   type PreparedUsageAllowanceRefresh,
-  prepareUsageAllowanceRefresh$,
+  prepareUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -323,7 +323,7 @@ async function admitMaintenance(
 }
 type MaintenanceAdmission = Awaited<ReturnType<typeof admitMaintenance>>;
 
-/** Exact pinned source → effect-resolved runtime → Pi model configuration. */
+/** Exact pinned source → resolved runtime → Pi model configuration. */
 async function prepareMaintenanceModel(
   db: ReadonlyDb,
   admitted: MaintenanceAdmission,
@@ -675,29 +675,6 @@ const prepareMaintenanceLaunch$ = command(
 );
 
 /**
- * Launch preparation and, for a built-in model, the Stripe entitlement refresh
- * for the allowance window run together outside the transaction. Either
- * failure fails the whole preparation, which records the failed run.
- */
-const prepareMaintenanceLaunchAndAllowance$ = command(
-  async ({ set }, args: MaintenanceLaunchInput, signal: AbortSignal) => {
-    return await settle(
-      Promise.all([
-        set(prepareMaintenanceLaunch$, args, signal),
-        isBuiltInModelProviderType(args.record.modelProvider.type)
-          ? set(
-              prepareUsageAllowanceRefresh$,
-              { orgId: args.job.orgId },
-              signal,
-            )
-          : undefined,
-      ]),
-      signal,
-    );
-  },
-);
-
-/**
  * Launch preparation failed after admission: keep the failed run record (with
  * its callback row), re-validate the claim fence and bind nothing.
  */
@@ -875,14 +852,10 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
 }
 
 /**
- * One claimed job's read-only resources: the exact memory mount's storage
- * preparation, the member metadata and the disabled paid tools. Construction
- * builds computed reads only, so the launch command may build it per job.
- */
-/**
  * The admitted job's model reads: the pinned source snapshot, its runtime
  * (side-effect-free decryption or managed-key read, Ethan 2026-10-02) and its
- * usage pricing and permissions. Built from plain values after admission.
+ * usage pricing and permissions, and the built-in allowance refresh read.
+ * Built from plain values after admission.
  */
 function createMaintenanceModelReads(
   job: ClaimedPiMemoryPhase2Job,
@@ -911,9 +884,22 @@ function createMaintenanceModelReads(
       timing,
     });
   });
-  return { source$, model$, usage$ };
+  // For a built-in model, the Stripe entitlement read for the allowance window
+  // (no write; the refresh itself is applied in the commit transaction).
+  const allowanceRefresh$ = computed(async (get) => {
+    const { modelProvider } = await get(model$);
+    return isBuiltInModelProviderType(modelProvider.type)
+      ? await prepareUsageAllowanceRefresh(get(db$), { orgId: job.orgId })
+      : undefined;
+  });
+  return { source$, model$, usage$, allowanceRefresh$ };
 }
 
+/**
+ * One claimed job's read-only resources: the exact memory mount's storage
+ * preparation, the member metadata and the disabled paid tools. Construction
+ * builds computed reads only, so the launch command may build it per job.
+ */
 function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
   const owner = { orgId: job.orgId, userId: job.userId };
   const memoryMounts = [maintenanceMemoryMount(job)];
@@ -1012,21 +998,29 @@ const launchMaintenanceRun$ = command(
       credential: admitted.credential,
       storedImageModel: member.preferences?.selectedImageModel,
     });
-    const prepared = await set(
-      prepareMaintenanceLaunchAndAllowance$,
-      {
-        job,
-        record,
-        selectionDigest,
-        piSandbox,
-        permissionManifest,
-        usage,
-        disabledPaidTools,
-        userTimezone: member.preferences?.timezone ?? undefined,
-        featureSwitchContext: admitted.featureSwitchContext,
-        timing,
-        preparedMounts,
-      },
+    // Launch preparation and the built-in allowance refresh read run
+    // together outside the transaction; either failure records the failed run.
+    const prepared = await settle(
+      Promise.all([
+        set(
+          prepareMaintenanceLaunch$,
+          {
+            job,
+            record,
+            selectionDigest,
+            piSandbox,
+            permissionManifest,
+            usage,
+            disabledPaidTools,
+            userTimezone: member.preferences?.timezone ?? undefined,
+            featureSwitchContext: admitted.featureSwitchContext,
+            timing,
+            preparedMounts,
+          },
+          signal,
+        ),
+        get(modelReads.allowanceRefresh$),
+      ]),
       signal,
     );
     if (!prepared.ok) {

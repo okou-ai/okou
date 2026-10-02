@@ -5831,16 +5831,6 @@ export function createThreadClaimRunObjects(
       return true;
     },
   );
-  const resolvePromptLaunchInputs$ = command(
-    async (
-      { set },
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      await set(refreshQueuedUsageAllowance$, signal);
-      signal.throwIfAborted();
-    },
-  );
   const promptAssembleQueuedPromptRunAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
       const early = await get(internalEarlyAssembly$);
@@ -11190,15 +11180,11 @@ export function createThreadClaimRunObjects(
     };
   });
   const authorizeClaimIdentity$ = command(
-    async (
-      { get, set },
-      resolvePromptInputs: boolean,
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ) => {
+    async ({ get, set }, resolvePromptInputs: boolean, signal: AbortSignal) => {
+      // A prompt head's only launch-input write is its allowance refresh.
       const [, authorized] = await Promise.all([
         resolvePromptInputs
-          ? set(resolvePromptLaunchInputs$, head, signal)
+          ? set(refreshQueuedUsageAllowance$, signal)
           : undefined,
         get(authorizeIdentity$),
       ]);
@@ -11222,7 +11208,6 @@ export function createThreadClaimRunObjects(
       const { identityInput, authorization } = await set(
         authorizeClaimIdentity$,
         resolvePromptInputs,
-        head,
         signal,
       );
       signal.throwIfAborted();
