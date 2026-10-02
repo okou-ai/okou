@@ -11,6 +11,16 @@ export async function attemptChatEventSideEffect(
 ): Promise<void> {
   const startedAt = performance.now();
   const result = await settleIncludingAbort(work());
+  reportChatEventSideEffect(operation, chatThreadId, startedAt, result);
+}
+
+/** Report a settled owned operation; takes facts, never execution callbacks. */
+export function reportChatEventSideEffect(
+  operation: string,
+  chatThreadId: string,
+  startedAt: number,
+  result: Awaited<ReturnType<typeof settleIncludingAbort>>,
+): void {
   const timing = {
     operation,
     chatThreadId,

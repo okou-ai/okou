@@ -41,7 +41,7 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { bestEffort, settle } from "../utils";
+import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
@@ -53,9 +53,9 @@ import {
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
-import { touchSentChatThreadSort } from "./chat-event-shared.service";
+import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   type NewChatEvent,
   chatEventContextInsertSql,
@@ -434,7 +434,7 @@ const resolveClientEventId$ = command(
       .where(
         and(
           eq(chatEvents.id, params.clientEventId),
-          chatThreadOrganizationCondition(db, params.orgId),
+          chatThreadOrganizationCondition(params.orgId),
         ),
       )
       .limit(1);
@@ -1449,24 +1449,34 @@ const normalSendThreadTouch$ = command(
     touchedAt: Date,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (
       thread.kind === "new" ||
       !shouldTouchThreadSortFromNormalSend(args.agentRunPreCreateSource, false)
     ) {
       return;
     }
-    await attemptChatEventSideEffect("thread_touch", thread.threadId, () => {
-      return touchSentChatThreadSort(db, {
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId: thread.threadId,
-        agentId: thread.agentId,
-        touchedAt,
-        eventId: args.body.chatThreadSortEventId,
-      });
-    });
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchSentChatThreadSort$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: thread.threadId,
+          agentId: thread.agentId,
+          touchedAt,
+          eventId: args.body.chatThreadSortEventId,
+        },
+        signal,
+      ),
+    );
     signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
+      thread.threadId,
+      startedAt,
+      result,
+    );
   },
 );
 const publishEnqueuedNormalSend$ = command(
@@ -2052,7 +2062,7 @@ const assertOwnedThread$ = command(
         and(
           eq(chatThreads.id, threadId),
           eq(chatThreads.userId, userId),
-          chatThreadOrganizationCondition(db, orgId),
+          chatThreadOrganizationCondition(orgId),
         ),
       )
       .limit(1);

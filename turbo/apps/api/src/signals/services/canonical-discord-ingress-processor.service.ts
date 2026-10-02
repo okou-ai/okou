@@ -50,7 +50,11 @@ import {
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  chatThreadLastMessageTouchSql,
+  chatThreadLastMessageTouchSchema,
+  chatThreadLastMessageSortSql,
+} from "./chat-event-shared.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import {
   type DiscordChatEventContext,
@@ -907,6 +911,17 @@ interface RecordedIngressFailure {
   } | null;
 }
 
+const terminalIngressRouteSelection = Object.freeze({
+  id: discordChatThreadRoutes.id,
+  chatThreadId: discordChatThreadRoutes.chatThreadId,
+  userId: discordChatThreadRoutes.userId,
+  sessionKey: discordChatThreadRoutes.sessionKey,
+  destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+  orgId: discordOrgInstallations.orgId,
+  guildId: discordOrgConnections.guildId,
+  discordUserId: discordOrgConnections.discordUserId,
+});
+
 async function recordTerminalIngressFailure(
   tx: Tx,
   args: {
@@ -935,16 +950,7 @@ async function recordTerminalIngressFailure(
     "I couldn't process this Discord message. Please send it again.";
   if (claimed.routeId !== null) {
     const [route] = await tx
-      .select({
-        id: discordChatThreadRoutes.id,
-        chatThreadId: discordChatThreadRoutes.chatThreadId,
-        userId: discordChatThreadRoutes.userId,
-        sessionKey: discordChatThreadRoutes.sessionKey,
-        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-        orgId: discordOrgInstallations.orgId,
-        guildId: discordOrgConnections.guildId,
-        discordUserId: discordOrgConnections.discordUserId,
-      })
+      .select(terminalIngressRouteSelection)
       .from(discordChatThreadRoutes)
       .innerJoin(
         discordOrgConnections,
@@ -983,13 +989,23 @@ async function recordTerminalIngressFailure(
         )[0] ?? null;
       signal.throwIfAborted();
       if (inserted) {
-        await touchChatThreadLastMessageAt(
-          tx,
-          route.chatThreadId,
-          currentTime,
+        const threadTouchRows = parseRawRows(
+          chatThreadLastMessageTouchSchema,
+          await tx.execute(
+            chatThreadLastMessageTouchSql(route.chatThreadId, currentTime, {
+              userId: route.userId,
+              orgId: route.orgId,
+            }),
+          ),
+        );
+        const threadSortSql = chatThreadLastMessageSortSql(
+          threadTouchRows,
           ingressId,
           { userId: route.userId, orgId: route.orgId },
         );
+        if (threadSortSql) {
+          await tx.execute(threadSortSql);
+        }
         signal.throwIfAborted();
       }
       return {

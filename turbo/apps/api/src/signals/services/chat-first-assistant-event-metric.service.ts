@@ -1,14 +1,14 @@
+import { command } from "ccstate";
 import { elapsedSinceApiStartMs } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
-import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
 
 const L = logger("api:chat-first-assistant-message-metric");
 
@@ -26,35 +26,43 @@ export function recordFirstAssistantEventEligibility(args: {
   });
 }
 
-async function recordFirstAssistantEventAcknowledgement(args: {
-  readonly db: Db;
-  readonly runId: string;
-  readonly acknowledgedAt: number;
-}): Promise<void> {
-  const firstAssistantClaimWhere = and(
-    eq(agentRuns.id, args.runId),
-    isNotNull(agentRuns.apiStartedAt),
-    isNull(agentRuns.firstAssistantEventAcknowledgedAt),
-  );
-  if (!firstAssistantClaimWhere) {
-    throw new Error("First assistant acknowledgement predicate is empty");
-  }
-  const [claimed] = await writeRunMetadataInTransaction(args.db, {
-    patch: {
-      firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+const recordFirstAssistantEventAcknowledgement$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly acknowledgedAt: number;
     },
-    where: firstAssistantClaimWhere,
-  });
-  if (!claimed?.apiStartedAt) {
-    return;
-  }
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const firstAssistantClaimWhere = and(
+      eq(agentRuns.id, args.runId),
+      isNotNull(agentRuns.apiStartedAt),
+      isNull(agentRuns.firstAssistantEventAcknowledgedAt),
+    );
+    if (!firstAssistantClaimWhere) {
+      throw new Error("First assistant acknowledgement predicate is empty");
+    }
+    const [claimed] = await set(writeDb$)
+      .update(agentRuns)
+      .set({
+        firstAssistantEventAcknowledgedAt: new Date(args.acknowledgedAt),
+      })
+      .where(firstAssistantClaimWhere)
+      .returning({ id: agentRuns.id, apiStartedAt: agentRuns.apiStartedAt });
+    signal.throwIfAborted();
+    if (!claimed?.apiStartedAt) {
+      return;
+    }
 
-  recordFirstAssistantEventAcknowledgementMetric({
-    runId: args.runId,
-    apiStartedAt: claimed.apiStartedAt.getTime(),
-    acknowledgedAt: args.acknowledgedAt,
-  });
-}
+    recordFirstAssistantEventAcknowledgementMetric({
+      runId: args.runId,
+      apiStartedAt: claimed.apiStartedAt.getTime(),
+      acknowledgedAt: args.acknowledgedAt,
+    });
+  },
+);
 
 export function recordFirstAssistantEventAcknowledgementMetric(args: {
   readonly runId: string;
@@ -79,36 +87,37 @@ export function recordFirstAssistantEventAcknowledgementMetric(args: {
   });
 }
 
-async function publishFirstAssistantEventCreated(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely(args);
-  const acknowledgedAt = now();
-  await tapError(
-    recordFirstAssistantEventAcknowledgement({
-      db: args.db,
-      runId: args.runId,
-      acknowledgedAt,
-    }),
-    (error) => {
-      L.warn("Failed to record first assistant message acknowledgement", {
-        runId: args.runId,
-        error,
-      });
+export const publishFirstAssistantEventCreatedSafely$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly userId: string;
+      readonly runId: string;
     },
-  );
-}
-
-export async function publishFirstAssistantEventCreatedSafely(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<void> {
-  await publishFirstAssistantEventCreated(args);
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    await publishChatThreadMessageCreatedSafely(args);
+    signal.throwIfAborted();
+    const acknowledgedAt = now();
+    await tapError(
+      set(
+        recordFirstAssistantEventAcknowledgement$,
+        {
+          runId: args.runId,
+          acknowledgedAt,
+        },
+        signal,
+      ),
+      (error) => {
+        L.warn("Failed to record first assistant message acknowledgement", {
+          runId: args.runId,
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+  },
+);

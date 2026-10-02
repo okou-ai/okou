@@ -232,7 +232,9 @@ import {
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
 import {
-  touchChatThreadLastMessageAt,
+  chatThreadLastMessageTouchSql,
+  chatThreadLastMessageTouchSchema,
+  chatThreadLastMessageSortSql,
   visibleChatEventCondition,
 } from "./chat-event-shared.service";
 import {
@@ -2652,11 +2654,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         if (!assistant) {
           throw new Error("Failed to append queued input rejection");
         }
-        await touchChatThreadLastMessageAt(
-          tx,
-          args.chatThreadId,
-          assistant.createdAt,
+        const threadTouchRows = parseRawRows(
+          chatThreadLastMessageTouchSchema,
+          await tx.execute(
+            chatThreadLastMessageTouchSql(
+              args.chatThreadId,
+              assistant.createdAt,
+            ),
+          ),
         );
+        const threadSortSql = chatThreadLastMessageSortSql(threadTouchRows);
+        if (threadSortSql) {
+          await tx.execute(threadSortSql);
+        }
         return { assistantEventId: assistant.id };
       });
       signal.throwIfAborted();
@@ -4441,7 +4451,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                       eq(chatEvents.chatThreadId, threadId),
                       eq(chatEvents.runId, incompleteAnchorCandidate.runId),
                       runOwnedChatEventCondition(),
-                      visibleChatEventCondition(db),
+                      visibleChatEventCondition(),
                       or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
                     ),
                   ),
@@ -4534,7 +4544,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             eq(chatEvents.chatThreadId, threadId),
             inArray(chatEvents.runId, runIds),
             chatEventTextCondition(),
-            visibleChatEventCondition(db),
+            visibleChatEventCondition(),
           ),
         )
         .orderBy(asc(chatEvents.seqId));
@@ -4631,7 +4641,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(chatEvents.chatThreadId, args.threadId),
           chatEventTextCondition(),
           inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(get(db$)),
+          visibleChatEventCondition(),
           isWebChatContextType(args.queuedMessage.contextType)
             ? or(
                 chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
@@ -4646,7 +4656,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                         chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
                         isNotNull(canonicalChatEventContent()),
                         inArray(chatEvents.runId, runIds),
-                        visibleChatEventCondition(get(db$)),
+                        visibleChatEventCondition(),
                       ),
                     )
                     .groupBy(chatEvents.runId),

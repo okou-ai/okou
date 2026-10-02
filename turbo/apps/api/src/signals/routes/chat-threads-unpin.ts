@@ -4,10 +4,9 @@ import { chatThreadUnpinContract } from "@okouai/api-contracts/contracts/chat-th
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
+import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const unpinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -16,20 +15,20 @@ const unpinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const query = get(queryOf(chatThreadUnpinContract.unpin));
   signal.throwIfAborted();
 
-  const writeDb = set(writeDb$);
-
-  const written = await updateOwnedChatThreadWithEvent(writeDb, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    threadId: params.id,
-    set: { pinnedAt: null, pinOrder: null },
-    event: () => {
-      return {
+  const written = await set(
+    updateOwnedChatThreadWithEvent$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      threadId: params.id,
+      set: { pinnedAt: null, pinOrder: null },
+      event: {
         kind: "unpinned",
         eventId: query?.eventId,
-      };
+      },
     },
-  });
+    signal,
+  );
   signal.throwIfAborted();
   if (!written) {
     return notFound("Chat thread not found");
