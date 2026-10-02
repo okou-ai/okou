@@ -2071,14 +2071,14 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
 
-  it("rejects a firewall-injected provider whose credential was deleted before run admission", async () => {
+  it("rejects a firewall-injected provider that was deleted before run admission", async () => {
     const { actor, agentId } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "anthropic-api-key",
-      secret: "sk-ant-api03-deleted-credential",
+      secret: "sk-ant-api03-deleted-provider",
     });
-    // claude-fable-5-1 has no Pi route: the firewall-injected key stays an
-    // encrypted reference instead of being decrypted at run creation.
+    // claude-fable-5-1 has no Pi route, so its key would be a firewall
+    // reference; the policy still pins the provider that is deleted below.
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
@@ -2088,7 +2088,8 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: providerId,
       },
     ]);
-    // Deleting the provider deletes its stored credential with it.
+    // Deleting the provider through the public API removes the pinned source
+    // (and its stored secret) before the queued input is picked.
     await createMiscRoutesApi(context).deleteOrgModelProvider(
       actor,
       "anthropic-api-key",
@@ -2097,7 +2098,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const { picked } = await sendUntilPicked(actor, {
       agentId,
-      prompt: "run without a stored provider credential",
+      prompt: "run with a deleted provider",
       model: "claude-fable-5-1",
     });
     expect(picked).toMatchObject({

@@ -499,11 +499,13 @@ describe("system storage presigned URL cache", () => {
     // (system_storage scope) make 52 mounts across the three cache scopes.
     const misc = createMiscRoutesApi(context);
     const storageNames: string[] = [];
+    const workflowMountPaths = new Map<string, string>();
     for (let index = 0; index < 50; index += 1) {
+      const workflowName = `mixed-batch-${String(index)}-${randomUUID().slice(0, 8)}`;
       const workflow = await misc.createWorkflow(
         actor,
         runFixture.agentId,
-        `mixed-batch-${String(index)}-${randomUUID().slice(0, 8)}`,
+        workflowName,
         { content: `# Mixed batch ${String(index)}\nUse for cache tests.` },
         [201],
       );
@@ -511,6 +513,10 @@ describe("system storage presigned URL cache", () => {
         throw new Error("Expected workflow creation to succeed");
       }
       storageNames.push(getCustomSkillStorageName(workflow.body.id));
+      workflowMountPaths.set(
+        getCustomSkillStorageName(workflow.body.id),
+        `/home/user/.claude/skills/${workflowName}`,
+      );
     }
     const connectors = createConnectorBddApi(context);
     const custom = await connectors.createCustomConnector(actor, {
@@ -640,11 +646,35 @@ describe("system storage presigned URL cache", () => {
       };
     });
     expect(warmed).toStrictEqual(expected);
-    // Workflow skills mount at their slug, the connector skill and the seed
-    // system skill at their skill directories.
+    // Workflow skills mount exactly at their slug, the connector skill and
+    // the seed system skill at their skill directories.
+    expect(
+      warmed
+        .filter((mount) => {
+          return workflowMountPaths.has(mount.name);
+        })
+        .map((mount) => {
+          return mount.mountPath;
+        }),
+    ).toStrictEqual(
+      warmed
+        .filter((mount) => {
+          return workflowMountPaths.has(mount.name);
+        })
+        .map((mount) => {
+          return workflowMountPaths.get(mount.name);
+        }),
+    );
+    expect(
+      new Set(
+        warmed.map((mount) => {
+          return mount.mountPath;
+        }),
+      ).size,
+    ).toBe(52);
     for (const mount of warmed) {
       expect(mount.mountPath).toMatch(
-        /^\/home\/user\/\.[a-z]+\/(agent\/)?skills\/[^/]+$/,
+        /^\/home\/user\/\.claude\/skills\/[^/]+$/,
       );
     }
     expect(
