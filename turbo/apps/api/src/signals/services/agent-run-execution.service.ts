@@ -10444,11 +10444,12 @@ const prepareStorageInput$ = command(
     signal.throwIfAborted();
     // Synchronous preparation still belongs to the resource join's failure
     // boundary. Its dependents rethrow the same error; this is not a fallback.
-    try {
-      return { ok: true, value: prepareRunnerStorageInput(input) };
-    } catch (error) {
-      return { ok: false, error };
-    }
+    const prepared = safeSync(() => {
+      return prepareRunnerStorageInput(input);
+    });
+    return "ok" in prepared
+      ? { ok: true, value: prepared.ok }
+      : { ok: false, error: prepared.error };
   },
 );
 
