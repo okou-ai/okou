@@ -2554,15 +2554,18 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ];
     const sendsBefore = sends.messages.length;
     for (const [index, groupId] of groupIds.entries()) {
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: `@Okou keep group ${index} isolated`,
-        messageId: `missing-conversation-${index}-${randomUUID()}`,
-        groupId,
-        isGroup: true,
-        participants: [{ identifier: phone }],
-      });
+      await ap.postAgentPhoneInboundMessage(
+        {
+          channel: "imessage",
+          from: phone,
+          body: `@Okou keep group ${index} isolated`,
+          messageId: `missing-conversation-${index}-${randomUUID()}`,
+          groupId,
+          isGroup: true,
+          participants: [{ identifier: phone }],
+        },
+        [500],
+      );
     }
 
     await runs.heartbeatRunner(runnerGroup);
@@ -2952,14 +2955,17 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const { phone, runnerGroup, sends } = await entitledLinkedActor();
     const before = sends.messages.length;
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "@Okou check this group",
-      conversationId: uniqueConversationId(),
-      isGroup: true,
-      groupId: null,
-    });
+    await ap.postAgentPhoneInboundMessage(
+      {
+        channel: "imessage",
+        from: phone,
+        body: "@Okou check this group",
+        conversationId: uniqueConversationId(),
+        isGroup: true,
+        groupId: null,
+      },
+      [500],
+    );
 
     expect(sends.messages).toHaveLength(before);
     await runs.heartbeatRunner(runnerGroup);
