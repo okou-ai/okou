@@ -14845,7 +14845,6 @@ function createRunMemberSnapshotObject(args: RunMemberReadInput) {
 }
 
 export interface RunWorkflowReadInput {
-  readonly db: ReadonlyDb;
   readonly args: Pick<
     CreateAgentRunArgs,
     | "catalog"
@@ -14877,9 +14876,8 @@ function createRunWorkflowReadObject(
   modelState$: Computed<Promise<RunWorkflowModelState>>,
 ) {
   const workflowInput$ = computed(async (get) => {
-    const { db, args } = await get(input$);
+    const { args } = await get(input$);
     return {
-      db,
       hasOfficialWorkflows: (args.injectSkillVolumes?.workflows ?? []).some(
         (workflow) => {
           return workflow.officialDefinitionName !== null;
@@ -17719,13 +17717,11 @@ function createPreCreateOfficialWorkflowObjects(
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
       const { command } = await get(input$);
-      const db = get(db$);
       const workflows = workflowsForRunFromRows(
         await get(workflowRows$),
         command.auth.userId,
       );
       return {
-        db,
         args: {
           catalog: await get(catalog$),
           orgId: command.auth.orgId,

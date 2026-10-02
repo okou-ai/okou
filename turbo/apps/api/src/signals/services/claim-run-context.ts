@@ -1,6 +1,6 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   zodDriverValueDecoder,
@@ -286,9 +286,9 @@ import {
   readCachedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
 import {
-  isPersonalSubscriptionRoute,
-  loadMemberSubscriptionModels,
-} from "./member-subscription-models.service";
+  memberSubscriptionModelsQuery,
+  memberSubscriptionModelsFromRows,
+} from "./member-subscription-model-plan";
 import {
   type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
@@ -411,7 +411,7 @@ import {
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import {
-  loadOrgPlanCapabilities,
+  orgPlanCapabilitiesFromRow,
   type OrgPlanCapabilities,
   runtimeStatusForEntitlement,
 } from "./org-plan-entitlement-read.service";
@@ -637,7 +637,7 @@ import {
   getTableColumns,
   notExists,
 } from "drizzle-orm";
-import { alias, unionAll } from "drizzle-orm/pg-core";
+import { alias, unionAll, QueryBuilder } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
@@ -3047,9 +3047,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(orgMetadata$),
       get(queuedModelRoutingMemberRoutes$),
     ]);
-    return org?.modelMode === "auto"
-      ? await loadMemberSubscriptionModels(get(db$), member)
-      : [];
+    if (org?.modelMode !== "auto" || member.subscriptions.length === 0) {
+      return [];
+    }
+    const query = memberSubscriptionModelsQuery(member.subscriptions);
+    const rows = await get(db$)
+      .select()
+      .from(query)
+      .orderBy(asc(query.sortOrder), asc(query.model));
+    return memberSubscriptionModelsFromRows(rows, member.subscriptions);
   });
   const queuedModelRoutingModelPin$ = computed(async (get) => {
     const [
@@ -4473,9 +4479,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const { newestAnchor, precedingAnchor } = await get(
         incompleteRoundAnchors$,
       );
-      const rows = await executeRawRows(
-        db,
-        sql`
+      const rows = parseRawRows(
+        incompleteRoundFrontierRowSchema,
+        await db.execute(sql`
       WITH RECURSIVE incomplete_frontier AS (
         SELECT candidate.*, 1 AS depth
         FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
@@ -4492,8 +4498,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       SELECT run_id AS "runId", run_status AS "runStatus", is_success AS "isSuccess"
       FROM incomplete_frontier
       ORDER BY depth
-    `,
-        incompleteRoundFrontierRowSchema,
+    `),
       );
       const rounds: IncompleteRoundSelection[] = [];
       for (const row of rows) {
@@ -5905,9 +5910,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(queuedModelInputsOrgMetadata$),
       get(queuedModelRoutingMemberRoutes$2),
     ]);
-    return org?.modelMode === "auto"
-      ? await loadMemberSubscriptionModels(get(db$), member)
-      : [];
+    if (org?.modelMode !== "auto" || member.subscriptions.length === 0) {
+      return [];
+    }
+    const query = memberSubscriptionModelsQuery(member.subscriptions);
+    const rows = await get(db$)
+      .select()
+      .from(query)
+      .orderBy(asc(query.sortOrder), asc(query.model));
+    return memberSubscriptionModelsFromRows(rows, member.subscriptions);
   });
   const queuedModelRoutingModelPin$2 = computed(async (get) => {
     const [
@@ -7064,9 +7075,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const bootstrapCustomConnectorQuery$ = computed(async (get) => {
     const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
-    const db = get(db$);
     return {
-      query: db
+      query: new QueryBuilder()
         .select({
           kind: sql`'custom_connector'`
             .mapWith(bootstrapMetadataRowKindDecoder)
@@ -9745,13 +9755,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
       const { command } = await get(preCreateExecutionInput$);
-      const db = get(db$);
       const workflows = workflowsForRunFromRows(
         await get(preCreateExecutionWorkflowRows$),
         command.auth.userId,
       );
       return {
-        db,
         args: {
           catalog: await get(claimCatalog$),
           orgId: command.auth.orgId,
@@ -9779,9 +9787,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return { requestedFramework, modelProvider };
   });
   const runWorkflowReadWorkflowInput$ = computed(async (get) => {
-    const { db, args } = await get(workflowInput$);
+    const { args } = await get(workflowInput$);
     return {
-      db,
       hasOfficialWorkflows: (args.injectSkillVolumes?.workflows ?? []).some(
         (workflow) => {
           return workflow.officialDefinitionName !== null;
@@ -9810,12 +9817,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
   });
   const acceptedRunCatalog$ = computed(async (get) => {
-    const { db, hasOfficialWorkflows } = await get(
-      runWorkflowReadWorkflowInput$,
-    );
+    const { hasOfficialWorkflows } = await get(runWorkflowReadWorkflowInput$);
     if (!hasOfficialWorkflows) {
       return null;
     }
+    const db = get(db$);
     const [row] = await db
       .select({
         releaseId: officialWorkflowCatalogState.acceptedReleaseId,
@@ -9856,11 +9862,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return acceptedRunCandidates(catalog, candidates);
   });
   const acceptedRunRevisions$ = computed(async (get) => {
-    const { db } = await get(runWorkflowReadWorkflowInput$);
     const candidates = await get(acceptedCandidates$);
     if (candidates.length === 0) {
       return [];
     }
+    const db = get(db$);
     const rows = await db
       .select({
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
@@ -11334,7 +11340,41 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const capturedRunAdmissionCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
       const { orgId } = await get(capturedRunAdmissionReadInput$);
-      return await loadOrgPlanCapabilities(get(db$), orgId);
+      const database = get(db$);
+      const [row] = await database
+        .select({
+          planKey: orgPlanEntitlements.planKey,
+          status: orgPlanEntitlements.status,
+          baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+          canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+          canBuyCredits: orgPlanEntitlements.canBuyCredits,
+          showUsagePack: orgPlanEntitlements.showUsagePack,
+          autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+          supportByok: orgPlanEntitlements.supportByok,
+          restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+          videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
+          workflowWebhookAutomationAllowed:
+            orgPlanEntitlements.workflowWebhookTriggerAllowed,
+          audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+          audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+          audioDailyDurationSeconds:
+            orgPlanEntitlements.audioDailyDurationSeconds,
+        })
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.orgId, orgId))
+        .limit(1);
+      if (row) {
+        return orgPlanCapabilitiesFromRow(row, orgId);
+      }
+      const [org] = await database
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      if (org) {
+        throw new Error(`Missing org plan entitlement for ${orgId}`);
+      }
+      return null;
     },
   );
   const runAdmissionCreditBalance$ = computed(async (get) => {
@@ -11532,13 +11572,40 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
   const runAdmissionPersonalSubscription$ = computed(async (get) => {
     const input = await get(capturedRunAdmissionReadInput$);
-    return await isPersonalSubscriptionRoute({
-      db: get(db$),
+    if (
+      !input.selectedModel ||
+      (input.modelProviderType !== "claude-code-oauth-token" &&
+        input.modelProviderType !== "codex-oauth-token") ||
+      input.userId === "__no_preference__" ||
+      input.userId === "__org__"
+    ) {
+      return false;
+    }
+    const accounts = await get(db$)
+      .select({
+        type: modelProviderAccounts.type,
+        providerId: modelProviderAccounts.modelProviderId,
+        isActive: modelProviderAccounts.isActive,
+        needsReconnect: modelProviderAccounts.needsReconnect,
+      })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, input.orgId),
+          eq(modelProviderAccounts.userId, input.userId),
+          inArray(modelProviderAccounts.type, [
+            "claude-code-oauth-token",
+            "codex-oauth-token",
+          ]),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    return isMemberSubscriptionRoute({
       catalog: input.catalog,
-      orgId: input.orgId,
-      userId: input.userId,
+      member: memberModelRouteContextFromAccounts(input.userId, accounts),
       model: input.selectedModel,
       providerType: input.modelProviderType,
+      credentialScope: "member",
     });
   });
   const runAdmissionCheckAdmission$ = command(
