@@ -276,8 +276,8 @@ async fn send_failures_share_degradation_with_body_reads_and_preserve_genuine_wa
             });
         })
         .await;
-    // Queue through the real production layer during the scenario, then drive
-    // its HTTP dispatcher on an independent clock after all catalog time jumps.
+    // Queue through the provider's test-only Axiom harness, then drive its
+    // HTTP dispatcher on an independent clock after all catalog time jumps.
     // Advancing the catalog clock must not expire a loopback ingest in flight.
     let axiom_runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
