@@ -10428,27 +10428,41 @@ export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
   };
 }
 
+type StorageInputPreparation =
+  | {
+      readonly ok: true;
+      readonly value: ReturnType<typeof prepareRunnerStorageInput>;
+    }
+  | { readonly ok: false; readonly error: unknown };
+
 const prepareStorageInput$ = command(
   (
     _store,
     input: StorageMaterializationInput,
     signal: AbortSignal,
-  ): ReturnType<typeof prepareRunnerStorageInput> => {
+  ): StorageInputPreparation => {
     signal.throwIfAborted();
-    // Token generation is owned by this command; the storage read graph only
-    // needs the original vars and volume versions, never the random token.
-    return prepareRunnerStorageInput(input);
+    // Synchronous preparation still belongs to the resource join's failure
+    // boundary. Its dependents rethrow the same error; this is not a fallback.
+    try {
+      return { ok: true, value: prepareRunnerStorageInput(input) };
+    } catch (error) {
+      return { ok: false, error };
+    }
   },
 );
 
 const prepareStoredContextDraft$ = command(
   async (
     _store,
-    input: ReturnType<typeof prepareRunnerStorageInput>,
+    preparation: StorageInputPreparation,
     signal: AbortSignal,
   ): Promise<BuiltStoredExecutionContextDraft> => {
-    const { args, body, platformEnvironment } = input;
     signal.throwIfAborted();
+    if (!preparation.ok) {
+      throw preparation.error;
+    }
+    const { args, body, platformEnvironment } = preparation.value;
     // KMS key generation belongs to this explicit resource command, not a
     // computed read. It can run alongside the independent storage plan.
     const context = await measureApiDispatchTiming(
@@ -10495,11 +10509,16 @@ interface MaterializedRunnerStorage {
 const materializeRunnerStorage$ = command(
   async (
     { get, set },
-    input: ReturnType<typeof prepareRunnerStorageInput>,
+    preparation: StorageInputPreparation,
     storageInput: AgentRunStorageInput,
     suppliedCapture: AgentRunStorageMaterialization | undefined,
     signal: AbortSignal,
   ): Promise<MaterializedRunnerStorage> => {
+    signal.throwIfAborted();
+    if (!preparation.ok) {
+      throw preparation.error;
+    }
+    const input = preparation.value;
     const capture =
       suppliedCapture ??
       (await get(createAgentRunStorageObjects(storageInput).materialization$));
