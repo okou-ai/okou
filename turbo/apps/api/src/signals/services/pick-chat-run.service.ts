@@ -85,7 +85,6 @@ import {
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
 import {
-  runAllowanceSnapshotSelection,
   requireRunAllowanceWindowPair,
   planRunAllowanceActivation,
   runAllowanceWindowInsertSql,
@@ -1161,7 +1160,11 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                 .update(orgUsageAllowanceEntitlements)
                 .set(planned.update)
                 .where(unchangedRunAllowanceEntitlement(owned))
-                .returning(runAllowanceSnapshotSelection);
+                .returning({
+                  snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+                    pgTextDecoder,
+                  ),
+                });
               signal.throwIfAborted();
               if (!published) {
                 throw new Error(

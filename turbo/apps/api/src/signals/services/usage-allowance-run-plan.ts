@@ -11,11 +11,6 @@ import {
   type AllowanceEntitlement,
 } from "./usage-allowance-settlement-plan";
 import type { PreparedUsageAllowanceRefresh } from "./usage-allowance.service";
-import { pgTextDecoder } from "../../lib/db-structured-result";
-
-export const runAllowanceSnapshotSelection = {
-  snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(pgTextDecoder),
-};
 
 export function requireRunAllowanceWindowPair(
   windows: readonly { readonly kind: string }[],

@@ -18,7 +18,7 @@ import {
   or,
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
