@@ -25,9 +25,9 @@
 //!
 //! Eligible fresh and reused sandbox attempts can assign bounded cold
 //! identities to a runner owner before independent pre-spawn preparation.
-//! That owner performs one full request, keeps the cache writer through atomic
-//! publication and the runner-wide permit through guest application, and
-//! stages only complete content. An admitted owner's terminal failure fails
+//! That owner performs a bounded sequence of read-only GET attempts, keeps the
+//! cache writer through atomic publication and the runner-wide permit through
+//! guest application, and stages only complete content. A terminal failure fails
 //! storage preparation after draining; it does not retry the request in the guest.
 //! Keying on both name and version gives same-version entries with different
 //! storage names separate collision-resistant staged filenames in normal
@@ -70,7 +70,11 @@ use crate::archive_connection_attempt::{
     ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
 };
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
-use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
+use crate::object_download_policy::{
+    OBJECT_DOWNLOAD_BUDGET, OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_RETRY_DELAY,
+    OBJECT_DOWNLOAD_TIMEOUT, object_download_http_retry_after,
+    object_download_transient_transport_kind,
+};
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 #[cfg(test)]
 use crate::telemetry::StorageTelemetry;
@@ -1074,8 +1078,9 @@ struct FreshArchivePhaseRecord {
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
 }
 
-/// At most four phases for each of the four archives admitted to one delivery.
-/// Records live outside fetch tasks so aborting and joining those tasks retains
+/// At most eight phases per archive: headers/body for three attempts, then
+/// apply-wait/publication once. Four admitted archives therefore retain at most
+/// 32 records. Records live outside fetch tasks so aborting and joining retains
 /// their last observed phase. Draining never holds the lock while recording
 /// telemetry.
 #[derive(Clone, Default)]
@@ -1202,7 +1207,53 @@ enum FreshArchiveSizeSource {
 
 enum FreshArchiveFetchTaskResult {
     Downloaded(FreshArchiveDownloaded),
-    Terminal { reason: &'static str },
+    Terminal { error: FreshArchiveFetchError },
+}
+
+struct FreshArchiveFetchError {
+    reason: &'static str,
+    http_status: Option<u16>,
+    retry_after: Option<Duration>,
+}
+
+impl FreshArchiveFetchError {
+    fn permanent(reason: &'static str) -> Self {
+        Self {
+            reason,
+            http_status: None,
+            retry_after: None,
+        }
+    }
+
+    fn from_reqwest(reason: &'static str, error: reqwest::Error) -> Self {
+        Self {
+            reason: if error.is_timeout() {
+                "timeout"
+            } else {
+                reason
+            },
+            http_status: None,
+            retry_after: object_download_transient_transport_kind(&error).map(|_| Duration::ZERO),
+        }
+    }
+
+    fn http_status(response: &reqwest::Response) -> Self {
+        Self {
+            reason: "http-status",
+            http_status: Some(response.status().as_u16()),
+            retry_after: object_download_http_retry_after(response),
+        }
+    }
+}
+
+impl fmt::Display for FreshArchiveFetchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.reason)?;
+        if let Some(status) = self.http_status {
+            write!(f, " (status={status})")?;
+        }
+        Ok(())
+    }
 }
 
 struct FreshArchivePublicationTaskResult {
@@ -1429,7 +1480,8 @@ impl FreshArchiveDelivery {
                         FreshArchivePublicationTaskResult { group, result }
                     });
                 }
-                FreshArchiveFetchTaskResult::Terminal { reason } => {
+                FreshArchiveFetchTaskResult::Terminal { error } => {
+                    let reason = error.reason;
                     let action = if reason == "cancelled" {
                         STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
                     } else {
@@ -1440,7 +1492,7 @@ impl FreshArchiveDelivery {
                         RunnerError::Cancelled
                     } else {
                         RunnerError::Internal(format!(
-                            "runner-owned archive download failed: {reason}"
+                            "runner-owned archive download failed: {error}"
                         ))
                     });
                 }
@@ -2957,12 +3009,12 @@ impl FreshArchiveRequests {
         self.fetches.spawn(async move {
             let fetch = tokio::select! {
                 biased;
-                () = cancel.cancelled() => Err("cancelled"),
+                () = cancel.cancelled() => Err(FreshArchiveFetchError::permanent("cancelled")),
                 result = fetch_fresh_archive(&http, &archive_url, group.archive_size, representative, &phase_records) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
-                Err(reason) => return FreshArchiveFetchTaskResult::Terminal { reason },
+                Err(error) => return FreshArchiveFetchTaskResult::Terminal { error },
             };
             let phase = FreshArchivePhaseGuard::new(
                 &phase_records,
@@ -2978,7 +3030,9 @@ impl FreshArchiveRequests {
                 Ok(()) => FreshArchiveFetchTaskResult::Downloaded(FreshArchiveDownloaded {
                     group, bytes, size_source, writer, permit,
                 }),
-                Err(reason) => FreshArchiveFetchTaskResult::Terminal { reason },
+                Err(reason) => FreshArchiveFetchTaskResult::Terminal {
+                    error: FreshArchiveFetchError::permanent(reason),
+                },
             }
         });
         metrics.record(
@@ -2987,6 +3041,8 @@ impl FreshArchiveRequests {
             true,
             None,
         );
+        // Retain the legacy admission marker once per logical download owner.
+        // Entered headers phases count explicit application-level GET attempts.
         metrics.record(
             STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST,
             Duration::ZERO,
@@ -2997,15 +3053,69 @@ impl FreshArchiveRequests {
     }
 }
 
-/// An admitted runner-owned request uses the shared bounded timeout. Failure
-/// is terminal; it must not be retried through a second Guest download owner.
+/// Retries remain within this owner, with the same URL, writer and permit.
+/// Exhaustion is terminal; no second Guest download owner follows a failure.
 async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
     expected_size: Option<u64>,
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
-) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
+) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
+    let deadline = tokio::time::Instant::now() + OBJECT_DOWNLOAD_BUDGET;
+    tokio::time::timeout_at(deadline, async {
+        let mut attempt = 1usize;
+        loop {
+            match fetch_fresh_archive_once(
+                http,
+                archive_url,
+                expected_size,
+                representative,
+                phase_records,
+            )
+            .await
+            {
+                Ok(download) => return Ok(download),
+                Err(error) => {
+                    let Some(retry_after) = error.retry_after else {
+                        return Err(error);
+                    };
+                    if attempt >= OBJECT_DOWNLOAD_MAX_ATTEMPTS {
+                        return Err(error);
+                    }
+                    let backoff = OBJECT_DOWNLOAD_RETRY_DELAY * (1 << (attempt - 1));
+                    let delay = backoff.max(retry_after);
+                    if delay >= deadline.saturating_duration_since(tokio::time::Instant::now()) {
+                        return Err(error);
+                    }
+                    info!(
+                        action = "storage_cache_fresh_delivery_retry",
+                        attempt,
+                        max_attempts = OBJECT_DOWNLOAD_MAX_ATTEMPTS,
+                        reason = error.reason,
+                        http_status = error.http_status,
+                        retry_delay_ms = delay.as_millis() as u64,
+                        "retrying runner-owned archive download"
+                    );
+                    // The enclosing task's cancellation owns this sleep and
+                    // the next request. Partial bodies never leave an attempt.
+                    tokio::time::sleep(delay).await;
+                    attempt += 1;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(FreshArchiveFetchError::permanent("timeout")))
+}
+
+async fn fetch_fresh_archive_once(
+    http: &Client,
+    archive_url: &str,
+    expected_size: Option<u64>,
+    representative: ArchiveHandle,
+    phase_records: &FreshArchivePhaseRecords,
+) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
     let mut mismatch = None;
     let headers = connection_attempt_observer
@@ -3015,15 +3125,9 @@ async fn fetch_fresh_archive(
                 .timeout(OBJECT_DOWNLOAD_TIMEOUT)
                 .send()
                 .await
-                .map_err(|error| {
-                    if error.is_timeout() {
-                        "timeout"
-                    } else {
-                        "http"
-                    }
-                })?;
+                .map_err(|error| FreshArchiveFetchError::from_reqwest("http", error))?;
             if response.status() != reqwest::StatusCode::OK {
-                return Err("http-status");
+                return Err(FreshArchiveFetchError::http_status(&response));
             }
 
             let response_size = response.content_length();
@@ -3050,33 +3154,39 @@ async fn fetch_fresh_archive(
                     )
                 }
                 None => match response_size {
-                    Some(0) => return Err("response-size-zero"),
+                    Some(0) => return Err(FreshArchiveFetchError::permanent("response-size-zero")),
                     Some(size) if size <= CACHE_MAX_SIZE => {
                         (size, FreshArchiveSizeSource::Response)
                     }
-                    Some(_) => return Err("response-size-oversized"),
-                    None => return Err("response-size-missing"),
+                    Some(_) => {
+                        return Err(FreshArchiveFetchError::permanent("response-size-oversized"));
+                    }
+                    None => return Err(FreshArchiveFetchError::permanent("response-size-missing")),
                 },
             };
             if exact_size == 0 {
-                return Err(if response_size.is_some() {
-                    "response-size-zero"
-                } else {
-                    "expected-size-zero"
-                });
+                return Err(FreshArchiveFetchError::permanent(
+                    if response_size.is_some() {
+                        "response-size-zero"
+                    } else {
+                        "expected-size-zero"
+                    },
+                ));
             }
             if exact_size > CACHE_MAX_SIZE {
-                return Err(if response_size.is_some() {
-                    "response-size-oversized"
-                } else {
-                    "expected-size-oversized"
-                });
+                return Err(FreshArchiveFetchError::permanent(
+                    if response_size.is_some() {
+                        "response-size-oversized"
+                    } else {
+                        "expected-size-oversized"
+                    },
+                ));
             }
             Ok((response, response_size, exact_size, size_source))
         })
         .await;
     phase.finish_with_archive_size_mismatch(
-        headers.as_ref().map(|_| ()).map_err(|reason| *reason),
+        headers.as_ref().map(|_| ()).map_err(|error| error.reason),
         mismatch,
     );
     let (mut response, response_size, exact_size, size_source) = headers?;
@@ -3089,27 +3199,25 @@ async fn fetch_fresh_archive(
             CACHE_MAX_SIZE,
         ));
         let mut downloaded = 0u64;
-        while let Some(chunk) = response.chunk().await.map_err(|error| {
-            if error.is_timeout() {
-                "timeout"
-            } else {
-                "body"
-            }
-        })? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| FreshArchiveFetchError::from_reqwest("body", error))?
+        {
             if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
-                .map_err(|_| "body-length-overflow")?
+                .map_err(|_| FreshArchiveFetchError::permanent("body-length-overflow"))?
                 .is_some()
             {
-                return Err("body-oversized");
+                return Err(FreshArchiveFetchError::permanent("body-oversized"));
             }
         }
         if downloaded != exact_size {
-            return Err("body-size-mismatch");
+            return Err(FreshArchiveFetchError::permanent("body-size-mismatch"));
         }
         Ok((Bytes::from(bytes), size_source))
     }
     .await;
-    phase.finish(body.as_ref().map(|_| ()).map_err(|reason| *reason));
+    phase.finish(body.as_ref().map(|_| ()).map_err(|error| error.reason));
     body
 }
 
@@ -4243,6 +4351,7 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
 mod tests {
     use super::*;
 
+    mod archive_retries;
     mod decoded_observation;
     mod http_reuse;
     mod phase_diagnostics;

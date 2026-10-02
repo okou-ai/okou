@@ -667,7 +667,7 @@ async fn cancellation_preserves_completed_phases_and_marks_only_active_phase() {
 #[tokio::test]
 async fn rejected_headers_and_body_report_the_failed_phase_without_later_phases() {
     for (response, expected_phase, reason) in [
-        (http_response("503 Service Unavailable", b"bad"), 0, "http-status"),
+        (http_response("403 Forbidden", b"bad"), 0, "http-status"),
         // Hyper rejects this declared length before exposing response headers.
         // It must keep the original HTTP error rather than fabricate a mismatch.
         (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", u64::MAX).into_bytes(), 0, "http"),

@@ -37,13 +37,12 @@
 //! outcome, so successful recovery does not erase an earlier transport failure.
 
 use std::collections::HashMap;
-use std::error::Error as _;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use api_contracts::generated::constants::runners::RESUME_SESSION_HISTORY_MAX_BYTES;
-use reqwest::header::{CONTENT_ENCODING, RETRY_AFTER, TRANSFER_ENCODING};
+use reqwest::header::{CONTENT_ENCODING, TRANSFER_ENCODING};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -61,7 +60,12 @@ use crate::telemetry::{
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
 use runner_provider::http::HttpClient;
-use runner_storage::OBJECT_DOWNLOAD_TIMEOUT;
+use runner_storage::{
+    OBJECT_DOWNLOAD_BUDGET as SESSION_HISTORY_DOWNLOAD_BUDGET,
+    OBJECT_DOWNLOAD_MAX_ATTEMPTS as SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
+    OBJECT_DOWNLOAD_RETRY_DELAY as SESSION_HISTORY_DOWNLOAD_RETRY_DELAY, OBJECT_DOWNLOAD_TIMEOUT,
+    object_download_http_retry_after, object_download_transient_transport_kind,
+};
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,
@@ -69,12 +73,6 @@ use runner_types::types::{
 
 const SESSION_HISTORY_PROBE_TTL: Duration = Duration::from_secs(60 * 60);
 const SESSION_HISTORY_PROBE_CAPACITY: usize = 4096;
-
-// These limits apply only to read-only history blob downloads, not signed-URL
-// renewal, archive transfers, restore writes, or replaying the agent.
-const SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS: usize = 3;
-const SESSION_HISTORY_DOWNLOAD_RETRY_DELAY: Duration = Duration::from_millis(200);
-const SESSION_HISTORY_DOWNLOAD_BUDGET: Duration = Duration::from_secs(90);
 
 pub struct SessionHistoryMaterializer {
     state: SessionHistoryMaterializerState,
@@ -972,12 +970,7 @@ async fn download_body_once(
     if let Err(error) = response.error_for_status_ref() {
         timings.record_request_status(request_started.elapsed(), false);
         let mut failure = SessionHistoryDownloadBodyError::from_reqwest("GET status", url, error);
-        if matches!(response.status().as_u16(), 429 | 500 | 502 | 503 | 504) {
-            failure.retry_after = match response.headers().get(RETRY_AFTER) {
-                Some(value) => value.to_str().ok().and_then(session_history_retry_after),
-                None => Some(Duration::ZERO),
-            };
-        }
+        failure.retry_after = object_download_http_retry_after(&response);
         return Err(failure);
     }
     timings.record_request_status(request_started.elapsed(), true);
@@ -1090,7 +1083,7 @@ impl SessionHistoryDownloadBodyError {
     }
 
     fn from_reqwest(phase: &str, url: &str, error: reqwest::Error) -> Self {
-        let retry_kind = session_history_transient_transport_kind(&error);
+        let retry_kind = object_download_transient_transport_kind(&error);
         let failure_kind = match error.status() {
             Some(status) if status.as_u16() == 429 => "http_429",
             Some(status) if status.is_server_error() => "http_5xx",
@@ -1111,53 +1104,6 @@ impl SessionHistoryDownloadBodyError {
     fn into_runner_error(self) -> RunnerError {
         RunnerError::Internal(self.message)
     }
-}
-
-fn session_history_transient_transport_kind(error: &reqwest::Error) -> Option<&'static str> {
-    if error.is_timeout() {
-        return Some("timeout");
-    }
-    if error.is_connect() {
-        return Some("connect");
-    }
-    // chunk() wraps body interruptions as decode errors. Inspect typed sources
-    // rather than treating every decode failure or dependency message as transient.
-    let mut source = error.source();
-    while let Some(error) = source {
-        if let Some(error) = error.downcast_ref::<std::io::Error>()
-            && matches!(
-                error.kind(),
-                std::io::ErrorKind::ConnectionReset
-                    | std::io::ErrorKind::ConnectionAborted
-                    | std::io::ErrorKind::BrokenPipe
-                    | std::io::ErrorKind::UnexpectedEof
-            )
-        {
-            return Some("body_interrupted");
-        }
-        if let Some(error) = error.downcast_ref::<hyper::Error>()
-            && (error.is_incomplete_message() || error.is_closed())
-        {
-            return Some("body_interrupted");
-        }
-        source = error.source();
-    }
-    None
-}
-
-fn session_history_retry_after(value: &str) -> Option<Duration> {
-    let value = value.trim();
-    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return value.parse::<u64>().ok().map(Duration::from_secs);
-    }
-    // An unsupported/malformed hint is terminal rather than retrying sooner
-    // than the provider permits. HTTP dates in the past permit normal backoff.
-    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
-    Some(
-        date.signed_duration_since(chrono::Utc::now())
-            .to_std()
-            .unwrap_or(Duration::ZERO),
-    )
 }
 
 impl fmt::Display for SessionHistoryDownloadBodyError {

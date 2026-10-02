@@ -21,6 +21,7 @@ chrono = { workspace = true, features = ["now", "serde"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 hex = { workspace = true, features = ["std"] }
+hyper.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
 reqwest = { workspace = true, features = ["json", "rustls"] }
