@@ -439,7 +439,8 @@ export function createRunsApi(
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
 
-      const suffix = randomUUID().slice(0, 8);
+      // Stripe identities persist across files in the shared test database.
+      const suffix = randomUUID();
       const customerId = options.customerId ?? `cus_bdd_${suffix}`;
       const subscriptionId = options.subscriptionId ?? `sub_bdd_${suffix}`;
       const invoiceId = `in_bdd_${suffix}`;
@@ -517,6 +518,15 @@ export function createRunsApi(
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
+          {
+            cause: {
+              orgId: actor.orgId,
+              customerId,
+              subscriptionId,
+              invoiceId,
+              billingStatus: billingStatus.body,
+            },
+          },
         );
       }
 
