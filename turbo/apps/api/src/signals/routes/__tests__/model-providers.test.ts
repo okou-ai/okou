@@ -194,10 +194,9 @@ async function markOrgCodexProviderStaleViaFirewall(
   if (!actor.orgId) {
     throw new Error("Entitled actor must be org-scoped");
   }
-  const run = await api.createRun(actor, {
+  const run = await api.createThreadRun(actor, {
     agentId,
     prompt: "trigger firewall auth token refresh",
-    modelProvider: "anthropic-api-key",
   });
 
   server.use(

@@ -24,6 +24,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedPendingArtifactCatalogFile } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
@@ -557,14 +558,10 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("lists the source URL for a video without a poster", async () => {
     const owner = await catalogActor("Artifact catalog video source owner");
-    const run = await api.createDirectRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: "upload a video",
-      modelProviderType: "anthropic-api-key",
-      triggerSource: "automation-schedule",
-      vars: { OKOU_AGENT_ID: owner.agentId },
-      secrets: { OKOU_TOKEN: "bdd-artifact-video-source-token" },
-    });
+    // A real schedule-triggered workflow run.
+    const run = await createWorkflowsBddApi(
+      context,
+    ).startScheduledAutomationRun(owner.actor, owner.agentId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/source-fallback.webm`,
@@ -977,14 +974,10 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("keeps a workflow run artifact under the owning Okou user", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
-    const run = await api.createDirectRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: "create a workflow artifact",
-      modelProviderType: "anthropic-api-key",
-      triggerSource: "automation-schedule",
-      vars: { OKOU_AGENT_ID: owner.agentId },
-      secrets: { OKOU_TOKEN: "bdd-artifact-catalog-token" },
-    });
+    // A real schedule-triggered workflow run.
+    const run = await createWorkflowsBddApi(
+      context,
+    ).startScheduledAutomationRun(owner.actor, owner.agentId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,

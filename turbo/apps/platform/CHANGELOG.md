@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.990.6](https://github.com/okou-ai/okou/compare/app-v0.990.5...app-v0.990.6) (2026-10-02)
+
+
+### Refactoring
+
+* **platform:** bind account search debounce to page lifecycle ([#37492](https://github.com/okou-ai/okou/issues/37492)) ([e072833](https://github.com/okou-ai/okou/commit/e07283388b6590bb222f8059b1ef29f298d89892))
+
+## [0.990.5](https://github.com/okou-ai/okou/compare/app-v0.990.4...app-v0.990.5) (2026-10-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.725.7
+
 ## [0.990.4](https://github.com/okou-ai/okou/compare/app-v0.990.3...app-v0.990.4) (2026-10-02)
 
 

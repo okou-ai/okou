@@ -3,20 +3,27 @@
 `pickChatThread$` in
 `turbo/apps/api/src/signals/services/pick-chat-run.service.ts` is a stable command
 constructed at module scope. It accepts ordinary organization/thread/cursor data
-and returns `{ result, cursor }`. The parent owns organization capacity, thread selection, the lease,
-overall control flow, the pending transaction, token-bound cleanup and activation.
-`createClaimRunObjects(claim)` in `claim-run-context.ts` returns only
-`{ pickedEvent$, prepareRunContext$, updatePresignedUrlCache$ }`. It owns selection
+and optional `prefetchedBootstrap`, returning `{ result, cursor }`. The outer
+picker owns organization capacity, thread selection, the lease, scheduling and
+token-bound cleanup for no-capacity, empty or passed work.
+`createThreadClaimRunObjects(claim, prefetchedBootstrap?)` in
+`thread-claim-run.service.ts` returns only
+`{ hasFirstPickableChatEvent$, startRun$ }`. The Thread owner now owns selection
 of the claimed thread's input, execution identity, pinned model, prompt,
-connectors, storage, complete resource preparation and the deferred URL-cache
-write. These are the two S2/S3 business-object boundaries.
+connectors, storage, private preparation, final admission, the pending
+transaction, selected-input rejection, post-commit activation and deferred
+URL-cache writes. No prepared execution context or selected raw event crosses
+this public boundary. The deleted `claim-run-context.ts` and
+`agent-run-execution.service.ts` are not compatibility entrypoints.
 
-The claim factory accepts only the actual successful lease-write receipt. It contains
-`orgId`, `chatThreadId`, `claimId`, `pickStartedAt` and the captured `queuedAt`.
-No factory in this path receives a `State`,
+Only actual successful lease-write receipts drive the claim graph. The outer
+receipt retains `orgId`, `chatThreadId`, `claimId`, `queuedAt` and its optional
+plain prefetch object containing identity values and an already-created Promise.
+The child receives only `{ orgId, chatThreadId, claimId }` and that prefetch
+object; it owns its pick-start timing. No factory in this path receives a `State`,
 `Computed`, `Command`, getter, setter, Store, signal or business callback, including
 inside a dependency object. Nodes are defined directly in their owning closure.
-The child exposes only the three signals needed by the parent; private state is not
+The child exposes only its boolean observation and start command; private state is not
 forwarded into another factory. Plain conversion and decoding functions and
 connection-free SQL builders may remain ordinary functions; transaction handles
 never leave their owning command callback.
@@ -36,8 +43,8 @@ no I/O, create no Store and capture no `AbortSignal`. Resource commands and the
 fixed-thread repick scheduler invoke already-declared commands; they do not
 construct additional graphs.
 
-The pre-existing Pi background and test-fixture adapters keep their legitimate
-non-chat entrypoints; they do not provide another chat ingress. Domain
+Pi memory maintenance keeps its own non-chat entrypoint (`startMaintenanceRun$`,
+driven by the Phase 2 worker); it does not provide another chat ingress. Domain
 infrastructure can remain shared, but S2/S3 does not call an asynchronous
 preparation/helper chain or pass injected signals through the old execution
 stages. Business reads belong directly in computed nodes; writes and orchestration
@@ -50,31 +57,35 @@ are omitted):
 const { claim, cursor } = await set(claim$, input, signal);
 if (!claim) return { result: { kind: "none" }, cursor };
 
-// The computed was declared before any command execution. It derives only
-// from successful write receipts and memoizes each receipt's child graph.
+// The predeclared computed preserves one child graph per SQL receipt.
 const claimed = get(capturedClaims$).get(claim.claimId);
 if (!claimed) throw new Error("Missing captured claim graph");
-const [hasCapacity, event] = await Promise.all([
+const [hasCapacity, hasInput] = await Promise.all([
   get(claimed.orgHasCapacity$),
-  get(claimed.pickedEvent$),
+  get(claimed.hasFirstPickableChatEvent$),
 ]);
 signal.throwIfAborted();
 if (!hasCapacity) {
-  await set(releaseClaim$, claim, signal);
+  if (await set(releaseClaim$, claim, signal)) {
+    // This independent predeclared observation is first read after release.
+    const freed = await get(claimed.orgHasCapacityAfterRelease$);
+    signal.throwIfAborted();
+    if (freed) set(scheduleThreadPick$, claim, signal);
+  }
   return { result: { kind: "org-full" }, cursor };
 }
-if (!event) {
+if (!hasInput) {
   await set(deleteEmptyQueue$, claim, signal);
   return { result: { kind: "none" }, cursor };
 }
 
-const timing = createClaimRunTiming(claim.pickStartedAt);
-const context = await set(claimed.prepareRunContext$, timing, signal);
-const pending = await set(createRun$, { claim, context, timing }, signal);
-// A successful pending commit already fences and clears this lease.
-waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-await set(activatePendingRun$, pending, timing, signal);
-return { result: { kind: "launched", runId: pending.runId }, cursor };
+const runId = await set(claimed.startRun$, signal);
+if (runId === null) {
+  await set(releaseClaim$, claim, signal);
+  return { result: { kind: "none" }, cursor };
+}
+// The child has fenced the lease, scheduled URL-cache work and activated.
+return { result: { kind: "launched", runId }, cursor };
 ```
 
 After agent authorization,
@@ -87,11 +98,106 @@ copied between preparation commands. Independent reads use `Promise.all` and
 propagate the first rejection. There is no prescribed priority among concurrent
 infrastructure failures, no settled-result staging and no error fallback.
 
+## S1 agent bootstrap prefetch
+
+Web session-authenticated direct sends and verified MCP direct sends start
+`get(createAgentBootstrap(userId, orgId, agentId))` before the enqueue transaction.
+`agent-bootstrap.service.ts` owns this signal factory. The entry passes the ordinary
+`{ userId, orgId, agentId, bootstrap: Promise<AgentBootstrap> }` object to its
+post-commit pick. `pickEnqueuedChatThread$` forwards it unchanged to the stable
+picker, which attaches it to only that successful claim's immutable receipt;
+`createThreadClaimRunObjects` receives the same Promise without an outer await.
+It does not await it before returning the accepted-input response. Integration, automation, workflow-command, run-callback and other
+non-Web direct-send entries keep the canonical claim-owned read.
+
+The package composes normalized member metadata, scoped connector selection,
+effective permission grants, workflow winners and feature-switch context. Four
+read-only factories own those definitions; no metadata UNION rows or workflow
+candidate rows cross the bootstrap boundary. It also retains Agent facts, disabled
+paid-tool IDs, environment source values, execution-only custom definitions and
+normalized catalog identity/projection data. Custom definitions omit enabled/audit
+fields and OAuth audit identities after existing validation. Agent facts remain
+independently readable for authorization, without joining unrelated bootstrap work.
+Independent queries start together.
+Environment secrets depend on the agent's execution configuration; custom
+connector definitions and catalog projection rows depend on the connector list.
+The catalog identity query depends only on global data and starts immediately.
+The factories accept ordinary values only and obtain their database inside
+computed nodes; no database handle or signal is passed through request state.
+Canonical claims construct the same query graph. Its agent-only read remains
+independent so authorization does not start automation metadata before its
+existing preparation boundary.
+
+The claim derives `{ userId, orgId, chatThreadId, agentId }` from its selected
+execution identity and already-read queue head. All three prefetch key fields
+must match both identities before any speculative result is consumed. A miss
+or absent object reads the canonical graph. A matching Promise rejection
+propagates through the existing rejection/lease boundary; it never triggers a
+second query or retry. S1 tracks the original speculative work in `waitUntil`
+with a separate error observer, including duplicate sends, active-run steer,
+no-capacity and identity misses. Observing an unused rejection does not turn
+the original Promise into a successful result or change the accepted S1 response.
+
+Permission overrides are filtered by application time when their read evaluates.
+The small prefetch-to-use expiry window is accepted; no use-time re-read or timer
+is added. Existing Runner permission refresh remains intact. Existing observed
+feature-switch values retain precedence. Model-provider feature switches use that observation directly,
+without waiting for bootstrap. Session-based execution resolution starts beside
+firewall/body construction, using the same authorized agent, canonical session
+snapshot, reset policy and product execution configuration.
+
+Catalog reuse has a separate key: current projection identity plus the sorted
+connector list. The pick reads the current global identity; only a matching
+projection set/version, capability identity and connector list reuse speculative
+rows. A changed catalog reads current projection rows without discarding other
+bootstrap data. Reusing speculative projection rows also joins a fresh identity
+fence, even when those rows are complete, so replacement after the first pick
+identity read cannot admit mixed catalog generations. Existing payload/digest
+validation, count checks and immutable process caches remain in force. Thread
+connector selection/accounts, stored connector snapshots, custom connector
+values and session rows are not in the prefetch package.
+
+`api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows` measures remaining
+package wait, with `bootstrap_prefetch=hit|miss` and a miss reason of
+`not_provided|identity_mismatch`. `api_dispatch_connector_catalog_prefetch_selection`
+records `bootstrap_catalog_prefetch=hit|miss` when uncached projection rows are
+needed. These overlapping waits do not measure S1 query cost and must not be
+summed. A process-cached catalog can avoid the projection selection altogether.
+Normalized bootstrap telemetry reports workflow-winner and permission-grant count
+buckets instead of raw SQL-row/candidate counts. Member profile/preferences and
+built-in/custom selection each retain a single UNION read. Splitting permission
+and feature-switch readers gives five independent reads across these four resource
+factories and feature overrides, versus the previous three metadata/member/workflow
+queries. This is a round-trip increase, not a demonstrated performance gain;
+production SQL cost and S1/S3 latency still require measurement.
+
+The identity lookups are primary-key/composite-index reads. Connector grants
+use `(org_id, user_id, agent_id)` or `(agent_id, user_id)` indexes, workflows
+use their agent/org indexes, member and paid-tool reads use organization/user
+keys, environment rows use organization/user/type/name indexes, and catalog
+identity/projection reads use source/schema and projection-set/slug keys. S1 may
+perform unused reads for steer; this is accepted. Live masked metadata confirms
+indexes on accessible tables, but MaskDB does not expose EXPLAIN and does not
+expose every catalog/config table. Actual production plan choice and latency
+remain deployment-verification work, not claims established by static checks.
+
+Route tests observe accepted input while a real database read is held, claimable
+Web/CLI runs, visible rejection after a one-shot PostgreSQL cancellation,
+continued steer after an unused prefetch failure, and current-catalog behavior
+when publication changes during prefetch. The database barrier/cancellation and
+catalog publication fixtures are infrastructure-only exceptions: no production
+user API can create those conditions. Assertions stay on chat and Runner APIs;
+there are no database-row/log assertions, elapsed polling or production hooks.
+
 ## One pick and one organization pass
 
 Each invocation reads a fresh candidate and, after a successful claim, fresh
-claim-owned organization capacity. There is no shared parameter slot or latest
-`internalClaim$`; the acquired claim is a local immutable write receipt. The candidate query and conditional claim update both exclude
+claim-owned organization capacity. The actual conditional-write receipt is
+appended before the post-SQL abort check. There is no shared parameter or
+latest-claim slot. The predeclared `capturedClaims$` and per-Store weak memo
+preserve the graph of every immutable receipt, including concurrent claims and
+in-flight background URL-cache writes. The candidate query and conditional
+claim update both exclude
 threads with an active run. That slot also covers cancellation recovery until
 Runner completion or the existing stale-run cleanup releases it. A claim contains
 the organization, thread and a random token, with a fixed 10-second lease. Capacity and the FIFO head are read
@@ -99,10 +205,12 @@ in parallel after claim. The active count and capacity are independent reads;
 capacity retains the existing soft admission limit, including zero/unlimited
 and the paid-subscription payment grace policy.
 
-A pick handles at most one input. Normal no-capacity, empty-queue and completed
-paths explicitly release or delete using the captured thread/token pair.
-A picked input always ends terminal. When preparation or commit throws after
-the head was read, the head is rejected through the same rejection path as a
+A pick handles at most one input. The outer no-capacity, empty-queue and
+`startRun$ === null` paths release or delete using the captured thread/token pair.
+A successful start returns the run ID; the child's pending commit has already
+fenced and cleared the lease, so there is no outer success-path release.
+When preparation or commit throws after the head was read but before a durable
+run commit, the Thread owner rejects the head through the same path as a
 business rejection (`input.rejected` plus a visible `internal_error` message,
 the usual schedule settlement for an automation tick, the realtime event, and
 the unexpected-failure reply to the source integration). The only difference
@@ -113,6 +221,45 @@ fallback. Transient failures (KMS, a brief database outage) are handled the
 same way and the user sends again. The no-capacity exit never does this. If the
 marking write itself fails, the lease simply expires; there is no other
 catch/finally cleanup, so the thread waits at most about 10 seconds.
+The child records its actual committed run ID before later telemetry or abort
+checks. A failure after durable creation must not reject the consumed input.
+Deferred URL-cache writes and post-commit activation live outside that
+creation-failure boundary; their errors propagate without an outer retry,
+second rejection or compensating lease release.
+
+### Org-full release and wakeup
+
+A slot release (run completion, cancellation, cleanup) schedules one
+organization pick, and that pick counts and claims only _unleased_ queued
+threads. If a thread's own pick holds its lease at that moment and has
+already read the organization as full, the slot release skips the thread
+and the thread's pick then releases its lease without launching. Without a
+follow-up, the input waits with a free slot until some unrelated later pick.
+This race is pre-existing: main's pick has the same claim → capacity read →
+release ordering. This PR's change made the window wide enough for main's
+single-read `chat-events-pi-preparation` scenario to hit it on CI.
+
+After an org-full release that still owned the lease, the pick first evaluates
+its independent `orgHasCapacityAfterRelease$` observation. This graph is declared
+with the initial observation when the receipt graph is constructed, but is not
+read before release. It therefore reads capacity afresh without a shared reload
+counter or mutation of the initial snapshot. If a slot is free, the pick
+schedules one new fixed-thread invocation of the same stable `pickChatThread$`
+through `scheduleThreadPick$`, without forwarding the old S1 prefetch. This is
+the same `waitUntil`-owned path used when input arrives under a lease. The
+scheduled pick runs with the pick's own signal, which is the background-work
+signal and not a request-response signal. Its failure is reported through
+`waitUntil`'s detached-promise handling, never as a floating rejection.
+Boundaries:
+
+- No retry and no loop. The follow-up is one new pick. It stops at its own
+  next org-full observation, and its own release re-reads capacity only once.
+  Capacity has to have changed again for another pick to be scheduled.
+- A release that no longer owned the lease (a lost lease) does nothing more.
+  The current lease holder owns the thread.
+- Ordinary capacity bookkeeping is unchanged; this only closes the
+  claim-held window.
+
 Every lease comparison (claim and organization candidates) uses
 the application clock `nowDate()`, never database `now()`, so tests move the
 clock instead of waiting. There is no claim heartbeat, session preparation
@@ -183,18 +330,18 @@ batched. The internal `runPlan$` is a thin `Promise.all` of pure read branches.
 The pure `RunPlan` never escapes as a commit-ready context.
 `prepareRunContext$` starts it alongside the pure storage-mount read graph,
 callback preparation and stored-context preparation. Each branch waits only for
-its actual dependencies. Its final `RunContext` contains selected mounts,
+its actual dependencies. Its private `ThreadRunContext` contains selected mounts,
 versions and URLs, encrypted callback rows, the final stored execution context
 and the final pending-persistence encoding. Runner payload construction, run
-metadata and diagnostic-payload validation finish before the child returns.
+metadata and diagnostic-payload validation finish before the private preparation returns.
 There is no storage plan, cache request or intermediate context draft in this
 result. It returns ordinary prepared data, not commands or business callbacks,
 and never submits the pending run.
 
 Explicit commands initialize or repair model policy facts when needed, refresh
 an expired usage allowance when required and reconcile an official automation.
-The parent separately submits the pending transaction and activates the committed
-run. Official reconciliation starts alongside independent resource work. Only
+The Thread owner separately submits the pending transaction and activates the committed
+run; the parent receives only its run ID or null. Official reconciliation starts alongside independent resource work. Only
 reads of its actual results wait: the final automation target, launch prompt and
 event policy, autonomy budget, and automation callback definitions. Reconciliation
 invalidates those snapshots before their final read. Session, model, member,
@@ -207,18 +354,46 @@ Storage selection and local URL signing perform no database writes. Discord acce
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
 
-Storage plan, request, presigned-cache and mount nodes are constructed with the
-claim factory. A valid cached URL is reused; a miss or expired row is signed in
-memory using local credentials, without an R2 request. Final URLs enter the
-runner payload directly. Fresh cache rows remain private to the child. Only a
-successfully committed pending run schedules `updatePresignedUrlCache$` through
-the existing request's `waitUntil`; rejected inputs and lost commits do not.
-The cache write does not delay activation. Its failure is logged without retry
-or changing the admitted run. This is the one explicit exception to preparation's
-fail-fast rule; the runner never needs the cache write to finish.
+Thread owns HEAD/prefix resolution, session/Official selection and display/persisted
+mount projections. It derives one `createExecutionStorageObjects(exactMounts)`
+instance from the selected ordinary identities. The resource exposes only the
+read-only `preparedMounts$`: it batches exact-version reads,
+verifies actual owner/name/storage/version membership, validates mount configuration,
+and prepares URLs in request order. It does not select HEAD, initialize storage,
+repair versions, update a session or write a cache during preparation. Empty
+writeback versions remain empty mounts; read-only/archive mounts retain the actual
+archive metadata. Thread privately adapts the results to the existing Runner wire
+shape, including omission of unknown/zero archive sizes and optional default-fail
+root policy.
 
-Callback KMS encryption starts when callback definitions are ready, and runtime
-secret encryption starts when its resolved secrets are ready. They overlap
+A valid cached URL is reused; a miss or expired row is signed locally, without an
+R2 request. Existing system/workflow/readonly namespaces, cache keys and TTLs are
+reused; workflow-cache classification follows the reserved organization skill
+storage namespace, not a supplied business context. A freshly signed URL travels
+on its prepared mount as `presignedUrlCacheWrite`. The cache write is the
+module-level command `updateExecutionStoragePresignedUrlCache$(mounts, prepared,
+signal)` (interface #4 as revised by Ethan, 2026-10-02): only a successfully
+committed run passes it its requests and prepared mounts through request-owned
+`waitUntil`; rejected inputs and lost commits do not. Pi maintenance calls the
+same command after its commit and activation. The write does not delay activation. Failure is
+logged without retry or changing the admitted run: the existing explicit exception
+to preparation fail-fast remains intact.
+
+Resource preparation adds a batched exact-version membership read after the
+business selection snapshot. This is an explicit round-trip change, not a latency
+claim. Thread measures the resource wait with `storage_manifest_signing_owner=execution_storage`; its former private per-scope cache/pool/signing stages are
+retired rather than exposed through an injected timing/context API.
+
+`execution-callbacks.service.ts:prepareCallbacks$` encrypts ordinary callback
+definitions and returns no run ID or persistence row. The Thread owner preserves
+existing JSONB payload serialization and adds the run ID only for its atomic
+write. Internal callbacks carry no HTTP secret. Callback preparation no longer
+waits for bootstrap merely to supply an unused encryption feature context.
+`execution-secrets.service.ts:encryptExecutionSecrets$` encrypts the final secret
+namespace with the existing versioned envelope; null remains null and an empty
+object remains encrypted. Neither resource selects secrets, writes rows or sends
+notifications. Callback KMS encryption starts when callback definitions are ready,
+and runtime secret encryption starts when its resolved secrets are ready. They overlap
 independent reads and storage assembly through `Promise.all`, but both must
 finish before `createRun$`: the runner may claim the queue row immediately after
 commit. Pending run, runner job and encrypted callbacks remain one atomic write
@@ -273,9 +448,23 @@ that carries the run token is produced by its command and passed on as a plain
 value to storage and stored-context preparation. An automation's independent
 Get Started reward is recorded alongside the launch reads, not ahead of them.
 
-Dispatch timing collectors are created by the parent `pick$` after its claim
-and passed as plain arguments to `prepareRunContext$` and `createRun$`;
-`RunContext` does not carry them.
+Dispatch timing collectors are private to the Thread `startRun$` owner.
+The child's first pickable-input observation captures its timing origin; preparation
+and commit share those collectors without exposing them or a run context to pick.
+The durable run/job commit is recorded before post-transaction telemetry and
+cancellation checks. Failures after that boundary propagate without rejecting the
+consumed input, compensating, retrying or creating a replacement execution.
+
+Shared `activatePendingRun$` receives ordinary `notification`, `timing` and
+`activationScheduledAt` values and returns the actual publication boolean. It
+has no Thread identity, API-start time or first-output marker responsibility.
+Thread records first-assistant eligibility and the persisted-job/marker-complete
+milestones before invoking it. The same cumulative marker-complete action remains
+observable with its real earlier boundary; generic activation no longer emits
+an artificial no-op Thread-marker milestone or Thread-marker dimensions.
+Commit/context/dispatch/scheduling/activation-entry/database-ready notification
+attribution remains in the shared notifier. False keeps the existing admitted-run
+policy; an exception remains post-commit and cannot create a replacement run.
 
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection uses fixed
@@ -296,14 +485,87 @@ The discovery/slug readers, runner firewall catalog and legacy complete runtime
 snapshot callers retain their existing `loadAcceptedConnectorCatalogSnapshot`
 compatibility behavior. Catalog publication locks remain unchanged.
 
+## Selected model source migration (in progress)
+
+Gateway Thread execution now consumes `createModelSourceSnapshot` for the exact
+selected surface. Configuration, mappings and encrypted credentials share one
+read snapshot. KMS decryption and the exact managed-key read have no side
+effects, so (Ethan, 2026-10-02) the prepared runtime is the computed
+`preparedConfiguredEnvironment$`: it decrypts once per claim graph and calls
+synchronous `compileModelRuntime`, and downstream model reads get it directly.
+Side effects (OAuth refresh, encryption with database writes, Stripe and cache
+writes) stay in commands. Official reconciliation and independent reads are not
+serialized behind it.
+
+The pure converter has no query, KMS or provider call. Thread privately assembles
+supplementary firewall and Codex protocol from the same configuration snapshot;
+no hidden configuration query is added. Existing framework/model availability
+checks remain caller-owned. Org and member-owned single-secret provider records now use the same source,
+effect and pure-conversion path for Anthropic/OpenAI keys and the OpenRouter/
+Vercel protocol twins. `member-provider` explicitly identifies a user-owned
+`modelProviders` record, unlike `member` subscription-account identity. The
+reader applies exact owner scope without trying another source table or account.
+Thread retains deferred firewall alias metadata, conditional Pi credential capture
+and Codex protocol assembly. Non-Pi Codex subscription-account/org auth-json execution now also consumes the
+same source/effect/pure-conversion boundary. Account-source IDs remain distinct
+from member-provider IDs; required fields and server-only refresh/ID-token policy
+are selected from the existing auth-method registry. Thread retains deferred
+source IDs and real nonsecret Codex routing identity. Claude OAuth and Pi
+Codex account/org execution also consume the owned source/runtime boundary;
+member subscription accounts no longer fall back to a separate legacy
+personal-account snapshot after the exact source has been prepared. A
+registered provider pin without a stored credential scope passes an explicit
+`unscoped-provider` identity; the source reader resolves the member/workspace
+owner and credentials in one statement (no separate owner pre-query); the
+legacy regular-provider snapshot fallback is gone from Thread now that
+DeepSeek also uses the pure runtime contract.
+Explicit cloud deployments/profiles now use stored `configuredModel` facts:
+Bedrock bearer/SigV4 and Azure projections validate required auth fields through
+the existing registry; the owner retains Pi cloud mapping checks before pure
+conversion. Specialized DeepSeek and full legacy retirement remain unfinished.
+No missing cloud profile is replaced with a guessed model. Builtin paths now consume the approved managed-key
+credential variant: source reads nonsecret exact-key facts/reference, an effect
+explicitly resolves that same key, and the converter checks source/route/vendor/key
+binding without I/O. No ciphertext is fabricated, no default key is selected and
+no credential storage migration occurs. Thread retains its private US-routing,
+firewall and Codex projection from those same already-resolved values. This is
+real source execution progress, not complete model-source or fifteen-interface parity.
+
+## Selected connector source migration (in progress)
+
+Builtin Thread accounts are still selected by the existing catalog/source/default
+rules. Their exact IDs then drive `createConnectorSourceSnapshots`, which batches
+saved variables and encrypted credentials with actual org/user/target checks and
+returns an available/unavailable result per requested source in input order. It
+does not select another account, decrypt, refresh OAuth or compile policies.
+The normalized selected builtin context consumes those snapshot variables and
+credential names; eager decryption consumes the snapshot's credential values.
+
+The existing catalog-declared-name and captured connection-revision authority
+condition is retained in a caller-owned names/identity query. It reads no credential
+values a second time. Builtin decryption is the side-effect-free computed
+`decryptedSecrets$`, resolved once per claim graph, as on main.
+Unready input exits before either new effect reads full preparation context.
+Thread custom connectors now read every candidate account through the same
+reader. Custom results unfold the structured connection facts (auth method,
+storage version, reconnect state, token expiry), credential row IDs, the
+custom definition revision observed in the same statement, and the automatic
+OAuth binding. Thread derives its existing credential-access rows from those
+facts, keeps the same compatible/current-version value filter and still picks
+the first admissible candidate. Custom OAuth reconnect state is returned rather
+than hidden as unavailable because runtime refresh owns it. Custom secrets stay
+runtime template references, so no preparation decryption is added. This adds
+explicit source/authority reads, without claiming a latency improvement or full
+connector-source parity.
+
 ## Pending atomic boundary
 
-The parent's `createRun$` receives `{ claim, context }` after resource preparation
-has completed. It directly owns the database transaction, rather than delegating
-to an asynchronous launch helper. It consumes the child's completed persistence
+The Thread child's private `createRun$` receives its privately prepared context.
+It directly owns the database transaction, rather than delegating to an
+asynchronous launch helper or passing context to pick. It consumes the child's completed persistence
 encoding; commit timestamps, account validation, credit admission and returned-ID
 bindings remain transaction-local. Producer binding and post-commit bookkeeping
-are ordinary data in the context; their owning parent commands perform the
+are ordinary data in the context; their owning Thread commands perform the
 writes. The transaction keeps input consumption, the necessary session/run and thread
 binding, the runner job, callbacks, producer binding and accounting together.
 `active_agent_runs` is inserted last. Its uniqueness violation escapes and rolls

@@ -9,7 +9,7 @@ use serde_json::json;
 use std::time::Duration;
 
 const EVENT_BYTES: usize = 2 * 1024 * 1024;
-const EVENT_COUNT: usize = 8;
+const EVENT_COUNT: usize = 16;
 
 #[tokio::test]
 async fn claude_code_event_delivery_byte_overload_terminates_promptly()
@@ -18,8 +18,8 @@ async fn claude_code_event_delivery_byte_overload_terminates_promptly()
     let tmp = tempfile::tempdir()?;
     let server = MockServer::start();
     let mut prompt_lines = vec!["@ECHO-HANG@".to_string()];
-    // One in-flight payload plus seven queued payloads crosses the byte budget;
-    // seven queued payloads alone do not. This distinguishes queued-plus-in-flight
+    // One in-flight payload plus fifteen queued payloads crosses the byte budget;
+    // fifteen queued payloads alone do not. This distinguishes queued-plus-in-flight
     // accounting from a queue-only implementation.
     prompt_lines.extend((0..EVENT_COUNT).map(|index| {
         json!({
@@ -61,7 +61,7 @@ async fn claude_code_event_delivery_byte_overload_terminates_promptly()
         .expect("byte overload should be exposed as a control error")
         .to_string();
     assert!(
-        error.contains("event delivery byte buffer exhausted") && error.contains("16777216 bytes"),
+        error.contains("event delivery byte buffer exhausted") && error.contains("33554432 bytes"),
         "unexpected byte-overload error: {error}"
     );
     assert_eq!(result.last_event_sequence, None);

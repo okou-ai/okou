@@ -972,7 +972,7 @@ describe("MCP Web parity", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(f.actor);
-    const run = await runs.createRun(f.actor, {
+    const run = await runs.createThreadRun(f.actor, {
       agentId: f.agentId,
       prompt: "Ordinary Run state",
     });

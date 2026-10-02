@@ -3,7 +3,7 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import type { RunContext } from "./claim-run-context";
+import type { ThreadRunContext } from "./thread-claim-run.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { pendingLaunchUpdateSql } from "./pending-launch-sql";
 
@@ -11,7 +11,7 @@ export interface PendingLaunchClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
-  readonly producer: RunContext["producerBinding"];
+  readonly producer: ThreadRunContext["producerBinding"];
 }
 
 /** Release only the captured queue token; rowCount is the fence result. */

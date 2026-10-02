@@ -207,7 +207,7 @@ async function createOwnedRun(
   runsApi.acceptTelemetryIngest();
   runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName: `Connector check ${randomUUID()}`,
     visibility: "private",
@@ -226,10 +226,9 @@ async function createOwnedRun(
       options.customConnectorIds,
     );
   }
-  const run = await runsApi.createRun(actor, {
+  const run = await runsApi.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Create a connector check fixture",
-    modelProvider: "anthropic-api-key",
   });
   return { runId: run.runId, agentId: agent.agentId };
 }

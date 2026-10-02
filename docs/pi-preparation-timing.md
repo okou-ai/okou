@@ -1,19 +1,24 @@
 # Pi preparation timing
 
-Current Pi preparation measures API launch assembly and Sandbox session startup.
+Current Pi preparation measures Sandbox session startup.
 Every foreground Pi provider turn runs in the Sandbox. API-first activation,
 provider ownership, compaction-preflight and credential-revalidation phases are
 retired and are no longer part of the runtime phase vocabulary.
 
 ## Delivery and fields
 
-The API adapter in
-[`pi-preparation-timing.service.ts`](../turbo/apps/api/src/signals/services/pi-preparation-timing.service.ts)
-uses the existing sandbox-operation writer and `waitUntil` ownership. Started
-launch phases emit content-free completion observations to
-`vm0-sandbox-op-log-prod`. The runtime observer and clock helpers live in
+Sandbox session observations use the CLI/Guest preparation event boundary: the
+Guest records `pi_prepare_<phase>` to `vm0-sandbox-op-log-prod`. The runtime
+observer and clock helpers live in
 [`preparation-timing.ts`](../turbo/packages/pi-agent-runtime/src/preparation-timing.ts).
-Sandbox session observations use the CLI/Guest preparation event boundary.
+
+The API no longer emits `pi_prepare_*` launch observations (`launch`,
+`launch_resume`, `launch_memory`, `launch_manifest_sign`, `launch_session_sign`,
+`launch_identity`). Their API adapter was retired with the legacy agent-run
+execution graph (#37431). API launch work is observed through the
+`api_dispatch_*` dispatch timings, for example
+`api_dispatch_prepare_pi_launch_resume_session` and the storage manifest
+timings.
 
 Observer exceptions cannot replace the execution result or own cancellation.
 Missing observations are not zero-duration phases. `duration_ms` is monotonic;
@@ -24,19 +29,14 @@ resource identifier enters a phase observation.
 
 ## Current phases
 
-| Phase                                         | Executable boundary                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `launch`                                      | `preparePiLaunchResources`; parent of launch assembly.                                                       |
-| `launch_resume`                               | `resolveLatestPiResumeSession`; absent for maintenance.                                                      |
-| `launch_memory`                               | `resolvePiMemoryRecall` from captured mounts and versions; absent for maintenance.                           |
-| `launch_manifest_sign`, `launch_session_sign` | Signing the ordinary run objects; overlapping children of `launch`. These are not API-first handoff objects. |
-| `launch_identity`                             | Resource digest, base-session identity, deadline and final launch-object assembly.                           |
-| `resources_prompt`                            | Registry, memory recall/tool metadata, harness prompt, resource options and catalog selection.               |
-| `model_runtime`                               | Explicit credential-store selection and model-runtime registration.                                          |
-| `session_services`                            | Official foreground services and resource-loader options.                                                    |
-| `resource_loader`                             | Resource-option assembly within `session_services`.                                                          |
-| `session_create`                              | Official AgentSession construction with captured thinking level and tools.                                   |
-| `session_finalize`                            | Persisting the effective configured thinking level.                                                          |
+| Phase              | Executable boundary                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `resources_prompt` | Registry, memory recall/tool metadata, harness prompt, resource options and catalog selection. |
+| `model_runtime`    | Explicit credential-store selection and model-runtime registration.                            |
+| `session_services` | Official foreground services and resource-loader options.                                      |
+| `resource_loader`  | Resource-option assembly within `session_services`.                                            |
+| `session_create`   | Official AgentSession construction with captured thinking level and tools.                     |
+| `session_finalize` | Persisting the effective configured thinking level.                                            |
 
 Reconstruct serial boundaries instead of summing parents and children. Use the
 union of concurrent signing intervals. Leave observation overhead and gaps

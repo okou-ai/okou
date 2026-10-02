@@ -36,10 +36,9 @@ async function setupAwsFirewall() {
     description: "Exercises AWS refresh and reconnect.",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve AWS firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   const headers = fw.sandboxHeaders(actor, run.runId);
   mockAwsExternalCodeProvider();

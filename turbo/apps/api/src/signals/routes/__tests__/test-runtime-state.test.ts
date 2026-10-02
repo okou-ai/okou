@@ -85,14 +85,30 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // A BYOK default route and a selectable built-in route.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-sonnet-5",
+      preferred: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+    {
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    },
+  ]);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD built-in model failure report agent",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "report a built-in model provider failure",
-    modelProvider: "built-in",
+    model: SEEDED_SYSTEM_DEFAULT_MODEL,
   });
   const runnerIdentity = {
     runnerId: randomUUID(),
@@ -1047,10 +1063,10 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         expectApiError(invalid.body);
       }
 
-      const byokRun = await runs.createRun(claimed.actor, {
+      const byokRun = await runs.createThreadRun(claimed.actor, {
         agentId: claimed.agentId,
         prompt: "ignore a BYOK model provider failure",
-        modelProvider: "anthropic-api-key",
+        model: "claude-sonnet-5",
       });
       const byokRunnerIdentity = {
         runnerId: randomUUID(),

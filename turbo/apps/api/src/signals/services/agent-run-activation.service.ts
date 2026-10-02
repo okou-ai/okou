@@ -1,51 +1,52 @@
-import { command } from "ccstate";
+import { command, type Command } from "ccstate";
 import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import type { PendingRunActivation } from "./agent-run-activation.types";
-import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
-import { notifyRunnerJob } from "./runner-dispatch.service";
-import { recordSameThreadRunnerJobPersisted } from "./runner-job-queue-lifecycle.service";
+import {
+  notifyRunnerJob,
+  type RunnerJobNotification,
+  type RunnerJobPreActivationTiming,
+} from "./runner-dispatch.service";
 
-interface PendingRunActivationRequest {
-  readonly activation: PendingRunActivation;
+export type PendingRunnerJobNotification = RunnerJobNotification;
+export type ActivationTiming =
+  | DirectActivationTiming
+  | PromotionActivationTiming;
+export type DirectActivationTiming = Extract<
+  RunnerJobPreActivationTiming,
+  { activationOrigin: "direct" }
+>;
+export type PromotionActivationTiming = Extract<
+  RunnerJobPreActivationTiming,
+  { activationOrigin: "promotion" }
+>;
+
+export interface PendingRunActivationRequest {
+  readonly notification: PendingRunnerJobNotification;
+  readonly timing: ActivationTiming;
   readonly activationScheduledAt: number;
 }
 
-/** Common post-commit activation for direct and promoted pending runs. */
-export const activatePendingRun$ = command(
+/** Publish an already-durable job; false is not a failed creation transaction. */
+export const activatePendingRun$: Command<
+  Promise<boolean>,
+  [input: PendingRunActivationRequest, signal: AbortSignal]
+> = command(
   async (
     { set },
     input: PendingRunActivationRequest,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal.throwIfAborted();
     const activationEnteredAt = now();
-    const activation = input.activation;
-    // Activation follows a durable run/job commit and therefore must finish
-    // under the caller's background-work lifetime.
-    if (activation.chatThreadId !== undefined) {
-      recordSameThreadRunnerJobPersisted({
-        runId: activation.runnerNotification.runId,
-        createdAt: activation.runnerNotification.createdAt,
-      });
-      recordFirstAssistantEventEligibility({
-        runId: activation.runnerNotification.runId,
-        apiStartedAt: activation.apiStartTime,
-      });
-    }
-    const sameThreadMarkersCompletedAt = now();
-
     const db = set(writeDb$);
     const databaseReadyAt = now();
-    await notifyRunnerJob(db, activation.runnerNotification, {
-      preActivation: activation.timing,
+    const published = await notifyRunnerJob(db, input.notification, {
+      preActivation: input.timing,
       activationScheduledAt: input.activationScheduledAt,
       activationEnteredAt,
-      sameThreadMarkersCompletedAt,
       databaseReadyAt,
-      sameThreadMarkers:
-        activation.chatThreadId === undefined ? "not_applicable" : "recorded",
     });
     signal.throwIfAborted();
+    return published;
   },
 );

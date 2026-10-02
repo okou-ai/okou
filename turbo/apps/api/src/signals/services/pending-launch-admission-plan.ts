@@ -31,7 +31,7 @@ import {
 import { chatEventReplacementInsertSql } from "./chat-event.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
-import type { PreparedCommitPreparedLaunchArgs } from "./agent-run-execution.service";
+import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 
 interface ValidatedPendingThreadSession {
   readonly kind: "validated-thread-session-snapshot";

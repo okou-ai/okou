@@ -3242,6 +3242,9 @@ describe("CHAT-03 run usage events", () => {
       prompt: "record billable usage",
     });
     await cancelChatRun(actor, runId);
+    // Cancellation also settles usage in waitUntil. Finish that owner before
+    // submitting the later batch, so its settlement cannot race this one.
+    await flushWaitUntilForTest();
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };

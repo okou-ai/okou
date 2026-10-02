@@ -38,10 +38,9 @@ async function startRun(
   agentId: string,
   runnerGroup: string,
 ) {
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId,
     prompt: "Exercise runtime wakeups",
-    modelProvider: "anthropic-api-key",
   });
   await runs.heartbeatRunner(runnerGroup);
   await runs.claimRunnerJob(run.runId, {

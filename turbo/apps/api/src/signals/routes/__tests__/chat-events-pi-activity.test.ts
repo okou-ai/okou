@@ -1,4 +1,3 @@
-import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
@@ -517,12 +516,6 @@ describe("CHAT-02: model-first provider policies", () => {
         `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
       );
     }
-    const applicationSession = await readCompletedRunSessionId(
-      context,
-      actor,
-      run.runId,
-    );
-
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: run.runId,
@@ -670,20 +663,10 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(spoofedFailedH2.body)).toContain(
       "[PI_H2_TYPE_MISMATCH]",
     );
-    const explicitResume = await api.createRun(actor, {
-      agentId,
-      sessionId: applicationSession,
-      prompt: "keep an incompatible direct run off the Pi checkpoint",
-    });
-    const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
-    expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
-    expect(explicitResumeClaim.resumeSession).toBeNull();
-    await api.requestCancelRun(actor, explicitResume.runId, [200]);
-    await waitForRunStatus(actor, explicitResume.runId, "cancelled");
-
     const cancelledRun = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
+      model,
       prompt: "reject H2 after an explicit Pi run is cancelled",
     });
     const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
@@ -810,6 +793,40 @@ describe("CHAT-02: model-first provider policies", () => {
       historyRef: { kind: "blob", hash: h2Hash },
     });
     await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
+
+    // Switching the thread to the Claude Code route must not resume the Pi
+    // checkpoint; the org keeps the Pi route as its default.
+    const anthropic = await api.createOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "pi-activity-claude-key",
+    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: "claude-fable-5-1",
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.providerId,
+      },
+    ]);
+    const explicitResume = await api.createThreadRun(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "keep an incompatible run off the Pi checkpoint",
+      model: "claude-fable-5-1",
+    });
+    const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
+    expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
+    expect(explicitResumeClaim.resumeSession).toBeNull();
+    await cancelChatRun(actor, explicitResume.runId, {
+      authorization: `Bearer ${explicitResumeClaim.sandboxToken}`,
+    });
   }
 
   it(

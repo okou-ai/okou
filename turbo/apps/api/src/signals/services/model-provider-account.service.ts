@@ -31,7 +31,7 @@ import {
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
@@ -1169,6 +1169,8 @@ async function credentialValues(
   }
   return values;
 }
+
+/** Exact connected account observation; no lock or sibling substitution. */
 
 /** Organization subscriptions remain singleton `model_providers` + `secrets`
  * credentials. */

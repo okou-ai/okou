@@ -1,29 +1,15 @@
-import {
-  checkPiMemoryQuota,
-  PiMemoryQuotaError,
-} from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { command } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { createAgentRun$ } from "./background-agent-run.service";
-import type { PersistProducerRunBinding } from "./agent-run-contracts";
+import { startMaintenanceRun$ } from "./pi-memory-maintenance-execution.service";
+
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
-import {
-  PiMemoryPhase2CredentialError,
-  resolvePiMemoryPhase2Credential,
-} from "./pi-memory-phase2-credential.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
+
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -184,222 +170,6 @@ const recoverMaintenanceRun$ = command(
   },
 );
 
-const checkNewAttemptQuotaAdmission$ = command(
-  async (
-    { set },
-    catalogSnapshot: ModelCatalog,
-    claim: ClaimedPiMemoryPhase2Job,
-    credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    // Prepare ordinary admission first; quota then sees locally reconciled data.
-    // Canonical createAgentRun admission and final transaction remain authoritative.
-    const admission = await set(
-      checkOrgCreditsForRunAdmission$,
-      {
-        catalog: await catalogSnapshot,
-        orgId: claim.orgId,
-        userId: claim.userId,
-        modelProviderType: credential.pin.modelProvider,
-        selectedModel: credential.pin.selectedModel,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (admission) {
-      return false;
-    }
-    await checkPiMemoryQuota(
-      db,
-      {
-        orgId: claim.orgId,
-        userId: claim.userId,
-        stage: "phase2",
-        source: credential.quota,
-      },
-      signal,
-    );
-
-    return true;
-  },
-);
-
-function createPiMemoryProducerRunBinding(
-  claim: ClaimedPiMemoryPhase2Job,
-  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
-  selectionDigest: string,
-): PersistProducerRunBinding {
-  // Pi memory's own same-transaction admission fence and claim binding.
-  // A failed launch only re-validates; binding it would strand the job.
-  return async (tx, run) => {
-    await credential.validate(tx);
-    if (run.status === "pending") {
-      await bindPiMemoryPhase2MaintenanceRun(tx, {
-        runId: run.runId,
-        binding: {
-          memoryStorageId: claim.memoryStorageId,
-          orgId: claim.orgId,
-          userId: claim.userId,
-          leaseToken: claim.leaseToken,
-          claimedRevision: claim.claimedRevision,
-          claimedBaseVersionId: claim.baseVersion.versionId,
-          selectionDigest,
-        },
-      });
-    }
-  };
-}
-
-function phase2MaintenanceInput(claim: ClaimedPiMemoryPhase2Job) {
-  const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
-  const maintenance = {
-    schemaVersion: 1,
-    memoryStorageId: claim.memoryStorageId,
-    claimedRevision: claim.claimedRevision,
-    claimedBaseVersionId: claim.baseVersion.versionId,
-    leaseToken: claim.leaseToken,
-    selectionDigest,
-    selected: claim.selected.map((candidate) => {
-      return {
-        ...candidate,
-        sourceCompletedAt: candidate.sourceCompletedAt.toISOString(),
-      };
-    }),
-  } as const;
-  return { selectionDigest, maintenance };
-}
-
-const dispatchClaim$ = command(
-  async (
-    { set },
-    input: { readonly db: Db; readonly claim: ClaimedPiMemoryPhase2Job },
-    signal: AbortSignal,
-  ): Promise<PiMemoryPhase2WorkerResult> => {
-    const { db, claim } = input;
-    // The claimed job's owner decides, never the cron caller. Off releases
-    // the lease with an explicit disposition and dispatches no maintenance run.
-    const featureSwitchContext = await set(
-      loadUserFeatureSwitchContext$,
-      claim.orgId,
-      claim.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
-      return await failClaim(db, claim, nowDate(), "pi_memory_disabled");
-    }
-    const catalog = await set(loadModelCatalog$, signal);
-    const credential = await resolvePiMemoryPhase2Credential(
-      catalog,
-      db,
-      claim,
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (
-      !(await set(
-        checkNewAttemptQuotaAdmission$,
-        catalog,
-        claim,
-        credential,
-        signal,
-      ))
-    ) {
-      return await failClaim(db, claim, nowDate(), "source_admission_denied");
-    }
-
-    const { selectionDigest, maintenance } = phase2MaintenanceInput(claim);
-    const result = await set(
-      createAgentRun$,
-      {
-        catalog,
-        userId: claim.userId,
-        orgId: claim.orgId,
-        body: {
-          prompt: "Run first-party Pi memory maintenance.",
-          triggerSource: "agent",
-          // Private BYOK runs need an encrypted namespace for dynamic secrets.
-          secrets: {},
-        },
-        apiStartTime: now(),
-        modelProviderType: credential.pin.modelProvider,
-        modelProviderId: credential.pin.modelProviderId ?? undefined,
-        modelProviderCredentialScope:
-          credential.pin.modelProviderCredentialScope,
-        agentRunModelPin: credential.pin,
-        persistProducerRunBinding: createPiMemoryProducerRunBinding(
-          claim,
-          credential,
-          selectionDigest,
-        ),
-        selectedModelOverride: credential.pin.selectedModel,
-        builtInModelRuntimeRoute: credential.route,
-        callbacks: [
-          {
-            internalKind: "pi-memory:phase2",
-            payload: {
-              schemaVersion: 1,
-              memoryStorageId: claim.memoryStorageId,
-              orgId: claim.orgId,
-              userId: claim.userId,
-              leaseToken: claim.leaseToken,
-              claimedRevision: claim.claimedRevision,
-              claimedBaseVersionId: claim.baseVersion.versionId,
-              selectionDigest,
-              selected: claim.selected.map((candidate) => {
-                return {
-                  piSessionId: candidate.piSessionId,
-                  sourceHistoryHash: candidate.sourceHistoryHash,
-                };
-              }),
-            },
-          },
-        ],
-        includeOkouTokenSecret: false,
-        productAgentExecutionPlan: {
-          identity: "no-agent",
-          content: {
-            version: "1",
-            // Pi is the sandbox execution overlay; run preparation still
-            // needs a supported base framework.
-            agent: { framework: "claude-code" },
-          },
-        },
-        connectorScope: {
-          allowedConnectorSlugs: [],
-          allowedCustomConnectorIds: [],
-        },
-        validateEnvironmentReferences: false,
-        enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
-        piExecution: true,
-        piLaunchConfig: { maintenance },
-        artifactMissingRootPolicy: "fail",
-        pinnedMemoryVersionId: claim.baseVersion.versionId,
-      },
-      signal,
-    );
-    if (result.status !== 201 || result.body.status === "failed") {
-      log.warn("Pi memory maintenance run dispatch was rejected", {
-        memoryStorageId: claim.memoryStorageId,
-        status: result.status,
-        runStatus: result.status === 201 ? result.body.status : undefined,
-      });
-      return await failClaim(
-        db,
-        claim,
-        nowDate(),
-        result.status === 409 &&
-          result.admissionFailure === "subscription_account_disconnected"
-          ? "credential_unavailable"
-          : "maintenance_dispatch_failed",
-      );
-    }
-    return { outcome: "dispatched", runId: result.body.runId };
-  },
-);
-
 export const executePiMemoryPhase2Work$ = command(
   async (
     { set },
@@ -419,17 +189,13 @@ export const executePiMemoryPhase2Work$ = command(
       return { outcome: "no_work" };
     }
     const dispatched = await settle(
-      set(dispatchClaim$, { db, claim }, signal),
+      set(startMaintenanceRun$, claim, signal),
       signal,
     );
     if (dispatched.ok) {
-      return dispatched.value;
-    }
-    if (
-      dispatched.error instanceof PiMemoryPhase2CredentialError ||
-      dispatched.error instanceof PiMemoryQuotaError
-    ) {
-      return await failClaim(db, claim, nowDate(), dispatched.error.errorClass);
+      return typeof dispatched.value === "string"
+        ? { outcome: "dispatched", runId: dispatched.value }
+        : await failClaim(db, claim, nowDate(), dispatched.value.errorClass);
     }
     log.error("Pi memory maintenance run dispatch failed", {
       memoryStorageId: claim.memoryStorageId,

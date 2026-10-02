@@ -9,7 +9,9 @@ import {
   workflowVisibilityContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { HttpResponse, http } from "msw";
+import { randomUUID } from "node:crypto";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -22,6 +24,12 @@ import { createRouteMocks } from "./route-test";
 import { readProjectedChatEvents } from "./chat-event-test-reader";
 import { chatThreadGetRoutes } from "../../chat-threads-get";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
+import { testWorkflowAutomationExecutionRoutes } from "../../test-workflow-automation-execution";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { createAppWithRoutes } from "../../../../app-factory-core";
+import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
+import { now } from "../../../../lib/time";
+import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowsRoutes } from "../../workflows";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -279,6 +287,125 @@ export function createWorkflowsBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    /**
+     * Starts a real schedule-triggered run: a due loop automation on a new
+     * workflow, executed through the scheduler's test execution route. The
+     * fired run's id is read from the automation's thread.
+     */
+    async startScheduledAutomationRun(
+      actor: ApiTestUser,
+      agentId: string,
+    ): Promise<{ readonly runId: string; readonly threadId: string }> {
+      const workflowName = `scheduled-${randomUUID().slice(0, 8)}`;
+      const workflowId = await api.createWorkflow(actor, {
+        agentId,
+        name: workflowName,
+      });
+      const created = await accept(
+        setupApp({ context, routes: workflowAutomationsRoutes })(
+          workflowAutomationsContract,
+        ).create({
+          headers: authenticate(actor),
+          params: { workflowId },
+          body: { schedule: { type: "loop", intervalSeconds: 60 } },
+        }),
+        [201],
+      );
+      const executed = await accept(
+        setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+          testWorkflowAutomationExecutionContract,
+        ).execute({ body: { automation_id: created.body.id } }),
+        [200],
+      );
+      if (!executed.body.success) {
+        throw new Error("Expected the automation execution to succeed");
+      }
+      // The tick only enqueues; its background pick finishes here.
+      await flushWaitUntilForTest();
+      authenticate(actor);
+      const automation = await api.readAutomation(created.body.id);
+      if (!automation.chatThreadId) {
+        throw new Error("Expected the automation to bind a chat thread");
+      }
+      const events = await api.readThreadEvents(automation.chatThreadId);
+      const fired = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      });
+      if (!fired?.runId) {
+        throw new Error("Expected the automation to start a run");
+      }
+      return { runId: fired.runId, threadId: automation.chatThreadId };
+    },
+
+    /**
+     * Starts a real event-triggered run: a webhook-received automation on a
+     * new workflow, fired by a signed POST to its public webhook route.
+     */
+    async startEventAutomationRun(
+      actor: ApiTestUser,
+      agentId: string,
+    ): Promise<{ readonly runId: string; readonly threadId: string }> {
+      const workflowId = await api.createWorkflow(actor, {
+        agentId,
+        name: `event-${randomUUID().slice(0, 8)}`,
+      });
+      const created = await accept(
+        setupApp({ context, routes: workflowAutomationsRoutes })(
+          workflowAutomationsContract,
+        ).create({
+          headers: authenticate(actor),
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+      const automation = created.body;
+      if (
+        automation.kind !== "event" ||
+        automation.eventType !== "webhook-received" ||
+        !automation.webhookUrl ||
+        !automation.webhookSecret ||
+        !automation.chatThreadId
+      ) {
+        throw new Error("Expected a thread-bound webhook automation");
+      }
+      const token = new URL(automation.webhookUrl).pathname.split("/").at(-1);
+      if (!token) {
+        throw new Error("Expected a webhook URL token");
+      }
+      const rawBody = JSON.stringify({ event: "start an event run" });
+      const timestamp = Math.floor(now() / 1000);
+      const response = await createAppWithRoutes({
+        signal: context.signal,
+        routes: webhooksWorkflowAutomationsRoutes,
+      }).request(`/api/webhooks/workflow-automations/${token}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Okou-Timestamp": String(timestamp),
+          "X-Okou-Signature": computeHmacSignature(
+            rawBody,
+            automation.webhookSecret,
+            timestamp,
+          ),
+        },
+        body: rawBody,
+      });
+      if (response.status !== 200) {
+        throw new Error(`Expected the webhook to fire, got ${response.status}`);
+      }
+      await flushWaitUntilForTest();
+      authenticate(actor);
+      const events = await api.readThreadEvents(automation.chatThreadId);
+      const fired = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      });
+      if (!fired?.runId) {
+        throw new Error("Expected the webhook automation to start a run");
+      }
+      return { runId: fired.runId, threadId: automation.chatThreadId };
     },
 
     async readThreadSelectedModel(threadId: string): Promise<string | null> {

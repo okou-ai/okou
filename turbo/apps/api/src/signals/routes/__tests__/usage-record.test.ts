@@ -174,10 +174,9 @@ async function createChatThreadRun(
 }
 
 /**
- * Creates an unthreaded run whose compose declares an inline framework API
- * key. Such runs skip model-provider resolution (agent_runs.model_provider
- * stays NULL), so the sandbox usage-event webhook accepts their model-kind
- * events into the billing ledger.
+ * Seeds a completed run on an existing thread. Seeded runs keep
+ * agent_runs.model_provider NULL, so the sandbox usage-event webhook accepts
+ * their model-kind events into the billing ledger.
  */
 async function createThreadRun(
   fixture: UsageRecordActor,
@@ -208,36 +207,32 @@ async function createThreadRun(
   );
 }
 
+/** Seeds a persisted threadless run, as left by earlier direct-run producers. */
 async function createUnthreadedRun(
-  actor: ApiTestUser,
+  fixture: UsageRecordActor,
   args: {
     readonly prompt: string;
     readonly triggerSource: TriggerSource;
     readonly createdAt?: Date;
   },
 ): Promise<{ readonly runId: string }> {
-  const name = `bdd-usage-record-${randomUUID().slice(0, 8)}`;
-  const compose = await api.createDirectAgent(actor, {
-    version: "1.0",
-    agents: {
-      [name]: {
-        framework: "claude-code",
-        environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-      },
+  if (!fixture.actor.orgId) {
+    throw new Error("Unthreaded usage requires an org-scoped actor");
+  }
+  return await store.set(
+    seedRun$,
+    {
+      orgId: fixture.actor.orgId,
+      userId: fixture.actor.userId,
+      composeId: fixture.agentId,
+      prompt: args.prompt,
+      triggerSource: args.triggerSource,
+      status: "completed",
+      completedAt: nowDate(),
+      createdAt: args.createdAt,
     },
-  });
-  if (args.createdAt) {
-    mockNow(args.createdAt);
-  }
-  const run = await api.createDirectRun(actor, {
-    agentId: compose.agentId,
-    prompt: args.prompt,
-    triggerSource: args.triggerSource,
-  });
-  if (args.createdAt) {
-    clearMockNow();
-  }
-  return { runId: run.runId };
+    context.signal,
+  );
 }
 
 // Unit prices are chosen so cron-computed credits stay readable:
@@ -517,7 +512,7 @@ describe("GET /api/usage/record", () => {
       output: 20,
     });
 
-    const historical = await createUnthreadedRun(fixture.actor, {
+    const historical = await createUnthreadedRun(fixture, {
       prompt: "Historical unthreaded usage",
       triggerSource: "webhook",
       createdAt: createdAt(60),
@@ -739,7 +734,7 @@ describe("GET /api/usage/record", () => {
     const connectorProvider = uniqueProvider("hourly-connector");
     await seedModelPricing(model);
     await seedConnectorPricing(connectorProvider);
-    const run = await createUnthreadedRun(fixture.actor, {
+    const run = await createUnthreadedRun(fixture, {
       prompt: "Hourly usage record",
       triggerSource: "slack",
     });
@@ -833,7 +828,7 @@ describe("GET /api/usage/record", () => {
       ["automation-event", 5],
     ] as const;
     for (const [triggerSource, quantity] of sources) {
-      const run = await createUnthreadedRun(fixture.actor, {
+      const run = await createUnthreadedRun(fixture, {
         prompt: `${triggerSource} usage`,
         triggerSource,
       });
@@ -969,7 +964,7 @@ describe("GET /api/usage/record", () => {
     const model = uniqueProvider("bdd-model");
     await seedModelPricing(model);
 
-    const webhookRun = await createUnthreadedRun(fixture.actor, {
+    const webhookRun = await createUnthreadedRun(fixture, {
       prompt: "Webhook triggered run",
       triggerSource: "webhook",
       createdAt: createdAt(10),
@@ -1071,7 +1066,7 @@ describe("GET /api/usage/record", () => {
     await seedConnectorPricing(connectorProvider);
     await seedImagePricing(imageProvider);
 
-    const run = await createUnthreadedRun(fixture.actor, {
+    const run = await createUnthreadedRun(fixture, {
       prompt: "Mixed media run",
       triggerSource: "test",
       createdAt: createdAt(5),
@@ -1155,7 +1150,7 @@ describe("GET /api/usage/record", () => {
       }),
     );
 
-    const run = await createUnthreadedRun(fixture.actor, {
+    const run = await createUnthreadedRun(fixture, {
       prompt: "Settlement boundary usage",
       triggerSource: "test",
     });
@@ -1245,7 +1240,7 @@ describe("GET /api/usage/record", () => {
         ],
       });
       onTestFinished(pricing.cleanup);
-      const run = await createUnthreadedRun(fixture.actor, {
+      const run = await createUnthreadedRun(fixture, {
         prompt: "Wallet expiry admission",
         triggerSource: "test",
       });

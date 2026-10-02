@@ -45,7 +45,7 @@ async function prepareRunCreation(
   api.configureRunnerGroup();
   for (const actor of actors) {
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   }
 }
 
@@ -75,16 +75,14 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
     await prepareRunCreation(actor);
     const target = await createAgent(actor, "Deletion Target");
     const survivor = await createAgent(actor, "Independent Survivor");
-    const targetRun = await api.createRun(actor, {
+    const targetRun = await api.createThreadRun(actor, {
       agentId: target.agentId,
       prompt: "retain target billing history",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, targetRun.runId, [200]);
-    const survivorRun = await api.createRun(actor, {
+    const survivorRun = await api.createThreadRun(actor, {
       agentId: survivor.agentId,
       prompt: "retain unrelated lifecycle",
-      modelProvider: "anthropic-api-key",
     });
     const usageEventId = await store.set(
       insertUsageEvent$,
@@ -127,10 +125,9 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
     const actor = bdd.user();
     await prepareRunCreation(actor);
     const target = await createAgent(actor, "Active Session Target");
-    const targetRun = await api.createRun(actor, {
+    const targetRun = await api.createThreadRun(actor, {
       agentId: target.agentId,
       prompt: "block target deletion",
-      modelProvider: "anthropic-api-key",
     });
     const response = await bdd.requestDeleteAgent(actor, target.agentId, [409]);
 
@@ -160,20 +157,17 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       "Cross Org Agent Survivor",
     );
     const target = await createAgent(targetOwner, "Terminal Cleanup Target");
-    const survivorRun = await api.createRun(survivorOwner, {
+    const survivorRun = await api.createThreadRun(survivorOwner, {
       agentId: survivor.agentId,
       prompt: "survive another org deletion",
-      modelProvider: "anthropic-api-key",
     });
-    const terminalRun = await api.createRun(targetOwner, {
+    const terminalRun = await api.createThreadRun(targetOwner, {
       agentId: target.agentId,
       prompt: "terminal target Run",
-      modelProvider: "anthropic-api-key",
     });
-    const queuedRun = await api.createRun(targetOwner, {
+    const queuedRun = await api.createThreadRun(targetOwner, {
       agentId: target.agentId,
       prompt: "queued target Run",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(targetOwner, terminalRun.runId, [200]);
     await flushWaitUntilForTest();

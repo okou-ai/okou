@@ -40,12 +40,9 @@ async function setup() {
 }
 
 async function createRun(f: Awaited<ReturnType<typeof setup>>) {
-  const run = await f.api.createDirectRun(f.actor, {
+  const run = await f.api.createThreadRun(f.actor, {
     agentId: f.agentId,
     prompt: "Resolve an existing Runner target",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: f.agentId },
-    secrets: { OKOU_TOKEN: "bdd-wss-target-test-token" },
   });
   await f.api.heartbeatRunner(f.runnerGroup);
   return run;

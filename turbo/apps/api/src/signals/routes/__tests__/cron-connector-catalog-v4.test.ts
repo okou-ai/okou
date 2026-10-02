@@ -379,10 +379,9 @@ describe("connector catalog v4 preparation", () => {
             }
             created.connectionId = connected.body.connectedAccountId;
           }
-          const run = await runs.createRun(actor, {
+          const run = await runs.createThreadRun(actor, {
             agentId: agent.agentId,
             prompt: "Use the selected builtin MCP account",
-            modelProvider: "anthropic-api-key",
           });
           created.runId = run.runId;
           await runs.heartbeatRunner(runnerGroup);

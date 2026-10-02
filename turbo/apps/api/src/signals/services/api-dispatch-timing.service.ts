@@ -280,6 +280,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_connector_catalog_load_runtime_snapshot"
   | "api_dispatch_connector_catalog_query_projection_identity"
   | "api_dispatch_connector_catalog_query_projection_rows"
+  | "api_dispatch_connector_catalog_prefetch_selection"
   | "api_dispatch_connector_catalog_fetch_projection_rows"
   | "api_dispatch_connector_catalog_validate_projection_rows"
   | "api_dispatch_connector_catalog_parse_projection_rows"
@@ -526,19 +527,6 @@ export async function measureApiDispatchTiming<T>(
     return await operation();
   }
   return await collector.measure(actionType, spanKind, operation, dimensions);
-}
-
-export function measureApiDispatchTimingSync<T>(
-  collector: ApiDispatchTimingCollector | undefined,
-  actionType: ApiDispatchTimingActionType,
-  spanKind: ApiDispatchTimingSpanKind,
-  operation: () => T,
-  dimensions?: ApiDispatchTimingDimensionsInput,
-): T {
-  if (!collector) {
-    return operation();
-  }
-  return collector.measureSync(actionType, spanKind, operation, dimensions);
 }
 
 function resolveApiDispatchTimingDimensions(

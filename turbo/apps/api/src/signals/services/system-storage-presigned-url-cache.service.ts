@@ -91,8 +91,7 @@ export type SystemStoragePresignedUrlCacheStatus =
   StoragePresignedUrlCacheStatus;
 export type WorkflowSkillStoragePresignedUrlCacheStatus =
   StoragePresignedUrlCacheStatus;
-export type ReadOnlyStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
+type ReadOnlyStoragePresignedUrlCacheStatus = StoragePresignedUrlCacheStatus;
 
 export interface SystemStoragePresignedUrlRequest {
   readonly bucket: string;
@@ -1764,67 +1763,7 @@ interface RunStoragePresignedUrlsArgs {
   readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
 
-function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
-  const { requests, ...common } = args;
-  switch (requests.kind) {
-    case "system": {
-      return prepareCapturedStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "system_storage",
-        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: systemStoragePresignedUrlCacheKey,
-        normalize: systemStorageRequest,
-      });
-    }
-    case "workflow": {
-      return prepareCapturedStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "workflow_skill_storage",
-        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: workflowSkillStoragePresignedUrlCacheKey,
-        normalize: workflowSkillStorageRequest,
-      });
-    }
-    case "readonly": {
-      return prepareCapturedStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "readonly_storage",
-        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: readOnlyStoragePresignedUrlCacheKey,
-        normalize: readOnlyStorageRequest,
-      });
-    }
-  }
-}
-
 /** Shared run preparation signs from a captured cache snapshot without persisting. */
-export const materializeRunStoragePresignedUrls$ = command(
-  async ({ get }, args: RunStoragePresignedUrlsArgs, signal: AbortSignal) => {
-    const requests = await prepareRunStoragePresignedUrls(args);
-    signal.throwIfAborted();
-    const signingRequests = requests.needsFresh.map((entry) => {
-      return {
-        ...entry,
-        sign: get(
-          presignedGetUrlSignerForBucket(
-            entry.request.bucket,
-            entry.request.publicEndpoint,
-          ),
-        ),
-      };
-    });
-    const prepared = await signPreparedStoragePresignedUrls(
-      requests,
-      signingRequests,
-    );
-    signal.throwIfAborted();
-    prepared.timing?.flush();
-    return prepared.results;
-  },
-);
 
 export function resolveSystemStoragePresignedUrls(args: {
   readonly db: Db;

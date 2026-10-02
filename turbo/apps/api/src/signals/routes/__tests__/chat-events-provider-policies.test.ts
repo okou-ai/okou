@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
@@ -2002,6 +2003,42 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization?.length ?? 0).toBeGreaterThan("Bearer ".length);
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
+
+  it("rejects a firewall-injected provider that was deleted before run admission", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const { providerId } = await upsertOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "sk-ant-api03-deleted-provider",
+    });
+    // claude-fable-5-1 has no Pi route, so its key would be a firewall
+    // reference; the policy still pins the provider that is deleted below.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    // Deleting the provider through the public API removes the pinned source
+    // (and its stored secret) before the queued input is picked.
+    await createMiscRoutesApi(context).deleteOrgModelProvider(
+      actor,
+      "anthropic-api-key",
+      [204],
+    );
+
+    const { picked } = await sendUntilPicked(actor, {
+      agentId,
+      prompt: "run with a deleted provider",
+      model: "claude-fable-5-1",
+    });
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "model_provider_unavailable",
+    });
+  }, 60_000);
 
   it("rejects legacy blank OpenRouter provider secrets before run admission", async () => {
     const { actor, agentId } = await entitledChatActor();

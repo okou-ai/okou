@@ -2473,10 +2473,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       displayName: "BDD agentphone upload agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "deliver a phone attachment",
-      modelProvider: "anthropic-api-key",
     });
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(run.runId);

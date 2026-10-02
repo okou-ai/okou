@@ -48,12 +48,9 @@ describe("direct Runner WSS ticket boundary", () => {
       description: "Tests a one-use ticket on an official Runner",
       visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Connect directly",
-      modelProviderType: "anthropic-api-key",
-      vars: { OKOU_AGENT_ID: agent.agentId },
-      secrets: { OKOU_TOKEN: "bdd-wss-ticket-test-token" },
     });
     await api.heartbeatRunner(group);
     const runnerId = randomUUID();
@@ -301,12 +298,9 @@ describe("direct Runner WSS ticket boundary", () => {
     await accept(bootstrap(f), [404]);
     clearMockNow();
 
-    const withoutHost = await f.api.createDirectRun(f.actor, {
+    const withoutHost = await f.api.createThreadRun(f.actor, {
       agentId: f.agentId,
       prompt: "No official hostname",
-      modelProviderType: "anthropic-api-key",
-      vars: { OKOU_AGENT_ID: f.agentId },
-      secrets: { OKOU_TOKEN: "bdd-wss-ticket-no-host" },
     });
     await f.api.heartbeatRunner(f.group);
     await f.api.claimRunnerJob(withoutHost.runId, {

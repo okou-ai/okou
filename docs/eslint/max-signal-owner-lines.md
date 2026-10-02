@@ -10,7 +10,7 @@ These two modules use `api/max-signal-owner-lines` instead of Oxlint's aggregate
 callback and ordinary function to 128 non-comment, non-blank lines.
 
 Only the explicitly configured, top-level `createPickObjects` and
-`createClaimRunObjects` declarations can qualify as graph owners. A qualifying
+`createThreadClaimRunObjects` declarations can qualify as graph owners. A qualifying
 owner contains only `const` declarations and a final object return. Its
 initializers contain ordinary values or constructors imported from `ccstate`;
 eager business calls, control flow, mutable declarations, and lookalike

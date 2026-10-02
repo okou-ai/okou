@@ -22,6 +22,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
@@ -194,6 +195,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
     },
     signal: AbortSignal,
   ) => {
@@ -213,7 +215,7 @@ const PICK_PAGE_SIZE = 100;
 
 /**
  * A finite organization pass handles at most the queued-thread count captured
- * at entry. One factory owns the keyset cursor and skips active/leased work;
+ * at entry. Each invocation owns its keyset cursor and skips active/leased work;
  * each candidate is visited once, even when it has no input, loses its claim,
  * or rejects its head. A `none` pick is not a signal that the organization is
  * empty; the pass stops early only when a pick found the organization full.

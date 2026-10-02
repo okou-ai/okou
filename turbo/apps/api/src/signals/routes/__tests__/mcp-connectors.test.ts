@@ -84,12 +84,9 @@ function headers(token: string): { readonly authorization: string } {
 }
 
 async function createRunForAgent(actor: ApiTestUser, agentId: string) {
-  return await runs.createDirectRun(actor, {
+  return await runs.createThreadRun(actor, {
     agentId,
     prompt: "Discover MCP connectors",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: agentId },
-    secrets: { OKOU_TOKEN: "mcp-discovery-okou-token" },
   });
 }
 
@@ -643,10 +640,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
         connector.id,
       ]);
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await runs.heartbeatRunner(runnerGroup);
@@ -771,10 +767,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
       connector.id,
     ]);
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
     await runs.heartbeatRunner(runnerGroup);

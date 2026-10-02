@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.103.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.1...guest-agent-v0.103.2) (2026-10-02)
+
+
+### Refactoring
+
+* **guest-agent:** require codex oauth workspace id ([#37436](https://github.com/okou-ai/okou/issues/37436)) ([a9d39fc](https://github.com/okou-ai/okou/commit/a9d39fc804a4a802b6621142c8a2fd00dca89c18))
+
 ## [0.103.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.0...guest-agent-v0.103.1) (2026-10-01)
 
 ## [0.103.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.102.2...guest-agent-v0.103.0) (2026-10-01)

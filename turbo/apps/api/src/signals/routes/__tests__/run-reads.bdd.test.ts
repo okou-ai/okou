@@ -1,3 +1,4 @@
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 
@@ -27,6 +28,7 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -82,20 +84,19 @@ async function entitledActor(customerId?: string): Promise<ApiTestUser> {
   return actor;
 }
 
-async function createClaudeAgent(
+/** A product Agent whose runs start through the Thread entry. */
+async function createThreadAgent(
   actor: ApiTestUser,
   prefix: string,
-): Promise<{ readonly agentId: string; readonly name: string }> {
-  const name = `${prefix}-${randomUUID().slice(0, 8)}`;
-  return await api.createDirectAgent(actor, {
-    version: "1",
-    agents: {
-      [name]: {
-        framework: "claude-code",
-        environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-      },
-    },
+): Promise<{ readonly agentId: string }> {
+  // The Claude Code route (no Pi route), matching completeRun's checkpoints.
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const agent = await bdd.createAgent(actor, {
+    displayName: `${prefix}-${randomUUID().slice(0, 8)}`,
+    description: "Exercises run reads.",
+    visibility: "private",
   });
+  return { agentId: agent.agentId };
 }
 
 type ChatInputOutcome =
@@ -300,16 +301,20 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    const actorCompose = await createClaudeAgent(actor, "bdd-actor-usage");
-    const memberCompose = await createClaudeAgent(member, "bdd-member-usage");
+    const actorAgent = await createThreadAgent(actor, "bdd-actor-usage");
+    const memberAgent = await bdd.createAgent(member, {
+      displayName: "bdd-member-usage",
+      visibility: "private",
+    });
 
-    await api.createDirectRun(actor, {
-      agentId: actorCompose.agentId,
+    await api.createThreadRun(actor, {
+      agentId: actorAgent.agentId,
       prompt: "actor active run",
     });
-    await api.createDirectRun(member, {
-      agentId: memberCompose.agentId,
+    await api.createThreadRun(member, {
+      agentId: memberAgent.agentId,
       prompt: "member active run",
+      model: "claude-fable-5-1",
     });
     await bdd.readMe(actor);
     await bdd.readMe(member);
@@ -341,7 +346,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
   it("reads legacy and expanded unattended trigger sources from logs", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-trigger-sources");
+    const compose = await createThreadAgent(actor, "bdd-trigger-sources");
     if (!actor.orgId) {
       throw new Error("Trigger source reads require an org-scoped actor");
     }
@@ -406,7 +411,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
   it("keeps lifecycle-only logs visible without product metadata", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "lifecycle-only-log");
+    const compose = await createThreadAgent(actor, "lifecycle-only-log");
     if (!actor.orgId) {
       throw new Error("Lifecycle-only log reads require an org-scoped actor");
     }
@@ -461,15 +466,25 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     ).not.toContain(lifecycleRun.runId);
   });
 
-  it("lists and reads direct runs with status, agent, and window filters", async () => {
+  it("lists and reads runs with status, agent, and window filters", async () => {
     // Keep this capacity scenario independent of the product-tier limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    const target = await createClaudeAgent(actor, "bdd-target");
-    const other = await createClaudeAgent(actor, "bdd-other");
-    const memberCompose = await createClaudeAgent(member, "bdd-member");
+    const namedAgent = async (owner: ApiTestUser, displayName: string) => {
+      const created = await bdd.createAgent(owner, {
+        displayName,
+        visibility: "private",
+      });
+      return {
+        agentId: created.agentId,
+        name: await readCanonicalAgentNameFixture(created.agentId),
+      };
+    };
+    const target = await namedAgent(actor, "bdd-target");
+    const other = await namedAgent(actor, "bdd-other");
+    const memberCompose = await namedAgent(member, "bdd-member");
 
     await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
@@ -478,11 +493,11 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       visibility: "private",
     });
 
-    const runA = await api.createDirectRun(actor, {
+    const runA = await api.createThreadRun(actor, {
       agentId: target.agentId,
       prompt: "target run a",
     });
-    const runB = await api.createDirectRun(actor, {
+    const runB = await api.createThreadRun(actor, {
       agentId: other.agentId,
       prompt: "other run b",
     });
@@ -611,9 +626,10 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expectApiError(missing.body);
     expect(missing.body.error.message).toBe("Agent run not found");
 
-    const runM = await api.createDirectRun(member, {
+    const runM = await api.createThreadRun(member, {
       agentId: memberCompose.agentId,
       prompt: "member run m",
+      model: "claude-fable-5-1",
     });
     const hiddenFromActor = await api.requestReadRun(actor, runM.runId, [404]);
     expectApiError(hiddenFromActor.body);
@@ -685,13 +701,13 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 describe("RUN-03: cancel through the run cancel route", () => {
   async function cancelFixture() {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-cancel");
+    const compose = await createThreadAgent(actor, "bdd-cancel");
     return { actor, compose };
   }
 
   it("cancels a running run idempotently", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "cancel a running run",
     });
@@ -713,7 +729,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
 
   it("rejects cancellation after a run completes", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
@@ -733,7 +749,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
 
   it("hides another organization's run from cancellation", async () => {
     const { actor, compose } = await cancelFixture();
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
@@ -755,16 +771,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     mockEnv("S3_ENDPOINT", undefined);
     mockEnv("S3_PUBLIC_ENDPOINT", "https://public-s3.example.test");
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
-    const composeName = `bdd-gzip-resume-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-        },
-      },
-    });
+    const compose = await createThreadAgent(actor, "bdd-compressed-resume");
     const history = `{"type":"init"}\n{"type":"human","text":"compressed-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedHistory = gzipSync(Buffer.from(history, "utf8"));
@@ -779,10 +786,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create compressed checkpoint",
-      modelProviderType: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -831,10 +837,10 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       [200],
     );
 
-    const compressedContinuation = await api.createDirectRun(actor, {
-      sessionId: run.sessionId,
+    const compressedContinuation = await api.createThreadRun(actor, {
+      agentId: compose.agentId,
+      threadId: run.threadId,
       prompt: "continue with compressed ref",
-      modelProviderType: "anthropic-api-key",
     });
     const compressedClaim = await api.claimRunnerJob(
       compressedContinuation.runId,
@@ -859,16 +865,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     mockEnv("S3_ENDPOINT", undefined);
     mockEnv("S3_PUBLIC_ENDPOINT", undefined);
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
-    const composeName = `bdd-zstd-resume-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-        },
-      },
-    });
+    const compose = await createThreadAgent(actor, "bdd-compressed-resume");
     const history = `{"type":"init"}\n{"type":"human","text":"zstd-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedHistory = zstdCompressSync(Buffer.from(history, "utf8"));
@@ -887,10 +884,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create zstd compressed checkpoint",
-      modelProviderType: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -939,10 +935,10 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       [200],
     );
 
-    const compressedContinuation = await api.createDirectRun(actor, {
-      sessionId: run.sessionId,
+    const compressedContinuation = await api.createThreadRun(actor, {
+      agentId: compose.agentId,
+      threadId: run.threadId,
       prompt: "continue with zstd compressed ref",
-      modelProviderType: "anthropic-api-key",
     });
     const compressedClaim = await api.claimRunnerJob(
       compressedContinuation.runId,
@@ -964,7 +960,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
   it("rejects identity repair for a missing compressed session history blob", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-gzip-repair");
+    const compose = await createThreadAgent(actor, "bdd-gzip-repair");
     const history = `{"type":"init"}\n{"type":"human","text":"repair-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedKey = `blobs/${historyHash}.blob.gz`;
@@ -975,7 +971,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create missing compressed blob metadata",
     });
@@ -1050,7 +1046,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
   it("rejects identity repair for a missing zstd session history blob", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-zstd-repair");
+    const compose = await createThreadAgent(actor, "bdd-zstd-repair");
     const history = `{"type":"init"}\n{"type":"human","text":"repair-zstd-${randomUUID()}"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     const compressedHistory = zstdCompressSync(Buffer.from(history, "utf8"));
@@ -1066,7 +1062,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const run = await api.createDirectRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "create missing zstd blob metadata",
     });
@@ -1145,7 +1141,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     mockEnv("S3_PUBLIC_ENDPOINT", undefined);
     const storages = createStoragesBddApi(context);
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const volumeArchiveSize = 12_345;
     storages.mockStoragePresignedUrls();
     storages.mockStorageObjectsExist(volumeArchiveSize);
@@ -1189,19 +1185,31 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
     storages.mockStorageObjectsExist(volumeArchiveSize);
 
-    const composeName = `bdd-resume-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["data:/data"],
-        },
-      },
-      volumes: {
-        data: { name: volumeName, version: `\${{ vars.VOL_VERSION }}` },
-      },
+    // An Agent workflow's exact Storage version is the run's volume; its
+    // archive is recorded at the mocked object size.
+    storages.mockStorageObjectsExist(volumeArchiveSize);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD resume agent",
+      visibility: "private",
     });
+    const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agent.agentId,
+      workflowName,
+      { content: "# Resume\nUse for session continuation." },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
+    const workflowVersion = (
+      await storages.downloadStorage(actor, {
+        name: workflowStorageName,
+        owner: "organization",
+      })
+    ).versionId;
 
     // The session-history blob for checkpointed conversations is hash-only
     // in R2 — answer the GetObject for it while keeping other s3 sends inert.
@@ -1227,14 +1235,11 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       return Promise.resolve({});
     });
 
-    const versionPrefix = volumeVersion.slice(0, 16);
     const presignCallsBeforeRun =
       context.mocks.s3.getSignedUrl.mock.calls.length;
-    const r1 = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "pin the volume by version prefix",
-      modelProviderType: "anthropic-api-key",
-      vars: { VOL_VERSION: versionPrefix },
+    const r1 = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "pin the workflow Storage version",
     });
     const claim1 = await api.claimRunnerJob(r1.runId);
     expect(
@@ -1242,13 +1247,21 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     ).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: volumeName,
-          mountPath: "/data",
-          versionId: volumeVersion,
-          archiveSize: volumeArchiveSize,
+          name: workflowStorageName,
+          mountPath: `/home/user/.claude/skills/${workflowName}`,
+          versionId: workflowVersion,
+          // The server packages the workflow, so its archive size is the one
+          // recorded for that version rather than a mocked object size.
+          archiveSize: expect.any(Number),
         }),
       ]),
     );
+    const workflowMount = expectCanonicalStorageManifest(
+      claim1.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === workflowStorageName;
+    });
+    expect(workflowMount?.archiveSize).toBeGreaterThan(0);
     const memory1 = expectCanonicalStorageManifest(
       claim1.storageManifest,
     )?.storageMounts.find((mount) => {
@@ -1287,53 +1300,23 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
               mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
             },
           ],
-          volumeVersionsSnapshot: { versions: { data: volumeVersion } },
+          volumeVersionsSnapshot: {
+            versions: { [workflowStorageName]: workflowVersion },
+          },
         },
       },
       headers1,
       [200],
     );
 
-    const latestCompose = await api.createDirectAgent(actor, {
-      version: "2",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["data:/data"],
-        },
-      },
-      volumes: {
-        data: { name: volumeName, version: `\${{ vars.VOL_VERSION }}` },
-      },
-    });
-    expect(latestCompose.agentId).toBe(compose.agentId);
-
-    const byAgent = await reads.requestCreateDirectRun(
-      actor,
-      {
-        agentId: compose.agentId,
-        prompt: "run the latest Agent head",
-        vars: { VOL_VERSION: volumeVersion },
-      },
-      [201],
-    );
-    if (byAgent.status !== 201) {
-      throw new Error("Expected the Agent-backed run create to succeed");
-    }
-    const byAgentClaim = await api.claimRunnerJob(byAgent.body.runId);
-    await api.requestCancelRun(actor, byAgent.body.runId, [200]);
-    await finishCancelledRun(byAgent.body.runId, byAgentClaim.sandboxToken);
-
-    const continued = await api.createDirectRun(actor, {
-      sessionId: r1.sessionId,
+    await flushWaitUntilForTest();
+    const continued = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      threadId: r1.threadId,
       prompt: "continue the checkpointed session",
-      modelProviderType: "anthropic-api-key",
     });
-    expect(continued.sessionId).toBe(r1.sessionId);
     const continuedClaim = await api.claimRunnerJob(continued.runId);
-    expect(continuedClaim.vars).toStrictEqual({
-      VOL_VERSION: versionPrefix,
-    });
+    expect(continuedClaim.vars).toStrictEqual(claim1.vars);
     expect(continuedClaim.resumeSession).toStrictEqual({
       sessionId: `bdd-cli-${r1.runId}`,
       historyRef: {
@@ -1360,20 +1343,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
   });
 });
 
-describe("RUN-01: direct run admission boundaries", () => {
-  it("requires an Agent or Session identity", async () => {
-    const actor = await entitledActor();
-    const missingIdentity = await reads.requestCreateDirectRun(
-      actor,
-      { prompt: "reject a direct run without identity" },
-      [400],
-    );
-    expectApiError(missingIdentity.body);
-    expect(missingIdentity.body.error.message).toBe(
-      "Missing agentId or sessionId",
-    );
-  });
-
+describe("RUN-01: run admission boundaries", () => {
   it("treats the one-run limit as soft for concurrent chat picks and enforces it afterwards", async () => {
     const actor = await entitledActor();
     const agentId = await createChatAgent(actor);
@@ -1432,18 +1402,18 @@ describe("RUN-01: direct run admission boundaries", () => {
   it("enforces chat pick concurrency until the cap is disabled", async () => {
     const customerId = `cus_${randomUUID()}`;
     const actor = await entitledActor(customerId);
-    const compose = await createClaudeAgent(actor, "bdd-admission");
+    const compose = await createThreadAgent(actor, "bdd-admission");
     const agentId = await createChatAgent(actor);
 
-    const first = await api.createDirectRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "first concurrent run",
     });
-    const second = await api.createDirectRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "second concurrent run",
     });
-    const third = await api.createDirectRun(actor, {
+    const third = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "third concurrent run",
     });
@@ -1468,37 +1438,37 @@ describe("RUN-01: direct run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("rejects a foreign agent before admitting a direct run", async () => {
+  it("rejects a foreign agent before admitting a run", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-admission");
-    const first = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-admission");
+    const first = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "first concurrent run",
     });
-    const second = await api.createDirectRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "second concurrent run",
     });
     const outsider = bdd.user();
-    const foreignCompose = await createClaudeAgent(outsider, "bdd-foreign");
-    const crossOrgCompose = await reads.requestCreateDirectRun(
+    const foreignCompose = await createThreadAgent(outsider, "bdd-foreign");
+    const crossOrgCompose = await chat.requestSendEvent(
       actor,
       {
         agentId: foreignCompose.agentId,
         prompt: "run a foreign compose",
+        model: "claude-fable-5-1",
       },
       [404],
     );
     expectApiError(crossOrgCompose.body);
-    expect(crossOrgCompose.body.error.message).toBe("Resource not found");
+    expect(crossOrgCompose.body.error.message).toBe("Agent not found");
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
   it("restricts production network-body capture to staff organizations", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-admission");
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const compose = await createThreadAgent(actor, "bdd-admission");
     mockEnv("ENV", "production");
     mockOptionalEnv("VERCEL_ENV", "preview");
     const legacyDomainActor = {
@@ -1506,36 +1476,26 @@ describe("RUN-01: direct run admission boundaries", () => {
       email: `bdd-${randomUUID().slice(0, 8)}@vm0.ai`,
     };
     await bdd.readMe(legacyDomainActor);
-    const externalGate = await reads.requestCreateDirectRun(
-      legacyDomainActor,
-      {
+    // The pick rejects a non-staff capture request before any run exists.
+    await expect(
+      api.readThreadRunRejection(legacyDomainActor, {
         agentId: compose.agentId,
         prompt: "capture from a non-staff organization",
         captureNetworkBodies: true,
-      },
-      [403],
-    );
-    expectApiError(externalGate.body);
-    expect(externalGate.body.error.message).toContain("internal accounts");
+      }),
+    ).resolves.toBe("forbidden");
 
     const staff = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     await api.grantProEntitlement(staff);
-    const staffAgent = await createClaudeAgent(staff, "bdd-staff-capture");
-    const allowed = await reads.requestCreateDirectRun(
-      staff,
-      {
-        agentId: staffAgent.agentId,
-        prompt: "capture from a staff organization",
-        captureNetworkBodies: true,
-      },
-      [201],
-    );
-    if (allowed.status !== 201) {
-      throw new Error("Expected the staff capture run create to succeed");
-    }
-    const captureClaim = await api.claimRunnerJob(allowed.body.runId);
+    const staffAgent = await createThreadAgent(staff, "bdd-staff-capture");
+    const allowed = await api.createThreadRun(staff, {
+      agentId: staffAgent.agentId,
+      prompt: "capture from a staff organization",
+      captureNetworkBodies: true,
+    });
+    const captureClaim = await api.claimRunnerJob(allowed.runId);
     expect(captureClaim.captureNetworkBodies).toBeTruthy();
-    await api.requestCancelRun(staff, allowed.body.runId, [200]);
+    await api.requestCancelRun(staff, allowed.runId, [200]);
   });
 });
 
@@ -1796,8 +1756,8 @@ describe("RUN-04: agent run telemetry families", () => {
   it("serves paged Activity events without leaking another member's run", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const compose = await createClaudeAgent(actor, "bdd-activity-events");
-    const run = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-activity-events");
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "inspect activity events",
     });
@@ -1887,8 +1847,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("hardens network log rows in the agent read API", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-network-hardening");
-    const agentRun = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-network-hardening");
+    const agentRun = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "zero network hardening",
     });
@@ -1970,8 +1930,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("keeps same-timestamp network rows reachable across time cursor pages", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-time-cursor-ties");
-    const run = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-time-cursor-ties");
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "emit tied network telemetry",
     });
@@ -2202,8 +2162,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("fails visibly when a network page cannot advance its cursor", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-unpageable");
-    const run = await api.createDirectRun(actor, {
+    const compose = await createThreadAgent(actor, "bdd-unpageable");
+    const run = await api.createThreadRun(actor, {
       agentId: compose.agentId,
       prompt: "emit an unpageable network boundary",
     });
@@ -2250,7 +2210,7 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("preserves reuse outcomes from completion through runner reads", async () => {
     const actor = await entitledActor();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD sandbox reuse reason agent",
       description: "Sandbox reuse reason compatibility.",
@@ -2270,10 +2230,9 @@ describe("RUN-04: agent run telemetry families", () => {
     ] as const;
 
     for (const scenario of scenarios) {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: `record ${scenario.name}`,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       const headers = sandboxHeaders(claim.sandboxToken);
@@ -2384,10 +2343,9 @@ describe("RUN-04: agent run telemetry families", () => {
       description: "Bounded run context reads.",
       visibility: "private",
     });
-    const agentRun = await api.createRun(actor, {
+    const agentRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "bounded run context",
-      modelProvider: "anthropic-api-key",
     });
     onTestFinished(async () => {
       await api.requestCancelRun(actor, agentRun.runId, [200]);
@@ -2437,17 +2395,16 @@ describe("RUN-04: agent run telemetry families", () => {
   it("maps agent run context, network, and runner metadata from axiom snapshots", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD zero detail agent",
       description: "Agent run detail reads.",
       visibility: "private",
     });
 
-    const agentRun = await api.createRun(actor, {
+    const agentRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "agent run detail",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(agentRun.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
@@ -2469,10 +2426,9 @@ describe("RUN-04: agent run telemetry families", () => {
       [200],
     );
 
-    const bareRun = await api.createRun(actor, {
+    const bareRun = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "agent run without snapshots",
-      modelProvider: "anthropic-api-key",
     });
 
     const runId = agentRun.runId;
@@ -3034,7 +2990,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agentOne = await bdd.createAgent(actor, {
       displayName: "BDD logs agent one",
       description: "Primary logs agent.",
@@ -3050,31 +3006,44 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const testCompose = await createClaudeAgent(actor, "bdd-test-logs");
+    const testCompose = await bdd.createAgent(actor, {
+      displayName: "BDD historical test-source agent",
+      visibility: "private",
+    });
     const agentOneName = await readCanonicalAgentNameFixture(agentOne.agentId);
 
-    const webRun = await api.createRun(actor, {
+    const webRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "web run on agent one",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, webRun.runId, [200]);
-    const secondAgentRun = await api.createRun(actor, {
+    const secondAgentRun = await api.createThreadRun(actor, {
       agentId: agentTwo.agentId,
       prompt: "web run on agent two",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, secondAgentRun.runId, [200]);
-    const testRun = await api.createDirectRun(actor, {
-      agentId: testCompose.agentId,
-      prompt: "direct test run",
-    });
+    if (!actor.orgId) {
+      throw new Error("Run log fixtures require an org-scoped actor");
+    }
+    // A persisted historical direct run supplies the second log source.
+    const testRun = await store.set(
+      seedRun$,
+      {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        composeId: testCompose.agentId,
+        prompt: "direct test run",
+        status: "pending",
+        triggerSource: "test",
+      },
+      context.signal,
+    );
     await api.requestCancelRun(actor, testRun.runId, [200]);
 
-    const memberRun = await api.createRun(member, {
+    const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member run stays invisible",
-      modelProvider: "anthropic-api-key",
+      model: "claude-fable-5-1",
     });
     await api.requestCancelRun(member, memberRun.runId, [200]);
 
@@ -3132,7 +3101,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     expect(testEntry).toMatchObject({
       agentId: testCompose.agentId,
-      displayName: "Direct run fixture",
+      displayName: "BDD historical test-source agent",
       triggerSource: "test",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
@@ -3265,10 +3234,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("returns pending and failed run-log detail residue", async () => {
     const { actor, agentOne } = await setupRunLogFixture();
-    const pendingRun = await api.createRun(actor, {
+    const pendingRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "pending detail run",
-      modelProvider: "anthropic-api-key",
     });
     const pendingDetail = await reads.requestReadLogById(
       actor,
@@ -3283,10 +3251,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
-    const failedRun = await api.createRun(actor, {
+    const failedRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "failed detail run",
-      modelProvider: "anthropic-api-key",
     });
     await webhooks.requestAgentComplete(
       { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
@@ -3307,10 +3274,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("reads run-log list and detail with a claimed run token", async () => {
     const { actor, agentOne, webRun } = await setupRunLogFixture();
-    const tokenRun = await api.createRun(actor, {
+    const tokenRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
-      modelProvider: "anthropic-api-key",
     });
     const tokenClaim = await api.claimRunnerJob(tokenRun.runId);
     const okouToken = tokenClaim.platformEnvironment.OKOU_TOKEN;
@@ -3344,10 +3310,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const beforeBoundaryRun = await withMockNowForTest(
       beforeBoundaryAt,
       async () => {
-        const run = await api.createRun(actor, {
+        const run = await api.createThreadRun(actor, {
           agentId: agentOne.agentId,
           prompt: "since boundary hidden run",
-          modelProvider: "anthropic-api-key",
         });
         await api.requestCancelRun(actor, run.runId, [200]);
         return run;
@@ -3357,10 +3322,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const sinceBoundaryRun = await withMockNowForTest(
       sinceBoundary,
       async () => {
-        const run = await api.createRun(actor, {
+        const run = await api.createThreadRun(actor, {
           agentId: agentOne.agentId,
           prompt: "since boundary visible run",
-          modelProvider: "anthropic-api-key",
         });
         await api.requestCancelRun(actor, run.runId, [200]);
         return run;
@@ -3382,12 +3346,26 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("preserves historical agent-source logs without provenance", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "historical-agent-log");
-    const historicalAgentRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "historical agent-source run",
-      triggerSource: "agent",
+    if (!actor.orgId) {
+      throw new Error("Historical logs require an org-scoped actor");
+    }
+    const agent = await bdd.createAgent(actor, {
+      displayName: "historical-agent-log",
+      visibility: "private",
     });
+    // A persisted historical agent-source run without launch provenance.
+    const historicalAgentRun = await store.set(
+      seedRun$,
+      {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        composeId: agent.agentId,
+        prompt: "historical agent-source run",
+        status: "pending",
+        triggerSource: "agent",
+      },
+      context.signal,
+    );
     await api.requestCancelRun(actor, historicalAgentRun.runId, [200]);
     await clearRunLaunchSnapshotFixture(historicalAgentRun.runId);
 

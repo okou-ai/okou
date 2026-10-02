@@ -80,9 +80,9 @@ subscription routes are
 `usage_pricing` is the billing authority for Built-in model usage, reached
 through the pricing link of the route a run was assigned:
 
-1. **Run creation.** Run creation (the queue pick, or a direct run) selects
+1. **Run creation.** Run creation (the queue pick, or Pi maintenance) selects
    and captures the Built-in concrete route (`builtInModelRuntimeRoute`), then
-   `prepareModelUsageContext` (`agent-run-execution.service.ts`) reads that
+   `prepareModelUsageContext` (`execution-model-source.service.ts`) reads that
    route's `pricing_provider` from the same catalog snapshot
    (`catalogBuiltInRoute`) as `modelUsageProvider`, together with the billable
    firewalls and the long-context threshold
@@ -323,13 +323,13 @@ per execution (Pi or not, and the concrete provider for DeepSeek).
 ## Run-scoped snapshot and admission
 
 Each run decision reads one catalog snapshot. The queue pick
-(`createClaimRunObjects` in `claim-run-context.ts`) loads it once per claim
+(`createThreadClaimRunObjects` in `thread-claim-run.service.ts`) loads it once per claim
 (`claimCatalog$`) and passes it to every step from model resolution to run
 creation: policy projection, model pin, provider admission, Built-in route
 and framework, provider environment, reasoning effort, usage context and
-final admission. A run created outside the queue (`agent-run-execution`)
-loads it once per creation (`catalog$`) and carries it on
-`CreateAgentRunArgs.catalog`; the provider environment takes the system
+final admission. Pi memory maintenance, the only run created outside the
+queue, loads it once per admission and carries it on its model inputs
+(`RunModelProviderArgs.catalog`); the provider environment takes the system
 default from that snapshot. A chat send loads it once for its validation,
 thread settings and input model capture.
 

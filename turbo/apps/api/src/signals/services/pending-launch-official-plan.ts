@@ -37,7 +37,7 @@ import {
   pendingAdmissionRecordSchema,
   type PendingAdmissionProgress,
 } from "./pending-launch-admission-plan";
-import type { PreparedCommitPreparedLaunchArgs } from "./agent-run-execution.service";
+import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
 
 const officialRowSchema = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("catalog-lock"), authority: z.string() }),

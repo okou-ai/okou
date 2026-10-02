@@ -11,6 +11,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createEmailApi } from "./helpers/api-bdd-email";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
@@ -282,20 +283,20 @@ describe("low-credit email delivery", () => {
       },
     ]);
 
-    const agentName = `bdd-low-credit-${randomUUID().slice(0, 8)}`;
-    const compose = await runs.createDirectAgent(actor, {
-      version: "1.0",
-      agents: {
-        [agentName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    runs.configureRunnerGroup();
+    // Built-in usage is billed to the organization's credits.
+    await createChatEventsFixture(context).configureBuiltInPiModel(
+      actor,
+      "deepseek-v4.1-flash",
+    );
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD low-credit agent",
+      description: "Crosses the low-credit alert threshold.",
+      visibility: "private",
     });
-    const run = await runs.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "cross the low-credit alert threshold",
-      triggerSource: "web",
     });
     await webhooks.requestAgentUsageEvent(
       {
