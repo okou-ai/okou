@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { logger } from "../../lib/log";
+import { settle } from "../utils";
 import {
   attributedManagedValues,
   managedAttributionQuery,
@@ -389,6 +391,31 @@ export const checkManagedCredits$ = command(
       balance.requiredCredits
       ? null
       : insufficientCredits();
+  },
+);
+
+/** Billing is best-effort after provider success; cancellation still propagates. */
+export const recordSuccessfulManagedUsage$ = command(
+  async (
+    { set },
+    args: ManagedUsageRecordArgs,
+    signal: AbortSignal,
+  ): Promise<number | null> => {
+    const outcome = await settle(set(recordManagedUsage$, args, signal));
+    signal.throwIfAborted();
+    if (!outcome.ok) {
+      logger("ManagedUsage").error(
+        "Failed to bill successful provider result",
+        {
+          kind: args.resource.kind,
+          provider: args.resource.provider,
+          orgId: args.actor.orgId,
+          error: outcome.error,
+        },
+      );
+      return null;
+    }
+    return outcome.value;
   },
 );
 

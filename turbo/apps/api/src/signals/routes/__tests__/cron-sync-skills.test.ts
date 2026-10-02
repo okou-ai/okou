@@ -38,6 +38,10 @@ import {
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { createBddApi } from "./helpers/api-bdd";
 import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import {
   cleanupOwnedSkillsState,
   findSkillByUrlState,
   findSystemStorageByNameState,
@@ -898,20 +902,34 @@ describe("GET /api/cron/sync-skills", () => {
 
   it("reuses a previously registered skill version after A to B to A", async () => {
     const fixture = useCronSyncSkillsFixture();
-    await seedCurrentSeedSkillVersions(fixture);
+    const firstVersion = buildMockSkillVersion(fixture, fixture.alphaSkill);
+    // Only the lookup identity changes; the real run resolves the published HEAD.
+    const runs = createRunsApi(context, { gen: firstVersion.storageName });
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Reused system skill Agent",
+      visibility: "private",
+    });
+
+    await publishSeedSkills(fixture);
     const firstCommitSha = newCommitSha();
     setupMswHandlers(
       firstCommitSha,
       createFullTarball(fixture, [fixture.alphaSkill]),
     );
-    await syncOwnedSkills(fixture);
-    const firstVersion = buildMockSkillVersion(fixture, fixture.alphaSkill);
-    const firstStorage = await findSystemStorageByName(
-      firstVersion.storageName,
-    );
-    if (!firstStorage?.archiveSize) {
-      throw new Error("Expected the first registered skill version");
-    }
+    await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
+      success: true,
+      synced: 1,
+      failed: 0,
+    });
+    const firstUpload = expectUploadedSkill(fixture.alphaSkill);
+    context.mocks.s3.send.mockClear();
 
     const modifiedAlpha: MockSkillEntry = {
       ...fixture.alphaSkill,
@@ -925,7 +943,12 @@ describe("GET /api/cron/sync-skills", () => {
       newCommitSha(),
       createFullTarball(fixture, [modifiedAlpha]),
     );
-    await syncOwnedSkills(fixture);
+    await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
+      success: true,
+      synced: 1,
+      failed: 0,
+    });
+    expectUploadedSkill(modifiedAlpha);
     context.mocks.s3.send.mockClear();
 
     const finalCommitSha = newCommitSha();
@@ -938,15 +961,38 @@ describe("GET /api/cron/sync-skills", () => {
     expect(result).toMatchObject({ success: true, synced: 1, failed: 0 });
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
     expect(s3CallsByName("HeadObjectCommand")).toHaveLength(0);
-    await expect(
-      findSystemStorageByName(firstVersion.storageName),
-    ).resolves.toMatchObject({
-      headVersionId: firstVersion.versionHash,
-      archiveSize: firstStorage.archiveSize,
+    await expectCompletedCommit(fixture, finalCommitSha);
+
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Mount the republished system skill version A",
     });
-    await expect(
-      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.toMatchObject({ commitSha: finalCommitSha });
+    onTestFinished(async () => {
+      await runs.requestCancelRun(actor, run.runId, [200, 404]);
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(run.runId);
+    const mounts = expectCanonicalStorageManifest(
+      claim.storageManifest,
+    )?.storageMounts.filter((storage) => {
+      return storage.name === firstVersion.storageName;
+    });
+    expect(mounts).toStrictEqual([
+      expect.objectContaining({
+        name: firstVersion.storageName,
+        mountPath: "/home/user/.claude/skills/gen",
+        versionId: firstVersion.versionHash,
+        archiveSize: firstUpload.archive.length,
+      }),
+    ]);
+    const archiveUrl = mounts?.[0]?.archiveUrl;
+    if (!archiveUrl) {
+      throw new Error("Expected the Runner's reused system skill archive URL");
+    }
+    expect(new URL(archiveUrl).searchParams.get("object")).toBe(
+      `${BUCKET}/${firstUpload.archiveKey}`,
+    );
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each(["archive.tar.gz", "manifest.json"])(

@@ -6225,6 +6225,18 @@ describe("okou browser route", () => {
       ok: true,
       cloudBrowserEnabled: true,
     });
+    const completed = await accept(
+      authorizationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      expiresAt: createdOnOkouApi.body.expiresAt,
+      completedAt: isoAt(0),
+      cloudBrowserEnabled: true,
+    });
 
     const events = await accept(
       chatThreadsClient().events({
@@ -6240,6 +6252,291 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: true,
       }),
     );
+  });
+
+  it.each(["another user", "another organization"] as const)(
+    "does not disclose or apply browser authorization for %s",
+    async (foreignScope) => {
+      const { routeMocks, runs, chat, actor, agent } =
+        await setupBrowserScenario();
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "Keep browser authorization within its owner scope",
+        cloudBrowserEnabled: false,
+      });
+      const created = await accept(
+        authorizationClient().create({
+          headers: {
+            authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
+          },
+          body: {},
+        }),
+        [200],
+      );
+      const requestToken = decodeURIComponent(
+        new URL(created.body.authorizationUrl).pathname.slice(
+          "/browser/authorize/".length,
+        ),
+      );
+      const foreignActor = createBddApi(context).user(
+        foreignScope === "another user"
+          ? { orgId: actor.orgId }
+          : { userId: actor.userId },
+      );
+      routeMocks.clerk.session(
+        foreignActor.userId,
+        foreignActor.orgId,
+        foreignActor.orgRole,
+      );
+      const hidden = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [404],
+      );
+      expect(hidden.body.error.code).toBe("NOT_FOUND");
+      const rejected = await accept(
+        authorizationClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {},
+        }),
+        [404],
+      );
+      expect(rejected.body.error.code).toBe("NOT_FOUND");
+
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const pending = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(pending.body).toStrictEqual({
+        expiresAt: created.body.expiresAt,
+        completedAt: null,
+        cloudBrowserEnabled: false,
+      });
+      await expect(
+        chat.readThreadMetadata(actor, sent.threadId),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: false });
+      const events = await accept(
+        chatThreadsClient().events({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(
+        events.body.events.filter((event) => {
+          return (
+            event.kind === "computer_use_host_updated" &&
+            event.chatThreadId === sent.threadId
+          );
+        }),
+      ).toStrictEqual([]);
+    },
+  );
+
+  it("expires pending browser authorization at the inclusive one-hour boundary", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Let this browser authorization expire",
+      cloudBrowserEnabled: false,
+    });
+    const created = await accept(
+      authorizationClient().create({
+        headers: {
+          authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    const requestToken = decodeURIComponent(
+      new URL(created.body.authorizationUrl).pathname.slice(
+        "/browser/authorize/".length,
+      ),
+    );
+    expect(created.body.expiresAt).toBe(isoAt(60 * MINUTE_MS));
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    mockNow(STARTED_AT_MS + 60 * MINUTE_MS - 1);
+    const pending = await accept(
+      authorizationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      }),
+      [200],
+    );
+    expect(pending.body).toStrictEqual({
+      expiresAt: created.body.expiresAt,
+      completedAt: null,
+      cloudBrowserEnabled: false,
+    });
+
+    mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
+    const expired = await accept(
+      authorizationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      }),
+      [410],
+    );
+    expect(expired.body.error.code).toBe("GONE");
+    const rejected = await accept(
+      authorizationClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {},
+      }),
+      [410],
+    );
+    expect(rejected.body.error.code).toBe("GONE");
+    await expect(
+      chat.readThreadMetadata(actor, sent.threadId),
+    ).resolves.toMatchObject({ cloudBrowserEnabled: false });
+    const events = await accept(
+      chatThreadsClient().events({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(
+      events.body.events.filter((event) => {
+        return (
+          event.kind === "computer_use_host_updated" &&
+          event.chatThreadId === sent.threadId
+        );
+      }),
+    ).toStrictEqual([]);
+  });
+
+  it("preserves completion and ordered events when browser authorization is applied again", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Apply this browser authorization twice",
+      cloudBrowserEnabled: false,
+    });
+    const created = await accept(
+      authorizationClient().create({
+        headers: {
+          authorization: `Bearer ${runs.sandboxTokenForRun(actor, sent.runId)}`,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    const requestToken = decodeURIComponent(
+      new URL(created.body.authorizationUrl).pathname.slice(
+        "/browser/authorize/".length,
+      ),
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    for (const minute of [1, 2]) {
+      mockNow(STARTED_AT_MS + minute * MINUTE_MS);
+      const applied = await accept(
+        authorizationClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {},
+        }),
+        [200],
+      );
+      expect(applied.body).toStrictEqual({
+        ok: true,
+        cloudBrowserEnabled: true,
+      });
+      const completed = await accept(
+        authorizationClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+      expect(completed.body).toStrictEqual({
+        expiresAt: created.body.expiresAt,
+        completedAt: isoAt(minute * MINUTE_MS),
+        cloudBrowserEnabled: true,
+      });
+    }
+    await expect(
+      chat.readThreadMetadata(actor, sent.threadId),
+    ).resolves.toMatchObject({
+      computerUseHostId: null,
+      cloudBrowserEnabled: true,
+    });
+    const events = await accept(
+      chatThreadsClient().events({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    const appliedEvents = events.body.events.filter((event) => {
+      return (
+        event.kind === "computer_use_host_updated" &&
+        event.chatThreadId === sent.threadId
+      );
+    });
+    expect(appliedEvents).toHaveLength(2);
+    const [first, second] = appliedEvents;
+    if (!first || !second) {
+      throw new Error("Expected both browser authorization events");
+    }
+    expect(second.seqId).toBeGreaterThan(first.seqId);
+    expect(second.id).not.toBe(first.id);
+    expect(
+      appliedEvents.map((event) => {
+        return event.createdAt;
+      }),
+    ).toStrictEqual([isoAt(MINUTE_MS), isoAt(2 * MINUTE_MS)]);
+    expect(appliedEvents).toStrictEqual([
+      expect.objectContaining({
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+      }),
+      expect.objectContaining({
+        computerUseHostId: null,
+        cloudBrowserEnabled: true,
+      }),
+    ]);
+
+    mockNow(STARTED_AT_MS + 60 * MINUTE_MS);
+    const expired = await accept(
+      authorizationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      }),
+      [410],
+    );
+    expect(expired.body.error.code).toBe("GONE");
+    const rejected = await accept(
+      authorizationClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {},
+      }),
+      [410],
+    );
+    expect(rejected.body.error.code).toBe("GONE");
+    const unchangedEvents = await accept(
+      chatThreadsClient().events({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(
+      unchangedEvents.body.events.filter((event) => {
+        return (
+          event.kind === "computer_use_host_updated" &&
+          event.chatThreadId === sent.threadId
+        );
+      }),
+    ).toStrictEqual(appliedEvents);
   });
 
   it("attaches concurrent requests to the same thread browser", async () => {

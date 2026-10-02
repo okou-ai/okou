@@ -31,7 +31,7 @@ Video generation admission was removed in #37242. The remaining
 snapshots, model bootstrap, pending-credit reads and Billing status; no current
 product action consumes it. This cleanup removes that propagation, the Billing
 response field and the shared Drizzle declaration. Generated migration
-`1314_drop_retired_video_entitlement` drops only that column. Historical usage,
+`1315_drop_retired_video_entitlement` drops only that column. Historical usage,
 credit records, accepted artifacts and shipped migrations remain unchanged.
 
 **Accepted rollout interruption:** Ethan explicitly accepted brief unavailability

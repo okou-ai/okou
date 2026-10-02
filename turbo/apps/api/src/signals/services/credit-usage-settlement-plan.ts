@@ -1,5 +1,4 @@
 import {
-  UsageSettlementSnapshotConflict,
   usageSnapshotCondition,
   type PendingUsageSnapshot,
 } from "./credit-usage-batch";
@@ -91,8 +90,6 @@ export function settledEventsSql(
 export interface ConditionalDeduction {
   readonly id: string;
   readonly amount: number;
-  /** Row version observed by the read that planned this deduction. */
-  readonly xmin: string;
 }
 
 export function planMemberGrantDeductions(
@@ -101,7 +98,6 @@ export function planMemberGrantDeductions(
     id: string;
     userId: string;
     remainingAmount: number;
-    xmin: string;
   }[],
 ) {
   const remaining = new Map(charges);
@@ -112,7 +108,7 @@ export function planMemberGrantDeductions(
       continue;
     }
     const amount = Math.min(charge, grant.remainingAmount);
-    updates.push({ id: grant.id, amount, xmin: grant.xmin });
+    updates.push({ id: grant.id, amount });
     remaining.set(grant.userId, charge - amount);
   }
   return {
@@ -133,31 +129,16 @@ function deductionSource(updates: readonly ConditionalDeduction[]) {
     updates.map((update) => {
       return update.amount;
     }),
-  )}::bigint[], ${sql.param(
-    updates.map((update) => {
-      return update.xmin;
-    }),
-  )}::text[]) AS deduction(id, amount, observed_xmin)`;
+  )}::bigint[]) AS deduction(id, amount)`;
 }
 
-/**
- * Atomic, conditional decrement. A row changed since the planning read (its
- * xmin moved, under EvalPlanQual this also covers a writer that committed
- * while this statement waited), a remainder smaller than the deduction, or a
- * grant that expired is skipped; the caller compares the row count with the
- * plan and rejects the whole settlement snapshot on any shortfall, leaving the
- * batch pending for the next settlement cycle.
- */
+/** Apply the prepared split atomically; concurrent overdraft is accepted. */
 export function memberGrantDeductionsSql(
   updates: readonly ConditionalDeduction[],
-  at: Date,
 ) {
   return sql`UPDATE ${usagePackCreditGrants} SET remaining_amount = remaining_amount - deduction.amount
     FROM ${deductionSource(updates)}
-    WHERE ${usagePackCreditGrants.id} = deduction.id
-      AND ${usagePackCreditGrants}.xmin::text = deduction.observed_xmin
-      AND ${usagePackCreditGrants.remainingAmount} >= deduction.amount
-      AND ${usagePackCreditGrants.expiresAt} > ${sql.param(at, usagePackCreditGrants.expiresAt)}`;
+    WHERE ${usagePackCreditGrants.id} = deduction.id`;
 }
 
 export function planExpiryLotDeductions(
@@ -165,7 +146,6 @@ export function planExpiryLotDeductions(
     id: string;
     remaining: number;
     expiresAt: Date;
-    xmin: string;
   }[],
   amount: number,
   at: Date,
@@ -179,41 +159,37 @@ export function planExpiryLotDeductions(
     if (lot.expiresAt <= at) {
       expired += lot.remaining;
       expiredRows += 1;
-      updates.push({ id: lot.id, amount: lot.remaining, xmin: lot.xmin });
+      updates.push({ id: lot.id, amount: lot.remaining });
     } else {
       expiryRows += 1;
       if (left <= 0) {
         continue;
       }
       const deduction = Math.min(left, lot.remaining);
-      updates.push({ id: lot.id, amount: deduction, xmin: lot.xmin });
+      updates.push({ id: lot.id, amount: deduction });
       left -= deduction;
     }
   }
   return { updates, expired, expiredRows, expiryRows };
 }
 
-/** Same conditional decrement contract as member grants. */
+/** Same atomic decrement and accepted overdraft as member grants. */
 export function expiryLotDeductionsSql(
   updates: readonly ConditionalDeduction[],
 ) {
   return sql`UPDATE ${creditExpiresRecord} SET remaining = remaining - deduction.amount
     FROM ${deductionSource(updates)}
-    WHERE ${creditExpiresRecord.id} = deduction.id
-      AND ${creditExpiresRecord}.xmin::text = deduction.observed_xmin
-      AND ${creditExpiresRecord.remaining} >= deduction.amount`;
+    WHERE ${creditExpiresRecord.id} = deduction.id`;
 }
 
-/** Any planned conditional row that was not updated rejects the snapshot. */
+/** A missing target is a billing bug; a changed balance is not. */
 export function requireConditionalDeductions(
   kind: "grant" | "expiry lot",
   planned: readonly unknown[],
   updated: number | null,
 ) {
   if (updated !== planned.length) {
-    throw new UsageSettlementSnapshotConflict(
-      `Usage ${kind} changed before its deduction`,
-    );
+    throw new Error(`Usage ${kind} disappeared before its deduction`);
   }
 }
 
@@ -308,9 +284,9 @@ export function completeSettlementReceipt(
 }
 
 /**
- * The claim is conditional on each prepared row version; no parent Run row is
- * locked first. A usage row deleted with its Run, or changed since preparation,
- * is not claimed and the short count rejects the snapshot.
+ * Only pending usage can be claimed. The claim and all debits share one
+ * transaction, so rollback releases the claim and concurrent callers never
+ * charge a processed event again.
  */
 export function claimUsageWhere(
   orgId: string,

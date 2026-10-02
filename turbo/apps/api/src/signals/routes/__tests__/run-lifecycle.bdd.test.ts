@@ -13440,6 +13440,9 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "pick this chat input",
     });
+    // Finish this enqueue request's finite preload/pick while both slots are
+    // still occupied, before moving the clock past its ten-second claim lease.
+    await flushWaitUntilForTest();
 
     mockNow(pickedAt);
     await api.requestCancelRun(actor, first.runId, [200]);

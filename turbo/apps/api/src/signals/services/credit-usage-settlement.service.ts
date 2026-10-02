@@ -1,17 +1,14 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
 import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
-  usageExpiryScope,
-  expiryLotsQuery,
-  unseenExpiryQuery,
-  planCurrentExpiryDeduction,
-} from "./usage-expiry-prefix";
+  prepareUsageFinancialPlan$,
+  usageFinancialPlan,
+  type PreparedUsageFinancialPlan,
+} from "./credit-usage-financial-plan.service";
 import {
-  preparedMemberGrantsQuery,
-  requiredUsageGrantPrefix,
-  unseenGrantPrefixQuery,
-  requireCurrentGrantPrefix,
-} from "./usage-grant-prefix";
+  allowanceSettlementWrites,
+  issuedAllowanceWindowsQuery,
+} from "./usage-allowance-settlement-writes";
 import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
@@ -22,8 +19,6 @@ import {
   type PreparedUsageBatch,
   preparedSettlementPrices,
   reportCommittedSettlementPricing,
-  requireSettlementPricingSnapshot,
-  settlementPricingQuery,
 } from "./credit-usage-batch";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
@@ -59,9 +54,7 @@ import {
   settlementObservation,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
-  planUsageCharges,
   settledEventsSql,
-  planMemberGrantDeductions,
   memberGrantDeductionsSql,
   expiryLotDeductionsSql,
   requireConditionalDeductions,
@@ -78,6 +71,7 @@ import {
   windowQuery,
   planAllowanceWrites,
   requireAllowanceWrite,
+  insertWindowsSql,
 } from "./usage-allowance-settlement-plan";
 import {
   prepareUsageAllowanceRefresh$,
@@ -108,14 +102,15 @@ interface UsageSettlementArgs {
 interface SettlementBatchArgs extends UsageSettlementArgs {
   readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly batch: PreparedUsageBatch;
+  readonly financial?: PreparedUsageFinancialPlan;
+  readonly at: Date;
 }
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * No explicit row lock: the usage claim, allowance windows and consumption,
- * grant and lot deductions are conditional on the rows read, expiration and
- * the wallet debit are atomic arithmetic, and a short row count rejects the
- * batch with UsageSettlementSnapshotConflict (deferred, not retried).
+ * The pending claim prevents duplicate charging. Prepared allowance and credit
+ * splits use atomic arithmetic without old-version or balance checks; concurrent
+ * overuse is accepted. No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
@@ -149,8 +144,7 @@ const commitUsageBatch$ = command(
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
       const key = managed?.idempotencyKey;
-      const [entitlement] = await tx.select().from(entitlementQuery(orgId));
-      const at = nowDate();
+      const at = args.at;
       const events = processPending
         ? await tx
             .update(usageEvent)
@@ -163,33 +157,41 @@ const commitUsageBatch$ = command(
       if (hasNoStandaloneUsage(events, args.social)) {
         return emptySettlementReceipt(work);
       }
-      const currentPricing = await tx
-        .select()
-        .from(settlementPricingQuery(batch.pricingKeys));
-      requireSettlementPricingSnapshot(batch.pricing, currentPricing);
-      const priced = preparedSettlementPrices(args, batch, events);
-      const allocations = await tx.select().from(allocationQuery(priced));
-      const anchors = await tx.select().from(anchorQuery(orgId, priced));
-      const plan = planAllowanceCandidates(priced, allocations, anchors);
-      const windows = await tx.select().from(windowQuery(orgId, plan));
-      const scope = { orgId, refresh, at };
-      const allowance = planAllowanceWrites(scope, plan, windows, entitlement);
-      for (const write of allowance.writes) {
+      let financial = args.financial;
+      if (!financial) {
+        // Background Social jobs publish their usage in this transaction. Their
+        // newly created event identity is required for allowance allocations.
+        const priced = preparedSettlementPrices(args, batch, events);
+        const [entitlement] = await tx.select().from(entitlementQuery(orgId));
+        const allocations = await tx.select().from(allocationQuery(priced));
+        const anchors = await tx.select().from(anchorQuery(orgId, priced));
+        const plan = planAllowanceCandidates(priced, allocations, anchors);
+        const windows = await tx.select().from(windowQuery(orgId, plan));
+        const allowance = planAllowanceWrites(
+          { orgId, refresh, at },
+          plan,
+          windows,
+          entitlement,
+        );
+        financial = usageFinancialPlan(batch, priced, allowance, at);
+      }
+      const { priced, allowance, charges, deduction, expiry } = financial;
+      if (allowance.refresh) {
+        await tx.execute(allowance.refresh);
+      }
+      await tx.execute(insertWindowsSql(allowance.inserted));
+      const canonicalWindows = allowance.inserted.length
+        ? await tx.select().from(issuedAllowanceWindowsQuery(allowance))
+        : [];
+      for (const write of allowanceSettlementWrites(
+        allowance,
+        canonicalWindows,
+      )) {
         const { rowCount } = await tx.execute(write.sql);
         requireAllowanceWrite(write.kind, write.planned, rowCount);
       }
-      const charges = planUsageCharges(priced, allowance.applied);
       await tx.execute(settledEventsSql(charges, at));
-      const prefix = requiredUsageGrantPrefix(batch.grants, charges.byUser);
-      const grants = await tx
-        .select()
-        .from(preparedMemberGrantsQuery(orgId, prefix, at));
-      const [unseenGrant] = await tx
-        .select()
-        .from(unseenGrantPrefixQuery(orgId, prefix, at));
-      requireCurrentGrantPrefix(prefix, grants, unseenGrant);
-      const deduction = planMemberGrantDeductions(charges.byUser, grants);
-      const grantSql = memberGrantDeductionsSql(deduction.updates, at);
+      const grantSql = memberGrantDeductionsSql(deduction.updates);
       const granted = (await tx.execute(grantSql)).rowCount;
       requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
@@ -197,16 +199,13 @@ const commitUsageBatch$ = command(
         // Main's order: expire before the new deduction, in one statement.
         await expireOrgCreditsInTransaction(tx, orgId, at);
       }
-      const lotScope = usageExpiryScope(orgId, batch.lots, amount, at);
-      const lots =
-        amount > 0 ? await tx.select().from(expiryLotsQuery(lotScope)) : [];
-      const [unseenLot] =
-        amount > 0 ? await tx.select().from(unseenExpiryQuery(lotScope)) : [];
-      const expiry = planCurrentExpiryDeduction(lotScope, lots, unseenLot);
       const lotSql = expiryLotDeductionsSql(expiry.updates);
       const lotted = (await tx.execute(lotSql)).rowCount;
       requireConditionalDeductions("expiry lot", expiry.updates, lotted);
-      Object.assign(work, deduction.work, expiry.work);
+      Object.assign(work, deduction.work, {
+        expiredRows: expiry.expiredRows,
+        expiryRows: expiry.expiryRows,
+      });
       let afterCredits = 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
@@ -256,8 +255,19 @@ export const settleOrgUsage$ = command(
     const refresh = refreshArgs
       ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
       : undefined;
+    const financial = args.social
+      ? undefined
+      : await set(
+          prepareUsageFinancialPlan$,
+          { orgId: args.orgId, batch, refresh },
+          signal,
+        );
     const outcome = await settle(
-      set(commitUsageBatch$, { ...args, batch, refresh }, signal),
+      set(
+        commitUsageBatch$,
+        { ...args, batch, refresh, financial, at: financial?.at ?? nowDate() },
+        signal,
+      ),
     );
     signal.throwIfAborted();
     if (!outcome.ok) {

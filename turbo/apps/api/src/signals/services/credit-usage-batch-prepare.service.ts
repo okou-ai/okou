@@ -6,8 +6,7 @@ import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { writeDb$ } from "../external/db";
 import {
@@ -54,7 +53,6 @@ export const prepareUsageSettlementBatch$ = command(
     const snapshots = await db
       .select({
         event: usageEvent,
-        xmin: sql`${usageEvent}.xmin::text`.mapWith(pgTextDecoder),
       })
       .from(usageEvent)
       .where(
@@ -79,17 +77,11 @@ export const prepareUsageSettlementBatch$ = command(
       events,
       get(usagePricingResolution$),
     );
-    const pricing = await db
-      .select({
-        price: usagePricing,
-        xmin: sql`${usagePricing}.xmin::text`.mapWith(pgTextDecoder),
-      })
+    const prices = await db
+      .select()
       .from(usagePricing)
       .where(settlementPricingCondition(pricingKeys));
     signal.throwIfAborted();
-    const prices = pricing.map(({ price }) => {
-      return price;
-    });
     const records = events.map(({ event }) => {
       return event;
     });
@@ -119,8 +111,6 @@ export const prepareUsageSettlementBatch$ = command(
       events,
       social,
       hasSocialReceipt,
-      pricing,
-      pricingKeys,
       prices,
       records,
       priced,

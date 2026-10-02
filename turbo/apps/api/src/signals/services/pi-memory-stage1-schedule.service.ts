@@ -16,7 +16,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -97,7 +100,15 @@ function sourceArgs(run: Run) {
 export async function requestPiMemoryStage1Day(
   tx: Tx,
   run: Run,
+  capturedFeatures?: FeatureSwitchContext,
 ): Promise<void> {
+  if (
+    capturedFeatures &&
+    (capturedFeatures.orgId !== run.orgId ||
+      capturedFeatures.userId !== run.userId)
+  ) {
+    throw new Error("Pi memory scheduling feature context identity mismatch");
+  }
   const args = sourceArgs(run);
   const reason = getPiMemoryStage1AdmissionPrerequisiteSkipReason({
     ...args,

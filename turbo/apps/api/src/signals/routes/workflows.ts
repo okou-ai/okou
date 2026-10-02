@@ -118,7 +118,6 @@ import {
 } from "../services/workflow-data.service";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
-import { organizationPlanCapabilities$ } from "../services/org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
 import {
@@ -2086,8 +2085,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     "nested",
     apiStartTime,
   );
-  const orgPlanCapabilities = await get(organizationPlanCapabilities$);
-  signal.throwIfAborted();
   const result = await set(
     sendNormalEvent$,
     {
@@ -2096,7 +2093,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       orgId: auth.orgId,
       preloadedAgent: agent,
-      orgPlanCapabilities,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
       ...(workflow.officialDefinitionName === null

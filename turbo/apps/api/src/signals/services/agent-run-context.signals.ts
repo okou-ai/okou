@@ -1,4 +1,18 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { waitUntil } from "../context/wait-until";
+import {
+  createModelFacts,
+  createMemberModelBootstrap,
+  type OrgModelBootstrap,
+  type MemberModelBootstrap,
+  type RunOrgMetadata,
+} from "./model-bootstrap.service";
+import {
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { z } from "zod";
 import {
   pgInt8ToBigIntDecoder,
@@ -18,10 +32,7 @@ import {
   type ConnectorSourceResult,
 } from "./execution-connector-sources.service";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  createBootstrapAgent,
-  type BootstrapAgent,
-} from "./agent-data.service";
+import type { BootstrapAgent } from "./agent-data.service";
 
 import {
   createAgentCatalogIdentity,
@@ -92,31 +103,39 @@ export interface BootstrapEnvironment {
   readonly variables: readonly BootstrapVariable[];
 }
 
-export interface AgentBootstrap {
-  readonly memberMetadata: ExecutionMemberMetadata;
-  readonly connectorSelection: AgentConnectorSelection;
-  readonly permissionGrants: readonly ConnectorPermissionGrant[];
-  readonly workflows: readonly SelectedAgentWorkflow[];
-  readonly featureSwitchContext: BootstrapFeatureSwitchContext;
-  readonly agent: BootstrapAgent | null;
-  readonly disabledPaidToolIds: readonly string[];
-  readonly environment: BootstrapEnvironment;
-  readonly customConnectorDefinitions: readonly CustomConnectorExecutionDefinition[];
-  readonly catalog: ConnectorRuntimeSelection | null;
+/** The only cross-graph read-only signal interface; no state or commands. */
+export interface AgentRunContextSignals {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly agent$: Computed<Promise<BootstrapAgent | null>>;
+  readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
+  readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
+  readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
+  readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
+  readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
+  readonly permissionGrants$: Computed<
+    Promise<readonly ConnectorPermissionGrant[]>
+  >;
+  readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
+  readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
+  readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
+  readonly environment$: Computed<Promise<BootstrapEnvironment>>;
+  readonly customConnectorDefinitions$: Computed<
+    Promise<readonly CustomConnectorExecutionDefinition[]>
+  >;
+  readonly catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>;
+  readonly connectors$: Computed<Promise<BootstrapConnectorData>>;
+}
+
+export interface BootstrapConnectorData {
   readonly connectorAccounts: readonly BootstrapConnectorAccount[];
   readonly connectorSources: readonly ConnectorSourceResult[];
   readonly decryptedConnectorCredentials: ReadonlyMap<
     string,
     Awaited<ReturnType<typeof settle<string>>>
   >;
-}
-
-/** The original speculative Promise is transported without a settled fallback. */
-export interface PrefetchedAgentBootstrap {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-  readonly bootstrap: Promise<AgentBootstrap>;
 }
 
 function catalogMetadataSlugs(selection: AgentConnectorSelection) {
@@ -144,20 +163,89 @@ export interface BootstrapConnectorAccount extends ConnectorSourceRow {
 }
 
 /** Compose the authoritative read definitions once per execution identity. */
-export function createAgentBootstrap(
+export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
-): Computed<Promise<AgentBootstrap>> {
+): AgentRunContextSignals {
+  return createIdentityContext(userId, orgId, agentId);
+}
+
+/** Reuse by each group's authority key before wiring dependent computeds. */
+export function matchAgentRunContextSignals(
+  supplied: AgentRunContextSignals | undefined,
+  userId: string,
+  orgId: string,
+  agentId: string,
+): AgentRunContextSignals {
+  if (
+    supplied?.orgId === orgId &&
+    supplied.userId === userId &&
+    supplied.agentId === agentId
+  ) {
+    return supplied;
+  }
+  return createIdentityContext(userId, orgId, agentId, supplied);
+}
+
+function createIdentityContext(
+  userId: string,
+  orgId: string,
+  agentId: string,
+  supplied?: AgentRunContextSignals,
+): AgentRunContextSignals {
   const scope = { userId, orgId, agentId };
-  const agent$ = createBootstrapAgent(agentId);
+  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
+  const orgMetadata$ = sharedOrg?.orgMetadata$ ?? createRunOrgMetadata(orgId);
+  const plan$ =
+    sharedOrg?.plan$ ??
+    computed((get) => {
+      return loadOrgPlanCapabilities(get(db$), orgId);
+    });
+  const modelFacts$ =
+    sharedOrg?.modelFacts$ ??
+    computed(async (get) => {
+      const [plan, org] = await Promise.all([get(plan$), get(orgMetadata$)]);
+      return await get(createModelFacts(orgId, plan, org));
+    });
+  const memberModels$ =
+    sharedOrg?.userId === userId
+      ? sharedOrg.memberModels$
+      : createMemberModelBootstrap(orgId, userId);
+  const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
+    const [[row], org] = await Promise.all([
+      get(db$)
+        .select({
+          id: agents.id,
+          name: agents.name,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          displayName: agents.displayName,
+          description: agents.description,
+          sound: agents.sound,
+          modelProviderId: agents.modelProviderId,
+          selectedModel: agents.selectedModel,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1),
+      get(orgMetadata$),
+    ]);
+    return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
+  });
   const memberMetadata$ = createExecutionMemberMetadata(scope);
-  const connectorSelection$ = createAgentConnectorSelection(scope);
+  const {
+    connectorSelection$,
+    environmentSnapshot$,
+    customConnectorDefinitions$,
+    catalog$,
+    connectors$,
+  } = createConnectorContextGroups(userId, orgId, agentId);
   const permissionGrants$ = createConnectorPermissionGrants(scope);
   const workflows$ = createAgentWorkflowSelection(scope);
   const featureSwitchOverrides$ = userFeatureSwitchOverrides(orgId, userId);
   const disabledPaidTools$ = createAgentDisabledPaidTools(userId, orgId);
-  const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
   const featureSwitchContext$ = computed(
     async (get): Promise<BootstrapFeatureSwitchContext> => {
       const [member, overrides] = await Promise.all([
@@ -180,98 +268,54 @@ export function createAgentBootstrap(
     const snapshot = await get(environmentSnapshot$);
     return { variables: snapshot.variables };
   });
-  const customConnectorDefinitions$ = computed(async (get) => {
-    return (await get(connectorSelection$)).customConnectorDefinitions;
-  });
-  const connectorSnapshot$ = computed(async (get) => {
-    const [snapshot, definitions] = await Promise.all([
-      get(environmentSnapshot$),
-      get(customConnectorDefinitions$),
-    ]);
-    return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
-  });
-  const catalogIdentity$ = createAgentCatalogIdentity();
-  const catalogRequest$ = computed(async (get) => {
-    return bootstrapCatalogRequest(await get(connectorSelection$));
-  });
-  const catalogCapture$ = computed(async (get) => {
-    const requested = await get(catalogRequest$);
-    return requested
-      ? { requested, captured: await get(catalogIdentity$) }
-      : null;
-  });
-  const catalogProjection$ = computed(async (get) => {
-    const input = await get(catalogCapture$);
-    if (!input || input.captured.projection.kind !== "ready") {
-      return null;
-    }
-    const projection = input.captured.projection.projection;
-    const cached = takeCachedProjectedConnectors(
-      projection.identity,
-      requestedProjectionConnectorSlugs(input.requested),
-    );
-    const rows = await get(
-      createAgentCatalogProjectionRows(
-        projection.identity.projectionSetId,
-        cached.uncachedSlugs,
-      ),
-    );
-    const validated = validateConnectorCatalogRuntimeProjectionRows({
-      rows,
-      connectorSlugs: cached.uncachedSlugs,
-    });
-    const actualCount =
-      validated.kind === "ready" && validated.missingConnectorSlugs.length > 0
-        ? requiredProjectionCount(
-            (
-              await get(db$)
-                .select({ value: count() })
-                .from(connectorCatalogRuntimeProjections)
-                .where(
-                  eq(
-                    connectorCatalogRuntimeProjections.projectionSetId,
-                    projection.identity.projectionSetId,
-                  ),
-                )
-            )[0],
-          )
-        : undefined;
-    return { projection, cached: cached.cached, validated, actualCount };
-  });
-  const catalog$ = computed(
-    async (get): Promise<ConnectorRuntimeSelection | null> => {
-      const input = await get(catalogCapture$);
-      return input
-        ? await bootstrapCatalogSelection(input, await get(catalogProjection$))
-        : null;
-    },
-  );
-  const decryptedCredentials$ = computed(async (get) => {
-    const [snapshot, catalog] = await Promise.all([
-      get(connectorSnapshot$),
-      get(catalog$),
-    ]);
-    return await bootstrapDecryptedCredentials(snapshot, catalog);
-  });
-  return computed(async (get): Promise<AgentBootstrap> => {
-    return assembledBootstrap(
-      await Promise.all([
-        get(agent$),
-        get(memberMetadata$),
-        get(connectorSelection$),
-        get(permissionGrants$),
-        get(workflows$),
-        get(featureSwitchContext$),
-        get(disabledPaidTools$),
-        get(environment$),
-        get(customConnectorDefinitions$),
-        get(catalog$),
-        get(connectorSnapshot$),
-        get(decryptedCredentials$),
-      ]),
-    );
-  });
+  return {
+    userId,
+    orgId,
+    agentId,
+    agent$,
+    orgMetadata$,
+    plan$,
+    modelFacts$,
+    memberModels$,
+    memberMetadata$,
+    connectorSelection$,
+    permissionGrants$,
+    workflows$,
+    featureSwitches$: featureSwitchContext$,
+    disabledPaidTools$,
+    environment$,
+    customConnectorDefinitions$,
+    catalog$,
+    connectors$,
+  };
 }
+
+/** Trigger each group after enqueue; cached failures remain authoritative. */
+export const preloadAgentRunContext$ = command(
+  ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.agent$,
+      signals.orgMetadata$,
+      signals.plan$,
+      signals.modelFacts$,
+      signals.memberModels$,
+      signals.memberMetadata$,
+      signals.connectorSelection$,
+      signals.permissionGrants$,
+      signals.workflows$,
+      signals.featureSwitches$,
+      signals.disabledPaidTools$,
+      signals.environment$,
+      signals.customConnectorDefinitions$,
+      signals.catalog$,
+      signals.connectors$,
+    ];
+    for (const node of nodes) {
+      waitUntil(settle(get(node)));
+    }
+  },
+);
 
 function requiredProjectionCount(
   row: { readonly value: number } | undefined,
@@ -280,50 +324,6 @@ function requiredProjectionCount(
     throw new Error("Connector runtime projection count query returned no row");
   }
   return row.value;
-}
-
-function assembledBootstrap([
-  agent,
-  memberMetadata,
-  connectorSelection,
-  permissionGrants,
-  workflows,
-  featureSwitchContext,
-  disabledPaidTools,
-  environment,
-  customConnectorDefinitions,
-  catalog,
-  connectorSnapshot,
-  decryptedConnectorCredentials,
-]: readonly [
-  BootstrapAgent | null,
-  ExecutionMemberMetadata,
-  AgentConnectorSelection,
-  readonly ConnectorPermissionGrant[],
-  readonly SelectedAgentWorkflow[],
-  BootstrapFeatureSwitchContext,
-  readonly string[],
-  BootstrapEnvironment,
-  readonly CustomConnectorExecutionDefinition[],
-  ConnectorRuntimeSelection | null,
-  ReturnType<typeof bootstrapConnectorSnapshot>,
-  AgentBootstrap["decryptedConnectorCredentials"],
-]): AgentBootstrap {
-  return {
-    agent,
-    memberMetadata,
-    connectorSelection,
-    permissionGrants,
-    workflows,
-    featureSwitchContext,
-    disabledPaidToolIds: disabledPaidTools,
-    environment,
-    customConnectorDefinitions,
-    catalog,
-    connectorAccounts: connectorSnapshot.accounts,
-    connectorSources: connectorSnapshot.sources,
-    decryptedConnectorCredentials,
-  };
 }
 
 function bootstrapConnectorSnapshot(
@@ -764,4 +764,124 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
       )
       .groupBy(secrets.connectorId),
   );
+}
+
+function createRunOrgMetadata(orgId: string) {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select({
+        credits: orgMetadata.credits,
+        modelMode: orgMetadata.modelMode,
+        defaultAgentId: orgMetadata.defaultAgentId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    return row ?? null;
+  });
+}
+
+/** Connector groups share one account/environment statement and one catalog capture. */
+function createConnectorContextGroups(
+  userId: string,
+  orgId: string,
+  agentId: string,
+) {
+  const connectorSelection$ = createAgentConnectorSelection({
+    userId,
+    orgId,
+    agentId,
+  });
+  const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
+  const customConnectorDefinitions$ = computed(async (get) => {
+    return (await get(connectorSelection$)).customConnectorDefinitions;
+  });
+  const connectorSnapshot$ = computed(async (get) => {
+    const [snapshot, definitions] = await Promise.all([
+      get(environmentSnapshot$),
+      get(customConnectorDefinitions$),
+    ]);
+    return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
+  });
+  const catalogIdentity$ = createAgentCatalogIdentity();
+  const catalogRequest$ = computed(async (get) => {
+    return bootstrapCatalogRequest(await get(connectorSelection$));
+  });
+  const catalogCapture$ = computed(async (get) => {
+    const requested = await get(catalogRequest$);
+    return requested
+      ? { requested, captured: await get(catalogIdentity$) }
+      : null;
+  });
+  const catalogProjection$ = computed(async (get) => {
+    const input = await get(catalogCapture$);
+    if (!input || input.captured.projection.kind !== "ready") {
+      return null;
+    }
+    const projection = input.captured.projection.projection;
+    const cached = takeCachedProjectedConnectors(
+      projection.identity,
+      requestedProjectionConnectorSlugs(input.requested),
+    );
+    const rows = await get(
+      createAgentCatalogProjectionRows(
+        projection.identity.projectionSetId,
+        cached.uncachedSlugs,
+      ),
+    );
+    const validated = validateConnectorCatalogRuntimeProjectionRows({
+      rows,
+      connectorSlugs: cached.uncachedSlugs,
+    });
+    const actualCount =
+      validated.kind === "ready" && validated.missingConnectorSlugs.length > 0
+        ? requiredProjectionCount(
+            (
+              await get(db$)
+                .select({ value: count() })
+                .from(connectorCatalogRuntimeProjections)
+                .where(
+                  eq(
+                    connectorCatalogRuntimeProjections.projectionSetId,
+                    projection.identity.projectionSetId,
+                  ),
+                )
+            )[0],
+          )
+        : undefined;
+    return { projection, cached: cached.cached, validated, actualCount };
+  });
+  const catalog$ = computed(
+    async (get): Promise<ConnectorRuntimeSelection | null> => {
+      const input = await get(catalogCapture$);
+      return input
+        ? await bootstrapCatalogSelection(input, await get(catalogProjection$))
+        : null;
+    },
+  );
+  const decryptedCredentials$ = computed(async (get) => {
+    const [snapshot, catalog] = await Promise.all([
+      get(connectorSnapshot$),
+      get(catalog$),
+    ]);
+    return await bootstrapDecryptedCredentials(snapshot, catalog);
+  });
+  const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
+    const [snapshot, decryptedConnectorCredentials] = await Promise.all([
+      get(connectorSnapshot$),
+      get(decryptedCredentials$),
+    ]);
+    return {
+      connectorAccounts: snapshot.accounts,
+      connectorSources: snapshot.sources,
+      decryptedConnectorCredentials,
+    };
+  });
+  return {
+    connectorSelection$,
+    environmentSnapshot$,
+    customConnectorDefinitions$,
+    catalog$,
+    connectors$,
+  };
 }

@@ -97,7 +97,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_VIDEO_MODEL_COLUMNS_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *1287_drop_image_model_thread_columns.sql* ]]; then
       printf '%s\n' "${MOCK_IMAGE_MODEL_THREAD_COLUMNS_COMMIT-1313131313131313131313131313131313131313}"
-    elif [[ "$*" == *1314_drop_retired_video_entitlement.sql* ]]; then
+    elif [[ "$*" == *1315_drop_retired_video_entitlement.sql* ]]; then
       printf '%s\n' "${MOCK_VIDEO_ENTITLEMENT_COMMIT-1515151515151515151515151515151515151515}"
     elif [[ "$*" == *pi-api-first-turn-retired* ]]; then
       printf '%s\n' "${MOCK_PI_API_FIRST_TURN_COMMIT-9999999999999999999999999999999999999999}"

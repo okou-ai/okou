@@ -6,7 +6,7 @@ import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session"
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
@@ -61,69 +61,81 @@ function authorizationUrl(requestToken: string): string {
   )}`;
 }
 
-async function resolveChatThreadId(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<string | "run_not_found" | "unsupported_context"> {
-  if (!isUuid(args.runId)) {
-    return "run_not_found";
-  }
-  const [run] = await args.db
-    .select({ chatThreadId: agentRuns.chatThreadId })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.userId, args.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return "run_not_found";
-  }
-  return run.chatThreadId ?? "unsupported_context";
-}
-
-async function loadRequestByToken(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly requestToken: string;
-  readonly now: Date;
-}): Promise<
-  | {
-      readonly status: "found";
-      readonly request: BrowserAuthorizationRequestRow;
+const resolveChatThreadId$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | "run_not_found" | "unsupported_context"> => {
+    if (!isUuid(args.runId)) {
+      return "run_not_found";
     }
-  | { readonly status: "not_found" }
-  | { readonly status: "expired" }
-> {
-  const [request] = await args.db
-    .select()
-    .from(browserAuthorizationRequests)
-    .where(
-      and(
-        eq(
-          browserAuthorizationRequests.requestTokenHash,
-          hashSecret(args.requestToken),
+    const [run] = await get(db$)
+      .select({ chatThreadId: agentRuns.chatThreadId })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          isNotNull(agentRuns.triggerSource),
         ),
-        eq(browserAuthorizationRequests.orgId, args.orgId),
-        eq(browserAuthorizationRequests.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  if (!request) {
-    return { status: "not_found" };
-  }
-  if (request.expiresAt.getTime() <= args.now.getTime()) {
-    return { status: "expired" };
-  }
-  return { status: "found", request };
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return "run_not_found";
+    }
+    return run.chatThreadId ?? "unsupported_context";
+  },
+);
+
+const loadRequestByToken$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly status: "found";
+        readonly request: BrowserAuthorizationRequestRow;
+      }
+    | { readonly status: "not_found" }
+    | { readonly status: "expired" }
+  > => {
+    const [request] = await get(db$)
+      .select()
+      .from(browserAuthorizationRequests)
+      .where(
+        and(
+          eq(
+            browserAuthorizationRequests.requestTokenHash,
+            hashSecret(args.requestToken),
+          ),
+          eq(browserAuthorizationRequests.orgId, args.orgId),
+          eq(browserAuthorizationRequests.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!request) {
+      return { status: "not_found" };
+    }
+    if (request.expiresAt.getTime() <= args.now.getTime()) {
+      return { status: "expired" };
+    }
+    return { status: "found", request };
+  },
+);
 
 export const createBrowserAuthorizationRequest$ = command(
   async (
@@ -136,7 +148,7 @@ export const createBrowserAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<CreateBrowserAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    const chatThreadId = await resolveChatThreadId({ db, ...args });
+    const chatThreadId = await set(resolveChatThreadId$, args, signal);
     signal.throwIfAborted();
     if (chatThreadId === "run_not_found") {
       return { status: "run_not_found" };
@@ -172,7 +184,7 @@ export const createBrowserAuthorizationRequest$ = command(
 
 export const readBrowserAuthorizationRequest$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -180,18 +192,17 @@ export const readBrowserAuthorizationRequest$ = command(
     },
     signal: AbortSignal,
   ): Promise<ReadBrowserAuthorizationRequestResult> => {
-    const db = set(writeDb$);
-    const loaded = await loadRequestByToken({
-      db,
-      ...args,
-      now: nowDate(),
-    });
+    const loaded = await set(
+      loadRequestByToken$,
+      { ...args, now: nowDate() },
+      signal,
+    );
     signal.throwIfAborted();
     if (loaded.status !== "found") {
       return loaded;
     }
 
-    const [thread] = await db
+    const [thread] = await get(db$)
       .select({ cloudBrowserEnabled: chatThreads.cloudBrowserEnabled })
       .from(chatThreads)
       .where(
@@ -226,7 +237,7 @@ export const applyBrowserAuthorizationRequest$ = command(
   ): Promise<ApplyBrowserAuthorizationRequestResult> => {
     const db = set(writeDb$);
     const now = nowDate();
-    const loaded = await loadRequestByToken({ db, ...args, now });
+    const loaded = await set(loadRequestByToken$, { ...args, now }, signal);
     signal.throwIfAborted();
     if (loaded.status !== "found") {
       return loaded;

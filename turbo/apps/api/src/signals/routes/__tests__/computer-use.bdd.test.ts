@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { HttpResponse, http } from "msw";
 import type {
   TestComputerUseStateGetResponse,
   TestComputerUseStatePostResponse,
@@ -18,7 +20,11 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { teamsConnectRoutes } from "../teams-connect";
 import { computerUseRoutes } from "../computer-use";
 import { testComputerUseStateRoutes } from "../test-computer-use-state";
 import {
@@ -31,12 +37,23 @@ import {
   computerUseToken,
 } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { uniqueSlackUserId } from "./helpers/slack-public-install";
+import {
+  installTeamsForTest,
+  postTeamsActivityForTest,
+  removeTeamsForTest,
+  setupTeamsConnectTestEnv,
+  teamsConnectFixture,
+  teamsMessageActivityForTest,
+} from "./helpers/teams-connect";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
-import { createFixtureTracker } from "./helpers/route-test";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 /*
  * FILE-03 timing notes:
@@ -157,6 +174,55 @@ async function readComputerUseRunState(
   );
   expect(response.status).toBe(200);
   return await readJson<TestComputerUseStateGetResponse>(response);
+}
+
+async function claimCanonicalIntegrationRun(args: {
+  readonly actor: ApiTestUser;
+  readonly source: "slack" | "teams";
+  readonly prompt: string;
+  readonly runs: ReturnType<typeof createRunsApi>;
+  readonly runnerGroup: string;
+}) {
+  await flushWaitUntilForTest();
+  const chat = createChatFilesBddApi(context);
+  const lifecycle = await chat.requestThreadEvents(args.actor, {}, [200]);
+  if (lifecycle.status !== 200) {
+    throw new Error("Expected the integration actor's thread lifecycle");
+  }
+  const created = lifecycle.body.events.filter((event) => {
+    return event.kind === "created";
+  });
+  expect(created).toHaveLength(1);
+  const threadId = created[0]?.chatThreadId;
+  if (!threadId) {
+    throw new Error("Expected one integration-created chat thread");
+  }
+  const { events } = await chat.listThreadEvents(args.actor, threadId);
+  const launched = events.filter((event) => {
+    return event.eventType === "input.prompt" && event.runId !== undefined;
+  });
+  expect(launched).toHaveLength(1);
+  const input = launched[0];
+  if (!input || input.eventType !== "input.prompt" || !input.runId) {
+    throw new Error("Expected one launched integration input");
+  }
+  expect(input.userMessage?.parts).toContainEqual(
+    expect.objectContaining({ type: "source", kind: args.source }),
+  );
+  await args.runs.heartbeatRunner(args.runnerGroup);
+  const claim = await args.runs.claimRunnerJob(input.runId);
+  expect(claim.prompt).toContain(args.prompt);
+  const log = await createRunReadsApi(context).requestReadLogById(
+    args.actor,
+    input.runId,
+    [200],
+  );
+  expect(log.body.triggerSource).toBe(args.source);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Runner claim to issue an Okou token");
+  }
+  return { runId: input.runId, threadId, token };
 }
 
 function requestTokenFromUrl(authorizationUrl: string): string {
@@ -342,30 +408,42 @@ describe("FILE-03 desktop computer-use runtime", () => {
   });
 
   it("uses chat-thread authorization for a canonical Slack run", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({
-      actor,
-      triggerSource: "slack",
-      canonicalThread: true,
+    const actor = bdd.user();
+    const runs = createRunsApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
     });
-    if (!run.threadId) {
-      throw new Error("Expected canonical Slack run to use a chat thread");
-    }
+    const prompt = "Authorize this Slack thread to use my desktop";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: prompt,
+      ts: "2900.000100",
+      channel: `C_${randomUUID()}`,
+      channel_type: "channel",
+    });
+    const run = await claimCanonicalIntegrationRun({
+      actor,
+      source: "slack",
+      prompt,
+      runs,
+      runnerGroup,
+    });
 
     const host = await api.startComputerUseHost(actor, {
       hostName: "Canonical Slack Desktop",
     });
     mockClerkMembership(context, actor, "org:admin");
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
     const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
+      bearer: run.token,
     });
     expect(created.source).toBe("chat");
 
@@ -381,37 +459,108 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: host.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "slack",
-      computer_use_host_id: host.hostId,
-    });
+    await expect(
+      createChatFilesBddApi(context).readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
   });
 
   it("uses chat-thread authorization for a canonical Teams run", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({
-      actor,
-      triggerSource: "teams",
-      canonicalThread: true,
+    const fixture = teamsConnectFixture();
+    const actor = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
+    const runs = createRunsApi(context);
+    const runnerGroup = runs.configureRunnerGroup();
+    setupTeamsConnectTestEnv();
+    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "computer-use-teams-password");
+    const serviceUrl = fixture.serviceUrl.replace(/\/+$/u, "");
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/:tenantId/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: "computer-use-teams-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.post(`${serviceUrl}/v3/conversations/:id/activities`, () => {
+        return HttpResponse.json({ id: randomUUID() });
+      }),
+      http.post(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId`,
+        () => {
+          return HttpResponse.json({ id: randomUUID() });
+        },
+      ),
+      http.put(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId/reactions/:reaction`,
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+      http.delete(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId/reactions/:reaction`,
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+      http.get(
+        "https://graph.microsoft.com/v1.0/teams/:teamId/channels/:channelId/messages",
+        () => {
+          return HttpResponse.json({ value: [] });
+        },
+      ),
+    );
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    await installTeamsForTest(context.signal, fixture);
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      ).connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tenantId: fixture.teamsTenantId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          teamsUserDisplayName: "Ada Lovelace",
+          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      }),
+      [200],
+    );
+    const prompt = "Authorize this Teams thread to use my desktop";
+    const message = await postTeamsActivityForTest({
+      signal: context.signal,
+      activity: teamsMessageActivityForTest(fixture, {
+        text: `<at>Nova</at> ${prompt}`,
+        replyToId: null,
+      }),
     });
-    if (!run.threadId) {
-      throw new Error("Expected canonical Teams run to use a chat thread");
-    }
+    expect(message.status).toBe(200);
+    const run = await claimCanonicalIntegrationRun({
+      actor,
+      source: "teams",
+      prompt,
+      runs,
+      runnerGroup,
+    });
 
     const host = await api.startComputerUseHost(actor, {
       hostName: "Canonical Teams Desktop",
     });
     mockClerkMembership(context, actor, "org:admin");
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
     const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
+      bearer: run.token,
     });
     expect(created.source).toBe("chat");
 
@@ -426,10 +575,10 @@ describe("FILE-03 desktop computer-use runtime", () => {
       source: "chat",
       computerUseHostId: host.hostId,
     });
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "teams",
-      computer_use_host_id: host.hostId,
-    });
+    const chat = createChatFilesBddApi(context);
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
 
     const completed = await api.readComputerUseAuthorizationRequest(
       actor,
@@ -440,10 +589,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
     // Stopping an installation host leaves it offline but still bound.
     await api.stopComputerUseHost(host.hostToken);
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "teams",
-      computer_use_host_id: host.hostId,
-    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await removeTeamsForTest(context.signal, fixture);
   });
 
   it("chains host start, command claim, completion, audit, and host stop", async () => {

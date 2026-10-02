@@ -13,7 +13,7 @@ import { env } from "../../lib/env";
 import { safeJsonParse } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -217,7 +217,7 @@ const weatherRequest$ = command(
 
     const runId = runIdForUsage(args.auth);
     const creditsCharged = await set(
-      recordManagedUsage$,
+      recordSuccessfulManagedUsage$,
       {
         actor: {
           orgId: args.auth.orgId,

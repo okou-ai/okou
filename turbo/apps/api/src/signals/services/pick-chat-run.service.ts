@@ -15,15 +15,16 @@ import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
-  createOrgModelBootstrap,
-  type PrefetchedModelBootstrap,
-  type OrgModelBootstrap,
-} from "./model-bootstrap.service";
+  matchAgentRunContextSignals,
+  preloadAgentRunContext$,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeConcurrencySubscriptionPredicate,
   totalConcurrencyLimit,
@@ -43,8 +44,9 @@ export interface OrgPickCursor {
 /** Actual lease-write receipt, including this invocation's plain prefetch. */
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
-  readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
-  readonly prefetchedModels?: PrefetchedModelBootstrap;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly context?: AgentRunContextSignals;
 }
 
 /** Fixed chat thread lease; it is never renewed. */
@@ -57,7 +59,7 @@ export type PickResult =
   | { readonly kind: "none" };
 
 /** An independent observation, evaluated only when its owner first reads it. */
-function createOrgHasCapacity(orgId: string, models: OrgModelBootstrap) {
+function createOrgHasCapacity(orgId: string, plan: OrgPlanCapabilities | null) {
   const orgActiveRunCount$ = computed(async (get) => {
     const database = get(db$);
     const [row] = await database
@@ -78,9 +80,7 @@ function createOrgHasCapacity(orgId: string, models: OrgModelBootstrap) {
       .from(orgConcurrencySubscriptions)
       .where(activeConcurrencySubscriptionPredicate(orgId, at));
     const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(
-        models.capabilities?.baseConcurrencyLimit ?? 0,
-      ),
+      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
       paidSlots: subscriptions.reduce((total, row) => {
         return total + row.slots;
       }, 0),
@@ -99,7 +99,8 @@ function createOrgHasCapacity(orgId: string, models: OrgModelBootstrap) {
 
 function createCapturedClaimObjects(
   claim: LeasedThreadClaim,
-  models: OrgModelBootstrap,
+  context: AgentRunContextSignals,
+  plan: OrgPlanCapabilities | null,
 ) {
   const preparation = createThreadClaimRunObjects(
     {
@@ -107,23 +108,30 @@ function createCapturedClaimObjects(
       chatThreadId: claim.chatThreadId,
       claimId: claim.claimId,
     },
-    claim.prefetchedBootstrap,
-    claim.prefetchedModels,
-    models,
+    context,
+    claim.context === undefined
+      ? "not_provided"
+      : context === claim.context
+        ? "hit"
+        : "identity_mismatch",
   );
-  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, models);
+  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, plan);
   // This separate, predeclared graph is first evaluated after an org-full
   // release. Re-reading the initial memoized graph would lose a slot wakeup.
-  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId, models);
-  return { ...preparation, orgHasCapacity$, orgHasCapacityAfterRelease$ };
+  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId, plan);
+  return {
+    ...preparation,
+    context,
+    orgHasCapacity$,
+    orgHasCapacityAfterRelease$,
+  };
 }
 
 interface PickInput {
   readonly orgId: string;
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
-  readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
-  readonly prefetchedModels?: PrefetchedModelBootstrap;
+  readonly context?: AgentRunContextSignals;
 }
 
 export interface PickIteration {
@@ -152,11 +160,14 @@ function createPickObjects() {
         // Install the private receipt node synchronously, before its model
         // promise can yield. Concurrent receipt-list evaluations share it.
         graph = computed(async (read) => {
-          const models =
-            claim.prefetchedModels?.orgId === claim.orgId
-              ? await claim.prefetchedModels.org
-              : await read(createOrgModelBootstrap(claim.orgId));
-          return createCapturedClaimObjects(claim, models);
+          const context = matchAgentRunContextSignals(
+            claim.context,
+            claim.userId,
+            claim.orgId,
+            claim.agentId,
+          );
+          const plan = await read(context.plan$);
+          return createCapturedClaimObjects(claim, context, plan);
         });
         graphCache.set(claim, graph);
       }
@@ -223,7 +234,7 @@ function createPickObjects() {
 
   const claim$ = command(
     async ({ set }, input: PickInput, signal: AbortSignal) => {
-      const { orgId, prefetchedBootstrap, prefetchedModels } = input;
+      const { orgId, context } = input;
       let threadId = input.chatThreadId;
       let cursor = input.after ?? null;
       if (threadId === undefined) {
@@ -250,8 +261,10 @@ function createPickObjects() {
             claimId,
             claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
           })
+          .from(chatThreads)
           .where(
             and(
+              eq(chatThreads.id, queuedChatThreads.chatThreadId),
               eq(queuedChatThreads.orgId, orgId),
               eq(queuedChatThreads.chatThreadId, threadId),
               or(
@@ -269,18 +282,22 @@ function createPickObjects() {
           .returning({
             chatThreadId: queuedChatThreads.chatThreadId,
             queuedAt: queuedChatThreads.queuedAt,
+            userId: chatThreads.userId,
+            agentId: chatThreads.agentId,
           })
       )[0];
+      if (row?.agentId === null) {
+        throw new Error("A queued thread claim requires an Agent identity");
+      }
       const claim: LeasedThreadClaim | null = row
         ? Object.freeze({
             orgId,
             chatThreadId: row.chatThreadId,
             claimId,
             queuedAt: row.queuedAt,
-            ...(prefetchedBootstrap === undefined
-              ? {}
-              : { prefetchedBootstrap }),
-            ...(prefetchedModels === undefined ? {} : { prefetchedModels }),
+            userId: row.userId,
+            agentId: row.agentId,
+            ...(context === undefined ? {} : { context }),
           })
         : null;
       if (claim) {
@@ -381,6 +398,8 @@ function createPickObjects() {
         throw new Error("Successful queue claim has no captured run graph");
       }
       const claimed = await get(captured);
+      signal.throwIfAborted();
+      set(preloadAgentRunContext$, claimed.context, signal);
       signal.throwIfAborted();
       const [hasCapacity, hasInput] = await Promise.all([
         get(claimed.orgHasCapacity$),
