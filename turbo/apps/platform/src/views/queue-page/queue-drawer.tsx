@@ -58,7 +58,7 @@ const UPGRADE_PATHS = {
   free: {
     targetTier: "pro",
     targetLabel: "Pro",
-    concurrentRuns: 2,
+    concurrentRuns: 3,
     monthlyPriceUsd: 20,
   },
   pro: {
