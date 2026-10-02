@@ -3419,6 +3419,17 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row ? { ...picked, ...row } : null;
   });
+  // Per-claim dispatch timing collectors, created once per graph like the run
+  // ids; commands record into them in their own order.
+  const claimRunTiming$ = computed((get): ClaimRunTiming => {
+    return {
+      run: new ApiDispatchTimingCollector(),
+      phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
+    };
+  });
+  const promptTiming$ = computed(() => {
+    return new ChatCallbackPreCreateTimingCollector();
+  });
   // Generated once per claim graph; read after authorization admits the head.
   const runIds$ = computed(() => {
     return { runId: randomUUID(), newSessionId: randomUUID() };
@@ -4197,22 +4208,26 @@ export function createThreadClaimRunObjects(
     },
   );
   const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
-  const promptInternalInputInternalInput$ =
-    state<QueuedPromptGraphInput | null>(null);
   const promptInternalModelInternalModel$ =
     state<QueuedMessageModelRouteResolution | null>(null);
   const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
     readonly material: QueuedLaunchMaterial | null;
   } | null>(null);
-  const promptInputInput$ = computed((get) => {
-    const input = get(promptInternalInputInternalInput$);
-    if (!input) {
-      throw new Error("Prompt preparation has no selected input");
-    }
-    return input;
-  });
+  const promptInputInput$ = computed(
+    async (get): Promise<QueuedPromptGraphInput> => {
+      const head = await get(head$);
+      if (!head) {
+        throw new Error("Prompt preparation has no selected head");
+      }
+      return {
+        head,
+        timing: get(promptTiming$),
+        runTiming: get(claimRunTiming$).run,
+      };
+    },
+  );
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const { head } = await get(promptInputInput$);
     const picked = await get(pickedEvent$);
     // The picked head already excludes consumed and revoked inputs.
     const event =
@@ -4306,7 +4321,7 @@ export function createThreadClaimRunObjects(
   );
   const promptAgentAgent$ = computed(
     async (get): Promise<QueuedPromptAgent | null> => {
-      const { head } = get(promptInputInput$);
+      const { head } = await get(promptInputInput$);
       const db = get(db$);
       if (
         ![
@@ -4350,7 +4365,7 @@ export function createThreadClaimRunObjects(
   );
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { head, timing } = get(promptInputInput$);
+      const { head, timing } = await get(promptInputInput$);
       const db = get(db$);
       const [queuedMessage, agent] = await Promise.all([
         get(promptQueuedMessageQueuedMessage$),
@@ -4372,7 +4387,7 @@ export function createThreadClaimRunObjects(
   );
   const promptFeaturesFeatures$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const { head } = get(promptInputInput$);
+      const { head } = await get(promptInputInput$);
       const db = get(db$);
       const rows = await db
         .select({
@@ -5525,7 +5540,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const promptHostHost$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const { head } = await get(promptInputInput$);
     const db = get(db$);
     const [host] = await db
       .select({
@@ -5550,7 +5565,7 @@ export function createThreadClaimRunObjects(
     return host ?? null;
   });
   const promptCaptureCapture$ = computed(async (get) => {
-    const { head } = get(promptInputInput$);
+    const { head } = await get(promptInputInput$);
     const db = get(db$);
     const [row] = await db
       .select({ id: chatNetworkBodyCaptures.chatEventId })
@@ -5785,54 +5800,51 @@ export function createThreadClaimRunObjects(
         };
       },
     );
-  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
-  const initializeQueuedPrompt$ = command(
-    async (
-      { get, set },
-      head: ChatQueueHeadContext,
-      runTiming: ApiDispatchTimingCollector,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
-      const timing = new ChatCallbackPreCreateTimingCollector();
-      set(promptInternalInputInternalInput$, {
-        head,
-        timing,
-        runTiming,
-      });
-      set(promptInternalModelInternalModel$, null);
-      set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
-      set(internalEarlyAssembly$, null);
+  const internalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
       const selected = await settle(
         Promise.all([
           get(promptQueuedMessageQueuedMessage$),
           get(promptAgentAgent$),
         ]),
-        signal,
       );
-      signal.throwIfAborted();
       if (!selected.ok) {
-        set(
-          internalEarlyAssembly$,
-          queuedPromptPreparationRejection(selected.error, head),
-        );
-        return false;
+        return queuedPromptPreparationRejection(selected.error, head);
       }
       const [queued, agent] = selected.value;
       if (queued?.id !== head.id) {
-        set(internalEarlyAssembly$, { kind: "not-ready" });
+        return { kind: "not-ready" };
+      }
+      return agent ? null : missingQueuedAgentRejection(head);
+    },
+  );
+  const initializeQueuedPrompt$ = command(
+    async (
+      { get },
+      head: ChatQueueHeadContext,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const early = await get(internalEarlyAssembly$);
+      signal.throwIfAborted();
+      if (early) {
         return false;
       }
-      timing.recordElapsed({
+      const queued = await get(promptQueuedMessageQueuedMessage$);
+      signal.throwIfAborted();
+      if (!queued) {
+        throw new Error("Prepared prompt has no selected queue input");
+      }
+      get(promptTiming$).recordElapsed({
         actionType:
           "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
         spanKind: "nested",
         startedAt: queued.createdAt.getTime(),
         finishedAt: head.apiStartTime,
       });
-      if (!agent) {
-        set(internalEarlyAssembly$, missingQueuedAgentRejection(head));
-        return false;
-      }
       return true;
     },
   );
@@ -5858,14 +5870,11 @@ export function createThreadClaimRunObjects(
   );
   const promptAssembleQueuedPromptRunAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(internalEarlyAssembly$);
+      const early = await get(internalEarlyAssembly$);
       if (early) {
         return early;
       }
-      const input = get(promptInternalInputInternalInput$);
-      if (!input) {
-        throw new Error("Prompt preparation has no selected input");
-      }
+      const input = await get(promptInputInput$);
       const { head, timing } = input;
       const prepared = await settle(
         timing.measure(
@@ -5914,17 +5923,17 @@ export function createThreadClaimRunObjects(
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        (await get(promptInputInput$)).head,
       );
       return false;
     }
     return !("error" in templates);
   });
   const promptExecutionSelectionIdentityInput$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = get(promptInputInput$);
+    const { head, runTiming: timing } = await get(promptInputInput$);
     const db = get(db$);
     const args = await get(promptArgsArgs$);
     return {
@@ -6005,7 +6014,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const promptExecutionResourcesThreadSession$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(promptSessionSession$)) ?? undefined;
@@ -6016,14 +6025,14 @@ export function createThreadClaimRunObjects(
   });
   const promptExecutionResourcesFeatureSwitchContext$ = computed(
     async (get) => {
-      return get(internalEarlyAssembly$)
+      return (await get(internalEarlyAssembly$))
         ? undefined
         : await get(promptFeaturesFeatures$);
     },
   );
   const promptExecutionResourcesMemberAccountSnapshot$ = computed(
     async (get) => {
-      if (get(internalEarlyAssembly$)) {
+      if (await get(internalEarlyAssembly$)) {
         return null;
       }
       const model = await get(promptModelModel$);
@@ -6031,21 +6040,21 @@ export function createThreadClaimRunObjects(
     },
   );
   const availableMaterial$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
     const material = await settle(get(promptMaterialMaterial$));
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        get(promptInputInput$).head,
+        (await get(promptInputInput$)).head,
       );
       return null;
     }
     return material.value;
   });
   const promptExecutionResourcesCallbackInputs$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     const [args, material] = await Promise.all([
@@ -6066,7 +6075,7 @@ export function createThreadClaimRunObjects(
     return (await get(availableMaterial$))?.connectorSourceId;
   });
   const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return {};
     }
     const templates = await get(promptTemplatesTemplates$);
@@ -7254,19 +7263,13 @@ export function createThreadClaimRunObjects(
     automationLaunchEffectsResolveAutomationModel$;
   const workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$ =
     automationLaunchEffectsRecordQueuedWorkflowReward$;
-  const workflowAutomationLaunchReadGraphInternalTiming$ =
-    state<ApiDispatchTimingCollector | null>(null);
   const workflowAutomationLaunchReadGraphInternalModel$ =
     state<ModelContext | null>(null);
   const workflowAutomationLaunchReadGraphInternalAssembly$ = state<
     AssembledWorkflowAutomationRun | RunFailure | null
   >(null);
   const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
-    const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
-    if (!timing) {
-      throw new Error("Automation timing is missing its selected input");
-    }
-    return timing;
+    return get(claimRunTiming$).run;
   });
   const workflowAutomationLaunchReadGraphModel$ = computed((get) => {
     const model = get(workflowAutomationLaunchReadGraphInternalModel$);
@@ -7339,7 +7342,6 @@ export function createThreadClaimRunObjects(
     workflowAutomationLaunchReadGraphResolveAutomationModel$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
-  const internalTiming$ = workflowAutomationLaunchReadGraphInternalTiming$;
   const workflowAutomationLaunchInternalModel$ =
     workflowAutomationLaunchReadGraphInternalModel$;
   const internalAssembly$ = workflowAutomationLaunchReadGraphInternalAssembly$;
@@ -7483,10 +7485,8 @@ export function createThreadClaimRunObjects(
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
-      set(
-        internalTiming$,
-        workflowAutomationTiming(runTiming, head.apiStartTime),
-      );
+      // Records the entrypoint gap on the claim's run timing.
+      workflowAutomationTiming(runTiming, head.apiStartTime);
       const input = await get(automationExecutionInput$);
       signal.throwIfAborted();
       if (!input) {
@@ -12119,7 +12119,7 @@ export function createThreadClaimRunObjects(
       const resolvePromptInputs =
         head.contextType === "automation"
           ? await set(initializeAutomationExecution$, head, timing.run, signal)
-          : await set(initializeQueuedPrompt$, head, timing.run, signal);
+          : await set(initializeQueuedPrompt$, head, signal);
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
         authorizeClaimIdentity$,
@@ -12721,10 +12721,7 @@ export function createThreadClaimRunObjects(
       if (!event) {
         return null;
       }
-      const timing: ClaimRunTiming = {
-        run: new ApiDispatchTimingCollector(),
-        phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
-      };
+      const timing = get(claimRunTiming$);
       const settled = await settle(
         (async (): Promise<PendingClaimRun | null> => {
           const context = await set(prepareRunContext$, timing, signal);
