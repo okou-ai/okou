@@ -72,6 +72,8 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_MODEL_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1313131313131313131313131313131313131313" ]; then
       [ "${MOCK_IMAGE_MODEL_THREAD_COLUMNS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1515151515151515151515151515151515151515" ]; then
+      [ "${MOCK_VIDEO_ENTITLEMENT_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -95,6 +97,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_VIDEO_MODEL_COLUMNS_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *1287_drop_image_model_thread_columns.sql* ]]; then
       printf '%s\n' "${MOCK_IMAGE_MODEL_THREAD_COLUMNS_COMMIT-1313131313131313131313131313131313131313}"
+    elif [[ "$*" == *1314_drop_retired_video_entitlement.sql* ]]; then
+      printf '%s\n' "${MOCK_VIDEO_ENTITLEMENT_COMMIT-1515151515151515151515151515151515151515}"
     elif [[ "$*" == *pi-api-first-turn-retired* ]]; then
       printf '%s\n' "${MOCK_PI_API_FIRST_TURN_COMMIT-9999999999999999999999999999999999999999}"
     elif [[ "$*" == *chat-event-v8* ]]; then
@@ -219,6 +223,7 @@ grep -Fxq "git merge-base --is-ancestor 9999999999999999999999999999999999999999
 grep -Fxq "git merge-base --is-ancestor 1212121212121212121212121212121212121212 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired integration agent table drop floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video model column drop floor"
 grep -Fxq "git merge-base --is-ancestor 1313131313131313131313131313131313131313 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the image model thread column drop floor"
+grep -Fxq "git merge-base --is-ancestor 1515151515151515151515151515151515151515 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video entitlement column drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -366,6 +371,25 @@ assert_failure "Rollback target predates the image model thread column drop" \
 [ ! -s "${tmp_dir}/image-model-thread-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "image model thread column drop floor must fail before artifact or host access"
+fi
+
+# This is the current rollback safety boundary, not retired-feature absence.
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged video entitlement column drop" \
+    run_resolver "${tmp_dir}/video-entitlement-history.output" "MOCK_VIDEO_ENTITLEMENT_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/video-entitlement-history.output" ] || fail "invalid video entitlement history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid video entitlement history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video entitlement column drop" \
+  run_resolver "${tmp_dir}/video-entitlement-floor.output" MOCK_VIDEO_ENTITLEMENT_FLOOR_VALID=0
+grep -Fq '1515151515151515151515151515151515151515' "${tmp_dir}/failure.err" || fail "video entitlement rejection must identify the canonical drop commit"
+[ ! -s "${tmp_dir}/video-entitlement-floor.output" ] || fail "incompatible entitlement API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "video entitlement floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do
