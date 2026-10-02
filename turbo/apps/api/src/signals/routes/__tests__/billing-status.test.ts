@@ -134,7 +134,6 @@ describe("GET /api/billing/status", () => {
     expect(response.body.concurrencyLimit).toBe(2);
     expect(response.body.supportByok).toBeTruthy();
     expect(response.body.restrictedBuiltInModels).toBeTruthy();
-    expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(100_000);
     expect(response.body.onboardingPaymentPending).toBeFalsy();
     expect(response.body.hasSubscription).toBeFalsy();
@@ -477,7 +476,6 @@ describe("GET /api/billing/status", () => {
       autoRechargeAllowed: false,
       supportByok: false,
       restrictedBuiltInModels: false,
-      videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: true,
     });
     mocks.clerk.session(userId, orgId);
@@ -499,7 +497,6 @@ describe("GET /api/billing/status", () => {
     expect(response.body.autoRechargeAllowed).toBeFalsy();
     expect(response.body.supportByok).toBeFalsy();
     expect(response.body.restrictedBuiltInModels).toBeFalsy();
-    expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
     expect(response.body.concurrencyLimit).toBe(3);
     expect(response.body.concurrencyUnitAmountCents).toBe(4200);

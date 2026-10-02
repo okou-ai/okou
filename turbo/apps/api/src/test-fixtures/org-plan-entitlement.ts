@@ -24,7 +24,6 @@ interface OrgPlanEntitlementFixtureState {
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
   readonly audioDailyRateLimit: number;
@@ -47,7 +46,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   readonly autoRechargeAllowed?: boolean;
   readonly supportByok?: boolean;
   readonly restrictedBuiltInModels?: boolean;
-  readonly videoGenerationAllowed?: boolean;
   readonly workflowWebhookAutomationAllowed?: boolean;
   readonly audioLifetimeLimit?: number | null;
   readonly audioDailyRateLimit?: number;
@@ -66,7 +64,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     autoRechargeAllowed: values.autoRechargeAllowed,
     supportByok: values.supportByok,
     restrictedBuiltInModels: values.restrictedBuiltInModels,
-    videoGenerationAllowed: values.videoGenerationAllowed,
     workflowWebhookTriggerAllowed: values.workflowWebhookAutomationAllowed,
     audioLifetimeLimit: values.audioLifetimeLimit,
     audioDailyRateLimit: values.audioDailyRateLimit,
@@ -109,9 +106,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
         ...(row.restrictedBuiltInModels === undefined
           ? {}
           : { restrictedBuiltInModels: row.restrictedBuiltInModels }),
-        ...(row.videoGenerationAllowed === undefined
-          ? {}
-          : { videoGenerationAllowed: row.videoGenerationAllowed }),
         ...(row.workflowWebhookTriggerAllowed === undefined
           ? {}
           : {
@@ -148,7 +142,6 @@ export async function readOrgPlanEntitlementFixture(
       autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
       supportByok: orgPlanEntitlements.supportByok,
       restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-      videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
       workflowWebhookAutomationAllowed:
         orgPlanEntitlements.workflowWebhookTriggerAllowed,
       audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,

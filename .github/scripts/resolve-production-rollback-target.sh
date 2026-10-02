@@ -56,6 +56,7 @@ readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
+readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1314_drop_retired_video_entitlement.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -241,6 +242,17 @@ if [[ ! "$image_model_thread_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$image_model_thread_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the image model thread column drop: ${image_model_thread_columns_drop_commit}."
+fi
+
+# Migration 1314 drops the retired video entitlement. Earlier APIs still name
+# it in entitlement reads/writes, model bootstrap and reward wallet creation.
+video_entitlement_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$VIDEO_ENTITLEMENT_DROP_PATH" | sed -n '1p')
+if [[ ! "$video_entitlement_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged video entitlement column drop on main."
+fi
+if ! git merge-base --is-ancestor "$video_entitlement_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the video entitlement column drop: ${video_entitlement_drop_commit}."
 fi
 
 # Release 7 stopped writing piLaunchConfig.apiFirstTurn. Its Runners, Guests

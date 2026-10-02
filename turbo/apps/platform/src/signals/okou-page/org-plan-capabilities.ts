@@ -11,7 +11,6 @@ export interface OrgPlanCapabilities {
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
 }
 
@@ -26,7 +25,6 @@ export function orgPlanCapabilitiesFromBilling(
     autoRechargeAllowed: billing.autoRechargeAllowed,
     supportByok: billing.supportByok,
     restrictedBuiltInModels: billing.restrictedBuiltInModels,
-    videoGenerationAllowed: billing.videoGenerationAllowed,
     workflowWebhookAutomationAllowed: billing.workflowWebhookAutomationAllowed,
   };
 }

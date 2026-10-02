@@ -53,7 +53,6 @@ export function createOrgModelBootstrap(
         autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
         supportByok: orgPlanEntitlements.supportByok,
         restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-        videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
         workflowWebhookAutomationAllowed:
           orgPlanEntitlements.workflowWebhookTriggerAllowed,
         audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,

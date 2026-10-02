@@ -24,6 +24,47 @@
   deployment configuration. Production release and provider-secret deletion
   are separate operations, not performed by this source change.
 
+## Retired video entitlement contraction
+
+Video generation admission was removed in #37242. The remaining
+`video_generation_allowed` column is only propagated through entitlement
+snapshots, model bootstrap, pending-credit reads and Billing status; no current
+product action consumes it. This cleanup removes that propagation, the Billing
+response field and the shared Drizzle declaration. Generated migration
+`1314_drop_retired_video_entitlement` drops only that column. Historical usage,
+credit records, accepted artifacts and shipped migrations remain unchanged.
+
+**Release gate (not satisfied by this PR):** migrations run before API promotion.
+The outgoing API still selects and writes this column, including bare Drizzle
+INSERT/SELECT/RETURNING, so ordinary overlapping deployment produces `42703`
+errors for Billing, model admission and entitlement/reward writes until it
+drains. Do not release this contraction under the assumption that retiring the
+video endpoints also retired these queries. Before production deployment, the
+owner must approve a coordinated no-old-writer rollout or explicitly accept the
+bounded interruption; otherwise split out a preparatory code release and defer
+physical contraction. This PR does not approve either release action.
+
+New API/new App and CLI use the reduced capability shape. New App/old API works:
+the removed response property is surplus data. The outgoing production App and
+CLI do not enable Billing response validation; their remaining product actions
+never read this property, so its omission does not require a new Web build floor.
+App tests do validate responses, as do callers explicitly opting into validation:
+an external client pinned to the old required-field schema must update. Sandbox
+CLI packages are run-captured; this change does not rewrite an existing Run's
+package or payload. This is source-level compatibility evidence, not deployed
+mixed-client verification.
+
+The rollback resolver uses the canonical main commit introducing migration 1314
+as the API floor. Pre-cleanup APIs are not compatible with the contracted schema.
+Rollback promotes artifacts, not database columns: recovery below this floor
+requires a reviewed forward restoration migration before the old API serves.
+No production deployment, Web-floor update or provider action is part of this PR.
+
+Historical SQL fixtures and the pro-suspend transition validator retain the
+field because they replay pre-retirement migrations, not current capability
+behavior. Old migration snapshots remain immutable; the new Drizzle snapshot
+contains the contracted schema.
+
 ## MCP Web-parity protocol simplification
 
 The owner explicitly approved removal of the MCP-specific chat protocol in

@@ -17,7 +17,6 @@ export interface OrgPlanCapabilities {
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-  readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
   readonly audioDailyRateLimit: number;
@@ -34,7 +33,6 @@ export const ORG_PLAN_CAPABILITY_SELECTION = {
   autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
   supportByok: orgPlanEntitlements.supportByok,
   restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-  videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
   workflowWebhookAutomationAllowed:
     orgPlanEntitlements.workflowWebhookTriggerAllowed,
   audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
