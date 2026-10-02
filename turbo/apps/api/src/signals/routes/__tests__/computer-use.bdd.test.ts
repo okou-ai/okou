@@ -14,11 +14,16 @@ import {
   computerUsePluginCapability,
   computerUsePluginToolCapability,
 } from "@okouai/api-contracts/contracts/computer-use-plugins";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import {
+  clearMockNow,
+  mockNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -234,6 +239,56 @@ function requestTokenFromUrl(authorizationUrl: string): string {
   return decodeURIComponent(url.pathname.slice(prefix.length));
 }
 
+async function createAuthorizationScenario(actor: ApiTestUser) {
+  const runs = createRunsApi(context);
+  const chat = createChatFilesBddApi(context);
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor);
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Computer Use authorization boundary",
+    visibility: "private",
+  });
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Authorize this thread to use my desktop",
+  });
+  onTestFinished(async () => {
+    await runs.requestCancelRun(actor, run.runId, [200]);
+  });
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Runner claim to issue an Okou token");
+  }
+  mockClerkMembership(context, actor, "org:admin");
+  const created = await api.createComputerUseAuthorizationRequest({
+    bearer: token,
+  });
+  return {
+    chat,
+    run,
+    created,
+    requestToken: requestTokenFromUrl(created.authorizationUrl),
+  };
+}
+
+async function readAuthorizationThreadLifecycle(actor: ApiTestUser) {
+  const response = await createChatFilesBddApi(context).requestThreadEvents(
+    actor,
+    {},
+    [200],
+  );
+  if (response.status !== 200) {
+    throw new Error("Expected the actor's thread lifecycle");
+  }
+  return response.body;
+}
+
 describe("FILE-03 desktop computer-use runtime", () => {
   it("creates a delegated authorization link and applies the selected host to the chat thread", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -313,6 +368,239 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
     expect(completed.completedAt).not.toBeNull();
     expect(completed.computerUseHostId).toBe(host.hostId);
+  });
+
+  it.each(["another user in the same org", "the same user in another org"])(
+    "denies authorization tokens to %s without changing their owner's state",
+    async (identity) => {
+      await withMockNowForTest(now(), async () => {
+        const actor = bdd.user();
+        const peer =
+          identity === "another user in the same org"
+            ? bdd.user({ orgId: requireOrg(actor) })
+            : bdd.user({ userId: actor.userId, orgId: `org_${randomUUID()}` });
+        const { chat, run, requestToken } =
+          await createAuthorizationScenario(actor);
+        const host = await api.startComputerUseHost(actor);
+        const requestBefore = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        mockClerkMembership(context, peer, "org:admin");
+        const deniedRead = await api.requestReadComputerUseAuthorizationRequest(
+          peer,
+          requestToken,
+          [404],
+        );
+        expectApiError(deniedRead.body);
+        expect(deniedRead.body.error.message).toBe(
+          "Computer Use authorization request not found",
+        );
+        const deniedApply =
+          await api.requestApplyComputerUseAuthorizationRequest(
+            peer,
+            requestToken,
+            host.hostId,
+            [404],
+          );
+        expectApiError(deniedApply.body);
+        expect(deniedApply.body.error.message).toBe(
+          "Computer Use authorization request not found",
+        );
+        mockClerkMembership(context, actor, "org:admin");
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toStrictEqual(requestBefore);
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it.each(["another user in the same org", "the same user in another org"])(
+    "rejects an online host owned by %s without completing authorization",
+    async (identity) => {
+      await withMockNowForTest(now(), async () => {
+        const actor = bdd.user();
+        const peer =
+          identity === "another user in the same org"
+            ? bdd.user({ orgId: requireOrg(actor) })
+            : bdd.user({ userId: actor.userId, orgId: `org_${randomUUID()}` });
+        const { chat, run, requestToken } =
+          await createAuthorizationScenario(actor);
+        const foreignHost = await api.startComputerUseHost(peer);
+        const requestBefore = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(requestBefore).toMatchObject({
+          completedAt: null,
+          computerUseHostId: null,
+          hosts: [],
+        });
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        const denied = await api.requestApplyComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+          foreignHost.hostId,
+          [404],
+        );
+        expectApiError(denied.body);
+        expect(denied.body.error.message).toBe("Computer-use host not found");
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toStrictEqual(requestBefore);
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it.each([
+    { state: "pending", completeBeforeExpiry: false },
+    { state: "completed", completeBeforeExpiry: true },
+  ])(
+    "expires a $state authorization at the inclusive one-hour boundary",
+    async ({ completeBeforeExpiry }) => {
+      const base = now();
+      await withMockNowForTest(base, async () => {
+        const actor = bdd.user();
+        const { chat, run, created, requestToken } =
+          await createAuthorizationScenario(actor);
+        const host = await api.startComputerUseHost(actor);
+        const expiresAt = base + 60 * 60 * 1000;
+        expect(created.expiresAt).toBe(new Date(expiresAt).toISOString());
+        mockNow(expiresAt - 1);
+        await api.heartbeatComputerUseHost(host.hostToken);
+        const readable = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(readable).toMatchObject({
+          completedAt: null,
+          computerUseHostId: null,
+          hosts: [expect.objectContaining({ id: host.hostId })],
+        });
+        if (completeBeforeExpiry) {
+          await expect(
+            api.applyComputerUseAuthorizationRequest(
+              actor,
+              requestToken,
+              host.hostId,
+            ),
+          ).resolves.toStrictEqual({
+            ok: true,
+            source: "chat",
+            computerUseHostId: host.hostId,
+          });
+          await expect(
+            api.readComputerUseAuthorizationRequest(actor, requestToken),
+          ).resolves.toMatchObject({
+            completedAt: new Date(expiresAt - 1).toISOString(),
+            computerUseHostId: host.hostId,
+          });
+        }
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        mockNow(expiresAt);
+        const expiredRead =
+          await api.requestReadComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            [410],
+          );
+        expectApiError(expiredRead.body);
+        expect(expiredRead.body.error.code).toBe("GONE");
+        const expiredApply =
+          await api.requestApplyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+            [410],
+          );
+        expectApiError(expiredApply.body);
+        expect(expiredApply.body.error.code).toBe("GONE");
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it("accepts repeat authorization with updated completion and distinct ordered events", async () => {
+    const base = now();
+    await withMockNowForTest(base, async () => {
+      const actor = bdd.user();
+      const { chat, run, created, requestToken } =
+        await createAuthorizationScenario(actor);
+      const host = await api.startComputerUseHost(actor);
+      for (const offset of [1000, 2000]) {
+        mockNow(base + offset);
+        await expect(
+          api.applyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+          ),
+        ).resolves.toStrictEqual({
+          ok: true,
+          source: "chat",
+          computerUseHostId: host.hostId,
+        });
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toMatchObject({
+          expiresAt: created.expiresAt,
+          completedAt: new Date(base + offset).toISOString(),
+          computerUseHostId: host.hostId,
+        });
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toMatchObject({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+        });
+      }
+      const lifecycle = await readAuthorizationThreadLifecycle(actor);
+      const appliedEvents = lifecycle.events.filter((event) => {
+        return (
+          event.kind === "computer_use_host_updated" &&
+          event.chatThreadId === run.threadId
+        );
+      });
+      expect(appliedEvents).toStrictEqual([
+        expect.objectContaining({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+          createdAt: new Date(base + 1000).toISOString(),
+        }),
+        expect.objectContaining({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+          createdAt: new Date(base + 2000).toISOString(),
+        }),
+      ]);
+      const [first, second] = appliedEvents;
+      if (!first || !second) {
+        throw new Error("Expected both authorization events");
+      }
+      expect(second.seqId).toBeGreaterThan(first.seqId);
+      expect(second.id).not.toBe(first.id);
+    });
   });
 
   it("only exposes online hosts for delegated authorization requests", async () => {

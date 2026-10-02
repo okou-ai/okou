@@ -18,7 +18,7 @@ import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
@@ -100,320 +100,404 @@ function authorizationUrl(requestToken: string): string {
   )}`;
 }
 
-async function resolveRequestScope(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId: string;
-}): Promise<
-  AuthorizationRequestScope | "run_not_found" | "unsupported_context"
-> {
-  if (!isUuid(args.runId)) {
-    return "run_not_found";
-  }
+const resolveRequestScope$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    AuthorizationRequestScope | "run_not_found" | "unsupported_context"
+  > => {
+    if (!isUuid(args.runId)) {
+      return "run_not_found";
+    }
 
-  const [run] = await args.db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.userId, args.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-
-  if (!run) {
-    return "run_not_found";
-  }
-
-  if (run.chatThreadId) {
-    return { source: "chat", chatThreadId: run.chatThreadId };
-  }
-
-  return "unsupported_context";
-}
-
-async function loadRequestByToken(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly requestToken: string;
-  readonly now: Date;
-}): Promise<
-  | { readonly status: "found"; readonly request: AuthorizationRequestRow }
-  | { readonly status: "not_found" }
-  | { readonly status: "expired" }
-> {
-  const [request] = await args.db
-    .select()
-    .from(computerUseAuthorizationRequests)
-    .where(
-      and(
-        eq(
-          computerUseAuthorizationRequests.requestTokenHash,
-          hashSecret(args.requestToken),
-        ),
-        eq(computerUseAuthorizationRequests.orgId, args.orgId),
-        eq(computerUseAuthorizationRequests.userId, args.userId),
-      ),
-    )
-    .limit(1);
-
-  if (!request) {
-    return { status: "not_found" };
-  }
-  if (request.expiresAt.getTime() <= args.now.getTime()) {
-    return { status: "expired" };
-  }
-  return { status: "found", request };
-}
-
-async function onlineHostExists(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly hostId: string;
-  readonly now: Date;
-}): Promise<boolean> {
-  const [host] = await args.db
-    .select({
-      lastSeenAt: computerUseHosts.lastSeenAt,
-      revokedAt: computerUseHosts.revokedAt,
-      status: computerUseHosts.status,
-    })
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.id, args.hostId),
-        eq(computerUseHosts.orgId, args.orgId),
-        eq(computerUseHosts.userId, args.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .limit(1);
-  return host !== undefined && computerUseHostIsOnline(host, args.now);
-}
-
-async function loadTeamsChatThread(args: {
-  readonly db: Pick<Db, "select">;
-  readonly request: AuthorizationRequestRow;
-  readonly userId: string;
-}) {
-  const connectionId = args.request.teamsConnectionId;
-  const conversationId = args.request.teamsConversationId;
-  const threadId = args.request.teamsThreadId;
-  if (!connectionId || !conversationId || !threadId) {
-    return undefined;
-  }
-
-  const [thread] = await args.db
-    .select({
-      id: chatThreads.id,
-      agentId: chatThreads.agentId,
-      computerUseHostId: chatThreads.computerUseHostId,
-    })
-    .from(teamsChatThreadRoutes)
-    .innerJoin(
-      chatThreads,
-      eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
-    )
-    .where(
-      and(
-        eq(teamsChatThreadRoutes.connectionId, connectionId),
-        eq(teamsChatThreadRoutes.conversationId, conversationId),
-        eq(teamsChatThreadRoutes.threadId, threadId),
-        eq(teamsChatThreadRoutes.userId, args.userId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return thread;
-}
-
-async function loadAuthorizedComputerUseHostId(args: {
-  readonly db: Db;
-  readonly request: AuthorizationRequestRow;
-  readonly userId: string;
-}): Promise<string | null> {
-  if (!args.request.completedAt) {
-    return null;
-  }
-
-  if (args.request.source === "chat") {
-    const [thread] = await args.db
-      .select({ computerUseHostId: chatThreads.computerUseHostId })
-      .from(chatThreads)
+    const [run] = await get(db$)
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+      })
+      .from(agentRuns)
       .where(
         and(
-          eq(chatThreads.id, requiredChatThreadId(args.request)),
-          eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.agentId),
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.orgId, args.orgId),
+          eq(agentRuns.userId, args.userId),
+          isNotNull(agentRuns.triggerSource),
         ),
       )
       .limit(1);
-    return thread?.computerUseHostId ?? null;
-  }
+    signal.throwIfAborted();
 
-  if (
-    args.request.source === "teams" &&
-    args.request.teamsConnectionId &&
-    args.request.teamsConversationId &&
-    args.request.teamsThreadId
-  ) {
-    const thread = await loadTeamsChatThread(args);
-    return thread?.computerUseHostId ?? null;
-  }
+    if (!run) {
+      return "run_not_found";
+    }
+    if (run.chatThreadId) {
+      return { source: "chat", chatThreadId: run.chatThreadId };
+    }
+    return "unsupported_context";
+  },
+);
 
-  return null;
-}
+const loadRequestByToken$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly status: "found"; readonly request: AuthorizationRequestRow }
+    | { readonly status: "not_found" }
+    | { readonly status: "expired" }
+  > => {
+    const [request] = await get(db$)
+      .select()
+      .from(computerUseAuthorizationRequests)
+      .where(
+        and(
+          eq(
+            computerUseAuthorizationRequests.requestTokenHash,
+            hashSecret(args.requestToken),
+          ),
+          eq(computerUseAuthorizationRequests.orgId, args.orgId),
+          eq(computerUseAuthorizationRequests.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
 
-async function teamsScopeExists(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
+    if (!request) {
+      return { status: "not_found" };
+    }
+    if (request.expiresAt.getTime() <= args.now.getTime()) {
+      return { status: "expired" };
+    }
+    return { status: "found", request };
+  },
+);
+
+const onlineHostExists$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly hostId: string;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [host] = await get(db$)
+      .select({
+        lastSeenAt: computerUseHosts.lastSeenAt,
+        revokedAt: computerUseHosts.revokedAt,
+        status: computerUseHosts.status,
+      })
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.id, args.hostId),
+          eq(computerUseHosts.orgId, args.orgId),
+          eq(computerUseHosts.userId, args.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return host !== undefined && computerUseHostIsOnline(host, args.now);
+  },
+);
+
+function teamsChatThreadCondition(args: {
   readonly connectionId: string;
-}): Promise<boolean> {
-  const [connection] = await args.db
-    .select({ id: teamsOrgConnections.id })
-    .from(teamsOrgConnections)
-    .innerJoin(
-      teamsOrgInstallations,
-      eq(
-        teamsOrgInstallations.teamsTenantId,
-        teamsOrgConnections.teamsTenantId,
-      ),
-    )
-    .where(
-      and(
-        eq(teamsOrgConnections.id, args.connectionId),
-        eq(teamsOrgConnections.userId, args.userId),
-        eq(teamsOrgInstallations.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  return connection !== undefined;
+  readonly conversationId: string;
+  readonly threadId: string;
+  readonly userId: string;
+}) {
+  return and(
+    eq(teamsChatThreadRoutes.connectionId, args.connectionId),
+    eq(teamsChatThreadRoutes.conversationId, args.conversationId),
+    eq(teamsChatThreadRoutes.threadId, args.threadId),
+    eq(teamsChatThreadRoutes.userId, args.userId),
+    eq(chatThreads.userId, args.userId),
+  );
 }
 
-async function applyChatAuthorizationScope(args: {
-  readonly db: Db;
-  readonly request: AuthorizationRequestRow;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly computerUseHostId: string;
-  readonly now: Date;
-}): Promise<boolean> {
-  return await args.db.transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        computerUseHostId: args.computerUseHostId,
-        cloudBrowserEnabled: false,
-        updatedAt: args.now,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, requiredChatThreadId(args.request)),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .returning({
+const loadTeamsChatThread$ = command(
+  async (
+    { get },
+    args: {
+      readonly request: AuthorizationRequestRow;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const connectionId = args.request.teamsConnectionId;
+    const conversationId = args.request.teamsConversationId;
+    const threadId = args.request.teamsThreadId;
+    if (!connectionId || !conversationId || !threadId) {
+      return undefined;
+    }
+
+    const [thread] = await get(db$)
+      .select({
         id: chatThreads.id,
         agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
+        computerUseHostId: chatThreads.computerUseHostId,
+      })
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+      )
+      .where(
+        teamsChatThreadCondition({
+          connectionId,
+          conversationId,
+          threadId,
+          userId: args.userId,
+        }),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return thread;
+  },
+);
+
+const loadAuthorizedComputerUseHostId$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly request: AuthorizationRequestRow;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (!args.request.completedAt) {
+      return null;
     }
-    await tx.execute(
-      chatThreadEventInsertSql({
-        kind: "computer_use_host_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        computerUseHostId: args.computerUseHostId,
-        cloudBrowserEnabled: false,
-        createdAt: args.now,
-      }),
-    );
-    return true;
-  });
-}
 
-async function applyTeamsAuthorizationScope(args: {
-  readonly db: Db;
-  readonly request: AuthorizationRequestRow;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly computerUseHostId: string;
-  readonly now: Date;
-}): Promise<boolean> {
-  const connectionId = args.request.teamsConnectionId;
-  const conversationId = args.request.teamsConversationId;
-  const threadId = args.request.teamsThreadId;
-  if (
-    !connectionId ||
-    !conversationId ||
-    !threadId ||
-    !(await teamsScopeExists({
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectionId,
-    }))
-  ) {
-    return false;
-  }
+    if (args.request.source === "chat") {
+      const [thread] = await get(db$)
+        .select({ computerUseHostId: chatThreads.computerUseHostId })
+        .from(chatThreads)
+        .where(
+          and(
+            eq(chatThreads.id, requiredChatThreadId(args.request)),
+            eq(chatThreads.userId, args.userId),
+            isNotNull(chatThreads.agentId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      return thread?.computerUseHostId ?? null;
+    }
 
-  return await args.db.transaction(async (tx) => {
-    const existing = await loadTeamsChatThread({
-      db: tx,
-      request: args.request,
-      userId: args.userId,
+    if (
+      args.request.source === "teams" &&
+      args.request.teamsConnectionId &&
+      args.request.teamsConversationId &&
+      args.request.teamsThreadId
+    ) {
+      const thread = await set(loadTeamsChatThread$, args, signal);
+      signal.throwIfAborted();
+      return thread?.computerUseHostId ?? null;
+    }
+
+    return null;
+  },
+);
+
+const teamsScopeExists$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [connection] = await get(db$)
+      .select({ id: teamsOrgConnections.id })
+      .from(teamsOrgConnections)
+      .innerJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
+        ),
+      )
+      .where(
+        and(
+          eq(teamsOrgConnections.id, args.connectionId),
+          eq(teamsOrgConnections.userId, args.userId),
+          eq(teamsOrgInstallations.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return connection !== undefined;
+  },
+);
+
+const applyChatAuthorizationScope$ = command(
+  async (
+    { set },
+    args: {
+      readonly request: AuthorizationRequestRow;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly computerUseHostId: string;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    // Successful preference and durable event writes commit together.
+    const applied = await set(writeDb$).transaction(async (tx) => {
+      const [thread] = await tx
+        .update(chatThreads)
+        .set({
+          computerUseHostId: args.computerUseHostId,
+          cloudBrowserEnabled: false,
+          updatedAt: args.now,
+        })
+        .where(
+          and(
+            eq(chatThreads.id, requiredChatThreadId(args.request)),
+            eq(chatThreads.userId, args.userId),
+          ),
+        )
+        .returning({
+          id: chatThreads.id,
+          agentId: chatThreads.agentId,
+        });
+      if (!thread?.agentId) {
+        return false;
+      }
+      await tx.execute(
+        chatThreadEventInsertSql({
+          kind: "computer_use_host_updated",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: thread.id,
+          agentId: thread.agentId,
+          computerUseHostId: args.computerUseHostId,
+          cloudBrowserEnabled: false,
+          createdAt: args.now,
+        }),
+      );
+      return true;
     });
-    if (!existing) {
+    signal.throwIfAborted();
+    return applied;
+  },
+);
+
+const applyTeamsAuthorizationScope$ = command(
+  async (
+    { set },
+    args: {
+      readonly request: AuthorizationRequestRow;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly computerUseHostId: string;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const connectionId = args.request.teamsConnectionId;
+    const conversationId = args.request.teamsConversationId;
+    const threadId = args.request.teamsThreadId;
+    if (
+      !connectionId ||
+      !conversationId ||
+      !threadId ||
+      !(await set(
+        teamsScopeExists$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectionId,
+        },
+        signal,
+      ))
+    ) {
       return false;
     }
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        computerUseHostId: args.computerUseHostId,
-        cloudBrowserEnabled: false,
-        updatedAt: args.now,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, existing.id),
-          eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await tx.execute(
-      chatThreadEventInsertSql({
-        kind: "computer_use_host_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: thread.id,
-        agentId: thread.agentId,
-        computerUseHostId: args.computerUseHostId,
-        cloudBrowserEnabled: false,
-        createdAt: args.now,
-      }),
-    );
-    return true;
-  });
-}
+    signal.throwIfAborted();
+
+    // Keep route authority, preference and durable event in this transaction.
+    const applied = await set(writeDb$).transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          id: chatThreads.id,
+          agentId: chatThreads.agentId,
+          computerUseHostId: chatThreads.computerUseHostId,
+        })
+        .from(teamsChatThreadRoutes)
+        .innerJoin(
+          chatThreads,
+          eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
+        )
+        .where(
+          teamsChatThreadCondition({
+            connectionId,
+            conversationId,
+            threadId,
+            userId: args.userId,
+          }),
+        )
+        .limit(1);
+      if (!existing) {
+        return false;
+      }
+      const [thread] = await tx
+        .update(chatThreads)
+        .set({
+          computerUseHostId: args.computerUseHostId,
+          cloudBrowserEnabled: false,
+          updatedAt: args.now,
+        })
+        .where(
+          and(
+            eq(chatThreads.id, existing.id),
+            eq(chatThreads.userId, args.userId),
+            isNotNull(chatThreads.agentId),
+          ),
+        )
+        .returning({
+          id: chatThreads.id,
+          agentId: chatThreads.agentId,
+        });
+      if (!thread?.agentId) {
+        return false;
+      }
+      await tx.execute(
+        chatThreadEventInsertSql({
+          kind: "computer_use_host_updated",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: thread.id,
+          agentId: thread.agentId,
+          computerUseHostId: args.computerUseHostId,
+          cloudBrowserEnabled: false,
+          createdAt: args.now,
+        }),
+      );
+      return true;
+    });
+    signal.throwIfAborted();
+    return applied;
+  },
+);
 
 export const createComputerUseAuthorizationRequest$ = command(
   async (
@@ -426,7 +510,7 @@ export const createComputerUseAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<CreateComputerUseAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    const scope = await resolveRequestScope({ db, ...args });
+    const scope = await set(resolveRequestScope$, args, signal);
     signal.throwIfAborted();
 
     if (scope === "run_not_found") {
@@ -477,25 +561,30 @@ export const readComputerUseAuthorizationRequest$ = command(
     },
     signal: AbortSignal,
   ): Promise<ReadComputerUseAuthorizationRequestResult> => {
-    const db = set(writeDb$);
-    const loaded = await loadRequestByToken({
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      requestToken: args.requestToken,
-      now: nowDate(),
-    });
+    const loaded = await set(
+      loadRequestByToken$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        requestToken: args.requestToken,
+        now: nowDate(),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (loaded.status !== "found") {
       return loaded;
     }
 
-    const computerUseHostId = await loadAuthorizedComputerUseHostId({
-      db,
-      request: loaded.request,
-      userId: args.userId,
-    });
+    const computerUseHostId = await set(
+      loadAuthorizedComputerUseHostId$,
+      {
+        request: loaded.request,
+        userId: args.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const hosts = await set(
@@ -531,13 +620,16 @@ export const applyComputerUseAuthorizationRequest$ = command(
   ): Promise<ApplyComputerUseAuthorizationRequestResult> => {
     const db = set(writeDb$);
     const now = nowDate();
-    const loaded = await loadRequestByToken({
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      requestToken: args.requestToken,
-      now,
-    });
+    const loaded = await set(
+      loadRequestByToken$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        requestToken: args.requestToken,
+        now,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (loaded.status !== "found") {
@@ -545,13 +637,16 @@ export const applyComputerUseAuthorizationRequest$ = command(
     }
 
     if (
-      !(await onlineHostExists({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        hostId: args.computerUseHostId,
-        now,
-      }))
+      !(await set(
+        onlineHostExists$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          hostId: args.computerUseHostId,
+          now,
+        },
+        signal,
+      ))
     ) {
       return { status: "host_not_found" };
     }
@@ -560,23 +655,29 @@ export const applyComputerUseAuthorizationRequest$ = command(
     const request = loaded.request;
     const applied =
       request.source === "chat"
-        ? await applyChatAuthorizationScope({
-            db,
-            request,
-            orgId: args.orgId,
-            userId: args.userId,
-            computerUseHostId: args.computerUseHostId,
-            now,
-          })
-        : request.source === "teams"
-          ? await applyTeamsAuthorizationScope({
-              db,
+        ? await set(
+            applyChatAuthorizationScope$,
+            {
               request,
               orgId: args.orgId,
               userId: args.userId,
               computerUseHostId: args.computerUseHostId,
               now,
-            })
+            },
+            signal,
+          )
+        : request.source === "teams"
+          ? await set(
+              applyTeamsAuthorizationScope$,
+              {
+                request,
+                orgId: args.orgId,
+                userId: args.userId,
+                computerUseHostId: args.computerUseHostId,
+                now,
+              },
+              signal,
+            )
           : false;
     signal.throwIfAborted();
 
