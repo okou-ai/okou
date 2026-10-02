@@ -78,10 +78,8 @@ import {
   compileModelRuntime,
   type ModelCredentialValues,
 } from "./execution-model-runtime";
-import type {
-  ResolvedModelProviderEnvironment,
-  ResolveModelProviderEnvironmentArgs,
-} from "./agent-run-contracts";
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import { providerTypeForSurfaceProtocol } from "./effective-model-route.service";
 import {
@@ -1722,18 +1720,20 @@ export async function prepareRegisteredModelEnvironment(
   };
 }
 
+/** The run facts a Built-in model environment is prepared from. */
+interface ManagedModelEnvironmentRequest {
+  readonly catalog: ModelCatalog;
+  readonly framework: SupportedFramework;
+  readonly selectedModelOverride?: string;
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
 /** Exact managed-key source → explicit key resolution → managed runtime. */
 export async function prepareManagedModelEnvironment(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
-  args: Pick<
-    ResolveModelProviderEnvironmentArgs,
-    | "builtInModelRuntimeRoute"
-    | "selectedModelOverride"
-    | "catalog"
-    | "framework"
-    | "featureSwitchContext"
-  >,
+  args: ManagedModelEnvironmentRequest,
   signal: AbortSignal,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (source.identity.kind !== "built-in") {
