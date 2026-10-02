@@ -30,19 +30,19 @@ export const mcpChatThreadModels$ = command(
         return [row.model, row.replacedBy];
       }),
     );
-    const available = new Set(
+    // A configured selection is not a promise of current Run admission. Quota
+    // and transient provider availability are checked by the ordinary send;
+    // they must not erase a stored model's canonical replacement in a read.
+    const configured = new Set(
       listing.response.policies
         .filter((policy) => {
-          return (
-            policy.routeStatus === "valid" &&
-            policy.memberEffective?.availability !== "unavailable"
-          );
+          return policy.routeStatus === "valid";
         })
         .map((policy) => {
           return policy.model;
         }),
     );
-    const defaultModel = available.has(listing.systemDefaultModel)
+    const defaultModel = configured.has(listing.systemDefaultModel)
       ? listing.systemDefaultModel
       : null;
     const result = new Map<string | null, McpChatThread["model"]>();
@@ -61,7 +61,7 @@ export const mcpChatThreadModels$ = command(
         finalModel = replacement;
       }
       const effectivePin =
-        finalModel !== null && available.has(finalModel) ? finalModel : null;
+        finalModel !== null && configured.has(finalModel) ? finalModel : null;
       result.set(selectedModel, {
         selectedModel,
         effectiveModel: effectivePin ?? defaultModel,

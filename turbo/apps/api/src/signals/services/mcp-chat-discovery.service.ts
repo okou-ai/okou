@@ -177,7 +177,8 @@ export const listMcpAgents$ = command(
             ? encodeAgentCursor({
                 version: 1,
                 operation: "list_agents",
-                ...principal,
+                userId: principal.userId,
+                orgId: principal.orgId,
                 limit: input.limit,
                 issuedAt,
                 expiresAt: issuedAt + CURSOR_TTL_MS,
