@@ -50,15 +50,21 @@ pub fn object_download_transient_transport_kind(error: &reqwest::Error) -> Optio
 }
 
 /// Provider delay for an explicitly transient status. Missing hints permit
-/// normal backoff; malformed hints are terminal rather than ignored.
+/// normal backoff; malformed or repeated hints are terminal rather than ignored.
 pub fn object_download_http_retry_after(response: &reqwest::Response) -> Option<Duration> {
     if !matches!(response.status().as_u16(), 429 | 500 | 502 | 503 | 504) {
         return None;
     }
-    match response.headers().get(RETRY_AFTER) {
-        Some(value) => value.to_str().ok().and_then(parse_retry_after),
-        None => Some(Duration::ZERO),
+    let mut values = response.headers().get_all(RETRY_AFTER).iter();
+    let Some(value) = values.next() else {
+        return Some(Duration::ZERO);
+    };
+    // Retry-After is not list-valued. Do not choose an earlier value over a
+    // conflicting provider delay, even when one of the values parses alone.
+    if values.next().is_some() {
+        return None;
     }
+    value.to_str().ok().and_then(parse_retry_after)
 }
 
 fn parse_retry_after(value: &str) -> Option<Duration> {

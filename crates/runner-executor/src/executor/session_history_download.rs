@@ -1560,7 +1560,7 @@ mod tests {
         status: &'static str,
         body: Vec<u8>,
         content_length: Option<u64>,
-        retry_after: Option<&'static str>,
+        retry_after: Vec<&'static str>,
         stall: bool,
     }
 
@@ -1574,13 +1574,13 @@ mod tests {
                 status,
                 body: body.into(),
                 content_length,
-                retry_after: None,
+                retry_after: Vec::new(),
                 stall: false,
             }
         }
 
         fn with_retry_after(mut self, value: &'static str) -> Self {
-            self.retry_after = Some(value);
+            self.retry_after.push(value);
             self
         }
 
@@ -1725,10 +1725,11 @@ mod tests {
                 .content_length
                 .map(|content_length| format!("Content-Length: {content_length}\r\n"))
                 .unwrap_or_default();
-            let retry_after_header = response
+            let retry_after_header: String = response
                 .retry_after
+                .iter()
                 .map(|value| format!("Retry-After: {value}\r\n"))
-                .unwrap_or_default();
+                .collect();
             let response_head = format!(
                 "HTTP/1.1 {}\r\n{content_length_header}{retry_after_header}Connection: close\r\n\r\n",
                 response.status

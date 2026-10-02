@@ -69,7 +69,7 @@ errors and typed transport interruptions can retry. The next attempt always
 starts with an empty body buffer; incomplete bytes are never staged or published.
 
 The effective delay is the larger of backoff and a valid `Retry-After` delta or
-HTTP date. Invalid hints, hints beyond the remaining budget, permanent statuses
+HTTP date. Invalid or repeated hints, hints beyond the remaining budget, permanent statuses
 (including 401/403/404/501), redirects, unsolicited partial responses and archive
 size-contract violations do not retry. Cancellation owns both backoff and GETs;
 the original cache writer and runner-wide permit remain held by the same owner

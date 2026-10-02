@@ -26,9 +26,17 @@ impl Reply {
     }
 
     fn retry_after(value: &str) -> Self {
+        Self::retry_after_values(&[value])
+    }
+
+    fn retry_after_values(values: &[&str]) -> Self {
+        let headers: String = values
+            .iter()
+            .map(|value| format!("Retry-After: {value}\r\n"))
+            .collect();
         Self {
             bytes: format!(
-                "HTTP/1.1 429 Too Many Requests\r\nRetry-After: {value}\r\nContent-Length: 1\r\nConnection: close\r\n\r\n"
+                "HTTP/1.1 429 Too Many Requests\r\n{headers}Content-Length: 1\r\nConnection: close\r\n\r\n"
             )
             .into_bytes(),
             stall: true,
@@ -434,25 +442,35 @@ async fn archive_retry_rejects_permanent_statuses_without_another_get() {
 
 #[tokio::test]
 async fn archive_retry_respects_retry_after_before_recovery() {
-    let temp = tempfile::tempdir().unwrap();
-    let home = home_at(&temp);
-    let body = tarball_bytes();
-    let server = RetryServer::start(vec![
-        Reply::retry_after("1"),
-        Reply::response("200 OK", &body),
-    ])
-    .await;
-    let mut plan =
-        fresh_storage_plan_with_archive_size(server.url.clone(), "retry", "v1", body.len() as u64);
-    let sandbox = MockSandbox::new("archive-retry-provider-delay");
-    let mut telemetry = new_telemetry();
-    populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-        .await
-        .unwrap();
-    // Observe spacing between actual HTTP requests, not unrelated whole-run time.
-    assert!(server.delays.lock().unwrap()[0] >= Duration::from_secs(1));
-    server.finish(2).await;
-    assert_staged_archive(&home, &sandbox, &plan, &body).await;
+    for (hint, minimum_delay) in [
+        ("1", Duration::from_secs(1)),
+        // A comma within one HTTP-date is valid; it is not multiple hints.
+        ("Thu, 01 Jan 1970 00:00:00 GMT", OBJECT_DOWNLOAD_RETRY_DELAY),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let body = tarball_bytes();
+        let server = RetryServer::start(vec![
+            Reply::retry_after(hint),
+            Reply::response("200 OK", &body),
+        ])
+        .await;
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url.clone(),
+            "retry",
+            "v1",
+            body.len() as u64,
+        );
+        let sandbox = MockSandbox::new("archive-retry-provider-delay");
+        let mut telemetry = new_telemetry();
+        populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+            .await
+            .unwrap();
+        // Observe spacing between actual HTTP requests, not unrelated whole-run time.
+        assert!(server.delays.lock().unwrap()[0] >= minimum_delay);
+        server.finish(2).await;
+        assert_staged_archive(&home, &sandbox, &plan, &body).await;
+    }
 }
 
 #[tokio::test]
@@ -486,6 +504,40 @@ async fn archive_retry_does_not_ignore_invalid_or_over_budget_retry_after() {
                 .unwrap();
         assert!(error.to_string().contains("status=429"));
         server.stop(1).await;
+        assert!(sandbox.write_files_calls().is_empty());
+        assert!(!home.storage_cache_dir("retry", "v1").exists());
+    }
+}
+
+#[tokio::test]
+async fn archive_retry_rejects_duplicate_retry_after_without_another_get() {
+    for values in [["0", "120"], ["0", "invalid"], ["0", "0"], ["invalid", "0"]] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let body = tarball_bytes();
+        let server = RetryServer::start(vec![
+            Reply::retry_after_values(&values),
+            Reply::response("200 OK", &body),
+        ])
+        .await;
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url.clone(),
+            "retry",
+            "v1",
+            body.len() as u64,
+        );
+        let sandbox = MockSandbox::new("archive-retry-ambiguous-delay");
+        let mut telemetry = new_telemetry();
+        let error =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                .await
+                .err()
+                .expect(
+                    "duplicate Retry-After must be terminal rather than ignoring another value",
+                );
+        assert!(error.to_string().contains("status=429"));
+        server.stop(1).await;
+        assert_eq!(header_count(&telemetry), 1);
         assert!(sandbox.write_files_calls().is_empty());
         assert!(!home.storage_cache_dir("retry", "v1").exists());
     }
