@@ -11,7 +11,7 @@ import { bestEffort } from "../utils";
 import {
   clearChatThreadConnectorSelection,
   listChatThreadConnectorSelections,
-  updateChatThreadConnectorSelection,
+  updateChatThreadConnectorSelection$,
 } from "../services/chat-thread-connector-selection.service";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
@@ -52,8 +52,8 @@ const updateSelectionInner$ = command(
       return body.response;
     }
     const writeDb = set(writeDb$);
-    const result = await updateChatThreadConnectorSelection(
-      writeDb,
+    const result = await set(
+      updateChatThreadConnectorSelection$,
       {
         orgId: auth.orgId,
         userId: auth.userId,

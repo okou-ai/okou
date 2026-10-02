@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
-import { writeDb$ } from "../external/db";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -98,10 +97,11 @@ const updateModelModeInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const context = await loadUserFeatureSwitchContext(
-      set(writeDb$),
+    const context = await set(
+      loadUserFeatureSwitchContext$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.OkouDebug, context)) {

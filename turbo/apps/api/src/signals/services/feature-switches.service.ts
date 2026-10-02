@@ -1,80 +1,50 @@
 import { command, computed, type Computed } from "ccstate";
 import {
-  filterFeatureSwitchOverrides,
+  getAllFeatureStates,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { invalidateFeatureSwitchPiStableContexts$ } from "./pi-stable-context-generation.service";
 import {
-  invalidatePiStableContextsForOrg,
-  invalidatePiStableContextsForUser,
-} from "./pi-stable-context-generation.service";
-import {
+  ORG_SCOPED_FEATURE_SWITCH_KEYS,
   ORG_SENTINEL_USER_ID,
   splitFeatureSwitchesByScope,
   userFeatureSwitchOverridesFromRows,
-  withoutOrgScopedFeatureSwitches,
 } from "./feature-switch-scope";
-
-function hasSwitches(switches: Record<string, boolean>): boolean {
-  return Object.keys(switches).length > 0;
-}
-
-async function loadUserFeatureSwitchOverrides(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<Record<string, boolean>> {
-  const rows = await db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, orgId),
-        inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
-      ),
-    );
-
-  return userFeatureSwitchOverridesFromRows(rows, userId);
-}
 
 export function userFeatureSwitchOverrides(
   orgId: string,
   userId: string,
 ): Computed<Promise<Record<string, boolean>>> {
-  return computed(async (get): Promise<Record<string, boolean>> => {
-    const db = get(db$);
-    return await loadUserFeatureSwitchOverrides(db, orgId, userId);
+  return computed(async (get) => {
+    const rows = await get(db$)
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        and(
+          eq(userFeatureSwitches.orgId, orgId),
+          inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
+        ),
+      );
+    return userFeatureSwitchOverridesFromRows(rows, userId);
   });
-}
-
-export async function loadUserFeatureSwitchContext(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<FeatureSwitchContext> {
-  return {
-    orgId,
-    userId,
-    overrides: await loadUserFeatureSwitchOverrides(db, orgId, userId),
-  };
 }
 
 export const loadUserFeatureSwitchContext$ = command(
   async (
-    { set },
+    { get },
     orgId: string,
     userId: string,
     abortSignal?: AbortSignal,
-  ): Promise<FeatureSwitchContext> => {
-    const db = set(writeDb$);
-    const rows = await db
+  ): Promise<FeatureSwitchContext & { overrides: Record<string, boolean> }> => {
+    const rows = await get(db$)
       .select({
         userId: userFeatureSwitches.userId,
         switches: userFeatureSwitches.switches,
@@ -99,12 +69,9 @@ export function userFeatureSwitchContext(
   orgId: string,
   userId: string,
 ): Computed<Promise<FeatureSwitchContext>> {
-  return computed(async (get): Promise<FeatureSwitchContext> => {
-    return {
-      orgId,
-      userId,
-      overrides: await get(userFeatureSwitchOverrides(orgId, userId)),
-    };
+  const overrides$ = userFeatureSwitchOverrides(orgId, userId);
+  return computed(async (get) => {
+    return { orgId, userId, overrides: await get(overrides$) };
   });
 }
 
@@ -122,82 +89,55 @@ export const updateUserFeatureSwitches$ = command(
     const { userSwitches, orgSwitches } = splitFeatureSwitchesByScope(
       args.switches,
     );
-
-    await writeDb.transaction(async (tx) => {
-      if (hasSwitches(userSwitches)) {
-        await upsertFeatureSwitches(
-          tx,
-          args.orgId,
-          args.userId,
-          userSwitches,
-          signal,
-        );
-      }
-
-      if (hasSwitches(orgSwitches)) {
-        await upsertFeatureSwitches(
-          tx,
-          args.orgId,
-          ORG_SENTINEL_USER_ID,
-          orgSwitches,
-          signal,
-        );
-        await invalidatePiStableContextsForOrg(tx, args.orgId);
-      } else if (hasSwitches(userSwitches)) {
-        await invalidatePiStableContextsForUser(tx, args);
-      }
+    const writes = [
+      { userId: args.userId, switches: userSwitches },
+      { userId: ORG_SENTINEL_USER_ID, switches: orgSwitches },
+    ].filter((row) => {
+      return Object.keys(row.switches).length > 0;
     });
-    signal.throwIfAborted();
-
-    return await loadUserFeatureSwitchOverrides(
-      writeDb,
+    if (writes.length > 0) {
+      const updatedAt = nowDate();
+      // Merge against the conflict winner in PostgreSQL, not a stale pre-read.
+      // Filter historical retired keys just as the former application merge did.
+      await writeDb
+        .insert(userFeatureSwitches)
+        .values(
+          writes.map((row) => {
+            return { ...row, orgId: args.orgId, updatedAt };
+          }),
+        )
+        .onConflictDoUpdate({
+          target: [userFeatureSwitches.orgId, userFeatureSwitches.userId],
+          set: {
+            switches: sql`COALESCE((
+              SELECT jsonb_object_agg(entry.key, entry.value)
+              FROM jsonb_each(${userFeatureSwitches.switches}) AS entry
+              WHERE entry.key = ANY(${sql.param(Object.keys(getAllFeatureStates({})))}::text[])
+            ), '{}'::jsonb) || excluded.switches`,
+            updatedAt,
+          },
+        });
+      signal.throwIfAborted();
+      await set(
+        invalidateFeatureSwitchPiStableContexts$,
+        {
+          orgId: args.orgId,
+          ...(Object.keys(orgSwitches).length > 0
+            ? {}
+            : { userId: args.userId }),
+        },
+        signal,
+      );
+    }
+    const context = await set(
+      loadUserFeatureSwitchContext$,
       args.orgId,
       args.userId,
+      signal,
     );
+    return context.overrides;
   },
 );
-
-async function upsertFeatureSwitches(
-  writeDb: Db,
-  orgId: string,
-  userId: string,
-  switches: Record<string, boolean>,
-  signal: AbortSignal,
-): Promise<void> {
-  const [existingRow] = await writeDb
-    .select({ switches: userFeatureSwitches.switches })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, orgId),
-        eq(userFeatureSwitches.userId, userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-
-  const existing =
-    (existingRow?.switches as Record<string, boolean> | undefined) ?? {};
-  const merged: Record<string, boolean> = {
-    ...filterFeatureSwitchOverrides(existing),
-    ...filterFeatureSwitchOverrides(switches),
-  };
-  const now = nowDate();
-
-  await writeDb
-    .insert(userFeatureSwitches)
-    .values({
-      orgId,
-      userId,
-      switches: merged,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [userFeatureSwitches.orgId, userFeatureSwitches.userId],
-      set: { switches: merged, updatedAt: now },
-    });
-  signal.throwIfAborted();
-}
 
 export const deleteUserFeatureSwitches$ = command(
   async (
@@ -206,67 +146,36 @@ export const deleteUserFeatureSwitches$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
-    await writeDb.transaction(async (tx) => {
-      await tx
-        .delete(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, args.orgId),
-            eq(userFeatureSwitches.userId, args.userId),
-          ),
-        );
-      signal.throwIfAborted();
-
-      await removeOrgScopedFeatureSwitches(tx, args.orgId, signal);
-      await invalidatePiStableContextsForOrg(tx, args.orgId);
-    });
-  },
-);
-
-async function removeOrgScopedFeatureSwitches(
-  writeDb: Db,
-  orgId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const [existingRow] = await writeDb
-    .select({ switches: userFeatureSwitches.switches })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, orgId),
-        eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (!existingRow) {
-    return;
-  }
-
-  const next = withoutOrgScopedFeatureSwitches(existingRow.switches);
-
-  if (Object.keys(next).length === 0) {
     await writeDb
       .delete(userFeatureSwitches)
       .where(
         and(
-          eq(userFeatureSwitches.orgId, orgId),
-          eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
+          eq(userFeatureSwitches.orgId, args.orgId),
+          eq(userFeatureSwitches.userId, args.userId),
         ),
       );
     signal.throwIfAborted();
-    return;
-  }
-
-  await writeDb
-    .update(userFeatureSwitches)
-    .set({ switches: next, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, orgId),
-        eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
-      ),
+    const orgCondition = and(
+      eq(userFeatureSwitches.orgId, args.orgId),
+      eq(userFeatureSwitches.userId, ORG_SENTINEL_USER_ID),
     );
-  signal.throwIfAborted();
-}
+    // Subtraction touches only organization keys and preserves concurrent unrelated keys.
+    await writeDb
+      .update(userFeatureSwitches)
+      .set({
+        switches: sql`${userFeatureSwitches.switches} - ${sql.param(ORG_SCOPED_FEATURE_SWITCH_KEYS)}::text[]`,
+        updatedAt: nowDate(),
+      })
+      .where(orgCondition);
+    signal.throwIfAborted();
+    await writeDb
+      .delete(userFeatureSwitches)
+      .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
+    signal.throwIfAborted();
+    await set(
+      invalidateFeatureSwitchPiStableContexts$,
+      { orgId: args.orgId },
+      signal,
+    );
+  },
+);

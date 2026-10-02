@@ -1,3 +1,8 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
@@ -33,12 +38,11 @@ import {
   catalogBuiltInCandidates,
   catalogBuiltInRoute,
   catalogProviderUpstreamModel,
-  loadModelCatalog,
   type ModelCatalog,
   ModelCatalogInvariantError,
 } from "./model-catalog.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
 import {
   personalModelProviderAccountById,
@@ -121,7 +125,7 @@ interface ResolutionContext {
   readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>> & {
     readonly type: string;
   };
-  readonly context: Awaited<ReturnType<typeof loadUserFeatureSwitchContext>>;
+  readonly context: Awaited<ReturnType<typeof featureSwitchContextFromRows>>;
   readonly catalog: ModelCatalog;
 }
 
@@ -572,6 +576,7 @@ async function apiKeyCredential(
 
 /** Source identity is authority; defaults and foreground settings never participate. */
 export async function resolvePiMemoryStage1Credential(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   source: SourceIdentity,
   signal: AbortSignal,
@@ -587,13 +592,20 @@ export async function resolvePiMemoryStage1Credential(
   if (!binding.type) {
     return skip("source_binding_invalid");
   }
-  const context = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(source.orgId, source.userId));
+  const context = featureSwitchContextFromRows(
     source.orgId,
     source.userId,
+    featureSwitchContextRows0,
   );
   signal.throwIfAborted();
-  const catalog = await loadModelCatalog(db);
+  const catalog = await catalogSnapshot;
   signal.throwIfAborted();
   const args = {
     db,

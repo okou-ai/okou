@@ -446,6 +446,61 @@ test.each(["part", "completion"] as const)(
   },
 );
 
+test("concurrent resumptions keep one downloadable archive and one completion email", async () => {
+  const user = actor();
+  let loseResponse = true;
+  const storage = installDurableUserExportStorage(context, {
+    afterWrite: (command) => {
+      if (command instanceof UploadPartCommand && loseResponse) {
+        loseResponse = false;
+        return Promise.reject(new Error("Part committed; response lost"));
+      }
+      return Promise.resolve();
+    },
+  });
+  const api = createOpsLogsApi(context);
+  const started = await api.requestPostUserExport(user, [202]);
+  cleanup(user, started.body.jobId);
+  await flushWaitUntilForTest();
+  await work(user, started.body.jobId, "run", 200);
+  expect((await api.requestGetUserExport(user, [200])).body.job).toMatchObject({
+    id: started.body.jobId,
+    status: "running",
+    downloadUrl: null,
+  });
+  await work(user, started.body.jobId, "make-due");
+  await Promise.all([
+    work(user, started.body.jobId, "run", 200),
+    work(user, started.body.jobId, "run", 200),
+  ]);
+  const before = (
+    await completedZip(user, started.body.jobId, storage)
+  ).toBuffer();
+  await work(user, started.body.jobId, "run", 200);
+  expect(
+    (await completedZip(user, started.body.jobId, storage)).toBuffer(),
+  ).toStrictEqual(before);
+  const outbox = createEmailOutboxStateApi(context);
+  const [email] = await outbox.findItems({
+    toAddress: user.email,
+    subject: readySubject,
+  });
+  if (!email) {
+    throw new Error("Expected the completion email");
+  }
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `export-${started.body.jobId}` },
+    error: null,
+  });
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  await expect(outbox.drainItems([email.id])).resolves.toBe(1);
+  await expect(outbox.drainItems([email.id])).resolves.toBe(0);
+  expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ to: user.email, subject: readySubject }),
+    expect.anything(),
+  );
+});
+
 test("an expired worker cannot publish after a replacement finished the export", async () => {
   const user = actor();
   const entered = createDeferredPromise<void>(context.signal);

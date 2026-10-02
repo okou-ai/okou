@@ -1,3 +1,7 @@
+import {
+  invalidatePiStableContextsForCatalogSourceSql,
+  invalidateAllPiStableContextsSql,
+} from "./pi-stable-context-generation.service";
 import { isDeepStrictEqual } from "node:util";
 
 import type {
@@ -75,10 +79,7 @@ import {
 } from "./connector-catalog-runtime.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
-import {
-  invalidateAllPiStableContexts,
-  invalidatePiStableContextsForCatalogSource,
-} from "./pi-stable-context-generation.service";
+
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
@@ -915,9 +916,14 @@ async function commitCandidate(
         validator: args.validator,
       });
       if (connectorCatalogSourceIsTestScoped()) {
-        await invalidatePiStableContextsForCatalogSource(tx, args.sourceId);
+        await tx.execute(
+          invalidatePiStableContextsForCatalogSourceSql(
+            args.sourceId,
+            nowDate(),
+          ),
+        );
       } else {
-        await invalidateAllPiStableContexts(tx);
+        await tx.execute(invalidateAllPiStableContextsSql(nowDate()));
       }
       return "accepted" as const;
     }),

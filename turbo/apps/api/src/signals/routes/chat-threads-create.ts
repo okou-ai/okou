@@ -12,7 +12,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+
 import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
@@ -26,8 +26,8 @@ import {
 } from "../services/chat-thread.service";
 import { agentExistsInOrg } from "../services/agent-deletion.service";
 import {
-  resolveDefaultModelFirstPin,
-  resolveModelSelectionPin,
+  resolveDefaultModelFirstPin$,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
 import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
@@ -36,7 +36,10 @@ import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
-import { loadModelCatalog } from "../services/model-catalog.service";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
@@ -133,6 +136,7 @@ const initialThreadModel$ = command(
       readonly model?: string;
       readonly serviceTier?: ChatThreadServiceTier | null;
     },
+    catalog: ModelCatalog,
     signal: AbortSignal,
   ): Promise<{
     readonly selectedModel: string | null;
@@ -140,12 +144,16 @@ const initialThreadModel$ = command(
   }> => {
     const initial =
       requested.model === undefined
-        ? await resolveDefaultModelFirstPin(
-            set(writeDb$),
-            owner.orgId,
-            owner.userId,
-            undefined,
-            undefined,
+        ? await set(
+            resolveDefaultModelFirstPin$,
+            {
+              orgId: owner.orgId,
+              userId: owner.userId,
+              defaultSource: undefined,
+              orgPlanCapabilities: undefined,
+              catalog,
+            },
+            signal,
           )
         : { selectedModel: requested.model, serviceTier: null };
     signal.throwIfAborted();
@@ -199,29 +207,34 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Agent not found");
   }
 
+  const catalog = await get(modelCatalog$);
+  signal.throwIfAborted();
   const connectorSelections = body.data.connectorSelections ?? [];
   const { selectedModel, codexServiceTier } = await set(
     initialThreadModel$,
     auth,
     body.data,
+    catalog,
     signal,
   );
   signal.throwIfAborted();
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  const pin = await resolveModelSelectionPin({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-    modelSelection: modelFirstSelection(selectedModel),
-  });
+  const pin = await set(
+    resolveModelSelectionPin$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      modelSelection: modelFirstSelection(selectedModel),
+      catalog,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if ("status" in pin) {
     return pin;
   }
-  const catalog = await loadModelCatalog(set(writeDb$));
-  signal.throwIfAborted();
   const codexServiceTierError = validateCodexServiceTier({
     catalog,
     pin,

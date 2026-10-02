@@ -1,3 +1,5 @@
+import { nowDate } from "../../lib/time";
+import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
@@ -12,7 +14,8 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import type { Db, ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
   loadAgentConnectorScope,
@@ -26,8 +29,6 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -241,119 +242,130 @@ export async function listChatThreadConnectorSelections(
   return { selections, selectedConnections };
 }
 
-export async function prepareChatThreadConnectorSelections(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-    readonly selections: readonly ConnectorAccountSelection[];
-    readonly missingAccountPolicy?: "reject" | "omit";
-  },
-): Promise<PrepareChatThreadConnectorSelectionsResult> {
-  const byTarget = new Map<string, ConnectorAccountSelection>();
-  for (const selection of args.selections) {
-    const key = connectorAccountTargetKey(selection.target);
-    if (byTarget.has(key)) {
-      return {
-        kind: "invalid",
-        message: "Only one connector account may be selected per target",
-      };
-    }
-    byTarget.set(key, selection);
-  }
-  if (byTarget.size === 0) {
-    return { kind: "ready", selections: [] };
-  }
-
-  const selections = [...byTarget.values()];
-  // No account row is locked here. The selection insert's FK checks on the
-  // thread and account arbitrate a concurrent deletion: the loser of that race
-  // receives a deterministic invalid/omitted result (see
-  // selectionParentMissing), never a stale selection.
-  const scope = await loadAgentConnectorScope(db, args);
-  const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
-  for (const selection of byTarget.values()) {
-    if (!targetExistsInCatalog(snapshot, selection.target)) {
-      return {
-        kind: "invalid",
-        message: "Connector target is unavailable",
-      };
-    }
-    if (!targetIsAuthorized(scope, selection.target)) {
-      return {
-        kind: "invalid",
-        message: "Connector target is not authorized for this chat thread",
-      };
-    }
-  }
-
-  const connectionIds = selections.map((selection) => {
-    return selection.connectionId;
-  });
-  const targetOwnerships = await loadConnectorTargetOwnerships(db, {
-    connectorIds: connectionIds,
-  });
-  const projectedConnections = await listConnectorAccountsByIds(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectionIds,
-  });
-  const projectedById = new Map(
-    projectedConnections.map((connection) => {
-      return [connection.id, connection];
-    }),
-  );
-  for (const [key, selection] of byTarget) {
-    const ownership = targetOwnerships.get(selection.connectionId);
-    if (!ownership) {
-      if (args.missingAccountPolicy === "omit") {
-        byTarget.delete(key);
-        continue;
+export const prepareChatThreadConnectorSelections$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string;
+      readonly selections: readonly ConnectorAccountSelection[];
+      readonly missingAccountPolicy?: "reject" | "omit";
+    },
+    signal: AbortSignal,
+  ): Promise<PrepareChatThreadConnectorSelectionsResult> => {
+    signal.throwIfAborted();
+    const db = get(db$);
+    const byTarget = new Map<string, ConnectorAccountSelection>();
+    for (const selection of args.selections) {
+      const key = connectorAccountTargetKey(selection.target);
+      if (byTarget.has(key)) {
+        return {
+          kind: "invalid",
+          message: "Only one connector account may be selected per target",
+        };
       }
-      return {
-        kind: "invalid",
-        message: "Connector account does not match the requested target",
-      };
+      byTarget.set(key, selection);
     }
-    if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
-      return {
-        kind: "invalid",
-        message: "Connector account does not match the requested target",
-      };
+    if (byTarget.size === 0) {
+      return { kind: "ready", selections: [] };
     }
-    const ownedTarget = targetFromRow(ownership);
-    if (
-      connectorAccountTargetKey(ownedTarget) !==
-      connectorAccountTargetKey(selection.target)
-    ) {
-      return {
-        kind: "invalid",
-        message: "Connector account does not match the requested target",
-      };
+
+    const selections = [...byTarget.values()];
+    // No account row is locked here. The selection insert's FK checks on the
+    // thread and account arbitrate a concurrent deletion: the loser of that race
+    // receives a deterministic invalid/omitted result (see
+    // selectionParentMissing), never a stale selection.
+    const scope = await loadAgentConnectorScope(db, args);
+    signal.throwIfAborted();
+    const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
+    signal.throwIfAborted();
+    for (const selection of byTarget.values()) {
+      if (!targetExistsInCatalog(snapshot, selection.target)) {
+        return {
+          kind: "invalid",
+          message: "Connector target is unavailable",
+        };
+      }
+      if (!targetIsAuthorized(scope, selection.target)) {
+        return {
+          kind: "invalid",
+          message: "Connector target is not authorized for this chat thread",
+        };
+      }
     }
-    const projected = projectedById.get(selection.connectionId);
-    if (!projected) {
-      if (args.missingAccountPolicy === "omit") {
-        // Deletion can commit between the ownership read and the projection.
-        // Initial thread creation omits a deleted account at either boundary;
-        // an existing but unavailable account still receives the same error.
-        const current = await loadConnectorTargetOwnerships(db, {
-          connectorIds: [selection.connectionId],
-        });
-        if (!current.has(selection.connectionId)) {
+
+    const connectionIds = selections.map((selection) => {
+      return selection.connectionId;
+    });
+    const targetOwnerships = await loadConnectorTargetOwnerships(db, {
+      connectorIds: connectionIds,
+    });
+    signal.throwIfAborted();
+    const projectedConnections = await listConnectorAccountsByIds(db, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectionIds,
+    });
+    signal.throwIfAborted();
+    const projectedById = new Map(
+      projectedConnections.map((connection) => {
+        return [connection.id, connection];
+      }),
+    );
+    for (const [key, selection] of byTarget) {
+      const ownership = targetOwnerships.get(selection.connectionId);
+      if (!ownership) {
+        if (args.missingAccountPolicy === "omit") {
           byTarget.delete(key);
           continue;
         }
+        return {
+          kind: "invalid",
+          message: "Connector account does not match the requested target",
+        };
       }
-      return {
-        kind: "invalid",
-        message: "Connector account is unavailable for thread selection",
-      };
+      if (ownership.orgId !== args.orgId || ownership.userId !== args.userId) {
+        return {
+          kind: "invalid",
+          message: "Connector account does not match the requested target",
+        };
+      }
+      const ownedTarget = targetFromRow(ownership);
+      if (
+        connectorAccountTargetKey(ownedTarget) !==
+        connectorAccountTargetKey(selection.target)
+      ) {
+        return {
+          kind: "invalid",
+          message: "Connector account does not match the requested target",
+        };
+      }
+      const projected = projectedById.get(selection.connectionId);
+      if (!projected) {
+        if (args.missingAccountPolicy === "omit") {
+          // Deletion can commit between the ownership read and the projection.
+          // Initial thread creation omits a deleted account at either boundary;
+          // an existing but unavailable account still receives the same error.
+          const current = await loadConnectorTargetOwnerships(db, {
+            connectorIds: [selection.connectionId],
+          });
+          signal.throwIfAborted();
+          if (!current.has(selection.connectionId)) {
+            byTarget.delete(key);
+            continue;
+          }
+        }
+        return {
+          kind: "invalid",
+          message: "Connector account is unavailable for thread selection",
+        };
+      }
     }
-  }
-  return { kind: "ready", selections: [...byTarget.values()] };
-}
+    signal.throwIfAborted();
+    return { kind: "ready", selections: [...byTarget.values()] };
+  },
+);
 
 /**
  * Insert only from an existing account. The ordinary foreign-key check either
@@ -441,7 +453,7 @@ function foreignKeyConstraint(error: unknown): string | undefined {
  * PostgreSQL's FK check waits for the deleting transaction and then rejects
  * the insert; callers map it to a deterministic result.
  */
-function selectionParentMissing(
+export function selectionParentMissing(
   error: unknown,
 ): "thread" | "account" | undefined {
   switch (foreignKeyConstraint(error)) {
@@ -458,83 +470,102 @@ function selectionParentMissing(
   }
 }
 
-export async function updateChatThreadConnectorSelection(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly selection: ConnectorAccountSelection;
-  },
-  signal: AbortSignal,
-): Promise<UpdateChatThreadConnectorSelectionResult> {
-  const result = await settle(
-    db.transaction(
-      async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
-        // No parent row lock: the selection upsert's FK check on the thread
-        // (or the row lock on an existing selection) makes a concurrent Agent
-        // or thread deletion wait for this commit, or reject the upsert.
-        const thread = await loadOwnedChatThread(tx, args);
-        if (!thread) {
-          return { kind: "not_found" };
-        }
-        const prepared = await prepareChatThreadConnectorSelections(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: thread.agentId,
-          selections: [args.selection],
-        });
-        if (prepared.kind === "invalid") {
-          return prepared;
-        }
-        const [selection] = prepared.selections;
-        if (!selection) {
-          throw new Error("Expected one prepared connector selection");
-        }
-        const updated = await upsertSelection(tx, args.chatThreadId, selection);
-        if (!updated) {
-          return {
-            kind: "invalid",
-            message: "Connector account does not match the requested target",
-          };
-        }
-        await reprojectWorkflowAutomationsForOwner(
-          tx,
-          { ...args, target: selection.target },
-          signal,
-        );
-        await invalidatePiStableContext(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-          agentId: thread.agentId,
-        });
-        return {
-          kind: "updated",
-          selection: updated,
-        };
-      },
-    ),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  // Wait for the whole transaction to roll back before reporting a lost
-  // parent, including its selection change and generation invalidation.
-  switch (selectionParentMissing(result.error)) {
-    case "thread": {
+export const updateChatThreadConnectorSelection$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly selection: ConnectorAccountSelection;
+    },
+    signal: AbortSignal,
+  ): Promise<UpdateChatThreadConnectorSelectionResult> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const thread = await loadOwnedChatThread(db, args);
+    signal.throwIfAborted();
+    if (!thread) {
       return { kind: "not_found" };
     }
-    case "account": {
-      return {
-        kind: "invalid",
-        message: "Connector account does not match the requested target",
-      };
+    const prepared = await set(
+      prepareChatThreadConnectorSelections$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: thread.agentId,
+        selections: [args.selection],
+      },
+      signal,
+    );
+    if (prepared.kind === "invalid") {
+      return prepared;
     }
-    default: {
-      throw result.error;
+    const result = await settle(
+      db.transaction(
+        async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
+          // No parent row lock: the selection upsert's FK check on the thread
+          // (or the row lock on an existing selection) makes a concurrent Agent
+          // or thread deletion wait for this commit, or reject the upsert.
+          const [selection] = prepared.selections;
+          if (!selection) {
+            throw new Error("Expected one prepared connector selection");
+          }
+          const updated = await upsertSelection(
+            tx,
+            args.chatThreadId,
+            selection,
+          );
+          if (!updated) {
+            return {
+              kind: "invalid",
+              message: "Connector account does not match the requested target",
+            };
+          }
+          await reprojectWorkflowAutomationsForOwner(
+            tx,
+            { ...args, target: selection.target },
+            signal,
+          );
+          await tx.execute(
+            invalidatePiStableContextSql(
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: thread.agentId,
+              },
+              nowDate(),
+            ),
+          );
+          return {
+            kind: "updated",
+            selection: updated,
+          };
+        },
+      ),
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return result.value;
     }
-  }
-}
+    // Wait for the whole transaction to roll back before reporting a lost
+    // parent, including its selection change and generation invalidation.
+    switch (selectionParentMissing(result.error)) {
+      case "thread": {
+        return { kind: "not_found" };
+      }
+      case "account": {
+        return {
+          kind: "invalid",
+          message: "Connector account does not match the requested target",
+        };
+      }
+      default: {
+        throw result.error;
+      }
+    }
+  },
+);
 
 export async function clearChatThreadConnectorSelection(
   db: Db,
@@ -575,41 +606,39 @@ export async function clearChatThreadConnectorSelection(
       .returning({ connectorId: chatThreadConnectorSelections.connectorId });
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
     if (deleted.length > 0) {
-      await invalidatePiStableContext(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: thread.agentId,
-      });
+      await tx.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            agentId: thread.agentId,
+          },
+          nowDate(),
+        ),
+      );
     }
     return { kind: "cleared" };
   });
 }
 
-export async function insertInitialChatThreadConnectorSelections(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly selections: readonly PreparedChatThreadConnectorSelection[];
-  },
-): Promise<void> {
-  // Stable insertion order for the finite prepared selection set.
-  const ordered = [...args.selections].sort((a, b) => {
-    return a.connectionId < b.connectionId
-      ? -1
-      : a.connectionId > b.connectionId
-        ? 1
-        : 0;
-  });
-  for (const selection of ordered) {
-    // Losing an account between the source SELECT and FK check omits only
-    // this selection, not the thread or its other still-valid accounts.
-    const inserted = await settle(
-      tx.transaction(async (sp) => {
-        await selectionWriteSql(sp, args.chatThreadId, selection, "none");
-      }),
-    );
-    if (!inserted.ok && selectionParentMissing(inserted.error) !== "account") {
-      throw inserted.error;
-    }
-  }
+/** Pure, stably ordered statements. The creation owner executes savepoints. */
+export function initialChatThreadConnectorSelectionStatements(args: {
+  readonly chatThreadId: string;
+  readonly selections: readonly PreparedChatThreadConnectorSelection[];
+}) {
+  return [...args.selections]
+    .sort((a, b) => {
+      return a.connectionId < b.connectionId
+        ? -1
+        : a.connectionId > b.connectionId
+          ? 1
+          : 0;
+    })
+    .map((selection) => {
+      const target = targetColumns(selection.target);
+      return sql`INSERT INTO ${chatThreadConnectorSelections}
+      (chat_thread_id, connector_id, connector_slug, custom_connector_id)
+      SELECT ${args.chatThreadId}::uuid, ${connectors.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid
+      FROM ${connectors} WHERE ${connectors.id} = ${selection.connectionId}::uuid`;
+    });
 }

@@ -1,4 +1,4 @@
-import { loadModelCatalog } from "./model-catalog.service";
+import { modelCatalog$ } from "./model-catalog.service";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import type {
@@ -42,11 +42,13 @@ function onboardingEntitlementValues(metadata: {
 
 /** Metadata, entitlement bootstrap and untouched policy seeding commit together. */
 export const markOrgOnboardingComplete$ = command(
-  async ({ set }, args: OrgOnboardingCompletion, signal: AbortSignal) => {
+  async ({ get, set }, args: OrgOnboardingCompletion, signal: AbortSignal) => {
     const db = set(writeDb$);
     const now = nowDate();
     const industry =
       args.industry === undefined ? {} : { onboardingIndustry: args.industry };
+    signal.throwIfAborted();
+    const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       // No row lock: the INSERT ... ON CONFLICT DO NOTHING result tells this
@@ -99,7 +101,6 @@ export const markOrgOnboardingComplete$ = command(
       if (metadata?.mode === "auto") {
         return true;
       }
-      const catalog = await loadModelCatalog(tx);
       // Onboarding writes provider-less seed rows without coordinating other
       // low-frequency policy operations; existing uniqueness arbitrates inserts.
       const existing = await tx.select().from(orgModelPolicies).where(owner);

@@ -1,4 +1,8 @@
 import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
+import {
+  allowanceAvailability,
+  allowanceAvailabilityQuery,
+} from "./usage-allowance-availability-plan";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -31,7 +35,7 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
@@ -138,25 +142,28 @@ function publicJob(job: Job): SocialDataJobResponse {
   });
 }
 
-async function requireEnabled(
-  db: Db,
-  auth: Actor,
-  signal: AbortSignal,
-): Promise<ErrorResponse | null> {
-  const context = await loadUserFeatureSwitchContext(
-    db,
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
-    ? null
-    : errorResponse(
-        403,
-        "FEATURE_NOT_AVAILABLE",
-        "Social data jobs are not enabled for this account.",
-      );
-}
+const requireEnabled$ = command(
+  async (
+    { set },
+    auth: Actor,
+    signal: AbortSignal,
+  ): Promise<ErrorResponse | null> => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    return isFeatureEnabled(FeatureSwitchKey.SocialDataJobs, context)
+      ? null
+      : errorResponse(
+          403,
+          "FEATURE_NOT_AVAILABLE",
+          "Social data jobs are not enabled for this account.",
+        );
+  },
+);
 
 function ownerWhere(auth: Pick<Actor, "orgId" | "userId">, jobId: string) {
   return and(
@@ -240,7 +247,7 @@ export const quoteSocialData$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
+    const disabled = await set(requireEnabled$, args.auth, signal);
     if (disabled) {
       return disabled;
     }
@@ -325,6 +332,11 @@ async function checkBudget(
   if (args.maxCredits === 0) {
     return null;
   }
+  const at = nowDate();
+  const allowanceRows = await tx
+    .select()
+    .from(allowanceAvailabilityQuery(args.auth.orgId, at));
+  signal.throwIfAborted();
   return await checkManagedCreditsSnapshotInDb(
     tx,
     {
@@ -342,6 +354,7 @@ async function checkBudget(
       enforceBalance: true,
     },
     args.resolution,
+    allowanceAvailability(allowanceRows, at),
     signal,
   );
 }
@@ -427,7 +440,7 @@ export const createSocialDataJob$ = command(
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
     const db = set(writeDb$);
-    const disabled = await requireEnabled(db, args.auth, signal);
+    const disabled = await set(requireEnabled$, args.auth, signal);
     if (disabled) {
       return disabled;
     }
@@ -451,8 +464,8 @@ export const createSocialDataJob$ = command(
         if (admitted !== "allowance_refresh_required") {
           return admitted;
         }
-        // The owner-row transaction has ended. Allowance refresh takes the
-        // credit lock and can call Stripe, so neither belongs under that row.
+        // The owner-row transaction has ended. External Stripe preparation and
+        // the allowance CAS refresh must not run while that row is owned.
         await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
         signal.throwIfAborted();
         const refreshed = await db.transaction((tx) => {

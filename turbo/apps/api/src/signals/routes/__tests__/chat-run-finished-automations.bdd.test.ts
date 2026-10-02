@@ -301,22 +301,25 @@ async function expectAutomationSourceAnnotation(
   if (!automationThreadId) {
     throw new Error("Expected the automation chat thread");
   }
-  const automationRun = await readLatestWorkflowAutomationRunFixture(
-    context,
-    automationId,
-  );
-  if (!automationRun) {
-    throw new Error("Expected the triggered automation run");
-  }
   const automationEvents = await chat.listThreadEvents(
     fixture.actor,
     automationThreadId,
   );
-  const automationInput = automationEvents.events.find((event) => {
+  const automationInputs = automationEvents.events.filter((event) => {
     return (
-      event.eventType === "input.prompt" && event.runId === automationRun.runId
+      event.eventType === "input.prompt" &&
+      event.runId !== undefined &&
+      event.userMessage.parts.some((part) => {
+        return (
+          part.type === "source" &&
+          part.kind === "agent" &&
+          part.runId === sourceRun.runId
+        );
+      })
     );
   });
+  expect(automationInputs).toHaveLength(1);
+  const [automationInput] = automationInputs;
   if (!automationInput || automationInput.eventType !== "input.prompt") {
     throw new Error("Expected the triggered automation input");
   }

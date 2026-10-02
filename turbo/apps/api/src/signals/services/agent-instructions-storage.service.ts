@@ -1,3 +1,4 @@
+import type { PiStableContextPublicationFence } from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 import {
   getInstructionsFilename,
@@ -5,24 +6,16 @@ import {
 } from "@okouai/core/frameworks";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
 
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
   type ServerSideVolumeStorage,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
-import {
-  completePiStableContextPublication,
-  lockPiStableContextPublication,
-  refreshPiStableContextStorageDemands,
-  type PiStableContextPublicationFence,
-} from "./pi-stable-context-generation.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
@@ -101,47 +94,6 @@ export const prepareAgentInstructionsStorage$ = command(
 );
 
 /** DB-only publication; the caller revalidates source authority and Storage. */
-export async function commitPreparedAgentInstructionsStorageInTransaction(
-  args: {
-    readonly tx: Tx;
-    readonly volume: PreparedServerSideVolume;
-    readonly stableContextPublication?: PiStableContextPublicationFence;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  // Own the immutable Storage parent before generation/index lifecycle locks.
-  await commitPreparedVolumeServerSide(
-    { db: args.tx, volume: args.volume },
-    signal,
-  );
-  if (args.stableContextPublication) {
-    if (
-      !(await lockPiStableContextPublication(
-        args.tx,
-        args.stableContextPublication,
-      ))
-    ) {
-      throw new Error(
-        "Stable-context publication was superseded before Storage HEAD commit",
-      );
-    }
-    await refreshPiStableContextStorageDemands(
-      args.tx,
-      args.stableContextPublication,
-      args.volume.version,
-    );
-    signal.throwIfAborted();
-    if (
-      !(await completePiStableContextPublication(
-        args.tx,
-        args.stableContextPublication,
-      ))
-    ) {
-      throw new Error("Stable-context publication fence changed while locked");
-    }
-  }
-  signal.throwIfAborted();
-}
 
 export const deleteAgentInstructionsStorage$ = command(
   async (

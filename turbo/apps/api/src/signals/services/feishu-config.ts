@@ -1,5 +1,10 @@
+import {
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -161,10 +166,22 @@ export async function isFeishuInstallationEnabled(
   if (!installation.ownerUserId) {
     return false;
   }
-  const context = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(
+      userFeatureSwitchRowCondition(
+        installation.orgId,
+        installation.ownerUserId,
+      ),
+    );
+  const context = featureSwitchContextFromRows(
     installation.orgId,
     installation.ownerUserId,
+    featureSwitchContextRows0,
   );
   return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, context);
 }

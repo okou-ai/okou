@@ -270,7 +270,7 @@ describe("Pi agent model adapter", () => {
           },
         ],
       },
-      contextWindow: 272_000,
+      contextWindow: 1_050_000,
       maxTokens: 128_000,
       compat: {
         supportsStrictMode: true,
@@ -427,7 +427,7 @@ describe("Pi agent model adapter", () => {
       expect(model).toMatchObject({
         id: "gpt-6.1-sol",
         name: "GPT 6.1 Sol",
-        contextWindow: 1_050_000,
+        contextWindow: provider === "openai-codex" ? 272_000 : 1_050_000,
         maxTokens: 128_000,
         cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
       });

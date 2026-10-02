@@ -1,7 +1,13 @@
 /** Typed append-only commands for the canonical ChatEvent stream. */
-import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
+import {
+  chatInputModelSelectionSchema,
+  type ChatInputModelSelection,
+} from "@okouai/api-contracts/contracts/chat-input-model";
 import { randomUUID } from "node:crypto";
-import { isValidChatEventRevocation } from "@okouai/api-contracts/contracts/chat-events";
+import {
+  chatEventTypeSchema,
+  isValidChatEventRevocation,
+} from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
@@ -21,26 +27,31 @@ import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq } from "drizzle-orm";
+import {
+  and,
+  eq,
+  getTableColumns,
+  sql,
+  type InferInsertModel,
+  type SQL,
+} from "drizzle-orm";
+import { PgDialect, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
+import { z } from "zod";
+import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
 import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import type { ApiDb, Tx } from "../../lib/db-types";
-import { logger } from "../../lib/log";
 import {
-  appendCanonicalChatEvents,
+  appendCanonicalChatEventsSql,
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 
 import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 
-const log = logger("chat-event-context");
-
 type CanonicalChatEventInsert = typeof chatEvents.$inferInsert;
-type ChatEventWriteTransaction = ApiDb | Tx;
 
 type ChatEventIdentity = {
   readonly id?: string;
@@ -324,19 +335,6 @@ export type NewChatEvent =
   | UsageRecordedEvent;
 
 type AppendChatEvent = Exclude<NewChatEvent, ControlRevokeEvent>;
-
-interface ChatEventCommandResult {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly seqId: number;
-}
-
-interface ChatEventBatchCommandResult {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly seqId: number;
-  readonly sequenceNumber: number | null;
-}
 
 type InsertChatEventConflict = "none" | "any" | "id" | "run-lifecycle";
 
@@ -628,69 +626,80 @@ function displayContextPointer(
   };
 }
 
-async function insertAgentphoneDisplayContext(
-  tx: ChatEventWriteTransaction,
+/** Construct a schema-encoded INSERT without a session or database capability. */
+function contextInsertSql<T extends PgTable>(
+  table: T,
+  values: InferInsertModel<T>,
+  onConflict: SQL = sql`do nothing`,
+): SQL {
+  const columns = getTableColumns(table);
+  return new PgDialect().buildInsertQuery({
+    table,
+    values: [
+      Object.fromEntries(
+        Object.entries(values).map(([key, value]) => {
+          return [key, sql.param(value, columns[key])];
+        }),
+      ),
+    ],
+    onConflict,
+  });
+}
+
+function insertAgentphoneDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agentphone" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx
-    .insert(chatAgentphoneContext)
-    .values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      messageText: context.messageText,
-      threadContext: context.threadContext,
-      messageId: context.messageId,
-      rootMessageId: context.rootMessageId,
-      conversationId: context.conversationId,
-      groupId: context.groupId,
-      channel: context.channel,
-      isGroup: context.isGroup,
-      phoneHandle: context.phoneHandle,
-      fromNumber: context.fromNumber,
-      toNumber: context.toNumber,
-      userLinkId: context.userLinkId,
-      agentphoneAgentId: context.agentphoneAgentId,
-      createdAt,
-    })
-    .onConflictDoNothing();
+): SQL {
+  return contextInsertSql(chatAgentphoneContext, {
+    id: context.id,
+    chatThreadId: context.chatThreadId,
+    messageText: context.messageText,
+    threadContext: context.threadContext,
+    messageId: context.messageId,
+    rootMessageId: context.rootMessageId,
+    conversationId: context.conversationId,
+    groupId: context.groupId,
+    channel: context.channel,
+    isGroup: context.isGroup,
+    phoneHandle: context.phoneHandle,
+    fromNumber: context.fromNumber,
+    toNumber: context.toNumber,
+    userLinkId: context.userLinkId,
+    agentphoneAgentId: context.agentphoneAgentId,
+    createdAt,
+  });
 }
 
-async function insertTelegramDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertTelegramDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "telegram" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx
-    .insert(chatTelegramContext)
-    .values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      chatId: context.chatId,
-      messageId: context.messageId,
-      messageThreadId: context.messageThreadId,
-      messageText: context.messageText,
-      threadContext: context.threadContext,
-      rootMessageId: context.rootMessageId,
-      thinkingMessageId: context.thinkingMessageId,
-      userLinkId: context.userLinkId,
-      userLinkKind: context.userLinkKind,
-      chatType: context.chatType,
-      senderUserId: context.senderUserId,
-      senderDisplayName: context.senderDisplayName,
-      senderUsername: context.senderUsername,
-      senderLanguage: context.senderLanguage,
-      createdAt,
-    })
-    .onConflictDoNothing();
+): SQL {
+  return contextInsertSql(chatTelegramContext, {
+    id: context.id,
+    chatThreadId: context.chatThreadId,
+    chatId: context.chatId,
+    messageId: context.messageId,
+    messageThreadId: context.messageThreadId,
+    messageText: context.messageText,
+    threadContext: context.threadContext,
+    rootMessageId: context.rootMessageId,
+    thinkingMessageId: context.thinkingMessageId,
+    userLinkId: context.userLinkId,
+    userLinkKind: context.userLinkKind,
+    chatType: context.chatType,
+    senderUserId: context.senderUserId,
+    senderDisplayName: context.senderDisplayName,
+    senderUsername: context.senderUsername,
+    senderLanguage: context.senderLanguage,
+    createdAt,
+  });
 }
 
-async function insertAgentRunDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertAgentRunDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agent_run" }>,
   createdAt: Date,
-): Promise<void> {
-  const [source] = await tx
+): SQL {
+  const source = new QueryBuilder()
     .select({
       sourceUserId: chatThreads.userId,
       sourceOrgId: agents.orgId,
@@ -703,158 +712,129 @@ async function insertAgentRunDisplayContext(
         eq(agents.id, context.sourceAgentId),
       ),
     );
-  if (!source) {
-    return;
-  }
-  await tx
-    .insert(chatAgentRunContext)
-    .values({
-      id: context.id,
-      sourceChatThreadId: context.sourceChatThreadId,
-      sourceAgentId: context.sourceAgentId,
-      ...source,
-      createdAt,
-    })
-    .onConflictDoNothing({ target: chatAgentRunContext.id });
+  return sql`INSERT INTO ${chatAgentRunContext} (
+    id, source_chat_thread_id, source_agent_id, source_user_id, source_org_id, created_at
+  ) SELECT ${context.id}::uuid, ${context.sourceChatThreadId}::uuid,
+    ${context.sourceAgentId}::uuid, source.user_id, source.org_id,
+    ${createdAt.toISOString()}::timestamp
+    FROM (${source.getSQL()}) AS source
+    ON CONFLICT (id) DO NOTHING`;
 }
 
-async function insertAutomationDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertAutomationDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "automation" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx
-    .insert(chatAutomationContext)
-    .values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      automationId: context.automationId,
-      workflowName: context.workflowName,
-      eventType: context.workflowAutomationEventType,
-      eventPayload: context.workflowAutomationEventPayload,
-      connectorSourceId: context.connectorSourceId,
-      triggerBrief: context.triggerBrief,
-      createdAt,
-    })
-    .onConflictDoNothing();
-  return;
+): SQL {
+  return contextInsertSql(chatAutomationContext, {
+    id: context.id,
+    chatThreadId: context.chatThreadId,
+    automationId: context.automationId,
+    workflowName: context.workflowName,
+    eventType: context.workflowAutomationEventType,
+    eventPayload: context.workflowAutomationEventPayload,
+    connectorSourceId: context.connectorSourceId,
+    triggerBrief: context.triggerBrief,
+    createdAt,
+  });
 }
 
-async function insertDiscordDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertDiscordDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "discord" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx
-    .insert(chatDiscordContext)
-    .values({
+): SQL {
+  return contextInsertSql(
+    chatDiscordContext,
+    {
       ...context.snapshot,
       id: context.id,
       chatThreadId: context.chatThreadId,
       createdAt,
-    })
-    .onConflictDoNothing({ target: chatDiscordContext.id });
+    },
+    sql`(${sql.identifier("id")}) do nothing`,
+  );
 }
 
-async function insertDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertDisplayContext(
   context: NewDisplayContext,
   createdAt: Date,
-): Promise<void> {
+): SQL {
   if (context.type === "agent_run") {
-    await insertAgentRunDisplayContext(tx, context, createdAt);
-    return;
+    return insertAgentRunDisplayContext(context, createdAt);
   }
   if (context.type === "discord") {
-    await insertDiscordDisplayContext(tx, context, createdAt);
-    return;
+    return insertDiscordDisplayContext(context, createdAt);
   }
   if (context.type === "slack") {
-    await tx
-      .insert(chatSlackContext)
-      .values({
-        id: context.id,
-        chatThreadId: context.chatThreadId,
-        channelId: context.channelId,
-        messageTs: context.messageTs,
-        botUserId: context.botUserId,
-        conversationContext: context.conversationContext,
-        messageText: context.messageText,
-        messageFiles: context.messageFiles,
-        messageAssets: context.messageAssets,
-        mentionDisplayNames: context.mentionDisplayNames,
-        senderDisplayName: context.senderDisplayName,
-        senderUserId: context.senderUserId,
-        channelType: context.channelType,
-        threadTs: context.threadTs,
-        routeThreadTs: context.routeThreadTs,
-        createdAt,
-      })
-      .onConflictDoNothing();
-    return;
+    return contextInsertSql(chatSlackContext, {
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      channelId: context.channelId,
+      messageTs: context.messageTs,
+      botUserId: context.botUserId,
+      conversationContext: context.conversationContext,
+      messageText: context.messageText,
+      messageFiles: context.messageFiles,
+      messageAssets: context.messageAssets,
+      mentionDisplayNames: context.mentionDisplayNames,
+      senderDisplayName: context.senderDisplayName,
+      senderUserId: context.senderUserId,
+      channelType: context.channelType,
+      threadTs: context.threadTs,
+      routeThreadTs: context.routeThreadTs,
+      createdAt,
+    });
   }
   if (context.type === "feishu") {
-    await tx
-      .insert(chatFeishuContext)
-      .values({
-        id: context.id,
-        chatThreadId: context.chatThreadId,
-        conversationHistory: context.conversationHistory,
-        messageText: context.messageText,
-        messageFiles: context.messageFiles,
-        chatType: context.chatType,
-        chatId: context.chatId,
-        messageId: context.messageId,
-        threadId: context.threadId,
-        replyInThread: context.replyInThread,
-        reactionId: context.reactionId,
-        senderOpenId: context.senderOpenId,
-        connectionId: context.connectionId,
-        installationId: context.installationId,
-        createdAt,
-      })
-      .onConflictDoNothing();
-    return;
+    return contextInsertSql(chatFeishuContext, {
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      conversationHistory: context.conversationHistory,
+      messageText: context.messageText,
+      messageFiles: context.messageFiles,
+      chatType: context.chatType,
+      chatId: context.chatId,
+      messageId: context.messageId,
+      threadId: context.threadId,
+      replyInThread: context.replyInThread,
+      reactionId: context.reactionId,
+      senderOpenId: context.senderOpenId,
+      connectionId: context.connectionId,
+      installationId: context.installationId,
+      createdAt,
+    });
   }
   if (context.type === "teams") {
-    await tx
-      .insert(chatTeamsContext)
-      .values({
-        id: context.id,
-        chatThreadId: context.chatThreadId,
-        tenantId: context.tenantId,
-        teamId: context.teamId,
-        channelId: context.channelId,
-        conversationId: context.conversationId,
-        conversationType: context.conversationType,
-        activityId: context.activityId,
-        threadContext: context.threadContext,
-        messageText: context.messageText,
-        messageFiles: context.messageFiles,
-        tenantName: context.tenantName,
-        teamName: context.teamName,
-        threadId: context.threadId,
-        serviceUrl: context.serviceUrl,
-        teamsAppId: context.teamsAppId,
-        senderUserId: context.senderUserId,
-        senderDisplayName: context.senderDisplayName,
-        senderPrincipalName: context.senderPrincipalName,
-        connectionId: context.connectionId,
-        createdAt,
-      })
-      .onConflictDoNothing();
-    return;
+    return contextInsertSql(chatTeamsContext, {
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      tenantId: context.tenantId,
+      teamId: context.teamId,
+      channelId: context.channelId,
+      conversationId: context.conversationId,
+      conversationType: context.conversationType,
+      activityId: context.activityId,
+      threadContext: context.threadContext,
+      messageText: context.messageText,
+      messageFiles: context.messageFiles,
+      tenantName: context.tenantName,
+      teamName: context.teamName,
+      threadId: context.threadId,
+      serviceUrl: context.serviceUrl,
+      teamsAppId: context.teamsAppId,
+      senderUserId: context.senderUserId,
+      senderDisplayName: context.senderDisplayName,
+      senderPrincipalName: context.senderPrincipalName,
+      connectionId: context.connectionId,
+      createdAt,
+    });
   }
   if (context.type === "telegram") {
-    await insertTelegramDisplayContext(tx, context, createdAt);
-    return;
+    return insertTelegramDisplayContext(context, createdAt);
   }
   if (context.type === "agentphone") {
-    return insertAgentphoneDisplayContext(tx, context, createdAt);
+    return insertAgentphoneDisplayContext(context, createdAt);
   }
-  if (context.type === "automation") {
-    await insertAutomationDisplayContext(tx, context, createdAt);
-  }
+  return insertAutomationDisplayContext(context, createdAt);
 }
 
 function canonicalChatEventPayload(
@@ -953,119 +933,78 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/**
- * Write an input's context row. Entries own their context and persist it with
- * the event that points at it in the enqueue transaction, so a failure rejects
- * the input. Appending never writes context.
- */
-export async function insertChatEventContext(
-  db: ChatEventWriteTransaction,
+/** Pure context plan. The enqueue owner executes it after reserving the event
+ * sequence, in the same transaction, to preserve thread lock ordering. */
+export function chatEventContextInsertSql(
   values: AppendChatEvent & { readonly id: string },
-): Promise<void> {
+): SQL | null {
   const context = newDisplayContext(values.id, values);
-  if (!context) {
-    return;
-  }
-  await insertDisplayContext(db, context, values.createdAt ?? nowDate());
-}
-
-/** Slow-path telemetry for the single append statement. */
-function recordChatEventAppendTiming(timing: {
-  readonly attemptedEvents?: number;
-  readonly insertedEvents: number;
-  readonly statementDurationMs: number;
-}): void {
-  log.debug("Chat event append statement finished", timing);
-  if (timing.statementDurationMs >= 250) {
-    log.warn("Chat event append exceeded 250 ms", timing);
-  }
-}
-
-/** The caller owns context preparation and persistence around this atomic append. */
-async function appendPreparedChatEvent(
-  db: ChatEventWriteTransaction,
-  prepared: PreparedChatEvent,
-  conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  const startedAt = performance.now();
-  const rows = await appendCanonicalChatEvents(db, [prepared.row], conflict);
-  recordChatEventAppendTiming({
-    insertedEvents: rows.length,
-    statementDurationMs: performance.now() - startedAt,
-  });
-  const inserted = rows[0];
-  return inserted
-    ? { id: inserted.id, createdAt: inserted.createdAt, seqId: inserted.seqId }
+  return context
+    ? insertDisplayContext(context, values.createdAt ?? nowDate())
     : null;
 }
 
-/** Control callers may pass their transaction; ordinary writes pass DB. */
-export async function insertChatEvent(
-  db: ChatEventWriteTransaction,
+/** The caller independently persists context before this atomic append. */
+export function chatEventInsertSql(
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  return await appendPreparedChatEvent(db, prepareChatEvent(values), conflict);
+): SQL {
+  return appendCanonicalChatEventsSql([prepareChatEvent(values).row], conflict);
 }
 
-/** Reserve N and insert atomically, preserving every existing idempotency index. */
-export async function insertChatEvents(
-  db: ChatEventWriteTransaction,
-  values: readonly AppendChatEvent[],
-): Promise<readonly ChatEventBatchCommandResult[]> {
-  if (values.length === 0) {
-    return [];
-  }
-  const prepared = values.map(prepareChatEvent);
-  const startedAt = performance.now();
-  const rows = await appendCanonicalChatEvents(
-    db,
-    prepared.map((event) => {
-      return event.row;
+/** Empty batches reserve nothing and return no rows. */
+export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
+  return appendCanonicalChatEventsSql(
+    values.map((value) => {
+      return prepareChatEvent(value).row;
     }),
     "any",
   );
-  recordChatEventAppendTiming({
-    attemptedEvents: values.length,
-    insertedEvents: rows.length,
-    statementDurationMs: performance.now() - startedAt,
-  });
-  return rows.map(({ id, createdAt, seqId, sequenceNumber }) => {
-    return { id, createdAt, seqId, sequenceNumber };
-  });
 }
 
-/** Append a replacement event after validating its immutable revoke edge. */
-export async function replaceChatEvent(
-  tx: ChatEventWriteTransaction,
-  eventId: string,
-  replacement: NewChatEvent,
-): Promise<ChatEventCommandResult | null> {
-  const [target] = await tx
+export const chatEventReplacementTargetSchema = z.object({
+  id: z.string().uuid(),
+  chatThreadId: z.string().uuid(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+  eventType: chatEventTypeSchema,
+  contextType: z.string().nullable(),
+  contextId: z.string().uuid().nullable(),
+  modelSelection: chatInputModelSelectionSchema.nullable(),
+});
+
+/** Execute on the caller's transaction when replacement needs its snapshot. */
+export function chatEventReplacementTargetSql(eventId: string): SQL {
+  return new QueryBuilder()
     .select({
       id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      eventType: chatEvents.eventType,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      modelSelection: canonicalChatInputModelSelection(),
+      chatThreadId: sql`${chatEvents.chatThreadId}`.as("chatThreadId"),
+      createdAt: sql`${chatEvents.createdAt}::text`.as("createdAt"),
+      eventType: sql`${chatEvents.eventType}`.as("eventType"),
+      contextType: sql`${chatEvents.contextType}`.as("contextType"),
+      contextId: sql`${chatEvents.contextId}`.as("contextId"),
+      modelSelection: canonicalChatInputModelSelection().as("modelSelection"),
     })
     .from(chatEvents)
     .where(eq(chatEvents.id, eventId))
-    .limit(1);
+    .limit(1)
+    .getSQL();
+}
+
+export function requireChatEventReplacementTarget(
+  rows: readonly LoadedChatEventReplacementTarget[],
+): LoadedChatEventReplacementTarget {
+  const target = rows[0];
   if (!target) {
     throw new Error("Cannot revoke a missing chat event");
   }
-  return await replaceLoadedChatEvent(tx, target, replacement);
+  return target;
 }
 
 /** Append a replacement for a target already loaded by an authoritative read. */
-export async function replaceLoadedChatEvent(
-  tx: ChatEventWriteTransaction,
+export function chatEventReplacementInsertSql(
   target: LoadedChatEventReplacementTarget,
   replacement: NewChatEvent,
-): Promise<ChatEventCommandResult | null> {
+): SQL {
   if (target.chatThreadId !== replacement.chatThreadId) {
     throw new Error("Cannot revoke a chat event from another thread");
   }
@@ -1114,17 +1053,5 @@ export async function replaceLoadedChatEvent(
     },
     displayContext: undefined,
   };
-  return await appendPreparedChatEvent(tx, prepared, "any");
-}
-
-/** Append a payload-free revocation event for an existing chat event. */
-export async function revokeChatEvent(
-  tx: ChatEventWriteTransaction,
-  eventId: string,
-  revocation: ControlRevokeEvent,
-): Promise<ChatEventCommandResult | null> {
-  return await replaceChatEvent(tx, eventId, {
-    ...revocation,
-    content: null,
-  });
+  return appendCanonicalChatEventsSql([prepared.row], "any");
 }

@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
-import { appendChatThreadEvent } from "../signals/services/chat-thread-event.service";
+import { chatThreadEventInsertSql } from "../signals/services/chat-thread-event.service";
 import { chatThreadSnapshotObjectKey } from "../signals/services/chat-thread-snapshot-object";
 import { createDeferredPromise } from "../signals/utils";
 
@@ -88,16 +88,18 @@ export async function holdChatThreadEventInsertTransactionFixture(
     if (!holderPid) {
       throw new Error("Expected the chat-thread event insert holder pid");
     }
-    await appendChatThreadEvent(tx, {
-      eventId,
-      kind: "renamed",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: args.chatThreadId,
-      agentId: args.agentId,
-      title: args.title,
-      ...(args.createdAt === undefined ? {} : { createdAt: args.createdAt }),
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        eventId,
+        kind: "renamed",
+        userId: args.userId,
+        orgId: args.orgId,
+        chatThreadId: args.chatThreadId,
+        agentId: args.agentId,
+        title: args.title,
+        ...(args.createdAt === undefined ? {} : { createdAt: args.createdAt }),
+      }),
+    );
     const [event] = await tx
       .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
       .from(chatThreadEvents)
@@ -131,16 +133,18 @@ export async function insertChatThreadEventTransactionFixture(
 ): Promise<PersistedChatThreadEventFixture> {
   const eventId = randomUUID();
   const event = await db().transaction(async (tx) => {
-    await appendChatThreadEvent(tx, {
-      eventId,
-      kind: "renamed",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: args.chatThreadId,
-      agentId: args.agentId,
-      title: args.title,
-      ...(args.createdAt === undefined ? {} : { createdAt: args.createdAt }),
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        eventId,
+        kind: "renamed",
+        userId: args.userId,
+        orgId: args.orgId,
+        chatThreadId: args.chatThreadId,
+        agentId: args.agentId,
+        title: args.title,
+        ...(args.createdAt === undefined ? {} : { createdAt: args.createdAt }),
+      }),
+    );
     const [persisted] = await tx
       .select({ id: chatThreadEvents.id, seqId: chatThreadEvents.seqId })
       .from(chatThreadEvents)

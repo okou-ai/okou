@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
 type IntegrationChatThreadModelResult =
@@ -50,12 +50,16 @@ export const readIntegrationChatThreadModel$ = command(
     if (!thread) {
       return null;
     }
-    const model = await resolveChatInputModelSelection(set(writeDb$), {
-      ...thread,
-      orgId: args.orgId,
-      userId: args.userId,
-      modelSettings: modelSettingsSchema.parse(thread.modelSettings),
-    });
+    const model = await set(
+      resolveChatInputModelSelection$,
+      {
+        ...thread,
+        orgId: args.orgId,
+        userId: args.userId,
+        modelSettings: modelSettingsSchema.parse(thread.modelSettings),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if ("status" in model) {
       throw new Error(model.body.error.message);
@@ -104,12 +108,6 @@ export const updateIntegrationChatThreadModel$ = command(
       }
       case "response": {
         return { kind: "rejected" };
-      }
-      case "conflict":
-      case "expired": {
-        throw new Error(
-          `Unexpected ${result.kind} for an unkeyed model update`,
-        );
       }
     }
   },

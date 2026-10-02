@@ -8,17 +8,8 @@ import type {
   AgentRunOfficialWorkflowDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { asc, eq, inArray } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
-import {
-  type AcceptedOfficialWorkflowCatalog,
-  lockAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowRevisions,
-} from "./official-workflow-catalog-read.service";
+import type { AcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
   "Official Workflow execution state is not current; retry";
@@ -55,7 +46,7 @@ export interface OfficialWorkflowRunObservation {
   readonly provenance: AgentRunOfficialWorkflowProvenance;
 }
 
-function artifactMatches(
+export function artifactMatches(
   provenance: AgentRunOfficialWorkflowDefinitionProvenance["artifact"],
   artifact: OfficialWorkflowArtifactReference,
 ): boolean {
@@ -79,7 +70,7 @@ function acceptedArtifactsMatch(
   );
 }
 
-function blueprintIdentities(
+export function blueprintIdentities(
   definition: OfficialWorkflowAcceptedDefinition,
 ): readonly OfficialWorkflowRunBlueprintIdentity[] {
   return definition.blueprints.map((blueprint) => {
@@ -87,7 +78,7 @@ function blueprintIdentities(
   });
 }
 
-function blueprintIdentitiesMatch(
+export function blueprintIdentitiesMatch(
   left: readonly OfficialWorkflowRunBlueprintIdentity[],
   right: readonly OfficialWorkflowRunBlueprintIdentity[],
 ): boolean {
@@ -121,7 +112,7 @@ function acceptedRevisionMatchesDefinition(
   );
 }
 
-function acceptedRevisionsMatchDefinitions(
+export function acceptedRevisionsMatchDefinitions(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
 ): boolean {
@@ -135,7 +126,7 @@ function acceptedRevisionsMatchDefinitions(
   });
 }
 
-function acceptedDefinitionForName(
+export function acceptedDefinitionForName(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   name: string,
 ): OfficialWorkflowAcceptedDefinition | null {
@@ -235,27 +226,17 @@ export function assembleRunObservation(
   };
 }
 
-export async function acquireOfficialWorkflowRunCatalogAdmissionLock(
-  tx: Tx,
-  observation: OfficialWorkflowRunObservation | undefined,
-): Promise<void> {
-  if (!observation) {
-    return;
-  }
-  await lockAcceptedOfficialWorkflowCatalog(tx);
-}
-
-function lockedInstallationMatches(
+export function lockedInstallationMatches(
   expected: ResolvedOfficialWorkflowRunDefinition,
   row: {
     readonly id: string;
     readonly orgId: string;
     readonly agentId: string;
     readonly name: string;
-    readonly visibility: "public" | "private";
+    readonly visibility: string;
     readonly ownerUserId: string;
     readonly officialDefinitionName: string | null;
-    readonly officialInstallationState: "installing" | "installed" | null;
+    readonly officialInstallationState: string | null;
   },
   args: {
     readonly orgId: string;
@@ -275,7 +256,7 @@ function lockedInstallationMatches(
   );
 }
 
-function exactMountsMatch(
+export function exactMountsMatch(
   observation: OfficialWorkflowRunObservation,
   mounts: readonly PersistedStorageMount[] | undefined,
 ): boolean {
@@ -299,168 +280,4 @@ function exactMountsMatch(
       mount.writeback !== true
     );
   });
-}
-
-async function officialAutomationMatches(
-  tx: Tx,
-  args: {
-    readonly automationId: string | undefined;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly observation: OfficialWorkflowRunObservation;
-  },
-): Promise<boolean> {
-  if (!args.automationId) {
-    return true;
-  }
-  const [row] = await tx
-    .select({
-      id: workflowAutomations.id,
-      orgId: workflowAutomations.orgId,
-      workflowId: workflowAutomations.workflowId,
-      ownerUserId: workflowAutomations.ownerUserId,
-      blueprintKey: workflowAutomations.officialBlueprintKey,
-      appliedFingerprint: workflowAutomations.officialAppliedFingerprint,
-      reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-      definitionName: workflows.officialDefinitionName,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1)
-    .for("update");
-  if (!row) {
-    return false;
-  }
-  if (row.orgId !== args.orgId || row.ownerUserId !== args.userId) {
-    return false;
-  }
-  if (row.blueprintKey === null) {
-    return row.definitionName === null;
-  }
-  const definition = args.observation.definitions.find((candidate) => {
-    return candidate.workflowId === row.workflowId;
-  });
-  if (
-    !definition ||
-    row.definitionName !== definition.name ||
-    row.appliedFingerprint === null ||
-    row.reconciliationStatus !== "current"
-  ) {
-    return false;
-  }
-  const blueprint = definition.blueprints.find((candidate) => {
-    return candidate.key === row.blueprintKey;
-  });
-  return blueprint?.fingerprint === row.appliedFingerprint;
-}
-
-export async function validateOfficialWorkflowRunForInsert(
-  tx: Tx,
-  args: {
-    readonly observation: OfficialWorkflowRunObservation | undefined;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string | null;
-    readonly automationId: string | undefined;
-    readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
-    readonly allowMissingMountsForFailedRun: boolean;
-  },
-): Promise<OfficialWorkflowRunAdmissionError | null> {
-  const observation = args.observation;
-  if (!observation) {
-    return null;
-  }
-
-  const catalog = await readAcceptedOfficialWorkflowCatalog(tx);
-  if (!catalog || catalog.releaseId !== observation.releaseId) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-
-  const lockedInstallations = await tx
-    .select({
-      id: workflows.id,
-      orgId: workflows.orgId,
-      agentId: workflows.agentId,
-      name: workflows.name,
-      visibility: workflows.visibility,
-      ownerUserId: workflows.ownerUserId,
-      officialDefinitionName: workflows.officialDefinitionName,
-      officialInstallationState: workflows.officialInstallationState,
-    })
-    .from(workflows)
-    .where(
-      inArray(
-        workflows.id,
-        observation.definitions.map((definition) => {
-          return definition.workflowId;
-        }),
-      ),
-    )
-    .orderBy(asc(workflows.id))
-    .for("update");
-  if (lockedInstallations.length !== observation.definitions.length) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-  const installationById = new Map(
-    lockedInstallations.map((installation) => {
-      return [installation.id, installation] as const;
-    }),
-  );
-
-  const acceptedDefinitions: OfficialWorkflowAcceptedDefinition[] = [];
-  for (const expected of observation.definitions) {
-    const installation = installationById.get(expected.workflowId);
-    const accepted = acceptedDefinitionForName(
-      catalog.payload.definitions,
-      expected.name,
-    );
-    if (
-      !installation ||
-      !lockedInstallationMatches(expected, installation, args) ||
-      !accepted ||
-      accepted.revision !== expected.revision ||
-      !artifactMatches(expected.artifact, accepted.artifact) ||
-      !blueprintIdentitiesMatch(
-        expected.blueprints,
-        blueprintIdentities(accepted),
-      )
-    ) {
-      return new OfficialWorkflowRunAdmissionError();
-    }
-    acceptedDefinitions.push(accepted);
-  }
-  const revisions = await readAcceptedOfficialWorkflowRevisions(
-    tx,
-    acceptedDefinitions.map((accepted) => {
-      return { name: accepted.name, revision: accepted.revision };
-    }),
-  );
-  if (!acceptedRevisionsMatchDefinitions(acceptedDefinitions, revisions)) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-
-  if (
-    !args.allowMissingMountsForFailedRun &&
-    !exactMountsMatch(observation, args.runStorageMounts)
-  ) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-  if (
-    args.runStorageMounts !== undefined &&
-    !exactMountsMatch(observation, args.runStorageMounts)
-  ) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-  if (
-    !(await officialAutomationMatches(tx, {
-      automationId: args.automationId,
-      orgId: args.orgId,
-      userId: args.userId,
-      observation,
-    }))
-  ) {
-    return new OfficialWorkflowRunAdmissionError();
-  }
-  return null;
 }

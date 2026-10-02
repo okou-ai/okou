@@ -42,7 +42,6 @@ import type {
 } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import {
-  persistStripeWorkflowSource,
   StripeDeliveryClaimChangedError,
   StripeDeliveryTargetChangedError,
 } from "./workflow-stripe-queue.service";
@@ -1376,35 +1375,20 @@ async function processClaimedDelivery(
         triggerSource: "automation-event",
         triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
         replacePendingScheduleTick: false,
-        persistSourceTransition: async (tx) => {
-          await persistStripeWorkflowSource(
-            tx,
-            {
-              source: {
-                id: args.delivery.id,
-                revision: args.delivery.revision,
-                automationId: args.delivery.automationId,
-                connectorId: args.delivery.connectorId,
-                stripeAccountId: args.delivery.stripeAccountId,
-                livemode: args.delivery.livemode,
-                billingReason: args.delivery.billingReason,
-                orgId: target.automation.orgId,
-                userId: target.automation.ownerUserId,
-              },
-              automationId: {
-                automation: target.automation,
-                agentId: target.agentId,
-                chatThreadId: target.chatThreadId,
-              }.automation.id,
-              chatThreadId: {
-                automation: target.automation,
-                agentId: target.agentId,
-                chatThreadId: target.chatThreadId,
-              }.chatThreadId,
-              snapshot,
-            },
-            signal,
-          );
+        sourcePlan: {
+          kind: "stripe",
+          source: {
+            id: args.delivery.id,
+            revision: args.delivery.revision,
+            automationId: args.delivery.automationId,
+            connectorId: args.delivery.connectorId,
+            stripeAccountId: args.delivery.stripeAccountId,
+            livemode: args.delivery.livemode,
+            billingReason: args.delivery.billingReason,
+            orgId: target.automation.orgId,
+            userId: target.automation.ownerUserId,
+          },
+          snapshot,
         },
       },
       signal,

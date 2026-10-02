@@ -1,3 +1,5 @@
+import { nowDate } from "../../lib/time";
+import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -24,7 +26,6 @@ import {
   FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
 } from "./feishu-custom-connector-permissions";
 import type { Tx } from "../../lib/db-types";
-import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 type UpdateUserBuiltinConnectorsResult =
   | {
@@ -280,11 +281,16 @@ export async function updateUserBuiltinConnectors(
     }
 
     if (operation === "replace") {
-      await invalidatePiStableContext(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.agentId,
-      });
+      await tx.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            agentId: args.agentId,
+          },
+          nowDate(),
+        ),
+      );
       return { status: "updated", enabledConnectorSlugs };
     }
 
@@ -298,11 +304,16 @@ export async function updateUserBuiltinConnectors(
         return row.connectorSlug;
       }),
     } as const;
-    await invalidatePiStableContext(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-    });
+    await tx.execute(
+      invalidatePiStableContextSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: args.agentId,
+        },
+        nowDate(),
+      ),
+    );
     return result;
   });
 }
@@ -707,11 +718,16 @@ export async function updateUserCustomConnectors(
       connectorCatalogSnapshot,
     });
     if (persisted.result.status === "updated") {
-      await invalidatePiStableContext(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.agentId,
-      });
+      await tx.execute(
+        invalidatePiStableContextSql(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            agentId: args.agentId,
+          },
+          nowDate(),
+        ),
+      );
     }
     return persisted;
   });

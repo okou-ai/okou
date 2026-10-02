@@ -134,6 +134,59 @@ describe("CHAT-02: on-demand member memory initialization", () => {
 });
 
 describe("CHAT-02: web chat send and client ids", () => {
+  it("keeps one input and one launch when the first web send races its retry", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const clientThreadId = randomUUID();
+    const clientEventId = randomUUID();
+    const body = {
+      agentId,
+      prompt: "concurrent first input",
+      clientThreadId,
+      clientEventId,
+      model: await chat.getDefaultCreateThreadModel(actor),
+    };
+    const responses = await Promise.all([
+      chat.requestSendEvent(actor, body, [201]),
+      chat.requestSendEvent(actor, body, [201]),
+    ]);
+    for (const response of responses) {
+      expect(response.body).toMatchObject({
+        threadId: clientThreadId,
+        runId: null,
+      });
+    }
+    const messages = await waitForThreadMessages(
+      actor,
+      clientThreadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const inputs = userMessages(messages.events);
+    expect(
+      inputs.filter((message) => {
+        return message.id === clientEventId;
+      }),
+    ).toHaveLength(1);
+    const launches = inputs.filter((message) => {
+      return (
+        message.revokesEventId === clientEventId && message.runId !== undefined
+      );
+    });
+    expect(launches).toHaveLength(1);
+    const runId = launches[0]?.runId;
+    if (!runId) {
+      throw new Error("Expected one picked run for the raced input");
+    }
+    expect((await api.readRun(actor, runId)).prompt).toBe(body.prompt);
+    await cancelChatRun(actor, runId);
+  });
+
   it("creates a web chat run with client-provided ids", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

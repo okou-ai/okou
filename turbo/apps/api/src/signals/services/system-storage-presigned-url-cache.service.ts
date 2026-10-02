@@ -13,7 +13,7 @@ import {
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { db$, type Db, type ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
@@ -976,7 +976,6 @@ function storageManifestExceedsObjectKeyLowerBound(
 }
 
 interface StorageManifestPresignedUrlCacheReadInput {
-  readonly db: ReadonlyDb;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
   readonly groups: readonly RunStoragePresignedUrlsArgs["requests"][];
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
@@ -1061,12 +1060,9 @@ export function planStorageManifestMixedLookup(
 }
 
 function createMixedStorageManifestPresignedUrlCacheRows(
-  input$: Computed<
-    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
-  >,
+  args: StorageManifestPresignedUrlCacheReadInput | undefined,
 ) {
   return computed(async (get) => {
-    const args = await get(input$);
     if (!args) {
       return undefined;
     }
@@ -1088,7 +1084,7 @@ function createMixedStorageManifestPresignedUrlCacheRows(
       "nested",
       async () => {
         const lookup = async () => {
-          return await args.db
+          return await get(db$)
             .select({
               scope: systemStoragePresignedUrlCache.scope,
               cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -1175,13 +1171,11 @@ function createMixedStorageManifestPresignedUrlCacheRows(
 
 /** Construct cache readers once; later storage initialization only changes input. */
 export function createStorageManifestPresignedUrlCacheRows(
-  input$: Computed<
-    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
-  >,
+  args: StorageManifestPresignedUrlCacheReadInput | undefined,
 ): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
-  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(input$);
+  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(args);
   return computed(async (get) => {
-    const [args, mixedRows] = await Promise.all([get(input$), get(mixedRows$)]);
+    const mixedRows = await get(mixedRows$);
     if (!args || mixedRows) {
       return mixedRows;
     }
@@ -1215,7 +1209,7 @@ export function createStorageManifestPresignedUrlCacheRows(
         const rows =
           cacheKeys.length === 0
             ? []
-            : await args.db
+            : await get(db$)
                 .select({
                   cacheKey: systemStoragePresignedUrlCache.cacheKey,
                   presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
@@ -1653,7 +1647,6 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
 }
 
 interface RunStoragePresignedUrlsArgs {
-  readonly db: ReadonlyDb;
   readonly requests:
     | {
         readonly kind: "system";
@@ -1670,6 +1663,8 @@ interface RunStoragePresignedUrlsArgs {
   readonly observation?: StorageManifestCacheObservationContext;
   readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
+
+/** Shared run preparation signs from a captured cache snapshot without persisting. */
 
 export function resolveSystemStoragePresignedUrls(args: {
   readonly db: Db;

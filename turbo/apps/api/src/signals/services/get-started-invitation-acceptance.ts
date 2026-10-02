@@ -124,23 +124,6 @@ export function invitationClaimConflict(sourceKey: string) {
   };
 }
 
-/** A conditional claim transition lost to another redeemer. */
-export class InvitationClaimTransitionLost extends Error {
-  constructor(readonly claimId: string) {
-    super(`Invitation reward claim ${claimId} changed during acceptance`);
-    this.name = "InvitationClaimTransitionLost";
-  }
-}
-
-export function requireInvitationClaimTransition(
-  claimId: string,
-  updated: number | null,
-) {
-  if (updated !== 1) {
-    throw new InvitationClaimTransitionLost(claimId);
-  }
-}
-
 export function requireInvitationRewardIdentity(
   args: AcceptedGetStartedInvitation,
   claim: { readonly invitationId: string | null },

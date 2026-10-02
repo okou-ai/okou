@@ -7,8 +7,8 @@ import type {
   PermissionManifest,
 } from "./agent-run-contracts";
 import {
-  loadBuiltInRoutePricing,
-  loadRunRoutePricing,
+  builtInRoutePricing,
+  runRoutePricing,
   prepareModelUsageContext,
 } from "./built-in-route-pricing";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../context/usage-pricing-resolution";
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
+import type { OrgModelBootstrap } from "./model-bootstrap.service";
 import {
   matchAgentRunContextSignals,
   type AgentRunContextSignals,
@@ -80,7 +81,40 @@ import {
   type AgentConnectorScopeSnapshot,
   type CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
-import type { Tx } from "../../lib/db-types";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+  executeRawRows,
+} from "../../lib/db-raw-rows";
+import {
+  pendingOfficialAdmissionStart,
+  advancePendingOfficialAdmission,
+  pendingLaunchAdmissionRowSchema as admissionRow,
+} from "./pending-launch-official-plan";
+import {
+  pendingLaunchTailStart,
+  advancePendingLaunchTail,
+  pendingLaunchTailRowSchema as tailRow,
+  type PendingLaunchTailInput,
+} from "./pending-launch-tail-plan";
+import {
+  pendingLaunchClaimFenceSql,
+  requirePendingLaunchClaimFence,
+  pendingLaunchClaimProducerStatements,
+  type PendingLaunchClaim,
+} from "./pending-launch-claim-plan";
+import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
+import {
+  pendingLaunchInsertSql,
+  pendingLaunchUpdateSql,
+} from "./pending-launch-sql";
+import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
+import {
+  pendingRunAllowancePlan,
+  pendingRunAllowanceWindowsPlan,
+  allowanceSnapshotSchema as snapshotRow,
+} from "./pending-launch-allowance-plan";
 import { waitUntil } from "../context/wait-until";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
@@ -88,7 +122,6 @@ import {
   isFreePlanForCreditAdmission,
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
-  type OrgCreditAvailability,
   type RunAdmissionInput,
 } from "./run-admission.service";
 import {
@@ -96,8 +129,6 @@ import {
   type AdmissionAttemptOutcome,
 } from "./api-dispatch-admission-timing.service";
 import {
-  acquireOfficialWorkflowRunCatalogAdmissionLock,
-  validateOfficialWorkflowRunForInsert,
   acceptedRunCandidates,
   assembleRunObservation,
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
@@ -105,8 +136,6 @@ import {
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import {
-  resolveQueueFirstRunAdmission,
-  claimQueueFirstRunAssociation,
   isWebChatContextType,
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
@@ -115,22 +144,22 @@ import {
   type QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import {
-  activateUsageAllowanceWindowsForRun,
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
-  prepareUsageAllowanceRefresh,
+  createUsageAllowanceRefreshObject,
+  refreshUsageAllowanceAvailability$,
   remainingUnits,
-  resolveAvailabilityInTransaction,
   type PreparedUsageAllowanceRefresh,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
 import {
-  bindMorningBriefScheduleClaimRun,
-  morningBriefScheduleClaimBound,
-  morningBriefScheduleClaimSuperseded,
+  ACTIVE_ALLOWANCE_STATUSES,
+  activeAllowanceCutoff,
+} from "./usage-allowance-policy";
+import {
+  morningBriefScheduleClaimBound$,
+  morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
@@ -160,7 +189,6 @@ import {
 } from "./internal-chat-run-callback.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -247,16 +275,16 @@ import {
   canonicalChatInputModelSelection,
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
-import {
-  touchChatThreadLastMessageAt,
-  visibleChatEventCondition,
-} from "./chat-event-shared.service";
+import { visibleChatEventCondition } from "./chat-event-shared.service";
 import {
   chatEventTextCondition,
   chatEventTypeIn,
   runOwnedChatEventCondition,
 } from "./chat-event-type.service";
-import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
+import {
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+} from "./chat-event.service";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
   ChatQueueHeadRejection,
@@ -341,7 +369,7 @@ import {
 } from "./feature-switch-scope";
 import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
@@ -358,7 +386,6 @@ import {
   type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
-  validatePersonalSubscriptionAdmission,
 } from "./model-provider-account.service";
 import {
   type ModelFirstPin,
@@ -560,7 +587,7 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { alias, unionAll } from "drizzle-orm/pg-core";
+import { alias, unionAll, QueryBuilder } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -626,7 +653,6 @@ import {
   type RunMetadataValues,
   normalizeRunMetadata,
 } from "./agent-run-metadata-write.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -1905,7 +1931,7 @@ interface ClaimRunTiming {
   readonly phase: ApiDispatchPhaseCollector;
 }
 
-interface ThreadRunContext {
+export interface ThreadRunContext {
   readonly kind: "prepared";
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
@@ -2362,21 +2388,22 @@ type RunErrorResponse = {
  * A Built-in pin that found no route because every executable candidate
  * lacks usage pricing is rejected as unbillable (not as a temporary outage).
  */
-async function unpricedBuiltInModelRejection(
-  db: ReadonlyDb,
-  args: Parameters<typeof loadBuiltInRoutePricing>[1],
-): Promise<RunErrorResponse | undefined> {
-  const message = unpricedBuiltInModelMessage(
-    args.catalog,
-    args.model,
-    await loadBuiltInRoutePricing(db, args),
-  );
-  return message
-    ? {
-        status: 503,
-        body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
-      }
-    : undefined;
+function unpricedBuiltInModelRejection(
+  args: Parameters<typeof builtInRoutePricing>[0],
+) {
+  return computed(async (get): Promise<RunErrorResponse | undefined> => {
+    const message = unpricedBuiltInModelMessage(
+      args.catalog,
+      args.model,
+      await get(builtInRoutePricing(args)),
+    );
+    return message
+      ? {
+          status: 503,
+          body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
+        }
+      : undefined;
+  });
 }
 
 interface InternalRunCallbackInput {
@@ -2693,241 +2720,11 @@ const ABANDONED_HEAD_ERROR = {
   message: "The input could not be started",
 } as const;
 
-type AdmittedClaimRun = {
-  readonly kind: "admitted";
-  readonly validatedThreadSession: Awaited<
-    ReturnType<typeof validateThreadSessionSnapshot>
-  >;
-  readonly validatedAccountIdentity: string | null;
-  readonly queueFirstClaim: Extract<
-    Awaited<ReturnType<typeof claimQueueFirstRunAssociation>>,
-    { kind: "claimed" }
-  >;
-};
-
-type ClaimRunAdmission =
-  | AdmittedClaimRun
-  | Exclude<AtomicLaunchCommitCompletion["result"], { kind: "pending" }>;
-
 /** Revalidate only the captured admission facts under the pending transaction. */
-async function validateClaimedRunAdmission(
-  tx: Tx,
-  claim: ThreadClaim,
-  context: ThreadRunContext,
-  preparedCommit: PreparedCommitPreparedLaunchArgs,
-  timing: ApiDispatchTimingCollector,
-): Promise<ClaimRunAdmission> {
-  const { input, identity, launch } = context;
-  const { admissionTiming } = preparedCommit;
-  const validateOfficialAdmission = () => {
-    return timing.measure(
-      "api_dispatch_validate_official_workflow_admission",
-      "nested",
-      () => {
-        return validateOfficialWorkflowRunForInsert(tx, {
-          observation: input.context.officialWorkflowRun,
-          orgId: input.args.orgId,
-          userId: input.args.userId,
-          agentId: input.context.resolved.agentId,
-          automationId: input.args.agentRunMetadata?.workflowAutomationId,
-          runStorageMounts: launch.runStorageMounts,
-          allowMissingMountsForFailedRun: false,
-        });
-      },
-    );
-  };
-  const officialFailure = input.context.officialWorkflowRun
-    ? await admissionTiming.measureLeaf(
-        "official_workflow",
-        validateOfficialAdmission,
-      )
-    : await validateOfficialAdmission();
-  if (officialFailure) {
-    return conflict(officialFailure.message);
-  }
-  const validatedThreadSession = await admissionTiming.measureLeaf(
-    "thread_session",
-    () => {
-      return validateThreadSessionSnapshot(tx, {
-        createArgs: input.args,
-        identity,
-        timing: timing,
-      });
-    },
-  );
-  const subscription = await validateCapturedSubscriptionAccount(
-    tx,
-    preparedCommit,
-  );
-  if (subscription && !("identity" in subscription)) {
-    return subscription;
-  }
-  const association = input.args.queueFirstAssociation;
-  const modelPin = input.args.agentRunModelPin;
-  if (
-    !association ||
-    association.threadId !== claim.chatThreadId ||
-    !modelPin
-  ) {
-    throw new Error(
-      "Chat run commit requires its captured input association and model pin",
-    );
-  }
-  const queueFirstClaim = await admissionTiming.measureLeaf(
-    "queue_first",
-    async () => {
-      const admission = await resolveQueueFirstRunAdmission(tx, {
-        association,
-        sessionSnapshotState: validatedThreadSession
-          ? "current"
-          : "unvalidated",
-        timing: timing,
-      });
-      return await claimQueueFirstRunAssociation(tx, {
-        ...association,
-        admission,
-        runId: identity.runId,
-        selectedModel: modelPin.selectedModel,
-        ...(input.args.codexServiceTier
-          ? {
-              serviceTier:
-                input.args.codexServiceTier === "fast"
-                  ? ("priority" as const)
-                  : ("ultrafast" as const),
-            }
-          : {}),
-        timing: timing,
-      });
-    },
-  );
-  if (queueFirstClaim.kind === "lost") {
-    return { kind: "queue-first-claim-lost" };
-  }
-  return {
-    kind: "admitted",
-    validatedThreadSession,
-    validatedAccountIdentity: subscription?.identity ?? null,
-    queueFirstClaim,
-  };
-}
 
 /** Producer ownership is persisted with the run rather than carried as a callback. */
-async function persistClaimProducerBinding(
-  tx: Tx,
-  context: ThreadRunContext,
-  runId: string,
-): Promise<void> {
-  const producer = context.producerBinding;
-  if (producer?.kind === "automation") {
-    await bindMorningBriefScheduleClaimRun(tx, {
-      queueEventId: producer.queueEventId,
-      runId,
-    });
-  } else if (producer?.kind === "reassign-agent") {
-    await tx
-      .update(chatThreads)
-      .set({ agentId: producer.agentId })
-      .where(
-        and(
-          eq(chatThreads.id, producer.threadId),
-          eq(chatThreads.userId, producer.userId),
-          eq(chatThreads.agentId, producer.expectedAgentId),
-        ),
-      );
-    await appendChatThreadEvent(tx, {
-      kind: "sort_touched",
-      chatThreadId: producer.threadId,
-      userId: producer.userId,
-      orgId: producer.orgId,
-      agentId: producer.agentId,
-      reassignedAgentId: producer.agentId,
-    });
-  }
-}
 
 /** All writes here use the parent's one pending transaction. */
-async function persistClaimedRun(
-  tx: Tx,
-  context: ThreadRunContext,
-  preparedCommit: PreparedCommitPreparedLaunchArgs,
-  admission: AdmittedClaimRun,
-  timing: ApiDispatchTimingCollector,
-): Promise<Extract<AtomicLaunchCommitResult, { kind: "pending" }>> {
-  const { input, identity, launch } = context;
-  const { admissionTiming, persistence } = preparedCommit;
-  const persisted = await admissionTiming.measureLeaf(
-    "persistence",
-    async () => {
-      const capabilities = context.planCapabilities;
-      const creditAdmitted =
-        input.enforceBuiltInCredits &&
-        isFreePlanForCreditAdmission(capabilities?.planKey);
-      if (input.args.threadSessionResolution?.resetNativeSession) {
-        await tx
-          .update(agentSessions)
-          .set({
-            agentId: input.context.resolved.agentId,
-            conversationId: null,
-            storageMounts: [...launch.sessionStorageMounts],
-          })
-          .where(eq(agentSessions.id, identity.sessionId));
-      }
-      const rows = {
-        tx,
-        commit: preparedCommit,
-        payload: persistence.payload,
-        validatedThreadSession: admission.validatedThreadSession,
-        validatedAccountIdentity: admission.validatedAccountIdentity,
-      };
-      const ctes = buildAtomicLaunchCteContext(rows, creditAdmitted);
-      const rowsPersisted = await timing.measure(
-        "api_dispatch_persist_atomic_launch",
-        "nested",
-        () => {
-          return persistPendingAtomicLaunch(rows, ctes);
-        },
-      );
-      await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
-      await requestPiMemoryStage1DayForAdmittedRun(
-        tx,
-        rowsPersisted.run.id,
-        context.featureSwitchContext,
-      );
-      const threadSessionBinding =
-        input.args.chatThreadId && !admission.validatedThreadSession
-          ? await persistThreadSessionBinding(tx, {
-              chatThreadId: input.args.chatThreadId,
-              identity,
-              resolution: input.args.threadSessionResolution,
-              timing: timing,
-            })
-          : rowsPersisted.threadSessionBinding;
-      return { ...rowsPersisted, threadSessionBinding };
-    },
-  );
-  if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
-    await admissionTiming.measureLeaf("usage_allowance", async () => {
-      const startedAt = now();
-      await activateUsageAllowanceWindowsForRun(tx, {
-        orgId: input.args.orgId,
-        runId: persisted.run.id,
-        runCreatedAt: persisted.run.createdAt,
-        refresh: context.allowanceRefresh,
-      });
-      timing.recordElapsed(
-        "api_dispatch_activate_usage_allowance_windows",
-        "nested",
-        startedAt,
-      );
-    });
-  }
-  return {
-    ...persisted,
-    runnerJobPayload: persistence.payload,
-    runContextSnapshot: launch.runContextSnapshot,
-    queueFirstClaim: admission.queueFirstClaim,
-  };
-}
 
 /**
  * Reuse this outer graph for one organization pass. Each successful claim gets
@@ -2938,73 +2735,6 @@ async function persistClaimedRun(
  * Replace an unconsumed queued input with `input.rejected` and append its
  * visible error. Returns null when the input was already consumed.
  */
-async function appendQueueHeadRejection(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventId: string;
-    readonly errorMarker: string;
-    readonly displayError: string;
-  },
-): Promise<{
-  readonly assistantEventId: string;
-  readonly contextType: string | null;
-  readonly contextId: string | null;
-} | null> {
-  const [head] = await tx
-    .select({
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-      ),
-    )
-    .limit(1);
-  if (!head?.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const rejectedAt = new Date(
-    Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
-  );
-  const rejected = await replaceChatEvent(tx, args.eventId, {
-    chatThreadId: args.chatThreadId,
-    eventType: "input.rejected",
-    userMessage: head.userMessage,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: rejectedAt,
-  });
-  if (!rejected) {
-    return null;
-  }
-  const assistant = await insertChatEvent(tx, {
-    chatThreadId: args.chatThreadId,
-    eventType: "output.error",
-    content: args.displayError,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: new Date(rejectedAt.getTime() + 1),
-  });
-  if (!assistant) {
-    throw new Error("Failed to append queued input rejection");
-  }
-  await touchChatThreadLastMessageAt(
-    tx,
-    args.chatThreadId,
-    assistant.createdAt,
-  );
-  return {
-    assistantEventId: assistant.id,
-    contextType: head.contextType,
-    contextId: head.contextId,
-  };
-}
 
 /** A picked queue head a rejection records, publishes and reports. */
 interface RejectedQueueHead {
@@ -3028,24 +2758,17 @@ export interface ThreadClaimRunObjects {
 type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
 
 /** Plan, credit and usage-pack reads for one admission check. */
-function createRunAdmissionCreditReads(
-  input: CapturedRunAdmissionInput,
-  context: AgentRunContextSignals,
-) {
-  const capturedRunAdmissionReadInput$ = computed(() => {
-    return Promise.resolve(input);
-  });
-  const capturedRunAdmissionCapabilities$ = computed(
-    async (get): Promise<OrgPlanCapabilities | null> => {
-      return await get(context.plan$);
-    },
-  );
-  const runAdmissionCreditBalance$ = computed(async (get) => {
-    const { orgId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const [models, [expired]] = await Promise.all([
-      get(context.modelFacts$),
-      get(db$)
+const readRunAdmissionCredits$ = command(
+  async (
+    { get },
+    input: CapturedRunAdmissionInput,
+    models: OrgModelBootstrap,
+    signal: AbortSignal,
+  ) => {
+    const { orgId, userId, at } = input;
+    const db = get(db$);
+    const [[expired], [row]] = await Promise.all([
+      db
         .select({
           total: sum(creditExpiresRecord.remaining).mapWith(
             nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
@@ -3059,164 +2782,134 @@ function createRunAdmissionCreditReads(
             gt(creditExpiresRecord.remaining, 0),
           ),
         ),
-    ]);
-    return models.org === null
-      ? null
-      : models.org.credits - (expired?.total ?? 0);
-  });
-  const runAdmissionUsagePack$ = computed(async (get) => {
-    const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-      })
-      .from(usagePackCreditGrants)
-      .where(
-        and(
-          eq(usagePackCreditGrants.orgId, orgId),
-          eq(usagePackCreditGrants.userId, userId),
-          gt(usagePackCreditGrants.remainingAmount, 0),
-          gt(usagePackCreditGrants.expiresAt, at),
-        ),
-      );
-    return row?.total ?? 0;
-  });
-  const runAdmissionAvailability$ = computed(
-    async (get): Promise<OrgCreditAvailability | null> => {
-      const [capabilities, spendableCredits, usagePackCredits] =
-        await Promise.all([
-          get(capturedRunAdmissionCapabilities$),
-          get(runAdmissionCreditBalance$),
-          get(runAdmissionUsagePack$),
-        ]);
-      return capabilities && spendableCredits !== null
-        ? {
-            status: capabilities.status,
-            supportByok: capabilities.supportByok,
-            restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-            spendableCredits,
-            usagePackCredits,
-          }
-        : null;
-    },
-  );
-  return { capturedRunAdmissionCapabilities$, runAdmissionAvailability$ };
-}
-
-/** Allowance window and personal-subscription reads for one admission check. */
-function createRunAdmissionAllowanceReads(
-  input: CapturedRunAdmissionInput,
-  context: AgentRunContextSignals,
-) {
-  const capturedRunAdmissionReadInput$ = computed(() => {
-    return Promise.resolve(input);
-  });
-  const usageAllowanceSnapshot$ = computed(
-    async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
-      const input = await get(capturedRunAdmissionReadInput$);
-      const db = get(db$);
-      const { orgId } = input;
-      const at = nowDate();
-      const rows = await db
+      db
         .select({
-          entitlement: {
-            status: orgUsageAllowanceEntitlements.status,
-            expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-            shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-            weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-          },
-          window: {
-            kind: orgUsageAllowanceWindows.kind,
-            unitLimit: orgUsageAllowanceWindows.unitLimit,
-            consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-          },
-        })
-        .from(orgUsageAllowanceEntitlements)
-        .leftJoin(
-          orgUsageAllowanceWindows,
-          and(
-            eq(
-              orgUsageAllowanceWindows.entitlementId,
-              orgUsageAllowanceEntitlements.id,
-            ),
-            eq(orgUsageAllowanceWindows.orgId, orgId),
-            inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-            gte(
-              orgUsageAllowanceWindows.startsAt,
-              orgUsageAllowanceEntitlements.effectiveAt,
-            ),
-            lte(orgUsageAllowanceWindows.startsAt, at),
-            gt(orgUsageAllowanceWindows.expiresAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-            ),
+          total: sum(usagePackCreditGrants.remainingAmount).mapWith(
+            nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
           ),
-        )
+        })
+        .from(usagePackCreditGrants)
         .where(
           and(
-            eq(orgUsageAllowanceEntitlements.orgId, orgId),
-            inArray(orgUsageAllowanceEntitlements.status, [
-              ...ACTIVE_ALLOWANCE_STATUSES,
-            ]),
-            lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-              isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-            ),
+            eq(usagePackCreditGrants.orgId, orgId),
+            eq(usagePackCreditGrants.userId, userId),
+            gt(usagePackCreditGrants.remainingAmount, 0),
+            gt(usagePackCreditGrants.expiresAt, at),
           ),
-        )
-        .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-      const entitlement = rows[0]?.entitlement;
-      if (!entitlement) {
-        return null;
-      }
-      if (
-        entitlement.expiresAt &&
-        entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-      ) {
-        return "allowance_refresh_required";
-      }
-      const shortWindow = rows.find((row) => {
-        return row.window?.kind === "short";
-      })?.window;
-      const weeklyWindow = rows.find((row) => {
-        return row.window?.kind === "weekly";
-      })?.window;
-      const shortRemainingUnits = shortWindow
-        ? remainingUnits(shortWindow)
-        : entitlement.shortWindowUnits;
-      const weeklyRemainingUnits = weeklyWindow
-        ? remainingUnits(weeklyWindow)
-        : entitlement.weeklyWindowUnits;
-      return {
-        shortRemainingUnits,
-        weeklyRemainingUnits,
-        remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
-      };
-    },
-  );
-  const runAdmissionPersonalSubscription$ = computed(async (get) => {
-    const input = await get(capturedRunAdmissionReadInput$);
-    return isMemberSubscriptionRoute({
-      catalog: input.catalog,
-      member: (await get(context.memberModels$)).member,
-      model: input.selectedModel,
-      providerType: input.modelProviderType,
-    });
-  });
-  return { usageAllowanceSnapshot$, runAdmissionPersonalSubscription$ };
-}
+        ),
+    ]);
+    signal.throwIfAborted();
+    const spendableCredits =
+      models.org === null ? null : models.org.credits - (expired?.total ?? 0);
+    const capabilities = models.capabilities;
+    const usagePackCredits = row?.total ?? 0;
+    return {
+      capabilities,
+      availability:
+        capabilities && spendableCredits !== null
+          ? {
+              status: capabilities.status,
+              supportByok: capabilities.supportByok,
+              restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+              spendableCredits,
+              usagePackCredits,
+            }
+          : null,
+    };
+  },
+);
 
-type RunAdmissionReads = ReturnType<typeof createRunAdmissionCreditReads> &
-  ReturnType<typeof createRunAdmissionAllowanceReads> & {
-    readonly input: CapturedRunAdmissionInput;
-  };
+/** Allowance window and personal-subscription reads for one admission check. */
+const readAdmissionAllowanceSnapshot$ = command(
+  async (
+    { get },
+    input: CapturedRunAdmissionInput,
+    signal: AbortSignal,
+  ): Promise<UsageAllowanceAvailabilitySnapshot> => {
+    const db = get(db$);
+    const { orgId } = input;
+    const at = nowDate();
+    const rows = await db
+      .select({
+        entitlement: {
+          status: orgUsageAllowanceEntitlements.status,
+          expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+          shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+          weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+        },
+        window: {
+          kind: orgUsageAllowanceWindows.kind,
+          unitLimit: orgUsageAllowanceWindows.unitLimit,
+          consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+        },
+      })
+      .from(orgUsageAllowanceEntitlements)
+      .leftJoin(
+        orgUsageAllowanceWindows,
+        and(
+          eq(
+            orgUsageAllowanceWindows.entitlementId,
+            orgUsageAllowanceEntitlements.id,
+          ),
+          eq(orgUsageAllowanceWindows.orgId, orgId),
+          inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+          gte(
+            orgUsageAllowanceWindows.startsAt,
+            orgUsageAllowanceEntitlements.effectiveAt,
+          ),
+          lte(orgUsageAllowanceWindows.startsAt, at),
+          gt(orgUsageAllowanceWindows.expiresAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, orgId),
+          inArray(orgUsageAllowanceEntitlements.status, [
+            ...ACTIVE_ALLOWANCE_STATUSES,
+          ]),
+          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+          ),
+        ),
+      )
+      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+    signal.throwIfAborted();
+    const entitlement = rows[0]?.entitlement;
+    if (!entitlement) {
+      return null;
+    }
+    if (
+      entitlement.expiresAt &&
+      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+    ) {
+      return "allowance_refresh_required";
+    }
+    const shortWindow = rows.find((row) => {
+      return row.window?.kind === "short";
+    })?.window;
+    const weeklyWindow = rows.find((row) => {
+      return row.window?.kind === "weekly";
+    })?.window;
+    const shortRemainingUnits = shortWindow
+      ? remainingUnits(shortWindow)
+      : entitlement.shortWindowUnits;
+    const weeklyRemainingUnits = weeklyWindow
+      ? remainingUnits(weeklyWindow)
+      : entitlement.weeklyWindowUnits;
+    return {
+      shortRemainingUnits,
+      weeklyRemainingUnits,
+      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+    };
+  },
+);
 
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
@@ -3227,7 +2920,7 @@ export function createThreadClaimRunObjects(
   // Stripe entitlement refresh for an allowance window runs outside the
   // admission and pending transactions, in the same parallel preparation.
   const preparedAllowanceRefresh$ = computed(async (get) => {
-    return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
+    return await get(createUsageAllowanceRefreshObject(claim.orgId));
   });
   const orgModels$ = context.modelFacts$;
   const claimCatalog$ = computed(async (get) => {
@@ -3694,12 +3387,15 @@ export function createThreadClaimRunObjects(
     const catalog = await get(claimCatalog$);
     // A new run skips Built-in candidates whose billable categories for the
     // requested service tier lack usage_pricing, like any unavailable one.
-    const routePricing = await loadBuiltInRoutePricing(get(db$), {
-      catalog,
-      model: pin.selectedModel,
-      serviceTier: (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
-      resolution: get(usagePricingResolution$),
-    });
+    const routePricing = await get(
+      builtInRoutePricing({
+        catalog,
+        model: pin.selectedModel,
+        serviceTier: (await get(queuedModelRuntimeSelection$))
+          ?.codexServiceTier,
+        resolution: get(usagePricingResolution$),
+      }),
+    );
     const [keyIdsByVendor, cooldowns] = await Promise.all([
       get(keyIdsByVendor$),
       get(cooldowns$),
@@ -3948,17 +3644,11 @@ export function createThreadClaimRunObjects(
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
-        const db = set(writeDb$);
-        availability = await db.transaction(async (tx) => {
-          const refreshed = await resolveAvailabilityInTransaction(
-            tx,
-            input.orgId,
-            refresh,
-          );
-          signal.throwIfAborted();
-          return refreshed;
-        });
-        signal.throwIfAborted();
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId: input.orgId, refresh },
+          signal,
+        );
       }
       safeSync(() => {
         recordBillingOperationTimings([
@@ -4061,12 +3751,14 @@ export function createThreadClaimRunObjects(
     // `null`: a Built-in pin with no available route.
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
-        ? await unpricedBuiltInModelRejection(get(db$), {
-            catalog: await get(claimCatalog$),
-            model: pin.selectedModel,
-            serviceTier: selection.codexServiceTier,
-            resolution: get(usagePricingResolution$),
-          })
+        ? await get(
+            unpricedBuiltInModelRejection({
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            }),
+          )
         : undefined;
     return {
       pin,
@@ -5028,7 +4720,7 @@ export function createThreadClaimRunObjects(
                       eq(chatEvents.chatThreadId, threadId),
                       eq(chatEvents.runId, incompleteAnchorCandidate.runId),
                       runOwnedChatEventCondition(),
-                      visibleChatEventCondition(db),
+                      visibleChatEventCondition(),
                       or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
                     ),
                   ),
@@ -5120,7 +4812,7 @@ export function createThreadClaimRunObjects(
             eq(chatEvents.chatThreadId, threadId),
             inArray(chatEvents.runId, runIds),
             chatEventTextCondition(),
-            visibleChatEventCondition(db),
+            visibleChatEventCondition(),
           ),
         )
         .orderBy(asc(chatEvents.seqId));
@@ -5217,7 +4909,7 @@ export function createThreadClaimRunObjects(
           eq(chatEvents.chatThreadId, args.threadId),
           chatEventTextCondition(),
           inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(args.db),
+          visibleChatEventCondition(),
           isWebChatContextType(args.queuedMessage.contextType)
             ? or(
                 chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
@@ -5232,7 +4924,7 @@ export function createThreadClaimRunObjects(
                         chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
                         isNotNull(canonicalChatEventContent()),
                         inArray(chatEvents.runId, runIds),
-                        visibleChatEventCondition(args.db),
+                        visibleChatEventCondition(),
                       ),
                     )
                     .groupBy(chatEvents.runId),
@@ -6266,14 +5958,16 @@ export function createThreadClaimRunObjects(
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ) => {
-      await set(writeDb$).transaction((tx) => {
-        return recordGetStartedWorkflow(tx, {
+      const statement = recordGetStartedWorkflowSql(
+        {
           orgId: args.due.automation.orgId,
           userId: args.due.automation.ownerUserId,
           workflowId: args.due.automation.workflowId,
           sourceEventId: args.queueEventId,
-        });
-      });
+        },
+        nowDate(),
+      );
+      await set(writeDb$).execute(statement);
       signal.throwIfAborted();
     },
   );
@@ -9354,12 +9048,14 @@ export function createThreadClaimRunObjects(
       catalog,
       modelProvider,
       permissionManifest: connectors.permissionManifest,
-      routePricing: await loadRunRoutePricing(get(db$), {
-        catalog,
-        modelProvider,
-        serviceTier: (await get(contextInput$)).args.codexServiceTier,
-        resolution: get(usagePricingResolution$),
-      }),
+      routePricing: await get(
+        runRoutePricing({
+          catalog,
+          modelProvider,
+          serviceTier: (await get(contextInput$)).args.codexServiceTier,
+          resolution: get(usagePricingResolution$),
+        }),
+      ),
     });
     if ("kind" in usage) {
       return providerUnavailable(usage.message);
@@ -9521,26 +9217,27 @@ export function createThreadClaimRunObjects(
     return undefined;
   });
   const resolveAdmissionUsageAllowance$ = command(
-    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
+    async (
+      { get, set },
+      input: CapturedRunAdmissionInput,
+      signal: AbortSignal,
+    ) => {
       const startedAt = performance.now();
-      const { input } = reads;
-      const snapshot = await get(reads.usageAllowanceSnapshot$);
+      const snapshot = await set(
+        readAdmissionAllowanceSnapshot$,
+        input,
+        signal,
+      );
       signal.throwIfAborted();
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
-        const db = set(writeDb$);
-        availability = await db.transaction(async (tx) => {
-          const refreshed = await resolveAvailabilityInTransaction(
-            tx,
-            input.orgId,
-            refresh,
-          );
-          signal.throwIfAborted();
-          return refreshed;
-        });
-        signal.throwIfAborted();
+        availability = await set(
+          refreshUsageAllowanceAvailability$,
+          { orgId: input.orgId, refresh },
+          signal,
+        );
       }
       safeSync(() => {
         recordBillingOperationTimings([
@@ -9555,26 +9252,37 @@ export function createThreadClaimRunObjects(
       return availability;
     },
   );
-  const runAdmissionCheckAdmission$ = command(
-    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
-      const { input } = reads;
-      const personalSubscription = await get(
-        reads.runAdmissionPersonalSubscription$,
-      );
+  const runAdmissionCheckCheckAdmission$ = command(
+    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
+      const captured = { ...input, at: nowDate() };
+      const [models, memberModels] = await Promise.all([
+        get(context.modelFacts$),
+        get(memberModels$),
+      ]);
+      signal.throwIfAborted();
+      const personalSubscription = isMemberSubscriptionRoute({
+        catalog: input.catalog,
+        member: memberModels.member,
+        model: input.selectedModel,
+        providerType: input.modelProviderType,
+        credentialScope: "member",
+      });
       if (!input.enforceBuiltInCredits) {
-        const capabilities = await get(reads.capturedRunAdmissionCapabilities$);
-        signal.throwIfAborted();
         return (
           checkOrgPlanRunAdmission({
             ...input,
-            capabilities,
+            capabilities: models.capabilities,
             personalSubscription,
           }) ?? null
         );
       }
-      const availability = await get(reads.runAdmissionAvailability$);
-      signal.throwIfAborted();
+      const { availability } = await set(
+        readRunAdmissionCredits$,
+        captured,
+        models,
+        signal,
+      );
       const routeFailure = checkCatalogRunRoute(input.catalog, input);
       if (routeFailure) {
         return routeFailure;
@@ -9599,28 +9307,13 @@ export function createThreadClaimRunObjects(
       }
       const allowance = await set(
         resolveAdmissionUsageAllowance$,
-        reads,
+        captured,
         signal,
       );
       signal.throwIfAborted();
       return allowance && allowance.remainingUnits > 0
         ? null
         : insufficientCredits();
-    },
-  );
-  const runAdmissionCheckCheckAdmission$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const captured = { ...input, at: nowDate() };
-      return await set(
-        runAdmissionCheckAdmission$,
-        {
-          input: captured,
-          ...createRunAdmissionCreditReads(captured, context),
-          ...createRunAdmissionAllowanceReads(captured, context),
-        },
-        signal,
-      );
     },
   );
 
@@ -9646,6 +9339,149 @@ export function createThreadClaimRunObjects(
    * the claim still holds it; otherwise the transaction rolls back and nothing
    * changes. The queue row is locked last, as enqueue does.
    */
+  const rejectionInput$ = command(
+    async ({ get }, head: RejectedQueueHead, signal: AbortSignal) => {
+      const [source] = await get(db$)
+        .select({
+          id: chatEvents.id,
+          chatThreadId: chatEvents.chatThreadId,
+          eventType: chatEvents.eventType,
+          userMessage: canonicalChatEventUserMessage(),
+          createdAt: chatEvents.createdAt,
+          contextType: chatEvents.contextType,
+          contextId: chatEvents.contextId,
+          modelSelection: canonicalChatInputModelSelection(),
+        })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, head.id),
+            eq(chatEvents.chatThreadId, head.chatThreadId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!source?.userMessage) {
+        throw new Error("Queued input event is missing userMessage");
+      }
+      return { ...source, userMessage: source.userMessage };
+    },
+  );
+
+  const commitQueueHeadRejection$ = command(
+    async (
+      { set },
+      args: {
+        readonly head: RejectedQueueHead;
+        readonly errorMarker: string;
+        readonly displayError: string;
+        readonly lease?: ThreadClaim;
+      },
+      signal: AbortSignal,
+    ) => {
+      const source = await set(rejectionInput$, args.head, signal);
+      const rejectedAt = new Date(
+        Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
+      );
+      return await set(writeDb$).transaction(async (tx) => {
+        const rejected =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              chatEventReplacementInsertSql(source, {
+                chatThreadId: source.chatThreadId,
+                eventType: "input.rejected",
+                userMessage: source.userMessage,
+                runId: null,
+                error: args.errorMarker,
+                createdAt: rejectedAt,
+              }),
+            ),
+          )[0] ?? null;
+        signal.throwIfAborted();
+        let appended: {
+          readonly assistantEventId: string;
+          readonly contextType: string | null;
+          readonly contextId: string | null;
+        } | null = null;
+        if (rejected) {
+          const assistant =
+            parseRawRows(
+              chatEventCommandResultSchema,
+              await tx.execute(
+                chatEventInsertSql({
+                  chatThreadId: source.chatThreadId,
+                  eventType: "output.error",
+                  content: args.displayError,
+                  runId: null,
+                  error: args.errorMarker,
+                  createdAt: new Date(rejectedAt.getTime() + 1),
+                }),
+              ),
+            )[0] ?? null;
+          signal.throwIfAborted();
+          if (!assistant) {
+            throw new Error("Failed to append queued input rejection");
+          }
+          const [thread] = await tx
+            .update(chatThreads)
+            .set({
+              lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${assistant.createdAt.toISOString()}::timestamp)`,
+            })
+            .where(
+              and(
+                eq(chatThreads.id, source.chatThreadId),
+                isNotNull(chatThreads.agentId),
+              ),
+            )
+            .returning({
+              id: chatThreads.id,
+              userId: chatThreads.userId,
+              agentId: chatThreads.agentId,
+              lastMessageAt: chatThreads.lastMessageAt,
+            });
+          signal.throwIfAborted();
+          if (thread?.agentId) {
+            await tx.execute(
+              chatThreadEventInsertSql({
+                kind: "sort_touched",
+                userId: thread.userId,
+                chatThreadId: thread.id,
+                agentId: thread.agentId,
+                createdAt: thread.lastMessageAt,
+              }),
+            );
+            signal.throwIfAborted();
+          }
+          appended = {
+            assistantEventId: assistant.id,
+            contextType: source.contextType,
+            contextId: source.contextId,
+          };
+        }
+        if (args.lease) {
+          const { lease } = args;
+          const [released] = await tx
+            .update(queuedChatThreads)
+            .set({ claimId: null, claimExpiresAt: null })
+            .where(
+              and(
+                eq(queuedChatThreads.orgId, lease.orgId),
+                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
+                eq(queuedChatThreads.claimId, lease.claimId),
+              ),
+            )
+            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+          signal.throwIfAborted();
+          if (!released) {
+            tx.rollback();
+          }
+        }
+        return appended;
+      });
+    },
+  );
+
   const rejectChatQueueHead$ = command(
     async (
       { get, set },
@@ -9675,31 +9511,11 @@ export function createThreadClaimRunObjects(
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(writeDb$).transaction(async (tx) => {
-        const appended = await appendQueueHeadRejection(tx, {
-          chatThreadId: head.chatThreadId,
-          eventId: head.id,
-          errorMarker: error.code.toLowerCase(),
-          displayError,
-        });
-        if (lease) {
-          const [released] = await tx
-            .update(queuedChatThreads)
-            .set({ claimId: null, claimExpiresAt: null })
-            .where(
-              and(
-                eq(queuedChatThreads.orgId, lease.orgId),
-                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
-                eq(queuedChatThreads.claimId, lease.claimId),
-              ),
-            )
-            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-          if (!released) {
-            tx.rollback();
-          }
-        }
-        return appended;
-      });
+      const rejected = await set(
+        commitQueueHeadRejection$,
+        { head, errorMarker: error.code.toLowerCase(), displayError, lease },
+        signal,
+      );
       signal.throwIfAborted();
       if (!rejected) {
         return;
@@ -9838,7 +9654,8 @@ export function createThreadClaimRunObjects(
       if (!input) {
         return null;
       }
-      const { db, args } = input;
+      const { args } = input;
+      const db = get(db$);
       const [row] = await db
         .select({
           storageId: storages.id,
@@ -10717,9 +10534,7 @@ export function createThreadClaimRunObjects(
       ) {
         throw new Error("Prepared run does not belong to this thread claim");
       }
-      const database = set(writeDb$);
       const commit: CommitPreparedLaunchArgs = {
-        db: database,
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
@@ -10740,70 +10555,24 @@ export function createThreadClaimRunObjects(
       const preparedCommit: PreparedCommitPreparedLaunchArgs = {
         ...commit,
         persistence: context.persistence,
+        allowanceRefresh: context.allowanceRefresh,
+        planCapabilities: context.planCapabilities,
         admissionTiming,
       };
       const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
         "api_dispatch_insert_run_with_concurrency",
         "top_level",
         async () => {
-          const result = await database.transaction(
-            async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
-              admissionTiming.transactionStarted();
-              await acquireOfficialWorkflowRunCatalogAdmissionLock(
-                tx,
-                input.context.officialWorkflowRun,
-              );
-              admissionTiming.admissionStarted();
-              const admission = await validateClaimedRunAdmission(
-                tx,
-                claim,
-                context,
-                preparedCommit,
-                timing.run,
-              );
-              if (!("kind" in admission) || admission.kind !== "admitted") {
-                admissionTiming.callbackFinished();
-                return admission;
-              }
-              // Fence the lease before the run writes. Admission above already
-              // appended the input claim (locking the thread's event sequence
-              // row, which every enqueue takes first) and took the
-              // automation/plan locks that enqueue takes before its upsert.
-              const [fenced] = await tx
-                .update(queuedChatThreads)
-                .set({ claimId: null, claimExpiresAt: null })
-                .where(
-                  and(
-                    eq(queuedChatThreads.orgId, claim.orgId),
-                    eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
-                    eq(queuedChatThreads.claimId, claim.claimId),
-                  ),
-                )
-                .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-              if (!fenced) {
-                throw new Error(
-                  "Chat thread claim was lost before the pending commit",
-                );
-              }
-              const pending = await persistClaimedRun(
-                tx,
-                context,
-                preparedCommit,
-                admission,
-                timing.run,
-              );
-              // This unique insert is deliberately the final SQL statement.
-              // A concurrent active run rolls the entire pending commit back.
-              await tx.insert(activeAgentRuns).values({
-                runId: pending.run.id,
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                chatThreadId: claim.chatThreadId,
-                lastHeartbeatAt: pending.run.createdAt,
-              });
-              admissionTiming.callbackFinished();
-              return pending;
+          const result = await set(
+            commitPreparedPendingLaunch$,
+            preparedCommit,
+            {
+              orgId: claim.orgId,
+              chatThreadId: claim.chatThreadId,
+              claimId: claim.claimId,
+              producer: context.producerBinding,
             },
+            signal,
           );
           if ("kind" in result && result.kind === "pending") {
             set(internalCommittedRunId$, result.run.id);
@@ -10862,7 +10631,7 @@ export function createThreadClaimRunObjects(
             updatedAt: nowDate(),
           };
         };
-        if (await morningBriefScheduleClaimBound(database, pending.runId)) {
+        if (await set(morningBriefScheduleClaimBound$, pending.runId, signal)) {
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
@@ -10873,10 +10642,22 @@ export function createThreadClaimRunObjects(
               .where(eq(workflowAutomations.id, launched.automationId))
               .limit(1)
               .for("update");
-            if (
-              !locked ||
-              (await morningBriefScheduleClaimSuperseded(tx, pending.runId))
-            ) {
+            signal.throwIfAborted();
+            if (!locked) {
+              return;
+            }
+            const [observation] = await tx
+              .select({
+                superseded: morningBriefScheduleClaimSupersededCondition(
+                  pending.runId,
+                ).mapWith(pgBooleanDecoder),
+              })
+              .from(sql`(SELECT 1) AS schedule_claim_observation`);
+            signal.throwIfAborted();
+            if (!observation) {
+              throw new Error("Schedule claim observation returned no row");
+            }
+            if (observation.superseded) {
               return;
             }
             await tx
@@ -12894,8 +12675,6 @@ async function withStoragePrefixVersions(
 }
 // --- Thread-private implementation: launch persistence ---
 
-type DbTransaction = Tx;
-
 interface AgentRunCreateAdditionalVolume {
   readonly name: string;
   readonly version?: string;
@@ -13021,16 +12800,11 @@ interface QueueFirstRunClaimLost {
   readonly kind: "queue-first-claim-lost";
 }
 
-const validatedThreadSessionTransaction = Symbol(
-  "validatedThreadSessionTransaction",
-);
-
 interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly agentSessionId: string | null;
   readonly agentSessionRunId: string | null;
-  readonly [validatedThreadSessionTransaction]: DbTransaction;
 }
 
 type AtomicLaunchCommitResult =
@@ -13089,8 +12863,7 @@ interface PendingRunContext {
   > | null;
 }
 
-interface CommitPreparedLaunchArgs {
-  readonly db: Db;
+export interface CommitPreparedLaunchArgs {
   readonly createArgs: PendingRunArguments;
   readonly enforceBuiltInCredits: boolean;
   readonly context: PendingRunContext;
@@ -13404,7 +13177,9 @@ interface PreparedAtomicLaunchPersistence {
   >;
 }
 
-interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
+export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
+  readonly planCapabilities: OrgPlanCapabilities | null;
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
 }
@@ -13436,26 +13211,19 @@ interface ValidatedPreparedLaunchAdmission {
   readonly validatedAccountIdentity: string | null;
 }
 
-interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
-  readonly tx: DbTransaction;
-  readonly commit: PreparedCommitPreparedLaunchArgs;
-  readonly payload: RunnerJobPayload;
-}
-
 type ReturnedIdCte = WithSubquery & { readonly id: SQLWrapper };
 
 function returnedCteId(cte: ReturnedIdCte): SQL {
   // Child mutations read the returned key so their dependency is explicit;
   // data-modifying CTE declaration order alone does not order execution.
-  return sql`(SELECT ${cte.id} FROM ${cte})`;
+  return sql`(SELECT ${returnedCteColumn(cte, "id")} FROM ${cte})`;
 }
 
 function nullableReturnedCteId(cte: ReturnedIdCte | undefined): SQL {
-  return cte ? sql`(SELECT ${cte.id} FROM ${cte})` : sql`NULL`;
+  return cte ? returnedCteId(cte) : sql`NULL`;
 }
 
 function appendLaunchCallbackCte(args: {
-  readonly tx: DbTransaction;
   readonly ctes: WithSubquery[];
   readonly callbacks: readonly AgentRunCallbackInsert[];
   readonly insertedRun: ReturnedIdCte;
@@ -13463,18 +13231,19 @@ function appendLaunchCallbackCte(args: {
   if (args.callbacks.length === 0) {
     return;
   }
-  const insertedCallbacks = args.tx.$with("inserted_launch_callbacks").as(
-    args.tx.insert(agentRunCallbacks).values(
-      args.callbacks.map((callback) => {
-        return { ...callback, runId: returnedCteId(args.insertedRun) };
-      }),
+  args.ctes.push(
+    new QueryBuilder().$with("inserted_launch_callbacks", {}).as(
+      pendingLaunchInsertSql(
+        agentRunCallbacks,
+        args.callbacks.map((callback) => {
+          return { ...callback, runId: returnedCteId(args.insertedRun) };
+        }),
+      ),
     ),
   );
-  args.ctes.push(insertedCallbacks);
 }
 
 function launchThreadBindingCte(args: {
-  readonly tx: DbTransaction;
   readonly chatThreadId: string | undefined;
   readonly identity: LaunchRunIdentity;
   readonly insertedRun: ReturnedIdCte;
@@ -13486,83 +13255,91 @@ function launchThreadBindingCte(args: {
   if (args.validatedThreadSession.chatThreadId !== args.chatThreadId) {
     throw new Error("Validated chat thread does not match binding target");
   }
-  return args.tx.$with("updated_launch_thread_binding").as(
-    args.tx
-      .update(chatThreads)
-      .set({
-        agentSessionId: args.identity.sessionId,
-        agentSessionRunId: returnedCteId(args.insertedRun),
-      })
-      // Compare-and-set: another launch that rebound the thread since the
-      // snapshot makes this launch lose its claim.
-      .where(
+  return new QueryBuilder()
+    .$with("updated_launch_thread_binding", { id: chatThreads.id })
+    .as(
+      pendingLaunchUpdateSql(
+        chatThreads,
+        {
+          agentSessionId: args.identity.sessionId,
+          agentSessionRunId: returnedCteId(args.insertedRun),
+        },
         and(
           eq(chatThreads.id, args.chatThreadId),
           sql`${chatThreads.agentSessionRunId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionRunId}::uuid`,
         ),
-      )
-      .returning({ id: chatThreads.id }),
-  );
+        ["id"],
+      ),
+    );
 }
 
 function buildAtomicLaunchCteContext(
-  args: PersistAtomicLaunchRowsArgs,
+  args: AtomicLaunchRowsPlanArgs,
   creditAdmitted: boolean,
 ) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
   const insertedSession = rowsArgs.identity.shouldCreateSession
-    ? args.tx
-        .$with("inserted_launch_session")
+    ? new QueryBuilder()
+        .$with("inserted_launch_session", { id: agentSessions.id })
         .as(
-          args.tx
-            .insert(agentSessions)
-            .values(launchSessionValues(rowsArgs))
-            .returning({ id: agentSessions.id }),
+          pendingLaunchInsertSql(
+            agentSessions,
+            [launchSessionValues(rowsArgs)],
+            ["id"],
+          ),
         )
     : undefined;
   if (insertedSession) {
     ctes.push(insertedSession);
   }
 
-  const insertedRun = args.tx.$with("inserted_launch_run").as(
-    args.tx
-      .insert(agentRuns)
-      .values({
-        ...launchRunValues(rowsArgs, createdAt, metadata),
-        creditAdmitted,
-        modelProviderAccountIdentity: args.validatedAccountIdentity,
-        sessionId: insertedSession
-          ? returnedCteId(insertedSession)
-          : rowsArgs.identity.sessionId,
-      })
-      .returning({ id: agentRuns.id, createdAt: agentRuns.createdAt }),
-  );
+  const insertedRun = new QueryBuilder()
+    .$with("inserted_launch_run", {
+      id: agentRuns.id,
+      createdAt: agentRuns.createdAt,
+    })
+    .as(
+      pendingLaunchInsertSql(
+        agentRuns,
+        [
+          {
+            ...launchRunValues(rowsArgs, createdAt, metadata),
+            creditAdmitted,
+            modelProviderAccountIdentity: args.validatedAccountIdentity,
+            sessionId: insertedSession
+              ? returnedCteId(insertedSession)
+              : rowsArgs.identity.sessionId,
+          },
+        ],
+        ["id", "createdAt"],
+      ),
+    );
   ctes.push(insertedRun);
 
-  const insertedDiagnosticRegistration = args.tx
-    .$with("inserted_launch_connector_diagnostic_registration")
+  const insertedDiagnosticRegistration = new QueryBuilder()
+    .$with("inserted_launch_connector_diagnostic_registration", {})
     .as(
-      args.tx.insert(agentRunConnectorDiagnosticRegistrations).values({
-        runId: returnedCteId(insertedRun),
-        payload: args.commit.persistence.diagnosticRegistrationPayload,
-        createdAt,
-      }),
+      pendingLaunchInsertSql(agentRunConnectorDiagnosticRegistrations, [
+        {
+          runId: returnedCteId(insertedRun),
+          payload: args.commit.persistence.diagnosticRegistrationPayload,
+          createdAt,
+        },
+      ]),
     );
   // The insert executes with the statement and depends on insertedRun's ID.
   // Its returned row need not participate in the final result join.
   ctes.push(insertedDiagnosticRegistration);
 
   appendLaunchCallbackCte({
-    tx: args.tx,
     ctes,
     callbacks: rowsArgs.callbackRows,
     insertedRun,
   });
   const chatThreadId = args.commit.createArgs.chatThreadId;
   const updatedThread = launchThreadBindingCte({
-    tx: args.tx,
     chatThreadId,
     identity: rowsArgs.identity,
     insertedRun,
@@ -13579,9 +13356,18 @@ function buildAtomicLaunchCteContext(
 
 type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 
+interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
+  readonly commit: PreparedCommitPreparedLaunchArgs;
+  readonly payload: RunnerJobPayload;
+}
+interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
+  readonly kind: "admitted";
+  readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
+}
+
 function atomicThreadSessionBinding(args: {
   readonly context: AtomicLaunchCteContext;
-  readonly commit: CommitPreparedLaunchArgs;
+  readonly commit: Omit<CommitPreparedLaunchArgs, "db">;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
   readonly boundThreadId: string | null;
   readonly runId: string;
@@ -13604,84 +13390,6 @@ function atomicThreadSessionBinding(args: {
   };
 }
 
-async function persistPendingAtomicLaunch(
-  args: PersistAtomicLaunchRowsArgs,
-  context: AtomicLaunchCteContext,
-): Promise<PersistedAtomicLaunchRows> {
-  const timestamps = runnerJobQueueTimestamps();
-  const insertedQueue = args.tx.$with("inserted_launch_runner_job").as(
-    args.tx
-      .insert(runnerJobQueue)
-      .values({
-        runId: returnedCteId(context.insertedRun),
-        runnerGroup: args.payload.runnerGroup,
-        profile: args.payload.profile,
-        cliAgentSessionId: args.payload.cliAgentSessionId,
-        reuseKey: args.payload.reuseKey,
-        executionContext: args.payload.executionContext,
-        ...timestamps,
-      })
-      .returning({
-        runId: runnerJobQueue.runId,
-        createdAt: runnerJobQueue.createdAt,
-      }),
-  );
-  const ctes = [...context.ctes, insertedQueue];
-  if (context.updatedThread) {
-    ctes.push(context.updatedThread);
-  }
-  const [row] = await args.tx
-    .with(...ctes)
-    .select({
-      runId: context.insertedRun.id,
-      createdAt: context.insertedRun.createdAt,
-      runnerJobCreatedAt: insertedQueue.createdAt,
-      boundThreadId: nullableReturnedCteId(context.updatedThread).mapWith(
-        nullableDriverValueDecoder(pgTextDecoder),
-      ),
-    })
-    .from(context.insertedRun)
-    .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id));
-  if (row && context.updatedThread && !row.boundThreadId) {
-    throw new ChatThreadBindingChanged();
-  }
-  if (!row) {
-    throw new Error("Atomic pending launch persistence returned no row");
-  }
-  const capture = billingRunAttributionWrite({
-    id: row.runId,
-    orgId: context.rowsArgs.orgId,
-    userId: context.rowsArgs.userId,
-    startedAt: row.createdAt.toISOString(),
-    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
-    threadId: args.commit.persistence.rows.metadata.chatThreadId,
-  });
-  const [attribution] = await args.tx
-    .insert(billingRunAttribution)
-    .values(capture.values)
-    .onConflictDoUpdate(capture.conflict)
-    .returning({ id: billingRunAttribution.runId });
-  if (!attribution) {
-    throw new Error("New Run billing attribution conflicts with history");
-  }
-  return {
-    kind: "pending",
-    run: runRecordFromLaunchIdentity(
-      context.rowsArgs.identity,
-      "pending",
-      row.createdAt,
-    ),
-    runnerJobCreatedAt: row.runnerJobCreatedAt,
-    threadSessionBinding: atomicThreadSessionBinding({
-      context,
-      commit: args.commit,
-      validatedThreadSession: args.validatedThreadSession,
-      boundThreadId: row.boundThreadId,
-      runId: row.runId,
-    }),
-  };
-}
-
 function threadSessionBindingAction(args: {
   readonly identity: LaunchRunIdentity;
   readonly previousAgentSessionId: string | null;
@@ -13695,48 +13403,6 @@ function threadSessionBindingAction(args: {
         ? "reused"
         : "rotated")
   );
-}
-
-async function validateCapturedSubscriptionAccount(
-  tx: Tx,
-  args: PreparedCommitPreparedLaunchArgs,
-): Promise<
-  CreateRunErrorResult | { readonly identity: string | null } | undefined
-> {
-  const provider = args.context.modelProvider;
-  if (
-    provider &&
-    isPersonalSubscriptionProviderType(provider.type) &&
-    provider.credentialOwner === "member"
-  ) {
-    const type = provider.type;
-    return await args.admissionTiming.measureLeaf("subscription", async () => {
-      const account = await args.timing.measure(
-        "api_dispatch_subscription_validate_admission",
-        "nested",
-        async () => {
-          return await validatePersonalSubscriptionAdmission({
-            db: tx,
-            orgId: args.createArgs.orgId,
-            userId: args.createArgs.userId,
-            type,
-            sourceId: provider.id ?? undefined,
-          });
-        },
-        { subscription_provider_type: type },
-      );
-      if (!account) {
-        return {
-          ...conflict(
-            "The selected subscription account was disconnected. Reconnect it before starting another run.",
-          ),
-          admissionFailure: "subscription_account_disconnected" as const,
-        };
-      }
-      return { identity: personalSubscriptionAccountIdentity(account) };
-    });
-  }
-  return undefined;
 }
 
 /** The thread's session binding changed after the launch read its snapshot. */
@@ -17894,151 +17560,6 @@ interface AtomicLaunchCommitCompletion {
   readonly transactionReturnedAt: number;
 }
 
-async function persistThreadSessionBinding(
-  tx: DbTransaction,
-  args: {
-    readonly chatThreadId: string;
-    readonly identity: LaunchRunIdentity;
-    readonly resolution: PendingThreadSessionResolution | undefined;
-    readonly timing: ApiDispatchTimingCollector;
-    readonly validatedThreadSession?: ValidatedThreadSessionSnapshot;
-  },
-): Promise<ThreadSessionBindingWrite> {
-  const chatThreadId = args.chatThreadId;
-  const validatedThreadSession =
-    args.validatedThreadSession?.[validatedThreadSessionTransaction] === tx &&
-    args.validatedThreadSession.chatThreadId === chatThreadId
-      ? args.validatedThreadSession
-      : undefined;
-  const thread = validatedThreadSession
-    ? { agentSessionId: validatedThreadSession.agentSessionId }
-    : await args.timing.measure(
-        "api_dispatch_load_thread_session_binding",
-        "nested",
-        async () => {
-          const [loaded] = await tx
-            .select({ agentSessionId: chatThreads.agentSessionId })
-            .from(chatThreads)
-            .where(eq(chatThreads.id, chatThreadId))
-            .limit(1);
-          return loaded;
-        },
-      );
-  if (!thread) {
-    throw new Error("Chat thread not found while persisting session binding");
-  }
-
-  const action = threadSessionBindingAction({
-    identity: args.identity,
-    previousAgentSessionId: thread.agentSessionId,
-    resolution: args.resolution,
-  });
-  const [updated] = await args.timing.measure(
-    "api_dispatch_update_thread_session_binding",
-    "nested",
-    async () => {
-      return await tx
-        .update(chatThreads)
-        .set({
-          agentSessionId: args.identity.sessionId,
-          agentSessionRunId: args.identity.runId,
-        })
-        .where(eq(chatThreads.id, chatThreadId))
-        .returning({ id: chatThreads.id });
-    },
-  );
-  if (!updated) {
-    throw new Error("Failed to persist chat thread session binding");
-  }
-
-  return {
-    chatThreadId: updated.id,
-    agentSessionId: args.identity.sessionId,
-    agentSessionRunId: args.identity.runId,
-    action,
-  };
-}
-
-async function validateThreadSessionSnapshot(
-  tx: DbTransaction,
-  args: {
-    readonly createArgs: PendingRunArguments;
-    readonly identity: LaunchRunIdentity;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-): Promise<ValidatedThreadSessionSnapshot | undefined> {
-  const resolution = args.createArgs.threadSessionResolution;
-  const chatThreadId = args.createArgs.chatThreadId;
-  if (!chatThreadId) {
-    return undefined;
-  }
-
-  const [thread] = await args.timing.measure(
-    "api_dispatch_validate_thread_session_snapshot_thread",
-    "nested",
-    async () => {
-      return await tx
-        .select({
-          agentSessionId: chatThreads.agentSessionId,
-          agentSessionRunId: chatThreads.agentSessionRunId,
-        })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, chatThreadId))
-        .limit(1);
-    },
-  );
-  if (!thread) {
-    throw new Error("Chat thread not found while validating session snapshot");
-  }
-  // No thread row lock: the binding update compares this run id, and the
-  // final active-run insert is the per-thread lock.
-  if (!resolution) {
-    return undefined;
-  }
-  if (
-    thread.agentSessionId !== resolution.expected.agentSessionId ||
-    thread.agentSessionRunId !== resolution.expected.agentSessionRunId
-  ) {
-    throw new Error("Chat thread session changed during run preparation");
-  }
-
-  const expectedSessionId = resolution.expected.sessionId;
-  if (expectedSessionId === null) {
-    return Object.freeze({
-      kind: "validated-thread-session-snapshot",
-      chatThreadId,
-      agentSessionId: thread.agentSessionId,
-      agentSessionRunId: thread.agentSessionRunId,
-      [validatedThreadSessionTransaction]: tx,
-    });
-  }
-  const [session] = await args.timing.measure(
-    "api_dispatch_validate_thread_session_snapshot_session",
-    "nested",
-    async () => {
-      return await tx
-        .select({ conversationId: agentSessions.conversationId })
-        .from(agentSessions)
-        .where(eq(agentSessions.id, expectedSessionId))
-        .for("update")
-        .limit(1);
-    },
-  );
-  if (
-    !session ||
-    session.conversationId !== resolution.expected.conversationId
-  ) {
-    throw new Error("Chat thread session changed during run preparation");
-  }
-  return Object.freeze({
-    kind: "validated-thread-session-snapshot",
-    chatThreadId,
-    agentSessionId: thread.agentSessionId,
-    agentSessionRunId: thread.agentSessionRunId,
-    [validatedThreadSessionTransaction]: tx,
-  });
-}
-
 function admissionAttemptOutcome(
   result: AtomicLaunchCommitResult | CreateRunErrorResult,
 ): AdmissionAttemptOutcome {
@@ -19799,3 +19320,381 @@ interface ResolveModelProviderEnvironmentArgs {
   readonly piExecution: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
 }
+
+// Pending persistence uses connection-free SQL plans owned by one command.
+function pendingLaunchCommitResult(
+  args: PreparedCommitPreparedLaunchArgs,
+  admission: AdmittedPreparedLaunch,
+  persisted: PersistedAtomicLaunchRows,
+): AtomicLaunchCommitResult {
+  return {
+    ...persisted,
+    runnerJobPayload: args.persistence.payload,
+    runContextSnapshot: args.launch.runContextSnapshot,
+    queueFirstClaim: admission.queueFirstClaim,
+  };
+}
+
+function tailFacts(
+  args: PreparedCommitPreparedLaunchArgs,
+  claim: PendingLaunchClaim | undefined,
+  admission: AdmittedPreparedLaunch,
+  persisted: PersistedAtomicLaunchRows,
+): PendingLaunchTailInput {
+  return {
+    orgId: args.createArgs.orgId,
+    userId: args.createArgs.userId,
+    runId: persisted.run.id,
+    sessionId: args.identity.sessionId,
+    runCreatedAt: persisted.run.createdAt,
+    snapshot: args.persistence.rows.rowsArgs.launchSnapshot,
+    triggerSource: args.persistence.rows.metadata.triggerSource,
+    chatThreadId: args.persistence.rows.metadata.chatThreadId,
+    bindingThreadId: args.createArgs.chatThreadId,
+    action: args.createArgs.threadSessionResolution?.action,
+    requestMemory: Boolean(claim),
+    needsBinding:
+      Boolean(args.createArgs.chatThreadId) &&
+      !admission.validatedThreadSession,
+    binding: persisted.threadSessionBinding,
+  };
+}
+
+function pendingLaunchAllowanceInput(
+  args: PreparedCommitPreparedLaunchArgs,
+  run: RunRecord,
+) {
+  return {
+    orgId: args.createArgs.orgId,
+    runId: run.id,
+    runCreatedAt: run.createdAt,
+    refresh: args.allowanceRefresh,
+    action: "api_dispatch_activate_usage_allowance_windows" as const,
+  };
+}
+
+function assertPendingLaunchClaim(
+  args: PreparedCommitPreparedLaunchArgs,
+  claim: PendingLaunchClaim | undefined,
+) {
+  if (
+    claim &&
+    (args.createArgs.orgId !== claim.orgId ||
+      args.createArgs.chatThreadId !== claim.chatThreadId ||
+      args.createArgs.queueFirstAssociation?.threadId !== claim.chatThreadId ||
+      !args.createArgs.agentRunModelPin)
+  ) {
+    throw new Error(
+      "Chat run commit requires its captured input association and model pin",
+    );
+  }
+}
+
+function pendingActiveRunInsertSql(
+  args: CommitPreparedLaunchArgs,
+  run: RunRecord,
+) {
+  return pendingLaunchInsertSql(activeAgentRuns, [
+    pendingLaunchActiveRunValues(args, run),
+  ]);
+}
+
+function pendingLaunchActiveRunValues(
+  commit: CommitPreparedLaunchArgs,
+  run: RunRecord,
+) {
+  return {
+    runId: run.id,
+    orgId: commit.createArgs.orgId,
+    userId: commit.createArgs.userId,
+    chatThreadId: commit.createArgs.chatThreadId ?? null,
+    lastHeartbeatAt: run.createdAt,
+  };
+}
+
+function preparedNativeSessionResetStatements(
+  commit: PreparedCommitPreparedLaunchArgs,
+) {
+  return commit.createArgs.threadSessionResolution?.resetNativeSession
+    ? [
+        pendingLaunchUpdateSql(
+          agentSessions,
+          {
+            agentId: commit.context.resolved.agentId,
+            conversationId: null,
+            storageMounts: [...commit.launch.sessionStorageMounts],
+          },
+          eq(agentSessions.id, commit.identity.sessionId),
+        ),
+      ]
+    : [];
+}
+
+const pendingLaunchRowSchema = z.object({
+  runId: z.string(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+  runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
+  boundThreadId: z.string().nullable(),
+  billingAttributionId: z.string().nullable(),
+});
+
+function pendingAtomicLaunchResult(
+  args: AtomicLaunchRowsPlanArgs,
+  context: AtomicLaunchCteContext,
+  row:
+    | {
+        readonly runId: string;
+        readonly createdAt: Date;
+        readonly runnerJobCreatedAt: Date;
+        readonly boundThreadId: string | null;
+        readonly billingAttributionId: string | null;
+      }
+    | undefined,
+) {
+  if (row && context.updatedThread && !row.boundThreadId) {
+    throw new ChatThreadBindingChanged();
+  }
+  if (!row) {
+    throw new Error("Atomic pending launch persistence returned no row");
+  }
+  if (row.billingAttributionId !== row.runId) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
+  const persisted: PersistedAtomicLaunchRows = {
+    kind: "pending",
+    run: runRecordFromLaunchIdentity(
+      context.rowsArgs.identity,
+      "pending",
+      row.createdAt,
+    ),
+    runnerJobCreatedAt: row.runnerJobCreatedAt,
+    threadSessionBinding: atomicThreadSessionBinding({
+      context,
+      commit: args.commit,
+      validatedThreadSession: args.validatedThreadSession,
+      boundThreadId: row.boundThreadId,
+      runId: row.runId,
+    }),
+  };
+  return { persisted };
+}
+
+function pendingAtomicLaunchPlan(
+  args: AtomicLaunchRowsPlanArgs,
+  context: AtomicLaunchCteContext,
+) {
+  const timestamps = runnerJobQueueTimestamps();
+  const insertedQueue = new QueryBuilder()
+    .$with("inserted_launch_runner_job", {
+      runId: runnerJobQueue.runId,
+      createdAt: runnerJobQueue.createdAt,
+    })
+    .as(
+      pendingLaunchInsertSql(
+        runnerJobQueue,
+        [
+          {
+            runId: returnedCteId(context.insertedRun),
+            runnerGroup: args.payload.runnerGroup,
+            profile: args.payload.profile,
+            cliAgentSessionId: args.payload.cliAgentSessionId,
+            reuseKey: args.payload.reuseKey,
+            executionContext: args.payload.executionContext,
+            ...timestamps,
+          },
+        ],
+        ["runId", "createdAt"],
+      ),
+    );
+  const capture = billingRunAttributionWrite({
+    id: context.rowsArgs.identity.runId,
+    orgId: context.rowsArgs.orgId,
+    userId: context.rowsArgs.userId,
+    startedAt: context.createdAt.toISOString(),
+    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
+    threadId: args.commit.persistence.rows.metadata.chatThreadId,
+  });
+  const attribution = new QueryBuilder()
+    .$with("inserted_launch_billing_attribution", {
+      runId: billingRunAttribution.runId,
+    })
+    .as(
+      pendingLaunchBillingAttributionSql(
+        capture,
+        returnedCteId(context.insertedRun),
+      ),
+    );
+  const ctes = [...context.ctes, insertedQueue, attribution];
+  if (context.updatedThread) {
+    ctes.push(context.updatedThread);
+  }
+  return new QueryBuilder()
+    .with(...ctes)
+    .select({
+      billingAttributionId:
+        sql`(SELECT ${attribution.runId} FROM ${attribution})`
+          .mapWith(nullableDriverValueDecoder(billingRunAttribution.runId))
+          .as("billingAttributionId"),
+      runId: returnedCteColumn(context.insertedRun, "id")
+        .mapWith(agentRuns.id)
+        .as("runId"),
+      createdAt: returnedCteColumn(context.insertedRun, "created_at")
+        .mapWith(agentRuns.createdAt)
+        .as("createdAt"),
+      runnerJobCreatedAt: returnedCteColumn(insertedQueue, "created_at")
+        .mapWith(runnerJobQueue.createdAt)
+        .as("runnerJobCreatedAt"),
+      boundThreadId: nullableReturnedCteId(context.updatedThread)
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("boundThreadId"),
+    })
+    .from(context.insertedRun)
+    .innerJoin(
+      insertedQueue,
+      eq(
+        returnedCteColumn(insertedQueue, "run_id"),
+        returnedCteColumn(context.insertedRun, "id"),
+      ),
+    )
+    .getSQL();
+}
+
+function returnedCteColumn(cte: WithSubquery, name: string): SQL {
+  return sql`${sql.identifier(cte._.alias)}.${sql.identifier(name)}`;
+}
+
+function pendingLaunchRowsPlan(
+  commit: PreparedCommitPreparedLaunchArgs,
+  admission: ValidatedPreparedLaunchAdmission,
+  capabilities: OrgPlanCapabilities | null,
+) {
+  const creditAdmitted =
+    commit.enforceBuiltInCredits &&
+    isFreePlanForCreditAdmission(capabilities?.planKey);
+  const rows = { commit, payload: commit.persistence.payload, ...admission };
+  const context = buildAtomicLaunchCteContext(rows, creditAdmitted);
+  return {
+    rows,
+    context,
+  };
+}
+
+export const commitPreparedPendingLaunch$ = command(
+  async (
+    { set },
+    args: PreparedCommitPreparedLaunchArgs,
+    claim: PendingLaunchClaim | undefined,
+    signal: AbortSignal,
+  ): Promise<AtomicLaunchCommitAttempt> => {
+    signal.throwIfAborted();
+    const { admissionTiming, timing } = args;
+    assertPendingLaunchClaim(args, claim);
+    return await set(writeDb$).transaction(
+      async (tx): Promise<AtomicLaunchCommitAttempt> => {
+        admissionTiming.transactionStarted();
+        let admission = pendingOfficialAdmissionStart(args);
+        if (!args.context.officialWorkflowRun) {
+          admissionTiming.admissionStarted();
+        }
+        while ("kind" in admission && admission.kind === "statement") {
+          const step = admission;
+          if (step.phase === "catalog") {
+            admissionTiming.admissionStarted();
+          }
+          const rows = parseRawRows(admissionRow, await tx.execute(step.sql));
+          signal.throwIfAborted();
+          admission = advancePendingOfficialAdmission(args, step, rows);
+        }
+        if (!("kind" in admission) || admission.kind !== "admitted") {
+          admissionTiming.callbackFinished();
+          return admission;
+        }
+        // Release only this token, after the queue-head input claim succeeded.
+        if (claim) {
+          requirePendingLaunchClaimFence(
+            (await tx.execute(pendingLaunchClaimFenceSql(claim))).rowCount,
+          );
+        }
+        const persisted = await admissionTiming.measureLeaf(
+          "persistence",
+          async () => {
+            // The approved S1 snapshot also drives the persisted admission bit;
+            // account/session/queue authority is still checked by this writer.
+            const capabilities = args.planCapabilities;
+            signal.throwIfAborted();
+            for (const reset of preparedNativeSessionResetStatements(args)) {
+              await tx.execute(reset);
+            }
+            const prepared = pendingLaunchRowsPlan(
+              args,
+              admission,
+              capabilities,
+            );
+            const rowsPersisted = await timing.measure(
+              "api_dispatch_persist_atomic_launch",
+              "nested",
+              async () => {
+                const { rows, context } = prepared;
+                const plan = pendingAtomicLaunchPlan(rows, context);
+                const [row] = parseRawRows(
+                  pendingLaunchRowSchema,
+                  await tx.execute(plan),
+                );
+                return pendingAtomicLaunchResult(rows, context, row).persisted;
+              },
+            );
+            if (claim) {
+              for (const statement of pendingLaunchClaimProducerStatements(
+                claim.producer,
+                rowsPersisted.run.id,
+              )) {
+                await tx.execute(statement);
+              }
+            }
+            const input = tailFacts(args, claim, admission, rowsPersisted);
+            let tail = pendingLaunchTailStart(input);
+            while (tail.kind === "statement") {
+              const step = tail;
+              const rows = parseRawRows(tailRow, await tx.execute(step.sql));
+              signal.throwIfAborted();
+              tail = advancePendingLaunchTail(input, step, rows);
+            }
+            return { ...rowsPersisted, threadSessionBinding: tail.binding };
+          },
+        );
+        if (isBuiltInModelProviderType(args.context.modelProvider?.type)) {
+          const startedAt = now();
+          const activation = pendingLaunchAllowanceInput(args, persisted.run);
+          const [owned] = await tx
+            .select()
+            .from(entitlementQuery(activation.orgId));
+          signal.throwIfAborted();
+          const planned = pendingRunAllowancePlan(owned, activation, nowDate());
+          const [published] = planned.publication
+            ? parseRawRows(snapshotRow, await tx.execute(planned.publication))
+            : [];
+          signal.throwIfAborted();
+          const windows = pendingRunAllowanceWindowsPlan(
+            planned,
+            activation,
+            published,
+          );
+          if (windows) {
+            await tx.execute(windows.insert);
+            signal.throwIfAborted();
+            const issued = await tx.select().from(windows.windows);
+            signal.throwIfAborted();
+            requireRunAllowanceWindowPair(issued);
+          }
+          timing.recordElapsed(activation.action, "nested", startedAt);
+        }
+        // Keep this unique insertion last: do not acquire another row after it.
+        await tx.execute(pendingActiveRunInsertSql(args, persisted.run));
+        signal.throwIfAborted();
+        admissionTiming.callbackFinished();
+        return pendingLaunchCommitResult(args, admission, persisted);
+      },
+    );
+    // The caller records the durable receipt before observing cancellation.
+  },
+);

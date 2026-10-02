@@ -5,6 +5,21 @@
 the real SDK ModelRuntime. This is a model definition, not a substitute V4
 request or a second admission policy.
 
+## Effective limit corrections (2026-10-02)
+
+The [model-limit audit](model-limits-audit.md) supersedes the historical output
+snapshots below. The exact V4.1 Flash direct-API maximum in the provider's
+[Models documentation](https://api-docs.deepseek.com/api/list-models/) is 393,216,
+not 384,000. The OpenRouter primary-provider maximum is separately 943,718
+according to its live Models and endpoint metadata; it is not interchangeable
+with the direct API or a guarantee for every fallback endpoint. Both retain
+1,048,576 total context.
+
+`model-limits.ts` applies these corrections at the shared resolver and includes
+them in installed-CLI parity. The hand-pinned identity, cost, input modalities
+and dialect-compatibility boundary remain unchanged. Legacy V4 retains its
+provider-specific definition and is not remapped to V4.1.
+
 ## Provenance (2026-09-15)
 
 - [DeepSeek model details](https://api-docs.deepseek.com/quick_start/pricing/)

@@ -35,7 +35,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { writeDb$ } from "../../external/db";
 import { nowDate } from "../../../lib/time";
-import { appendChatThreadEvent } from "../../services/chat-thread-event.service";
+import { chatThreadEventInsertSql } from "../../services/chat-thread-event.service";
 import {
   connectorCatalogExecutableCapabilityState,
   persistConnectorCatalogCompatibility,
@@ -495,14 +495,16 @@ async function seedBenchChatThread(): Promise<BenchChatThreadFixture> {
     title,
   });
   await db.transaction(async (tx) => {
-    await appendChatThreadEvent(tx, {
-      userId,
-      orgId,
-      chatThreadId: threadId,
-      kind: "created",
-      agentId,
-      title,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        userId,
+        orgId,
+        chatThreadId: threadId,
+        kind: "created",
+        agentId,
+        title,
+      }),
+    );
   });
 
   return { userId, orgId, agentId, threadId };

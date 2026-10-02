@@ -1,34 +1,47 @@
 # Chat run pick
 
-`createPickObjects(orgId, threadId?, prefetchedBootstrap?)` in
-`turbo/apps/api/src/signals/services/pick-chat-run.service.ts` returns only
-`{ pick$ }`. The parent owns organization capacity, thread selection, the lease,
-outer scheduling and token-bound cleanup for no-capacity, empty or passed work.
+`pickChatThread$` in
+`turbo/apps/api/src/signals/services/pick-chat-run.service.ts` is a stable command
+constructed at module scope. It accepts ordinary organization/thread/cursor data
+and optional `prefetchedBootstrap`, returning `{ result, cursor }`. The outer
+picker owns organization capacity, thread selection, the lease, scheduling and
+token-bound cleanup for no-capacity, empty or passed work.
 `createThreadClaimRunObjects(claim, prefetchedBootstrap?)` in
 `thread-claim-run.service.ts` returns only
-`{ hasFirstPickableChatEvent$, startRun$ }`. It owns selection of the claimed
-thread's input, execution identity, pinned model, prompt, connectors, storage,
-private preparation, final admission, the pending transaction, selected-input
-rejection, post-commit activation and deferred URL-cache writes. No prepared
-execution context or selected raw event crosses this public boundary.
+`{ hasFirstPickableChatEvent$, startRun$ }`. The Thread owner now owns selection
+of the claimed thread's input, execution identity, pinned model, prompt,
+connectors, storage, private preparation, final admission, the pending
+transaction, selected-input rejection, post-commit activation and deferred
+URL-cache writes. No prepared execution context or selected raw event crosses
+this public boundary. The deleted `claim-run-context.ts` and
+`agent-run-execution.service.ts` are not compatibility entrypoints.
 
-Both factories accept ordinary business identities and an optional ordinary
-prefetch object containing identity values and a Promise. The child claim contains
-`orgId`, `chatThreadId` and `claimId`; the parent also keeps the claimed
-`queuedAt`. No factory in this path receives a `State`,
+Only actual successful lease-write receipts drive the claim graph. The outer
+receipt retains `orgId`, `chatThreadId`, `claimId`, `queuedAt` and its optional
+plain prefetch object containing identity values and an already-created Promise.
+The child receives only `{ orgId, chatThreadId, claimId }` and that prefetch
+object; it owns its pick-start timing. No factory in this path receives a `State`,
 `Computed`, `Command`, getter, setter, Store, signal or business callback, including
 inside a dependency object. Nodes are defined directly in their owning closure.
 The child exposes only its boolean observation and start command; private state is not
 forwarded into another factory. Plain conversion and decoding functions and
-transaction-local consistency primitives may remain ordinary functions.
+connection-free SQL builders may remain ordinary functions; transaction handles
+never leave their owning command callback.
 
-An organization traversal constructs the outer object once and calls the same
-`pick$` sequentially. Each successful claim constructs one new child object, after
-the lease is acquired. Its complete graph is built once for that claim. Resource
-commands do not construct additional graphs. A subsequent claim receives fresh
-query caches naturally; writes within one claim invalidate only that child's
-relevant snapshots. The factories perform no I/O, create no Store and capture no
-`AbortSignal`. All objects and `waitUntil` work use the one request-owned Store.
+An organization traversal calls the stable pick command with an invocation-local
+cursor. Only successful conditional lease writes append immutable receipts to
+private request-Store state. A predeclared computed derives child graphs from
+those receipts; a request-local weak memo keeps one graph per receipt identity.
+Each pick captures its graph once by its unique claim token, never a shared
+"latest claim" slot. Concurrent claims cannot replace each other's source
+snapshots. Failed claims add no receipt, and candidate cursors are returned as
+ordinary data even when another picker wins the claim.
+
+Receipts live only for the request Store, including its tracked background work;
+no receipt cleanup can invalidate an in-flight URL-cache update. Factories perform
+no I/O, create no Store and capture no `AbortSignal`. Resource commands and the
+fixed-thread repick scheduler invoke already-declared commands; they do not
+construct additional graphs.
 
 Pi memory maintenance keeps its own non-chat entrypoint (`startMaintenanceRun$`,
 driven by the Phase 2 worker); it does not provide another chat ingress. Domain
@@ -41,35 +54,38 @@ The successful path has this ownership shape (business rejection and telemetry
 are omitted):
 
 ```ts
-const claim = await set(claim$, signal);
-signal.throwIfAborted();
-if (!claim) return null;
+const { claim, cursor } = await set(claim$, input, signal);
+if (!claim) return { result: { kind: "none" }, cursor };
 
-// The captured plain claim drives a memoized child-graph computed.
-set(internalSelectedClaim$, claim);
-const claimed = get(selectedClaimRunObjects$);
-if (!claimed) throw new Error("Selected claim is missing");
+// The predeclared computed preserves one child graph per SQL receipt.
+const claimed = get(capturedClaims$).get(claim.claimId);
+if (!claimed) throw new Error("Missing captured claim graph");
 const [hasCapacity, hasInput] = await Promise.all([
-  get(orgHasCapacity$),
+  get(claimed.orgHasCapacity$),
   get(claimed.hasFirstPickableChatEvent$),
 ]);
 signal.throwIfAborted();
 if (!hasCapacity) {
   if (await set(releaseClaim$, claim, signal)) {
-    // Post-release capacity re-read: see "Org-full release and wakeup".
-    set(internalReloadPick$, (revision) => revision + 1);
-    if (await get(orgHasCapacity$)) set(scheduleThreadPick$, signal);
+    // This independent predeclared observation is first read after release.
+    const freed = await get(claimed.orgHasCapacityAfterRelease$);
+    signal.throwIfAborted();
+    if (freed) set(scheduleThreadPick$, claim, signal);
   }
-  return null;
+  return { result: { kind: "org-full" }, cursor };
 }
 if (!hasInput) {
   await set(deleteEmptyQueue$, claim, signal);
-  return null;
+  return { result: { kind: "none" }, cursor };
 }
 
 const runId = await set(claimed.startRun$, signal);
-if (runId === null) await set(releaseClaim$, claim, signal);
-return runId;
+if (runId === null) {
+  await set(releaseClaim$, claim, signal);
+  return { result: { kind: "none" }, cursor };
+}
+// The child has fenced the lease, scheduled URL-cache work and activated.
+return { result: { kind: "launched", runId }, cursor };
 ```
 
 After agent authorization,
@@ -88,8 +104,10 @@ Web session-authenticated direct sends and verified MCP direct sends start
 `get(createAgentBootstrap(userId, orgId, agentId))` before the enqueue transaction.
 `agent-bootstrap.service.ts` owns this signal factory. The entry passes the ordinary
 `{ userId, orgId, agentId, bootstrap: Promise<AgentBootstrap> }` object to its
-post-commit pick. It does not await it before returning the accepted-input
-response. Integration, automation, workflow-command, run-callback and other
+post-commit pick. `pickEnqueuedChatThread$` forwards it unchanged to the stable
+picker, which attaches it to only that successful claim's immutable receipt;
+`createThreadClaimRunObjects` receives the same Promise without an outer await.
+It does not await it before returning the accepted-input response. Integration, automation, workflow-command, run-callback and other
 non-Web direct-send entries keep the canonical claim-owned read.
 
 The package composes normalized member metadata, scoped connector selection,
@@ -173,11 +191,13 @@ there are no database-row/log assertions, elapsed polling or production hooks.
 
 ## One pick and one organization pass
 
-Each call invalidates organization capacity/candidate reads (`internalReloadPick$`
-revision). The conditional claim update's result is stored in
-`internalSelectedClaim$`, a write result from which the computed
-`selectedClaimRunObjects$` builds the claim's child graph
-(`createThreadClaimRunObjects`); the claim itself is an immutable value. The candidate query and conditional claim update both exclude
+Each invocation reads a fresh candidate and, after a successful claim, fresh
+claim-owned organization capacity. The actual conditional-write receipt is
+appended before the post-SQL abort check. There is no shared parameter or
+latest-claim slot. The predeclared `capturedClaims$` and per-Store weak memo
+preserve the graph of every immutable receipt, including concurrent claims and
+in-flight background URL-cache writes. The candidate query and conditional
+claim update both exclude
 threads with an active run. That slot also covers cancellation recovery until
 Runner completion or the existing stale-run cleanup releases it. A claim contains
 the organization, thread and a random token, with a fixed 10-second lease. Capacity and the FIFO head are read
@@ -185,10 +205,12 @@ in parallel after claim. The active count and capacity are independent reads;
 capacity retains the existing soft admission limit, including zero/unlimited
 and the paid-subscription payment grace policy.
 
-A pick handles at most one input. Normal no-capacity, empty-queue and completed
-paths explicitly release or delete using the captured thread/token pair.
-A picked input always ends terminal. When preparation or commit throws after
-the head was read, the head is rejected through the same rejection path as a
+A pick handles at most one input. The outer no-capacity, empty-queue and
+`startRun$ === null` paths release or delete using the captured thread/token pair.
+A successful start returns the run ID; the child's pending commit has already
+fenced and cleared the lease, so there is no outer success-path release.
+When preparation or commit throws after the head was read but before a durable
+run commit, the Thread owner rejects the head through the same path as a
 business rejection (`input.rejected` plus a visible `internal_error` message,
 the usual schedule settlement for an automation tick, the realtime event, and
 the unexpected-failure reply to the source integration). The only difference
@@ -199,6 +221,11 @@ fallback. Transient failures (KMS, a brief database outage) are handled the
 same way and the user sends again. The no-capacity exit never does this. If the
 marking write itself fails, the lease simply expires; there is no other
 catch/finally cleanup, so the thread waits at most about 10 seconds.
+The child records its actual committed run ID before later telemetry or abort
+checks. A failure after durable creation must not reject the consumed input.
+Deferred URL-cache writes and post-commit activation live outside that
+creation-failure boundary; their errors propagate without an outer retry,
+second rejection or compensating lease release.
 
 ### Org-full release and wakeup
 
@@ -212,9 +239,13 @@ This race is pre-existing: main's pick has the same claim → capacity read →
 release ordering. This PR's change made the window wide enough for main's
 single-read `chat-events-pi-preparation` scenario to hit it on CI.
 
-So after an org-full release that still owned the lease, the pick invalidates
-its capacity reads and reads capacity once more. If a slot is free, it
-schedules one fresh fixed-thread pick through `scheduleThreadPick$`. This is
+After an org-full release that still owned the lease, the pick first evaluates
+its independent `orgHasCapacityAfterRelease$` observation. This graph is declared
+with the initial observation when the receipt graph is constructed, but is not
+read before release. It therefore reads capacity afresh without a shared reload
+counter or mutation of the initial snapshot. If a slot is free, the pick
+schedules one new fixed-thread invocation of the same stable `pickChatThread$`
+through `scheduleThreadPick$`, without forwarding the old S1 prefetch. This is
 the same `waitUntil`-owned path used when input arrives under a lease. The
 scheduled pick runs with the pick's own signal, which is the background-work
 signal and not a request-response signal. Its failure is reported through
@@ -276,8 +307,8 @@ earlier queued input is rejected ahead of this one) are an accepted gap. A resch
 no notice, running-run notification, sidebar touch or realtime event.
 
 An organization pass captures a finite count of currently pickable threads and
-uses one factory with an oldest-first `(queuedAt, threadId)` cursor and a set of
-visited thread IDs. Enqueue retains its existing queue-time refresh; a concurrent
+uses the stable command with an invocation-local oldest-first
+`(queuedAt, threadId)` cursor and a set of visited thread IDs. Enqueue retains its existing queue-time refresh; a concurrent
 enqueue cannot make the same thread eligible twice in that pass. It advances
 to another thread after an empty queue, lost claim, revoked input or permanent
 business rejection. A null result is not proof that the organization has no

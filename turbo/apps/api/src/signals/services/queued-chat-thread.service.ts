@@ -1,61 +1,50 @@
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { command } from "ccstate";
 import { asc, gt, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
-
-type ReadDb = Pick<Db, "selectDistinct">;
+import { db$ } from "../external/db";
 
 /**
- * Record the latest enqueue time for the thread's pending input. Enqueue never
- * touches the lease: from claim to the pending commit the lease is the only
- * mutual exclusion, so a live lease stays with its picker and an empty or
- * expired lease is claimed as usual. `queuedAt` strictly advances (at least
- * 1 ms past the stored value, even under a frozen or skewed clock) so a lease
- * holder's empty-queue delete misses the new input, releases its lease and
- * schedules one new pick for the thread. A release after a launch, rejection
- * or `passed` preparation schedules no pick; remaining input waits for the
- * next enqueue, slot release or cron pass.
+ * Pure enqueue plan for the input-owning command's atomic write. It executes
+ * nothing and never receives or captures a database handle. queuedAt advances
+ * even under a frozen/skewed clock; no live lease is touched.
  */
-export async function markChatThreadQueued(
-  db: Db | Tx,
-  args: { readonly chatThreadId: string; readonly orgId: string },
-): Promise<void> {
+export function queuedChatThreadEnqueuePlan(args: {
+  readonly chatThreadId: string;
+  readonly orgId: string;
+}) {
   const queuedAt = nowDate();
-  await db
-    .insert(queuedChatThreads)
-    .values({
-      chatThreadId: args.chatThreadId,
-      orgId: args.orgId,
-      queuedAt,
-    })
-    .onConflictDoUpdate({
+  return {
+    values: { chatThreadId: args.chatThreadId, orgId: args.orgId, queuedAt },
+    conflict: {
       target: queuedChatThreads.chatThreadId,
       set: {
         queuedAt: sql`greatest(${sql.param(queuedAt, queuedChatThreads.queuedAt)}, ${queuedChatThreads.queuedAt} + interval '1 millisecond')`,
       },
-    });
+    },
+  };
 }
 
-/**
- * Organizations that have queued threads, by org id keyset. The cron walks
- * every page; each organization is then picked to its concurrency limit.
- */
-export async function listQueuedChatThreadOrgIds(
-  db: ReadDb,
-  args: { readonly after?: string; readonly limit: number },
-): Promise<readonly string[]> {
-  const rows = await db
-    .selectDistinct({ orgId: queuedChatThreads.orgId })
-    .from(queuedChatThreads)
-    .where(
-      args.after === undefined
-        ? undefined
-        : gt(queuedChatThreads.orgId, args.after),
-    )
-    .orderBy(asc(queuedChatThreads.orgId))
-    .limit(args.limit);
-  return rows.map(({ orgId }) => {
-    return orgId;
-  });
-}
+/** Organizations with queued threads, by org-id keyset, for the cron pass. */
+export const listQueuedChatThreadOrgIds$ = command(
+  async (
+    { get },
+    args: { readonly after?: string; readonly limit: number },
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    const rows = await get(db$)
+      .selectDistinct({ orgId: queuedChatThreads.orgId })
+      .from(queuedChatThreads)
+      .where(
+        args.after === undefined
+          ? undefined
+          : gt(queuedChatThreads.orgId, args.after),
+      )
+      .orderBy(asc(queuedChatThreads.orgId))
+      .limit(args.limit);
+    signal.throwIfAborted();
+    return rows.map(({ orgId }) => {
+      return orgId;
+    });
+  },
+);

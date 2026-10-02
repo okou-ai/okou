@@ -1,7 +1,6 @@
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 
 export interface GoogleMeetQueueSource {
   readonly automationId: string;
@@ -22,7 +21,7 @@ export class GoogleMeetAutomationSourceChangedError extends Error {
 }
 
 /** Queue admission gated by the current consumer and subscription rows. */
-function googleMeetQueueAdmissionSql(source: GoogleMeetQueueSource) {
+export function googleMeetQueueAdmissionSql(source: GoogleMeetQueueSource) {
   return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${workflowAutomations}
       WHERE ${and(
@@ -53,20 +52,4 @@ function googleMeetQueueAdmissionSql(source: GoogleMeetQueueSource) {
         eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
       )}
     )`;
-}
-
-export async function persistGoogleMeetWorkflowSource(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly source: GoogleMeetQueueSource;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { source } = args;
-  if ((await tx.execute(googleMeetQueueAdmissionSql(source))).rowCount === 0) {
-    throw new GoogleMeetAutomationSourceChangedError();
-  }
-  signal.throwIfAborted();
 }

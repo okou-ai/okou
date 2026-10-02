@@ -30,6 +30,8 @@ import {
   createComputerUseBddApi,
   computerUseToken,
 } from "./helpers/api-bdd-computer-use";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -250,10 +252,22 @@ describe("FILE-03 desktop computer-use runtime", () => {
   it("only exposes online hosts for delegated authorization requests", async () => {
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({ actor, triggerSource: "web" });
-    if (!run.threadId) {
-      throw new Error("Expected web run fixture to create a chat thread");
-    }
+    const runs = createRunsApi(context);
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Online host authorization",
+      visibility: "private",
+    });
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Select an online computer-use host",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    await runs.claimRunnerJob(run.runId);
 
     const base = now();
     mockNow(base);
@@ -321,10 +335,10 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: onlineHost.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "web",
-      computer_use_host_id: onlineHost.hostId,
-    });
+    await expect(
+      createChatFilesBddApi(context).readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: onlineHost.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("uses chat-thread authorization for a canonical Slack run", async () => {

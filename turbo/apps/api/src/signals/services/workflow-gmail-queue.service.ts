@@ -2,7 +2,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 
 export interface GmailQueueSource {
   readonly orgId: string;
@@ -38,7 +37,7 @@ function gmailQueueAutomationCondition(source: GmailQueueSource) {
 }
 
 /** Queue admission gated by the current account, consumer and watch rows. */
-function gmailQueueAdmissionSql(source: GmailQueueSource) {
+export function gmailQueueAdmissionSql(source: GmailQueueSource) {
   return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${connectors}
       WHERE ${and(
@@ -66,21 +65,4 @@ function gmailQueueAdmissionSql(source: GmailQueueSource) {
         ),
       )}
     )`;
-}
-
-/** Publish one input only while its mailbox, account and consumer remain current. */
-export async function persistGmailWorkflowSource(
-  tx: Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly source: GmailQueueSource;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { source } = args;
-  if ((await tx.execute(gmailQueueAdmissionSql(source))).rowCount === 0) {
-    throw new GmailAutomationSourceChangedError();
-  }
-  signal.throwIfAborted();
 }

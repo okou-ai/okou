@@ -1634,7 +1634,7 @@ const lunaApiKeyRoutes = [
     type: "openai-api-key",
     url: "https://api.openai.com/v1/responses",
     model: "gpt-5.6-luna",
-    contextWindow: 272_000,
+    contextWindow: 1_050_000,
   },
   {
     type: "openrouter-codex",
@@ -1646,7 +1646,7 @@ const lunaApiKeyRoutes = [
     type: "vercel-ai-gateway-codex",
     url: "https://ai-gateway.vercel.sh/v1/responses",
     model: "openai/gpt-5.6-luna",
-    contextWindow: 272_000,
+    contextWindow: 1_050_000,
   },
 ] as const;
 type LunaApiKeyProvider = (typeof lunaApiKeyRoutes)[number]["type"];

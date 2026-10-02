@@ -10,10 +10,8 @@ import {
   type ModelSettings,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { ReadonlyDb } from "../external/db";
 import {
   catalogBuiltInCandidates,
-  loadModelCatalog,
   type CatalogRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
@@ -267,10 +265,10 @@ function catalogBuiltInPrimaryVendor(
 }
 
 /** Key-pool vendor that serves the system default on Built-in routes. */
-export async function loadSystemDefaultBuiltInVendor(
-  db: Pick<ReadonlyDb, "select">,
-): Promise<string> {
-  const catalog = await loadModelCatalog(db);
+export function loadSystemDefaultBuiltInVendor(
+  catalogSnapshot: ModelCatalog,
+): string {
+  const catalog = catalogSnapshot;
   return catalogBuiltInPrimaryVendor(catalog, catalog.systemDefaultModel);
 }
 

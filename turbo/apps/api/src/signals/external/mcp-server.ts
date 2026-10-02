@@ -7,12 +7,6 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import {
-  mcpCreateChatThreadInputSchema,
-  mcpCreateChatThreadOutputSchema,
-  type McpCreateChatThreadInput,
-  type McpCreateChatThreadOutput,
-} from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import {
   mcpUpdateChatThreadInputSchema,
   mcpUpdateChatThreadOutputSchema,
   type McpUpdateChatThreadInput,
@@ -93,10 +87,6 @@ interface McpChatAccess {
   readonly listModels: (
     signal: AbortSignal,
   ) => Promise<McpDiscoveryResult<McpListModelsOutput>>;
-  readonly createThread: (
-    input: McpCreateChatThreadInput,
-    signal: AbortSignal,
-  ) => Promise<McpChatMutationResult<McpCreateChatThreadOutput>>;
   readonly updateThread: (
     input: McpUpdateChatThreadInput,
     signal: AbortSignal,
@@ -535,13 +525,15 @@ async function mutationTool<T extends Record<string, unknown>>(
       code: "unavailable",
       message:
         options.unavailableMessage ??
-        "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
-      retryable: true,
+        "The operation result is uncertain. Inspect the conversation before intentionally sending new work. Do not automatically retry an uncertain send.",
+      retryable: false,
     });
   }
   if (result.value.kind === "error") {
     return toolError({
-      code: result.value.code,
+      // Common Web commands use uppercase API codes; MCP's existing wire
+      // contract uses lowercase snake_case while retaining the business meaning.
+      code: result.value.code.toLowerCase(),
       message: result.value.message,
       retryable: result.value.retryable,
     });
@@ -556,44 +548,10 @@ function registerManageTools(
 ): void {
   registerChatTool(
     server,
-    "create_chat_thread",
-    {
-      description:
-        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model stores the member preference or system default at creation; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, run admission follows acceptance; use get_chat_status: acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
-      inputSchema: mcpCreateChatThreadInputSchema,
-      outputSchema: mcpCreateChatThreadOutputSchema,
-      annotations: {
-        title: "Create Chat Thread",
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
-    },
-    (input, context) => {
-      return mutationTool(
-        access,
-        "message" in input ? "okou:chat:send" : "okou:chat:manage",
-        (signal) => {
-          return access.createThread(input, signal);
-        },
-        AbortSignal.any([requestSignal, context.mcpReq.signal]),
-        {
-          summarize(data) {
-            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: ${data.nextAction.tool}.`;
-          },
-          unavailableMessage:
-            "Creation result is unavailable. Retry the identical requestId, mode, exact values and optional-field presence within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
-        },
-      );
-    },
-  );
-  registerChatTool(
-    server,
     "update_chat_thread",
     {
       description:
-        "Update title/model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock. model:null clears the pin; future inputs capture the system default at enqueue without changing the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Use one UUID requestId per patch. For 24 hours, retry identical threadId and patch until retryUntil. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without reverting settings.",
+        "Update title/model using the ordinary Web metadata command; omitted fields stay unchanged. model:null clears the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Inspect get_chat_thread after an uncertain update.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
@@ -604,20 +562,20 @@ function registerManageTools(
         openWorldHint: false,
       },
     },
-    (input, context) => {
+    (input) => {
       return mutationTool(
         access,
         "okou:chat:manage",
         (signal) => {
           return access.updateThread(input, signal);
         },
-        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        requestSignal,
         {
           summarize(data) {
-            return `Updated chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}.`;
+            return `Updated chat thread ${data.threadId}.`;
           },
           unavailableMessage:
-            "Update result is unavailable. Retry the identical requestId, threadId and exact patch within 24 hours; otherwise inspect get_chat_thread before making a new intended change.",
+            "Update result is uncertain. Inspect get_chat_thread before making a new intended change.",
         },
       );
     },
@@ -629,6 +587,10 @@ function registerMutationTools(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  // The SDK aborts mcpReq.signal when a successful exchange closes, including
+  // normal JSON response completion. Ordinary Web mutation commands schedule
+  // finite background work with their caller's HTTP/application lifetime, so
+  // keep that real request signal rather than the shorter SDK exchange signal.
   if (access.scopes.includes("okou:chat:manage")) {
     registerManageTools(server, access, requestSignal);
   }
@@ -638,7 +600,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message. Within 24 hours, retry only the identical threadId and exact text; retryUntil is the deadline. Sends are not generally idempotent after expiry, so inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Execute nextAction unchanged to observe this input with get_chat_status, then follow its message handoff.",
+          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional. Acceptance is not run completion: inspect messages/events and read the Run by runId. Never automatically retry an uncertain send.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
@@ -649,20 +611,17 @@ function registerMutationTools(
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:chat:send",
           (signal) => {
             return access.sendMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
-              const run = data.runId
-                ? `; run ${data.runId}`
-                : "; no run assigned";
-              return `Accepted chat input ${data.inputRef.eventId}; disposition ${data.disposition}${run}.`;
+              return `Accepted input in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -675,7 +634,7 @@ function registerMutationTools(
       "revoke_queued_message",
       {
         description:
-          "Withdraw an unclaimed queued input using the complete send_chat_message inputRef. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
+          "Recall a queued user input using agentId, threadId and revokesEventId, exactly as Web chat does. This does not cancel a Run or undo prior effects.",
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
@@ -686,18 +645,17 @@ function registerMutationTools(
           openWorldHint: false,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.revokeQueuedMessage(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
-              const run = data.runId ? `; run ${data.runId}` : "";
-              return `Queued input ${data.inputRef.eventId}: ${data.outcome}${run}.`;
+              return `Recalled queued input in chat thread ${data.threadId}.`;
             },
           },
         );
@@ -719,14 +677,14 @@ function registerMutationTools(
           openWorldHint: true,
         },
       },
-      (input, context) => {
+      (input) => {
         return mutationTool(
           access,
           "okou:run:cancel",
           (signal) => {
             return access.cancelRun(input, signal);
           },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+          requestSignal,
           {
             summarize(data) {
               return `Run ${data.runId} is cancelled${data.alreadyCancelled ? " (already cancelled)" : ""}.`;
@@ -748,7 +706,7 @@ function registerDiscoveryTools(
     "list_agents",
     {
       description:
-        "List visible Agents, including the default, with bounded descriptions rather than instructions/configuration. Continue nextCursor with the same limit (default 20, max 50); pages may be shortened by response limits. Cursors expire after 24 hours and visibility is rechecked per page. Use agentId with create_chat_thread.",
+        "List visible Agents, including the default, with bounded descriptions rather than instructions/configuration. Continue nextCursor with the same limit (default 20, max 50); pages may be shortened by response limits. Cursors expire after 24 hours and visibility is rechecked per page. Use agentId with send_chat_message.",
       inputSchema: mcpListAgentsInputSchema,
       outputSchema: mcpListAgentsOutputSchema,
       annotations: { ...readAnnotations, title: "List Agents" },
@@ -773,7 +731,7 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "List model catalog, member preference and system default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
+        "List model catalog, member preference and system default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with send_chat_message.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
       annotations: { ...readAnnotations, title: "List Models" },
@@ -835,19 +793,7 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe derived lifecycle {phase,outcome,output}. Pass complete send_chat_message inputRef " +
-        "for that input, or only threadId for the latest run. waitMs requires inputRef, clamps to " +
-        "8 seconds and 5 observations, and returns ready, deadline, or status; " +
-        "deadline or capacity is current state, not a run outcome. Missing associations never select " +
-        "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
-        "observations may map several inputs to one run and output. Terminal runs may remain " +
-        "finalizing with pending or partial output; ready means current materialized output is " +
-        "readable, but late output may arrive. A ready wait includes one bounded messagePage; follow " +
-        "its cursors or messages handoff. Disconnect cancels only the waiter, never the run. Honor " +
-        "retryAfterMs. Limits match get_chat_messages: 8 MiB gzip, 32 MiB history, 50,000 events, " +
-        "15 seconds; missing refs are unavailable and archive errors explicit. Response caps are " +
-        "16 KiB, or 192 KiB with messagePage. Reading neither marks read nor changes or cancels " +
-        "execution.",
+        "Read the ordinary Web Run state by runId. Discover run IDs in chat events/messages. This read does not wait, derive a second lifecycle, mark read, change execution or imply output completeness.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
       annotations: { ...readAnnotations, title: "Get Chat Status" },
@@ -861,16 +807,7 @@ function registerSearchAndStatusTools(
         },
         signal,
         (data) => {
-          const outcome = data.lifecycle.outcome
-            ? `/${data.lifecycle.outcome}`
-            : "";
-          const wait = data.wait
-            ? `; wait ${data.wait.outcome} (${data.wait.returnReason})`
-            : "";
-          const retry = data.retryAfterMs
-            ? `; retry after ${data.retryAfterMs} ms`
-            : "";
-          return `Chat ${data.threadId}: ${data.lifecycle.phase}${outcome}/${data.lifecycle.output}${wait}${retry}.`;
+          return `Run ${data.runId}: ${data.status}.`;
         },
         "Chat status is temporarily unavailable. Retry later.",
       );

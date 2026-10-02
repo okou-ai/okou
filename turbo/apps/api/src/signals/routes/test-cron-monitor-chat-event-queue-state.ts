@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "../services/chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
@@ -23,9 +25,12 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  insertChatEvent,
-  insertChatEventContext,
-  replaceChatEvent,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
 } from "../services/chat-event.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
@@ -309,8 +314,15 @@ async function seedFixtureEvents(
       automationId: randomUUID(),
       triggerBrief: null,
     };
-    await insertChatEventContext(tx, values);
-    const automation = await insertChatEvent(tx, values);
+    const contextInsert = chatEventContextInsertSql(values);
+    if (contextInsert) {
+      await tx.execute(contextInsert);
+    }
+    const automation =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(chatEventInsertSql(values)),
+      )[0] ?? null;
     return [automation];
   }
   if (fixtureKind === "queued-integration") {
@@ -335,17 +347,27 @@ async function seedFixtureEvents(
   }
   const event =
     fixtureKind === "failed-message"
-      ? await insertChatEvent(tx, {
-          ...baseEvent,
-          contextType: "web",
-          eventType: "input.rejected",
-          error: "INSUFFICIENT_CREDITS",
-        })
-      : await insertChatEvent(tx, {
-          ...baseEvent,
-          contextType: "web",
-          eventType: "input.prompt",
-        });
+      ? (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              ...baseEvent,
+              contextType: "web",
+              eventType: "input.rejected",
+              error: "INSUFFICIENT_CREDITS",
+            }),
+          ),
+        )[0] ?? null)
+      : (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql({
+              ...baseEvent,
+              contextType: "web",
+              eventType: "input.prompt",
+            }),
+          ),
+        )[0] ?? null);
   return [event];
 }
 
@@ -391,14 +413,29 @@ async function seedFixture(
 
   if (fixtureKind === "revoked-message") {
     const replacement = await db.transaction(async (tx) => {
-      return await replaceChatEvent(tx, event.id, {
-        chatThreadId: thread.id,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: "claimed orphan monitor fixture",
-        }),
-        runId: randomUUID(),
-      });
+      return (
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventReplacementInsertSql(
+              requireChatEventReplacementTarget(
+                parseRawRows(
+                  chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(event.id)),
+                ),
+              ),
+              {
+                chatThreadId: thread.id,
+                eventType: "input.prompt",
+                userMessage: createUserMessageDocument({
+                  text: "claimed orphan monitor fixture",
+                }),
+                runId: randomUUID(),
+              },
+            ),
+          ),
+        )[0] ?? null
+      );
     });
     if (!replacement) {
       throw new Error("Failed to revoke orphan monitor message");

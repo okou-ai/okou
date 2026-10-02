@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   chatRunFinishedEventConfigSchema,
   type ChatRunFinishedEventConfig,
@@ -17,25 +19,22 @@ import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadRunAutonomyBudget } from "./autonomy-budget.service";
-import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
-import { insertChatEvent } from "./chat-event.service";
+import { touchChatThreadLastMessageAtIndependently$ } from "./chat-event-shared.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import {
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
   pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import { waitUntil } from "../context/wait-until";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import {
-  ChatRunFinishedAutomationAlreadyAdmittedError,
-  persistWorkflowSourceReceipt,
-} from "./workflow-input-queue.service";
+import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
@@ -46,38 +45,59 @@ const CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE =
 const AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE =
   "e020ef30-b3ec-4465-83e0-f040094ef14b";
 
-async function appendAutonomyBudgetError(args: {
-  readonly db: Db;
-  readonly chatThreadId: string;
-  readonly sourceRunId: string;
-}): Promise<boolean> {
-  const errorEvent = await insertChatEvent(
-    args.db,
-    {
-      id: uuidv5(
-        `${args.chatThreadId}:${args.sourceRunId}`,
-        AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
-      ),
-      chatThreadId: args.chatThreadId,
-      eventType: "output.error",
-      content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-      runId: null,
-      error: "AUTONOMY_BUDGET_EXHAUSTED",
+const appendAutonomyBudgetError$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      readonly sourceRunId: string;
     },
-    "id",
-  );
-  if (!errorEvent) {
-    return false;
-  }
-  await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
-    return touchChatThreadLastMessageAtIndependently(
-      args.db,
-      args.chatThreadId,
-      { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const errorEvent =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await set(writeDb$).execute(
+          chatEventInsertSql(
+            {
+              id: uuidv5(
+                `${args.chatThreadId}:${args.sourceRunId}`,
+                AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+              ),
+              chatThreadId: args.chatThreadId,
+              eventType: "output.error",
+              content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+              runId: null,
+              error: "AUTONOMY_BUDGET_EXHAUSTED",
+            },
+            "id",
+          ),
+        ),
+      )[0] ?? null;
+    signal.throwIfAborted();
+    if (!errorEvent) {
+      return false;
+    }
+    const startedAt = performance.now();
+    const result = await settleIncludingAbort(
+      set(
+        touchChatThreadLastMessageAtIndependently$,
+        args.chatThreadId,
+        { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
+        signal,
+      ),
     );
-  });
-  return true;
-}
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "thread_touch",
+      args.chatThreadId,
+      startedAt,
+      result,
+    );
+    return true;
+  },
+);
 
 /**
  * Anchored case-insensitive `*`-wildcard match. Every character except `*`
@@ -218,28 +238,10 @@ const admitChatRunFinishedAutomation$ = command(
             `${automation.id}:${event.runId}`,
             CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
           ),
-          persistSourceTransition: async (tx) => {
-            await persistWorkflowSourceReceipt(
-              tx,
-              {
-                receipt: {
-                  kind: "chat-run-finished",
-                  sourceCallbackId: event.sourceCallbackId,
-                  runId: event.runId,
-                },
-                automationId: {
-                  automation,
-                  agentId,
-                  chatThreadId,
-                }.automation.id,
-                chatThreadId: {
-                  automation,
-                  agentId,
-                  chatThreadId,
-                }.chatThreadId,
-              },
-              signal,
-            );
+          sourcePlan: {
+            kind: "chat-run-finished",
+            sourceCallbackId: event.sourceCallbackId,
+            runId: event.runId,
           },
           apiStartTime: now(),
           agentRunSource: {
@@ -273,9 +275,7 @@ const admitChatRunFinishedAutomation$ = command(
           signal,
         ),
       );
-      waitUntil(
-        notifyRunningChatRunOfPendingInput(set(writeDb$), chatThreadId),
-      );
+      waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
   },
 );
@@ -356,7 +356,9 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
               signal,
             ),
           );
-          waitUntil(notifyRunningChatRunOfPendingInput(db, row.chatThreadId));
+          waitUntil(
+            set(notifyRunningChatRunOfPendingInput$, row.chatThreadId, signal),
+          );
         }
         continue;
       }
@@ -382,11 +384,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
           continue;
         }
         exhaustedThreadIds.add(chatThreadId);
-        const inserted = await appendAutonomyBudgetError({
-          db,
-          chatThreadId,
-          sourceRunId: event.runId,
-        });
+        const inserted = await set(
+          appendAutonomyBudgetError$,
+          {
+            chatThreadId,
+            sourceRunId: event.runId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         if (inserted) {
           await publishChatThreadMessageCreatedSafely({

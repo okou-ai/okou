@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "../signals/services/chat-event-append.service";
+import { parseRawRows } from "../lib/db-raw-rows";
 import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { randomUUID } from "node:crypto";
 
@@ -7,7 +9,12 @@ import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
-import { revokeChatEvent } from "../signals/services/chat-event.service";
+import {
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
+} from "../signals/services/chat-event.service";
 
 export async function readOfficialWorkflowQueueInputFixture(eventId: string) {
   const [row] = await db()
@@ -40,10 +47,25 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
 }) {
   const source = await readOfficialWorkflowQueueInputFixture(args.eventId);
   return await db().transaction(async (tx) => {
-    const revoked = await revokeChatEvent(tx, source.id, {
-      chatThreadId: source.chatThreadId,
-      eventType: "control.revoke",
-    });
+    const revoked =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
+          chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              parseRawRows(
+                chatEventReplacementTargetSchema,
+                await tx.execute(chatEventReplacementTargetSql(source.id)),
+              ),
+            ),
+            {
+              chatThreadId: source.chatThreadId,
+              eventType: "control.revoke",
+              content: null,
+            },
+          ),
+        ),
+      )[0] ?? null;
     if (!revoked) {
       throw new Error("Official queue fixture source was already revoked");
     }

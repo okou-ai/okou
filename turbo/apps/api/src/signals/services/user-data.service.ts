@@ -16,10 +16,7 @@ import type {
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  isCatalogModelRunnable,
-  loadModelCatalog,
-} from "./model-catalog.service";
+import { isCatalogModelRunnable, modelCatalog$ } from "./model-catalog.service";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
   modelSettingsSchema,
@@ -201,7 +198,7 @@ export function userModelPreference({
       .limit(1);
 
     // Only an active catalog model with a route is a current selection.
-    const catalog = await loadModelCatalog(db);
+    const catalog = await get(modelCatalog$);
     const selectedModel =
       row?.selectedModel && isCatalogModelRunnable(catalog, row.selectedModel)
         ? row.selectedModel

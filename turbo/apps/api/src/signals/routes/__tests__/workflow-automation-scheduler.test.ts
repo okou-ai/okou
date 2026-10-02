@@ -17,7 +17,6 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflow-schedule-expiry";
 import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
@@ -34,7 +33,6 @@ import { agentsRoutes } from "../agents";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
@@ -312,28 +310,6 @@ async function completeRunThroughSandbox(
   );
 }
 
-async function waitForScheduleCallback(
-  scenario: Scenario,
-  runId: string,
-): Promise<void> {
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      const callbacks = await store.set(
-        readAgentRunCallbacks$,
-        { orgId: scenario.orgId, userId: scenario.userId, runId },
-        context.signal,
-      );
-      return callbacks.find((callback) => {
-        return (
-          callback.internalKind === "workflow-automation:cron" ||
-          callback.internalKind === "workflow-automation:loop"
-        );
-      })?.status;
-    })(),
-  ).resolves.toBe("delivered");
-}
-
 async function deleteWorkflowViaApi(scenario: Scenario): Promise<void> {
   const response = await createApp({
     signal: context.signal,
@@ -589,29 +565,6 @@ describe("okou workflow automation scheduler", () => {
     const threadId = await executeDueWorkflowAutomations(created.body.id);
 
     const onceRun = await onlyWorkflowRunMessage(threadId);
-    const emittedCallbacks = await store.set(
-      readAgentRunCallbacks$,
-      {
-        orgId: scenario.orgId,
-        userId: scenario.userId,
-        runId: onceRun.runId,
-      },
-      context.signal,
-    );
-    const onceCallback = emittedCallbacks.find((callback) => {
-      return callback.internalKind === "workflow-automation:cron";
-    });
-    expect(
-      emittedCallbacks.every((callback) => {
-        return !callback.hasEncryptedSecret;
-      }),
-    ).toBeTruthy();
-    expect(onceCallback?.payload).toStrictEqual({
-      automationId: created.body.id,
-      timezone: "UTC",
-    });
-    expect(onceCallback?.status).toBe("pending");
-
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.enabled).toBeFalsy();
     expect(automation.nextRunAt).toBeNull();
@@ -619,6 +572,12 @@ describe("okou workflow automation scheduler", () => {
     await expect(onlyWorkflowDisplayText(threadId)).resolves.toBe(
       "The one-time scheduled run started.",
     );
+    await completeRunThroughSandbox(scenario, onceRun.runId, 0);
+    await flushWaitUntilForTest();
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
   });
 
   it("audits and disables an expired unclaimed one-time schedule without starting a Run", async () => {
@@ -898,14 +857,26 @@ describe("okou workflow automation scheduler", () => {
       const expectedOwner = queuedLaunch
         ? { ...later, identity: "later-owner-account" }
         : { ...owner, identity: "automation-owner" };
-      await expect(
-        runsApi.readRun(member, message.runId),
-      ).resolves.toMatchObject({
+      const pendingRun = await runsApi.readRun(member, message.runId);
+      expect(pendingRun).toMatchObject({
         status: "pending",
+        source: {
+          providerType: "codex-oauth-token",
+          credentialScope: "member",
+        },
       });
+      // An immediate run retains the replaced account's credentials, but the
+      // public source hides that now-disconnected account. A queued run binds
+      // the still-connected replacement when its slot is released.
+      expect(pendingRun.source?.account).toStrictEqual(
+        queuedLaunch
+          ? { status: "connected", id: expectedOwner.accountId }
+          : { status: "unavailable" },
+      );
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const claim = await runsApi.claimRunnerJob(message.runId);
       expect(claim.cliAgentType).toBe("codex");
+      expect(claim.billableFirewalls).toStrictEqual([]);
       expect(
         claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
       ).toBe(expectedOwner.accountId);
@@ -931,15 +902,6 @@ describe("okou workflow automation scheduler", () => {
           Authorization: `Bearer ${expectedOwner.token}`,
           "ChatGPT-Account-ID": expectedOwner.identity,
         },
-      });
-      await expect(
-        readRunModelSourceFixture(message.runId),
-      ).resolves.toMatchObject({
-        modelProvider: "codex-oauth-token",
-        modelProviderCredentialScope: "member",
-        modelProviderId: expectedOwner.accountId,
-        creditAdmitted: false,
-        builtInModelKeyId: null,
       });
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
       await disableAutomation(created.automationId);
@@ -1054,26 +1016,11 @@ describe("okou workflow automation scheduler", () => {
     }
 
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
+    const expectedNextRunAt = new Date(
+      Date.parse(created.body.nextRunAt) + 86_400_000,
+    ).toISOString();
     const threadId = await executeDueWorkflowAutomations(created.body.id);
     const run = await onlyWorkflowRunMessage(threadId);
-    const emittedCallbacks = await store.set(
-      readAgentRunCallbacks$,
-      {
-        orgId: scenario.orgId,
-        userId: scenario.userId,
-        runId: run.runId,
-      },
-      context.signal,
-    );
-    const cronCallback = emittedCallbacks.find((callback) => {
-      return callback.internalKind === "workflow-automation:cron";
-    });
-    expect(cronCallback?.payload).toStrictEqual({
-      automationId: created.body.id,
-      timezone: "UTC",
-      cronExpression: "0 9 * * *",
-    });
-    expect(cronCallback?.status).toBe("pending");
     expect(run).toMatchObject({
       workflowId: scenario.workflowId,
       workflowName: WORKFLOW_NAME,
@@ -1082,13 +1029,9 @@ describe("okou workflow automation scheduler", () => {
     await completeRunThroughSandbox(scenario, run.runId, 0);
 
     await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        return (await wf.readAutomation(created.body.id)).nextRunAt;
-      })(),
-    ).resolves.not.toBeNull();
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.enabled).toBeTruthy();
+    expect(automation.nextRunAt).toBe(expectedNextRunAt);
   });
 
   it("reschedules a loop automation from a canonical-only callback", async () => {
@@ -1100,22 +1043,6 @@ describe("okou workflow automation scheduler", () => {
     );
     const before = now();
     const run = await onlyWorkflowRunMessage(threadId);
-    const emittedCallbacks = await store.set(
-      readAgentRunCallbacks$,
-      {
-        orgId: scenario.orgId,
-        userId: scenario.userId,
-        runId: run.runId,
-      },
-      context.signal,
-    );
-    const loopCallback = emittedCallbacks.find((callback) => {
-      return callback.internalKind === "workflow-automation:loop";
-    });
-    expect(loopCallback?.payload).toStrictEqual({
-      automationId: automation.automationId,
-    });
-    expect(loopCallback?.status).toBe("pending");
     expect(run).toMatchObject({
       workflowId: scenario.workflowId,
       workflowName: WORKFLOW_NAME,
@@ -1222,9 +1149,11 @@ describe("okou workflow automation scheduler", () => {
 
       mockNow(Date.parse("2026-09-08T02:35:10.634Z"));
       await completeRunThroughSandbox(scenario, run.runId, 0);
-      // The edit already seeded nextRunAt; wait for the old callback before
-      // checking it so an eventual stale overwrite cannot pass unnoticed.
-      await waitForScheduleCallback(scenario, run.runId);
+      // Own the completion and its callbacks before reading the edited schedule.
+      await flushWaitUntilForTest();
+      await expect(
+        runsApi.readRun(scenario.actor, run.runId),
+      ).resolves.toMatchObject({ status: "completed" });
       await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
         schedule: updatedSchedule,
         enabled: true,

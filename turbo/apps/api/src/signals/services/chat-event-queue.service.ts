@@ -274,26 +274,6 @@ export async function listPendingChatInputs(
     });
 }
 
-/**
- * Load one thread's pending queue head. The queue is strict FIFO by the
- * thread's event sequence: user messages and automation events interleave in
- * the order they were appended.
- */
-export async function loadChatQueueHead(
-  db: ChatQueueReadDb,
-  chatThreadId: string,
-): Promise<PendingChatQueueEvent | null> {
-  const pending = await listPendingChatInputs(db, {
-    chatThreadId,
-    eventTypes: ["input.prompt", "input.automation"],
-  });
-  const [head] = pending;
-  if (!head || head.eventType === "input.budget") {
-    return null;
-  }
-  return { ...head, eventType: head.eventType };
-}
-
 export async function loadPendingChatQueueEvent(
   db: ChatQueueReadDb,
   args: {

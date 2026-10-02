@@ -4,7 +4,7 @@ import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 import { command } from "ccstate";
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 
-import type { ApiDb } from "../../lib/db-types";
+import { db$ } from "../external/db";
 import {
   planUserExportZipRange,
   serializeUserExportZipCentralHeader,
@@ -39,7 +39,6 @@ export interface UserExportAssemblyState {
 }
 
 interface AssemblyArgs {
-  readonly db: ApiDb;
   readonly bucket: string;
   readonly jobId: string;
   readonly userId: string;
@@ -75,118 +74,144 @@ function entryEtag(entry: ExportEntry): string {
   return etag;
 }
 
-async function localSegments(
-  args: AssemblyArgs,
-  end: number,
-  signal: AbortSignal,
-): Promise<AssemblySegments> {
-  const rows = await args.db
-    .select()
-    .from(userExportEntries)
-    .where(
-      and(
-        eq(userExportEntries.jobId, args.jobId),
-        eq(userExportEntries.ready, true),
-        lt(userExportEntries.localOffset, end),
-        gt(
-          sql`${userExportEntries.localOffset} + ${localHeaderSizeSql()} + ${userExportEntries.size}`,
-          args.state.zipOffset,
+const localSegments$ = command(
+  async (
+    { get },
+    args: AssemblyArgs,
+    end: number,
+    signal: AbortSignal,
+  ): Promise<AssemblySegments> => {
+    const rows = await get(db$)
+      .select()
+      .from(userExportEntries)
+      .where(
+        and(
+          eq(userExportEntries.jobId, args.jobId),
+          eq(userExportEntries.ready, true),
+          lt(userExportEntries.localOffset, end),
+          gt(
+            sql`${userExportEntries.localOffset} + ${localHeaderSizeSql()} + ${userExportEntries.size}`,
+            args.state.zipOffset,
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(userExportEntries.localOffset), asc(userExportEntries.ordinal))
-    .limit(LOCAL_ENTRY_BATCH);
-  signal.throwIfAborted();
-  const segments: UserExportZipRangeSegment[] = [];
-  const etags = new Map<string, string>();
-  let availableEnd = args.state.zipOffset;
-  for (const entry of rows) {
-    const header = serializeUserExportZipLocalHeader(entry);
-    segments.push({ type: "bytes", offset: entry.localOffset, bytes: header });
-    segments.push({
-      type: "source",
-      offset: entry.localOffset + header.length,
-      size: entry.size,
-      sourceKey: entry.sourceKey,
-      sourceOffset: 0,
-    });
-    etags.set(entry.sourceKey, entryEtag(entry));
-    availableEnd = entry.localOffset + header.length + entry.size;
-  }
-  return { segments, etags, end: Math.min(end, availableEnd) };
-}
+      )
+      .orderBy(
+        asc(userExportEntries.localOffset),
+        asc(userExportEntries.ordinal),
+      )
+      .limit(LOCAL_ENTRY_BATCH);
+    signal.throwIfAborted();
+    const segments: UserExportZipRangeSegment[] = [];
+    const etags = new Map<string, string>();
+    let availableEnd = args.state.zipOffset;
+    for (const entry of rows) {
+      const header = serializeUserExportZipLocalHeader(entry);
+      segments.push({
+        type: "bytes",
+        offset: entry.localOffset,
+        bytes: header,
+      });
+      segments.push({
+        type: "source",
+        offset: entry.localOffset + header.length,
+        size: entry.size,
+        sourceKey: entry.sourceKey,
+        sourceOffset: 0,
+      });
+      etags.set(entry.sourceKey, entryEtag(entry));
+      availableEnd = entry.localOffset + header.length + entry.size;
+    }
+    return { segments, etags, end: Math.min(end, availableEnd) };
+  },
+);
 
-async function centralSegments(
-  args: AssemblyArgs,
-  end: number,
-  signal: AbortSignal,
-): Promise<AssemblySegments> {
-  const rows = await args.db
-    .select()
-    .from(userExportEntries)
-    .where(
-      and(
-        eq(userExportEntries.jobId, args.jobId),
-        eq(userExportEntries.ready, true),
-        lt(userExportEntries.centralOffset, end - args.state.localSize),
-        gt(
-          sql`${userExportEntries.centralOffset} + ${centralHeaderSizeSql()}`,
-          args.state.zipOffset - args.state.localSize,
+const centralSegments$ = command(
+  async (
+    { get },
+    args: AssemblyArgs,
+    end: number,
+    signal: AbortSignal,
+  ): Promise<AssemblySegments> => {
+    const rows = await get(db$)
+      .select()
+      .from(userExportEntries)
+      .where(
+        and(
+          eq(userExportEntries.jobId, args.jobId),
+          eq(userExportEntries.ready, true),
+          lt(userExportEntries.centralOffset, end - args.state.localSize),
+          gt(
+            sql`${userExportEntries.centralOffset} + ${centralHeaderSizeSql()}`,
+            args.state.zipOffset - args.state.localSize,
+          ),
         ),
-      ),
-    )
-    .orderBy(
-      asc(userExportEntries.centralOffset),
-      asc(userExportEntries.ordinal),
-    )
-    .limit(CENTRAL_ENTRY_BATCH);
-  signal.throwIfAborted();
-  const segments: UserExportZipRangeSegment[] = [];
-  let availableEnd = args.state.zipOffset;
-  for (const entry of rows) {
-    const header = serializeUserExportZipCentralHeader({
-      ...entry,
-      localHeaderOffset: entry.localOffset,
-    });
-    const offset = args.state.localSize + entry.centralOffset;
-    segments.push({ type: "bytes", offset, bytes: header });
-    availableEnd = offset + header.length;
-  }
-  return {
-    segments,
-    etags: new Map(),
-    end: Math.min(end, availableEnd),
-  };
-}
+      )
+      .orderBy(
+        asc(userExportEntries.centralOffset),
+        asc(userExportEntries.ordinal),
+      )
+      .limit(CENTRAL_ENTRY_BATCH);
+    signal.throwIfAborted();
+    const segments: UserExportZipRangeSegment[] = [];
+    let availableEnd = args.state.zipOffset;
+    for (const entry of rows) {
+      const header = serializeUserExportZipCentralHeader({
+        ...entry,
+        localHeaderOffset: entry.localOffset,
+      });
+      const offset = args.state.localSize + entry.centralOffset;
+      segments.push({ type: "bytes", offset, bytes: header });
+      availableEnd = offset + header.length;
+    }
+    return {
+      segments,
+      etags: new Map(),
+      end: Math.min(end, availableEnd),
+    };
+  },
+);
 
-async function nextSegments(
-  args: AssemblyArgs,
-  signal: AbortSignal,
-): Promise<AssemblySegments> {
-  const { state } = args;
-  const end = Math.min(
-    state.zipOffset + STEP_BYTES,
-    state.zipOffset + PART_BYTES - state.pendingSize,
-    state.totalSize,
-  );
-  if (state.zipOffset < state.localSize) {
-    return await localSegments(args, Math.min(end, state.localSize), signal);
-  }
-  const centralEnd = state.localSize + state.centralSize;
-  if (state.zipOffset < centralEnd) {
-    return await centralSegments(args, Math.min(end, centralEnd), signal);
-  }
-  const footer = serializeUserExportZipEnd({
-    entryCount: state.entryCount,
-    centralDirectoryOffset: state.localSize,
-    centralDirectorySize: state.centralSize,
-  });
-  return {
-    segments: [{ type: "bytes", offset: centralEnd, bytes: footer }],
-    etags: new Map(),
-    end,
-  };
-}
+const nextSegments$ = command(
+  async (
+    { set },
+    args: AssemblyArgs,
+    signal: AbortSignal,
+  ): Promise<AssemblySegments> => {
+    const { state } = args;
+    const end = Math.min(
+      state.zipOffset + STEP_BYTES,
+      state.zipOffset + PART_BYTES - state.pendingSize,
+      state.totalSize,
+    );
+    if (state.zipOffset < state.localSize) {
+      return await set(
+        localSegments$,
+        args,
+        Math.min(end, state.localSize),
+        signal,
+      );
+    }
+    const centralEnd = state.localSize + state.centralSize;
+    if (state.zipOffset < centralEnd) {
+      return await set(
+        centralSegments$,
+        args,
+        Math.min(end, centralEnd),
+        signal,
+      );
+    }
+    const footer = serializeUserExportZipEnd({
+      entryCount: state.entryCount,
+      centralDirectoryOffset: state.localSize,
+      centralDirectorySize: state.centralSize,
+    });
+    return {
+      segments: [{ type: "bytes", offset: centralEnd, bytes: footer }],
+      etags: new Map(),
+      end,
+    };
+  },
+);
 
 function validateState(state: UserExportAssemblyState): void {
   const sizes = [
@@ -238,7 +263,7 @@ function validateState(state: UserExportAssemblyState): void {
  */
 export const assembleUserExportStep$ = command(
   async (
-    { get },
+    { get, set },
     args: AssemblyArgs,
     signal: AbortSignal,
   ): Promise<{
@@ -278,7 +303,7 @@ export const assembleUserExportStep$ = command(
       }
       buffers.push(pending);
     }
-    const next = await nextSegments(args, signal);
+    const next = await set(nextSegments$, args, signal);
     if (next.end <= state.zipOffset && state.zipOffset < state.totalSize) {
       throw new Error(
         "User export assembly is missing a required inventory entry",

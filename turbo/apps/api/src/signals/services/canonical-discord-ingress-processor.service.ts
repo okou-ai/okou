@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -7,7 +9,7 @@ import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installat
 import { command } from "ccstate";
 import { and, asc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 
 import type { Tx } from "../../lib/db-types";
@@ -48,17 +50,21 @@ import {
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  chatThreadLastMessageTouchSql,
+  chatThreadLastMessageTouchSchema,
+  chatThreadLastMessageSortSql,
+} from "./chat-event-shared.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import {
-  insertChatEvent,
   type DiscordChatEventContext,
+  chatEventInsertSql,
 } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
-  notifyRunningChatRunOfPendingInput,
+  notifyRunningChatRunOfPendingInput$,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -406,11 +412,15 @@ const enqueueMessage$ = command(
       id: args.ingress.id,
       chatThreadId: args.ingress.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
-        threadId: args.ingress.chatThreadId,
-        orgId: args.orgId,
-        userId: args.ingress.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: args.ingress.chatThreadId,
+          orgId: args.orgId,
+          userId: args.ingress.userId,
+        },
+        signal,
+      ),
       runId: null,
       userMessage: createUserMessageDocument({
         text: args.context.messageText,
@@ -901,6 +911,17 @@ interface RecordedIngressFailure {
   } | null;
 }
 
+const terminalIngressRouteSelection = Object.freeze({
+  id: discordChatThreadRoutes.id,
+  chatThreadId: discordChatThreadRoutes.chatThreadId,
+  userId: discordChatThreadRoutes.userId,
+  sessionKey: discordChatThreadRoutes.sessionKey,
+  destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+  orgId: discordOrgInstallations.orgId,
+  guildId: discordOrgConnections.guildId,
+  discordUserId: discordOrgConnections.discordUserId,
+});
+
 async function recordTerminalIngressFailure(
   tx: Tx,
   args: {
@@ -929,16 +950,7 @@ async function recordTerminalIngressFailure(
     "I couldn't process this Discord message. Please send it again.";
   if (claimed.routeId !== null) {
     const [route] = await tx
-      .select({
-        id: discordChatThreadRoutes.id,
-        chatThreadId: discordChatThreadRoutes.chatThreadId,
-        userId: discordChatThreadRoutes.userId,
-        sessionKey: discordChatThreadRoutes.sessionKey,
-        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-        orgId: discordOrgInstallations.orgId,
-        guildId: discordOrgConnections.guildId,
-        discordUserId: discordOrgConnections.discordUserId,
-      })
+      .select(terminalIngressRouteSelection)
       .from(discordChatThreadRoutes)
       .innerJoin(
         discordOrgConnections,
@@ -957,28 +969,43 @@ async function recordTerminalIngressFailure(
       .limit(1);
     signal.throwIfAborted();
     if (route?.destinationChannelId) {
-      const inserted = await insertChatEvent(
-        tx,
-        {
-          id: ingressId,
-          chatThreadId: route.chatThreadId,
-          eventType: "output.error",
-          runId: null,
-          content,
-          error: content,
-          createdAt: currentTime,
-        },
-        "id",
-      );
+      const inserted =
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
+            chatEventInsertSql(
+              {
+                id: ingressId,
+                chatThreadId: route.chatThreadId,
+                eventType: "output.error",
+                runId: null,
+                content,
+                error: content,
+                createdAt: currentTime,
+              },
+              "id",
+            ),
+          ),
+        )[0] ?? null;
       signal.throwIfAborted();
       if (inserted) {
-        await touchChatThreadLastMessageAt(
-          tx,
-          route.chatThreadId,
-          currentTime,
+        const threadTouchRows = parseRawRows(
+          chatThreadLastMessageTouchSchema,
+          await tx.execute(
+            chatThreadLastMessageTouchSql(route.chatThreadId, currentTime, {
+              userId: route.userId,
+              orgId: route.orgId,
+            }),
+          ),
+        );
+        const threadSortSql = chatThreadLastMessageSortSql(
+          threadTouchRows,
           ingressId,
           { userId: route.userId, orgId: route.orgId },
         );
+        if (threadSortSql) {
+          await tx.execute(threadSortSql);
+        }
         signal.throwIfAborted();
       }
       return {
@@ -1249,7 +1276,9 @@ export const processCanonicalDiscordIngress$ = command(
         }
       })(),
     );
-    waitUntil(notifyRunningChatRunOfPendingInput(db, ingress.chatThreadId));
+    waitUntil(
+      set(notifyRunningChatRunOfPendingInput$, ingress.chatThreadId, signal),
+    );
     return true;
   },
 );

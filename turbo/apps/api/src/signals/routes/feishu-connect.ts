@@ -17,7 +17,7 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { InvalidFeishuCredentialsError } from "../external/feishu-client";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   configureFeishuInstallation$,
@@ -58,11 +58,7 @@ const feishuIntegrationDisabled$ = computed((get) => {
 
 const feishuIntegrationEnabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const context = await loadUserFeatureSwitchContext(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
+  const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
   return isFeatureEnabled(
     FEISHU_PLATFORMS[get(feishuPlatform$)].featureSwitch,
     context,

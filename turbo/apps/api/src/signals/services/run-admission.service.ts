@@ -4,8 +4,12 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { command } from "ccstate";
+import { and, eq, gt, inArray, isNull, lte, sql, sum } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -16,14 +20,18 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-import { isPersonalSubscriptionRoute } from "./member-subscription-models.service";
-import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
+import {
+  isMemberSubscriptionRoute,
+  memberModelRouteContextFromAccounts,
+} from "./effective-model-route.service";
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
   catalogModelForSelectedId,
   catalogRunModelRouteAccess,
@@ -33,11 +41,11 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
+
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
   | ReturnType<typeof paidPlanRequired>
   | ReturnType<typeof badRequestMessage>;
-
 type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
 export interface OrgCreditAvailability {
@@ -47,22 +55,18 @@ export interface OrgCreditAvailability {
   readonly spendableCredits: number;
   readonly usagePackCredits: number;
 }
-
 type OrgPlanRunAdmissionCapabilities = Pick<
   OrgPlanCapabilities,
   "status" | "supportByok" | "restrictedBuiltInModels"
 >;
-
 export interface RunCreditAdmissionState {
   readonly orgId: string;
   readonly status: typeof agentRuns.$inferSelect.status;
-  /** Persisted permission for this active run to continue after credits run out. */
   readonly creditAdmitted: boolean;
 }
 
-/** One admission phase; callers replace this input before a fresh check. */
+/** One captured admission phase, including its already-owned catalog snapshot. */
 export interface RunAdmissionInput {
-  /** The run's catalog snapshot, loaded once by the caller. */
   readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
@@ -70,6 +74,227 @@ export interface RunAdmissionInput {
   readonly selectedModel: string | null | undefined;
   readonly enforceBuiltInCredits: boolean;
 }
+
+function creditBalanceQuery(orgId: string, at: Date) {
+  const builder = new QueryBuilder();
+  const expired = builder.$with("expired").as(
+    builder
+      .select({
+        total: sum(creditExpiresRecord.remaining)
+          .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+          .as("total"),
+      })
+      .from(creditExpiresRecord)
+      .where(
+        and(
+          eq(creditExpiresRecord.orgId, orgId),
+          lte(creditExpiresRecord.expiresAt, at),
+          gt(creditExpiresRecord.remaining, 0),
+        ),
+      ),
+  );
+  return builder
+    .with(expired)
+    .select({
+      credits: sql`${orgMetadata.credits}`
+        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+        .as("credits"),
+      unsettledExpired: expired.total,
+    })
+    .from(expired)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgId))
+    .as("admission_credit_balance");
+}
+
+function memberCreditsQuery(orgId: string, userId: string, at: Date) {
+  return new QueryBuilder()
+    .select({
+      total: sum(usagePackCreditGrants.remainingAmount)
+        .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
+        .as("total"),
+    })
+    .from(usagePackCreditGrants)
+    .where(
+      and(
+        eq(usagePackCreditGrants.orgId, orgId),
+        eq(usagePackCreditGrants.userId, userId),
+        gt(usagePackCreditGrants.remainingAmount, 0),
+        gt(usagePackCreditGrants.expiresAt, at),
+      ),
+    )
+    .as("admission_member_credits");
+}
+
+function memberAccountsQuery(
+  input: Pick<RunAdmissionInput, "orgId" | "userId">,
+) {
+  return new QueryBuilder()
+    .select({
+      type: modelProviderAccounts.type,
+      providerId: modelProviderAccounts.modelProviderId,
+      isActive: modelProviderAccounts.isActive,
+      needsReconnect: modelProviderAccounts.needsReconnect,
+    })
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.orgId, input.orgId),
+        eq(modelProviderAccounts.userId, input.userId),
+        inArray(modelProviderAccounts.type, [
+          "claude-code-oauth-token",
+          "codex-oauth-token",
+        ]),
+        isNull(modelProviderAccounts.disconnectedAt),
+      ),
+    )
+    .as("admission_member_accounts");
+}
+
+function needsPersonalSubscription(input: RunAdmissionInput) {
+  return (
+    Boolean(input.selectedModel) &&
+    (input.modelProviderType === "claude-code-oauth-token" ||
+      input.modelProviderType === "codex-oauth-token")
+  );
+}
+
+function personalSubscriptionFromAccounts(
+  input: RunAdmissionInput,
+  accounts: readonly {
+    readonly type: string;
+    readonly providerId: string;
+    readonly isActive: boolean;
+    readonly needsReconnect: boolean;
+  }[],
+) {
+  return isMemberSubscriptionRoute({
+    catalog: input.catalog,
+    member: memberModelRouteContextFromAccounts(input.userId, accounts),
+    model: input.selectedModel,
+    providerType: input.modelProviderType,
+    credentialScope: "member",
+  });
+}
+
+function creditAvailability(
+  capabilities: OrgPlanCapabilities | null,
+  balance:
+    | {
+        readonly credits: number | null;
+        readonly unsettledExpired: number | null;
+      }
+    | undefined,
+  usagePackCredits: number,
+): OrgCreditAvailability | null {
+  return capabilities && balance?.credits !== null && balance !== undefined
+    ? {
+        status: capabilities.status,
+        supportByok: capabilities.supportByok,
+        restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+        spendableCredits: balance.credits - (balance.unsettledExpired ?? 0),
+        usagePackCredits,
+      }
+    : null;
+}
+
+function admissionBeforeAllowance(
+  input: RunAdmissionInput,
+  availability: OrgCreditAvailability | null,
+  personalSubscription: boolean,
+): RunAdmissionFailure | "allowance_required" | null {
+  const routeFailure = checkCatalogRunRoute(input.catalog, input);
+  if (routeFailure) {
+    return routeFailure;
+  }
+  const planFailure = checkOrgPlanRunAdmission({
+    ...input,
+    capabilities: availability,
+    personalSubscription,
+  });
+  if (planFailure) {
+    return planFailure;
+  }
+  return !isBuiltInModelProviderType(input.modelProviderType) ||
+    (availability &&
+      (availability.usagePackCredits > 0 || availability.spendableCredits > 0))
+    ? null
+    : "allowance_required";
+}
+
+/** Runtime input is a plain captured snapshot; this command owns all reads. */
+export const checkRunAdmission$ = command(
+  async (
+    { set },
+    input: RunAdmissionInput,
+    signal: AbortSignal,
+  ): Promise<RunAdmissionFailure | null> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    const capabilities = await set(
+      loadOrgPlanCapabilities$,
+      input.orgId,
+      signal,
+    );
+    let personalSubscription = false;
+    if (needsPersonalSubscription(input)) {
+      const accounts = await db.select().from(memberAccountsQuery(input));
+      signal.throwIfAborted();
+      personalSubscription = personalSubscriptionFromAccounts(input, accounts);
+    }
+    if (!input.enforceBuiltInCredits) {
+      return (
+        checkOrgPlanRunAdmission({
+          ...input,
+          capabilities,
+          personalSubscription,
+        }) ?? null
+      );
+    }
+    const [[balance], [memberCredits]] = await Promise.all([
+      db.select().from(creditBalanceQuery(input.orgId, at)),
+      db.select().from(memberCreditsQuery(input.orgId, input.userId, at)),
+    ]);
+    signal.throwIfAborted();
+    const admission = admissionBeforeAllowance(
+      input,
+      creditAvailability(capabilities, balance, memberCredits?.total ?? 0),
+      personalSubscription,
+    );
+    if (admission !== "allowance_required") {
+      return admission;
+    }
+    const available = await set(
+      resolveUsageAllowanceAvailability$,
+      input.orgId,
+      signal,
+    );
+    return available && available.remainingUnits > 0
+      ? null
+      : insufficientCredits();
+  },
+);
+
+export const checkOrgCreditsForRunAdmission$ = command(
+  async (
+    { set },
+    input: Omit<
+      RunAdmissionInput,
+      "enforceBuiltInCredits" | "selectedModel"
+    > & { readonly selectedModel?: string | null },
+    signal: AbortSignal,
+  ): Promise<RunAdmissionFailure | undefined> => {
+    const failure = await set(
+      checkRunAdmission$,
+      {
+        ...input,
+        selectedModel: input.selectedModel,
+        enforceBuiltInCredits: true,
+      },
+      signal,
+    );
+    return failure ?? undefined;
+  },
+);
 
 export function isFreePlanForCreditAdmission(
   planKey: string | null | undefined,
@@ -181,89 +406,6 @@ export async function resolveOrgCreditAvailability(params: {
     spendableCredits,
     usagePackCredits,
   };
-}
-
-export async function checkOrgCreditsForRunAdmission(params: {
-  readonly db: Db;
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderType: string | null | undefined;
-  readonly selectedModel?: string | null;
-}): Promise<RunAdmissionFailure | undefined> {
-  const availability = await resolveOrgCreditAvailability(params);
-  return await checkResolvedOrgCreditsForRunAdmission({
-    ...params,
-    availability,
-  });
-}
-
-export async function checkResolvedOrgCreditsForRunAdmission(params: {
-  readonly db: Db;
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderType: string | null | undefined;
-  readonly selectedModel?: string | null;
-  readonly availability: OrgCreditAvailability | null;
-}): Promise<RunAdmissionFailure | undefined> {
-  const personalSubscription = await isPersonalSubscriptionRoute({
-    db: params.db,
-    catalog: params.catalog,
-    orgId: params.orgId,
-    userId: params.userId,
-    model: params.selectedModel,
-    providerType: params.modelProviderType,
-  });
-  return await checkResolvedOrgCreditsForRunAdmissionWithAllowance({
-    ...params,
-    personalSubscription,
-    resolveAllowance: async () => {
-      return await resolveUsageAllowanceAvailability(params.db, params.orgId);
-    },
-  });
-}
-
-async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly modelProviderType: string | null | undefined;
-  readonly selectedModel?: string | null;
-  readonly availability: OrgCreditAvailability | null;
-  readonly personalSubscription: boolean;
-  readonly resolveAllowance: () => Promise<{
-    readonly remainingUnits: number;
-  } | null>;
-}): Promise<RunAdmissionFailure | undefined> {
-  const { availability } = params;
-  if (!availability) {
-    return (
-      checkCatalogRunRoute(params.catalog, params) ?? insufficientCredits()
-    );
-  }
-  const planAdmission = checkOrgPlanRunAdmission({
-    catalog: params.catalog,
-    capabilities: availability,
-    modelProviderType: params.modelProviderType,
-    selectedModel: params.selectedModel,
-    personalSubscription: params.personalSubscription,
-  });
-  if (planAdmission) {
-    return planAdmission;
-  }
-
-  if (!isBuiltInModelProviderType(params.modelProviderType)) {
-    return undefined;
-  }
-
-  if (availability.usagePackCredits > 0 || availability.spendableCredits > 0) {
-    return undefined;
-  }
-
-  const allowance = await params.resolveAllowance();
-  return allowance && allowance.remainingUnits > 0
-    ? undefined
-    : insufficientCredits();
 }
 
 /**

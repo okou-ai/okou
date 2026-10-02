@@ -6,39 +6,44 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
+import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
 const archivingUnavailable = notFound("Chat thread archiving is not available");
 
 /** Sets the flag and appends its sidebar event; false when the thread is not the caller's. */
-async function writeChatThreadArchived(
-  writeDb: Db,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly threadId: string;
-    readonly archived: boolean;
-    readonly eventId: string | undefined;
-  },
-): Promise<boolean> {
-  return await updateOwnedChatThreadWithEvent(writeDb, {
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-    set: { archived: args.archived },
-    event: () => {
-      return {
-        kind: args.archived ? "archived" : "unarchived",
-        eventId: args.eventId,
-      };
+const writeChatThreadArchived$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly archived: boolean;
+      readonly eventId: string | undefined;
     },
-  });
-}
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return await set(
+      updateOwnedChatThreadWithEvent$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+        set: { archived: args.archived },
+        event: {
+          kind: args.archived ? "archived" : "unarchived",
+          eventId: args.eventId,
+        },
+      },
+      signal,
+    );
+  },
+);
 
 const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -53,13 +58,17 @@ const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return archivingUnavailable;
   }
 
-  const written = await writeChatThreadArchived(set(writeDb$), {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    threadId: params.id,
-    archived: true,
-    eventId: query?.eventId,
-  });
+  const written = await set(
+    writeChatThreadArchived$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      threadId: params.id,
+      archived: true,
+      eventId: query?.eventId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!written) {
     return notFound("Chat thread not found");
@@ -83,13 +92,17 @@ const unarchiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return archivingUnavailable;
   }
 
-  const written = await writeChatThreadArchived(set(writeDb$), {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    threadId: params.id,
-    archived: false,
-    eventId: query?.eventId,
-  });
+  const written = await set(
+    writeChatThreadArchived$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      threadId: params.id,
+      archived: false,
+      eventId: query?.eventId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!written) {
     return notFound("Chat thread not found");

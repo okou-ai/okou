@@ -110,6 +110,46 @@ function metadataClient() {
 }
 
 describe("POST /api/chat-threads/:id/model-selection", () => {
+  it("uses current workspace routes without mutating a rejected selection", async () => {
+    const fixture = await seedChatThread("Current workspace routes");
+    const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+    const route = {
+      defaultProviderType: "anthropic-api-key" as const,
+      credentialScope: "org" as const,
+      modelProviderId: providerId,
+    };
+    await api.updateOrgModelPolicies(fixture.actor, [
+      { ...route, model: "claude-sonnet-5", preferred: true },
+    ]);
+    const rejected = await chat.requestUpdateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-5",
+      [400],
+    );
+    expect(rejected.body).toMatchObject({
+      error: {
+        message: "The selected model is not available in this workspace",
+      },
+    });
+    await expect(
+      chat.readThreadMetadata(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
+
+    await api.updateOrgModelPolicies(fixture.actor, [
+      { ...route, model: "claude-sonnet-5", preferred: true },
+      { ...route, model: "claude-opus-5", preferred: false },
+    ]);
+    await chat.updateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-5",
+    );
+    await expect(
+      chat.readThreadMetadata(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-opus-5" });
+  });
+
   it("rejects unsupported effort levels and persists supported ones", async () => {
     const fixture = await seedChatThread("Effort validation");
     for (const [model, reasoningEffort] of [

@@ -13,8 +13,8 @@ import type { PricedUsageEvent } from "./credit-usage-pricing";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
+} from "./usage-allowance-policy";
+import type { PreparedUsageAllowanceRefresh } from "./usage-allowance.service";
 
 function allowanceEntitlementSelection() {
   return {

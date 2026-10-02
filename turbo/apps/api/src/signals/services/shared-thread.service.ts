@@ -10,10 +10,12 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/shared-thread";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { command, computed, type Computed } from "ccstate";
+import { command, state } from "ccstate";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { env } from "../../lib/env";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import {
@@ -24,14 +26,14 @@ import {
   sharedThreadArtifactAuthorUserId,
   sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
   prepareSharedThreadMessageAttachments$,
   publishSharedThreadAttachments$,
   type SharedThreadAttachmentCopy,
 } from "./shared-thread-attachments.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-shared.service";
 import { generateSharedThreadTitle } from "./chat-title.service";
 import { projectUserMessageForPublicShare } from "./chat-user-message.service";
 import {
@@ -41,7 +43,7 @@ import {
   canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
-import { readCurrentChatEventHistory } from "./chat-event-history.service";
+import { readSharedThreadChatEventHistory$ } from "./chat-event-history.service";
 import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
 import {
   type SharedThreadArtifactPlan,
@@ -53,8 +55,8 @@ import {
   initializeSharedThreadArtifacts$,
   prepareSharedThreadArtifactCopies$,
   publishSharedThreadArtifacts$,
-  removeSharedThreadArtifactCopies,
-  sharedThreadArtifactsReadable,
+  removeSharedThreadArtifactCopies$,
+  sharedThreadArtifactsReadable$,
 } from "./shared-thread-artifacts.service";
 
 const SHARED_THREAD_MAX_SERIALIZED_BYTES = 2 * 1024 * 1024;
@@ -160,16 +162,17 @@ function localIndex(
   return next;
 }
 
-function loadSharedThreadSourceRows(
-  args: {
-    readonly database: Db;
-    readonly threadId: string;
-    readonly selectedEventIds: readonly string[];
-  },
-  signal: AbortSignal,
-): Computed<Promise<readonly SharedThreadSourceRow[]>> {
-  return computed(async (get) => {
-    const { database, threadId, selectedEventIds } = args;
+const loadSharedThreadSourceRows$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly threadId: string;
+      readonly selectedEventIds: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<readonly SharedThreadSourceRow[]> => {
+    const database = get(db$);
+    const { threadId, selectedEventIds } = args;
     const hotSelectedRows = await database
       .select({
         id: chatEvents.id,
@@ -178,7 +181,7 @@ function loadSharedThreadSourceRows(
         userMessage: canonicalChatEventUserMessage(),
         runId: chatEvents.runId,
         isVisible: sql`COALESCE(
-        ${visibleChatEventCondition(database)},
+        ${visibleChatEventPredicate()},
         false
       )`.mapWith(pgBooleanDecoder),
       })
@@ -193,15 +196,10 @@ function loadSharedThreadSourceRows(
     signal.throwIfAborted();
 
     if (hotSelectedRows.length !== selectedEventIds.length) {
-      const history = await get(
-        readCurrentChatEventHistory(
-          {
-            db: database,
-            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-          },
-          threadId,
-          signal,
-        ),
+      const history = await set(
+        readSharedThreadChatEventHistory$,
+        threadId,
+        signal,
       );
       return archivedSharedThreadRows(history, new Set(selectedEventIds));
     }
@@ -224,43 +222,43 @@ function loadSharedThreadSourceRows(
         },
       ];
     });
-  });
-}
+  },
+);
 
-async function ownsSharedThreadSource(
-  database: Db,
-  args: CreateSharedThreadArgs,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [thread] = await database
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, args.threadId),
-        eq(chatThreads.userId, args.userId),
-        eq(agents.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return thread !== undefined;
-}
+const ownsSharedThreadSource$ = command(
+  async (
+    { get },
+    args: CreateSharedThreadArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const [thread] = await get(db$)
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+          eq(agents.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return thread !== undefined;
+  },
+);
 
-async function sharedThreadIdExists(
-  database: Db,
-  id: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [row] = await database
-    .select({ id: sharedThreads.id })
-    .from(sharedThreads)
-    .where(eq(sharedThreads.id, id))
-    .limit(1);
-  signal.throwIfAborted();
-  return row !== undefined;
-}
+const sharedThreadIdExists$ = command(
+  async ({ get }, id: string, signal: AbortSignal): Promise<boolean> => {
+    const [row] = await get(db$)
+      .select({ id: sharedThreads.id })
+      .from(sharedThreads)
+      .where(eq(sharedThreads.id, id))
+      .limit(1);
+    signal.throwIfAborted();
+    return row !== undefined;
+  },
+);
 
 function sharedThreadMessageColumns(messages: readonly SharedMessage[]) {
   // Previous API readers validate messages strictly. Keep attachment metadata
@@ -342,88 +340,204 @@ const prepareSharedThreadMessages$ = command(
   },
 );
 
+interface SharedThreadSnapshot {
+  readonly id: string;
+  readonly title: Promise<string>;
+  readonly createdAt: Date;
+  readonly messages: readonly SharedMessage[];
+  readonly plan: SharedThreadArtifactPlan | null;
+}
+
+// Successful SQL receipts remain owned by their publication attempt, including
+// cancellation after the response. Concurrent attempts never overwrite them.
+const insertedSharedThreads$ = state<
+  readonly {
+    readonly publicationId: string;
+    readonly id: string;
+  }[]
+>([]);
+
+const insertSharedThreadIdentity$ = command(
+  async (
+    { set },
+    args: CreateSharedThreadArgs,
+    snapshot: SharedThreadSnapshot & { readonly publicationId: string },
+    initialTitle: string,
+    signal: AbortSignal,
+  ) => {
+    const { id, createdAt, messages, plan, publicationId } = snapshot;
+    const database = set(writeDb$);
+    const insertion = database
+      .insert(sharedThreads)
+      .values({
+        id,
+        userId: args.userId,
+        orgId: args.orgId,
+        hasArtifactSnapshot: plan !== null,
+        sourceChatThreadId: args.threadId,
+        title: initialTitle,
+        ...sharedThreadMessageColumns(plan?.messages ?? messages),
+        linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
+        createdAt,
+      })
+      .returning({ id: sharedThreads.id });
+    if (plan) {
+      const inserted = (await insertion)[0];
+      if (inserted) {
+        set(insertedSharedThreads$, (previous) => {
+          return [...previous, { publicationId, id: inserted.id }];
+        });
+      }
+      signal.throwIfAborted();
+      if (!inserted) {
+        throw new Error("Shared thread insert did not return a row");
+      }
+    } else {
+      // The ordinary share and its catalog entry are one SQL statement.
+      // The CTE gates catalog creation on this request's actual insert.
+      const created = database.$with("created_shared_thread").as(insertion);
+      await database
+        .with(created)
+        .insert(artifacts)
+        .select(
+          database
+            .select({
+              id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
+              orgId: sql`${args.orgId}`.mapWith(artifacts.orgId).as("org_id"),
+              authorUserId:
+                sql`${sharedThreadArtifactAuthorUserId(args.userId)}`
+                  .mapWith(artifacts.authorUserId)
+                  .as("author_user_id"),
+              kind: sql`'file'`.mapWith(artifacts.kind).as("kind"),
+              entityId: created.id,
+              logicalKey: sql`${sharedThreadArtifactLogicalKey(id)}`
+                .mapWith(artifacts.logicalKey)
+                .as("logical_key"),
+              projectionFileId: sql`NULL::uuid`
+                .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
+                .as("projection_file_id"),
+              projectionCreatedAt: sql`${createdAt}::timestamp`
+                .mapWith(artifacts.projectionCreatedAt)
+                .as("projection_created_at"),
+              title: sql`${initialTitle}`.mapWith(artifacts.title).as("title"),
+              thumbnail: sql`NULL::jsonb`
+                .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
+                .as("thumbnail"),
+              createdAt: sql`${createdAt}::timestamp`
+                .mapWith(artifacts.createdAt)
+                .as("created_at"),
+              updatedAt: sql`${createdAt}::timestamp`
+                .mapWith(artifacts.updatedAt)
+                .as("updated_at"),
+            })
+            .from(created),
+        );
+    }
+    signal.throwIfAborted();
+  },
+);
+
+const updateSharedThreadTitle$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly userId: string;
+      readonly title: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const updated = await set(writeDb$)
+      .update(sharedThreads)
+      .set({ title: args.title })
+      .where(
+        and(
+          eq(sharedThreads.id, args.id),
+          eq(sharedThreads.userId, args.userId),
+        ),
+      )
+      .returning({ id: sharedThreads.id });
+    signal.throwIfAborted();
+    if (updated.length === 0) {
+      throw new SharedThreadArtifactUnavailable();
+    }
+  },
+);
+
+const removeSharedThreadIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const database = set(writeDb$);
+    const removed = database.$with("removed_shared_thread").as(
+      database
+        .delete(sharedThreads)
+        .where(
+          and(
+            eq(sharedThreads.id, args.id),
+            eq(sharedThreads.userId, args.userId),
+            eq(sharedThreads.orgId, args.orgId),
+          ),
+        )
+        .returning({ id: sharedThreads.id }),
+    );
+    await database
+      .with(removed)
+      .delete(artifacts)
+      .where(
+        and(
+          eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(args.id)),
+          eq(
+            artifacts.authorUserId,
+            sharedThreadArtifactAuthorUserId(args.userId),
+          ),
+          eq(artifacts.orgId, args.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 const persistSharedThread$ = command(
   async (
     { get, set },
     args: CreateSharedThreadArgs,
-    snapshot: {
-      readonly id: string;
-      readonly title: Promise<string>;
-      readonly createdAt: Date;
-      readonly messages: readonly SharedMessage[];
-      readonly plan: SharedThreadArtifactPlan | null;
-    },
+    snapshot: SharedThreadSnapshot,
     signal: AbortSignal,
   ) => {
-    const { id, title, createdAt, messages, plan } = snapshot;
-    const database = set(writeDb$);
-    // A caller-supplied ID may name another user's share. Cleanup may only
-    // revoke storage this request created with its create-only policy write.
+    const { id, title, plan } = snapshot;
+    // In-memory ownership only, not another persisted idempotency protocol.
+    const publicationId = randomUUID();
     let policyClaimed = false;
     async function persistAndPublish() {
       if (plan) {
         await set(initializeSharedThreadArtifacts$, plan, signal);
         policyClaimed = true;
       }
-      // A durable, denied identity lets deletion/revocation find in-flight
-      // snapshots. Only artifact snapshots may exist before the title settles.
       const initialTitle = plan ? "Shared conversation" : await title;
       signal.throwIfAborted();
-      await database.transaction(async (transaction) => {
-        const [sharedThread] = await transaction
-          .insert(sharedThreads)
-          .values({
-            id,
-            userId: args.userId,
-            orgId: args.orgId,
-            hasArtifactSnapshot: plan !== null,
-            sourceChatThreadId: args.threadId,
-            title: initialTitle,
-            ...sharedThreadMessageColumns(plan?.messages ?? messages),
-            linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
-            createdAt,
-          })
-          .returning({ id: sharedThreads.id });
-        if (!sharedThread) {
-          throw new Error("Shared thread insert did not return a row");
-        }
-        if (plan) {
-          return;
-        }
-        await transaction.insert(artifacts).values({
-          orgId: args.orgId,
-          authorUserId: sharedThreadArtifactAuthorUserId(args.userId),
-          kind: "file",
-          entityId: sharedThread.id,
-          logicalKey: sharedThreadArtifactLogicalKey(sharedThread.id),
-          projectionFileId: null,
-          projectionCreatedAt: createdAt,
-          title: initialTitle,
-          thumbnail: null,
-          createdAt,
-          updatedAt: createdAt,
-        });
-      });
-      signal.throwIfAborted();
+      await set(
+        insertSharedThreadIdentity$,
+        args,
+        { ...snapshot, publicationId },
+        initialTitle,
+        signal,
+      );
       if (plan) {
         await set(prepareSharedThreadArtifactCopies$, plan, signal);
-        // Never hold the deletion lock or a DB transaction while awaiting LLM.
         const finalTitle = await title;
         signal.throwIfAborted();
-        const updated = await database
-          .update(sharedThreads)
-          .set({ title: finalTitle })
-          .where(
-            and(
-              eq(sharedThreads.id, id),
-              eq(sharedThreads.userId, args.userId),
-            ),
-          )
-          .returning({ id: sharedThreads.id });
-        signal.throwIfAborted();
-        if (updated.length === 0) {
-          throw new SharedThreadArtifactUnavailable();
-        }
+        await set(
+          updateSharedThreadTitle$,
+          { id, userId: args.userId, title: finalTitle },
+          signal,
+        );
         await set(publishSharedThreadArtifacts$, plan, signal);
       }
     }
@@ -432,40 +546,29 @@ const persistSharedThread$ = command(
         // Cleanup owns a bounded lifetime even after the HTTP client disconnects.
         // Retain the identity if cleanup fails, so deletion can be retried.
         const cleanupSignal = AbortSignal.timeout(30_000);
-        await get(
-          removeSharedThreadArtifactCopies(
-            {
-              id,
-              userId: args.userId,
-              orgId: args.orgId,
-              linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
-              hasArtifactSnapshot: true,
-            },
-            cleanupSignal,
-          ),
+        await set(
+          removeSharedThreadArtifactCopies$,
+          {
+            id,
+            userId: args.userId,
+            orgId: args.orgId,
+            linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
+            hasArtifactSnapshot: true,
+          },
+          cleanupSignal,
         );
         cleanupSignal.throwIfAborted();
-        await database.transaction(async (tx) => {
-          await tx
-            .delete(artifacts)
-            .where(
-              and(
-                eq(artifacts.logicalKey, sharedThreadArtifactLogicalKey(id)),
-                eq(
-                  artifacts.authorUserId,
-                  sharedThreadArtifactAuthorUserId(args.userId),
-                ),
-              ),
-            );
-          await tx
-            .delete(sharedThreads)
-            .where(
-              and(
-                eq(sharedThreads.id, id),
-                eq(sharedThreads.userId, args.userId),
-              ),
-            );
-        });
+        if (
+          get(insertedSharedThreads$).some((receipt) => {
+            return receipt.publicationId === publicationId && receipt.id === id;
+          })
+        ) {
+          await set(
+            removeSharedThreadIdentity$,
+            { id, userId: args.userId, orgId: args.orgId },
+            cleanupSignal,
+          );
+        }
       }
     });
   },
@@ -565,32 +668,29 @@ const prepareAndPersistSharedThread$ = command(
 
 export const createSharedThread$ = command(
   async (
-    { get, set },
+    { set },
     args: CreateSharedThreadArgs,
     signal: AbortSignal,
   ): Promise<CreateSharedThreadResult> => {
     const startedAt = performance.now();
-    const database = set(writeDb$);
-    if (!(await ownsSharedThreadSource(database, args, signal))) {
+    if (!(await set(ownsSharedThreadSource$, args, signal))) {
       return { kind: "thread-not-found" };
     }
     if (
       args.id !== undefined &&
-      (await sharedThreadIdExists(database, args.id, signal))
+      (await set(sharedThreadIdExists$, args.id, signal))
     ) {
       return { kind: "id-conflict" };
     }
 
     const selectedEventIds = [...new Set(args.eventIds)];
-    const rows = await get(
-      loadSharedThreadSourceRows(
-        {
-          database,
-          threadId: args.threadId,
-          selectedEventIds,
-        },
-        signal,
-      ),
+    const rows = await set(
+      loadSharedThreadSourceRows$,
+      {
+        threadId: args.threadId,
+        selectedEventIds,
+      },
+      signal,
     );
     signal.throwIfAborted();
 
@@ -646,7 +746,7 @@ export const createSharedThread$ = command(
 );
 
 export const readSharedThread$ = command(
-  async ({ get }, id: string, signal: AbortSignal) => {
+  async ({ get, set }, id: string, signal: AbortSignal) => {
     const [row] = await get(db$)
       .select({
         id: sharedThreads.id,
@@ -663,7 +763,7 @@ export const readSharedThread$ = command(
       .where(eq(sharedThreads.id, id))
       .limit(1);
     signal.throwIfAborted();
-    return row && (await get(sharedThreadArtifactsReadable(row, signal)))
+    return row && (await set(sharedThreadArtifactsReadable$, row, signal))
       ? {
           id: row.id,
           title: visiblePiMemoryCitationText(row.title),
@@ -684,7 +784,7 @@ export const readSharedThread$ = command(
 );
 
 export const readSharedThreadMeta$ = command(
-  async ({ get }, id: string, signal: AbortSignal) => {
+  async ({ get, set }, id: string, signal: AbortSignal) => {
     const [row] = await get(db$)
       .select({
         id: sharedThreads.id,
@@ -699,7 +799,7 @@ export const readSharedThreadMeta$ = command(
       .where(eq(sharedThreads.id, id))
       .limit(1);
     signal.throwIfAborted();
-    return row && (await get(sharedThreadArtifactsReadable(row, signal)))
+    return row && (await set(sharedThreadArtifactsReadable$, row, signal))
       ? {
           title: visiblePiMemoryCitationText(row.title),
           hasArtifactSnapshot: row.hasArtifactSnapshot,

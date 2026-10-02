@@ -1,5 +1,38 @@
 # Deployment Compatibility
 
+## MCP Web-parity protocol simplification
+
+The owner explicitly approved removal of the MCP-specific chat protocol in
+[#37513](https://github.com/okou-ai/okou/issues/37513). MCP is a thin adapter to
+ordinary Web chat commands, not a separately versioned creation/replay product.
+The dedicated `create_chat_thread` tool, required `requestId`, 24-hour exact
+replay contract, input receipts/references, `nextAction` handoffs and server-side
+status waiting are removed rather than retained behind a compatibility branch.
+Clients must refresh tool discovery and use the current input schemas. An
+uncertain send must not be automatically retried as a new intent.
+
+Sending without a thread id creates an ordinary conversation; sending with one
+continues it. Acceptance does not imply Run admission, delivery or completion:
+read ordinary conversation events and Run facts for the resulting state. MCP
+editing, revocation and stopping may expose only operations with equivalent Web
+semantics. OAuth, scopes, tenant ownership and ordinary Web client-event identity
+are not relaxed by this protocol deletion.
+
+This is an intentional MCP client-contract change, not a historical message
+migration or a Runner protocol change. Existing stored message/source decoding
+remains readable; no old MCP protocol fallback or dual-write path is required.
+Rolling back restores the prior advertised MCP tools and contracts, while normal
+Web chat data remains in its existing format. This approval does not waive other
+persisted-state, database or deployment-compatibility contracts.
+
+MCP send input is `{agentId, prompt, threadId?, model?}`. Status reads take
+`{runId}` and return the ordinary Web Run response. Old protocol arguments are
+rejected, not replayed or silently translated. The common metadata command no
+longer accepts the MCP-only mutation identity; Web metadata event IDs retain
+their existing behavior. Mixed MCP-serving versions can advertise different tool
+schemas during deployment; clients must use the serving version's schema rather
+than assume old request replay is available.
+
 ## Owner-selected RSA-AES VNC (default off; #37500)
 
 Migration `1313_rsa_aes_vnc` adds an independent nullable RSA wire-key pin and
@@ -17,6 +50,25 @@ implementations cannot be assumed to support new RSA rows. Keep the expansion on
 rollback and keep VncAccess disabled; source/CI/engine interop do not prove a real
 product PNG or authorize production activation. Parent delivery and activation
 remain separate from this child PR.
+
+## Pi official model-limit corrections (2026-10-02)
+
+The shared Pi resolver applies verified context/output corrections by exact
+catalog provider and model; see the
+[model-limit audit](../turbo/packages/pi-agent-runtime/src/model-limits-audit.md).
+It preserves source admission, opaque deployments, dialect compatibility,
+credentials, pricing and reasoning defaults. Public API capacity, subscription
+runtime defaults and gateway primary-provider limits remain distinct.
+
+The internal session-construction hash document now includes the correction
+table as well as prompt/tool profiles. Its format is internal; the public launch
+and installed manifest still carry the same opaque SHA-256 string. This changes
+parity for a limits-only fix, so a new API cannot silently reuse an old installed
+CLI with stale corrected limits. New API/old CLI and old API/new CLI use the
+existing task-captured immutable package on a mismatch; matching versions can
+reuse the installed bundle. Older captured contexts retain their digest/package.
+No DDL, event or launch generation, historical rewrite, deployment activation,
+or independent compaction/summary policy change is part of this correction.
 
 ## Long-context threshold in the Runner payload (2026-10-01)
 
@@ -4773,9 +4825,10 @@ Compatibility is negotiated per run rather than by deployment order:
 
 - `piLaunchConfig.apiFirstTurn` also accepts the optional
   `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
-  code-determined session construction (the system prompt template and the
-  ordered tool schemas for fixed inputs, one profile without and one with the
-  memory tools) that `@okouai/pi-agent-runtime` commits in
+  code-determined session construction (the system prompt template, ordered
+  tool schemas for fixed inputs, and verified model-limit corrections; one
+  profile without and one with the memory tools) that
+  `@okouai/pi-agent-runtime` commits in
   `session-construction-digest.json` and whose test fails while it is stale.
   Every CLI artifact manifest carries the same value as
   `sessionConstruction.digest`, and the runner build copies it into the

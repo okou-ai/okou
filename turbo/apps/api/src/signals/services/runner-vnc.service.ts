@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import {
   runnerVncSecuritySchema,
   type RunnerVncCheckRequest,
@@ -10,21 +11,20 @@ import {
   vncQemuScramAuthenticationSchema,
   vncRsaAesAuthenticationSchema,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { clerk$, type ClerkClient } from "../external/clerk";
 import {
   isVncRsaAesSecurityType,
   isVncRsaAesAuthenticationOnly,
 } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
-import type { Db } from "../external/db";
-import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle, safeSync } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
-import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
+import { currentRunnerVncAuthority$ } from "./runner-vnc-authority.service";
 import { isVncProfileCompatible } from "./vnc-configuration.utils";
 import { parseStoredVncClientIdentity } from "./vnc-client-identity.service";
 
 type CurrentVncAuthority = NonNullable<
-  Awaited<ReturnType<typeof currentRunnerVncAuthority>>
+  Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>
 >;
 
 type TransportSnapshot =
@@ -143,7 +143,7 @@ function selectedCapability(
 }
 
 async function isSameCurrentHandoff(
-  current: Awaited<ReturnType<typeof currentRunnerVncAuthority>>,
+  current: Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>,
   initial: CurrentVncAuthority,
   transport: TransportSnapshot,
   clerk: ClerkClient,
@@ -161,32 +161,35 @@ async function isSameCurrentHandoff(
   );
 }
 
-export async function checkRunnerVnc(
-  db: Db,
-  clerk: ClerkClient,
-  input: RunnerVncCheckRequest & { readonly runId: string },
-  signal: AbortSignal,
-): Promise<RunnerVncCheckResponse> {
-  const row = await currentRunnerVncAuthority(db, input, signal);
-  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
-    return { outcome: "unavailable" };
-  }
-  validateStoredProfile(row);
-  const transport = storedTransportSnapshot(row);
-  if (!hasTransportAuthority(row, transport)) {
-    return { outcome: "unavailable" };
-  }
-  if (!hasValidAppleRoute(row, transport)) {
-    return { outcome: "unavailable" };
-  }
-  return {
-    outcome:
-      row.generation === input.expectedGeneration &&
-      matchesExpectedTransport(transport, input.expectedTransport)
-        ? "valid"
-        : "configuration_changed",
-  };
-}
+export const checkRunnerVnc$ = command(
+  async (
+    { get, set },
+    input: RunnerVncCheckRequest & { readonly runId: string },
+    signal: AbortSignal,
+  ): Promise<RunnerVncCheckResponse> => {
+    const clerk = get(clerk$);
+
+    const row = await set(currentRunnerVncAuthority$, input, signal);
+    if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+      return { outcome: "unavailable" };
+    }
+    validateStoredProfile(row);
+    const transport = storedTransportSnapshot(row);
+    if (!hasTransportAuthority(row, transport)) {
+      return { outcome: "unavailable" };
+    }
+    if (!hasValidAppleRoute(row, transport)) {
+      return { outcome: "unavailable" };
+    }
+    return {
+      outcome:
+        row.generation === input.expectedGeneration &&
+        matchesExpectedTransport(transport, input.expectedTransport)
+          ? "valid"
+          : "configuration_changed",
+    };
+  },
+);
 
 function storedRsaServerKeyPin(
   row: CurrentVncAuthority,
@@ -503,34 +506,37 @@ function resolvedRunnerResponse(
   };
 }
 
-export async function resolveRunnerVnc(
-  db: Db,
-  clerk: ClerkClient,
-  input: RunnerVncResolveRequest & { readonly runId: string },
-  signal: AbortSignal,
-): Promise<RunnerVncResolveResponse> {
-  const row = await currentRunnerVncAuthority(db, input, signal);
-  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
-    return { outcome: "unavailable" };
-  }
-  validateStoredProfile(row);
-  const transport = storedTransportSnapshot(row);
-  if (!hasTransportAuthority(row, transport)) {
-    return { outcome: "unavailable" };
-  }
-  const capability = selectedCapability(
-    row,
-    transport,
-    input.supportedProfiles,
-  );
-  if (!capability) {
-    return { outcome: "unsupported_profile" };
-  }
-  const security = storedRunnerSecurity(row, transport);
-  const authentication = await decryptRunnerAuthentication(row, signal);
-  const current = await currentRunnerVncAuthority(db, input, signal);
-  if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
-    return { outcome: "unavailable" };
-  }
-  return resolvedRunnerResponse(row, transport, security, authentication);
-}
+export const resolveRunnerVnc$ = command(
+  async (
+    { get, set },
+    input: RunnerVncResolveRequest & { readonly runId: string },
+    signal: AbortSignal,
+  ): Promise<RunnerVncResolveResponse> => {
+    const clerk = get(clerk$);
+
+    const row = await set(currentRunnerVncAuthority$, input, signal);
+    if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+      return { outcome: "unavailable" };
+    }
+    validateStoredProfile(row);
+    const transport = storedTransportSnapshot(row);
+    if (!hasTransportAuthority(row, transport)) {
+      return { outcome: "unavailable" };
+    }
+    const capability = selectedCapability(
+      row,
+      transport,
+      input.supportedProfiles,
+    );
+    if (!capability) {
+      return { outcome: "unsupported_profile" };
+    }
+    const security = storedRunnerSecurity(row, transport);
+    const authentication = await decryptRunnerAuthentication(row, signal);
+    const current = await set(currentRunnerVncAuthority$, input, signal);
+    if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
+      return { outcome: "unavailable" };
+    }
+    return resolvedRunnerResponse(row, transport, security, authentication);
+  },
+);

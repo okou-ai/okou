@@ -55,9 +55,9 @@ import {
   isCatalogModelAddable,
   isCatalogModelRunnable,
   catalogBuiltInCandidates,
-  loadModelCatalog,
   resolveCatalogModel,
   type ModelCatalog,
+  modelCatalog$,
 } from "./model-catalog.service";
 import {
   catalogModelAllowsCustomGateway,
@@ -479,32 +479,6 @@ export function orgModelPolicyFactsFromSnapshot(args: {
     }),
     catalog: args.catalog,
   };
-}
-
-/**
- * A caller that already read the organization's plan or the catalog in this
- * request supplies them; otherwise they are read in parallel with the
- * policies. The system default is projected, so reading policies never writes.
- */
-export async function loadOrgModelPolicyFacts(
-  db: Db,
-  orgId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-  suppliedCatalog?: ModelCatalog,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const [orgPlanCapabilities, stored, catalog] = await Promise.all([
-    suppliedPlanCapabilities === undefined
-      ? loadOrgPlanCapabilities(db, orgId)
-      : suppliedPlanCapabilities,
-    loadRows(db, orgId),
-    suppliedCatalog ?? loadModelCatalog(db),
-  ]);
-  return orgModelPolicyFactsFromSnapshot({
-    catalog,
-    orgId,
-    orgPlanCapabilities,
-    stored,
-  });
 }
 
 async function listOrgProviderRoutes(
@@ -1029,7 +1003,87 @@ export interface OrgModelPolicyListing {
   readonly systemDefaultModel: string;
 }
 
+function modelPolicyListingResponse(args: {
+  readonly modelMode: OrgModelPoliciesResponse["modelMode"];
+  readonly policies: readonly OrgModelPolicy[];
+  readonly memberPolicies: readonly OrgModelPolicy[];
+  readonly persistedRows: readonly OrgModelPolicyRow[];
+  readonly catalog: ModelCatalog;
+  readonly rows: ReturnType<typeof projectPolicyRows>;
+}): OrgModelPoliciesResponse {
+  const { modelMode, policies, memberPolicies, persistedRows, catalog, rows } =
+    args;
+  return {
+    modelMode,
+    policies: [...policies, ...memberPolicies],
+    revision: policyRevision(persistedRows),
+    // Permanent since the personal subscription priority rollout completed.
+    // Removing the field needs its own client-compatibility window.
+    writePreconditionRequired: true,
+    modelsAvailableToAdd:
+      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
+  };
+}
+function memberPolicyProjection(args: {
+  readonly policy: OrgModelPolicy;
+  readonly administrative: OrgModelPolicy;
+  readonly effective: ResolvedModelFirstPolicyRoute | null;
+  readonly catalog: ModelCatalog;
+  readonly capabilities: OrgPlanCapabilities | null;
+  readonly member: MemberModelRouteContext;
+  readonly runtimeRoute: Awaited<
+    ReturnType<typeof resolveBuiltInModelRuntimeRouteWithKeys>
+  >;
+}): OrgModelPolicy {
+  const {
+    policy,
+    administrative,
+    effective,
+    catalog,
+    capabilities,
+    member,
+    runtimeRoute,
+  } = args;
+  const providerType =
+    effective?.modelProviderType ?? policy.defaultProviderType;
+  const credentialScope =
+    effective?.modelProviderCredentialScope ?? policy.credentialScope;
+  const planDenied = checkOrgPlanRunAdmission({
+    catalog,
+    capabilities,
+    modelProviderType: providerType,
+    selectedModel: policy.model,
+    personalSubscription: isMemberSubscriptionRoute({
+      catalog,
+      member,
+      model: policy.model,
+      providerType,
+      credentialScope,
+    }),
+  });
+  const availability = memberRouteAvailability({
+    planDenied: !!planDenied,
+    effective,
+    orgRouteAvailable:
+      policy.routeStatus === "valid" &&
+      (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
+  });
+  return {
+    ...administrative,
+    memberEffective: {
+      providerType,
+      runtimeProviderType: isBuiltInModelProviderType(providerType)
+        ? (runtimeRoute?.providerType ?? null)
+        : providerType,
+      credentialScope,
+      availability,
+      accountSelection:
+        credentialScope === "member" ? "capture_required" : "not_applicable",
+    },
+  } satisfies OrgModelPolicy;
+}
 async function listOrgModelPolicies(
+  catalogSnapshot: ModelCatalog,
   db: Db,
   orgId: string,
   userId: string,
@@ -1037,7 +1091,7 @@ async function listOrgModelPolicies(
 ): Promise<OrgModelPolicyListing> {
   const [persistedRows, catalog] = await Promise.all([
     loadRows(db, orgId),
-    loadModelCatalog(db),
+    catalogSnapshot,
   ]);
   const rows = projectPolicyRows(catalog, orgId, persistedRows);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
@@ -1083,45 +1137,15 @@ async function listOrgModelPolicies(
             ? capabilities
             : { restrictedBuiltInModels: false, supportByok: true },
       });
-      const providerType =
-        effective?.modelProviderType ?? policy.defaultProviderType;
-      const credentialScope =
-        effective?.modelProviderCredentialScope ?? policy.credentialScope;
-      const planDenied = checkOrgPlanRunAdmission({
+      return memberPolicyProjection({
+        policy,
+        administrative,
+        effective,
         catalog,
         capabilities,
-        modelProviderType: providerType,
-        selectedModel: policy.model,
-        personalSubscription: isMemberSubscriptionRoute({
-          catalog,
-          member,
-          model: policy.model,
-          providerType,
-          credentialScope,
-        }),
+        member,
+        runtimeRoute,
       });
-      const availability = memberRouteAvailability({
-        planDenied: !!planDenied,
-        effective,
-        orgRouteAvailable:
-          policy.routeStatus === "valid" &&
-          (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
-      });
-      return {
-        ...administrative,
-        memberEffective: {
-          providerType,
-          runtimeProviderType: isBuiltInModelProviderType(providerType)
-            ? (runtimeRoute?.providerType ?? null)
-            : providerType,
-          credentialScope,
-          availability,
-          accountSelection:
-            credentialScope === "member"
-              ? "capture_required"
-              : "not_applicable",
-        },
-      } satisfies OrgModelPolicy;
     }),
   );
   const modelMode = await loadOrgModelMode(db, orgId);
@@ -1136,16 +1160,14 @@ async function listOrgModelPolicies(
         )
       : [];
 
-  const response: OrgModelPoliciesResponse = {
+  const response = modelPolicyListingResponse({
     modelMode,
-    policies: [...policies, ...memberPolicies],
-    revision: policyRevision(persistedRows),
-    // Permanent since the personal subscription priority rollout completed.
-    // Removing the field needs its own client-compatibility window.
-    writePreconditionRequired: true,
-    modelsAvailableToAdd:
-      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
-  };
+    policies,
+    memberPolicies,
+    persistedRows,
+    catalog,
+    rows,
+  });
   return { response, systemDefaultModel: catalog.systemDefaultModel };
 }
 
@@ -1292,6 +1314,7 @@ export const listOrgModelPolicies$ = command(
   ): Promise<OrgModelPoliciesResponse> => {
     const db = set(writeDb$);
     const { response } = await listOrgModelPolicies(
+      await get(modelCatalog$),
       db,
       params.orgId,
       params.userId,
@@ -1313,6 +1336,7 @@ export const listOrgModelPoliciesWithSystemDefault$ = command(
     signal: AbortSignal,
   ): Promise<OrgModelPolicyListing> => {
     const listing = await listOrgModelPolicies(
+      await get(modelCatalog$),
       set(writeDb$),
       params.orgId,
       params.userId,
@@ -1347,6 +1371,8 @@ export const updateOrgModelPolicies$ = command(
     if (!params.revision) {
       return refreshConflict();
     }
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
     const written = await db.transaction(async (tx) => {
       const [org] = await tx
         .select({ mode: orgMetadata.modelMode })
@@ -1359,10 +1385,7 @@ export const updateOrgModelPolicies$ = command(
         );
       }
       signal.throwIfAborted();
-      const [existing, catalog] = await Promise.all([
-        loadRows(tx, params.orgId),
-        loadModelCatalog(tx),
-      ]);
+      const existing = await loadRows(tx, params.orgId);
       if (
         params.revision !== undefined &&
         params.revision !== policyRevision(existing)
@@ -1410,6 +1433,7 @@ export const updateOrgModelPolicies$ = command(
     }
 
     const { response } = await listOrgModelPolicies(
+      await get(modelCatalog$),
       db,
       params.orgId,
       params.userId,

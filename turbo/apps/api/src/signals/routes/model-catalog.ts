@@ -5,17 +5,17 @@ import {
 } from "@okouai/api-contracts/contracts/model-catalog";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { db$ } from "../external/db";
+
 import type { RouteEntry } from "../route-entry";
 import {
   catalogBuiltInPriceTier,
-  loadModelCatalog,
   resolveCatalogModel,
+  modelCatalog$,
 } from "../services/model-catalog.service";
 
 const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
   get(organizationAuthContext$);
-  const catalog = await loadModelCatalog(get(db$));
+  const catalog = await get(modelCatalog$);
   signal.throwIfAborted();
   return {
     status: 200 as const,
