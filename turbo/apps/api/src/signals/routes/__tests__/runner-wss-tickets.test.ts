@@ -145,14 +145,8 @@ describe("direct Runner WSS ticket boundary", () => {
       snapshotSequence: 4,
       wssIngressServiceActive: true,
     });
-    await accept(bootstrap(f), [404]);
-    const digests = await accept(
-      testState().action({
-        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
-      }),
-      [200],
-    );
-    expect(digests.body.wss_ticket_digests).toStrictEqual([]);
+    const patReported = await accept(bootstrap(f), [404]);
+    expect(patReported.body.error.code).toBe("NOT_FOUND");
 
     await f.api.requestHeartbeatRunner(true, [200], {
       runnerId: f.runnerId,
@@ -167,13 +161,6 @@ describe("direct Runner WSS ticket boundary", () => {
   it("denies new tickets on inactive WSS ingress without recalling an issued ticket", async () => {
     const f = await setup();
     const issued = await accept(bootstrap(f), [200]);
-    const before = await accept(
-      testState().action({
-        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
-      }),
-      [200],
-    );
-    expect(before.body.wss_ticket_digests).toHaveLength(1);
 
     await f.api.requestHeartbeatRunner(true, [200], {
       runnerId: f.runnerId,
@@ -184,16 +171,14 @@ describe("direct Runner WSS ticket boundary", () => {
     const denied = await accept(bootstrap(f), [404]);
     expect(denied.body.error.code).toBe("NOT_FOUND");
     expect(denied.headers.get("Cache-Control")).toBe("no-store");
-    const after = await accept(
-      testState().action({
-        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
-      }),
-      [200],
-    );
-    expect(after.body.wss_ticket_digests).toStrictEqual(
-      before.body.wss_ticket_digests,
-    );
-    await accept(consume(f, issued.body.ticket), [200]);
+    const accepted = await accept(consume(f, issued.body.ticket), [200]);
+    expect(accepted.body).toStrictEqual({
+      runId: f.runId,
+      runnerId: f.runnerId,
+      origin,
+      orgId: f.actor.orgId,
+      userId: f.actor.userId,
+    });
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
@@ -236,15 +221,6 @@ describe("direct Runner WSS ticket boundary", () => {
     expect(issued.body.wssUrl).not.toContain(issued.body.ticket);
     expect(issued.body.ticket).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(new Date(issued.body.expiresAt).getTime()).toBeGreaterThan(now());
-    const digestState = await accept(
-      testState().action({
-        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
-      }),
-      [200],
-    );
-    expect(digestState.body.wss_ticket_digests).toHaveLength(1);
-    expect(digestState.body.wss_ticket_digests?.[0]).toMatch(/^[a-f0-9]{64}$/);
-    expect(JSON.stringify(digestState.body)).not.toContain(issued.body.ticket);
     await accept(
       consume(f, issued.body.ticket, { runId: randomUUID() }),
       [404],

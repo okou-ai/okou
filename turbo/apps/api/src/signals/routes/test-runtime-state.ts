@@ -1230,22 +1230,6 @@ const specializedRuntimeFixtureAction$ = command(
         },
       };
     }
-    if (body.action === "read-runner-wss-ticket-digests") {
-      const rows = await db
-        .select({ digest: runnerWssTickets.digest })
-        .from(runnerWssTickets)
-        .where(eq(runnerWssTickets.runId, body.run_id));
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          wss_ticket_digests: rows.map((r) => {
-            return r.digest;
-          }),
-        },
-      };
-    }
     if (body.action === "expire-runner-wss-tickets") {
       await db
         .update(runnerWssTickets)

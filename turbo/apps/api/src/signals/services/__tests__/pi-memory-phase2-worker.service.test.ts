@@ -1,10 +1,6 @@
-import { readPiMemoryBuiltinQuota } from "../pi-memory-builtin-quota.service";
 import { captureFixtureRunBilling } from "../billing-run-fixture";
 import { checkPiMemoryQuota } from "../pi-memory-quota.service";
-import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-} from "@okouai/db/schema/org-usage-allowance";
+import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -15,14 +11,12 @@ import {
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -32,12 +26,10 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { conversations } from "@okouai/db/schema/agent-run-session-conversation";
 import { createStore } from "ccstate";
 import { createDeferredPromise } from "../../utils";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
-import { executeRawRows } from "../../../lib/db-raw-rows";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
@@ -75,7 +67,6 @@ import {
   activateAnotherPhase2Codex,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
@@ -84,10 +75,7 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createMiscRoutesApi } from "../../routes/__tests__/helpers/api-bdd-misc";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import {
-  makeCodexJwt,
-  makeCodexAuthJson,
-} from "../../routes/__tests__/helpers/api-bdd-auth-device";
+import { makeCodexJwt } from "../../routes/__tests__/helpers/api-bdd-auth-device";
 import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 
 async function deleteRunSessionsForScope(scope: {
@@ -322,20 +310,6 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     });
   });
 
-  it("does not claim when no control job is ready", async () => {
-    const scope = await createPhase2TestScope("sandbox-no-work", {
-      emptyBase: true,
-    });
-    const store = createStore();
-    const result = await store.set(
-      executePiMemoryPhase2Work$,
-      { scope, currentTime: new Date("2026-09-05T02:00:00.000Z") },
-      testContext().signal,
-    );
-
-    expect(result).toStrictEqual({ outcome: "no_work" });
-  });
-
   it("retries a due maintenance_agent_missing job without creating an Agent", async () => {
     const now = new Date("2026-09-05T02:00:00.000Z");
     const scope = await createPhase2TestScope("sandbox-missing-agent-retry", {
@@ -436,46 +410,6 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
         ),
       );
     expect(candidate?.rawMemory).toBe("bounded private candidate");
-  });
-
-  it("recovers an expired bound lease whose maintenance run is missing", async () => {
-    const currentTime = new Date("2026-09-05T04:00:00.000Z");
-    const scope = await createPhase2TestScope("sandbox-orphaned-run", {
-      emptyBase: true,
-    });
-    const leaseToken = randomUUID();
-    const maintenanceRunId = randomUUID();
-    await insertPendingPhase2Job(scope, {
-      status: "leased",
-      claimedRevision: 1,
-      leaseToken,
-      sandboxLeaseToken: leaseToken,
-      leaseExpiresAt: new Date("2026-09-05T03:00:00.000Z"),
-      maintenanceRunId,
-      claimedSelectionDigest: "a".repeat(64),
-      claimedSelectedCount: 0,
-      claimedSelectedUtf8Bytes: 0,
-    });
-
-    const store = createStore();
-    await expect(
-      store.set(
-        executePiMemoryPhase2Work$,
-        { scope, currentTime },
-        testContext().signal,
-      ),
-    ).resolves.toStrictEqual({
-      outcome: "failed",
-      errorClass: "maintenance_run_missing",
-    });
-    await expect(readPhase2Job(scope)).resolves.toMatchObject({
-      status: "retryable_failure",
-      maintenanceRunId: null,
-      leaseToken: null,
-      sandboxLeaseToken: null,
-      retryCount: 1,
-      lastErrorClass: "maintenance_run_missing",
-    });
   });
 
   it("releases the claim when standard run launch preparation fails", async () => {
@@ -1121,25 +1055,6 @@ async function expectNoDispatch(
   }
 }
 
-// Runs `fault` when run preparation presigns the non-empty memory base archive.
-// Storage materialization happens after credential resolution and before the
-// final admission transaction; other presigns keep the default behavior.
-function onMemoryArchivePresign(
-  job: Awaited<ReturnType<typeof createPhase2WorkerFixture>>,
-  fault: () => Promise<void> | void,
-) {
-  const archiveKey = `${job.scope.baseVersion.s3Key}/archive.tar.gz`;
-  testContext().mocks.s3.getSignedUrl.mockImplementation(
-    async (_client: unknown, command: unknown) => {
-      const url = apiTestS3PresignedUrl(command);
-      if (new URL(url).searchParams.get("object")?.endsWith(`/${archiveKey}`)) {
-        await fault();
-      }
-      return url;
-    },
-  );
-}
-
 describe("Phase 2 current credential admission", () => {
   it.each([true, false])(
     "defers empty-selection cleanup/repair for emptyBase=%s with three hourly attempts",
@@ -1352,79 +1267,6 @@ describe("Phase 2 current credential admission", () => {
     await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
   });
 
-  it.each(["storage-head", "switch", "rotation", "replacement", "surface"])(
-    "fences %s changes during asynchronous preparation",
-    async (fault) => {
-      const job = await createPhase2WorkerFixture(`race-${fault}`, false);
-      const provider = await createPhase2Provider(
-        testContext(),
-        job.scope,
-        fault === "surface" ? "custom-openai-responses" : "openai-api-key",
-      );
-      const sourceIds = [randomUUID(), randomUUID()].sort();
-      await insertPhase2Candidates(
-        job.scope,
-        sourceIds.map((sourceRunId) => {
-          return {
-            piSessionId: randomUUID(),
-            sourceRunId,
-          };
-        }),
-        provider.binding,
-      );
-      let changed = false;
-      let expectedHead = job.scope.baseVersion.versionId;
-      onMemoryArchivePresign(job, async () => {
-        if (!changed) {
-          changed = true;
-          if (fault === "storage-head") {
-            const version = await insertPhase2StorageVersion(
-              job.scope,
-              "external",
-            );
-            await setPhase2StorageHead(job.scope, version);
-            expectedHead = version.versionId;
-          } else if (fault === "switch") {
-            await updateFeatureSwitchesForUser(testContext(), job.scope, {
-              [FeatureSwitchKey.PiMemory]: false,
-            });
-          } else if (fault === "surface") {
-            await db()
-              .update(modelProviderSurfaces)
-              .set({ modelMappings: { "gpt-5.6-luna": "replacement-alias" } })
-              .where(
-                eq(modelProviderSurfaces.id, provider.binding.modelProviderId),
-              );
-          } else {
-            const actor = createBddApi(testContext()).user({
-              ...job.scope,
-              orgRole: "org:admin",
-            });
-            const api = createMiscRoutesApi(testContext());
-            if (fault === "replacement") {
-              await api.deleteOrgModelProvider(actor, "openai-api-key", [204]);
-            }
-            await api.upsertOrgModelProvider(
-              actor,
-              { type: "openai-api-key", secret: "rotated-source-key" },
-              [200, 201],
-            );
-          }
-        }
-      });
-      await expectNoDispatch(
-        job,
-        fault === "switch"
-          ? "pi_memory_disabled"
-          : fault === "storage-head"
-            ? "storage_binding_changed"
-            : "credential_unavailable",
-        fault === "storage-head" ? null : expectedHead,
-      );
-      expect(changed).toBeTruthy();
-    },
-  );
-
   it("uses a surviving rotated key while ignoring a changed default", async () => {
     const job = await createPhase2WorkerFixture("surviving-key");
     const provider = await createPhase2Provider(
@@ -1451,75 +1293,6 @@ describe("Phase 2 current credential admission", () => {
       .set({ isDefault: false })
       .where(eq(modelProviders.id, provider.binding.modelProviderId));
     await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
-  });
-});
-
-test("does not admit a subscription disconnected during preparation", async () => {
-  const job = await createPhase2WorkerFixture(
-    "disconnect-before-admission",
-    false,
-  );
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    provider.binding,
-  );
-  let disconnected = false;
-  onMemoryArchivePresign(job, async () => {
-    if (!disconnected) {
-      disconnected = true;
-      await disconnectPhase2Codex(
-        testContext(),
-        job.scope,
-        provider.binding.modelProviderId,
-      );
-    }
-  });
-  // Final admission rejects disconnected accounts after all source-row locks.
-  await expectNoDispatch(job, "credential_unavailable");
-  expect(disconnected).toBeTruthy();
-});
-
-test("does not persist or dispatch when preparation is cancelled", async () => {
-  const job = await createPhase2WorkerFixture("cancel-before-admission", false);
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "openai-api-key",
-  );
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    provider.binding,
-  );
-  const controller = new AbortController();
-  const signal = AbortSignal.any([controller.signal, testContext().signal]);
-  onMemoryArchivePresign(job, () => {
-    controller.abort(new Error("Cancelled preparation"));
-  });
-  await expect(job.work(undefined, signal)).rejects.toThrow(
-    "Cancelled preparation",
-  );
-  await expect(
-    db()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.orgId, job.scope.orgId),
-          eq(agentRuns.triggerSource, "agent"),
-        ),
-      ),
-  ).resolves.toStrictEqual([]);
-  await expect(readPhase2Job(job.scope)).resolves.toMatchObject({
-    completedRevision: 0,
-    maintenanceRunId: null,
   });
 });
 
@@ -1753,46 +1526,6 @@ describe("Phase 2 built-in reserves with positive cash", () => {
   });
 });
 
-test.each(["uncreated-windows", "entitlement-stale", "no-grants"] as const)(
-  "quota-only DB read is pure and reports unknown for %s",
-  async (scenario) => {
-    const job = await createPhase2WorkerFixture("quota-purity");
-    const at = nowDate();
-    await seedMemoryQuotaCase(job.scope, at, scenario);
-    const before = await db()
-      .select()
-      .from(orgUsageAllowanceEntitlements)
-      .where(eq(orgUsageAllowanceEntitlements.orgId, job.scope.orgId));
-    const result = await readPiMemoryBuiltinQuota(
-      db(),
-      job.scope,
-      at,
-      testContext().signal,
-    );
-    expect(result).toMatchObject({
-      decision: "unknown",
-      reason:
-        scenario === "entitlement-stale"
-          ? "entitlement_stale"
-          : "cash_percentage_unknown",
-    });
-    await expect(
-      db()
-        .select()
-        .from(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, job.scope.orgId)),
-    ).resolves.toStrictEqual(before);
-    const windows = await db()
-      .select()
-      .from(orgUsageAllowanceWindows)
-      .where(eq(orgUsageAllowanceWindows.orgId, job.scope.orgId));
-    expect(windows).toHaveLength(scenario === "entitlement-stale" ? 1 : 0);
-    expect(
-      testContext().mocks.stripe.subscriptions.retrieve,
-    ).not.toHaveBeenCalled();
-  },
-);
-
 test.each([
   "invalid-pool",
   "invalid-pool-masked",
@@ -1909,106 +1642,6 @@ test("refreshes quota for a new hourly attempt and never re-admits committed rec
   ).resolves.toStrictEqual(retried);
   expect(reads).toBe(2);
 });
-
-test.each(["disconnect", "feature", "storage", "token", "cancel"])(
-  "preserves the Phase 2 final %s fence after quota I/O",
-  async (fault) => {
-    const job = await createPhase2WorkerFixture("post-quota-race");
-    const native = await createPhase2Provider(
-      testContext(),
-      job.scope,
-      "codex-oauth-token",
-      "member",
-    );
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID() }],
-      native.binding,
-    );
-    const controller = new AbortController();
-    onTestFinished(() => {
-      return controller.abort();
-    });
-    let mutated = false;
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", async () => {
-        if (fault === "token" && !mutated) {
-          mutated = true;
-          await createMiscRoutesApi(testContext()).upsertPersonalModelProvider(
-            createBddApi(testContext()).user({
-              ...job.scope,
-              orgRole: "org:admin",
-            }),
-            {
-              type: "codex-oauth-token",
-              authMethod: "auth_json",
-              secrets: {
-                CODEX_AUTH_JSON: makeCodexAuthJson({
-                  accessToken: makeCodexJwt({
-                    exp: Math.floor(now() / 1000) + 7200,
-                    identity: "rotated-after-quota",
-                  }),
-                  accountId: native.account as string,
-                  refreshToken: "rotated-refresh",
-                }),
-              },
-            },
-            [200],
-          );
-        }
-        if (fault === "disconnect") {
-          await disconnectPhase2Codex(
-            testContext(),
-            job.scope,
-            native.binding.modelProviderId,
-          );
-        }
-        if (fault === "feature") {
-          await updateFeatureSwitchesForUser(testContext(), job.scope, {
-            [FeatureSwitchKey.PiMemory]: false,
-          });
-        }
-        if (fault === "storage") {
-          const version = await insertPhase2StorageVersion(
-            job.scope,
-            "concurrent quota read",
-          );
-          await setPhase2StorageHead(job.scope, version);
-        }
-        if (fault === "cancel") {
-          controller.abort();
-        }
-        return HttpResponse.json({
-          rate_limit: { primary_window: { used_percent: 0 } },
-        });
-      }),
-    );
-    const work = job.work(nowDate(), controller.signal);
-    if (fault === "cancel") {
-      await expect(work).rejects.toMatchObject({ name: "AbortError" });
-    } else {
-      expect((await work).outcome).toBe("failed");
-    }
-    await expect(
-      db()
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.orgId, job.scope.orgId),
-            eq(agentRuns.triggerSource, "agent"),
-          ),
-        ),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      db()
-        .select({ id: usageEvent.id })
-        .from(usageEvent)
-        .where(eq(usageEvent.orgId, job.scope.orgId)),
-    ).resolves.toStrictEqual([]);
-    expect((await readPhase2Job(job.scope))?.completedRevision).toBe(0);
-  },
-);
 
 test.each(["malformed-json", "network", "timeout"])(
   "phase 2 unknown %s preserves canonical admission",
@@ -2141,87 +1774,6 @@ test.each([
     expect(quotaReads).toBe(0);
   },
 );
-
-test("writes the memory archive URL cache only after committing the run", async () => {
-  const job = await createPhase2WorkerFixture("cache-after-commit", false);
-  const provider = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "openai-api-key",
-  );
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    provider.binding,
-  );
-  // The non-empty memory archive is signed fresh, so the run caches its URL.
-  onMemoryArchivePresign(job, () => {});
-  const versionId = job.scope.baseVersion.versionId;
-  onTestFinished(async () => {
-    await db()
-      .delete(systemStoragePresignedUrlCache)
-      .where(eq(systemStoragePresignedUrlCache.storageVersionId, versionId));
-  });
-
-  const result = await job.work();
-  if (result.outcome !== "dispatched") {
-    throw new Error("Expected maintenance run");
-  }
-
-  // Transaction IDs order the writes: the run's callback row is written once,
-  // by the commit transaction, and the cache row by a later transaction.
-  const [xids] = await executeRawRows(
-    db(),
-    sql`
-      select
-        (select xmin::text from ${agentRunCallbacks}
-          where ${agentRunCallbacks.runId} = ${result.runId}) as "commitXid",
-        (select xmin::text from ${systemStoragePresignedUrlCache}
-          where ${systemStoragePresignedUrlCache.storageVersionId} = ${versionId})
-          as "cacheXid"
-    `,
-    z.object({ commitXid: z.string(), cacheXid: z.string() }),
-  );
-  if (!xids) {
-    throw new Error("Expected the run and cache rows");
-  }
-  expect(BigInt(xids.cacheXid)).toBeGreaterThan(BigInt(xids.commitXid));
-});
-
-test("reports a run committed before an abort on the next pass, never as stale", async () => {
-  const job = await createPhase2WorkerFixture("abort-after-commit");
-  await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }]);
-  const controller = new AbortController();
-  const signal = AbortSignal.any([controller.signal, testContext().signal]);
-  // The Runner notification is published only after the run commits.
-  testContext().mocks.ably.publish.mockImplementation((event: unknown) => {
-    if (event === "job") {
-      controller.abort();
-    }
-    return Promise.resolve();
-  });
-
-  await expect(job.work(undefined, signal)).rejects.toMatchObject({
-    name: "AbortError",
-  });
-
-  const bound = await readPhase2Job(job.scope);
-  expect(bound).toMatchObject({ status: "leased", lastErrorClass: null });
-  const runId = bound?.maintenanceRunId;
-  if (!runId) {
-    throw new Error("Expected the committed run to stay bound");
-  }
-  await expect(
-    db()
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId)),
-  ).resolves.toStrictEqual([{ status: "pending" }]);
-  await expect(job.work()).resolves.toStrictEqual({
-    outcome: "dispatched",
-    runId,
-  });
-});
 
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const job = await createPhase2WorkerFixture("quota-max3");

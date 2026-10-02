@@ -1,14 +1,10 @@
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  chatEventSearchMessages,
-  chatEventSearchMessageWatermarks,
-} from "@okouai/db/schema/chat-event-search";
+import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { chatSearchIndexText } from "../lib/chat-search-bigram";
@@ -17,20 +13,6 @@ import {
   replaceChatEvent,
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
-
-interface ChatEventSearchProjectionRowsFixture {
-  readonly indexedSeqId: number | null;
-  readonly messages: readonly {
-    readonly seqId: number;
-    readonly runId: string | null;
-    readonly role: "user" | "assistant";
-    readonly text: string;
-  }[];
-}
-
-interface ChatEventSearchProjectionFixture extends ChatEventSearchProjectionRowsFixture {
-  readonly lastChatEventSeqId: number;
-}
 
 export async function insertSearchableMessageBatchFixture(args: {
   readonly chatThreadId: string;
@@ -79,58 +61,6 @@ export async function removeChatSearchParentThreadsFixture(
   if (deleted.length !== chatThreadIds.length) {
     throw new Error("Expected every chat search parent thread to be removed");
   }
-}
-
-export async function readChatEventSearchProjectionRowsFixture(
-  chatThreadId: string,
-): Promise<ChatEventSearchProjectionRowsFixture> {
-  const [watermark] = await db()
-    .select({ indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId })
-    .from(chatEventSearchMessageWatermarks)
-    .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId))
-    .limit(1);
-  const messages = await db()
-    .select({
-      seqId: chatEventSearchMessages.seqId,
-      runId: chatEventSearchMessages.runId,
-      role: chatEventSearchMessages.role,
-      text: chatEventSearchMessages.text,
-    })
-    .from(chatEventSearchMessages)
-    .where(eq(chatEventSearchMessages.chatThreadId, chatThreadId))
-    .orderBy(asc(chatEventSearchMessages.seqId));
-  return {
-    indexedSeqId: watermark?.indexedSeqId ?? null,
-    messages,
-  };
-}
-
-export async function readChatEventSearchProjectionFixture(
-  chatThreadId: string,
-): Promise<ChatEventSearchProjectionFixture> {
-  const [thread] = await db()
-    .select({
-      lastChatEventSeqId:
-        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
-          chatEventSequences.lastSeqId,
-        ),
-    })
-    .from(chatThreads)
-    .leftJoin(
-      chatEventSequences,
-      eq(chatEventSequences.chatThreadId, chatThreads.id),
-    )
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  if (!thread) {
-    throw new Error("Expected chat search projection fixture thread");
-  }
-  const projection =
-    await readChatEventSearchProjectionRowsFixture(chatThreadId);
-  return {
-    lastChatEventSeqId: thread.lastChatEventSeqId,
-    ...projection,
-  };
 }
 
 export async function insertChatSearchProjectionCoverageFixture(args: {

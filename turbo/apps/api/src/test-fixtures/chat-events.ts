@@ -50,7 +50,6 @@ const BDD_BUILT_IN_MODEL_KEY_PREFIXES = [
 ] as const;
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
-const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
 const blockedQueryRowSchema = z.object({ query: z.string() });
 
 type ChatThreadBlockedStatementKind =
@@ -910,72 +909,6 @@ export async function holdChatThreadRowLockFixture(args: {
 }
 
 /**
- * Deletes one test-owned thread and pauses before commit. Product APIs cannot
- * pause after DELETE has locked the parent but before the transaction commits,
- * so this fixture exposes that exact projection/deletion concurrency boundary.
- */
-export async function holdChatThreadDeleteTransactionFixture(args: {
-  readonly threadId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly firstBlockedStatementKind: () => Promise<ChatThreadBlockedStatementKind | null>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const deleted = await tx
-      .delete(chatThreads)
-      .where(eq(chatThreads.id, args.threadId))
-      .returning({ id: chatThreads.id });
-    if (deleted.length !== 1) {
-      throw new Error("Expected one chat thread to delete");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat thread delete holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    firstBlockedStatementKind: async () => {
-      return await firstDirectBlockedStatementKind(holderPid);
-    },
-  };
-}
-
-async function pidIsDirectlyBlockedBy(
-  waiterPid: number,
-  holderPid: number,
-): Promise<boolean> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT ${holderPid} = ANY(pg_blocking_pids(${waiterPid})) AS "blocked"
-    `,
-    blockedByPidRowSchema,
-  );
-  return rows[0]?.blocked ?? false;
-}
-
-/**
  * Acquires bdd-scoped ownership of the platform-managed built-in model key
  * pool for one vendor.
  *
@@ -1032,70 +965,6 @@ export async function deleteAgentRunFixture(args: {
   if (deleted.length !== 1) {
     throw new Error("Expected one agent run to be deleted");
   }
-}
-
-/**
- * Inserts one event through the production sequence writer, then holds its
- * transaction open. No product endpoint can pause between INSERT and COMMIT,
- * so this fixture is the narrow timing boundary for sequence serialization.
- */
-export async function holdChatEventInsertTransactionFixture(args: {
-  readonly threadId: string;
-  readonly content: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly event: { readonly id: string; readonly seqId: number };
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly blocks: (waiterPid: number) => Promise<boolean>;
-}> {
-  const started = createDeferredPromise<{
-    readonly pid: number;
-    readonly event: { readonly id: string; readonly seqId: number };
-  }>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat-message insert holder pid");
-    }
-    const event = await insertChatEvent(tx, {
-      chatThreadId: args.threadId,
-      eventType: "output.message",
-      content: args.content,
-      runId: null,
-    });
-    if (!event) {
-      throw new Error("Expected the held chat-message insert");
-    }
-    started.resolve({ pid: holderPid, event });
-    await released.promise;
-  });
-  const { pid, event } = await started.promise;
-
-  return {
-    event,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(pid);
-    },
-    blocks: async (waiterPid) => {
-      return await pidIsDirectlyBlockedBy(waiterPid, pid);
-    },
-  };
 }
 
 /**
