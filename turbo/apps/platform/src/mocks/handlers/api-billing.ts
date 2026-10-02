@@ -83,7 +83,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
   }
 }
 
-function defaultBillingStatus(): BillingStatusResponse {
+export function defaultBillingStatus(): BillingStatusResponse {
   return {
     // Generic page tests retain unrestricted Built-in access on a current paid
     // plan; Limited Free scenarios install their restricted capabilities.
