@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.27](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.26...runner-storage-v0.1.27) (2026-10-02)
+
+
+### Bug Fixes
+
+* **runner-storage:** retry transient archive download failures ([#37557](https://github.com/okou-ai/okou/issues/37557)) ([353e71f](https://github.com/okou-ai/okou/commit/353e71fd9f0c29bbc7718382d49f40f62484e05b))
+
 ## [0.1.26](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.25...runner-storage-v0.1.26) (2026-10-01)
 
 ## [0.1.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.24...runner-storage-v0.1.25) (2026-10-01)
