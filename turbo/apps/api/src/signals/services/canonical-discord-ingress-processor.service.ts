@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -964,9 +964,9 @@ async function recordTerminalIngressFailure(
     signal.throwIfAborted();
     if (route?.destinationChannelId) {
       const inserted =
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql(
               {
                 id: ingressId,
@@ -979,8 +979,7 @@ async function recordTerminalIngressFailure(
               },
               "id",
             ),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null;
       signal.throwIfAborted();
       if (inserted) {

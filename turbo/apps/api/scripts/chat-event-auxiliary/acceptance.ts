@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
-import { executeRawRows } from "../../src/lib/db-raw-rows";
+import { parseRawRows } from "../../src/lib/db-raw-rows";
 import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -57,17 +57,16 @@ async function fixture() {
   await db.insert(chatThreads).values({ id: threadId, userId, agentId });
   const append = async () => {
     return (
-      (
-        await executeRawRows(
-          db,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
           chatEventInsertSql({
             chatThreadId: threadId,
             eventType: "input.prompt",
             userMessage: document,
             contextType: "web",
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null
     );
   };

@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import {
   runStatusSchema,
@@ -172,17 +172,16 @@ async function consumeActiveInputSource(
       userMessage: source.userMessage,
     };
     const replacement =
-      (
-        await executeRawRows(
-          db,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
           chatEventReplacementInsertSql(
             replacementTarget(source),
             source.eventType === "input.budget"
               ? { ...steeredInput, eventType: "input.budget" }
               : { ...steeredInput, eventType: "input.prompt" },
           ),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (replacement) {
       return { outcome: "appended", source };
@@ -414,16 +413,15 @@ async function revokePendingRunTimeBudgetInput(
     return false;
   }
   const revoked =
-    (
-      await executeRawRows(
-        db,
+    parseRawRows(
+      chatEventCommandResultSchema,
+      await db.execute(
         chatEventReplacementInsertSql(replacementTarget(source), {
           chatThreadId: args.chatThreadId,
           eventType: "control.revoke",
           runId: args.runId,
         }),
-        chatEventCommandResultSchema,
-      )
+      ),
     )[0] ?? null;
   return revoked !== null;
 }

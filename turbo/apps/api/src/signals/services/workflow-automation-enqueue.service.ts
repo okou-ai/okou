@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -213,15 +213,14 @@ export async function workflowAutomationQueueEventWriter(
       "api_dispatch_workflow_enqueue_event_insert",
       async () => {
         return (
-          (
-            await executeRawRows(
-              tx,
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
               chatEventInsertSql(
                 values,
                 args.queueEventId === undefined ? "none" : "id",
               ),
-              chatEventCommandResultSchema,
-            )
+            ),
           )[0] ?? null
         );
       },
@@ -309,24 +308,24 @@ export async function revokePendingScheduleTicks(
     if (eventId === args.excludeEventId) {
       continue;
     }
-    await executeRawRows(
-      db,
-      chatEventReplacementInsertSql(
-        requireChatEventReplacementTarget(
-          await executeRawRows(
-            db,
-            chatEventReplacementTargetSql(eventId),
-            chatEventReplacementTargetSchema,
-          ),
-        ),
-        {
-          chatThreadId: args.chatThreadId,
-          eventType: "control.revoke",
-          runId: null,
-          content: null,
-        },
-      ),
+    parseRawRows(
       chatEventCommandResultSchema,
+      await db.execute(
+        chatEventReplacementInsertSql(
+          requireChatEventReplacementTarget(
+            parseRawRows(
+              chatEventReplacementTargetSchema,
+              await db.execute(chatEventReplacementTargetSql(eventId)),
+            ),
+          ),
+          {
+            chatThreadId: args.chatThreadId,
+            eventType: "control.revoke",
+            runId: null,
+            content: null,
+          },
+        ),
+      ),
     );
   }
 }

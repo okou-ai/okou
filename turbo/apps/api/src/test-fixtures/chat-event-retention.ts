@@ -2,7 +2,7 @@ import {
   chatEventAppendResultSchema,
   chatEventCommandResultSchema,
 } from "../signals/services/chat-event-append.service";
-import { executeRawRows } from "../lib/db-raw-rows";
+import { parseRawRows } from "../lib/db-raw-rows";
 import { createHash, randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -52,9 +52,9 @@ export const seedRetentionOutputEvent$ = command(
   ): Promise<string> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
       return (
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql({
               chatThreadId: args.chatThreadId,
               eventType: "output.message",
@@ -62,8 +62,7 @@ export const seedRetentionOutputEvent$ = command(
               content: args.content ?? `retention-output-${randomUUID()}`,
               createdAt: retentionCreatedAt(args.offsetMs),
             }),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null
       );
     });
@@ -86,20 +85,21 @@ export const seedRetentionOutputEvents$ = command(
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
-      return await executeRawRows(
-        tx,
-        chatEventsInsertSql(
-          Array.from({ length: args.count }, (_, index) => {
-            return {
-              chatThreadId: args.chatThreadId,
-              eventType: "output.message" as const,
-              runId: null,
-              content: `retention-output-${index.toString()}-${randomUUID()}`,
-              createdAt: retentionCreatedAt(args.offsetMs),
-            };
-          }),
-        ),
+      return parseRawRows(
         chatEventAppendResultSchema,
+        await tx.execute(
+          chatEventsInsertSql(
+            Array.from({ length: args.count }, (_, index) => {
+              return {
+                chatThreadId: args.chatThreadId,
+                eventType: "output.message" as const,
+                runId: null,
+                content: `retention-output-${index.toString()}-${randomUUID()}`,
+                createdAt: retentionCreatedAt(args.offsetMs),
+              };
+            }),
+          ),
+        ),
       );
     });
     signal.throwIfAborted();
@@ -120,9 +120,9 @@ export const seedRetentionPendingEvent$ = command(
   ): Promise<string> => {
     const inserted = await set(writeDb$).transaction(async (tx) => {
       return (
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql({
               chatThreadId: args.chatThreadId,
               eventType: "input.prompt",
@@ -134,8 +134,7 @@ export const seedRetentionPendingEvent$ = command(
               },
               createdAt: retentionCreatedAt(args.offsetMs),
             }),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null
       );
     });
@@ -159,9 +158,9 @@ export const seedRetentionInvisibleReplacement$ = command(
   ): Promise<{ readonly targetId: string; readonly replacementId: string }> => {
     const result = await set(writeDb$).transaction(async (tx) => {
       const target =
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql({
               chatThreadId: args.chatThreadId,
               eventType: "input.prompt",
@@ -173,22 +172,20 @@ export const seedRetentionInvisibleReplacement$ = command(
               },
               createdAt: retentionCreatedAt(args.targetOffsetMs),
             }),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null;
       if (target === null) {
         throw new Error("Expected retention replacement target insertion");
       }
       const replacement =
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventReplacementInsertSql(
               requireChatEventReplacementTarget(
-                await executeRawRows(
-                  tx,
-                  chatEventReplacementTargetSql(target.id),
+                parseRawRows(
                   chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(target.id)),
                 ),
               ),
               {
@@ -205,8 +202,7 @@ export const seedRetentionInvisibleReplacement$ = command(
                 createdAt: retentionCreatedAt(args.replacementOffsetMs),
               },
             ),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null;
       if (replacement === null) {
         throw new Error("Expected retention replacement insertion");
@@ -230,15 +226,14 @@ export const revokeRetentionEvent$ = command(
   ): Promise<string> => {
     const revoker = await set(writeDb$).transaction(async (tx) => {
       return (
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventReplacementInsertSql(
               requireChatEventReplacementTarget(
-                await executeRawRows(
-                  tx,
-                  chatEventReplacementTargetSql(args.eventId),
+                parseRawRows(
                   chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(args.eventId)),
                 ),
               ),
               {
@@ -249,8 +244,7 @@ export const revokeRetentionEvent$ = command(
                 content: null,
               },
             ),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null
       );
     });

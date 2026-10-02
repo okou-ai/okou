@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
@@ -386,9 +386,9 @@ export async function claimQueueFirstRunAssociation(
         "nested",
         async () => {
           return (
-            (
-              await executeRawRows(
-                db,
+            parseRawRows(
+              chatEventCommandResultSchema,
+              await db.execute(
                 chatEventReplacementInsertSql(snapshot.target, {
                   ...snapshot.replacement,
                   // This fresh server run UUID identifies its initial input claim.
@@ -397,8 +397,7 @@ export async function claimQueueFirstRunAssociation(
                   // readers use its physical sequence as the run's lower bound.
                   id: args.runId,
                 }),
-                chatEventCommandResultSchema,
-              )
+              ),
             )[0] ?? null
           );
         },

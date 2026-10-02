@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   chatRunFinishedEventConfigSchema,
   type ChatRunFinishedEventConfig,
@@ -54,9 +54,9 @@ async function appendAutonomyBudgetError(args: {
   readonly sourceRunId: string;
 }): Promise<boolean> {
   const errorEvent =
-    (
-      await executeRawRows(
-        args.db,
+    parseRawRows(
+      chatEventCommandResultSchema,
+      await args.db.execute(
         chatEventInsertSql(
           {
             id: uuidv5(
@@ -71,8 +71,7 @@ async function appendAutonomyBudgetError(args: {
           },
           "id",
         ),
-        chatEventCommandResultSchema,
-      )
+      ),
     )[0] ?? null;
   if (!errorEvent) {
     return false;

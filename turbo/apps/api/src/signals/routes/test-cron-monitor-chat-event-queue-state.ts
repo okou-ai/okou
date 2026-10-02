@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "../services/chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
@@ -319,12 +319,9 @@ async function seedFixtureEvents(
       await tx.execute(contextInsert);
     }
     const automation =
-      (
-        await executeRawRows(
-          tx,
-          chatEventInsertSql(values),
-          chatEventCommandResultSchema,
-        )
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(chatEventInsertSql(values)),
       )[0] ?? null;
     return [automation];
   }
@@ -350,28 +347,26 @@ async function seedFixtureEvents(
   }
   const event =
     fixtureKind === "failed-message"
-      ? ((
-          await executeRawRows(
-            tx,
+      ? (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql({
               ...baseEvent,
               contextType: "web",
               eventType: "input.rejected",
               error: "INSUFFICIENT_CREDITS",
             }),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null)
-      : ((
-          await executeRawRows(
-            tx,
+      : (parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql({
               ...baseEvent,
               contextType: "web",
               eventType: "input.prompt",
             }),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null);
   return [event];
 }
@@ -419,15 +414,14 @@ async function seedFixture(
   if (fixtureKind === "revoked-message") {
     const replacement = await db.transaction(async (tx) => {
       return (
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventReplacementInsertSql(
               requireChatEventReplacementTarget(
-                await executeRawRows(
-                  tx,
-                  chatEventReplacementTargetSql(event.id),
+                parseRawRows(
                   chatEventReplacementTargetSchema,
+                  await tx.execute(chatEventReplacementTargetSql(event.id)),
                 ),
               ),
               {
@@ -439,8 +433,7 @@ async function seedFixture(
                 runId: randomUUID(),
               },
             ),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null
       );
     });
