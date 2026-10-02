@@ -8,6 +8,8 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import { createDeferredPromise } from "../../utils";
+import { createBddApi } from "./helpers/api-bdd";
+import { createEmailApi } from "./helpers/api-bdd-email";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 
 const context = testContext();
@@ -533,6 +535,35 @@ describe("email outbox provider replay", () => {
       resend_id: delivered[0]?.id,
       provider_idempotency_key: key,
       has_provider_request: false,
+    });
+  });
+
+  it("gives each outbox row its own provider key", async () => {
+    const email = createEmailApi(context);
+    const bdd = createBddApi(context);
+    const first = await email.enqueueDataExportEmail(bdd.user());
+    const second = await email.enqueueDataExportEmail(bdd.user());
+    const firstItem = await email.findEmailOutboxItem(first);
+    const secondItem = await email.findEmailOutboxItem(second);
+    context.mocks.resend.send.mockClear();
+
+    await expect(
+      email.drainEmailOutboxItems([firstItem.id, secondItem.id]),
+    ).resolves.toBe(2);
+
+    // Both rows drain in one batch; each provider request carries its own
+    // row's key, so Resend can never collapse one email into the other.
+    const keysByRecipient = new Map(
+      context.mocks.resend.send.mock.calls.map(([payload, options]) => {
+        return [payload.to, options];
+      }),
+    );
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    expect(keysByRecipient.get(first.to)).toStrictEqual({
+      idempotencyKey: providerKey(firstItem.id),
+    });
+    expect(keysByRecipient.get(second.to)).toStrictEqual({
+      idempotencyKey: providerKey(secondItem.id),
     });
   });
 });
