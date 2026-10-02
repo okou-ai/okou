@@ -15,7 +15,7 @@ import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -32,6 +32,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -190,89 +191,6 @@ async function fixture(
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-
-/** A currently claimed chat Run and owner-configured host, through production routes. */
-async function claimedFixture(): Promise<Fixture> {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected an SSH owner organization");
-  }
-  const owner = { orgId: actor.orgId, userId: actor.userId };
-  bdd.acceptAgentStorageWrites();
-  runs.acceptStorageDownloads();
-  runs.acceptTelemetryIngest();
-  const group = runs.configureRunnerGroup();
-  await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
-  const { defaultAgentId: agentId } = await bdd.readOnboardingStatus(actor);
-  if (!agentId) {
-    throw new Error("Expected onboarding to provide the default Agent");
-  }
-  authenticate(owner);
-  const connection = await accept(
-    config().create({
-      headers: sessionHeaders,
-      body: {
-        id: randomUUID(),
-        displayName: "SSH claimed Run",
-        host: "ssh.example.com",
-        credential: inlineSshKey("deploy", privateKey, passphrase),
-      },
-    }),
-    [201],
-  );
-  await enableHostDefault(owner, connection.body.id);
-  const { runId, threadId } = await runs.createThreadRun(actor, {
-    agentId,
-    prompt: "Use my configured SSH host",
-  });
-  onTestFinished(async () => {
-    await runs.requestCancelRun(actor, runId, [200]);
-  });
-  // Preserve the process-generation bigint boundary with a real heartbeat and claim.
-  const runnerIdentity = {
-    runnerId: randomUUID(),
-    heartbeatGeneration: 5_000_000_000,
-  };
-  await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
-    group,
-    runnerId: runnerIdentity.runnerId,
-    snapshotGeneration: runnerIdentity.heartbeatGeneration,
-  });
-  const claim = await accept(
-    setupApp({ context, routes: runnersRoutes })(runnersJobClaimContract).claim(
-      {
-        headers: runnerHeaders,
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
-        },
-      },
-    ),
-    [200],
-  );
-  const sandboxToken = claim.body.sandboxToken;
-  if (!sandboxToken) {
-    throw new Error("Expected the Runner claim to issue its sandbox token");
-  }
-  await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-    status: "running",
-  });
-  authenticate(owner);
-  return {
-    ...owner,
-    agentId,
-    runId,
-    threadId,
-    runnerIdentity,
-    sandboxToken,
-    connectionId: connection.body.id,
-    credentialId: connection.body.credentialId,
-  };
-}
 
 describe("SSH authority invalidation", () => {
   it("notifies all active owner Runs after committed edits, rotations, reset and deletion", async () => {
@@ -1084,6 +1002,98 @@ describe("SSH connection observations", () => {
 });
 
 describe("official Runner SSH authority", () => {
+  const claimedRunCleanups: (() => Promise<void>)[] = [];
+  // Finish owned Run cancellation before the parent context tears down its signal/mocks.
+  afterEach(async () => {
+    for (const cleanup of claimedRunCleanups.splice(0)) {
+      await cleanup();
+    }
+    await flushWaitUntilForTest();
+  });
+
+  /** A currently claimed chat Run and owner-configured host, through production routes. */
+  async function claimedFixture(): Promise<Fixture> {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an SSH owner organization");
+    }
+    const owner = { orgId: actor.orgId, userId: actor.userId };
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const { defaultAgentId: agentId } = await bdd.readOnboardingStatus(actor);
+    if (!agentId) {
+      throw new Error("Expected onboarding to provide the default Agent");
+    }
+    authenticate(owner);
+    const connection = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "SSH claimed Run",
+          host: "ssh.example.com",
+          credential: inlineSshKey("deploy", privateKey, passphrase),
+        },
+      }),
+      [201],
+    );
+    await enableHostDefault(owner, connection.body.id);
+    const { runId, threadId } = await runs.createThreadRun(actor, {
+      agentId,
+      prompt: "Use my configured SSH host",
+    });
+    claimedRunCleanups.push(async () => {
+      await runs.requestCancelRun(actor, runId, [200]);
+    });
+    // Preserve the process-generation bigint boundary with a real heartbeat and claim.
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
+      group,
+      runnerId: runnerIdentity.runnerId,
+      snapshotGeneration: runnerIdentity.heartbeatGeneration,
+    });
+    const claim = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersJobClaimContract,
+      ).claim({
+        headers: runnerHeaders,
+        params: { id: runId },
+        body: {
+          runnerIdentity,
+          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+        },
+      }),
+      [200],
+    );
+    const sandboxToken = claim.body.sandboxToken;
+    if (!sandboxToken) {
+      throw new Error("Expected the Runner claim to issue its sandbox token");
+    }
+    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+      status: "running",
+    });
+    authenticate(owner);
+    return {
+      ...owner,
+      agentId,
+      runId,
+      threadId,
+      runnerIdentity,
+      sandboxToken,
+      connectionId: connection.body.id,
+      credentialId: connection.body.credentialId,
+    };
+  }
+
   it("allows an ordinary owner and preserves a pinned connection", async () => {
     const f = await claimedFixture();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
