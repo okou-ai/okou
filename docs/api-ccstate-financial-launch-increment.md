@@ -95,3 +95,52 @@ Knip reported only two existing configuration hints. The full API production
 type-aware Oxlint process was terminated with exit 137; the full type-aware
 suite is not claimed to pass. No Vitest, development server or behavioral
 verification was run. Parent integration and CI remain required.
+
+## Second writer increment (base `5b7e380fbf`)
+
+This section supersedes the first increment's interface and residual inventory
+where they differ. It is still not terminal architectural conformance.
+
+- Remove `validateClaimedRunAdmission`, `persistClaimedRun` and
+  `commitCapturedRun$` from pick. Remove the separate `persistPreparedLaunch$`.
+  Both callers dispatch the package-stable `commitPreparedPendingLaunch$` with
+  a plain prepared commit and optional captured claim/producer facts. The command
+  returns the actual commit result; entries record transaction-return time and
+  finish telemetry. No command/computed or executor is injected.
+- The shared command obtains `writeDb$` and performs pending writes in its own
+  transaction. The captured token fence remains after the input claim and before
+  Run persistence. Active-run uniqueness remains the final SQL statement.
+- Move producer SQL, token-fence SQL/result validation, R1 SQL construction and
+  allowance CAS/window preparation into pure supporting plan files. There are
+  no database or transaction arguments in these new helpers.
+- Capture R1 attribution in a data-modifying CTE depending on the inserted Run
+  key. Preserve the exact historical `ON CONFLICT ... WHERE` comparison; absence
+  of the captured Run ID throws and rolls the launch back. Run creation time
+  remains sampled after native-session reset, and Runner queue timestamps retain
+  their existing sampling boundary.
+- Keep allowance publication, missing-window insertion and window identity reads
+  in the shared owning transaction. Publication returns the actual snapshot;
+  insertion uses that snapshot. The identity read deliberately remains a later
+  statement so a concurrent `ON CONFLICT` winner is visible. No windows are
+  issued after entitlement expiry; already-issued windows retain their existing
+  availability behavior. Pick now explicitly carries its prepared allowance
+  refresh into the shared commit, preserving both activation paths.
+- `buildAtomicLaunchCteContext`, `pendingAtomicLaunchPlan`,
+  `pendingAtomicLaunchResult` and the session/subscription helpers become private
+  because pick no longer imports them. `commitPreparedPendingLaunch$` is the only
+  added public node. The pure result no longer returns a separate billing write
+  description because that write is included in its SQL plan.
+- Preserve parent commit `0ad8faa5e9`'s empty-returning fix. This increment does
+  not edit `pending-launch-sql.ts` and depends on that fix.
+
+Remaining violations are explicit: the shared writer still forwards `tx` to
+`commitPreparedLaunchAdmission` and its session/subscription/queue-first helpers,
+Official catalog fencing, credit-plan reads, Pi-memory scheduling and fallback
+session binding. Direct producers still use their legacy transaction callback.
+The deleted pick wrappers are not proof that these remaining calls conform.
+
+For this second increment, only affected Prettier, ESLint, normal Oxlint and the
+explicit execution-service 128-line rule were checked. Full types, Knip,
+whole-API type-aware lint and CI are reserved for the parent; no Vitest or dev
+server was run. The earlier verification record applies only to the first
+increment, not to the integrated second increment.

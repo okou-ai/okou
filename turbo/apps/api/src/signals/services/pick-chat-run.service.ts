@@ -24,20 +24,10 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import {
-  pgBooleanDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
-import type { Tx } from "../../lib/db-types";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
-import { isFreePlanForCreditAdmission } from "./run-admission.service";
 import { now, nowDate } from "../../lib/time";
-import { conflict } from "../../lib/error";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { settle, tapError } from "../utils";
@@ -58,44 +48,19 @@ import {
 } from "./claim-run-context";
 import {
   type AtomicLaunchCommitCompletion,
-  type AtomicLaunchCommitResult,
   type CommitPreparedLaunchArgs,
   type PreparedCommitPreparedLaunchArgs,
   timingDimensionsForCreateArgs,
+  commitPreparedPendingLaunch$,
   admissionAttemptOutcome,
-  validateThreadSessionSnapshot,
-  validateCapturedSubscriptionAccount,
-  buildAtomicLaunchCteContext,
-  pendingAtomicLaunchPlan,
-  pendingAtomicLaunchResult,
-  persistThreadSessionBinding,
   committedAtomicLaunchResponse,
   flushQueueFirstClaimLostTiming,
 } from "./agent-run-execution.service";
 import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
-  acquireOfficialWorkflowRunCatalogAdmissionLock,
-  validateOfficialWorkflowRunForInsert,
-} from "./official-workflow-run.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import {
-  resolveQueueFirstRunAdmission,
-  claimQueueFirstRunAssociation,
-} from "./chat-queued-event.service";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import {
-  requireRunAllowanceWindowPair,
-  planRunAllowanceActivation,
-  runAllowanceWindowInsertSql,
-  runAllowanceWindowsQuery,
-  unchangedRunAllowanceEntitlement,
-} from "./usage-allowance-run-plan";
-import {
   morningBriefScheduleClaimBound$,
   morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
@@ -163,247 +128,6 @@ const ABANDONED_HEAD_ERROR = {
 
 /** Fixed chat thread lease; it is never renewed. See design §5.1. */
 const CHAT_THREAD_LEASE_MS = 10_000;
-
-type AdmittedClaimRun = {
-  readonly kind: "admitted";
-  readonly validatedThreadSession: Awaited<
-    ReturnType<typeof validateThreadSessionSnapshot>
-  >;
-  readonly validatedAccountIdentity: string | null;
-  readonly queueFirstClaim: Extract<
-    Awaited<ReturnType<typeof claimQueueFirstRunAssociation>>,
-    { kind: "claimed" }
-  >;
-};
-
-type ClaimRunAdmission =
-  | AdmittedClaimRun
-  | Exclude<AtomicLaunchCommitCompletion["result"], { kind: "pending" }>;
-
-/** Revalidate only the captured admission facts under the pending transaction. */
-async function validateClaimedRunAdmission(
-  tx: Tx,
-  claim: ThreadClaim,
-  context: RunContext,
-  preparedCommit: PreparedCommitPreparedLaunchArgs,
-  timing: ApiDispatchTimingCollector,
-): Promise<ClaimRunAdmission> {
-  const { input, identity, launch } = context;
-  const { admissionTiming } = preparedCommit;
-  const validateOfficialAdmission = () => {
-    return timing.measure(
-      "api_dispatch_validate_official_workflow_admission",
-      "nested",
-      () => {
-        return validateOfficialWorkflowRunForInsert(tx, {
-          observation: input.context.officialWorkflowRun,
-          orgId: input.args.orgId,
-          userId: input.args.userId,
-          agentId: input.context.resolved.agentId,
-          automationId: input.args.agentRunMetadata?.workflowAutomationId,
-          runStorageMounts: launch.runStorageMounts,
-          allowMissingMountsForFailedRun: false,
-        });
-      },
-    );
-  };
-  const officialFailure = input.context.officialWorkflowRun
-    ? await admissionTiming.measureLeaf(
-        "official_workflow",
-        validateOfficialAdmission,
-      )
-    : await validateOfficialAdmission();
-  if (officialFailure) {
-    return conflict(officialFailure.message);
-  }
-  const validatedThreadSession = await admissionTiming.measureLeaf(
-    "thread_session",
-    () => {
-      return validateThreadSessionSnapshot(tx, {
-        createArgs: input.args,
-        identity,
-        timing: timing,
-      });
-    },
-  );
-  const subscription = await validateCapturedSubscriptionAccount(
-    tx,
-    preparedCommit,
-  );
-  if (subscription && !("identity" in subscription)) {
-    return subscription;
-  }
-  const association = input.args.queueFirstAssociation;
-  const modelPin = input.args.agentRunModelPin;
-  if (
-    !association ||
-    association.threadId !== claim.chatThreadId ||
-    !modelPin
-  ) {
-    throw new Error(
-      "Chat run commit requires its captured input association and model pin",
-    );
-  }
-  const queueFirstClaim = await admissionTiming.measureLeaf(
-    "queue_first",
-    async () => {
-      const admission = await resolveQueueFirstRunAdmission(tx, {
-        association,
-        sessionSnapshotState: validatedThreadSession
-          ? "current"
-          : "unvalidated",
-        timing: timing,
-      });
-      return await claimQueueFirstRunAssociation(tx, {
-        ...association,
-        admission,
-        runId: identity.runId,
-        selectedModel: modelPin.selectedModel,
-        ...(input.args.codexServiceTier
-          ? {
-              serviceTier:
-                input.args.codexServiceTier === "fast"
-                  ? ("priority" as const)
-                  : ("ultrafast" as const),
-            }
-          : {}),
-        timing: timing,
-      });
-    },
-  );
-  if (queueFirstClaim.kind === "lost") {
-    return { kind: "queue-first-claim-lost" };
-  }
-  return {
-    kind: "admitted",
-    validatedThreadSession,
-    validatedAccountIdentity: subscription?.identity ?? null,
-    queueFirstClaim,
-  };
-}
-
-/** Pure producer writes; the pending commit owns their execution. */
-function claimProducerBindingStatements(
-  producer: RunContext["producerBinding"],
-  runId: string,
-) {
-  if (producer?.kind === "automation") {
-    return [
-      sql`UPDATE ${morningBriefScheduleClaims}
-      SET run_id = ${runId}::uuid, queue_disposition = 'claimed',
-        updated_at = ${sql.param(nowDate(), morningBriefScheduleClaims.updatedAt)}
-      WHERE ${eq(morningBriefScheduleClaims.queueEventId, producer.queueEventId)}
-        AND ${isNull(morningBriefScheduleClaims.runId)}`,
-    ];
-  }
-  if (producer?.kind === "reassign-agent") {
-    return [
-      sql`UPDATE ${chatThreads} SET agent_id = ${producer.agentId}::uuid
-        WHERE ${eq(chatThreads.id, producer.threadId)}
-          AND ${eq(chatThreads.userId, producer.userId)}
-          AND ${eq(chatThreads.agentId, producer.expectedAgentId)}`,
-      chatThreadEventInsertSql({
-        kind: "sort_touched",
-        chatThreadId: producer.threadId,
-        userId: producer.userId,
-        orgId: producer.orgId,
-        agentId: producer.agentId,
-        reassignedAgentId: producer.agentId,
-      }),
-    ];
-  }
-  return [];
-}
-
-/** All writes here use the parent's one pending transaction. */
-async function persistClaimedRun(
-  tx: Tx,
-  context: RunContext,
-  preparedCommit: PreparedCommitPreparedLaunchArgs,
-  admission: AdmittedClaimRun,
-  timing: ApiDispatchTimingCollector,
-): Promise<Extract<AtomicLaunchCommitResult, { kind: "pending" }>> {
-  const { input, identity, launch } = context;
-  const { admissionTiming, persistence } = preparedCommit;
-  const persisted = await admissionTiming.measureLeaf(
-    "persistence",
-    async () => {
-      const capabilities = input.enforceBuiltInCredits
-        ? await loadOrgPlanCapabilities(tx, input.args.orgId, {
-            forUpdate: true,
-          })
-        : null;
-      const creditAdmitted =
-        input.enforceBuiltInCredits &&
-        isFreePlanForCreditAdmission(capabilities?.planKey);
-      if (input.args.threadSessionResolution?.resetNativeSession) {
-        await tx
-          .update(agentSessions)
-          .set({
-            agentId: input.context.resolved.agentId,
-            conversationId: null,
-            storageMounts: [...launch.sessionStorageMounts],
-          })
-          .where(eq(agentSessions.id, identity.sessionId));
-      }
-      const rows = {
-        commit: preparedCommit,
-        payload: persistence.payload,
-        validatedThreadSession: admission.validatedThreadSession,
-        validatedAccountIdentity: admission.validatedAccountIdentity,
-      };
-      const ctes = buildAtomicLaunchCteContext(rows, creditAdmitted);
-      const rowsPersisted = await timing.measure(
-        "api_dispatch_persist_atomic_launch",
-        "nested",
-        async () => {
-          const plan = pendingAtomicLaunchPlan(rows, ctes);
-          const [row] = await tx
-            .with(...plan.ctes)
-            .select(plan.selection)
-            .from(plan.insertedRun)
-            .innerJoin(plan.insertedQueue, plan.queueRunJoin);
-          const result = pendingAtomicLaunchResult(rows, ctes, row);
-          const [attribution] = await tx
-            .insert(billingRunAttribution)
-            .values(result.capture.values)
-            .onConflictDoUpdate(result.capture.conflict)
-            .returning({ id: billingRunAttribution.runId });
-          if (!attribution) {
-            throw new Error(
-              "New Run billing attribution conflicts with history",
-            );
-          }
-          return result.persisted;
-        },
-      );
-      for (const statement of claimProducerBindingStatements(
-        context.producerBinding,
-        rowsPersisted.run.id,
-      )) {
-        await tx.execute(statement);
-      }
-      await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
-      const threadSessionBinding =
-        input.args.chatThreadId && !admission.validatedThreadSession
-          ? await persistThreadSessionBinding(tx, {
-              chatThreadId: input.args.chatThreadId,
-              identity,
-              resolution: input.args.threadSessionResolution,
-              timing: timing,
-            })
-          : rowsPersisted.threadSessionBinding;
-      return { ...rowsPersisted, threadSessionBinding };
-    },
-  );
-
-  return {
-    ...persisted,
-    runnerJobPayload: persistence.payload,
-    runContextSnapshot: launch.runContextSnapshot,
-    queueFirstClaim: admission.queueFirstClaim,
-  };
-}
 
 /**
  * Reuse this outer graph for one organization pass. Each successful claim gets
@@ -1067,156 +791,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     },
   );
 
-  const commitCapturedRun$ = command(
-    async (
-      { set },
-      args: {
-        readonly claim: ThreadClaim;
-        readonly context: RunContext;
-        readonly preparedCommit: PreparedCommitPreparedLaunchArgs;
-        readonly timing: ClaimRunTiming;
-      },
-      signal: AbortSignal,
-    ): Promise<AtomicLaunchCommitCompletion["result"]> => {
-      const { claim, context, preparedCommit, timing } = args;
-      const { input } = context;
-      const { admissionTiming } = preparedCommit;
-      signal.throwIfAborted();
-      return await set(writeDb$).transaction(
-        async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
-          admissionTiming.transactionStarted();
-          await acquireOfficialWorkflowRunCatalogAdmissionLock(
-            tx,
-            input.context.officialWorkflowRun,
-          );
-          // Keep credit-plan acquisition ahead of workflow/automation locks.
-          if (
-            input.context.officialWorkflowRun &&
-            input.enforceBuiltInCredits
-          ) {
-            await loadOrgPlanCapabilities(tx, input.args.orgId, {
-              forUpdate: true,
-            });
-          }
-          admissionTiming.admissionStarted();
-          const admission = await validateClaimedRunAdmission(
-            tx,
-            claim,
-            context,
-            preparedCommit,
-            timing.run,
-          );
-          if (!("kind" in admission) || admission.kind !== "admitted") {
-            admissionTiming.callbackFinished();
-            return admission;
-          }
-          // Fence the lease before the run writes. Admission above already
-          // appended the input claim (locking the thread's event sequence
-          // row, which every enqueue takes first) and took the
-          // automation/plan locks that enqueue takes before its upsert.
-          const [fenced] = await tx
-            .update(queuedChatThreads)
-            .set({ claimId: null, claimExpiresAt: null })
-            .where(
-              and(
-                eq(queuedChatThreads.orgId, claim.orgId),
-                eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
-                eq(queuedChatThreads.claimId, claim.claimId),
-              ),
-            )
-            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-          if (!fenced) {
-            throw new Error(
-              "Chat thread claim was lost before the pending commit",
-            );
-          }
-          const pending = await persistClaimedRun(
-            tx,
-            context,
-            preparedCommit,
-            admission,
-            timing.run,
-          );
-          if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
-            const startedAt = now();
-            const activation = {
-              orgId: input.args.orgId,
-              runId: pending.run.id,
-              runCreatedAt: pending.run.createdAt,
-              refresh: context.allowanceRefresh,
-            };
-            const [owned] = await tx
-              .select()
-              .from(entitlementQuery(activation.orgId));
-            signal.throwIfAborted();
-            const planned = planRunAllowanceActivation(
-              owned,
-              activation,
-              nowDate(),
-            );
-            let entitlement = planned.entitlement;
-            if (planned.update && owned) {
-              const [published] = await tx
-                .update(orgUsageAllowanceEntitlements)
-                .set(planned.update)
-                .where(unchangedRunAllowanceEntitlement(owned))
-                .returning({
-                  snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
-                    pgTextDecoder,
-                  ),
-                });
-              signal.throwIfAborted();
-              if (!published) {
-                throw new Error(
-                  "Run allowance changed during refresh publication",
-                );
-              }
-              if (entitlement) {
-                entitlement = {
-                  ...entitlement,
-                  snapshot: published.snapshot,
-                };
-              }
-            }
-            if (entitlement) {
-              await tx.execute(
-                runAllowanceWindowInsertSql(activation, entitlement),
-              );
-              signal.throwIfAborted();
-              const windows = await tx
-                .select()
-                .from(
-                  runAllowanceWindowsQuery(
-                    activation.orgId,
-                    activation.runCreatedAt,
-                    entitlement,
-                  ),
-                );
-              signal.throwIfAborted();
-              requireRunAllowanceWindowPair(windows);
-            }
-            timing.run.recordElapsed(
-              "api_dispatch_activate_usage_allowance_windows",
-              "nested",
-              startedAt,
-            );
-          }
-          // This unique insert is deliberately the final SQL statement.
-          // A concurrent active run rolls the entire pending commit back.
-          await tx.insert(activeAgentRuns).values({
-            runId: pending.run.id,
-            orgId: input.args.orgId,
-            userId: input.args.userId,
-            chatThreadId: claim.chatThreadId,
-            lastHeartbeatAt: pending.run.createdAt,
-          });
-          admissionTiming.callbackFinished();
-          return pending;
-        },
-      );
-    },
-  );
-
   const createRun$ = command(
     async (
       { set },
@@ -1241,6 +815,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         throw new Error("Prepared run does not belong to this thread claim");
       }
       const commit: CommitPreparedLaunchArgs = {
+        allowanceRefresh: context.allowanceRefresh,
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
@@ -1268,12 +843,14 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         "top_level",
         async () => {
           const result = await set(
-            commitCapturedRun$,
-            { claim, context, preparedCommit, timing },
+            commitPreparedPendingLaunch$,
+            preparedCommit,
+            { ...claim, producer: context.producerBinding },
             signal,
           );
           const transactionReturnedAt = now();
           await admissionTiming.finish(admissionAttemptOutcome(result));
+          signal.throwIfAborted();
           return { result, transactionReturnedAt };
         },
       );

@@ -1,12 +1,11 @@
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
 import {
-  requireRunAllowanceWindowPair,
-  planRunAllowanceActivation,
-  runAllowanceWindowInsertSql,
-  runAllowanceWindowsQuery,
-  unchangedRunAllowanceEntitlement,
-} from "./usage-allowance-run-plan";
+  pendingRunAllowancePlan,
+  pendingRunAllowanceWindowsPlan,
+  allowanceSnapshotSchema as snapshotRow,
+} from "./pending-launch-allowance-plan";
 import { state, computed, command, type State, type Computed } from "ccstate";
 import { settle, onRejection, tapError, safeSync } from "../utils";
 import {
@@ -525,6 +524,13 @@ import {
 } from "./connector-runtime-preparation.service";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
+import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
+import {
+  pendingLaunchClaimFenceSql,
+  requirePendingLaunchClaimFence,
+  pendingLaunchClaimProducerStatements,
+  type PendingLaunchClaim,
+} from "./pending-launch-claim-plan";
 import {
   pendingLaunchInsertSql,
   pendingLaunchUpdateSql,
@@ -10742,7 +10748,7 @@ function launchThreadBindingCte(args: {
     );
 }
 
-export function buildAtomicLaunchCteContext(
+function buildAtomicLaunchCteContext(
   args: AtomicLaunchRowsPlanArgs,
   creditAdmitted: boolean,
 ) {
@@ -10850,7 +10856,7 @@ function atomicThreadSessionBinding(args: {
   };
 }
 
-export function pendingAtomicLaunchPlan(
+function pendingAtomicLaunchPlan(
   args: AtomicLaunchRowsPlanArgs,
   context: AtomicLaunchCteContext,
 ) {
@@ -10877,13 +10883,35 @@ export function pendingAtomicLaunchPlan(
         ["runId", "createdAt"],
       ),
     );
-  const ctes = [...context.ctes, insertedQueue];
+  const capture = billingRunAttributionWrite({
+    id: context.rowsArgs.identity.runId,
+    orgId: context.rowsArgs.orgId,
+    userId: context.rowsArgs.userId,
+    startedAt: context.createdAt.toISOString(),
+    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
+    threadId: args.commit.persistence.rows.metadata.chatThreadId,
+  });
+  const attribution = new QueryBuilder()
+    .$with("inserted_launch_billing_attribution", {
+      runId: billingRunAttribution.runId,
+    })
+    .as(
+      pendingLaunchBillingAttributionSql(
+        capture,
+        returnedCteId(context.insertedRun),
+      ),
+    );
+  const ctes = [...context.ctes, insertedQueue, attribution];
   if (context.updatedThread) {
     ctes.push(context.updatedThread);
   }
   return {
     ctes,
     selection: {
+      billingAttributionId:
+        sql`(SELECT ${attribution.runId} FROM ${attribution})`.mapWith(
+          nullableDriverValueDecoder(billingRunAttribution.runId),
+        ),
       runId: returnedCteColumn(context.insertedRun, "id").mapWith(agentRuns.id),
       createdAt: returnedCteColumn(context.insertedRun, "created_at").mapWith(
         agentRuns.createdAt,
@@ -10905,7 +10933,7 @@ export function pendingAtomicLaunchPlan(
   };
 }
 
-export function pendingAtomicLaunchResult(
+function pendingAtomicLaunchResult(
   args: AtomicLaunchRowsPlanArgs,
   context: AtomicLaunchCteContext,
   row:
@@ -10914,6 +10942,7 @@ export function pendingAtomicLaunchResult(
         readonly createdAt: Date;
         readonly runnerJobCreatedAt: Date;
         readonly boundThreadId: string | null;
+        readonly billingAttributionId: string | null;
       }
     | undefined,
 ) {
@@ -10923,14 +10952,9 @@ export function pendingAtomicLaunchResult(
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
   }
-  const capture = billingRunAttributionWrite({
-    id: row.runId,
-    orgId: context.rowsArgs.orgId,
-    userId: context.rowsArgs.userId,
-    startedAt: row.createdAt.toISOString(),
-    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
-    threadId: args.commit.persistence.rows.metadata.chatThreadId,
-  });
+  if (row.billingAttributionId !== row.runId) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
   const persisted: PersistedAtomicLaunchRows = {
     kind: "pending",
     run: runRecordFromLaunchIdentity(
@@ -10947,7 +10971,7 @@ export function pendingAtomicLaunchResult(
       runId: row.runId,
     }),
   };
-  return { persisted, capture };
+  return { persisted };
 }
 
 async function resolveQueueFirstAdmissionForLaunch(args: {
@@ -11019,7 +11043,7 @@ function threadSessionBindingAction(args: {
   );
 }
 
-export async function persistThreadSessionBinding(
+async function persistThreadSessionBinding(
   tx: DbTransaction,
   args: {
     readonly chatThreadId: string;
@@ -11083,7 +11107,7 @@ export async function persistThreadSessionBinding(
   };
 }
 
-export async function validateThreadSessionSnapshot(
+async function validateThreadSessionSnapshot(
   tx: DbTransaction,
   args: {
     readonly createArgs: PendingRunArguments;
@@ -11171,7 +11195,7 @@ type PreparedLaunchAdmission =
   | QueueFirstRunClaimLost
   | CreateRunErrorResult;
 
-export async function validateCapturedSubscriptionAccount(
+async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: PreparedCommitPreparedLaunchArgs,
 ): Promise<
@@ -11319,11 +11343,14 @@ class ChatThreadBindingChanged extends Error {
   }
 }
 
-function preparedPendingLaunchPlan(
+function pendingLaunchRowsPlan(
   commit: PreparedCommitPreparedLaunchArgs,
   admission: ValidatedPreparedLaunchAdmission,
-  creditAdmitted: boolean,
+  capabilities: Awaited<ReturnType<typeof loadOrgPlanCapabilities>> | null,
 ) {
+  const creditAdmitted =
+    commit.enforceBuiltInCredits &&
+    isFreePlanForCreditAdmission(capabilities?.planKey);
   const rows = { commit, payload: commit.persistence.payload, ...admission };
   const context = buildAtomicLaunchCteContext(rows, creditAdmitted);
   return {
@@ -11366,14 +11393,80 @@ function pendingLaunchActiveRunValues(
  * producer/allowance binding and unique active-run admission. The final insert
  * rolls all these writes back on contention. No external I/O occurs here.
  */
-const persistPreparedLaunch$ = command(
+function pendingActiveRunInsertSql(
+  args: CommitPreparedLaunchArgs,
+  run: RunRecord,
+) {
+  return pendingLaunchInsertSql(activeAgentRuns, [
+    pendingLaunchActiveRunValues(args, run),
+  ]);
+}
+
+function assertPendingLaunchClaim(
+  args: PreparedCommitPreparedLaunchArgs,
+  claim: PendingLaunchClaim | undefined,
+) {
+  if (
+    claim &&
+    (args.createArgs.orgId !== claim.orgId ||
+      args.createArgs.chatThreadId !== claim.chatThreadId ||
+      args.createArgs.queueFirstAssociation?.threadId !== claim.chatThreadId ||
+      !args.createArgs.agentRunModelPin)
+  ) {
+    throw new Error(
+      "Chat run commit requires its captured input association and model pin",
+    );
+  }
+}
+
+function pendingLaunchAllowanceInput(
+  args: PreparedCommitPreparedLaunchArgs,
+  run: RunRecord,
+) {
+  return {
+    orgId: args.createArgs.orgId,
+    runId: run.id,
+    runCreatedAt: run.createdAt,
+    refresh: args.allowanceRefresh,
+  };
+}
+
+function pendingThreadBindingArgs(args: PreparedCommitPreparedLaunchArgs) {
+  const chatThreadId = args.createArgs.chatThreadId;
+  if (!chatThreadId) {
+    throw new Error("Pending session binding requires a chat thread");
+  }
+  return {
+    chatThreadId,
+    identity: args.identity,
+    resolution: args.createArgs.threadSessionResolution,
+    timing: args.timing,
+  };
+}
+
+function pendingLaunchCommitResult(
+  args: PreparedCommitPreparedLaunchArgs,
+  admission: AdmittedPreparedLaunch,
+  persisted: PersistedAtomicLaunchRows,
+): AtomicLaunchCommitResult {
+  return {
+    ...persisted,
+    runnerJobPayload: args.persistence.payload,
+    runContextSnapshot: args.launch.runContextSnapshot,
+    queueFirstClaim: admission.queueFirstClaim,
+  };
+}
+
+export const commitPreparedPendingLaunch$ = command(
   async (
     { set },
     args: PreparedCommitPreparedLaunchArgs,
+    claim: PendingLaunchClaim | undefined,
     signal: AbortSignal,
-  ): Promise<AtomicLaunchCommitCompletion> => {
+  ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
     const { admissionTiming, timing } = args;
+    assertPendingLaunchClaim(args, claim);
     const committed = await set(writeDb$).transaction(
       async (tx): Promise<AtomicLaunchCommitAttempt> => {
         admissionTiming.transactionStarted();
@@ -11392,6 +11485,12 @@ const persistPreparedLaunch$ = command(
           admissionTiming.callbackFinished();
           return admission;
         }
+        // Release only this token, after the queue-head input claim succeeded.
+        if (claim) {
+          requirePendingLaunchClaimFence(
+            (await tx.execute(pendingLaunchClaimFenceSql(claim))).rowCount,
+          );
+        }
         const persisted = await admissionTiming.measureLeaf(
           "persistence",
           async () => {
@@ -11404,11 +11503,10 @@ const persistPreparedLaunch$ = command(
             if (nativeSessionReset) {
               await tx.execute(nativeSessionReset);
             }
-            const prepared = preparedPendingLaunchPlan(
+            const prepared = pendingLaunchRowsPlan(
               args,
               admission,
-              args.enforceBuiltInCredits &&
-                isFreePlanForCreditAdmission(capabilities?.planKey),
+              capabilities,
             );
             const rowsPersisted = await timing.measure(
               "api_dispatch_persist_atomic_launch",
@@ -11421,90 +11519,59 @@ const persistPreparedLaunch$ = command(
                   .select(plan.selection)
                   .from(plan.insertedRun)
                   .innerJoin(plan.insertedQueue, plan.queueRunJoin);
-                const result = pendingAtomicLaunchResult(rows, context, row);
-                const [attribution] = await tx
-                  .insert(billingRunAttribution)
-                  .values(result.capture.values)
-                  .onConflictDoUpdate(result.capture.conflict)
-                  .returning({ id: billingRunAttribution.runId });
-                if (!attribution) {
-                  throw new Error(
-                    "New Run billing attribution conflicts with history",
-                  );
-                }
-                return result.persisted;
+                return pendingAtomicLaunchResult(rows, context, row).persisted;
               },
             );
-            await args.createArgs.persistProducerRunBinding?.(tx, {
-              runId: rowsPersisted.run.id,
-              status: "pending",
-            });
+            if (claim) {
+              for (const statement of pendingLaunchClaimProducerStatements(
+                claim.producer,
+                rowsPersisted.run.id,
+              )) {
+                await tx.execute(statement);
+              }
+              await requestPiMemoryStage1DayForAdmittedRun(
+                tx,
+                rowsPersisted.run.id,
+              );
+            } else {
+              await args.createArgs.persistProducerRunBinding?.(tx, {
+                runId: rowsPersisted.run.id,
+                status: "pending",
+              });
+            }
             const threadSessionBinding =
               args.createArgs.chatThreadId && !admission.validatedThreadSession
-                ? await persistThreadSessionBinding(tx, {
-                    chatThreadId: args.createArgs.chatThreadId,
-                    identity: args.identity,
-                    resolution: args.createArgs.threadSessionResolution,
-                    timing,
-                  })
+                ? await persistThreadSessionBinding(
+                    tx,
+                    pendingThreadBindingArgs(args),
+                  )
                 : rowsPersisted.threadSessionBinding;
             return { ...rowsPersisted, threadSessionBinding };
           },
         );
         if (isBuiltInModelProviderType(args.context.modelProvider?.type)) {
           const startedAt = now();
-          const activation = {
-            orgId: args.createArgs.orgId,
-            runId: persisted.run.id,
-            runCreatedAt: persisted.run.createdAt,
-            refresh: args.allowanceRefresh,
-          };
+          const activation = pendingLaunchAllowanceInput(args, persisted.run);
           const [owned] = await tx
             .select()
             .from(entitlementQuery(activation.orgId));
           signal.throwIfAborted();
-          const planned = planRunAllowanceActivation(
-            owned,
+          const planned = pendingRunAllowancePlan(owned, activation, nowDate());
+          const [published] = planned.publication
+            ? parseRawRows(snapshotRow, await tx.execute(planned.publication))
+            : [];
+          signal.throwIfAborted();
+          const windows = pendingRunAllowanceWindowsPlan(
+            planned,
             activation,
-            nowDate(),
+            published,
           );
-          let entitlement = planned.entitlement;
-          if (planned.update && owned) {
-            const [published] = await tx
-              .update(orgUsageAllowanceEntitlements)
-              .set(planned.update)
-              .where(unchangedRunAllowanceEntitlement(owned))
-              .returning({
-                snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
-                  pgTextDecoder,
-                ),
-              });
+          if (windows) {
+            await tx.execute(windows.insert);
             signal.throwIfAborted();
-            if (!published) {
-              throw new Error(
-                "Run allowance changed during refresh publication",
-              );
-            }
-            if (entitlement) {
-              entitlement = { ...entitlement, snapshot: published.snapshot };
-            }
-          }
-          if (entitlement) {
-            await tx.execute(
-              runAllowanceWindowInsertSql(activation, entitlement),
-            );
+            const issued = await tx.select().from(windows.windows);
             signal.throwIfAborted();
-            const windows = await tx
-              .select()
-              .from(
-                runAllowanceWindowsQuery(
-                  activation.orgId,
-                  activation.runCreatedAt,
-                  entitlement,
-                ),
-              );
-            signal.throwIfAborted();
-            requireRunAllowanceWindowPair(windows);
+            requireRunAllowanceWindowPair(issued);
           }
           timing.recordElapsed(
             "api_dispatch_activate_usage_allowance_windows",
@@ -11513,23 +11580,13 @@ const persistPreparedLaunch$ = command(
           );
         }
         // Keep this unique insertion last: do not acquire another row after it.
-        await tx
-          .insert(activeAgentRuns)
-          .values(pendingLaunchActiveRunValues(args, persisted.run));
+        await tx.execute(pendingActiveRunInsertSql(args, persisted.run));
         admissionTiming.callbackFinished();
-        return {
-          ...persisted,
-          runnerJobPayload: args.persistence.payload,
-          runContextSnapshot: args.launch.runContextSnapshot,
-          queueFirstClaim: admission.queueFirstClaim,
-        };
+        return pendingLaunchCommitResult(args, admission, persisted);
       },
     );
     signal.throwIfAborted();
-    const transactionReturnedAt = now();
-    await admissionTiming.finish(admissionAttemptOutcome(committed));
-    signal.throwIfAborted();
-    return { result: committed, transactionReturnedAt };
+    return committed;
   },
 );
 
@@ -11561,11 +11618,16 @@ const commitPreparedLaunch$ = command(
         ? { triggerSource: preparedArgs.context.body.triggerSource }
         : {}),
     });
-    return await set(
-      persistPreparedLaunch$,
+    const result = await set(
+      commitPreparedPendingLaunch$,
       { ...preparedArgs, admissionTiming },
+      undefined,
       signal,
     );
+    const transactionReturnedAt = now();
+    await admissionTiming.finish(admissionAttemptOutcome(result));
+    signal.throwIfAborted();
+    return { result, transactionReturnedAt };
   },
 );
 
