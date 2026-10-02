@@ -134,7 +134,7 @@ describe("entitlement transaction integrity", () => {
     });
     const before = await entitlement(harness.db, orgId);
     await harness.db.transaction(async (tx) => {
-      await createMetadata(tx, orgId, "free");
+      await createMetadata(tx, orgId, "limited-free-1");
     });
     await expect(entitlement(harness.db, orgId)).resolves.toStrictEqual(before);
   });
@@ -151,7 +151,7 @@ describe("entitlement transaction integrity", () => {
   it("keeps a pre-existing missing entitlement visible during an ordinary metadata update", async () => {
     const orgId = `org_${randomUUID()}`;
     await harness.db.transaction(async (tx) => {
-      await createMetadata(tx, orgId, "free");
+      await createMetadata(tx, orgId, "limited-free-1");
     });
     // A historical corrupt state is not constructible through a product API.
     await harness.db

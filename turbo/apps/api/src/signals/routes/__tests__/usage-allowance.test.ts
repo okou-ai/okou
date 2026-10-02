@@ -61,7 +61,7 @@ interface AllowanceEntitlementArgs {
 async function builtInAllowanceActor(args: {
   readonly credits: number;
   readonly allowance?: AllowanceEntitlementArgs;
-  readonly tier?: "free" | "limited-free-1" | "pro" | "team" | "custom";
+  readonly tier?: "limited-free-1" | "pro" | "team" | "custom";
 }): Promise<{
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -262,7 +262,6 @@ async function billableFirewallAuthStatus(
 }
 
 const runCreditExhaustionCases = [
-  ["free", 200],
   ["limited-free-1", 200],
   ["pro", 402],
   ["team", 402],
@@ -606,6 +605,59 @@ describe("Usage Allowance", () => {
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(10);
   });
 
+  it("fails the selected allowance preload without rereading Stripe and recovers only on the next request", async () => {
+    const { actor, agentId, orgId } = await builtInAllowanceActor({
+      credits: -10,
+    });
+    const subscriptionId = usageAllowanceSubscriptionId(orgId);
+    await postUsageAllowanceInvoicePaid(context.signal, {
+      orgId,
+      userId: actor.userId,
+      customerId: generatedStripeCustomerId(),
+      subscriptionId,
+      effectiveAt: addDays(nowDate(), -30),
+      expiresAt: addDays(nowDate(), -1),
+      shortWindowSeconds: 5 * 60 * 60,
+      shortWindowUnits: 10,
+      weeklyWindowSeconds: 7 * 24 * 60 * 60,
+      weeklyWindowUnits: 10,
+    });
+    context.mocks.stripe.subscriptions.retrieve
+      .mockRejectedValueOnce(
+        new Error("owned allowance subscription read failed"),
+      )
+      .mockResolvedValue({
+        id: subscriptionId,
+        status: "active",
+        items: {
+          data: [
+            {
+              current_period_end: Math.floor(
+                addDays(nowDate(), 30).getTime() / 1000,
+              ),
+            },
+          ],
+        },
+      });
+    const api = createRunsApi(context);
+    await expect(
+      api.readThreadLaunchFailure(actor, {
+        agentId,
+        prompt: "fail the captured allowance read",
+      }),
+    ).resolves.toStrictEqual({
+      pickError: "owned allowance subscription read failed",
+      inputError: "internal_error",
+    });
+    const next = await createBuiltInRun(
+      actor,
+      agentId,
+      "next request captures healthy allowance",
+    );
+    expect(next.runId).toStrictEqual(expect.any(String));
+    expect(next.status).toBe("pending");
+  });
+
   it("rejects built-in model run admission after allowance is exhausted", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 0,
@@ -637,7 +689,7 @@ describe("Usage Allowance", () => {
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 0,
-      tier: "free",
+      tier: "limited-free-1",
       allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
     });
     const api = createRunsApi(context);
@@ -794,7 +846,7 @@ describe("Usage Allowance", () => {
   it("does not let built-in credit admission bypass workspace suspension", async () => {
     const { actor, orgId, agentId } = await builtInAllowanceActor({
       credits: 1,
-      tier: "free",
+      tier: "limited-free-1",
     });
     const api = createRunsApi(context);
     const run = await createBuiltInRun(
@@ -802,7 +854,7 @@ describe("Usage Allowance", () => {
       agentId,
       "admitted before suspension",
     );
-    await seedOrgMetadata({ orgId, tier: "free", credits: 1 });
+    await seedOrgMetadata({ orgId, tier: "limited-free-1", credits: 1 });
     await upsertOrgPlanEntitlementFixture({ orgId, status: "suspended" });
     const client = setupApp({
       context,

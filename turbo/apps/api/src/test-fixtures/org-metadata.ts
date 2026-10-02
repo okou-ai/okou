@@ -4,10 +4,8 @@
  * The tier/credit combinations the generation tests exercise cannot be
  * constructed through product APIs: the Stripe webhook path only produces
  * "pro"/"team" orgs with fixed subscription credit grants, "limited-free-1"
- * is only set by the Clerk org-creation bootstrap (which also provisions a
- * default agent/compose), and the legacy "free" tier — still present in
- * production data and load-bearing for voice-io quota limits — has no
- * creation path at all. Exact credit balances (e.g. 0 or 1000) are equally
+ * is set by organization bootstrap paths that also provision an Agent and
+ * onboarding credits. Exact credit balances (e.g. 0 or 1000) are equally
  * unreachable because product grants come in fixed subscription amounts.
  * The legacy onboarding-payment-pending state also has no write path after
  * removing the retired onboarding setup endpoint, but billing must continue

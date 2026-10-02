@@ -447,9 +447,9 @@ test("The queue drawer follows a run queue refresh of slot availability", async 
 
 test("A full queue offers the next appropriate plan upgrade", async () => {
   const fixture = installQueuePageFixture(context, {
-    billing: billingStatus({ tier: "free", concurrencyLimit: 2 }),
+    billing: billingStatus({ tier: "limited-free-1", concurrencyLimit: 2 }),
     queue: queueResponse({
-      tier: "free",
+      tier: "limited-free-1",
       limit: 2,
       active: 2,
       available: 0,

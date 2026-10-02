@@ -105,6 +105,10 @@ import { connectorCatalogRuntimeProjections } from "@okouai/db/schema/connector-
 import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { db$ } from "../external/db";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
+import {
+  createUsageAllowanceContext,
+  type UsageAllowanceContext,
+} from "./usage-allowance-context.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -131,6 +135,7 @@ export interface AgentRunContextSignals {
   readonly agent$: Computed<Promise<BootstrapAgent | null>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly allowance$: Computed<Promise<UsageAllowanceContext>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
   readonly memberModels$: Computed<Promise<MemberModelBootstrap>>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
@@ -297,6 +302,8 @@ function createIdentityContext(
     computed((get) => {
       return loadOrgPlanCapabilities(get(db$), orgId);
     });
+  const allowance$ =
+    sharedOrg?.allowance$ ?? createUsageAllowanceContext(orgId);
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
@@ -329,7 +336,9 @@ function createIdentityContext(
     ]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
-  const memberMetadata$ = createExecutionMemberMetadata(scope);
+  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
+  const memberMetadata$ =
+    sharedMember?.memberMetadata$ ?? createExecutionMemberMetadata(scope);
   const {
     connectorSelection$,
     environmentSnapshot$,
@@ -362,8 +371,9 @@ function createIdentityContext(
   });
   const featureSwitchOverrides$ = userFeatureSwitchOverrides(orgId, userId);
   const disabledPaidTools$ = createAgentDisabledPaidTools(userId, orgId);
-  const featureSwitchContext$ = computed(
-    async (get): Promise<BootstrapFeatureSwitchContext> => {
+  const featureSwitchContext$ =
+    sharedMember?.featureSwitches$ ??
+    computed(async (get): Promise<BootstrapFeatureSwitchContext> => {
       const [member, overrides] = await Promise.all([
         get(memberMetadata$),
         get(featureSwitchOverrides$),
@@ -374,8 +384,7 @@ function createIdentityContext(
         email: member.profile?.email ?? undefined,
         overrides,
       };
-    },
-  );
+    });
   const environment$ = computed(async (get) => {
     const agent = await get(agent$);
     if (!agent) {
@@ -391,6 +400,7 @@ function createIdentityContext(
     agent$,
     orgMetadata$,
     plan$,
+    allowance$,
     modelFacts$,
     memberModels$,
     memberMetadata$,
@@ -418,6 +428,7 @@ export const preloadAgentRunContext$ = command(
       signals.agent$,
       signals.orgMetadata$,
       signals.plan$,
+      signals.allowance$,
       signals.modelFacts$,
       signals.memberModels$,
       signals.memberMetadata$,

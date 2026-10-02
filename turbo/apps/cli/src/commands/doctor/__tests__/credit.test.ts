@@ -121,13 +121,12 @@ describe("okou doctor credit command", () => {
     );
   });
 
-  it("points free-tier workspaces at both upgrade and credit purchase", async () => {
-    server.use(stubBillingStatus({ tier: "free" }));
+  it("points eligible paid workspaces at credit purchase", async () => {
+    server.use(stubBillingStatus({ tier: "pro" }));
 
     await runDoctorCredit();
 
-    expect(output()).toContain("Tier: free");
-    expect(output()).toContain("upgrade to Pro");
+    expect(output()).toContain("Tier: pro");
     expect(output()).toContain("`okou credit <credits>`");
   });
 });

@@ -1,6 +1,6 @@
 import { expireOrgCreditsAt$ } from "./org-credit-expiration.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
-import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
+import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
@@ -782,18 +782,10 @@ function subscriptionIsTerminalUsageAllowance(
 }
 
 function knownOrgTier(value: string): OrgTier {
-  switch (value) {
-    case "free":
-    case "limited-free-1":
-    case "pro":
-    case "team":
-    case "custom": {
-      return value;
-    }
-    default: {
-      throw new Error(`Unknown org tier: ${value}`);
-    }
+  if (isOrgTier(value)) {
+    return value;
   }
+  throw new Error(`Unknown org tier: ${value}`);
 }
 
 async function upsertStripeSubscriptionPlanSnapshot(

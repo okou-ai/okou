@@ -43,7 +43,7 @@ export const apiRunsHandlers = [
   mockApi(runsQueueContract.getQueue, ({ respond }) =>
     respond(200, {
       concurrency: {
-        tier: "free",
+        tier: "limited-free-1",
         limit: 2,
         active: 0,
         available: 2,

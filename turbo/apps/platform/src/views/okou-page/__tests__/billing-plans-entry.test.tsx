@@ -1,4 +1,5 @@
 import {
+  billingStatusContract,
   billingUsagePackCatalogContract,
   billingUsagePackManagementContract,
 } from "@okouai/api-contracts/contracts/billing";
@@ -8,6 +9,10 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  billingPlanCapabilities,
+  defaultBillingStatus,
+} from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -15,6 +20,15 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 /** A new workspace with no active plan, so the sidebar offers the Pro upgrade. */
 function prepareUpgradeFlow(): void {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+      onboardingPaymentPending: false,
+      concurrencyLimit: 2,
+    });
+  });
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 48rem)";
   });

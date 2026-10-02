@@ -372,7 +372,7 @@ async function ensureStarterCreditGrant(
         .values({
           orgId,
           credits: STARTER_GRANT_AMOUNT,
-          tier: "free",
+          tier: "limited-free-1",
           createdAt: sql`now()`,
           updatedAt: sql`now()`,
         })
@@ -380,7 +380,7 @@ async function ensureStarterCreditGrant(
           target: orgMetadataCanonicalWrites.orgId,
           set: {
             credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
-            tier: "free",
+            tier: "limited-free-1",
             updatedAt: sql`now()`,
           },
         })

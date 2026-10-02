@@ -20,20 +20,6 @@ interface OrgTierLimits {
 export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   Record<OrgTier, OrgTierLimits>
 > = {
-  free: {
-    planRank: 0,
-    baseConcurrencyLimit: 2,
-    canBuyConcurrency: false,
-    canBuyCredits: true,
-    autoRechargeAllowed: false,
-    supportByok: true,
-    // Every free plan runs only the catalog's free Built-in models.
-    restrictedBuiltInModels: true,
-    workflowWebhookAutomationAllowed: false,
-    audioLifetimeLimit: 10,
-    audioDailyRateLimit: 10,
-    audioDailyDurationSeconds: 10 * 60,
-  },
   "limited-free-1": {
     planRank: 0,
     baseConcurrencyLimit: 2,

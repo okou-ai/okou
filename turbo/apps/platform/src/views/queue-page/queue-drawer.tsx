@@ -55,7 +55,7 @@ interface UpgradePath {
 }
 
 const UPGRADE_PATHS = {
-  free: {
+  "limited-free-1": {
     targetTier: "pro",
     targetLabel: "Pro",
     concurrentRuns: 3,
@@ -721,7 +721,7 @@ function QueueDrawerContent() {
 
   const { concurrency } = data;
   const tierLabel =
-    concurrency.tier === "limited-free-1" || concurrency.tier === "free"
+    concurrency.tier === "limited-free-1"
       ? t(($) => {
           return $.queue.tiers.free;
         })

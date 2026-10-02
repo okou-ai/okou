@@ -145,16 +145,9 @@ import {
   type QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import {
-  createUsageAllowanceRefreshObject,
   refreshUsageAllowanceAvailability$,
-  remainingUnits,
   type PreparedUsageAllowanceRefresh,
-  type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
-import {
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
-} from "./usage-allowance-policy";
 import {
   morningBriefScheduleClaimBound$,
   morningBriefScheduleClaimSupersededCondition,
@@ -535,11 +528,6 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-} from "@okouai/db/schema/org-usage-allowance";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -561,7 +549,6 @@ import {
   eq,
   exists,
   gt,
-  gte,
   inArray,
   isNotNull,
   isNull,
@@ -2823,98 +2810,6 @@ const readRunAdmissionCredits$ = command(
   },
 );
 
-/** Allowance window and personal-subscription reads for one admission check. */
-const readAdmissionAllowanceSnapshot$ = command(
-  async (
-    { get },
-    input: CapturedRunAdmissionInput,
-    signal: AbortSignal,
-  ): Promise<UsageAllowanceAvailabilitySnapshot> => {
-    const db = get(db$);
-    const { orgId } = input;
-    const at = nowDate();
-    const rows = await db
-      .select({
-        entitlement: {
-          status: orgUsageAllowanceEntitlements.status,
-          expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-          shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-          weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-        },
-        window: {
-          kind: orgUsageAllowanceWindows.kind,
-          unitLimit: orgUsageAllowanceWindows.unitLimit,
-          consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-        },
-      })
-      .from(orgUsageAllowanceEntitlements)
-      .leftJoin(
-        orgUsageAllowanceWindows,
-        and(
-          eq(
-            orgUsageAllowanceWindows.entitlementId,
-            orgUsageAllowanceEntitlements.id,
-          ),
-          eq(orgUsageAllowanceWindows.orgId, orgId),
-          inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-          gte(
-            orgUsageAllowanceWindows.startsAt,
-            orgUsageAllowanceEntitlements.effectiveAt,
-          ),
-          lte(orgUsageAllowanceWindows.startsAt, at),
-          gt(orgUsageAllowanceWindows.expiresAt, at),
-          or(
-            isNull(orgUsageAllowanceEntitlements.expiresAt),
-            gt(orgUsageAllowanceEntitlements.expiresAt, at),
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(orgUsageAllowanceEntitlements.orgId, orgId),
-          inArray(orgUsageAllowanceEntitlements.status, [
-            ...ACTIVE_ALLOWANCE_STATUSES,
-          ]),
-          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-          or(
-            isNull(orgUsageAllowanceEntitlements.expiresAt),
-            gt(orgUsageAllowanceEntitlements.expiresAt, at),
-            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-          ),
-        ),
-      )
-      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-    signal.throwIfAborted();
-    const entitlement = rows[0]?.entitlement;
-    if (!entitlement) {
-      return null;
-    }
-    if (
-      entitlement.expiresAt &&
-      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-    ) {
-      return "allowance_refresh_required";
-    }
-    const shortWindow = rows.find((row) => {
-      return row.window?.kind === "short";
-    })?.window;
-    const weeklyWindow = rows.find((row) => {
-      return row.window?.kind === "weekly";
-    })?.window;
-    const shortRemainingUnits = shortWindow
-      ? remainingUnits(shortWindow)
-      : entitlement.shortWindowUnits;
-    const weeklyRemainingUnits = weeklyWindow
-      ? remainingUnits(weeklyWindow)
-      : entitlement.weeklyWindowUnits;
-    return {
-      shortRemainingUnits,
-      weeklyRemainingUnits,
-      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
-    };
-  },
-);
-
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   context: AgentRunContextSignals,
@@ -2924,7 +2819,7 @@ export function createThreadClaimRunObjects(
   // Stripe entitlement refresh for an allowance window runs outside the
   // admission and pending transactions, in the same parallel preparation.
   const preparedAllowanceRefresh$ = computed(async (get) => {
-    return await get(createUsageAllowanceRefreshObject(claim.orgId));
+    return (await get(context.allowance$)).refresh;
   });
   const orgModels$ = context.modelFacts$;
   const claimCatalog$ = computed(async (get) => {
@@ -3473,88 +3368,8 @@ export function createThreadClaimRunObjects(
       : null;
   });
   const credits = { creditBalance$: creditBalance$ };
-  const { input$: queuedModelAllowanceInput$ } = queuedModelSources;
   const allowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = await get(queuedModelAllowanceInput$);
-    const at = nowDate();
-    const rows = await get(db$)
-      .select({
-        entitlement: {
-          status: orgUsageAllowanceEntitlements.status,
-          expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-          shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-          weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-        },
-        window: {
-          kind: orgUsageAllowanceWindows.kind,
-          unitLimit: orgUsageAllowanceWindows.unitLimit,
-          consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-        },
-      })
-      .from(orgUsageAllowanceEntitlements)
-      .leftJoin(
-        orgUsageAllowanceWindows,
-        and(
-          eq(
-            orgUsageAllowanceWindows.entitlementId,
-            orgUsageAllowanceEntitlements.id,
-          ),
-          eq(orgUsageAllowanceWindows.orgId, orgId),
-          inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-          gte(
-            orgUsageAllowanceWindows.startsAt,
-            orgUsageAllowanceEntitlements.effectiveAt,
-          ),
-          lte(orgUsageAllowanceWindows.startsAt, at),
-          gt(orgUsageAllowanceWindows.expiresAt, at),
-          or(
-            isNull(orgUsageAllowanceEntitlements.expiresAt),
-            gt(orgUsageAllowanceEntitlements.expiresAt, at),
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(orgUsageAllowanceEntitlements.orgId, orgId),
-          inArray(orgUsageAllowanceEntitlements.status, [
-            ...ACTIVE_ALLOWANCE_STATUSES,
-          ]),
-          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-          or(
-            isNull(orgUsageAllowanceEntitlements.expiresAt),
-            gt(orgUsageAllowanceEntitlements.expiresAt, at),
-            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-          ),
-        ),
-      )
-      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-    const entitlement = rows[0]?.entitlement;
-    if (!entitlement) {
-      return null;
-    }
-    if (
-      entitlement.expiresAt &&
-      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-    ) {
-      return "allowance_refresh_required" as const;
-    }
-    const shortWindow = rows.find((row) => {
-      return row.window?.kind === "short";
-    })?.window;
-    const weeklyWindow = rows.find((row) => {
-      return row.window?.kind === "weekly";
-    })?.window;
-    const shortRemainingUnits = shortWindow
-      ? Math.max(0, shortWindow.unitLimit - shortWindow.consumedUnits)
-      : entitlement.shortWindowUnits;
-    const weeklyRemainingUnits = weeklyWindow
-      ? Math.max(0, weeklyWindow.unitLimit - weeklyWindow.consumedUnits)
-      : entitlement.weeklyWindowUnits;
-    return {
-      shortRemainingUnits,
-      weeklyRemainingUnits,
-      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
-    };
+    return (await get(context.allowance$)).availability;
   });
   const {
     input$: queuedProviderAdmissionInput$,
@@ -3894,7 +3709,6 @@ export function createThreadClaimRunObjects(
   const promptAgentAgent$ = computed(
     async (get): Promise<QueuedPromptAgent | null> => {
       const { head } = await get(promptInputInput$);
-      const db = get(db$);
       if (
         ![
           "slack",
@@ -3907,26 +3721,19 @@ export function createThreadClaimRunObjects(
       ) {
         return { agentId: head.agentId };
       }
-      const [agent] = await db
-        .select({ id: agents.id })
-        .from(orgMetadata)
-        .innerJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
-        .where(
-          and(eq(orgMetadata.orgId, head.orgId), eq(agents.orgId, head.orgId)),
-        )
-        .limit(1);
-      if (!agent) {
+      const agentId = (await get(context.orgMetadata$))?.defaultAgentId;
+      if (!agentId) {
         return null;
       }
-      if (agent.id === head.agentId) {
-        return { agentId: agent.id };
+      if (agentId === head.agentId) {
+        return { agentId };
       }
       return {
-        agentId: agent.id,
+        agentId,
         expectedThreadAgentId: head.agentId,
         producerBinding: {
           kind: "reassign-agent",
-          agentId: agent.id,
+          agentId,
           expectedAgentId: head.agentId,
           userId: head.userId,
           threadId: head.chatThreadId,
@@ -3935,6 +3742,21 @@ export function createThreadClaimRunObjects(
       };
     },
   );
+  const promptExecutionContext$ = computed(async (get) => {
+    const [{ head }, agent] = await Promise.all([
+      get(promptInputInput$),
+      get(promptAgentAgent$),
+    ]);
+    if (!agent) {
+      throw new Error("Prompt preparation lost its selected Agent");
+    }
+    return matchAgentRunContextSignals(
+      context,
+      head.userId,
+      head.orgId,
+      agent.agentId,
+    );
+  });
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
@@ -4597,7 +4419,6 @@ export function createThreadClaimRunObjects(
           eq(agentSessions.orgId, args.agent.orgId),
         ),
       )
-      .leftJoin(agents, eq(agents.id, args.agent.id))
       .leftJoin(
         conversations,
         eq(conversations.id, agentSessions.conversationId),
@@ -4619,13 +4440,17 @@ export function createThreadClaimRunObjects(
     if (!thread) {
       throw new Error("Chat thread not found while resolving session binding");
     }
-    return resolveChatThreadSessionSnapshot(thread, {
-      agentId: args.agent.id,
-      route: {
-        selectedModel: routedModel.modelPin.selectedModel,
-        cliAgentType: routedModel.cliAgentType,
+    const agent = await get((await get(promptExecutionContext$)).agent$);
+    return resolveChatThreadSessionSnapshot(
+      { ...thread, agent },
+      {
+        agentId: args.agent.id,
+        route: {
+          selectedModel: routedModel.modelPin.selectedModel,
+          cliAgentType: routedModel.cliAgentType,
+        },
       },
-    });
+    );
   });
   const incompleteRoundAnchors$ = computed(async (get) => {
     const { db, threadId } = await get(promptArgsArgs$);
@@ -6528,7 +6353,7 @@ export function createThreadClaimRunObjects(
           if (observation) {
             return observation.agent;
           }
-          // Authorization must not join the complete speculative package.
+          // Authorization waits only for the context's Agent snapshot.
           return await get((await get(executionContext$)).agent$);
         },
         {
@@ -6548,8 +6373,11 @@ export function createThreadClaimRunObjects(
     }
     // Reconciled integrations may select a different default Agent. Preserve only
     // groups whose authority key still matches, including their dependencies.
+    const supplied = (await get(isAutomation$))
+      ? context
+      : await get(promptExecutionContext$);
     return matchAgentRunContextSignals(
-      context,
+      supplied,
       command.owner.userId,
       command.owner.orgId,
       agentId,
@@ -7375,17 +7203,21 @@ export function createThreadClaimRunObjects(
     if (args.chatThreadId === undefined) {
       return null;
     }
+    const [agent, { command }] = await Promise.all([
+      get(preCreateAgentAgent$),
+      get(selectedIdentityInputIdentityInput$),
+    ]);
+    if (!agent || agent.orgId !== args.orgId) {
+      return null;
+    }
     const [thread] = await db
-      .select({ agentId: agents.id })
+      .select({ agentId: chatThreads.agentId })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
       .where(
         and(
           eq(chatThreads.id, args.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.agentId, command.expectedThreadAgentId ?? agent.id),
         ),
       )
       .limit(1);
@@ -8336,7 +8168,6 @@ export function createThreadClaimRunObjects(
                 eq(agentSessions.orgId, command.owner.orgId),
               ),
             )
-            .leftJoin(agents, eq(agents.id, agent.id))
             .leftJoin(
               conversations,
               eq(conversations.id, agentSessions.conversationId),
@@ -8369,10 +8200,13 @@ export function createThreadClaimRunObjects(
               "Chat thread not found while resolving session binding",
             );
           }
-          return resolveChatThreadSessionSnapshot(thread, {
-            agentId: agent.id,
-            route,
-          });
+          return resolveChatThreadSessionSnapshot(
+            { ...thread, agent },
+            {
+              agentId: agent.id,
+              route,
+            },
+          );
         },
       );
     },
@@ -9181,11 +9015,9 @@ export function createThreadClaimRunObjects(
       signal: AbortSignal,
     ) => {
       const startedAt = performance.now();
-      const snapshot = await set(
-        readAdmissionAllowanceSnapshot$,
-        input,
-        signal,
-      );
+      const selected = await get(executionContext$);
+      signal.throwIfAborted();
+      const snapshot = (await get(selected.allowance$)).availability;
       signal.throwIfAborted();
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
@@ -10521,6 +10353,7 @@ export function createThreadClaimRunObjects(
         persistence: context.persistence,
         allowanceRefresh: context.allowanceRefresh,
         planCapabilities: context.planCapabilities,
+        featureSwitchContext: context.featureSwitchContext,
         admissionTiming,
       };
       const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
@@ -12936,6 +12769,7 @@ interface PreparedAtomicLaunchPersistence {
 export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
 }
@@ -19108,7 +18942,14 @@ function tailFacts(
     chatThreadId: args.persistence.rows.metadata.chatThreadId,
     bindingThreadId: args.createArgs.chatThreadId,
     action: args.createArgs.threadSessionResolution?.action,
-    requestMemory: Boolean(claim),
+    // Memory flags are captured, not a launch-time transaction fence.
+    requestMemory:
+      Boolean(claim) &&
+      isFeatureEnabled(FeatureSwitchKey.PiMemory, args.featureSwitchContext),
+    threadAgentId:
+      claim?.producer?.kind === "reassign-agent"
+        ? claim.producer.expectedAgentId
+        : args.context.resolved.agentId,
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,

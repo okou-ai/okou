@@ -128,7 +128,7 @@ function planName(tier: BillingTier): string {
   });
 }
 
-function getPlanPrice(tier: "free" | "pro"): string {
+function getPlanPrice(tier: "limited-free-1" | "pro"): string {
   return i18n.t(
     ($) => {
       return $.billing.plans.pricePerMonth;
@@ -249,7 +249,7 @@ function DowngradeConfirmDialogContent({
   const downgradeTarget = isTeam ? selectedTarget : "limited-free-1";
   const targetLabel = planName(downgradeTarget);
   const proPlanPrice = getPlanPrice("pro");
-  const freePlanPrice = getPlanPrice("free");
+  const freePlanPrice = getPlanPrice("limited-free-1");
 
   const confirmAndResetTarget = async (): Promise<void> => {
     await confirm(downgradeTarget, pageSignal);

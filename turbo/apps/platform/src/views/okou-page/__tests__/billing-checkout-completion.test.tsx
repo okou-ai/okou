@@ -1,5 +1,6 @@
 import {
   billingCheckoutContract,
+  billingStatusContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackManagementContract,
@@ -13,6 +14,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  billingPlanCapabilities,
+  defaultBillingStatus,
+} from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -70,6 +75,15 @@ test("A pending subscription completes checkout and clears its return parameters
 });
 
 test("A confirmed usage-pack purchase displays its confirmation", async () => {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+      onboardingPaymentPending: false,
+      concurrencyLimit: 2,
+    });
+  });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
       supportsFreeMembers: true,

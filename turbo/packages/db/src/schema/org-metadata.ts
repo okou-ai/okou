@@ -118,6 +118,11 @@ export const orgMetadata = pgTable(
         "chk_org_metadata_model_mode",
         sql`${table.modelMode} IN ('auto', 'custom')`,
       ),
+      check("chk_org_metadata_tier_not_free", sql`${table.tier} <> 'free'`),
+      check(
+        "chk_org_metadata_pending_target_not_free",
+        sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'free'`,
+      ),
       check(
         "chk_org_metadata_tier_not_pro_suspend",
         sql`${table.tier} <> 'pro-suspend'`,

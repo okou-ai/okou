@@ -112,6 +112,12 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-legacy-free-retirement.ts` protects migration
+  `1316_retire_legacy_free_tier`: safe legacy and entitlement-only normalization,
+  unchanged credits/configuration/billing provenance/suspension, paid pending
+  targets, rejected ambiguous or subscription-linked rows with full DDL/data
+  rollback, and all three validated constraints.
+
 - `scripts/test-model-catalog-seed.ts` validates the current catalog's
   default, replacement, route, subscription and pricing invariants. Database
   constraint scenarios live in `scripts/test-model-catalog-permanent.ts`.
