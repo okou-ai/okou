@@ -1,5 +1,9 @@
 import { computed, command, type Computed } from "ccstate";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  readExecutionStorageCacheRows,
+  type ExecutionStorageCacheRows,
+} from "./execution-storage-cache-read.service";
 import { alias } from "drizzle-orm/pg-core";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
@@ -440,6 +444,22 @@ const persistPresignedUrlCache$ = command(
   },
 );
 
+export function executionStorageCachePairs(
+  mounts: readonly ExecutionStorageRequest[],
+  versions: Awaited<ReturnType<typeof readExactVersions>>,
+): {
+  readonly pairs: readonly {
+    readonly scope: StorageManifestPresignedUrlCacheScope;
+    readonly cacheKey: string;
+  }[];
+} {
+  return storageManifestPresignedUrlCacheLookupPairs(
+    signingRequests(mounts, versions, env("R2_USER_STORAGES_BUCKET_NAME"))
+      .input,
+    false,
+  );
+}
+
 /** Exact identity reads and local signing only; no HEAD selection or storage initialization. */
 export function createExecutionStorageObjects(
   mounts: readonly ExecutionStorageRequest[],
@@ -448,6 +468,27 @@ export function createExecutionStorageObjects(
     validateRequests(mounts);
     return await readExactVersions(get(db$), mounts);
   });
+  return createStorageObjects(mounts, versions$);
+}
+
+/** The canonical Thread already resolved exact rows; never reread those identities. */
+export function createResolvedExecutionStorageObjects(
+  mounts: readonly ExecutionStorageRequest[],
+  versions: Awaited<ReturnType<typeof readExactVersions>>,
+  cacheRows: ExecutionStorageCacheRows,
+): ExecutionStorageObjects {
+  const versions$ = computed(() => {
+    validateRequests(mounts);
+    return Promise.resolve(versions);
+  });
+  return createStorageObjects(mounts, versions$, cacheRows);
+}
+
+function createStorageObjects(
+  mounts: readonly ExecutionStorageRequest[],
+  versions$: Computed<Promise<Awaited<ReturnType<typeof readExactVersions>>>>,
+  suppliedCacheRows?: ExecutionStorageCacheRows,
+): ExecutionStorageObjects {
   const requests$ = computed(async (get) => {
     return signingRequests(
       mounts,
@@ -459,40 +500,10 @@ export function createExecutionStorageObjects(
     const { input } = await get(requests$);
     const { pairs, cacheKeysByRequest } =
       storageManifestPresignedUrlCacheLookupPairs(input, false);
-    const scopes: readonly StorageManifestPresignedUrlCacheScope[] = [
-      "system_storage",
-      "workflow_skill_storage",
-      "readonly_storage",
-    ];
-    const conditions = scopes.flatMap((scope) => {
-      const keys = pairs
-        .filter((pair) => {
-          return pair.scope === scope;
-        })
-        .map((pair) => {
-          return pair.cacheKey;
-        });
-      return keys.length === 0
-        ? []
-        : [
-            and(
-              eq(systemStoragePresignedUrlCache.scope, scope),
-              inArray(systemStoragePresignedUrlCache.cacheKey, keys),
-            ),
-          ];
-    });
     const rows =
-      conditions.length === 0
-        ? []
-        : await get(db$)
-            .select({
-              scope: systemStoragePresignedUrlCache.scope,
-              cacheKey: systemStoragePresignedUrlCache.cacheKey,
-              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-              expiresAt: systemStoragePresignedUrlCache.expiresAt,
-            })
-            .from(systemStoragePresignedUrlCache)
-            .where(or(...conditions));
+      suppliedCacheRows === undefined
+        ? await readExecutionStorageCacheRows(get(db$), pairs)
+        : suppliedCacheRows;
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
       Map<string, SelectedStoragePresignedUrlCacheRow>

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
@@ -36,6 +39,86 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("mounts the same exact workflow version from prefetch and a later independent pick", async () => {
+    context.mocks.s3.getSignedUrl.mockImplementation(() => {
+      const url = `https://storage.example.com/context/${randomUUID()}`;
+      return Promise.resolve(url);
+    });
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      `context-${randomUUID().slice(0, 8)}`,
+      {
+        content: "# Context storage\nKeep this published skill mounted.",
+      },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow publication");
+    }
+    const name = getCustomSkillStorageName(workflow.body.id);
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "prefetched skill",
+    });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstMount = expectCanonicalStorageManifest(
+      firstClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === name;
+    });
+    expect(firstMount).toMatchObject({ name });
+    expect(firstMount?.writeback).toBeUndefined();
+    expect(firstMount?.mountPath).toStrictEqual(expect.any(String));
+    expect(firstMount?.archiveUrl).toStrictEqual(expect.any(String));
+    expect(firstMount?.versionId).toMatch(/^[0-9a-f]{64}$/);
+    const queuedId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: queuedId,
+        prompt: "independent skill context",
+      },
+      [201],
+    );
+    expect(queued.body).toMatchObject({ runId: null });
+    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    const messages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === queuedId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const promoted = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queuedId;
+    });
+    if (!promoted?.runId) {
+      throw new Error("Expected independently prepared queued run");
+    }
+    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
+    const nextMount = expectCanonicalStorageManifest(
+      nextClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === name;
+    });
+    expect(nextMount).toMatchObject({
+      name,
+      mountPath: firstMount?.mountPath,
+      versionId: firstMount?.versionId,
+      archiveUrl: firstMount?.archiveUrl,
+    });
+    expect(nextMount?.writeback).toBeUndefined();
+    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+  });
   it("loads the same read-only context when a later request drains queued input", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
