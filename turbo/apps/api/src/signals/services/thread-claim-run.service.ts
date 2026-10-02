@@ -37,7 +37,6 @@ import {
   frameworkForProviderSelection,
   catalogBuiltInCandidates,
   catalogHasProviderRoute,
-  loadModelCatalog,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -420,7 +419,7 @@ import {
   dispatchConfiguredOfficialWorkflowReconciliation$,
   type OfficialWorkflowReconciliationResult,
 } from "./official-workflow-reconciliation-dispatch.service";
-import { type OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import {
   additionalVolumesForRun,
@@ -8053,7 +8052,7 @@ export function createThreadClaimRunObjects(
             userId: args.userId,
             source,
           },
-          source.kind === "member" ? await get(memberModels$) : undefined,
+          await get(memberModels$),
         ),
       );
     }

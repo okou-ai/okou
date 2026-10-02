@@ -358,16 +358,18 @@ export async function resolveDefaultModelFirstPin(
   orgId: string,
   userId: string,
   defaultSource: "member" | "workspace" = "member",
-  orgPlanCapabilities?: OrgPlanCapabilities | null,
-  modelBootstrap?: ModelSelectionBootstrap,
+  supplied?: {
+    readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+    readonly modelBootstrap?: ModelSelectionBootstrap;
+  },
 ): Promise<DefaultModelFirstPin> {
   const facts = await prepareModelRoutingFacts({
     db,
     orgId,
     userId,
     selectedModel: null,
-    orgPlanCapabilities,
-    modelBootstrap,
+    orgPlanCapabilities: supplied?.orgPlanCapabilities,
+    modelBootstrap: supplied?.modelBootstrap,
   });
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (defaultSource === "member" && userId !== "__no_preference__") {

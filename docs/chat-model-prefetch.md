@@ -50,8 +50,10 @@ official workflows, storage, allowances and thread/message reads are separate
 groups; this PR does not claim the entire endpoint meets the no-duplicate-query
 terminal state.
 
-The route regression pauses credit-expiry admission after the balance snapshot,
-adds credits through the Stripe webhook, and verifies the queued input is still
-rejected using its original balance. Existing web/CLI, model selection, account
+The route regression pauses the external S3 attachment response after model
+capture, changes the organization policy through its production API, and verifies
+the created and claimable run still uses the captured provider. Test setup and
+assertions use production APIs; no new database pause point or synthetic billing
+seed is introduced. Existing web/CLI, model selection, account
 and queue tests remain CI coverage. Production savings (previously estimated
 at 50–90 ms) require post-deployment traces and are not measured by this PR.

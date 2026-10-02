@@ -81,8 +81,10 @@ export async function resolveChatInputModelSelection(
       args.orgId,
       args.userId,
       "workspace",
-      args.orgPlanCapabilities,
-      args.modelBootstrap,
+      {
+        orgPlanCapabilities: args.orgPlanCapabilities,
+        modelBootstrap: args.modelBootstrap,
+      },
     );
     selectedModel = workspaceDefault.selectedModel;
     modelProviderType = workspaceDefault.modelProviderType;

@@ -78,7 +78,7 @@ export function createOrgModelBootstrap(
     readonly catalog?: ModelCatalog;
   } = {},
 ) {
-  return computed(async (get) => {
+  return computed((get) => {
     return loadOrgModelBootstrap(get(db$), orgId, supplied);
   });
 }
@@ -136,7 +136,7 @@ async function loadMemberModelBootstrap(
 }
 
 export function createMemberModelBootstrap(orgId: string, userId: string) {
-  return computed(async (get) => {
+  return computed((get) => {
     return loadMemberModelBootstrap(get(db$), orgId, userId);
   });
 }

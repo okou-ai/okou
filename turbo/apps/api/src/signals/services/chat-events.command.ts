@@ -1606,6 +1606,68 @@ async function validateSendThreadRevocation(
   return revocation;
 }
 
+async function normalSendEnqueueResponse(
+  db: Db,
+  args: NormalSendArgs,
+  thread: SendThread,
+  result:
+    | { readonly ok: true; readonly value: Date | null }
+    | { readonly ok: false; readonly error: unknown },
+) {
+  if (!result.ok) {
+    if (
+      thread.kind === "new" &&
+      result.error instanceof NewThreadSendCollision
+    ) {
+      return await resolveNewThreadSendCollision(
+        db,
+        args,
+        thread,
+        result.error.collision,
+      );
+    }
+    throw result.error;
+  }
+  return settledNormalSendResponse(args.body, thread.threadId, result.value);
+}
+
+const prepareNormalSendModels$ = command(
+  async (
+    { get },
+    input: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string;
+      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly catalog: ModelCatalog;
+    },
+    signal: AbortSignal,
+  ) => {
+    const prefetchedModels: PrefetchedModelBootstrap = {
+      orgId: input.orgId,
+      userId: input.userId,
+      agentId: input.agentId,
+      org: get(
+        createOrgModelBootstrap(input.orgId, {
+          capabilities: input.orgPlanCapabilities,
+          catalog: input.catalog,
+        }),
+      ),
+      member: get(createMemberModelBootstrap(input.orgId, input.userId)),
+    };
+    const [orgModels, memberModels] = await Promise.all([
+      prefetchedModels.org,
+      prefetchedModels.member,
+    ]);
+    signal.throwIfAborted();
+    return {
+      prefetchedModels,
+      orgModels,
+      modelBootstrap: { org: orgModels, member: memberModels },
+    };
+  },
+);
+
 export const sendNormalEvent$ = command(
   async (
     { get, set },
@@ -1621,24 +1683,17 @@ export const sendNormalEvent$ = command(
       return prepared;
     }
     const { authorized, agentRunSource, catalog } = prepared;
-    const prefetchedModels: PrefetchedModelBootstrap = {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.body.agentId,
-      org: get(
-        createOrgModelBootstrap(args.orgId, {
-          capabilities: orgPlanCapabilities,
-          catalog,
-        }),
-      ),
-      member: get(createMemberModelBootstrap(args.orgId, args.userId)),
-    };
-    const [orgModels, memberModels] = await Promise.all([
-      prefetchedModels.org,
-      prefetchedModels.member,
-    ]);
-    signal.throwIfAborted();
-    const modelBootstrap = { org: orgModels, member: memberModels };
+    const { prefetchedModels, orgModels, modelBootstrap } = await set(
+      prepareNormalSendModels$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: args.body.agentId,
+        orgPlanCapabilities,
+        catalog,
+      },
+      signal,
+    );
     const thread = await set(
       resolveSendThread$,
       {
@@ -1732,25 +1787,7 @@ export const sendNormalEvent$ = command(
       })(),
       signal,
     );
-    if (!enqueued.ok) {
-      if (
-        thread.kind === "new" &&
-        enqueued.error instanceof NewThreadSendCollision
-      ) {
-        return await resolveNewThreadSendCollision(
-          db,
-          args,
-          thread,
-          enqueued.error.collision,
-        );
-      }
-      throw enqueued.error;
-    }
-    return settledNormalSendResponse(
-      args.body,
-      thread.threadId,
-      enqueued.value,
-    );
+    return await normalSendEnqueueResponse(db, args, thread, enqueued);
   },
 );
 

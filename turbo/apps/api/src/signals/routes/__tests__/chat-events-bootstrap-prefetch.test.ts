@@ -1,18 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { billingStatusRoutes } from "../billing-status";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { testContext } from "../../../__tests__/test-context";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
+import { createDeferredPromise } from "../../utils";
 import { mockEnv } from "../../../lib/env";
 import {
   API_TEST_CONNECTOR_CATALOG,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import { withAgentBootstrapFailureFixture } from "../../../test-fixtures/agent-bootstrap-failure";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { postAutoRechargeInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   barrierQueryBinds,
@@ -35,88 +32,75 @@ const {
   claimChatRun,
   cancelChatRun,
   requestSendEventWithBearer,
-  sessionHeaders,
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
-  it("keeps the prefetched credit balance when credits arrive before admission", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped actor");
+  it("keeps the captured model policy when it changes during attachment resolution", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const fileId = randomUUID();
+    const filename = "model-snapshot.txt";
+    const key = buildArtifactKeyV2(fileId, filename);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    if (!originalSend) {
+      throw new Error("Expected the fixture's S3 implementation");
     }
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 0 });
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "active",
-      canBuyCredits: true,
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand && command.input.Key === key) {
+        entered.resolve(undefined);
+        await release.promise;
+        return {
+          ContentLength: 42,
+          ContentType: "text/plain",
+          LastModified: new Date("2026-10-02T00:00:00Z"),
+          Metadata: {
+            "artifact-id": fileId,
+            filename: encodeURIComponent(filename),
+            "user-id": encodeURIComponent(actor.userId),
+          },
+        };
+      }
+      return await originalSend(command);
     });
+    const sending = sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "use the captured model policy",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: filename,
+            contentType: "text/plain",
+          },
+          { type: "text", text: "use the captured model policy" },
+        ],
+      },
+    });
+    await entered.promise;
+    // Attachment metadata is an external response awaited after model capture.
+    // Change the real policy through its API before enqueue and admission.
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         preferred: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
         modelProviderId: null,
       },
     ]);
-    const clientEventId = randomUUID();
-    const sent = await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          return (
-            barrierQueryText(queryArgs).includes(
-              'from "credit_expires_record"',
-            ) && barrierQueryBinds(queryArgs, orgId)
-          );
-        },
-        stopAt: (_queryArgs, selecting) => {
-          return selecting;
-        },
-        work: async (barrier) => {
-          const sending = chat.requestSendEvent(
-            actor,
-            {
-              agentId,
-              model: "claude-sonnet-5",
-              prompt: "use the captured balance",
-              clientEventId,
-            },
-            [201],
-          );
-          await barrier.entered;
-          const response = await sending;
-          await postAutoRechargeInvoicePaid(context.signal, {
-            orgId,
-            credits: 100_000,
-          });
-          barrier.release();
-          await flushWaitUntilForTest();
-          return response;
-        },
-      },
-      context.signal,
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the queued send to be accepted");
-    }
-    const billing = await accept(
-      setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      ).get({ headers: sessionHeaders(actor) }),
-      [200],
-    );
-    expect(billing.body.credits).toBeGreaterThan(0);
-    const messages = userMessages(
-      (await chat.listThreadEvents(actor, sent.body.threadId)).events,
-    );
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: clientEventId,
-        error: "insufficient_credits",
-      }),
-    );
+    release.resolve(undefined);
+    const sent = await sending;
+    expect((await api.readRun(actor, sent.runId)).source).toMatchObject({
+      model: "claude-fable-5-1",
+      providerType: "anthropic-api-key",
+      credentialScope: "org",
+    });
+    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
   });
   it("returns the accepted input while bootstrap is still reading", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();

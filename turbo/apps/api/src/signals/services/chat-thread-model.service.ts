@@ -38,8 +38,7 @@ export const resolveRequiredDefaultChatThreadModelPin$ = command(
       args.orgId,
       args.userId,
       undefined,
-      orgPlanCapabilities,
-      args.modelBootstrap,
+      { orgPlanCapabilities, modelBootstrap: args.modelBootstrap },
     );
     abortSignal?.throwIfAborted();
     if (!pin.selectedModel) {
