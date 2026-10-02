@@ -2,7 +2,7 @@ import {
   checkPiMemoryQuota,
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
-import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -184,40 +184,46 @@ const recoverMaintenanceRun$ = command(
   },
 );
 
-async function checkNewAttemptQuotaAdmission(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  claim: ClaimedPiMemoryPhase2Job,
-  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
-  signal: AbortSignal,
-): Promise<boolean> {
-  // Prepare ordinary admission first; quota then sees locally reconciled data.
-  // Canonical createAgentRun admission and final transaction remain authoritative.
-  const admission = await checkOrgCreditsForRunAdmission({
-    db,
-    catalog: await catalogSnapshot,
-    orgId: claim.orgId,
-    userId: claim.userId,
-    modelProviderType: credential.pin.modelProvider,
-    selectedModel: credential.pin.selectedModel,
-  });
-  signal.throwIfAborted();
-  if (admission) {
-    return false;
-  }
-  await checkPiMemoryQuota(
-    db,
-    {
-      orgId: claim.orgId,
-      userId: claim.userId,
-      stage: "phase2",
-      source: credential.quota,
-    },
-    signal,
-  );
+const checkNewAttemptQuotaAdmission$ = command(
+  async (
+    { set },
+    catalogSnapshot: ModelCatalog,
+    claim: ClaimedPiMemoryPhase2Job,
+    credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    // Prepare ordinary admission first; quota then sees locally reconciled data.
+    // Canonical createAgentRun admission and final transaction remain authoritative.
+    const admission = await set(
+      checkOrgCreditsForRunAdmission$,
+      {
+        catalog: await catalogSnapshot,
+        orgId: claim.orgId,
+        userId: claim.userId,
+        modelProviderType: credential.pin.modelProvider,
+        selectedModel: credential.pin.selectedModel,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (admission) {
+      return false;
+    }
+    await checkPiMemoryQuota(
+      db,
+      {
+        orgId: claim.orgId,
+        userId: claim.userId,
+        stage: "phase2",
+        source: credential.quota,
+      },
+      signal,
+    );
 
-  return true;
-}
+    return true;
+  },
+);
 
 function createPiMemoryProducerRunBinding(
   claim: ClaimedPiMemoryPhase2Job,
@@ -293,9 +299,9 @@ const dispatchClaim$ = command(
     signal.throwIfAborted();
 
     if (
-      !(await checkNewAttemptQuotaAdmission(
+      !(await set(
+        checkNewAttemptQuotaAdmission$,
         catalog,
-        db,
         claim,
         credential,
         signal,

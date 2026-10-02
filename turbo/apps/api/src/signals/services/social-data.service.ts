@@ -1,4 +1,8 @@
 import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
+import {
+  allowanceAvailability,
+  allowanceAvailabilityQuery,
+} from "./usage-allowance-availability-plan";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -328,6 +332,11 @@ async function checkBudget(
   if (args.maxCredits === 0) {
     return null;
   }
+  const at = nowDate();
+  const allowanceRows = await tx
+    .select()
+    .from(allowanceAvailabilityQuery(args.auth.orgId, at));
+  signal.throwIfAborted();
   return await checkManagedCreditsSnapshotInDb(
     tx,
     {
@@ -345,6 +354,7 @@ async function checkBudget(
       enforceBalance: true,
     },
     args.resolution,
+    allowanceAvailability(allowanceRows, at),
     signal,
   );
 }
@@ -454,8 +464,8 @@ export const createSocialDataJob$ = command(
         if (admitted !== "allowance_refresh_required") {
           return admitted;
         }
-        // The owner-row transaction has ended. Allowance refresh takes the
-        // credit lock and can call Stripe, so neither belongs under that row.
+        // The owner-row transaction has ended. External Stripe preparation and
+        // the allowance CAS refresh must not run while that row is owned.
         await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
         signal.throwIfAborted();
         const refreshed = await db.transaction((tx) => {
