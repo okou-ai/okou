@@ -388,27 +388,6 @@ export async function readOfficialWorkflowRunStateFixture(
   return response.official_workflow_run_state;
 }
 
-export async function readAgentRunFamilyCountsFixture(
-  context: TestContext,
-  agentId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["agent_run_family_counts"]>
-> {
-  const response = await postAction(context, {
-    action: "read-agent-run-family-counts",
-    agent_id: agentId,
-  });
-  if (!("agent_run_family_counts" in response)) {
-    throw new Error(
-      "readAgentRunFamilyCountsFixture missing agent_run_family_counts",
-    );
-  }
-  if (!response.agent_run_family_counts) {
-    throw new Error("Agent Run-family count is unavailable");
-  }
-  return response.agent_run_family_counts;
-}
-
 export async function stageOfficialWorkflowAutomationFixture(
   context: TestContext,
   automationId: string,

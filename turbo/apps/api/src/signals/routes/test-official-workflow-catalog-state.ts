@@ -16,7 +16,6 @@ import {
   officialWorkflowDefinitionRevisions,
   officialWorkflowReconciliationWork,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
 import {
   officialWorkflowAutomationIdentities,
   workflowAutomations,
@@ -507,144 +506,6 @@ async function upsertExpiredReconciliationWork(
     });
 }
 
-async function deleteGmailWatchState(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<void> {
-  await db
-    .delete(gmailWatchStates)
-    .where(
-      and(
-        eq(gmailWatchStates.orgId, orgId),
-        eq(gmailWatchStates.userId, userId),
-      ),
-    );
-}
-
-async function simulateCommittedLifecycleGap(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly definitionName: string;
-    readonly materializationState: "current" | "reconciling" | "failed";
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  const leaseId = randomUUID();
-  await db.transaction(async (tx) => {
-    const [catalogState] = await tx
-      .select({
-        acceptedReleaseId: officialWorkflowCatalogState.acceptedReleaseId,
-      })
-      .from(officialWorkflowCatalogState)
-      .where(eq(officialWorkflowCatalogState.authority, "official"))
-      .limit(1);
-    const [automation] = await tx
-      .select({
-        id: workflowAutomations.id,
-        workflowId: workflowAutomations.workflowId,
-        orgId: workflowAutomations.orgId,
-        ownerUserId: workflowAutomations.ownerUserId,
-        eventType: workflowAutomations.eventType,
-        workflowDefinitionName: workflows.officialDefinitionName,
-        officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-        officialAppliedFingerprint:
-          workflowAutomations.officialAppliedFingerprint,
-        officialParameterBindings:
-          workflowAutomations.officialParameterBindings,
-        officialIntendedEnabled: workflowAutomations.officialIntendedEnabled,
-        officialReconciliationStatus:
-          workflowAutomations.officialReconciliationStatus,
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .where(eq(workflowAutomations.id, args.automationId))
-      .for("update")
-      .limit(1);
-    if (
-      !catalogState ||
-      !automation ||
-      automation.workflowDefinitionName !== args.definitionName ||
-      automation.officialBlueprintKey === null ||
-      automation.officialAppliedFingerprint === null ||
-      automation.officialParameterBindings === null ||
-      automation.officialIntendedEnabled !== true ||
-      automation.officialReconciliationStatus !== "current"
-    ) {
-      throw new Error("Cannot simulate an incomplete lifecycle commit");
-    }
-    const [identity] = await tx
-      .select()
-      .from(officialWorkflowAutomationIdentities)
-      .where(eq(officialWorkflowAutomationIdentities.id, automation.id))
-      .for("update")
-      .limit(1);
-    if (
-      !identity ||
-      identity.workflowId !== automation.workflowId ||
-      identity.automationId !== automation.id ||
-      identity.blueprintKey !== automation.officialBlueprintKey ||
-      identity.state !== "active"
-    ) {
-      throw new Error("Cannot simulate lifecycle gap without active identity");
-    }
-    await tx
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt: null,
-        ...(args.materializationState === "current"
-          ? {}
-          : { officialReconciliationStatus: args.materializationState }),
-        updatedAt: currentTime,
-      })
-      .where(eq(workflowAutomations.id, automation.id));
-    if (args.materializationState !== "current") {
-      const [reserved] = await tx
-        .update(officialWorkflowAutomationIdentities)
-        .set({
-          automationId: null,
-          state: args.materializationState,
-          retainedParameterBindings: automation.officialParameterBindings,
-          retainedIntendedEnabled: true,
-          retainedAppliedFingerprint: automation.officialAppliedFingerprint,
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            eq(officialWorkflowAutomationIdentities.id, automation.id),
-            eq(
-              officialWorkflowAutomationIdentities.automationId,
-              automation.id,
-            ),
-            eq(officialWorkflowAutomationIdentities.state, "active"),
-          ),
-        )
-        .returning({ id: officialWorkflowAutomationIdentities.id });
-      if (!reserved) {
-        throw new Error("Failed to persist dormant materialization stage");
-      }
-    }
-    if (
-      args.materializationState !== "failed" &&
-      (automation.eventType === "gmail-new-message" ||
-        automation.eventType === "gmail-label-applied")
-    ) {
-      await deleteGmailWatchState(tx, automation.orgId, automation.ownerUserId);
-    }
-    await upsertExpiredReconciliationWork(
-      tx,
-      args.definitionName,
-      catalogState.acceptedReleaseId,
-      currentTime,
-      leaseId,
-    );
-  });
-  signal.throwIfAborted();
-}
-
 async function simulateStructureTransitionCrash(
   db: Db,
   args: {
@@ -732,27 +593,6 @@ async function handleLifecycleSimulationAction(
 ): Promise<boolean> {
   if (body.action === "simulate-reconciliation-worker-crash") {
     await simulateReconciliationWorkerCrash(db, body.definitionName, signal);
-    return true;
-  }
-  if (
-    body.action === "simulate-dormant-materialization-crash" ||
-    body.action === "simulate-current-lifecycle-gap" ||
-    body.action === "simulate-dormant-materialization-discard-crash"
-  ) {
-    await simulateCommittedLifecycleGap(
-      db,
-      {
-        automationId: body.automationId,
-        definitionName: body.definitionName,
-        materializationState:
-          body.action === "simulate-current-lifecycle-gap"
-            ? "current"
-            : body.action === "simulate-dormant-materialization-crash"
-              ? "reconciling"
-              : "failed",
-      },
-      signal,
-    );
     return true;
   }
   if (body.action === "simulate-structure-transition-crash") {

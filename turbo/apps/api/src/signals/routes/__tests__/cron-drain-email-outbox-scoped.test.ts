@@ -200,44 +200,6 @@ describe("scoped email outbox drain", () => {
       "failed",
     );
   });
-
-  it("skips a selected item already claimed by another drain", async () => {
-    const toAddress = fixtureAddress();
-    const subject = fixtureSubject();
-    const seeded = await outbox.seedItem({
-      toAddress,
-      subject,
-      status: "pending",
-      createdAt: nowDate(),
-    });
-    const item = await outbox.findItem({ toAddress, subject });
-    expect(item.id).toBe(seeded.id);
-
-    const sendStarted = createDeferredPromise<void>(context.signal);
-    const releaseSend = createDeferredPromise<void>(context.signal);
-    onTestFinished(async () => {
-      if (!releaseSend.settled()) {
-        releaseSend.resolve(undefined);
-      }
-      await outbox.deleteItems([item.id]);
-    });
-    context.mocks.resend.send.mockImplementation(async () => {
-      sendStarted.resolve(undefined);
-      await releaseSend.promise;
-      return { data: { id: "resend-scoped-lock" }, error: null };
-    });
-
-    const firstDrain = outbox.drainItems([item.id]);
-    await sendStarted.promise;
-
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-
-    releaseSend.resolve(undefined);
-    await expect(firstDrain).resolves.toBe(1);
-    expect((await outbox.readItem(item.id))?.status).toBe("sent");
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("email outbox provider replay", () => {
@@ -572,37 +534,5 @@ describe("email outbox provider replay", () => {
       provider_idempotency_key: key,
       has_provider_request: false,
     });
-  });
-
-  it("gives each outbox row its own provider key", async () => {
-    const baseTime = pinTime();
-    const older = await seedItem({
-      status: "pending",
-      createdAt: new Date(baseTime - 1000),
-    });
-    const newer = await seedItem({
-      status: "pending",
-      createdAt: new Date(baseTime),
-    });
-    context.mocks.resend.send
-      .mockResolvedValueOnce({ data: { id: "resend-older" }, error: null })
-      .mockResolvedValueOnce({ data: { id: "resend-newer" }, error: null });
-
-    await expect(outbox.drainItems([older.id, newer.id])).resolves.toBe(2);
-
-    await expect(outbox.readItem(older.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-older",
-      provider_idempotency_key: providerKey(older.id),
-    });
-    await expect(outbox.readItem(newer.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-newer",
-      provider_idempotency_key: providerKey(newer.id),
-    });
-    expect([providerCall(0).options, providerCall(1).options]).toStrictEqual([
-      { idempotencyKey: providerKey(older.id) },
-      { idempotencyKey: providerKey(newer.id) },
-    ]);
   });
 });

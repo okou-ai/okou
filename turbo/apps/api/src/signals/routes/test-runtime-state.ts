@@ -12,7 +12,6 @@ import {
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import {
   browserSessionTabSnapshots,
@@ -1001,10 +1000,6 @@ type ReadOfficialWorkflowRunStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "read-official-workflow-run-state" }
 >;
-type ReadAgentRunFamilyCountsAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "read-agent-run-family-counts" }
->;
 type SetOfficialWorkflowAutomationAdmissionStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-official-workflow-automation-admission-state" }
@@ -1014,7 +1009,6 @@ type OfficialWorkflowRunFixtureAction = Extract<
   {
     action:
       | "read-official-workflow-run-state"
-      | "read-agent-run-family-counts"
       | "set-official-workflow-automation-admission-state";
   }
 >;
@@ -1024,7 +1018,6 @@ function isOfficialWorkflowRunFixtureAction(
 ): body is OfficialWorkflowRunFixtureAction {
   return [
     "read-official-workflow-run-state",
-    "read-agent-run-family-counts",
     "set-official-workflow-automation-admission-state",
   ].includes(body.action);
 }
@@ -1094,49 +1087,6 @@ async function readOfficialWorkflowRunStateActionResponse(
   };
 }
 
-async function readAgentRunFamilyCountsActionResponse(
-  db: Db,
-  body: ReadAgentRunFamilyCountsAction,
-  signal: AbortSignal,
-) {
-  const agentRunJoin = eq(agentRuns.sessionId, agentSessions.id);
-  const agentCondition = eq(agentSessions.agentId, body.agent_id);
-  const [[runs], [callbacks], [runnerJobs]] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(agentRuns)
-      .innerJoin(agentSessions, agentRunJoin)
-      .where(agentCondition),
-    db
-      .select({ value: count() })
-      .from(agentRunCallbacks)
-      .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
-      .innerJoin(agentSessions, agentRunJoin)
-      .where(agentCondition),
-    db
-      .select({ value: count() })
-      .from(runnerJobQueue)
-      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-      .innerJoin(agentSessions, agentRunJoin)
-      .where(agentCondition),
-  ]);
-  signal.throwIfAborted();
-  if (!runs || !callbacks || !runnerJobs) {
-    throw new Error("Agent Run-family count is incomplete");
-  }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      agent_run_family_counts: {
-        run_count: runs.value,
-        callback_count: callbacks.value,
-        runner_job_count: runnerJobs.value,
-      },
-    },
-  };
-}
-
 async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   db: Db,
   body: SetOfficialWorkflowAutomationAdmissionStateAction,
@@ -1177,9 +1127,6 @@ async function officialWorkflowRunFixtureActionResponse(
   switch (body.action) {
     case "read-official-workflow-run-state": {
       return await readOfficialWorkflowRunStateActionResponse(db, body, signal);
-    }
-    case "read-agent-run-family-counts": {
-      return await readAgentRunFamilyCountsActionResponse(db, body, signal);
     }
     case "set-official-workflow-automation-admission-state": {
       return await setOfficialWorkflowAutomationAdmissionStateActionResponse(

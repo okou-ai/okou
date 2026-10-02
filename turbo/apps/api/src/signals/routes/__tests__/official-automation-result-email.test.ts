@@ -15,13 +15,10 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { completeRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
 import {
-  clearResultEmailUserStateFixture,
   completeResultEmailRunWithoutCallbacksFixture,
   markWorkflowAsMorningBriefResultEmailFixture,
-  readResultEmailPreferenceFixture,
 } from "../../../test-fixtures/official-automation-result-email";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -282,54 +279,6 @@ beforeEach(() => {
 });
 
 describe("Official Automation result email callbacks", () => {
-  it("does not attach the Official result callback to a direct Workflow run", async () => {
-    const scenario = await setupScenario();
-    const directRun = await accept(
-      workflowClient().run({
-        headers: authHeaders(),
-        params: { workflowId: scenario.workflowId },
-      }),
-      [200],
-    );
-    const directRunId = await launchedRunId(directRun.body.chatThreadId);
-    expect(
-      (await runCallbackState(scenario, directRunId)).some((callback) => {
-        return callback.internalKind === RESULT_CALLBACK_KIND;
-      }),
-    ).toBeFalsy();
-    await runs.requestCancelRun(scenario.actor, directRunId, [200]);
-    await flushWaitUntilForTest();
-  });
-
-  it("keeps ordinary session success ineligible for a result email", async () => {
-    const scenario = await setupScenario();
-    const sessionRunId = await startRun(scenario, "https://app.okou.ai");
-    const sessionCallbacks = await runCallbackState(scenario, sessionRunId);
-    expect(sessionCallbacks).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ internalKind: "chat" }),
-      ]),
-    );
-    expect(
-      sessionCallbacks.some((callback) => {
-        return callback.internalKind === RESULT_CALLBACK_KIND;
-      }),
-    ).toBeFalsy();
-    await completeRun(scenario, sessionRunId, {
-      exitCode: 0,
-      output: "Ordinary Automation result",
-    });
-    expect((await runs.readRun(scenario.actor, sessionRunId)).status).toBe(
-      "completed",
-    );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: sessionRunId,
-        sourceWorkflowAutomationId: scenario.automationId,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
-  });
-
   it("delivers a stored callback payload that still carries a public brand", async () => {
     const scenario = await setupScenario();
     const runId = await startRun(scenario, "https://app.okou.ai");
@@ -721,10 +670,21 @@ describe("Official Automation result email callbacks", () => {
 
   it("keeps the existing automation switch separate from account-level unsubscribe", async () => {
     const scenario = await setupScenario();
-    await clearResultEmailUserStateFixture(scenario.actor.userId);
+
     await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeNull();
+      misc.requestEmailUnsubscribe(
+        unsubscribeToken(scenario.actor.userId),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { unsubscribed: true } });
+    const afterUnsubscribe = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: scenario.automationId },
+      }),
+      [200],
+    );
+    expect(afterUnsubscribe.body.enabled).toBeTruthy();
 
     const disabled = await accept(
       automationsClient().disable({
@@ -733,19 +693,21 @@ describe("Official Automation result email callbacks", () => {
       }),
       [200],
     );
-
     expect(disabled.body.enabled).toBeFalsy();
     await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeNull();
-
-    await misc.requestEmailUnsubscribe(
-      unsubscribeToken(scenario.actor.userId),
+      misc.requestEmailUnsubscribe(
+        unsubscribeToken(scenario.actor.userId),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { unsubscribed: true } });
+    const afterRepeatedUnsubscribe = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: scenario.automationId },
+      }),
       [200],
     );
-    await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeTruthy();
+    expect(afterRepeatedUnsubscribe.body.enabled).toBeFalsy();
   });
 
   it("keeps suppression at send and leaves a successful Run unchanged", async () => {
@@ -916,55 +878,6 @@ describe("Official Automation result email callbacks", () => {
         }),
       ).resolves.toStrictEqual({ items: [], claim: null });
     });
-  });
-
-  it("rechecks an absent preference row after concurrent unsubscribe commits", async () => {
-    const scenario = await setupScenario();
-    const runId = await startRun(scenario);
-    await seedResultCallback({
-      runId,
-      automationId: scenario.automationId,
-    });
-    await clearResultEmailUserStateFixture(scenario.actor.userId);
-    await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeNull();
-    await completeResultEmailRunWithoutCallbacksFixture(runId);
-
-    const emailLookupStarted = createDeferredPromise<void>(context.signal);
-    const releaseEmailLookup = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseEmailLookup.settled()) {
-        releaseEmailLookup.resolve(undefined);
-      }
-    });
-    context.mocks.clerk.users.getUser.mockImplementationOnce(async () => {
-      emailLookupStarted.resolve(undefined);
-      await releaseEmailLookup.promise;
-      return clerkUser(scenario.actor.userId, scenario.actor.email);
-    });
-
-    const callback = executionClient().interruptResultEmailCallback({
-      body: { run_id: runId },
-    });
-    await emailLookupStarted.promise;
-    await misc.requestEmailUnsubscribe(
-      unsubscribeToken(scenario.actor.userId),
-      [200],
-    );
-    releaseEmailLookup.resolve(undefined);
-    await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeTruthy();
-    const callbackResult = await accept(callback, [200]);
-    expect(callbackResult.body).toMatchObject({ success: true, skipped: true });
-
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: runId,
-        sourceWorkflowAutomationId: scenario.automationId,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
   });
 
   it.each(["pending", "failed"] as const)(

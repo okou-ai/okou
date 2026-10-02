@@ -157,10 +157,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-agent-run-family-counts"),
-    agent_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),
     automation_id: z.uuid(),
     blueprint_key: z.string().min(1).optional(),
@@ -330,13 +326,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       callback_count: z.int().nonnegative(),
     })
     .nullable()
-    .optional(),
-  agent_run_family_counts: z
-    .object({
-      run_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
-      runner_job_count: z.int().nonnegative(),
-    })
     .optional(),
   file_id: z.uuid().optional(),
 });
