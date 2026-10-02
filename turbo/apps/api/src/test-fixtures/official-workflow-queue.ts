@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "../signals/services/chat-event-append.service";
-import { executeRawRows } from "../lib/db-raw-rows";
+import { parseRawRows } from "../lib/db-raw-rows";
 import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { randomUUID } from "node:crypto";
 
@@ -48,15 +48,14 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
   const source = await readOfficialWorkflowQueueInputFixture(args.eventId);
   return await db().transaction(async (tx) => {
     const revoked =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventReplacementInsertSql(
             requireChatEventReplacementTarget(
-              await executeRawRows(
-                tx,
-                chatEventReplacementTargetSql(source.id),
+              parseRawRows(
                 chatEventReplacementTargetSchema,
+                await tx.execute(chatEventReplacementTargetSql(source.id)),
               ),
             ),
             {
@@ -65,8 +64,7 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
               content: null,
             },
           ),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (!revoked) {
       throw new Error("Official queue fixture source was already revoked");

@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "../signals/services/chat-event-append.service";
-import { executeRawRows } from "../lib/db-raw-rows";
+import { parseRawRows } from "../lib/db-raw-rows";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
@@ -152,9 +152,9 @@ export async function insertChatSearchProjectionCoverageFixture(args: {
   const assistantRunId = randomUUID();
   const messages = await db().transaction(async (tx) => {
     const prompt =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventInsertSql({
             chatThreadId: args.chatThreadId,
             eventType: "input.prompt",
@@ -162,55 +162,56 @@ export async function insertChatSearchProjectionCoverageFixture(args: {
             userMessage: createUserMessageDocument({ text: args.promptText }),
             runId: null,
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     const assistant =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventInsertSql({
             chatThreadId: args.chatThreadId,
             eventType: "output.message",
             content: args.assistantText,
             runId: assistantRunId,
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (!prompt || !assistant) {
       throw new Error("Expected chat search coverage messages");
     }
-    await executeRawRows(
-      tx,
-      chatEventInsertSql({
-        chatThreadId: args.chatThreadId,
-        eventType: "output.message",
-        content: "   ",
-        runId: randomUUID(),
-      }),
+    parseRawRows(
       chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventInsertSql({
+          chatThreadId: args.chatThreadId,
+          eventType: "output.message",
+          content: "   ",
+          runId: randomUUID(),
+        }),
+      ),
     );
-    await executeRawRows(
-      tx,
-      chatEventInsertSql({
-        chatThreadId: args.chatThreadId,
-        eventType: "output.error",
-        content: args.errorText,
-        error: args.errorText,
-        runId: randomUUID(),
-      }),
+    parseRawRows(
       chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventInsertSql({
+          chatThreadId: args.chatThreadId,
+          eventType: "output.error",
+          content: args.errorText,
+          error: args.errorText,
+          runId: randomUUID(),
+        }),
+      ),
     );
-    await executeRawRows(
-      tx,
-      chatEventInsertSql({
-        chatThreadId: args.chatThreadId,
-        eventType: "run.completed",
-        content: args.terminalText,
-        runId: randomUUID(),
-      }),
+    parseRawRows(
       chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventInsertSql({
+          chatThreadId: args.chatThreadId,
+          eventType: "run.completed",
+          content: args.terminalText,
+          runId: randomUUID(),
+        }),
+      ),
     );
     return { prompt, assistant };
   });
@@ -319,9 +320,9 @@ export async function insertSearchablePromptFixture(args: {
 }): Promise<{ readonly id: string; readonly seqId: number }> {
   const inserted = await db().transaction(async (tx) => {
     return (
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventInsertSql({
             chatThreadId: args.chatThreadId,
             eventType: "input.prompt",
@@ -329,8 +330,7 @@ export async function insertSearchablePromptFixture(args: {
             userMessage: createUserMessageDocument({ text: args.text }),
             runId: null,
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null
     );
   });
@@ -347,15 +347,14 @@ export async function rejectSearchablePromptFixture(args: {
 }): Promise<{ readonly id: string; readonly seqId: number }> {
   const inserted = await db().transaction(async (tx) => {
     return (
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventReplacementInsertSql(
             requireChatEventReplacementTarget(
-              await executeRawRows(
-                tx,
-                chatEventReplacementTargetSql(args.eventId),
+              parseRawRows(
                 chatEventReplacementTargetSchema,
+                await tx.execute(chatEventReplacementTargetSql(args.eventId)),
               ),
             ),
             {
@@ -366,8 +365,7 @@ export async function rejectSearchablePromptFixture(args: {
               error: "Rejected by the chat search projection fixture",
             },
           ),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null
     );
   });

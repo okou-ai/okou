@@ -1,5 +1,5 @@
 import { chatEventAppendResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -368,33 +368,34 @@ export async function appendAssistantEventRows(
   const runContext = await assistantEventRunContextForRun(tx, args.runId);
   signal.throwIfAborted();
 
-  const insertedRows = await executeRawRows(
-    tx,
-    chatEventsInsertSql(
-      args.items.map((item) => {
-        const eventIdentity = {
-          id: assistantEventIdForRunEvent(args.runId, item.runEventId),
-          chatThreadId: args.threadId,
-          runId: args.runId,
-          runEventSequenceNumber: item.runEventSequenceNumber,
-          runEventId: item.runEventId,
-        };
-        if (item.eventType === "output.message") {
+  const insertedRows = parseRawRows(
+    chatEventAppendResultSchema,
+    await tx.execute(
+      chatEventsInsertSql(
+        args.items.map((item) => {
+          const eventIdentity = {
+            id: assistantEventIdForRunEvent(args.runId, item.runEventId),
+            chatThreadId: args.threadId,
+            runId: args.runId,
+            runEventSequenceNumber: item.runEventSequenceNumber,
+            runEventId: item.runEventId,
+          };
+          if (item.eventType === "output.message") {
+            return {
+              ...eventIdentity,
+              eventType: item.eventType,
+              content: item.content,
+            };
+          }
           return {
             ...eventIdentity,
             eventType: item.eventType,
-            content: item.content,
+            content: null,
+            error: item.error,
           };
-        }
-        return {
-          ...eventIdentity,
-          eventType: item.eventType,
-          content: null,
-          error: item.error,
-        };
-      }),
+        }),
+      ),
     ),
-    chatEventAppendResultSchema,
   );
   signal.throwIfAborted();
 

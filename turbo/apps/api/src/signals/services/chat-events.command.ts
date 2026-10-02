@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { resolveRunSelectionModel } from "./model-selection.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
@@ -1274,19 +1274,19 @@ const appendNormalSendInput$ = command(
       const insert = args.body.revokesEventId
         ? chatEventReplacementInsertSql(
             requireChatEventReplacementTarget(
-              await executeRawRows(
-                tx,
-                chatEventReplacementTargetSql(args.body.revokesEventId),
+              parseRawRows(
                 chatEventReplacementTargetSchema,
+                await tx.execute(
+                  chatEventReplacementTargetSql(args.body.revokesEventId),
+                ),
               ),
             ),
             event,
           )
         : chatEventInsertSql(event, "id");
-      const [inserted] = await executeRawRows(
-        tx,
-        insert,
+      const [inserted] = parseRawRows(
         chatEventCommandResultSchema,
+        await tx.execute(insert),
       );
       if (!inserted) {
         if (thread.kind === "new") {
@@ -1849,10 +1849,11 @@ const appendRecallChatEvent$ = command(
       }
       return recallRejected;
     }
-    const [inserted] = await executeRawRows(
-      db,
-      chatEventReplacementInsertSql(target, recallChatEventValues(params)),
+    const [inserted] = parseRawRows(
       chatEventCommandResultSchema,
+      await db.execute(
+        chatEventReplacementInsertSql(target, recallChatEventValues(params)),
+      ),
     );
     signal.throwIfAborted();
     if (inserted) {
@@ -1990,9 +1991,9 @@ const appendInterruptUserMessage$ = command(
       };
     }
     const inserted =
-      (
-        await executeRawRows(
-          db,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
           chatEventInsertSql(
             {
               ...(params.clientEventId ? { id: params.clientEventId } : {}),
@@ -2003,8 +2004,7 @@ const appendInterruptUserMessage$ = command(
             },
             "any",
           ),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     signal.throwIfAborted();
     if (inserted) {

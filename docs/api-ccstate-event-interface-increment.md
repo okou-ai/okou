@@ -35,20 +35,18 @@ Adapt its two calls inside that existing owner; do not replace its newer pick
 helper or add another source read or independently committing command.
 
 ```ts
-const [rejected] = await executeRawRows(
-  tx,
-  chatEventReplacementInsertSql(source, replacement),
+const [rejected] = parseRawRows(
   chatEventCommandResultSchema,
+  await tx.execute(chatEventReplacementInsertSql(source, replacement)),
 );
-const [assistant] = await executeRawRows(
-  tx,
-  chatEventInsertSql(assistantValues),
+const [assistant] = parseRawRows(
   chatEventCommandResultSchema,
+  await tx.execute(chatEventInsertSql(assistantValues)),
 );
 ```
 
 Import the SQL constructors from `./chat-event.service`, the result schema from
-`./chat-event-append.service`, and `executeRawRows` from
+`./chat-event-append.service`, and the pure `parseRawRows` decoder from
 `../../lib/db-raw-rows`. The source satisfies
 `LoadedChatEventReplacementTarget`: `id`, `chatThreadId`, `createdAt`,
 `eventType`, `contextType`, `contextId`, and optional nullable `modelSelection`.
@@ -71,9 +69,12 @@ if (contextInsert) {
 }
 ```
 
-Keep that SQL in the owning command's transaction when required. Do not pass
-`tx` to another helper or replace a transaction-local read/write with a new
-command that commits on another connection.
+Keep that SQL in the owning command's transaction when required. Execute row-returning
+SQL directly with `parseRawRows(schema, await database.execute(sql))`.
+`executeRawRows(db/tx, sql, schema)` is not an acceptable terminal boundary: it
+still forwards an execution capability. Do not pass `tx` to another helper or
+replace a transaction-local read/write with a new command that commits on another
+connection. Existing cancellation checks remain at the same owning operation boundaries.
 
 ## Actual changed callers
 
@@ -156,6 +157,9 @@ all terminalized** merely by migrating their event operation. Existing handles
 remain in `appendAssistantEventRows`/`insertAssistantEvents`, active-input
 consumption/expiry, terminal callback helper/runtime objects, Discord failure
 persistence, autonomy-budget helpers, and queue association/admission helpers.
+All executing `executeRawRows` calls in this increment's changed callers and
+acceptance programs have been removed in favor of direct execution plus parsing.
+That does not eliminate DB/Tx parameters on their enclosing legacy helpers.
 `workflowAutomationQueueEventWriter` still returns a transaction-taking closure;
 that is parent-owned workflow queue orchestration, not solved by this increment.
 Existing Web-send transaction helpers such as asset registration and network

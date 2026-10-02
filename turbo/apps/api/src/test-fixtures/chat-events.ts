@@ -21,7 +21,7 @@ import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { Pool } from "pg";
 import { closeDbPool, db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
+import { parseRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
 import { nowDate } from "../lib/time";
 import {
@@ -336,52 +336,28 @@ export async function seedChatEventAnnotationProjectionFixture(
   const rejectedPendingId = randomUUID();
   await db().transaction(async (tx) => {
     for (const input of annotationProjectionInputs) {
-      await executeRawRows(
-        tx,
-        chatEventInsertSql({
-          chatThreadId,
-          eventType: "input.prompt",
-          userMessage: createUserMessageDocument({
-            text: input.text,
-            nonContentPart: annotationProjectionSourcePart(input),
-          }),
-          runId: null,
-          ...input.context,
-        }),
+      parseRawRows(
         chatEventCommandResultSchema,
+        await tx.execute(
+          chatEventInsertSql({
+            chatThreadId,
+            eventType: "input.prompt",
+            userMessage: createUserMessageDocument({
+              text: input.text,
+              nonContentPart: annotationProjectionSourcePart(input),
+            }),
+            runId: null,
+            ...input.context,
+          }),
+        ),
       );
     }
 
-    await executeRawRows(
-      tx,
-      chatEventInsertSql({
-        id: claimedPendingId,
-        chatThreadId,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: "claimed annotation",
-          nonContentPart: {
-            type: "source",
-            kind: "github",
-            href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
-          },
-        }),
-        runId: null,
-        contextType: "web",
-      }),
+    parseRawRows(
       chatEventCommandResultSchema,
-    );
-    await executeRawRows(
-      tx,
-      chatEventReplacementInsertSql(
-        requireChatEventReplacementTarget(
-          await executeRawRows(
-            tx,
-            chatEventReplacementTargetSql(claimedPendingId),
-            chatEventReplacementTargetSchema,
-          ),
-        ),
-        {
+      await tx.execute(
+        chatEventInsertSql({
+          id: claimedPendingId,
           chatThreadId,
           eventType: "input.prompt",
           userMessage: createUserMessageDocument({
@@ -392,49 +368,78 @@ export async function seedChatEventAnnotationProjectionFixture(
               href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
             },
           }),
-          runId: randomUUID(),
-        },
+          runId: null,
+          contextType: "web",
+        }),
       ),
+    );
+    parseRawRows(
       chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventReplacementInsertSql(
+          requireChatEventReplacementTarget(
+            parseRawRows(
+              chatEventReplacementTargetSchema,
+              await tx.execute(chatEventReplacementTargetSql(claimedPendingId)),
+            ),
+          ),
+          {
+            chatThreadId,
+            eventType: "input.prompt",
+            userMessage: createUserMessageDocument({
+              text: "claimed annotation",
+              nonContentPart: {
+                type: "source",
+                kind: "github",
+                href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+              },
+            }),
+            runId: randomUUID(),
+          },
+        ),
+      ),
     );
 
-    await executeRawRows(
-      tx,
-      chatEventInsertSql(
-        rejectedAnnotationPrompt(chatThreadId, rejectedPendingId),
-      ),
+    parseRawRows(
       chatEventCommandResultSchema,
-    );
-    await executeRawRows(
-      tx,
-      chatEventReplacementInsertSql(
-        requireChatEventReplacementTarget(
-          await executeRawRows(
-            tx,
-            chatEventReplacementTargetSql(rejectedPendingId),
-            chatEventReplacementTargetSchema,
-          ),
+      await tx.execute(
+        chatEventInsertSql(
+          rejectedAnnotationPrompt(chatThreadId, rejectedPendingId),
         ),
-        {
-          chatThreadId,
-          eventType: "input.rejected",
-          userMessage: createUserMessageDocument({
-            text: "rejected annotation",
-            nonContentPart: createChatEventSourcePart({
-              kind: "teams",
-              tenantId: "tenant-2",
-              channelId: "19:reject@thread.tacv2",
-              activityId: "activity-rejected",
-              conversationId: null,
-              conversationType: "channel",
-              botId: null,
-            }),
-          }),
-          runId: null,
-          error: "rejected for annotation coverage",
-        },
       ),
+    );
+    parseRawRows(
       chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventReplacementInsertSql(
+          requireChatEventReplacementTarget(
+            parseRawRows(
+              chatEventReplacementTargetSchema,
+              await tx.execute(
+                chatEventReplacementTargetSql(rejectedPendingId),
+              ),
+            ),
+          ),
+          {
+            chatThreadId,
+            eventType: "input.rejected",
+            userMessage: createUserMessageDocument({
+              text: "rejected annotation",
+              nonContentPart: createChatEventSourcePart({
+                kind: "teams",
+                tenantId: "tenant-2",
+                channelId: "19:reject@thread.tacv2",
+                activityId: "activity-rejected",
+                conversationId: null,
+                conversationType: "channel",
+                botId: null,
+              }),
+            }),
+            runId: null,
+            error: "rejected for annotation coverage",
+          },
+        ),
+      ),
     );
   });
   return { claimedPendingId, rejectedPendingId };
@@ -522,9 +527,9 @@ export async function insertQueuedSlackMissingContextFixture(args: {
 }): Promise<string> {
   return await db().transaction(async (tx) => {
     const event =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventInsertSql({
             chatThreadId: args.threadId,
             eventType: "input.prompt",
@@ -546,8 +551,7 @@ export async function insertQueuedSlackMissingContextFixture(args: {
               routeThreadTs: null,
             },
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (!event) {
       throw new Error("Failed to insert queued Slack fixture");
@@ -580,15 +584,14 @@ export async function replayPendingChatInputQueueEventFixture(args: {
       throw new Error("Expected one pending chat input queue event");
     }
     const replacement =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventReplacementInsertSql(
             requireChatEventReplacementTarget(
-              await executeRawRows(
-                tx,
-                chatEventReplacementTargetSql(args.eventId),
+              parseRawRows(
                 chatEventReplacementTargetSchema,
+                await tx.execute(chatEventReplacementTargetSql(args.eventId)),
               ),
             ),
             {
@@ -599,8 +602,7 @@ export async function replayPendingChatInputQueueEventFixture(args: {
               runId: null,
             },
           ),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (!replacement) {
       throw new Error("Expected the pending queue event replay to insert");
@@ -789,9 +791,9 @@ export async function withChatEventDeletedAfterReadFixture<T>(args: {
 async function transitiveBlockedWaiterCount(
   holderPid: number,
 ): Promise<number> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
+  const rows = parseRawRows(
+    waiterCountRowSchema,
+    await db().execute(sql`
       WITH RECURSIVE blocked("pid") AS (
         SELECT activity.pid
         FROM pg_stat_activity AS activity
@@ -806,8 +808,7 @@ async function transitiveBlockedWaiterCount(
       )
       SELECT ${count()}::int AS "waiterCount"
       FROM blocked
-    `,
-    waiterCountRowSchema,
+    `),
   );
   return rows[0]?.waiterCount ?? 0;
 }
@@ -827,16 +828,15 @@ function isSharedThreadHotSnapshotRead(query: string): boolean {
 async function firstDirectBlockedStatementKind(
   holderPid: number,
 ): Promise<ChatThreadBlockedStatementKind | null> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
+  const rows = parseRawRows(
+    blockedQueryRowSchema,
+    await db().execute(sql`
       SELECT activity.query AS "query"
       FROM pg_stat_activity AS activity
       WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
       ORDER BY activity.query_start, activity.pid
       LIMIT 1
-    `,
-    blockedQueryRowSchema,
+    `),
   );
   const query = rows[0] ? normalizeBlockedQuery(rows[0].query) : undefined;
   if (!query) {
@@ -870,14 +870,13 @@ async function firstDirectBlockedStatementKind(
  * exactly that writer block and then stop waiting counts only these.
  */
 async function blockedKeyShareWaiterCount(holderPid: number): Promise<number> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
+  const rows = parseRawRows(
+    blockedQueryRowSchema,
+    await db().execute(sql`
       SELECT activity.query AS "query"
       FROM pg_stat_activity AS activity
       WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
-    `,
-    blockedQueryRowSchema,
+    `),
   );
   return rows.filter((row) => {
     const query = normalizeBlockedQuery(row.query);
@@ -926,12 +925,11 @@ export async function holdChatThreadRowLockFixture(args: {
     if (!thread) {
       throw new Error("Expected the chat thread row");
     }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
+    const pidRows = parseRawRows(
       databasePidRowSchema,
+      await tx.execute(sql`
+        SELECT pg_backend_pid() AS "pid"
+      `),
     );
     const holderPid = pidRows[0]?.pid;
     if (!holderPid) {
@@ -1010,12 +1008,11 @@ export async function holdChatThreadDeleteTransactionFixture(args: {
     if (deleted.length !== 1) {
       throw new Error("Expected one chat thread to delete");
     }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
+    const pidRows = parseRawRows(
       databasePidRowSchema,
+      await tx.execute(sql`
+        SELECT pg_backend_pid() AS "pid"
+      `),
     );
     const holderPid = pidRows[0]?.pid;
     if (!holderPid) {
@@ -1043,12 +1040,11 @@ async function pidIsDirectlyBlockedBy(
   waiterPid: number,
   holderPid: number,
 ): Promise<boolean> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT ${holderPid} = ANY(pg_blocking_pids(${waiterPid})) AS "blocked"
-    `,
+  const rows = parseRawRows(
     blockedByPidRowSchema,
+    await db().execute(sql`
+      SELECT ${holderPid} = ANY(pg_blocking_pids(${waiterPid})) AS "blocked"
+    `),
   );
   return rows[0]?.blocked ?? false;
 }
@@ -1134,29 +1130,27 @@ export async function holdChatEventInsertTransactionFixture(args: {
   }>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
   const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
+    const pidRows = parseRawRows(
       databasePidRowSchema,
+      await tx.execute(sql`
+        SELECT pg_backend_pid() AS "pid"
+      `),
     );
     const holderPid = pidRows[0]?.pid;
     if (!holderPid) {
       throw new Error("Expected the chat-message insert holder pid");
     }
     const event =
-      (
-        await executeRawRows(
-          tx,
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await tx.execute(
           chatEventInsertSql({
             chatThreadId: args.threadId,
             eventType: "output.message",
             content: args.content,
             runId: null,
           }),
-          chatEventCommandResultSchema,
-        )
+        ),
       )[0] ?? null;
     if (!event) {
       throw new Error("Expected the held chat-message insert");
@@ -1219,19 +1213,13 @@ export async function insertOutputEventWithConflictingLegacyPayloadFixture(args:
     };
     const inserted =
       args.legacyPayload === "run.completed"
-        ? ((
-            await executeRawRows(
-              tx,
-              chatEventInsertSql(lifecyclePayloadEvent),
-              chatEventCommandResultSchema,
-            )
+        ? (parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(chatEventInsertSql(lifecyclePayloadEvent)),
           )[0] ?? null)
-        : ((
-            await executeRawRows(
-              tx,
-              chatEventInsertSql(usagePayloadEvent),
-              chatEventCommandResultSchema,
-            )
+        : (parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(chatEventInsertSql(usagePayloadEvent)),
           )[0] ?? null);
     if (!inserted) {
       throw new Error("Expected the conflicting legacy-payload event insert");
@@ -1277,40 +1265,43 @@ async function insertCanonicalSingleWrites(
   const inputUserMessage = createUserMessageDocument({
     text: "rejected canonical input",
   });
-  await executeRawRows(
-    tx,
-    chatEventInsertSql({
-      id: single.inputRejectedId,
-      chatThreadId: threadId,
-      eventType: "input.rejected",
-      contextType: "web",
-      userMessage: inputUserMessage,
-      runId: null,
-      error: "input rejected",
-    }),
+  parseRawRows(
     chatEventCommandResultSchema,
+    await tx.execute(
+      chatEventInsertSql({
+        id: single.inputRejectedId,
+        chatThreadId: threadId,
+        eventType: "input.rejected",
+        contextType: "web",
+        userMessage: inputUserMessage,
+        runId: null,
+        error: "input rejected",
+      }),
+    ),
   );
-  await executeRawRows(
-    tx,
-    chatEventInsertSql({
-      id: single.outputErrorId,
-      chatThreadId: threadId,
-      eventType: "output.error",
-      content: "output failed",
-      error: "output error",
-      runId: randomUUID(),
-    }),
+  parseRawRows(
     chatEventCommandResultSchema,
+    await tx.execute(
+      chatEventInsertSql({
+        id: single.outputErrorId,
+        chatThreadId: threadId,
+        eventType: "output.error",
+        content: "output failed",
+        error: "output error",
+        runId: randomUUID(),
+      }),
+    ),
   );
-  await executeRawRows(
-    tx,
-    chatEventInsertSql({
-      id: single.interruptId,
-      chatThreadId: threadId,
-      eventType: "control.interrupt",
-      interruptsRunId: single.interruptTargetRunId,
-    }),
+  parseRawRows(
     chatEventCommandResultSchema,
+    await tx.execute(
+      chatEventInsertSql({
+        id: single.interruptId,
+        chatThreadId: threadId,
+        eventType: "control.interrupt",
+        interruptsRunId: single.interruptTargetRunId,
+      }),
+    ),
   );
 }
 
@@ -1319,38 +1310,39 @@ async function insertCanonicalBatchWrites(
   threadId: string,
   batch: CanonicalChatEventWriteFixture["batch"],
 ): Promise<void> {
-  await executeRawRows(
-    tx,
-    chatEventsInsertSql([
-      {
-        id: batch.runFailedId,
-        chatThreadId: threadId,
-        eventType: "run.failed",
-        content: "run failed",
-        error: "runner error",
-        failureReason: "future_reason",
-        runId: randomUUID(),
-      },
-      {
-        id: batch.usageId,
-        chatThreadId: threadId,
-        eventType: "usage.recorded",
-        runId: randomUUID(),
-        usagePayload: {
-          version: 1,
-          totalCredits: 9,
-          settledAt: "2026-08-10T00:00:00.000Z",
-          breakdown: [
-            {
-              kind: "model",
-              credits: 9,
-              providers: [{ provider: "test", credits: 9 }],
-            },
-          ],
-        },
-      },
-    ]),
+  parseRawRows(
     chatEventAppendResultSchema,
+    await tx.execute(
+      chatEventsInsertSql([
+        {
+          id: batch.runFailedId,
+          chatThreadId: threadId,
+          eventType: "run.failed",
+          content: "run failed",
+          error: "runner error",
+          failureReason: "future_reason",
+          runId: randomUUID(),
+        },
+        {
+          id: batch.usageId,
+          chatThreadId: threadId,
+          eventType: "usage.recorded",
+          runId: randomUUID(),
+          usagePayload: {
+            version: 1,
+            totalCredits: 9,
+            settledAt: "2026-08-10T00:00:00.000Z",
+            breakdown: [
+              {
+                kind: "model",
+                credits: 9,
+                providers: [{ provider: "test", credits: 9 }],
+              },
+            ],
+          },
+        },
+      ]),
+    ),
   );
 }
 
@@ -1362,38 +1354,41 @@ async function insertCanonicalReplacementWrite(
   const userMessage = createUserMessageDocument({
     text: "replacement canonical input",
   });
-  await executeRawRows(
-    tx,
-    chatEventInsertSql({
-      id: replacement.targetId,
-      chatThreadId: threadId,
-      eventType: "input.prompt",
-      contextType: "web",
-      userMessage,
-      runId: null,
-    }),
+  parseRawRows(
     chatEventCommandResultSchema,
-  );
-  await executeRawRows(
-    tx,
-    chatEventReplacementInsertSql(
-      requireChatEventReplacementTarget(
-        await executeRawRows(
-          tx,
-          chatEventReplacementTargetSql(replacement.targetId),
-          chatEventReplacementTargetSchema,
-        ),
-      ),
-      {
-        id: replacement.replacementId,
+    await tx.execute(
+      chatEventInsertSql({
+        id: replacement.targetId,
         chatThreadId: threadId,
-        eventType: "input.rejected",
+        eventType: "input.prompt",
+        contextType: "web",
         userMessage,
         runId: null,
-        error: "replacement rejected",
-      },
+      }),
     ),
+  );
+  parseRawRows(
     chatEventCommandResultSchema,
+    await tx.execute(
+      chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(
+          parseRawRows(
+            chatEventReplacementTargetSchema,
+            await tx.execute(
+              chatEventReplacementTargetSql(replacement.targetId),
+            ),
+          ),
+        ),
+        {
+          id: replacement.replacementId,
+          chatThreadId: threadId,
+          eventType: "input.rejected",
+          userMessage,
+          runId: null,
+          error: "replacement rejected",
+        },
+      ),
+    ),
   );
 }
 

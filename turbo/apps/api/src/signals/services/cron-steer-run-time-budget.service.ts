@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -112,9 +112,9 @@ const persistRunTimeBudgetInput$ = command(
       }
 
       const inserted =
-        (
-          await executeRawRows(
-            tx,
+        parseRawRows(
+          chatEventCommandResultSchema,
+          await tx.execute(
             chatEventInsertSql(
               {
                 id: runTimeBudgetEventIdForRun(args.candidate.runId),
@@ -133,8 +133,7 @@ const persistRunTimeBudgetInput$ = command(
               },
               "id",
             ),
-            chatEventCommandResultSchema,
-          )
+          ),
         )[0] ?? null;
       return inserted !== null;
     });

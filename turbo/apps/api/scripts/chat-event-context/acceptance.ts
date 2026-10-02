@@ -1,5 +1,5 @@
 import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
-import { executeRawRows } from "../../src/lib/db-raw-rows";
+import { parseRawRows } from "../../src/lib/db-raw-rows";
 import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -110,12 +110,9 @@ async function appendEntryInput(
     await db.execute(contextInsert);
   }
   return (
-    (
-      await executeRawRows(
-        db,
-        chatEventInsertSql(input, "id"),
-        chatEventCommandResultSchema,
-      )
+    parseRawRows(
+      chatEventCommandResultSchema,
+      await db.execute(chatEventInsertSql(input, "id")),
     )[0] ?? null
   );
 }

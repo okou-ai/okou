@@ -1,4 +1,4 @@
-import { executeRawRows } from "../../src/lib/db-raw-rows";
+import { parseRawRows } from "../../src/lib/db-raw-rows";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -42,10 +42,9 @@ try {
   // The first append creates the sequence row for an empty thread.
   const first = await createThread();
   assert.equal(await watermark(first), 0);
-  const [firstRow] = await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql([event(first)], "none"),
+  const [firstRow] = parseRawRows(
     chatEventAppendResultSchema,
+    await db.execute(appendCanonicalChatEventsSql([event(first)], "none")),
   );
   assert.equal(firstRow?.seqId, 1);
   assert.equal(await watermark(first), 1);
@@ -53,13 +52,14 @@ try {
   const concurrentPositions = (
     await Promise.all(
       Array.from({ length: 24 }, async () => {
-        const rows = await executeRawRows(
-          db,
-          appendCanonicalChatEventsSql(
-            [event(concurrent), event(concurrent)],
-            "any",
-          ),
+        const rows = parseRawRows(
           chatEventAppendResultSchema,
+          await db.execute(
+            appendCanonicalChatEventsSql(
+              [event(concurrent), event(concurrent)],
+              "any",
+            ),
+          ),
         );
         return rows.map((row) => {
           return row.seqId;
@@ -71,123 +71,137 @@ try {
   assert.equal(await watermark(concurrent), 48);
   const second = await createThread();
   await Promise.all([
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql([event(concurrent), event(second)], "any"),
-      chatEventAppendResultSchema,
-    ),
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql([event(second), event(concurrent)], "any"),
-      chatEventAppendResultSchema,
-    ),
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql([event(second), event(concurrent)], "any"),
-      chatEventAppendResultSchema,
-    ),
+    db
+      .execute(
+        appendCanonicalChatEventsSql([event(concurrent), event(second)], "any"),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
+    db
+      .execute(
+        appendCanonicalChatEventsSql([event(second), event(concurrent)], "any"),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
+    db
+      .execute(
+        appendCanonicalChatEventsSql([event(second), event(concurrent)], "any"),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
   ]);
   assert.equal(await watermark(second), 3);
   const id = randomUUID();
-  await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql([event(second, { id })], "id"),
+  parseRawRows(
     chatEventAppendResultSchema,
+    await db.execute(
+      appendCanonicalChatEventsSql([event(second, { id })], "id"),
+    ),
   );
   assert.deepEqual(
-    await executeRawRows(
-      db,
-      appendCanonicalChatEventsSql([event(second, { id })], "id"),
+    parseRawRows(
       chatEventAppendResultSchema,
+      await db.execute(
+        appendCanonicalChatEventsSql([event(second, { id })], "id"),
+      ),
     ),
     [],
   );
   const gap = await watermark(second);
   assert.equal(gap, 5);
   await assert.rejects(
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql(
-        [event(second, { eventType: "input.prompt" }), event(second)],
-        "none",
-      ),
-      chatEventAppendResultSchema,
-    ),
+    db
+      .execute(
+        appendCanonicalChatEventsSql(
+          [event(second, { eventType: "input.prompt" }), event(second)],
+          "none",
+        ),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
   );
   assert.equal(await watermark(second), gap);
   const runId = randomUUID();
-  await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql(
-      [event(second, { runId, runEventSequenceNumber: 10 })],
-      "any",
-    ),
+  parseRawRows(
     chatEventAppendResultSchema,
-  );
-  assert.deepEqual(
-    await executeRawRows(
-      db,
+    await db.execute(
       appendCanonicalChatEventsSql(
         [event(second, { runId, runEventSequenceNumber: 10 })],
         "any",
       ),
+    ),
+  );
+  assert.deepEqual(
+    parseRawRows(
       chatEventAppendResultSchema,
+      await db.execute(
+        appendCanonicalChatEventsSql(
+          [event(second, { runId, runEventSequenceNumber: 10 })],
+          "any",
+        ),
+      ),
     ),
     [],
   );
-  const [target] = await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql([event(second)], "none"),
+  const [target] = parseRawRows(
     chatEventAppendResultSchema,
+    await db.execute(appendCanonicalChatEventsSql([event(second)], "none")),
   );
   assert.ok(target);
   const replacement = [
     event(second, { eventType: "control.revoke", revokesEventId: target.id }),
   ];
   const revocations = await Promise.all([
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql(replacement, "any"),
-      chatEventAppendResultSchema,
-    ),
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql(
-        [
-          event(second, {
-            eventType: "control.revoke",
-            revokesEventId: target.id,
-          }),
-        ],
-        "any",
-      ),
-      chatEventAppendResultSchema,
-    ),
+    db
+      .execute(appendCanonicalChatEventsSql(replacement, "any"))
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
+    db
+      .execute(
+        appendCanonicalChatEventsSql(
+          [
+            event(second, {
+              eventType: "control.revoke",
+              revokesEventId: target.id,
+            }),
+          ],
+          "any",
+        ),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
   ]);
   assert.equal(revocations.flat().length, 1);
   const terminal = [event(second, { runId, eventType: "run.completed" })];
   const completions = await Promise.all([
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql(terminal, "run-lifecycle"),
-      chatEventAppendResultSchema,
-    ),
-    executeRawRows(
-      db,
-      appendCanonicalChatEventsSql(
-        [event(second, { runId, eventType: "run.failed" })],
-        "run-lifecycle",
-      ),
-      chatEventAppendResultSchema,
-    ),
+    db
+      .execute(appendCanonicalChatEventsSql(terminal, "run-lifecycle"))
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
+    db
+      .execute(
+        appendCanonicalChatEventsSql(
+          [event(second, { runId, eventType: "run.failed" })],
+          "run-lifecycle",
+        ),
+      )
+      .then((rawRows) => {
+        return parseRawRows(chatEventAppendResultSchema, rawRows);
+      }),
   ]);
   assert.equal(completions.flat().length, 1);
   const beforeRetention = await watermark(second);
   await pool.query("DELETE FROM chat_events WHERE chat_thread_id=$1", [second]);
-  const [afterRetention] = await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql([event(second)], "none"),
+  const [afterRetention] = parseRawRows(
     chatEventAppendResultSchema,
+    await db.execute(appendCanonicalChatEventsSql([event(second)], "none")),
   );
   assert.equal(afterRetention?.seqId, beforeRetention + 1);
   // A normal control lock must remain compatible with the event FK KEY SHARE.
@@ -201,10 +215,11 @@ try {
     const writer = await pool.connect();
     try {
       await writer.query("SET lock_timeout='1s'");
-      await executeRawRows(
-        drizzle(writer),
-        appendCanonicalChatEventsSql([event(second)], "none"),
+      parseRawRows(
         chatEventAppendResultSchema,
+        await drizzle(writer).execute(
+          appendCanonicalChatEventsSql([event(second)], "none"),
+        ),
       );
     } finally {
       writer.release();
@@ -220,11 +235,11 @@ try {
     try {
       await blocked.query("SET lock_timeout='100ms'");
       await assert.rejects(
-        executeRawRows(
-          drizzle(blocked),
-          appendCanonicalChatEventsSql([event(second)], "none"),
-          chatEventAppendResultSchema,
-        ),
+        drizzle(blocked)
+          .execute(appendCanonicalChatEventsSql([event(second)], "none"))
+          .then((rawRows) => {
+            return parseRawRows(chatEventAppendResultSchema, rawRows);
+          }),
         (error: unknown) => {
           return (
             typeof error === "object" &&
