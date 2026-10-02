@@ -114,6 +114,7 @@ export const integrationsAgentPhoneContract = c.router({
       400: z.string(),
       401: z.string(),
       404: z.string(),
+      500: z.string(),
     },
     summary: "Handle inbound phone message webhooks",
   },

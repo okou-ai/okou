@@ -381,6 +381,11 @@ export async function storeInboundAgentPhoneMessage(
     let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
       [];
     if (isGroup) {
+      const receivedAt = params.event.receivedAt;
+      if (receivedAt === null) {
+        throw new Error("AgentPhone group message is missing receivedAt");
+      }
+
       const existingConditions = [
         eq(agentphoneMessages.agentphoneMessageId, params.event.messageId),
       ];
@@ -416,10 +421,6 @@ export async function storeInboundAgentPhoneMessage(
         return { inserted: false, dispatch: false };
       }
 
-      const receivedAt = params.event.receivedAt;
-      if (receivedAt === null) {
-        return { inserted: false, dispatch: true };
-      }
       visibilityRecipients = await resolveAgentPhoneMessageVisibilityRecipients(
         tx,
         params.event.participants,

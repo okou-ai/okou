@@ -237,6 +237,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
 
   async function postAgentPhoneInboundMessage(
     message: AgentPhoneInboundMessage,
+    statuses: readonly (200 | 500)[] = [200],
   ): Promise<string> {
     const messageId = message.messageId ?? `ap-msg-${randomUUID()}`;
     const groupId =
@@ -265,14 +266,16 @@ export function createAgentPhoneBddApi(context: TestContext) {
       groupId,
       receivedAt,
     });
-    await integrations.requestAgentPhoneWebhook(
+    const response = await integrations.requestAgentPhoneWebhook(
       rawBody,
       agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
-      [200],
+      statuses,
     );
-    // Webhook handling is waitUntil-detached; drain it so follow-up steps
-    // cannot observe provider sends before thread/session state is persisted.
-    await flushWaitUntilForTest();
+    if (response.status === 200) {
+      // Webhook handling is waitUntil-detached; drain it so follow-up steps
+      // cannot observe provider sends before thread/session state is persisted.
+      await flushWaitUntilForTest();
+    }
     return messageId;
   }
 

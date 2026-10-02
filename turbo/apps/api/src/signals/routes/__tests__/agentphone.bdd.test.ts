@@ -2189,30 +2189,24 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).toMatchObject([{ id: secondMessageId }]);
   });
 
-  it("dispatches a non-archivable group webhook only once across provider retries", async () => {
+  it("returns 500 and does not dispatch group webhooks without a timestamp", async () => {
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
-    integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
-    const conversationId = uniqueConversationId();
-    const messageId = `ap-group-no-timestamp-retry-${randomUUID()}`;
     const message = {
       channel: "imessage" as const,
       from: uniquePhoneHandle(),
       body: "@Okou please help me connect",
-      messageId,
-      conversationId,
+      messageId: `ap-group-no-timestamp-${randomUUID()}`,
+      conversationId: uniqueConversationId(),
       isGroup: true,
       receivedAt: null,
     };
 
-    await ap.postAgentPhoneInboundMessage(message);
-    const sendsAfterFirstDelivery = sends.messages.length;
-    expect(sendsAfterFirstDelivery).toBe(1);
-
-    await ap.postAgentPhoneInboundMessage(message);
-    expect(sends.messages).toHaveLength(sendsAfterFirstDelivery);
+    await ap.postAgentPhoneInboundMessage(message, [500]);
+    await ap.postAgentPhoneInboundMessage(message, [500]);
+    expect(sends.messages).toHaveLength(0);
   });
 
   it("delivers a group run reply when the provider roster lookup fails", async () => {

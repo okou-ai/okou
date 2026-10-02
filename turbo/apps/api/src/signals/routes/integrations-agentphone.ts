@@ -1099,8 +1099,31 @@ function shouldAcceptAgentPhoneEvent(args: {
   return true;
 }
 
+function agentPhoneWebhookAdmissionResponse(args: {
+  readonly event: AgentPhoneMessageEvent;
+  readonly config: AgentPhoneWebhookConfig;
+  readonly channel: AgentPhoneChannel;
+  readonly webhookId: string | null;
+}) {
+  if (!shouldAcceptAgentPhoneEvent(args)) {
+    return okText();
+  }
+  if (isMissingAgentPhoneGroupTimestamp(args.event)) {
+    return textResponse("iMessage group webhook is missing receivedAt", 500);
+  }
+  return null;
+}
+
 function shouldDispatchAgentPhoneEvent(event: AgentPhoneMessageEvent): boolean {
   return !(event.channel === "imessage" && event.isGroup && !event.mentioned);
+}
+
+function isMissingAgentPhoneGroupTimestamp(
+  event: AgentPhoneMessageEvent,
+): boolean {
+  return (
+    event.channel === "imessage" && event.isGroup && event.receivedAt === null
+  );
 }
 
 /** A connection code binds an unlinked sender, so a sender that already has a
@@ -1242,15 +1265,14 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return okText();
   }
 
-  if (
-    !shouldAcceptAgentPhoneEvent({
-      event,
-      config,
-      channel: rawChannel,
-      webhookId,
-    })
-  ) {
-    return okText();
+  const admissionResponse = agentPhoneWebhookAdmissionResponse({
+    event,
+    config,
+    channel: rawChannel,
+    webhookId,
+  });
+  if (admissionResponse) {
+    return admissionResponse;
   }
 
   const writeDb = set(writeDb$);

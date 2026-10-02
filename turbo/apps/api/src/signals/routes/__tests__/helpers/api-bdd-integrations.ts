@@ -1774,7 +1774,7 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly "x-webhook-event"?: string;
         readonly "x-webhook-id"?: string;
       },
-      statuses: readonly (200 | 400 | 401 | 404)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         requestRawAgentPhoneWebhook(context, body, headers),
