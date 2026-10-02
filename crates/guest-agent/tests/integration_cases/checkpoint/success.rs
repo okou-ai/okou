@@ -575,6 +575,126 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
 }
 
 #[tokio::test]
+async fn pi_checkpoint_commits_history_after_third_upload_retry() {
+    let api = SharedApiMock::new().await;
+    let server = api.server();
+    let mut runtime = checkpoint_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
+    let _files_guard = SessionCheckpointFilesGuard::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
+    let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
+    let history_hash = hex::encode(Sha256::digest(&history));
+    let history_size = history.len();
+    let upload_path = "/test/retried-pi-history-upload";
+    let signature = "sensitive-history-upload-signature";
+    let upload_url = format!("{}?X-Amz-Signature={signature}", server.url(upload_path));
+    let prepare = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .json_body_includes(format!(
+                r#"{{"hash":"{history_hash}","rawSize":{history_size},"encoding":"identity"}}"#
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"existing":false,"presignedUrl":upload_url}));
+    });
+    let upload_attempts = MockCallObserver::default();
+    let upload_body = history.clone();
+    let upload_len = history_size.to_string();
+    let upload = server.mock(|when, then| {
+        when.method(PUT)
+            .path(upload_path)
+            .header("Content-Type", "application/octet-stream");
+        then.respond_with(move |request| {
+            if !upload_request_matches(request, &upload_body, &upload_len) {
+                return http_status(400);
+            }
+            if upload_attempts.record() <= 3 {
+                http_status(502)
+            } else {
+                http_status(200)
+            }
+        });
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/complete")
+            .json_body_includes(format!(
+                r#"{{"checkpoint":{{"cliAgentSessionHistoryHash":"{history_hash}"}}}}"#
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"success":true,"status":"completed"}));
+    });
+
+    create_bounded_checkpoint(&runtime).await.unwrap();
+
+    prepare.assert_calls_async(1).await;
+    upload.assert_calls_async(4).await;
+    complete.assert_calls_async(1).await;
+    assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
+    let identity_bytes =
+        std::fs::read(runtime.paths.final_session_history_identity_file()).unwrap();
+    let identity = SessionHistoryIdentity::from_json_slice(&identity_bytes).unwrap();
+    assert_eq!(identity.framework, SessionHistoryFramework::Pi);
+    assert_eq!(identity.history_hash, history_hash);
+    assert_eq!(identity.history_size_bytes, history_size as u64);
+    let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
+    let retry_logs = system_log
+        .lines()
+        .filter(|line| line.contains("Presigned upload failed; retry"))
+        .collect::<Vec<_>>();
+    assert_eq!(retry_logs.len(), 3);
+    assert!(retry_logs.iter().all(|line| line.contains("[INFO]")));
+    assert!(!system_log.contains(signature));
+    assert!(!system_log.contains(upload_path));
+}
+
+#[tokio::test]
+async fn pi_checkpoint_rejects_missing_history_after_upload_retries_exhausted() {
+    let api = SharedApiMock::new().await;
+    let server = api.server();
+    let mut runtime = checkpoint_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _files_guard = SessionCheckpointFilesGuard::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
+    let (history_file, history) = write_pi_history(&session_id, false, 0).unwrap();
+    let upload_path = "/test/exhausted-pi-history-upload";
+    let prepare = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/checkpoints/prepare-history");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"existing":false,"presignedUrl":server.url(upload_path)}));
+    });
+    let upload = server.mock(|when, then| {
+        when.method(PUT).path(upload_path);
+        then.respond_with(retry_then_response(4, http_status(200)));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/complete")
+            .json_body_includes(
+                r#"{"checkpoint":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+            );
+        then.status(400)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"error":"Pi H2 requires a native session history hash"}));
+    });
+
+    assert!(create_bounded_checkpoint(&runtime).await.is_err());
+
+    prepare.assert_calls_async(1).await;
+    upload.assert_calls_async(4).await;
+    complete.assert_calls_async(1).await;
+    assert_eq!(std::fs::read(&history_file.0).unwrap(), history);
+    assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());
+}
+
+#[tokio::test]
 async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     let api = SharedApiMock::new().await;
     let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
@@ -642,7 +762,7 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     create_bounded_checkpoint(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
-    upload_mock.assert_calls_async(1).await;
+    upload_mock.assert_calls_async(4).await;
     complete_mock.assert_calls_async(1).await;
 
     let operations = std::fs::read_to_string(runtime.paths.sandbox_ops_file()).unwrap();
@@ -662,8 +782,8 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
     assert!(system_log.contains(
-        "[ERROR] [sandbox:guest-agent] Session history upload failed; continuing checkpoint \
-         without history: http: PUT presigned: HTTP 502 Bad Gateway"
+        "[INFO] [sandbox:guest-agent] Session history upload failed after 3 retries; \
+         continuing checkpoint without history: http: PUT presigned: HTTP 502 Bad Gateway"
     ));
     assert!(!system_log.contains(upload_path));
     assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());

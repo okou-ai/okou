@@ -1,4 +1,4 @@
-//! HTTP client for webhook calls and single-attempt S3 uploads.
+//! HTTP client for webhook calls and presigned S3 uploads.
 
 use crate::constants;
 use crate::env;
@@ -10,7 +10,7 @@ use api_contracts::generated::constants::client::headers::{
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
 use bytes::{Bytes, BytesMut};
 use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
-use guest_telemetry::log_warn;
+use guest_telemetry::{log_info, log_warn};
 use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
 use reqwest::header::CONTENT_TYPE;
@@ -849,6 +849,35 @@ impl HttpClient {
             )));
         }
         Ok(())
+    }
+
+    /// Retry an idempotent upload of the same bytes to the same presigned URL.
+    pub(crate) async fn put_presigned_with_retries(
+        &self,
+        url: &str,
+        data: Bytes,
+        content_type: &str,
+        max_retries: u32,
+    ) -> Result<(), AgentError> {
+        let mut retries = 0;
+        loop {
+            match self.put_presigned(url, data.clone(), content_type).await {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    if retries == max_retries {
+                        return Err(error);
+                    }
+                    retries += 1;
+                    log_info!(
+                        LOG_TAG,
+                        "Presigned upload failed; retry {retries}/{max_retries}: {error}"
+                    );
+                    if !self.retry_delay.is_zero() {
+                        tokio::time::sleep(self.retry_delay).await;
+                    }
+                }
+            }
+        }
     }
 }
 
