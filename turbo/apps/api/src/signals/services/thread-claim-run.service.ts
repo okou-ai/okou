@@ -3872,17 +3872,13 @@ export function createThreadClaimRunObjects(
       serviceTier: (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
       resolution: get(usagePricingResolution$),
     });
-    const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
-      [
-        get(queuedModelRuntimeFeatureSwitchContext$),
-        get(keyIdsByVendor$),
-        get(cooldowns$),
-      ],
-    );
+    const [keyIdsByVendor, cooldowns] = await Promise.all([
+      get(keyIdsByVendor$),
+      get(cooldowns$),
+    ]);
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: pin.selectedModel,
-      featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
       routePricing,
