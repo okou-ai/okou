@@ -2517,19 +2517,19 @@ function customSurfaceServesPin(
  * support on the pinned provider, org plan admission (the member's own
  * subscription route is plan-exempt), then the Built-in credit balance.
  */
-async function resolveQueuedProviderAdmission(params: {
+function resolveQueuedProviderAdmission(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
   readonly providerModelSupport: ProviderModelSupport | undefined;
-  readonly customSurface: () => Promise<QueuedProviderAdmissionSurface | null>;
-  readonly personalSubscription: () => Promise<boolean>;
-  readonly capabilities: () => Parameters<
+  readonly customSurface: QueuedProviderAdmissionSurface | null;
+  readonly personalSubscription: boolean;
+  readonly capabilities: Parameters<
     typeof checkOrgPlanRunAdmission
   >[0]["capabilities"];
-  readonly creditBalance: () => Promise<{
+  readonly creditBalance: {
     readonly spendableCredits: number;
     readonly usagePackCredits: number;
-  } | null>;
+  } | null;
 }) {
   const { catalog, pin } = params;
   const effectiveModelProvider = pin.modelProviderType;
@@ -2540,7 +2540,7 @@ async function resolveQueuedProviderAdmission(params: {
   );
   if (
     requiresCustomSurface &&
-    !customSurfaceServesPin(await params.customSurface(), pin)
+    !customSurfaceServesPin(params.customSurface, pin)
   ) {
     return {
       effectiveModelProvider,
@@ -2551,10 +2551,10 @@ async function resolveQueuedProviderAdmission(params: {
       needsAllowance: false,
     };
   }
-  const personalSubscription = await params.personalSubscription();
+  const personalSubscription = params.personalSubscription;
   const error = checkOrgPlanRunAdmission({
     catalog,
-    capabilities: params.capabilities(),
+    capabilities: params.capabilities,
     modelProviderType: effectiveModelProvider,
     selectedModel: pin.selectedModel,
     personalSubscription,
@@ -2567,7 +2567,7 @@ async function resolveQueuedProviderAdmission(params: {
       needsAllowance: false,
     };
   }
-  const balance = await params.creditBalance();
+  const balance = params.creditBalance;
   return {
     effectiveModelProvider,
     cliAgentType,
@@ -3335,23 +3335,50 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
     const facts = await get(queuedProviderAdmissionPolicyFacts$);
-    return await resolveQueuedProviderAdmission({
-      catalog: await get(claimCatalog$),
+    const catalog = await get(claimCatalog$);
+    const providerModelSupport = (await get(queuedProviderAdmissionInput$))
+      .providerModelSupport;
+    const framing = queuedProviderRouteFraming(
+      catalog,
       pin,
-      providerModelSupport: (await get(queuedProviderAdmissionInput$))
-        .providerModelSupport,
-      customSurface: () => {
-        return get(queuedProviderAdmissionCustomSurface$);
-      },
-      personalSubscription: () => {
-        return get(personalSubscription$);
-      },
-      capabilities: () => {
-        return facts.orgPlanCapabilities;
-      },
-      creditBalance: () => {
-        return get(queuedProviderAdmissionCreditBalance$);
-      },
+      providerModelSupport,
+    );
+    const customSurface = framing.requiresCustomSurface
+      ? await get(queuedProviderAdmissionCustomSurface$)
+      : null;
+    const captured = {
+      catalog,
+      pin,
+      providerModelSupport,
+      customSurface,
+      capabilities: facts.orgPlanCapabilities,
+    };
+    if (
+      framing.requiresCustomSurface &&
+      !customSurfaceServesPin(customSurface, pin)
+    ) {
+      return resolveQueuedProviderAdmission({
+        ...captured,
+        personalSubscription: false,
+        creditBalance: null,
+      });
+    }
+    const personalSubscription = await get(personalSubscription$);
+    const planError = checkOrgPlanRunAdmission({
+      catalog,
+      capabilities: captured.capabilities,
+      modelProviderType: pin.modelProviderType,
+      selectedModel: pin.selectedModel,
+      personalSubscription,
+    });
+    const creditBalance =
+      !planError && isBuiltInModelProviderType(pin.modelProviderType)
+        ? await get(queuedProviderAdmissionCreditBalance$)
+        : null;
+    return resolveQueuedProviderAdmission({
+      ...captured,
+      personalSubscription,
+      creditBalance,
     });
   });
   const admission = {
@@ -6222,23 +6249,50 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
     const facts = await get(queuedProviderAdmissionPolicyFacts$2);
-    return await resolveQueuedProviderAdmission({
-      catalog: await get(claimCatalog$),
+    const catalog = await get(claimCatalog$);
+    const providerModelSupport = (await get(queuedProviderAdmissionInput$2))
+      .providerModelSupport;
+    const framing = queuedProviderRouteFraming(
+      catalog,
       pin,
-      providerModelSupport: (await get(queuedProviderAdmissionInput$2))
-        .providerModelSupport,
-      customSurface: () => {
-        return get(queuedProviderAdmissionCustomSurface$2);
-      },
-      personalSubscription: () => {
-        return get(personalSubscription$2);
-      },
-      capabilities: () => {
-        return facts.orgPlanCapabilities;
-      },
-      creditBalance: () => {
-        return get(queuedProviderAdmissionCreditBalance$2);
-      },
+      providerModelSupport,
+    );
+    const customSurface = framing.requiresCustomSurface
+      ? await get(queuedProviderAdmissionCustomSurface$2)
+      : null;
+    const captured = {
+      catalog,
+      pin,
+      providerModelSupport,
+      customSurface,
+      capabilities: facts.orgPlanCapabilities,
+    };
+    if (
+      framing.requiresCustomSurface &&
+      !customSurfaceServesPin(customSurface, pin)
+    ) {
+      return resolveQueuedProviderAdmission({
+        ...captured,
+        personalSubscription: false,
+        creditBalance: null,
+      });
+    }
+    const personalSubscription = await get(personalSubscription$2);
+    const planError = checkOrgPlanRunAdmission({
+      catalog,
+      capabilities: captured.capabilities,
+      modelProviderType: pin.modelProviderType,
+      selectedModel: pin.selectedModel,
+      personalSubscription,
+    });
+    const creditBalance =
+      !planError && isBuiltInModelProviderType(pin.modelProviderType)
+        ? await get(queuedProviderAdmissionCreditBalance$2)
+        : null;
+    return resolveQueuedProviderAdmission({
+      ...captured,
+      personalSubscription,
+      creditBalance,
     });
   });
   const queuedModelAdmission = {

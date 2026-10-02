@@ -17,6 +17,7 @@ import {
   getTableColumns,
 } from "drizzle-orm";
 
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -72,7 +73,9 @@ const claimCleanupJob$ = command(
       db
         .select({
           id: backgroundJobs.id,
-          ownerId: exportJobs.id,
+          ownerId: sql`${exportJobs.id}`
+            .mapWith(nullableDriverValueDecoder(exportJobs.id))
+            .as("owner_id"),
           ownerStatus: exportJobs.status,
           ownerExpiresAt: exportJobs.expiresAt,
         })
