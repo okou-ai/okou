@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { computed, command, state } from "ccstate";
 import {
   count,
@@ -83,6 +85,8 @@ import {
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
 import {
+  runAllowanceSnapshotSelection,
+  requireRunAllowanceWindowPair,
   planRunAllowanceActivation,
   runAllowanceWindowInsertSql,
   runAllowanceWindowsQuery,
@@ -104,7 +108,10 @@ import {
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
 } from "./internal-chat-run-callback.service";
-import { replaceLoadedChatEvent, insertChatEvent } from "./chat-event.service";
+import {
+  chatEventReplacementInsertSql,
+  chatEventInsertSql,
+} from "./chat-event.service";
 import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
@@ -642,11 +649,17 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
    * new work, not a retry: `pick$` never loops.
    */
   const scheduleThreadPick$ = command(
-    ({ set }, claim: LeasedThreadClaim, signal: AbortSignal): void => {
-      const { pick$: nextPick$ } = createPickObjects(
-        claim.orgId,
-        claim.chatThreadId,
+    async (
+      { get, set },
+      claim: LeasedThreadClaim,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const { pick$: nextPick$ } = await get(
+        computed(() => {
+          return createPickObjects(claim.orgId, claim.chatThreadId);
+        }),
       );
+      signal.throwIfAborted();
       waitUntil(set(nextPick$, signal));
     },
   );
@@ -659,7 +672,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       signal: AbortSignal,
     ): Promise<void> => {
       if (await set(releaseClaim$, claim, signal)) {
-        set(scheduleThreadPick$, claim, signal);
+        await set(scheduleThreadPick$, claim, signal);
       }
     },
   );
@@ -805,14 +818,20 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
       return await set(writeDb$).transaction(async (tx) => {
-        const rejected = await replaceLoadedChatEvent(tx, source, {
-          chatThreadId: source.chatThreadId,
-          eventType: "input.rejected",
-          userMessage: source.userMessage,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: rejectedAt,
-        });
+        const rejected =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              chatEventReplacementInsertSql(source, {
+                chatThreadId: source.chatThreadId,
+                eventType: "input.rejected",
+                userMessage: source.userMessage,
+                runId: null,
+                error: args.errorMarker,
+                createdAt: rejectedAt,
+              }),
+            ),
+          )[0] ?? null;
         signal.throwIfAborted();
         let appended: {
           readonly assistantEventId: string;
@@ -820,14 +839,20 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           readonly contextId: string | null;
         } | null = null;
         if (rejected) {
-          const assistant = await insertChatEvent(tx, {
-            chatThreadId: source.chatThreadId,
-            eventType: "output.error",
-            content: args.displayError,
-            runId: null,
-            error: args.errorMarker,
-            createdAt: new Date(rejectedAt.getTime() + 1),
-          });
+          const assistant =
+            parseRawRows(
+              chatEventCommandResultSchema,
+              await tx.execute(
+                chatEventInsertSql({
+                  chatThreadId: source.chatThreadId,
+                  eventType: "output.error",
+                  content: args.displayError,
+                  runId: null,
+                  error: args.errorMarker,
+                  createdAt: new Date(rejectedAt.getTime() + 1),
+                }),
+              ),
+            )[0] ?? null;
           signal.throwIfAborted();
           if (!assistant) {
             throw new Error("Failed to append queued input rejection");
@@ -1043,6 +1068,152 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     },
   );
 
+  const commitCapturedRun$ = command(
+    async (
+      { set },
+      args: {
+        readonly claim: ThreadClaim;
+        readonly context: RunContext;
+        readonly preparedCommit: PreparedCommitPreparedLaunchArgs;
+        readonly timing: ClaimRunTiming;
+      },
+      signal: AbortSignal,
+    ): Promise<AtomicLaunchCommitCompletion["result"]> => {
+      const { claim, context, preparedCommit, timing } = args;
+      const { input } = context;
+      const { admissionTiming } = preparedCommit;
+      signal.throwIfAborted();
+      return await set(writeDb$).transaction(
+        async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
+          admissionTiming.transactionStarted();
+          await acquireOfficialWorkflowRunCatalogAdmissionLock(
+            tx,
+            input.context.officialWorkflowRun,
+          );
+          // Keep credit-plan acquisition ahead of workflow/automation locks.
+          if (
+            input.context.officialWorkflowRun &&
+            input.enforceBuiltInCredits
+          ) {
+            await loadOrgPlanCapabilities(tx, input.args.orgId, {
+              forUpdate: true,
+            });
+          }
+          admissionTiming.admissionStarted();
+          const admission = await validateClaimedRunAdmission(
+            tx,
+            claim,
+            context,
+            preparedCommit,
+            timing.run,
+          );
+          if (!("kind" in admission) || admission.kind !== "admitted") {
+            admissionTiming.callbackFinished();
+            return admission;
+          }
+          // Fence the lease before the run writes. Admission above already
+          // appended the input claim (locking the thread's event sequence
+          // row, which every enqueue takes first) and took the
+          // automation/plan locks that enqueue takes before its upsert.
+          const [fenced] = await tx
+            .update(queuedChatThreads)
+            .set({ claimId: null, claimExpiresAt: null })
+            .where(
+              and(
+                eq(queuedChatThreads.orgId, claim.orgId),
+                eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
+                eq(queuedChatThreads.claimId, claim.claimId),
+              ),
+            )
+            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+          if (!fenced) {
+            throw new Error(
+              "Chat thread claim was lost before the pending commit",
+            );
+          }
+          const pending = await persistClaimedRun(
+            tx,
+            context,
+            preparedCommit,
+            admission,
+            timing.run,
+          );
+          if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
+            const startedAt = now();
+            const activation = {
+              orgId: input.args.orgId,
+              runId: pending.run.id,
+              runCreatedAt: pending.run.createdAt,
+              refresh: context.allowanceRefresh,
+            };
+            const [owned] = await tx
+              .select()
+              .from(entitlementQuery(activation.orgId));
+            signal.throwIfAborted();
+            const planned = planRunAllowanceActivation(
+              owned,
+              activation,
+              nowDate(),
+            );
+            let entitlement = planned.entitlement;
+            if (planned.update && owned) {
+              const [published] = await tx
+                .update(orgUsageAllowanceEntitlements)
+                .set(planned.update)
+                .where(unchangedRunAllowanceEntitlement(owned))
+                .returning(runAllowanceSnapshotSelection);
+              signal.throwIfAborted();
+              if (!published) {
+                throw new Error(
+                  "Run allowance changed during refresh publication",
+                );
+              }
+              if (entitlement) {
+                entitlement = {
+                  ...entitlement,
+                  snapshot: published.snapshot,
+                };
+              }
+            }
+            if (entitlement) {
+              await tx.execute(
+                runAllowanceWindowInsertSql(activation, entitlement),
+              );
+              signal.throwIfAborted();
+              const windows = await tx
+                .select()
+                .from(
+                  runAllowanceWindowsQuery(
+                    activation.orgId,
+                    activation.runCreatedAt,
+                    entitlement,
+                  ),
+                );
+              signal.throwIfAborted();
+              requireRunAllowanceWindowPair(windows);
+            }
+            timing.run.recordElapsed(
+              "api_dispatch_activate_usage_allowance_windows",
+              "nested",
+              startedAt,
+            );
+          }
+          // This unique insert is deliberately the final SQL statement.
+          // A concurrent active run rolls the entire pending commit back.
+          await tx.insert(activeAgentRuns).values({
+            runId: pending.run.id,
+            orgId: input.args.orgId,
+            userId: input.args.userId,
+            chatThreadId: claim.chatThreadId,
+            lastHeartbeatAt: pending.run.createdAt,
+          });
+          admissionTiming.callbackFinished();
+          return pending;
+        },
+      );
+    },
+  );
+
   const createRun$ = command(
     async (
       { set },
@@ -1066,7 +1237,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       ) {
         throw new Error("Prepared run does not belong to this thread claim");
       }
-      const database = set(writeDb$);
       const commit: CommitPreparedLaunchArgs = {
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
@@ -1094,147 +1264,10 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         "api_dispatch_insert_run_with_concurrency",
         "top_level",
         async () => {
-          const result = await database.transaction(
-            async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
-              admissionTiming.transactionStarted();
-              await acquireOfficialWorkflowRunCatalogAdmissionLock(
-                tx,
-                input.context.officialWorkflowRun,
-              );
-              // Keep credit-plan acquisition ahead of workflow/automation locks.
-              if (
-                input.context.officialWorkflowRun &&
-                input.enforceBuiltInCredits
-              ) {
-                await loadOrgPlanCapabilities(tx, input.args.orgId, {
-                  forUpdate: true,
-                });
-              }
-              admissionTiming.admissionStarted();
-              const admission = await validateClaimedRunAdmission(
-                tx,
-                claim,
-                context,
-                preparedCommit,
-                timing.run,
-              );
-              if (!("kind" in admission) || admission.kind !== "admitted") {
-                admissionTiming.callbackFinished();
-                return admission;
-              }
-              // Fence the lease before the run writes. Admission above already
-              // appended the input claim (locking the thread's event sequence
-              // row, which every enqueue takes first) and took the
-              // automation/plan locks that enqueue takes before its upsert.
-              const [fenced] = await tx
-                .update(queuedChatThreads)
-                .set({ claimId: null, claimExpiresAt: null })
-                .where(
-                  and(
-                    eq(queuedChatThreads.orgId, claim.orgId),
-                    eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
-                    eq(queuedChatThreads.claimId, claim.claimId),
-                  ),
-                )
-                .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-              if (!fenced) {
-                throw new Error(
-                  "Chat thread claim was lost before the pending commit",
-                );
-              }
-              const pending = await persistClaimedRun(
-                tx,
-                context,
-                preparedCommit,
-                admission,
-                timing.run,
-              );
-              if (
-                isBuiltInModelProviderType(input.context.modelProvider?.type)
-              ) {
-                const startedAt = now();
-                const activation = {
-                  orgId: input.args.orgId,
-                  runId: pending.run.id,
-                  runCreatedAt: pending.run.createdAt,
-                  refresh: context.allowanceRefresh,
-                };
-                const [owned] = await tx
-                  .select()
-                  .from(entitlementQuery(activation.orgId));
-                signal.throwIfAborted();
-                const planned = planRunAllowanceActivation(
-                  owned,
-                  activation,
-                  nowDate(),
-                );
-                let entitlement = planned.entitlement;
-                if (planned.update && owned) {
-                  const [published] = await tx
-                    .update(orgUsageAllowanceEntitlements)
-                    .set(planned.update)
-                    .where(unchangedRunAllowanceEntitlement(owned))
-                    .returning({
-                      snapshot:
-                        sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
-                          pgTextDecoder,
-                        ),
-                    });
-                  signal.throwIfAborted();
-                  if (!published) {
-                    throw new Error(
-                      "Run allowance changed during refresh publication",
-                    );
-                  }
-                  if (entitlement) {
-                    entitlement = {
-                      ...entitlement,
-                      snapshot: published.snapshot,
-                    };
-                  }
-                }
-                if (entitlement) {
-                  await tx.execute(
-                    runAllowanceWindowInsertSql(activation, entitlement),
-                  );
-                  signal.throwIfAborted();
-                  const windows = await tx
-                    .select()
-                    .from(
-                      runAllowanceWindowsQuery(
-                        activation.orgId,
-                        activation.runCreatedAt,
-                        entitlement,
-                      ),
-                    );
-                  signal.throwIfAborted();
-                  if (
-                    !windows.some((window) => window.kind === "short") ||
-                    !windows.some((window) => window.kind === "weekly")
-                  ) {
-                    throw new Error(
-                      "Run allowance changed during window publication",
-                    );
-                  }
-                }
-                timing.run.recordElapsed(
-                  "api_dispatch_activate_usage_allowance_windows",
-                  "nested",
-                  startedAt,
-                );
-              }
-              // This unique insert is deliberately the final SQL statement.
-              // A concurrent active run rolls the entire pending commit back.
-              await tx.insert(activeAgentRuns).values({
-                runId: pending.run.id,
-                orgId: input.args.orgId,
-                userId: input.args.userId,
-                chatThreadId: claim.chatThreadId,
-                lastHeartbeatAt: pending.run.createdAt,
-              });
-              admissionTiming.callbackFinished();
-              return pending;
-            },
+          const result = await set(
+            commitCapturedRun$,
+            { claim, context, preparedCommit, timing },
+            signal,
           );
           const transactionReturnedAt = now();
           await admissionTiming.finish(admissionAttemptOutcome(result));
@@ -1347,12 +1380,17 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       if (!claim) {
         return { kind: "none" };
       }
-      const claimed = createClaimRunObjects({
-        orgId: claim.orgId,
-        chatThreadId: claim.chatThreadId,
-        claimId: claim.claimId,
-        pickStartedAt: claim.pickStartedAt,
-      });
+      const claimed = await get(
+        computed(() => {
+          return createClaimRunObjects({
+            orgId: claim.orgId,
+            chatThreadId: claim.chatThreadId,
+            claimId: claim.claimId,
+            pickStartedAt: claim.pickStartedAt,
+          });
+        }),
+      );
+      signal.throwIfAborted();
       const [hasCapacity, event] = await Promise.all([
         get(orgHasCapacity$),
         get(claimed.pickedEvent$),

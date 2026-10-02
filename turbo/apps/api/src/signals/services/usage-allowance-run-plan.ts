@@ -11,6 +11,26 @@ import {
   type AllowanceEntitlement,
 } from "./usage-allowance-settlement-plan";
 import type { PreparedUsageAllowanceRefresh } from "./usage-allowance.service";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+
+export const runAllowanceSnapshotSelection = {
+  snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(pgTextDecoder),
+};
+
+export function requireRunAllowanceWindowPair(
+  windows: readonly { readonly kind: string }[],
+) {
+  if (
+    !windows.some((window) => {
+      return window.kind === "short";
+    }) ||
+    !windows.some((window) => {
+      return window.kind === "weekly";
+    })
+  ) {
+    throw new Error("Run allowance changed during window publication");
+  }
+}
 
 /** Pure builders for SQL owned by admission and Run-availability commands. */
 export function runAllowanceWindowsQuery(

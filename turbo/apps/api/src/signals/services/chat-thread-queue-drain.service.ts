@@ -5,7 +5,7 @@ import {
   chatEventRunlessInputPredicate,
 } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   count,
@@ -17,102 +17,20 @@ import {
   notExists,
   or,
 } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
-import { safeSync, settle, tapError } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
 } from "./chat-input-enqueue-observation";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import { createPickObjects } from "./pick-chat-run.service";
-import {
-  listQueuedChatThreadOrgIds$,
-  queuedChatThreadEnqueuePlan,
-} from "./queued-chat-thread.service";
+import { listQueuedChatThreadOrgIds$ } from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
-
-export type EnqueueChatInputStep = "transaction" | "callback" | "queue_upsert";
-
-export interface EnqueueChatInput {
-  readonly chatThreadId: string;
-  readonly orgId: string;
-  /**
-   * Write the run-less `input.prompt` / `input.automation` event (and, for a
-   * new thread, its minimal `chat_threads` row) in the enqueue transaction.
-   * Returns the event id, or null when an idempotent retry appended nothing.
-   * Entry-specific context rows are written by the entry in this transaction.
-   */
-  readonly appendInput: (tx: Tx) => Promise<string | null>;
-  /** The producer's own write that commits with the input, when it has one. */
-  readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
-  /** Captures a local receipt; observation failure cannot change a committed input. */
-  readonly onCommitted?: (receipt: ChatInputEnqueueCommit) => void;
-  /** Optional, fail-open observation for the workflow producer; no other ingress opts in. */
-  readonly measureStep?: <T>(
-    step: EnqueueChatInputStep,
-    operation: () => Promise<T>,
-  ) => Promise<T>;
-}
-
-async function measureEnqueueStep<T>(
-  input: EnqueueChatInput,
-  step: EnqueueChatInputStep,
-  operation: () => Promise<T>,
-): Promise<T> {
-  return input.measureStep
-    ? await input.measureStep(step, operation)
-    : await operation();
-}
-
-/**
- * The single enqueue for every chat input: web, CLI and MCP sends,
- * integrations, and every workflow trigger. One transaction appends the
- * run-less input and upserts the thread's `queued_chat_threads` row, advancing
- * its `queuedAt` without touching a live lease; a lease holder whose
- * empty-queue delete misses that change releases and schedules one new pick.
- * The entry captures the input's model at enqueue; the pick resolves that
- * decision's route and performs credit admission. Enqueue adds no explicit
- * row lock.
- */
-export async function enqueueChatInput(
-  db: Db,
-  input: EnqueueChatInput,
-): Promise<string | null> {
-  return await measureEnqueueStep(input, "transaction", async () => {
-    const eventId = await db.transaction(async (tx) => {
-      return await measureEnqueueStep(input, "callback", async () => {
-        const eventId = await input.appendInput(tx);
-        if (eventId === null) {
-          return null;
-        }
-        await input.persistSourceTransition?.(tx, eventId);
-        await measureEnqueueStep(input, "queue_upsert", async () => {
-          const plan = queuedChatThreadEnqueuePlan({
-            chatThreadId: input.chatThreadId,
-            orgId: input.orgId,
-          });
-          await tx
-            .insert(queuedChatThreads)
-            .values(plan.values)
-            .onConflictDoUpdate(plan.conflict);
-        });
-        return eventId;
-      });
-    });
-    const committedAt = now();
-    if (eventId !== null) {
-      safeSync(() => {
-        input.onCommitted?.({ eventId, committedAt });
-      });
-    }
-    return eventId;
-  });
-}
 
 /**
  * Tell the thread's running run, if any, that it has a pending input to
@@ -267,7 +185,7 @@ export const enqueuedChatQueueWaitReason$ = command(
 /** Pick once. The entry owns background scheduling and all post-pick work. */
 export const pickEnqueuedChatThread$ = command(
   async (
-    { set },
+    { get, set },
     input: {
       readonly orgId: string;
       readonly chatThreadId: string;
@@ -281,7 +199,12 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
+    const { pick$ } = await get(
+      computed(() => {
+        return createPickObjects(input.orgId, input.chatThreadId);
+      }),
+    );
+    signal.throwIfAborted();
     return await set(pick$, signal);
   },
 );
@@ -300,7 +223,7 @@ const PICK_PAGE_SIZE = 100;
  */
 export const pickOrgQueuedChatThreads$ = command(
   async (
-    { set },
+    { get, set },
     input: { readonly orgId: string },
     signal: AbortSignal,
   ): Promise<number> => {
@@ -332,7 +255,12 @@ export const pickOrgQueuedChatThreads$ = command(
     if (!snapshot) {
       throw new Error("Queued chat thread count returned no row");
     }
-    const { pick$ } = createPickObjects(input.orgId);
+    const { pick$ } = await get(
+      computed(() => {
+        return createPickObjects(input.orgId);
+      }),
+    );
+    signal.throwIfAborted();
     let launched = 0;
     for (let visited = 0; visited < snapshot.count; visited++) {
       const picked = await set(pick$, signal);

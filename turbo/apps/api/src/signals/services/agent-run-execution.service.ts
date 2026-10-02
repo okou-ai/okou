@@ -1,6 +1,8 @@
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
 import {
+  runAllowanceSnapshotSelection,
+  requireRunAllowanceWindowPair,
   planRunAllowanceActivation,
   runAllowanceWindowInsertSql,
   runAllowanceWindowsQuery,
@@ -11473,11 +11475,7 @@ const persistPreparedLaunch$ = command(
               .update(orgUsageAllowanceEntitlements)
               .set(planned.update)
               .where(unchangedRunAllowanceEntitlement(owned))
-              .returning({
-                snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
-                  pgTextDecoder,
-                ),
-              });
+              .returning(runAllowanceSnapshotSelection);
             signal.throwIfAborted();
             if (!published) {
               throw new Error(
@@ -11503,14 +11501,7 @@ const persistPreparedLaunch$ = command(
                 ),
               );
             signal.throwIfAborted();
-            if (
-              !windows.some((window) => window.kind === "short") ||
-              !windows.some((window) => window.kind === "weekly")
-            ) {
-              throw new Error(
-                "Run allowance changed during window publication",
-              );
-            }
+            requireRunAllowanceWindowPair(windows);
           }
           timing.recordElapsed(
             "api_dispatch_activate_usage_allowance_windows",

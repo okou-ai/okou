@@ -1,5 +1,6 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   zodDriverValueDecoder,
@@ -239,7 +240,10 @@ import {
   chatEventTypeIn,
   runOwnedChatEventCondition,
 } from "./chat-event-type.service";
-import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
+import {
+  chatEventReplacementInsertSql,
+  chatEventInsertSql,
+} from "./chat-event.service";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
   ChatQueueHeadRejection,
@@ -2611,25 +2615,40 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         const rejectedAt = new Date(
           Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
         );
-        const rejected = await replaceChatEvent(tx, args.eventId, {
-          chatThreadId: args.chatThreadId,
-          eventType: "input.rejected",
-          userMessage,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: rejectedAt,
-        });
+        const rejected =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              chatEventReplacementInsertSql(
+                { ...head, modelSelection: head.canonicalModelSelection },
+                {
+                  chatThreadId: args.chatThreadId,
+                  eventType: "input.rejected",
+                  userMessage,
+                  runId: null,
+                  error: args.errorMarker,
+                  createdAt: rejectedAt,
+                },
+              ),
+            ),
+          )[0] ?? null;
         if (!rejected) {
           return null;
         }
-        const assistant = await insertChatEvent(tx, {
-          chatThreadId: args.chatThreadId,
-          eventType: "output.error",
-          content: args.displayError,
-          runId: null,
-          error: args.errorMarker,
-          createdAt: new Date(rejectedAt.getTime() + 1),
-        });
+        const assistant =
+          parseRawRows(
+            chatEventCommandResultSchema,
+            await tx.execute(
+              chatEventInsertSql({
+                chatThreadId: args.chatThreadId,
+                eventType: "output.error",
+                content: args.displayError,
+                runId: null,
+                error: args.errorMarker,
+                createdAt: new Date(rejectedAt.getTime() + 1),
+              }),
+            ),
+          )[0] ?? null;
         if (!assistant) {
           throw new Error("Failed to append queued input rejection");
         }
