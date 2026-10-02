@@ -18,16 +18,12 @@ import { create } from "tar";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { preparePiResourceIndex } from "../../lib/pi-resource-index";
-import {
-  enqueuePiResourceVersionIndexes,
-  publishPiResourceVersionIndex,
-} from "./pi-resource-version-index.service";
+
 import { writeDb$, type Db } from "../external/db";
 import { putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
-  registerPreparedStorageVersions,
   storageVersionMatches,
   StorageVersionIdentityConflictError,
   type PreparedStorageVersion,
@@ -419,45 +415,3 @@ export const prepareVolumeServerSide$ = command(
     );
   },
 );
-
-export async function commitPreparedVolumeServerSide(
-  args: {
-    readonly db: Db;
-    readonly volume: PreparedServerSideVolume;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await registerPreparedStorageVersions(
-    { db: args.db, versions: [args.volume.version] },
-    signal,
-  );
-  await args.db
-    .update(storages)
-    .set({
-      headVersionId: args.volume.version.versionId,
-      size: args.volume.version.size,
-      fileCount: args.volume.version.fileCount,
-      updatedAt: args.volume.updatedAt,
-    })
-    .where(eq(storages.id, args.volume.version.storageId));
-  signal.throwIfAborted();
-  // Keep Storage-before-index lock ordering across all publication paths. Both
-  // references become visible together when the caller commits its transaction.
-  if (args.volume.piResourceIndex) {
-    await publishPiResourceVersionIndex(
-      {
-        db: args.db,
-        versionId: args.volume.version.versionId,
-        projection: args.volume.piResourceIndex.projection,
-        archiveSize: args.volume.version.archiveSize,
-      },
-      signal,
-    );
-  } else {
-    await enqueuePiResourceVersionIndexes(
-      args.db,
-      [args.volume.version.versionId],
-      signal,
-    );
-  }
-}
