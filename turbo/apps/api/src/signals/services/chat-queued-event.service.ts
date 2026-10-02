@@ -17,6 +17,7 @@ export type QueuedUserMessageTriggerSource =
   | "slack"
   | "discord"
   | "feishu"
+  | "lark"
   | "teams"
   | "telegram"
   | "agentphone"

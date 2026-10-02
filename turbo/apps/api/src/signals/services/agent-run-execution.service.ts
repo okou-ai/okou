@@ -8386,56 +8386,6 @@ export interface RunAgentObservation {
   readonly agentOwner: string;
 }
 
-function createRunAgentObservationObject(
-  input$: RunContextInputObject,
-  options$: AsyncRead<ReturnType<typeof agentRunResolutionOptions>>,
-) {
-  return computed(async (get): Promise<RunAgentObservation | undefined> => {
-    const input = await get(input$);
-    const options = await get(options$);
-    const body = initialRunBody(input.args);
-    if (
-      options.testOnlyResolveDirectRun ||
-      body.sessionId ||
-      options.productAgentExecutionPlan?.identity === "no-agent" ||
-      !body.agentId
-    ) {
-      return undefined;
-    }
-    const agentId = body.agentId;
-    const preloaded = options.preloadedAgentExecutionObservation;
-    if (
-      preloaded &&
-      preloaded.requestUserId === input.args.userId &&
-      preloaded.requestOrgId === input.args.orgId &&
-      preloaded.agentId === agentId &&
-      preloaded.agentOrgId === input.args.orgId
-    ) {
-      return {
-        agentId,
-        agentOrgId: preloaded.agentOrgId,
-        agentOwner: preloaded.ownerUserId,
-      };
-    }
-    const [row] = await input.timing.measure(
-      "api_dispatch_resolve_agent_execution_lookup_agent",
-      "nested",
-      async () => {
-        return await input.db
-          .select({
-            agentId: agents.id,
-            agentOrgId: agents.orgId,
-            agentOwner: agents.owner,
-          })
-          .from(agents)
-          .where(eq(agents.id, agentId))
-          .limit(1);
-      },
-    );
-    return row;
-  });
-}
-
 function resolveAgentObservation(
   row: RunAgentObservation | undefined,
   options: ProductResolutionOptions,
@@ -8508,92 +8458,6 @@ function resolvedSessionStorage(session: {
   };
 }
 
-function createRunSessionSnapshotObject(
-  input$: RunContextInputObject,
-  options$: AsyncRead<ReturnType<typeof agentRunResolutionOptions>>,
-) {
-  return computed(
-    async (get): Promise<ChatThreadExecutionSnapshot | undefined> => {
-      const input = await get(input$);
-      const options = await get(options$);
-      const agentSessionId = initialRunBody(input.args).sessionId;
-      if (
-        options.testOnlyResolveDirectRun ||
-        !agentSessionId ||
-        options.productAgentExecutionPlan?.identity === "no-agent"
-      ) {
-        return undefined;
-      }
-      if (options.sessionSnapshot) {
-        return options.sessionSnapshot;
-      }
-      const {
-        db,
-        args: { userId, orgId },
-      } = input;
-      const [snapshot] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-        "nested",
-        async () => {
-          return await db
-            .select({
-              session: {
-                id: agentSessions.id,
-                agentId: agentSessions.agentId,
-                conversationId: agentSessions.conversationId,
-                storageMounts: agentSessions.storageMounts,
-              },
-              agent: {
-                id: agents.id,
-                orgId: agents.orgId,
-                owner: agents.owner,
-              },
-              conversation: {
-                id: conversations.id,
-                runId: conversations.runId,
-                cliAgentType: conversations.cliAgentType,
-                cliAgentSessionId: conversations.cliAgentSessionId,
-                cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-                cliAgentSessionHistoryHash:
-                  conversations.cliAgentSessionHistoryHash,
-              },
-              historyBlob: {
-                hash: blobs.hash,
-                encoding: blobs.encoding,
-              },
-              previousRun: {
-                id: agentRuns.id,
-                vars: agentRuns.vars,
-                storageMounts: agentRuns.storageMounts,
-                selectedModel: agentRuns.selectedModel,
-              },
-            })
-            .from(agentSessions)
-            .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-            .leftJoin(
-              conversations,
-              eq(agentSessions.conversationId, conversations.id),
-            )
-            .leftJoin(
-              blobs,
-              eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
-            )
-            .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-            .where(
-              and(
-                eq(agentSessions.id, agentSessionId),
-                eq(agentSessions.userId, userId),
-                eq(agentSessions.orgId, orgId),
-              ),
-            )
-            .limit(1);
-        },
-      );
-      return snapshot;
-    },
-  );
-}
-
 async function resolveSessionExecution(
   snapshot: ChatThreadExecutionSnapshot | undefined,
   options: ProductResolutionOptions,
@@ -8654,47 +8518,20 @@ function requireResolvedAgentIdMatch(
   return resolved;
 }
 
-export async function resolveAgentExecution(
-  db: ReadonlyDb,
+async function resolveCapturedAgentExecution(
   body: CreateRunBody,
   userId: string,
   orgId: string,
-  options: ResolveAgentExecutionOptions,
+  options: Pick<
+    ResolveAgentExecutionOptions,
+    | "productAgentExecutionPlan"
+    | "preloadedAgentExecutionObservation"
+    | "resetNativeSession"
+    | "agentObservation"
+    | "sessionSnapshot"
+    | "timing"
+  >,
 ): Promise<ResolvedRunExecution | CreateRunErrorResult> {
-  const testOnlyResolver = options.testOnlyResolveDirectRun;
-  if (testOnlyResolver) {
-    if (!body.sessionId && !body.agentId) {
-      return badRequestMessage("Missing agentId or sessionId");
-    }
-    const resolved = await measureApiDispatchTiming(
-      options.timing,
-      body.sessionId
-        ? "api_dispatch_resolve_agent_execution_by_session_id"
-        : "api_dispatch_resolve_agent_execution_by_agent_id",
-      "nested",
-      async () => {
-        return await testOnlyResolver({
-          db,
-          body,
-          userId,
-          orgId,
-          timing: options.timing,
-        });
-      },
-    );
-    if (!isRouteError(resolved) && options.resetNativeSession) {
-      return {
-        ...resolved,
-        agentId: body.agentId ?? resolved.agentId,
-        resumeSession: undefined,
-        resumeSessionIdentity: undefined,
-        previousRunStorageMounts: undefined,
-        vars: undefined,
-      };
-    }
-    return requireResolvedAgentIdMatch(resolved, body.agentId);
-  }
-
   const productAgentExecutionPlan = options.productAgentExecutionPlan;
   if (productAgentExecutionPlan === undefined) {
     throw new Error(
@@ -8765,6 +8602,50 @@ export async function resolveAgentExecution(
       });
     },
   );
+}
+
+export async function resolveAgentExecution(
+  db: ReadonlyDb,
+  body: CreateRunBody,
+  userId: string,
+  orgId: string,
+  options: ResolveAgentExecutionOptions,
+): Promise<ResolvedRunExecution | CreateRunErrorResult> {
+  const testOnlyResolver = options.testOnlyResolveDirectRun;
+  if (testOnlyResolver) {
+    if (!body.sessionId && !body.agentId) {
+      return badRequestMessage("Missing agentId or sessionId");
+    }
+    const resolved = await measureApiDispatchTiming(
+      options.timing,
+      body.sessionId
+        ? "api_dispatch_resolve_agent_execution_by_session_id"
+        : "api_dispatch_resolve_agent_execution_by_agent_id",
+      "nested",
+      async () => {
+        return await testOnlyResolver({
+          db,
+          body,
+          userId,
+          orgId,
+          timing: options.timing,
+        });
+      },
+    );
+    if (!isRouteError(resolved) && options.resetNativeSession) {
+      return {
+        ...resolved,
+        agentId: body.agentId ?? resolved.agentId,
+        resumeSession: undefined,
+        resumeSessionIdentity: undefined,
+        previousRunStorageMounts: undefined,
+        vars: undefined,
+      };
+    }
+    return requireResolvedAgentIdMatch(resolved, body.agentId);
+  }
+
+  return await resolveCapturedAgentExecution(body, userId, orgId, options);
 }
 
 export function enforceCaptureNetworkBodiesGate(
@@ -12283,16 +12164,30 @@ function resolveCompatibleDirectResumeSession(args: {
 }
 
 /** Construct the complete read graph once; each input invalidates its own snapshot. */
-function createRunIdentityObjects(
-  input$: RunContextInputObject,
-  shared?: SelectedRunReadObjects,
-) {
-  const featureSwitchContext$ =
-    shared?.featureSwitchContext$ ??
-    computed(async (get) => {
-      const input = await get(input$);
-      const { orgId, userId } = input.args;
-      const rows = await input.db
+interface CapturedRunIdentityFacts {
+  readonly body: CreateRunBody;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly timing: ApiDispatchTimingCollector;
+  readonly productPlan: ResolveAgentExecutionOptions["productAgentExecutionPlan"];
+  readonly preloadedAgent: ResolveAgentExecutionOptions["preloadedAgentExecutionObservation"];
+  readonly sessionSnapshot: ResolveAgentExecutionOptions["sessionSnapshot"];
+  readonly resetNativeSession: boolean | undefined;
+  readonly featureSnapshot: FeatureSwitchContext | undefined;
+  readonly legacyExecution:
+    | ResolvedRunExecution
+    | CreateRunErrorResult
+    | undefined;
+}
+class RunIdentityReadOwner {
+  constructor(private readonly facts: CapturedRunIdentityFacts) {}
+  readonly featureSwitchContext$ = computed(
+    async (get): Promise<FeatureSwitchContext> => {
+      if (this.facts.featureSnapshot) {
+        return this.facts.featureSnapshot;
+      }
+      const { orgId, userId } = this.facts;
+      const rows = await get(db$)
         .select({
           userId: userFeatureSwitches.userId,
           switches: userFeatureSwitches.switches,
@@ -12309,48 +12204,175 @@ function createRunIdentityObjects(
         userId,
         overrides: userFeatureSwitchOverridesFromRows(rows, userId),
       };
-    });
-  const resolutionOptions$ = computed(async (get) => {
-    return agentRunResolutionOptions((await get(input$)).args);
-  });
-  const agentObservation$ = createRunAgentObservationObject(
-    input$,
-    resolutionOptions$,
+    },
   );
-  const sessionSnapshot$ = createRunSessionSnapshotObject(
-    input$,
-    resolutionOptions$,
+  private readonly agentObservation$ = this.createAgentObservation();
+  private readonly sessionSnapshot$ = this.createSessionSnapshot();
+  readonly execution$ = computed(
+    async (get): Promise<ResolvedRunExecution | CreateRunErrorResult> => {
+      if (this.facts.legacyExecution) {
+        return this.facts.legacyExecution;
+      }
+      const [agentObservation, sessionSnapshot] = await Promise.all([
+        get(this.agentObservation$),
+        get(this.sessionSnapshot$),
+      ]);
+      return await resolveCapturedAgentExecution(
+        this.facts.body,
+        this.facts.userId,
+        this.facts.orgId,
+        {
+          productAgentExecutionPlan: this.facts.productPlan,
+          preloadedAgentExecutionObservation: this.facts.preloadedAgent,
+          resetNativeSession: this.facts.resetNativeSession,
+          agentObservation,
+          sessionSnapshot,
+          timing: this.facts.timing,
+        },
+      );
+    },
   );
-  const execution$ = computed(async (get) => {
-    const input = await get(input$);
-    const [agentObservation, sessionSnapshot] = await Promise.all([
-      get(agentObservation$),
-      get(sessionSnapshot$),
-    ]);
-    return await resolveAgentExecution(
-      input.db,
-      initialRunBody(input.args),
-      input.args.userId,
-      input.args.orgId,
-      {
-        ...(await get(resolutionOptions$)),
-        agentObservation,
-        sessionSnapshot,
-        timing: input.timing,
-      },
-    );
-  });
-  const content$ = computed(async (get) => {
-    const plan = (await get(resolutionOptions$)).productAgentExecutionPlan;
-    if (plan) {
-      return plan.content;
+  readonly content$ = computed(async (get) => {
+    if (this.facts.productPlan) {
+      return this.facts.productPlan.content;
     }
-    // Direct-compose fixtures own their resolver; production execution plans
-    // already carry content and do not wait for a session snapshot here.
-    const execution = await get(execution$);
+    const execution = await get(this.execution$);
     return isRouteError(execution) ? execution : execution.content;
   });
-  return { featureSwitchContext$, execution$, content$ };
+  private createAgentObservation() {
+    return computed(async (get): Promise<RunAgentObservation | undefined> => {
+      const {
+        body,
+        userId,
+        orgId,
+        timing,
+        preloadedAgent: preloaded,
+      } = this.facts;
+      if (
+        this.facts.legacyExecution ||
+        body.sessionId ||
+        this.facts.productPlan?.identity === "no-agent" ||
+        !body.agentId
+      ) {
+        return undefined;
+      }
+      const agentId = body.agentId;
+      if (
+        preloaded &&
+        preloaded.requestUserId === userId &&
+        preloaded.requestOrgId === orgId &&
+        preloaded.agentId === agentId &&
+        preloaded.agentOrgId === orgId
+      ) {
+        return {
+          agentId,
+          agentOrgId: preloaded.agentOrgId,
+          agentOwner: preloaded.ownerUserId,
+        };
+      }
+      const [row] = await timing.measure(
+        "api_dispatch_resolve_agent_execution_lookup_agent",
+        "nested",
+        async () => {
+          return await get(db$)
+            .select({
+              agentId: agents.id,
+              agentOrgId: agents.orgId,
+              agentOwner: agents.owner,
+            })
+            .from(agents)
+            .where(eq(agents.id, agentId))
+            .limit(1);
+        },
+      );
+      return row;
+    });
+  }
+  private createSessionSnapshot() {
+    return computed(
+      async (get): Promise<ChatThreadExecutionSnapshot | undefined> => {
+        const { body, userId, orgId, timing, sessionSnapshot } = this.facts;
+        const agentSessionId = body.sessionId;
+        if (
+          this.facts.legacyExecution ||
+          !agentSessionId ||
+          this.facts.productPlan?.identity === "no-agent"
+        ) {
+          return undefined;
+        }
+        if (sessionSnapshot) {
+          return sessionSnapshot;
+        }
+        const [snapshot] = await timing.measure(
+          "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
+          "nested",
+          async () => {
+            return await get(db$)
+              .select({
+                session: {
+                  id: agentSessions.id,
+                  agentId: agentSessions.agentId,
+                  conversationId: agentSessions.conversationId,
+                  storageMounts: agentSessions.storageMounts,
+                },
+                agent: {
+                  id: agents.id,
+                  orgId: agents.orgId,
+                  owner: agents.owner,
+                },
+                conversation: {
+                  id: conversations.id,
+                  runId: conversations.runId,
+                  cliAgentType: conversations.cliAgentType,
+                  cliAgentSessionId: conversations.cliAgentSessionId,
+                  cliAgentSessionHistory: conversations.cliAgentSessionHistory,
+                  cliAgentSessionHistoryHash:
+                    conversations.cliAgentSessionHistoryHash,
+                },
+                historyBlob: {
+                  hash: blobs.hash,
+                  encoding: blobs.encoding,
+                },
+                previousRun: {
+                  id: agentRuns.id,
+                  vars: agentRuns.vars,
+                  storageMounts: agentRuns.storageMounts,
+                  selectedModel: agentRuns.selectedModel,
+                },
+              })
+              .from(agentSessions)
+              .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+              .leftJoin(
+                conversations,
+                eq(agentSessions.conversationId, conversations.id),
+              )
+              .leftJoin(
+                blobs,
+                eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
+              )
+              .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
+              .where(
+                and(
+                  eq(agentSessions.id, agentSessionId),
+                  eq(agentSessions.userId, userId),
+                  eq(agentSessions.orgId, orgId),
+                ),
+              )
+              .limit(1);
+          },
+        );
+        return snapshot;
+      },
+    );
+  }
+}
+function createRunIdentityObjects(facts: CapturedRunIdentityFacts) {
+  const owner = new RunIdentityReadOwner(facts);
+  return {
+    featureSwitchContext$: owner.featureSwitchContext$,
+    execution$: owner.execution$,
+    content$: owner.content$,
+  };
 }
 
 function createRunBodyObjects(
@@ -15174,7 +15196,46 @@ function createRunContextObjects(
   input$: RunContextInputObject,
   shared?: SelectedRunReadObjects,
 ) {
-  const identity = createRunIdentityObjects(input$, shared);
+  const identityOwner$ = computed(async (get) => {
+    const input = await get(input$);
+    const body = initialRunBody(input.args);
+    const options = agentRunResolutionOptions(input.args);
+    const legacyExecution = options.testOnlyResolveDirectRun
+      ? await resolveAgentExecution(
+          get(db$),
+          body,
+          input.args.userId,
+          input.args.orgId,
+          { ...options, timing: input.timing },
+        )
+      : undefined;
+    const featureSnapshot = shared
+      ? await get(shared.featureSwitchContext$)
+      : undefined;
+    return createRunIdentityObjects({
+      body,
+      userId: input.args.userId,
+      orgId: input.args.orgId,
+      timing: input.timing,
+      productPlan: options.productAgentExecutionPlan,
+      preloadedAgent: options.preloadedAgentExecutionObservation,
+      sessionSnapshot: options.sessionSnapshot,
+      resetNativeSession: options.resetNativeSession,
+      legacyExecution,
+      featureSnapshot,
+    });
+  });
+  const identity = {
+    featureSwitchContext$: computed(async (get) => {
+      return await get((await get(identityOwner$)).featureSwitchContext$);
+    }),
+    execution$: computed(async (get) => {
+      return await get((await get(identityOwner$)).execution$);
+    }),
+    content$: computed(async (get) => {
+      return await get((await get(identityOwner$)).content$);
+    }),
+  };
   const body = createRunBodyObjects(input$, identity, shared);
   const model = shared ?? createRunModelObject(input$, body, identity);
   const selection =
