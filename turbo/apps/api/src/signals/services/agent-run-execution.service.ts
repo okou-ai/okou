@@ -26,7 +26,7 @@ import {
   OfficialWorkflowRunAdmissionError,
 } from "./official-workflow-run.service";
 import { now, nowDate } from "../../lib/time";
-import { db$, type Db, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, type Db, writeDb$ } from "../external/db";
 import {
   measureApiDispatchTiming,
   ApiDispatchTimingCollector,
@@ -5174,12 +5174,16 @@ function providerUpstreamModel(
   );
 }
 
-function createRunFrameworkObject(
-  input$: RunModelProviderInputObject,
-  content$: ReturnType<typeof createRunIdentityObjects>["content$"],
-) {
-  return computed(async (get) => {
-    const [input, content] = await Promise.all([get(input$), get(content$)]);
+class RunFrameworkReadOwner {
+  constructor(
+    private readonly input: RunModelProviderReadInput | CreateRunErrorResult,
+    private readonly content:
+      | agentRunCreateAgentExecutionConfig
+      | CreateRunErrorResult,
+  ) {}
+
+  readonly framework$ = computed(async (get) => {
+    const { input, content } = this;
     if (isRouteError(input)) {
       return input;
     }
@@ -5193,7 +5197,7 @@ function createRunFrameworkObject(
       return validation;
     }
     const composeFramework = validation.framework;
-    const db = input.db;
+    const db = get(db$);
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
@@ -12012,7 +12016,6 @@ function isImageRecognitionAvailableForRun(args: {
 }
 
 export interface PrepareRunContextInput {
-  readonly db: ReadonlyDb;
   readonly args: CreateAgentRunArgs;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -12315,7 +12318,11 @@ function createRunBodyObjects(
     });
   });
   const framework$ =
-    shared?.framework$ ?? createRunFrameworkObject(input$, content$);
+    shared?.framework$ ??
+    computed(async (get) => {
+      const [input, content] = await Promise.all([get(input$), get(content$)]);
+      return await get(new RunFrameworkReadOwner(input, content).framework$);
+    });
   const bodyContext$ = computed(
     async (get): Promise<PreparedRunBodyContext | CreateRunErrorResult> => {
       const input = await get(input$);
@@ -12652,7 +12659,6 @@ type RunModelProviderArgs = Pick<
 >;
 
 export interface RunModelProviderReadInput {
-  readonly db: ReadonlyDb;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: RunModelProviderArgs;
 }
@@ -13250,7 +13256,6 @@ type RunConnectorScopeObject = Computed<
 >;
 
 export interface RunConnectorReadInput {
-  readonly db: ReadonlyDb;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: Pick<
     CreateAgentRunArgs,
@@ -13311,8 +13316,8 @@ function createRunConnectorCatalogObjects(
     ].sort();
   });
   const catalogInput$ = computed(async (get) => {
-    const { db, timing } = await get(input$);
-    return { db, timing };
+    const { timing } = await get(input$);
+    return { db: get(db$), timing };
   });
   const requestedSlugs$ = computed(async (get) => {
     const [scope, metadataConnectorSlugs] = await Promise.all([
@@ -15770,7 +15775,6 @@ function createPrepareAgentRunCommand(
                 requestedModel,
             };
       const { timing } = input;
-      const db = set(writeDb$);
       if (input.checkOrgPlanStatusBeforeContext) {
         const tierGate = await timing.measure(
           "api_dispatch_check_org_tier",
@@ -15780,7 +15784,6 @@ function createPrepareAgentRunCommand(
               checkPlanStatus$,
               {
                 catalog: args.catalog,
-                db,
                 orgId: args.orgId,
                 userId: args.userId,
                 modelProviderType: args.modelProviderType,
@@ -15797,7 +15800,7 @@ function createPrepareAgentRunCommand(
         }
       }
 
-      const contextInput: PrepareRunContextInput = { db, args, timing };
+      const contextInput: PrepareRunContextInput = { args, timing };
       set(internalContextInput$, contextInput);
       const context = await timing.measure(
         "api_dispatch_prepare_run_context",
@@ -15870,7 +15873,6 @@ const completePreparedAgentRun$ = command(
             checkRunAdmission$,
             {
               catalog: args.catalog,
-              db,
               orgId: args.orgId,
               userId: args.userId,
               modelProviderType,
@@ -17670,7 +17672,6 @@ function createPreCreateModelObjects(
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        db: get(db$),
         timing: input.timing,
         args: {
           ...selectedRunModelProviderArgs(
@@ -17693,7 +17694,13 @@ function createPreCreateModelObjects(
   const featureSwitchContext$ = computed(async (get) => {
     return (await get(bootstrapMetadata$)).featureSwitchContext;
   });
-  const framework$ = createRunFrameworkObject(providerInput$, content$);
+  const framework$ = computed(async (get) => {
+    const [input, content] = await Promise.all([
+      get(providerInput$),
+      get(content$),
+    ]);
+    return await get(new RunFrameworkReadOwner(input, content).framework$);
+  });
   const { modelRoute$ } = createRunModelProviderObjects(
     providerInput$,
     { framework$ },
@@ -18082,9 +18089,7 @@ function createPreCreateConnectorObjects(
   const connectorInput$ = computed(
     async (get): Promise<RunConnectorReadInput> => {
       const { command, timing } = await get(input$);
-      const db = get(db$);
       return {
-        db,
         timing,
         args: {
           orgId: command.auth.orgId,
@@ -18789,7 +18794,6 @@ function createSelectedRunContextObjects(
           }
         : selected.args;
       return {
-        db: get(db$),
         args,
         timing: selected.input.timing,
       };

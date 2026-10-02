@@ -348,18 +348,24 @@ interface SharedThreadSnapshot {
   readonly plan: SharedThreadArtifactPlan | null;
 }
 
-// Actual write result, retained even when cancellation follows the SQL response.
-const insertedSharedThread$ = state<{ readonly id: string } | null>(null);
+// Successful SQL receipts remain owned by their publication attempt, including
+// cancellation after the response. Concurrent attempts never overwrite them.
+const insertedSharedThreads$ = state<
+  readonly {
+    readonly publicationId: string;
+    readonly id: string;
+  }[]
+>([]);
 
 const insertSharedThreadIdentity$ = command(
   async (
-    { get, set },
+    { set },
     args: CreateSharedThreadArgs,
-    snapshot: SharedThreadSnapshot,
+    snapshot: SharedThreadSnapshot & { readonly publicationId: string },
     initialTitle: string,
     signal: AbortSignal,
   ) => {
-    const { id, createdAt, messages, plan } = snapshot;
+    const { id, createdAt, messages, plan, publicationId } = snapshot;
     const database = set(writeDb$);
     const insertion = database
       .insert(sharedThreads)
@@ -376,9 +382,14 @@ const insertSharedThreadIdentity$ = command(
       })
       .returning({ id: sharedThreads.id });
     if (plan) {
-      set(insertedSharedThread$, (await insertion)[0] ?? null);
+      const inserted = (await insertion)[0];
+      if (inserted) {
+        set(insertedSharedThreads$, (previous) => {
+          return [...previous, { publicationId, id: inserted.id }];
+        });
+      }
       signal.throwIfAborted();
-      if (!get(insertedSharedThread$)) {
+      if (!inserted) {
         throw new Error("Shared thread insert did not return a row");
       }
     } else {
@@ -501,6 +512,8 @@ const persistSharedThread$ = command(
     signal: AbortSignal,
   ) => {
     const { id, title, plan } = snapshot;
+    // In-memory ownership only, not another persisted idempotency protocol.
+    const publicationId = randomUUID();
     let policyClaimed = false;
     async function persistAndPublish() {
       if (plan) {
@@ -512,7 +525,7 @@ const persistSharedThread$ = command(
       await set(
         insertSharedThreadIdentity$,
         args,
-        snapshot,
+        { ...snapshot, publicationId },
         initialTitle,
         signal,
       );
@@ -545,7 +558,11 @@ const persistSharedThread$ = command(
           cleanupSignal,
         );
         cleanupSignal.throwIfAborted();
-        if (get(insertedSharedThread$)?.id === id) {
+        if (
+          get(insertedSharedThreads$).some((receipt) => {
+            return receipt.publicationId === publicationId && receipt.id === id;
+          })
+        ) {
           await set(
             removeSharedThreadIdentity$,
             { id, userId: args.userId, orgId: args.orgId },
