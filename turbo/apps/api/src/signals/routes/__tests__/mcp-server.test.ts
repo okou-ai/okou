@@ -770,17 +770,42 @@ describe("MCP Web parity", () => {
         })
       ).structuredContent,
     );
-    const peerId = `user_${randomUUID()}`;
-    const peer = f.auth.token({ sub: peerId, scope: defaultScopes });
+    const beforeEvents = await f.chat.listThreadEvents(f.actor, sent.threadId);
+    const beforeThread = mcpGetChatThreadOutputSchema.parse(
+      (await callTool(f.token, "get_chat_thread", { threadId: sent.threadId }))
+        .structuredContent,
+    );
+    const peerActor = f.api.user({
+      orgId: f.auth.orgId,
+      orgRole: "org:member",
+    });
+    const peer = f.auth.token({ sub: peerActor.userId, scope: defaultScopes });
+    const send = {
+      agentId: f.agentId,
+      threadId: sent.threadId,
+      prompt: "Forbidden continuation",
+    };
+    // The same private-Agent guard precedes thread ownership in Web and MCP.
+    // Exercise the production Web route rather than imposing an MCP-only 404.
+    const webDenied = await f.chat.requestSendEvent(peerActor, send, [403]);
+    if (webDenied.status !== 403) {
+      throw new Error(
+        "Expected the Web private-Agent send guard to deny the peer",
+      );
+    }
+    expect(webDenied.body).toStrictEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "Only the private agent owner can run this agent",
+      },
+    });
     expect(
-      structuredToolError(
-        await callTool(peer, "send_chat_message", {
-          agentId: f.agentId,
-          threadId: sent.threadId,
-          prompt: "Forbidden continuation",
-        }),
-      ).code,
-    ).toMatch(/not_found/iu);
+      structuredToolError(await callTool(peer, "send_chat_message", send)),
+    ).toStrictEqual({
+      code: webDenied.body.error.code.toLowerCase(),
+      message: webDenied.body.error.message,
+      retryable: false,
+    });
     expect(
       structuredToolError(
         await callTool(peer, "get_chat_messages", { threadId: sent.threadId }),
@@ -794,6 +819,18 @@ describe("MCP Web parity", () => {
         }),
       ).code,
     ).toBe("not_found");
+    await expect(
+      f.chat.listThreadEvents(f.actor, sent.threadId),
+    ).resolves.toStrictEqual(beforeEvents);
+    expect(
+      mcpGetChatThreadOutputSchema.parse(
+        (
+          await callTool(f.token, "get_chat_thread", {
+            threadId: sent.threadId,
+          })
+        ).structuredContent,
+      ),
+    ).toStrictEqual(beforeThread);
     const foreignOrg = `org_${randomUUID()}`;
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
