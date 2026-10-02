@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.991.2](https://github.com/okou-ai/okou/compare/app-v0.991.1...app-v0.991.2) (2026-10-02)
+
+
+### Refactoring
+
+* remove retired video generation entitlement ([#37580](https://github.com/okou-ai/okou/issues/37580)) ([d6fb17a](https://github.com/okou-ai/okou/commit/d6fb17af11171e4edd1e7a9b289e255db602a402))
+* retire legacy free organization tier ([#37581](https://github.com/okou-ai/okou/issues/37581)) ([26691d8](https://github.com/okou-ai/okou/commit/26691d89ca363d22a9ed045b23fc02894a21d043))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.536.1
+    * @okouai/core bumped to 8.727.1
+
 ## [0.991.1](https://github.com/okou-ai/okou/compare/app-v0.991.0...app-v0.991.1) (2026-10-02)
 
 

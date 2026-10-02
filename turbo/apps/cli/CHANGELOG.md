@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.376.1](https://github.com/okou-ai/okou/compare/cli-v9.376.0...cli-v9.376.1) (2026-10-02)
+
+
+### Refactoring
+
+* remove retired video generation entitlement ([#37580](https://github.com/okou-ai/okou/issues/37580)) ([d6fb17a](https://github.com/okou-ai/okou/commit/d6fb17af11171e4edd1e7a9b289e255db602a402))
+* retire legacy free organization tier ([#37581](https://github.com/okou-ai/okou/issues/37581)) ([26691d8](https://github.com/okou-ai/okou/commit/26691d89ca363d22a9ed045b23fc02894a21d043))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.536.1
+    * @okouai/core bumped to 8.727.1
+    * @okouai/pi-agent-runtime bumped to 1.45.12
+
 ## [9.376.0](https://github.com/okou-ai/okou/compare/cli-v9.375.2...cli-v9.376.0) (2026-10-02)
 
 
