@@ -67,7 +67,7 @@ interface AgentPhoneInboundMessage {
     readonly identifier: string;
     readonly name?: string | null;
   }[];
-  readonly senderIdentifier?: string;
+  readonly senderIdentifier?: string | null;
   readonly receivedAt?: string | null;
   readonly mediaUrl?: string;
   readonly mentions?: readonly Readonly<Record<string, unknown>>[];
@@ -144,33 +144,35 @@ function buildAgentPhoneInboundWebhookBody(args: {
   readonly receivedAt: string | undefined;
 }): string {
   const { message, messageId, groupId, receivedAt } = args;
+  const senderIdentifier =
+    message.senderIdentifier === null
+      ? undefined
+      : (message.senderIdentifier ??
+        (message.isGroup ? message.from : undefined));
   return JSON.stringify({
     event: "agent.message",
     channel: message.channel,
+    agentId: AGENTPHONE_BDD_AGENT_ID,
     ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
     data: {
       ...(messageId === undefined ? {} : { id: messageId }),
-      agentId: AGENTPHONE_BDD_AGENT_ID,
       from: message.from,
       to: AGENTPHONE_BDD_PHONE_NUMBER,
-      body: message.body,
+      message: message.body,
       ...(receivedAt ? { receivedAt } : {}),
       ...(message.conversationId
         ? { conversationId: message.conversationId }
         : {}),
-      ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
-      ...(groupId
+      ...(message.isGroup
         ? {
             group: {
               isGroup: true,
-              groupId,
+              ...(groupId === null ? {} : { groupId }),
               ...(message.participants === undefined
                 ? {}
                 : { participants: message.participants }),
             },
-            ...(message.senderIdentifier === undefined
-              ? {}
-              : { senderIdentifier: message.senderIdentifier }),
+            ...(senderIdentifier === undefined ? {} : { senderIdentifier }),
           }
         : {}),
       ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
@@ -235,6 +237,21 @@ export function createAgentPhoneBddApi(context: TestContext) {
     };
   }
 
+  async function postRawAgentPhoneInboundWebhook(
+    rawBody: string,
+    statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
+  ) {
+    const response = await integrations.requestAgentPhoneWebhook(
+      rawBody,
+      agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
+      statuses,
+    );
+    if (response.status === 200) {
+      await flushWaitUntilForTest();
+    }
+    return response;
+  }
+
   async function postAgentPhoneInboundMessage(
     message: AgentPhoneInboundMessage,
     statuses: readonly (200 | 400 | 401 | 404 | 500)[] = [200],
@@ -268,21 +285,13 @@ export function createAgentPhoneBddApi(context: TestContext) {
       groupId,
       receivedAt,
     });
-    const response = await integrations.requestAgentPhoneWebhook(
-      rawBody,
-      agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
-      statuses,
-    );
-    if (response.status === 200) {
-      // Webhook handling is waitUntil-detached; drain it so follow-up steps
-      // cannot observe provider sends before thread/session state is persisted.
-      await flushWaitUntilForTest();
-    }
+    await postRawAgentPhoneInboundWebhook(rawBody, statuses);
     return messageId;
   }
 
   return {
     postAgentPhoneInboundMessage,
+    postRawAgentPhoneInboundWebhook,
 
     captureAgentPhoneSends(): AgentPhoneSendCapture {
       const messages: AgentPhoneProviderSend[] = [];

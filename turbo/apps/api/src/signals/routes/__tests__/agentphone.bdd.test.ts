@@ -1815,6 +1815,27 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(nextRun.sandboxToken, nextRun.runId, 0);
   });
 
+  it("accepts AgentPhone's documented media-only message body", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup } = await entitledLinkedActor();
+    const mediaUrl = "https://media.agentphone.test/media-only.png";
+    server.use(
+      http.get(mediaUrl, () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "",
+      mediaUrl,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toContain("[Phone file] media-only.png (image/png)");
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+  });
+
   it("renders media prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { actor, phone, runnerGroup } = await entitledLinkedActor();
@@ -2213,11 +2234,80 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       {
         ...message,
         messageId: `ap-group-invalid-time-${randomUUID()}`,
-        receivedAt: "not-a-date",
+        receivedAt: "October 1, 2026",
       },
       [500],
     );
+
+    const aliasConversationId = uniqueConversationId();
+    const aliasSender = uniquePhoneHandle();
+    const alternateTimestampEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "imessage",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        id: `ap-group-alias-time-${randomUUID()}`,
+        from: aliasSender,
+        senderIdentifier: aliasSender,
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "unsupported timestamp alias",
+        conversationId: aliasConversationId,
+        group: {
+          isGroup: true,
+          groupId: bddGroupId(aliasConversationId),
+          participants: [{ identifier: aliasSender }],
+        },
+        received_at: new Date(now()).toISOString(),
+      },
+    });
+    const alternateTimestamp = await ap.postRawAgentPhoneInboundWebhook(
+      alternateTimestampEvent,
+      [500],
+    );
+    expect(alternateTimestamp.body).toBe(
+      "iMessage group webhook is missing receivedAt",
+    );
     expect(sends.messages).toHaveLength(0);
+  });
+
+  it("acks AgentPhone's documented idless test webhook without processing it", async () => {
+    const runs = createRunsApi(context);
+    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const sendsBefore = sends.messages.length;
+    const timestamp = new Date(now()).toISOString();
+    const testWebhook = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      timestamp,
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        conversationId: uniqueConversationId(),
+        numberId: "num_bdd_test",
+        from: phone,
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "Test message",
+        direction: "inbound",
+        receivedAt: timestamp,
+      },
+      conversationState: { testMode: true },
+      recentHistory: [
+        {
+          content: "Earlier test message",
+          direction: "inbound",
+          channel: "sms",
+          at: timestamp,
+        },
+      ],
+    });
+
+    const response = await ap.postRawAgentPhoneInboundWebhook(
+      testWebhook,
+      [200],
+    );
+    expect(response.body).toBe("OK");
+    await runs.heartbeatRunner(runnerGroup);
+    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    expect(sends.messages).toHaveLength(sendsBefore);
   });
 
   it("returns 500 for direct message webhooks without provider message ids", async () => {
@@ -2239,6 +2329,31 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       );
     }
     expect(sends.messages).toHaveLength(0);
+  });
+
+  it("returns 500 for direct messages with an invalid sender", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneWebhook();
+    const invalidSenderEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        id: `ap-invalid-sender-${randomUUID()}`,
+        from: "not-a-phone-number",
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "this sender cannot be routed safely",
+      },
+    });
+
+    const response = await ap.postRawAgentPhoneInboundWebhook(
+      invalidSenderEvent,
+      [500],
+    );
+    expect(response.body).toBe(
+      "AgentPhone message webhook has an invalid sender",
+    );
   });
 
   it("returns 500 for group webhooks without stable provider identities", async () => {
@@ -2273,6 +2388,22 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         body: baseMessage.body,
         messageId: `ap-group-no-conversation-${randomUUID()}`,
         isGroup: true,
+      },
+      [500],
+    );
+    await ap.postAgentPhoneInboundMessage(
+      {
+        ...baseMessage,
+        messageId: `ap-group-no-sender-${randomUUID()}`,
+        senderIdentifier: null,
+      },
+      [500],
+    );
+    await ap.postAgentPhoneInboundMessage(
+      {
+        ...baseMessage,
+        messageId: `ap-group-invalid-id-${randomUUID()}`,
+        groupId: "not-a-provider-group-id",
       },
       [500],
     );
