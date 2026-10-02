@@ -901,9 +901,7 @@ async fn download_body(
         result = tokio::time::timeout_at(
             deadline,
             download_body_with_retries(http, url, expected_size, timings, deadline),
-        ) => result.unwrap_or_else(|_| Err(RunnerError::Internal(
-            "session history download exceeded its retry budget (cause=timeout)".into(),
-        ))),
+        ) => result.unwrap_or_else(|_| Err(session_history_download_budget_error())),
     }
 }
 
@@ -916,7 +914,16 @@ async fn download_body_with_retries(
 ) -> RunnerResult<Vec<u8>> {
     let mut attempt = 1usize;
     loop {
-        match download_body_once(http, url, expected_size, timings).await {
+        // Timeout polls its inner future before the expired timer, so a late
+        // backoff wakeup and a ready response both need explicit budget checks.
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        let result = download_body_once(http, url, expected_size, timings).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        match result {
             Ok(body) => return Ok(body),
             Err(error) => {
                 let Some(retry_after) = error.retry_after else {
@@ -945,6 +952,12 @@ async fn download_body_with_retries(
             }
         }
     }
+}
+
+fn session_history_download_budget_error() -> RunnerError {
+    RunnerError::Internal(
+        "session history download exceeded its retry budget (cause=timeout)".into(),
+    )
 }
 
 fn session_history_download_cancelled_error() -> RunnerError {

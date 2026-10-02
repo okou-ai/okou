@@ -63,7 +63,9 @@ early fetch time to storage-apply time.
 
 Archive downloads share the read-only failure policy with session-history blobs:
 at most three attempts including the first, 200/400 ms exponential backoff,
-and a 90-second overall deadline covering requests and backoff. Each GET retains
+and a 90-second overall deadline covering requests and backoff. The deadline is
+checked before each attempt and after its result: a delayed backoff wakeup cannot
+start an overdue GET or accept bytes after the budget expires. Each GET retains
 its 30-second request timeout. HTTP 429, 500, 502, 503 and 504, timeouts, connect
 errors and typed transport interruptions can retry. The next attempt always
 starts with an empty body buffer; incomplete bytes are never staged or published.

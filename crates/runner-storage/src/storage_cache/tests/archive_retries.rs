@@ -627,6 +627,62 @@ async fn archive_retry_cancellation_during_backoff_releases_owner_and_drains_onc
 }
 
 #[tokio::test]
+async fn archive_retry_does_not_start_an_attempt_after_backoff_expires_the_budget() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let body = tarball_bytes();
+    let server = RetryServer::start(vec![
+        Reply::retry_after("60"),
+        Reply::response("200 OK", &body),
+    ])
+    .await;
+    let mut plan =
+        fresh_storage_plan_with_archive_size(server.url.clone(), "retry", "v1", body.len() as u64);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    // Peer closure proves the rejected response has reached its backoff timer.
+    server.wait_for_client_close().await;
+    tokio::time::pause();
+    tokio::time::advance(OBJECT_DOWNLOAD_BUDGET + Duration::from_secs(1)).await;
+    tokio::time::resume();
+    let sandbox = MockSandbox::new("archive-retry-expired-backoff");
+    let error = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("timeout"));
+    assert_eq!(
+        header_count(&telemetry),
+        1,
+        "an expired budget must not enter another GET attempt"
+    );
+    server.stop(1).await;
+    assert!(sandbox.write_files_calls().is_empty());
+    assert!(!home.storage_cache_dir("retry", "v1").exists());
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+}
+
+#[tokio::test]
 async fn archive_retry_recovers_after_request_timeout() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

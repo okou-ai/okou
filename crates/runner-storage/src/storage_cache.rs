@@ -3066,15 +3066,23 @@ async fn fetch_fresh_archive(
     tokio::time::timeout_at(deadline, async {
         let mut attempt = 1usize;
         loop {
-            match fetch_fresh_archive_once(
+            // Timeout polls its inner future first. Recheck the deadline so
+            // overdue backoff cannot start another request or accept late bytes.
+            if tokio::time::Instant::now() >= deadline {
+                return Err(FreshArchiveFetchError::permanent("timeout"));
+            }
+            let result = fetch_fresh_archive_once(
                 http,
                 archive_url,
                 expected_size,
                 representative,
                 phase_records,
             )
-            .await
-            {
+            .await;
+            if tokio::time::Instant::now() >= deadline {
+                return Err(FreshArchiveFetchError::permanent("timeout"));
+            }
+            match result {
                 Ok(download) => return Ok(download),
                 Err(error) => {
                     let Some(retry_after) = error.retry_after else {
