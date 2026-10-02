@@ -1575,7 +1575,7 @@ async function codexAccountCredentials(
     : null;
 }
 
-export async function resolveModelCredentialValues(
+async function resolveModelCredentialValues(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
   signal: AbortSignal,

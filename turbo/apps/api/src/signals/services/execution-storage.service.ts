@@ -52,7 +52,7 @@ export type PreparedStorageIdentity = ExecutionStorageIdentity;
  * A URL this preparation signed fresh rather than read from the cache. Only
  * the post-commit cache write reads it.
  */
-export type PresignedUrlCacheWrite = FreshCacheValues[number];
+type PresignedUrlCacheWrite = FreshCacheValues[number];
 
 export interface PreparedReadOnlyMount extends PreparedStorageIdentity {
   readonly writeback: false;

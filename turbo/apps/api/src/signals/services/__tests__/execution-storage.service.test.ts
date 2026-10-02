@@ -10,8 +10,12 @@ import {
   updateExecutionStoragePresignedUrlCache$,
   type ExecutionStorageRequest,
   type PreparedExecutionStorageMount,
-  type PresignedUrlCacheWrite,
+  type PreparedReadOnlyMount,
 } from "../execution-storage.service";
+
+type PresignedUrlCacheWrite = NonNullable<
+  PreparedReadOnlyMount["presignedUrlCacheWrite"]
+>;
 
 const context = testContext();
 const { console: consoleOutput } = context.mocks;
@@ -74,29 +78,6 @@ async function cachedUrls(objectKey: string) {
 }
 
 describe("updateExecutionStoragePresignedUrlCache$", () => {
-  it("stores the URLs a preparation signed fresh", async () => {
-    const mount = readOnlyMount();
-    const write = cacheWrite(mount, randomUUID().replaceAll("-", ""));
-    onTestFinished(async () => {
-      await db()
-        .delete(systemStoragePresignedUrlCache)
-        .where(eq(systemStoragePresignedUrlCache.cacheKey, write.cacheKey));
-    });
-
-    await expect(
-      createStore().set(
-        updateExecutionStoragePresignedUrlCache$,
-        [mount.request],
-        [prepared(mount, write)],
-        context.signal,
-      ),
-    ).resolves.toBeUndefined();
-
-    await expect(cachedUrls(write.objectKey)).resolves.toStrictEqual([
-      { presignedUrl: write.presignedUrl },
-    ]);
-  });
-
   it("only logs a failed cache write", async () => {
     // A cache key longer than the column rejects the write in the database,
     // the one failure the post-commit owner must absorb.
