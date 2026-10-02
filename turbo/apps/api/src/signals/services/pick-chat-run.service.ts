@@ -10,6 +10,7 @@ import {
   notInArray,
   notExists,
   asc,
+  sql,
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -20,6 +21,8 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
@@ -73,9 +76,8 @@ import {
 } from "./chat-queued-event.service";
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
 import {
-  bindMorningBriefScheduleClaimRun,
-  morningBriefScheduleClaimBound,
-  morningBriefScheduleClaimSuperseded,
+  morningBriefScheduleClaimBound$,
+  morningBriefScheduleClaimSupersededCondition,
 } from "./morning-brief-schedule-claim.service";
 import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
@@ -259,30 +261,26 @@ async function validateClaimedRunAdmission(
   };
 }
 
-/** Producer ownership is persisted with the run rather than carried as a callback. */
-async function persistClaimProducerBinding(
-  tx: Tx,
-  context: RunContext,
+/** Pure producer writes; the pending commit owns their execution. */
+function claimProducerBindingStatements(
+  producer: RunContext["producerBinding"],
   runId: string,
-): Promise<void> {
-  const producer = context.producerBinding;
+) {
   if (producer?.kind === "automation") {
-    await bindMorningBriefScheduleClaimRun(tx, {
-      queueEventId: producer.queueEventId,
-      runId,
-    });
-  } else if (producer?.kind === "reassign-agent") {
-    await tx
-      .update(chatThreads)
-      .set({ agentId: producer.agentId })
-      .where(
-        and(
-          eq(chatThreads.id, producer.threadId),
-          eq(chatThreads.userId, producer.userId),
-          eq(chatThreads.agentId, producer.expectedAgentId),
-        ),
-      );
-    await tx.execute(
+    return [
+      sql`UPDATE ${morningBriefScheduleClaims}
+      SET run_id = ${runId}::uuid, queue_disposition = 'claimed',
+        updated_at = ${sql.param(nowDate(), morningBriefScheduleClaims.updatedAt)}
+      WHERE ${eq(morningBriefScheduleClaims.queueEventId, producer.queueEventId)}
+        AND ${isNull(morningBriefScheduleClaims.runId)}`,
+    ];
+  }
+  if (producer?.kind === "reassign-agent") {
+    return [
+      sql`UPDATE ${chatThreads} SET agent_id = ${producer.agentId}::uuid
+        WHERE ${eq(chatThreads.id, producer.threadId)}
+          AND ${eq(chatThreads.userId, producer.userId)}
+          AND ${eq(chatThreads.agentId, producer.expectedAgentId)}`,
       chatThreadEventInsertSql({
         kind: "sort_touched",
         chatThreadId: producer.threadId,
@@ -291,8 +289,9 @@ async function persistClaimProducerBinding(
         agentId: producer.agentId,
         reassignedAgentId: producer.agentId,
       }),
-    );
+    ];
   }
+  return [];
 }
 
 /** All writes here use the parent's one pending transaction. */
@@ -341,7 +340,12 @@ async function persistClaimedRun(
           return persistPendingAtomicLaunch(rows, ctes);
         },
       );
-      await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
+      for (const statement of claimProducerBindingStatements(
+        context.producerBinding,
+        rowsPersisted.run.id,
+      )) {
+        await tx.execute(statement);
+      }
       await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
       const threadSessionBinding =
         input.args.chatThreadId && !admission.validatedThreadSession
@@ -1153,7 +1157,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
             updatedAt: nowDate(),
           };
         };
-        if (await morningBriefScheduleClaimBound(database, pending.runId)) {
+        if (await set(morningBriefScheduleClaimBound$, pending.runId, signal)) {
           signal.throwIfAborted();
           // Only journaled occurrences require this post-commit lock. Read
           // supersession after acquiring it so a concurrent claim is visible.
@@ -1164,10 +1168,22 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
               .where(eq(workflowAutomations.id, launched.automationId))
               .limit(1)
               .for("update");
-            if (
-              !locked ||
-              (await morningBriefScheduleClaimSuperseded(tx, pending.runId))
-            ) {
+            signal.throwIfAborted();
+            if (!locked) {
+              return;
+            }
+            const [observation] = await tx
+              .select({
+                superseded: morningBriefScheduleClaimSupersededCondition(
+                  pending.runId,
+                ).mapWith(pgBooleanDecoder),
+              })
+              .from(sql`(SELECT 1) AS schedule_claim_observation`);
+            signal.throwIfAborted();
+            if (!observation) {
+              throw new Error("Schedule claim observation returned no row");
+            }
+            if (observation.superseded) {
               return;
             }
             await tx
