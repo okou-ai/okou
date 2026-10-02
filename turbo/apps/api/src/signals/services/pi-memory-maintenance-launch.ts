@@ -45,12 +45,12 @@ import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { safeSync } from "../utils";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
-import type { AgentRunModelPin } from "./agent-run-contracts";
-import {
-  type PermissionManifest,
-  type ResolvedModelProviderEnvironment,
-  nativeCredentialEnvironment,
-} from "./execution-model-source.service";
+import type {
+  AgentRunModelPin,
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
+import { nativeCredentialEnvironment } from "./pi-sandbox-config";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {

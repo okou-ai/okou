@@ -3,6 +3,7 @@ import {
   isPresetUpstreamModel,
   type PiCatalogModel,
   type PiRouteClass,
+  piCatalogModel,
 } from "@okouai/core/pi-execution";
 import {
   piThinkingLevelForEffort,
@@ -21,16 +22,31 @@ import {
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
+import {
+  isPiAgentModelSupported,
+  type PiExecutionRoute,
+  normalizePiExecutionRoute,
+  assertPiNativeCredential,
+  materializePiExecutionRoute,
+} from "@okouai/pi-agent-runtime";
 import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 
 import {
   resolvePiNativeModelConfig,
   type PiNativeModelProviderInput,
+  PiNativeConfigurationError,
 } from "./pi-native-model-config";
 
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
+import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
+import { safeSync } from "../utils";
+import { env } from "../../lib/env";
+import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
+import type {
+  RunModelProviderArgs,
+  ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
 
 /**
  * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
@@ -533,4 +549,149 @@ export function resolvePiSandboxModelConfig(
     ...config,
     thinkingLevel: piThinkingLevelForEffort(reasoningEffort),
   };
+}
+
+export function nativeCredentialEnvironment(
+  route: PiExecutionRoute | undefined,
+): Record<string, string> {
+  return route &&
+    (route.dialect === "anthropic-messages" ||
+      route.dialect === "bedrock-converse-stream")
+    ? Object.fromEntries(
+        route.credentialBindings.map((binding) => {
+          return [binding.environment, PI_NATIVE_CREDENTIAL_PLACEHOLDER];
+        }),
+      )
+    : {};
+}
+
+function assertCurrentPiCliArtifact(): void {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
+    throw new PiNativeConfigurationError(
+      "Pi requires the current commit-addressed CLI reader artifact",
+    );
+  }
+}
+
+export async function materializePreparedPiProvider(
+  createArgs: RunModelProviderArgs,
+  provider: ResolvedModelProviderEnvironment | null,
+): Promise<ResolvedModelProviderEnvironment | null> {
+  if (!createArgs.piExecution) {
+    return provider;
+  }
+  const catalogModel = piCatalogModel(
+    createArgs.catalog,
+    provider?.selectedModel,
+  );
+  const config = resolvePiSandboxModelConfig(
+    provider,
+    catalogModel,
+    createArgs.codexServiceTier,
+    createArgs.agentRunMetadata?.reasoningEffort,
+  );
+  if (!config || !provider) {
+    throw new Error(
+      "Selected Pi execution requires a supported model provider configuration",
+    );
+  }
+  if (provider.selectedModel === "deepseek-v4.1-flash") {
+    assertCurrentPiCliArtifact();
+  }
+  if (!("schemaVersion" in config) || config.schemaVersion !== 4) {
+    if (
+      !("schemaVersion" in config) &&
+      (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
+      catalogModel?.piRouteClass === "deepseek"
+    ) {
+      const credential = safeSync(() => {
+        return assertPiNativeCredential(
+          provider.secrets[config.credentialSecretName] ?? "",
+        );
+      });
+      if ("error" in credential) {
+        throw new PiNativeConfigurationError(
+          "Selected Pi credential is invalid",
+        );
+      }
+      return {
+        ...provider,
+        piModelConfig: config,
+        secretConnectorMap: undefined,
+        secretConnectorMetadataMap: undefined,
+      };
+    }
+    return { ...provider, piModelConfig: config };
+  }
+  assertCurrentPiCliArtifact();
+  const secrets: Record<string, string> = {};
+  const route = normalizePiExecutionRoute(config);
+  await materializePiExecutionRoute({
+    route,
+    target: "direct",
+    resolveCredential(binding) {
+      const value = provider.secrets[binding.secretName];
+      if (!value) {
+        throw new PiNativeConfigurationError(
+          "Selected native Pi credential is unavailable",
+        );
+      }
+      const credential = safeSync(() => {
+        return assertPiNativeCredential(value);
+      });
+      if ("error" in credential) {
+        throw new PiNativeConfigurationError(
+          "Selected Pi credential is invalid",
+        );
+      }
+      secrets[binding.secretName] = value;
+      return value;
+    },
+  });
+  return {
+    ...provider,
+    piModelConfig: config,
+    environment: nativeCredentialEnvironment(route),
+    secrets,
+    secretConnectorMap: undefined,
+    secretConnectorMetadataMap: undefined,
+    firewall: piNativeFirewall(config),
+    inlineFirewall: true,
+  };
+}
+
+export function resolvePreparedPiModelConfig(args: {
+  readonly createArgs: Pick<
+    RunModelProviderArgs,
+    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
+  >;
+  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+}): PiModelConfig | undefined {
+  if (!args.createArgs.piExecution) {
+    return undefined;
+  }
+  const config = resolvePiSandboxModelConfig(
+    args.modelProvider,
+    piCatalogModel(args.createArgs.catalog, args.modelProvider?.selectedModel),
+    args.createArgs.codexServiceTier,
+    args.createArgs.agentRunMetadata?.reasoningEffort,
+  );
+  if (!config) {
+    throw new Error(
+      "Selected Pi execution requires a supported Pi model provider configuration",
+    );
+  }
+  return config;
 }

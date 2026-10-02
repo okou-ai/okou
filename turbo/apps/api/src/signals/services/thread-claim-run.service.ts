@@ -3,8 +3,22 @@ import type {
   AgentRunRequestAgent,
   AgentRunModelPin,
   AgentRunPreCreateSource,
+  ResolveModelProviderEnvironmentArgs,
+  RunModelProviderArgs,
+  CreateRunErrorResult,
+  ResolvedModelProviderEnvironment,
+  PermissionManifest,
+  AgentRunMetadata,
+  ApiErrorResponse,
+  QueueFirstRunClaimed,
+  CreateRunRouteResult,
+  BuiltinRuntimeTargetRegistration,
 } from "./agent-run-contracts";
-import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
+import {
+  loadBuiltInRoutePricing,
+  loadRunRoutePricing,
+  prepareModelUsageContext,
+} from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   createConnectorSourceSnapshots,
@@ -13,26 +27,25 @@ import {
 import {
   createModelSourceSnapshot,
   type ModelSourceSnapshot,
+} from "./execution-model-source.service";
+import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
-  loadRunRoutePricing,
+} from "./model-provider.service";
+import {
   frameworkForProviderSelection,
+  catalogBuiltInCandidates,
+  catalogHasProviderRoute,
+  loadModelCatalog,
+  type ModelCatalog,
+} from "./model-catalog.service";
+import {
   materializePreparedPiProvider,
-  prepareModelUsageContext,
-  type ResolveModelProviderEnvironmentArgs,
   resolvePreparedPiModelConfig,
   nativeCredentialEnvironment,
-  type RunModelProviderArgs,
-  CreateRunErrorResult,
-  ResolvedModelProviderEnvironment,
-  PermissionManifest,
-  type AgentRunMetadata,
-  ApiErrorResponse,
-  QueueFirstRunClaimed,
-  CreateRunRouteResult,
-  BuiltinRuntimeTargetRegistration,
-} from "./execution-model-source.service";
+  shouldUsePiExecution,
+} from "./pi-sandbox-config";
 import {
   createExecutionStorageObjects,
   updateExecutionStoragePresignedUrlCache$,
@@ -264,12 +277,6 @@ import type {
   ChatQueueHeadContext,
 } from "./chat-queue-run-assembly";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import {
-  catalogBuiltInCandidates,
-  catalogHasProviderRoute,
-  loadModelCatalog,
-  type ModelCatalog,
-} from "./model-catalog.service";
 import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import {
   chatThreadConversationRun,
@@ -421,7 +428,6 @@ import {
   runtimeStatusForEntitlement,
 } from "./org-plan-entitlement-read.service";
 import { piCatalogModel } from "@okouai/core/pi-execution";
-import { shouldUsePiExecution } from "./pi-sandbox-config";
 import {
   additionalVolumesForRun,
   selectedUserPresentationTemplateIds,

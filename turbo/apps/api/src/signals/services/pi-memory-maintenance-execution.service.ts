@@ -49,17 +49,28 @@ import { createAgentDisabledPaidTools } from "./agent-bootstrap-resources";
 import {
   createModelSourceSnapshot,
   type ModelSourceIdentity,
+} from "./execution-model-source.service";
+import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
+} from "./model-provider.service";
+import {
   frameworkForProviderSelection,
+  loadModelCatalog,
+} from "./model-catalog.service";
+import {
   loadRunRoutePricing,
-  materializePreparedPiProvider,
   prepareModelUsageContext,
+} from "./built-in-route-pricing";
+import {
+  materializePreparedPiProvider,
   resolvePreparedPiModelConfig,
-  type PermissionManifest,
-  type ResolvedModelProviderEnvironment,
-} from "./execution-model-source.service";
+} from "./pi-sandbox-config";
+import type {
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
 import {
   createExecutionStorageObjects,
   updateExecutionStoragePresignedUrlCache$,
@@ -80,7 +91,6 @@ import {
   type MaintenanceLaunch,
   type MaintenanceRunRecord,
 } from "./pi-memory-maintenance-launch";
-import { loadModelCatalog } from "./model-catalog.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   activateUsageAllowanceWindowsForRun,
