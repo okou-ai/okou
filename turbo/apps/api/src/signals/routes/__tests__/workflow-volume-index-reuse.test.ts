@@ -224,6 +224,15 @@ describe("Registered workflow volume index reuse", () => {
         );
       }),
     ).toBeFalsy();
+    // Public APIs cannot corrupt a ready projection. Change only this owned
+    // historical index after reuse; the real next publication must reject it.
+    await alterRegisteredVolumeIndexFixture(
+      { ...volume.fixture, state: "corrupt-hash" },
+      context.signal,
+    );
+    await expect(volume.rejectedUpdate()).rejects.toThrow(
+      "Pi resource version index failed integrity validation",
+    );
   });
 
   it.each(["missing", "other-extractor"] as const)(

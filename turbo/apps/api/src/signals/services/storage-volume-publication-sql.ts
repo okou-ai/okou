@@ -36,7 +36,7 @@ export function repairVolumeIndexSql(version: PreparedStorageVersion) {
     )`;
 }
 
-/** Register one prepared immutable version, Storage HEAD and eager index together.
+/** Register one immutable version and Storage HEAD, preserving a reused ready index.
  * This builds SQL only; each owning command executes it in its local transaction.
  * The version insert's FK check and the HEAD UPDATE take the Storage row's
  * implicit locks; a missing Storage publishes no row and the caller rejects it.
@@ -51,12 +51,7 @@ export function preparedVolumePublicationSql(
     );
   }
   const version = volume.version;
-  const projection = piResourceProjectionValues(
-    volume.piResourceIndex.projection,
-    version.archiveSize,
-    publishedAt,
-  );
-  return sql`WITH retained_storage AS MATERIALIZED (
+  const publication = sql`WITH retained_storage AS MATERIALIZED (
     SELECT id FROM ${storages} WHERE id = ${version.storageId}::uuid
   ), registered AS (
     INSERT INTO ${storageVersions}
@@ -79,7 +74,16 @@ export function preparedVolumePublicationSql(
       updated_at = ${volume.updatedAt.toISOString()}::timestamp
     WHERE id IN (SELECT storage_id FROM registered)
     RETURNING id
-  ), indexed AS (
+  )`;
+  if (volume.piResourceIndex.kind === "reused") {
+    return sql`${publication} SELECT id FROM published`;
+  }
+  const projection = piResourceProjectionValues(
+    volume.piResourceIndex.projection,
+    version.archiveSize,
+    publishedAt,
+  );
+  return sql`${publication}, indexed AS (
     INSERT INTO ${piResourceVersionIndexes}
       (storage_version_id, extractor_version, status, projection,
        projection_hash, source_archive_size, lease_id, lease_expires_at, updated_at)
