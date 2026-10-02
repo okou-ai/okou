@@ -1842,6 +1842,25 @@ function reconciliationConflictMessage(
     : "Official Workflow automation no longer exists";
 }
 
+type RejectedQueueRunAssembly = Extract<
+  ChatQueueRunAssembly,
+  { readonly kind: "rejected" }
+>;
+
+/** The queued automation's launch arguments, or the rejection of its head. */
+type QueuedAutomationLaunch =
+  | {
+      readonly kind: "launch";
+      readonly args: AssembleWorkflowAutomationRunArgs;
+    }
+  | { readonly kind: "rejected"; readonly assembly: RejectedQueueRunAssembly };
+
+function rejectedAutomationLaunch(
+  assembly: RejectedQueueRunAssembly,
+): QueuedAutomationLaunch {
+  return { kind: "rejected", assembly };
+}
+
 function queuedAutomationLaunchArguments(args: {
   readonly head: ChatQueueHeadContext;
   readonly event: QueuedAutomationEvent;
@@ -7462,8 +7481,30 @@ export function createThreadClaimRunObjects(
   } = queuedAutomationRunSources;
   const { launchMaterial$: queuedAutomationAssemblerLaunchMaterial$ } =
     material;
-  const queuedAutomationAssemblerInternalEarlyAssembly$ =
-    state<ChatQueueRunAssembly | null>(null);
+  // A head whose automation input can no longer be read is rejected from its
+  // reads; rejections that depend on reconciliation are returned by the
+  // initialization command instead.
+  const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      if (await get(automationExecutionInput$)) {
+        return null;
+      }
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
+      return {
+        kind: "rejected",
+        rejection: {
+          userId: head.userId,
+          error: {
+            code: "CONFLICT",
+            message: "Workflow automation no longer exists",
+          },
+        },
+      };
+    },
+  );
   const {
     event$: initializeQueuedAutomationEvent$,
     target$: initializeQueuedAutomationTarget$,
@@ -7479,28 +7520,15 @@ export function createThreadClaimRunObjects(
       initializeQueuedAutomationReconcileOfficialWorkflow$,
   } = reconciliation;
   const initializeAutomationExecution$ = command(
-    async (
-      { get, set },
+    (
+      _store,
       head: ChatQueueHeadContext,
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
-    ): Promise<false> => {
+    ): false => {
+      signal.throwIfAborted();
       // Records the entrypoint gap on the claim's run timing.
       workflowAutomationTiming(runTiming, head.apiStartTime);
-      const input = await get(automationExecutionInput$);
-      signal.throwIfAborted();
-      if (!input) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
-          kind: "rejected",
-          rejection: {
-            userId: head.userId,
-            error: {
-              code: "CONFLICT",
-              message: "Workflow automation no longer exists",
-            },
-          },
-        });
-      }
       return false;
     },
   );
@@ -7509,9 +7537,8 @@ export function createThreadClaimRunObjects(
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
-      const unreadable = (message: string): ChatQueueRunAssembly => {
+    ): Promise<QueuedAutomationLaunch> => {
+      const unreadable = (message: string): RejectedQueueRunAssembly => {
         return {
           kind: "rejected",
           rejection: {
@@ -7527,15 +7554,13 @@ export function createThreadClaimRunObjects(
       ]);
       signal.throwIfAborted();
       if (!event || !loadedTarget) {
-        set(
-          queuedAutomationAssemblerInternalEarlyAssembly$,
+        return rejectedAutomationLaunch(
           unreadable(
             !event
               ? "Workflow queue event payload is unreadable"
               : "Workflow automation no longer exists",
           ),
         );
-        return null;
       }
       if (loadedTarget.automation.officialBlueprintKey !== null) {
         const reconciled = await set(
@@ -7544,7 +7569,7 @@ export function createThreadClaimRunObjects(
           signal,
         );
         if (reconciled.kind !== "current") {
-          set(queuedAutomationAssemblerInternalEarlyAssembly$, {
+          return rejectedAutomationLaunch({
             kind: "rejected",
             rejection: {
               error: {
@@ -7554,7 +7579,6 @@ export function createThreadClaimRunObjects(
               userId: loadedTarget.automation.ownerUserId,
             },
           });
-          return null;
         }
       }
       const [target, material, autonomyBudget] = await Promise.all([
@@ -7564,7 +7588,7 @@ export function createThreadClaimRunObjects(
       ]);
       signal.throwIfAborted();
       if (!target) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
+        return rejectedAutomationLaunch({
           kind: "rejected",
           rejection: {
             userId: loadedTarget.automation.ownerUserId,
@@ -7574,10 +7598,9 @@ export function createThreadClaimRunObjects(
             },
           },
         });
-        return null;
       }
       if (!material) {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
+        return rejectedAutomationLaunch({
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
@@ -7587,25 +7610,26 @@ export function createThreadClaimRunObjects(
             },
           },
         });
-        return null;
       }
       if (autonomyBudget.kind === "invalid") {
-        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
+        return rejectedAutomationLaunch({
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
             error: autonomyBudget.error,
           },
         });
-        return null;
       }
-      return queuedAutomationLaunchArguments({
-        head,
-        event,
-        target,
-        material,
-        autonomyBudget: autonomyBudget.autonomyBudget,
-      });
+      return {
+        kind: "launch",
+        args: queuedAutomationLaunchArguments({
+          head,
+          event,
+          target,
+          material,
+          autonomyBudget: autonomyBudget.autonomyBudget,
+        }),
+      };
     },
   );
   const resolveAutomationModelSnapshot$ = command(
@@ -7617,7 +7641,7 @@ export function createThreadClaimRunObjects(
   );
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
+      const early = await get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
       }
@@ -7666,7 +7690,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
-    if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
+    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(queuedAutomationAssemblerLaunchMaterial$))?.callbacks;
@@ -12131,7 +12155,7 @@ export function createThreadClaimRunObjects(
       if (!identityInput) {
         const assembly =
           head.contextType === "automation"
-            ? get(queuedAutomationAssemblerInternalEarlyAssembly$)
+            ? await get(queuedAutomationAssemblerInternalEarlyAssembly$)
             : await get(assembly$);
         signal.throwIfAborted();
         await set(
@@ -12193,14 +12217,14 @@ export function createThreadClaimRunObjects(
           signal,
         );
         signal.throwIfAborted();
-        if (!launch) {
-          // The automation input was already rejected from its reads; no
-          // launch read can change that, so none is started.
-          return { kind: "rejected" as const, assembly: await get(assembly$) };
+        if (launch.kind === "rejected") {
+          // The automation input was rejected from its reads or its
+          // reconciliation; no launch read can change that, so none starts.
+          return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(
           initializeWorkflowAutomationRun$,
-          launch,
+          launch.args,
           signal,
         );
         signal.throwIfAborted();
