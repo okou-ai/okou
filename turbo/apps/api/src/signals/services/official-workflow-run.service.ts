@@ -8,17 +8,8 @@ import type {
   AgentRunOfficialWorkflowDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { asc, eq, inArray } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
-import {
-  type AcceptedOfficialWorkflowCatalog,
-  lockAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowRevisions,
-} from "./official-workflow-catalog-read.service";
+import type { AcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
   "Official Workflow execution state is not current; retry";
@@ -289,58 +280,4 @@ export function exactMountsMatch(
       mount.writeback !== true
     );
   });
-}
-
-async function officialAutomationMatches(
-  tx: Tx,
-  args: {
-    readonly automationId: string | undefined;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly observation: OfficialWorkflowRunObservation;
-  },
-): Promise<boolean> {
-  if (!args.automationId) {
-    return true;
-  }
-  const [row] = await tx
-    .select({
-      id: workflowAutomations.id,
-      orgId: workflowAutomations.orgId,
-      workflowId: workflowAutomations.workflowId,
-      ownerUserId: workflowAutomations.ownerUserId,
-      blueprintKey: workflowAutomations.officialBlueprintKey,
-      appliedFingerprint: workflowAutomations.officialAppliedFingerprint,
-      reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-      definitionName: workflows.officialDefinitionName,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1)
-    .for("update");
-  if (!row) {
-    return false;
-  }
-  if (row.orgId !== args.orgId || row.ownerUserId !== args.userId) {
-    return false;
-  }
-  if (row.blueprintKey === null) {
-    return row.definitionName === null;
-  }
-  const definition = args.observation.definitions.find((candidate) => {
-    return candidate.workflowId === row.workflowId;
-  });
-  if (
-    !definition ||
-    row.definitionName !== definition.name ||
-    row.appliedFingerprint === null ||
-    row.reconciliationStatus !== "current"
-  ) {
-    return false;
-  }
-  const blueprint = definition.blueprints.find((candidate) => {
-    return candidate.key === row.blueprintKey;
-  });
-  return blueprint?.fingerprint === row.appliedFingerprint;
 }

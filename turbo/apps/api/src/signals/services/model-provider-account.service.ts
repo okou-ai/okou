@@ -31,7 +31,7 @@ import {
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";

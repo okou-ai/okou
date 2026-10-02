@@ -1749,7 +1749,6 @@ export const sendNormalEvent$ = command(
     args: NormalSendArgs,
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
-    const orgPlanCapabilities = args.orgPlanCapabilities;
     signal.throwIfAborted();
     const prepared = await set(prepareNormalSend$, args, signal);
     if ("status" in prepared) {
