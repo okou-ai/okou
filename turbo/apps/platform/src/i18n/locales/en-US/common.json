@@ -4718,7 +4718,6 @@
         },
         "model": {
           "autoDescription": "Okou chooses the model for each task.",
-          "autoLabel": "Easy model",
           "description": "Choose which AI models your workspace and your runs use.",
           "title": "Models"
         },
@@ -4907,17 +4906,23 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Active",
         "addAccount": "Add account",
+        "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
+        "autoTitle": "Use more models",
         "claudeDescription": "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents.",
         "claudeTitle": "Claude",
         "codexDescription": "Connect your ChatGPT account to use GPT models.",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "Connect account",
         "description": "Used only in your runs, with your own credentials.",
         "disconnectAccount": "Disconnect account",
         "disconnectDescription": "This removes the account from Okou. It won’t cancel your subscription with the provider.",
         "disconnecting": "Disconnecting…",
         "disconnectTitle": "Disconnect {{account}}?",
+        "loadError": "Couldn’t load your accounts.",
+        "loadingAccounts": "Loading accounts…",
         "noAccounts": "No accounts connected.",
         "reconnectAccount": "Reconnect",
+        "retry": "Try again",
         "sectionTitle": "Personal",
         "status": {
           "connected": "Connected",
@@ -4927,7 +4932,6 @@
           "stale": "Attention",
           "week": "Week"
         },
-        "subscriptionsSectionTitle": "Personal Model Subscriptions",
         "useAccount": "Use"
       },
       "picker": {

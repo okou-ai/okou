@@ -12,6 +12,35 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.990.4](https://github.com/okou-ai/okou/compare/app-v0.990.3...app-v0.990.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **platform:** throttle worker indicator refreshes ([#37538](https://github.com/okou-ai/okou/issues/37538)) ([142747e](https://github.com/okou-ai/okou/commit/142747eece04d8346b23764911c862f357a5658f))
+
+## [0.990.3](https://github.com/okou-ai/okou/compare/app-v0.990.2...app-v0.990.3) (2026-10-01)
+
+
+### Bug Fixes
+
+* **app:** simplify auto model account connection states ([#37519](https://github.com/okou-ai/okou/issues/37519)) ([8385c05](https://github.com/okou-ai/okou/commit/8385c05827f8a34c32a599ebd48fb970825adf68))
+
+## [0.990.2](https://github.com/okou-ai/okou/compare/app-v0.990.1...app-v0.990.2) (2026-10-01)
+
+
+### Refactoring
+
+* **api:** prepare advisory lock cleanup release 1 ([#37313](https://github.com/okou-ai/okou/issues/37313)) ([77b3c9f](https://github.com/okou-ai/okou/commit/77b3c9f855bb9cd434eefc68ab2cb2cb9eb11ab2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.533.2
+    * @okouai/core bumped to 8.725.6
+
 ## [0.990.1](https://github.com/okou-ai/okou/compare/app-v0.990.0...app-v0.990.1) (2026-10-01)
 
 

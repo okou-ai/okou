@@ -52,7 +52,6 @@ export enum FeatureSwitchKey {
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
-  DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",

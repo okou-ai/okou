@@ -31,7 +31,6 @@ import {
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -477,12 +476,6 @@ export async function listMcpModels(
         principal.orgId,
         principal.userId,
       );
-      await budget.beforeQuery(tx);
-      const featureSwitchContext = await loadUserFeatureSwitchContext(
-        tx,
-        principal.orgId,
-        principal.userId,
-      );
       const subscriptions = member.subscriptions;
       budget.check();
       const models: McpListModelsOutput["models"] = [];
@@ -521,11 +514,7 @@ export async function listMcpModels(
           isBuiltInModelProviderType(route.modelProviderType)
         ) {
           await budget.beforeQuery(tx);
-          const runtime = await resolveBuiltInModelRuntimeRoute(
-            tx,
-            model,
-            featureSwitchContext,
-          );
+          const runtime = await resolveBuiltInModelRuntimeRoute(tx, model);
           budget.check();
           if (!runtime) {
             entry.availability = "unavailable";

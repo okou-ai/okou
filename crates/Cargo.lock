@@ -994,6 +994,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmac"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac78aa94ce13e432b332a4d1bf2eff167d3a2520188ee05b337180a42fd2e62e"
+dependencies = [
+ "cipher",
+ "dbl",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1225,6 +1236,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
+name = "dbl"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0d7a944e61df464668c5f51f56cc667396a8821434273112948ea0b66e405d7"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "debugid"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1331,6 +1351,19 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
+name = "eax"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e576f1e6a494c9dff641883eb55c1a30322977f8d48e059decbe55d5c02fb16"
+dependencies = [
+ "aead",
+ "cipher",
+ "cmac",
+ "ctr",
+ "ctutils",
+]
 
 [[package]]
 name = "ecdsa"
@@ -3392,12 +3425,13 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
  "crypto-bigint",
  "des",
+ "eax",
  "flate2",
  "getrandom 0.4.3",
  "hex",
@@ -3411,6 +3445,7 @@ dependencies = [
  "rsasl",
  "rustls",
  "serde_json",
+ "sha1 0.11.0",
  "sha2 0.11.0",
  "subtle",
  "tempfile",
@@ -3530,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.219.3"
+version = "0.219.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3597,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.4.5"
+version = "0.4.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3764,7 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3879,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.2.15"
+version = "0.2.17"
 dependencies = [
  "api-contracts",
  "async-trait",

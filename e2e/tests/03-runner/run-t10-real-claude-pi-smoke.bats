@@ -215,12 +215,12 @@ run_real_claude_steer() {
     assert_success
     run jq -e --arg model "$REAL_PI_MODEL" '
         .cliAgentType == "pi" and
-        .environment.OPENAI_BASE_URL == "https://api.deepseek.com/" and
-        .environment.OPENAI_MODEL == $model and
+        .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
+        .environment.OPENAI_MODEL == ("deepseek/" + $model) and
         any(
             .firewalls[];
             .kind == "builtin" and
-            .name == "model-provider:deepseek"
+            .name == "model-provider:openrouter-codex"
         )
     ' <<<"$output"
     assert_success

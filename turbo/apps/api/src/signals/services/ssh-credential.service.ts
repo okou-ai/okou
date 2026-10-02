@@ -16,7 +16,7 @@ import { command } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
@@ -198,7 +198,7 @@ export async function prepareSshCredentialSelection(
 }
 export const createSshCredential$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly owner: Owner;
       readonly body: CreateSshCredentialRequest;
@@ -208,37 +208,32 @@ export const createSshCredential$ = command(
   ): Promise<SshResult<SshCredentialResponse | undefined>> => {
     const db = set(writeDb$);
     const prepared = await prepareCredential(args.body, args.featureContext);
-    const transaction = await settle(
-      db.transaction(async (tx) => {
-        const [existing] = await tx
-          .select({
-            orgId: sshCredentials.orgId,
-            userId: sshCredentials.userId,
-          })
-          .from(sshCredentials)
-          .where(eq(sshCredentials.id, args.id));
-        const creation = sshCreationResult(args.owner, existing);
-        if (!creation.ok) {
-          return creation;
-        }
-        if (!creation.value) {
-          return { ok: true as const, value: undefined };
-        }
-        const [created] = await tx
-          .insert(sshCredentials)
-          .values({ ...args.owner, ...prepared, id: args.id })
-          .returning(sshCredentialMetadata);
-        if (!created) {
-          throw new Error("SSH credential insert returned no row");
-        }
-        return { ok: true as const, value: response(created, []) };
-      }),
+    const [existing] = await get(db$)
+      .select({
+        orgId: sshCredentials.orgId,
+        userId: sshCredentials.userId,
+      })
+      .from(sshCredentials)
+      .where(eq(sshCredentials.id, args.id));
+    const creation = sshCreationResult(args.owner, existing);
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true, value: undefined };
+    }
+    // The primary key, not the unlocked preflight, arbitrates concurrent creates.
+    const inserted = await settle(
+      db
+        .insert(sshCredentials)
+        .values({ ...args.owner, ...prepared, id: args.id })
+        .returning(sshCredentialMetadata),
     );
-    if (!transaction.ok) {
-      if (!isUniqueViolation(transaction.error, "ssh_credentials_pkey")) {
-        throw transaction.error;
+    if (!inserted.ok) {
+      if (!isUniqueViolation(inserted.error, "ssh_credentials_pkey")) {
+        throw inserted.error;
       }
-      const [existing] = await db
+      const [existing] = await get(db$)
         .select({ orgId: sshCredentials.orgId, userId: sshCredentials.userId })
         .from(sshCredentials)
         .where(eq(sshCredentials.id, args.id));
@@ -253,11 +248,12 @@ export const createSshCredential$ = command(
               "This resource ID cannot be used for this SSH configuration.",
           };
     }
-    const row = transaction.value;
-    if (row.ok && row.value) {
-      await publishSshClientInvalidation(args.owner);
+    const [created] = inserted.value;
+    if (!created) {
+      throw new Error("SSH credential insert returned no row");
     }
-    return row;
+    await publishSshClientInvalidation(args.owner);
+    return { ok: true, value: response(created, []) };
   },
 );
 interface UpdateSshCredentialArgs {

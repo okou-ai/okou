@@ -328,6 +328,64 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
+  it("keeps concurrent issuance within the pending-ticket capacity", async () => {
+    const f = await setup();
+    const issued = await Promise.all(
+      Array.from({ length: 17 }, () => {
+        return bootstrap(f);
+      }),
+    );
+    expect(
+      issued.filter((result) => {
+        return result.status === 200;
+      }),
+    ).toHaveLength(16);
+    expect(
+      issued.filter((result) => {
+        return result.status === 404;
+      }),
+    ).toHaveLength(1);
+    const first = issued.find((result) => {
+      return result.status === 200;
+    });
+    if (!first || first.status !== 200) {
+      throw new Error("Expected an issued ticket at the capacity boundary");
+    }
+    await accept(consume(f, first.body.ticket), [200]);
+    await accept(bootstrap(f), [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("revokes pending tickets when revocation races consumption", async () => {
+    const f = await setup();
+    const first = await accept(bootstrap(f), [200]);
+    const second = await accept(bootstrap(f), [200]);
+    await f.bdd.readMe(f.actor);
+    await Promise.all([
+      accept(consume(f, first.body.ticket), [200, 404]),
+      accept(
+        client().revoke({
+          params: { runId: f.runId },
+          headers: { authorization: "Bearer clerk-session" },
+          body: undefined,
+        }),
+        [204],
+      ),
+    ]);
+    await accept(consume(f, first.body.ticket), [404]);
+    await accept(consume(f, second.body.ticket), [404]);
+    const fresh = await accept(bootstrap(f), [200]);
+    const accepted = await accept(consume(f, fresh.body.ticket), [200]);
+    expect(accepted.body).toStrictEqual({
+      runId: f.runId,
+      runnerId: f.runnerId,
+      origin,
+      orgId: f.actor.orgId,
+      userId: f.actor.userId,
+    });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
   it("rejects expired and revoked tickets and a terminal run", async () => {
     const f = await setup();
     const expired = await accept(bootstrap(f), [200]);

@@ -13,10 +13,11 @@ import { db$, writeDb$ } from "../external/db";
 import { setResHeader$ } from "../context/hono";
 import { readConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
 import type { RouteEntry } from "../route-entry";
-import { bestEffort } from "../utils";
+import { bestEffort, settle } from "../utils";
 import {
   connectorAccountDeletionImpact,
   getConnectorAccount,
+  isConnectorAccountDefaultConflict,
   listConnectorAccountsByIds,
   listConnectorAccountsForTarget,
   listConnectorAccountSummaries,
@@ -359,29 +360,42 @@ const deleteInner$ = command(
     if (!(await getConnectorAccount(get(db$), request))) {
       return notFound("Connector account not found");
     }
-    const result =
+    const deletion =
       body.data.target.kind === "builtin"
-        ? await set(
-            deleteBuiltinConnectorLocalState$,
-            {
-              orgId: auth.orgId,
-              userId: auth.userId,
-              connectorSlug: body.data.target.connectorSlug,
-              sourceId: params.connectionId,
-            },
-            signal,
+        ? await settle(
+            set(
+              deleteBuiltinConnectorLocalState$,
+              {
+                orgId: auth.orgId,
+                userId: auth.userId,
+                connectorSlug: body.data.target.connectorSlug,
+                sourceId: params.connectionId,
+              },
+              signal,
+            ),
           )
-        : await set(
-            deleteCustomConnectorAccount$,
-            {
-              orgId: auth.orgId,
-              userId: auth.userId,
-              connectorId: body.data.target.customConnectorId,
-              memberConnectorId: params.connectionId,
-            },
-            signal,
+        : await settle(
+            set(
+              deleteCustomConnectorAccount$,
+              {
+                orgId: auth.orgId,
+                userId: auth.userId,
+                connectorId: body.data.target.customConnectorId,
+                memberConnectorId: params.connectionId,
+              },
+              signal,
+            ),
           );
     signal.throwIfAborted();
+    if (!deletion.ok) {
+      if (isConnectorAccountDefaultConflict(deletion.error)) {
+        return badRequestMessage(
+          "Another default change won; please delete again",
+        );
+      }
+      throw deletion.error;
+    }
+    const result = deletion.value;
     if (result === "missing") {
       return notFound("Connector account not found");
     }

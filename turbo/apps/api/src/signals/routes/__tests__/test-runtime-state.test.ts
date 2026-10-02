@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { withMockNowForTest } from "../../../lib/time";
+import { insertBuiltInModelMirrorFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -139,42 +140,30 @@ describe("POST /api/test/runtime-state/action", () => {
   });
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
-    "uses OpenRouter during a built-in %s native cooldown",
-    async (selectedModel) => {
+    "serves built-in %s on OpenRouter and recovers after its cooldown",
+    async (sourceModel) => {
+      const mirror = await insertBuiltInModelMirrorFixture(sourceModel);
+      onTestFinished(mirror.restore);
+      const selectedModel = mirror.model;
       await seedBuiltInModelCandidateKeys(context, selectedModel);
       const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
-      const primaryCooldownUntil = new Date(startedAt + 5 * 60 * 1000);
-      const primary = await withMockNowForTest(startedAt, async () => {
+      const cooldownUntil = new Date(startedAt + 5 * 60 * 1000);
+      const route = await withMockNowForTest(startedAt, async () => {
         return await resolveBuiltInModelRouteFixture(context, selectedModel);
       });
-      if (!primary) {
-        throw new Error(`Expected a primary route for ${selectedModel}`);
+      if (!route) {
+        throw new Error(`Expected a route for ${selectedModel}`);
       }
-      expect(primary.provider_type).toBe("deepseek");
-      await setBuiltInCandidateCooldownFixture(
-        context,
-        selectedModel,
-        primary,
-        primaryCooldownUntil,
-      );
-      const fallback = await withMockNowForTest(startedAt, async () => {
-        return await resolveBuiltInModelRouteFixture(context, selectedModel);
-      });
-      if (!fallback || fallback.provider_type !== "openrouter-codex") {
-        throw new Error(`Expected an OpenRouter fallback for ${selectedModel}`);
-      }
+      expect(route.provider_type).toBe("openrouter-codex");
 
       const actor = bdd.user();
-      if (!actor.orgId) {
-        throw new Error("Expected built-in fallback actor to have an org");
-      }
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: `BDD ${selectedModel} fallback catalog agent`,
+        displayName: `BDD ${sourceModel} route catalog agent`,
       });
       await runs.updateOrgModelPolicies(actor, [
         {
@@ -188,12 +177,10 @@ describe("POST /api/test/runtime-state/action", () => {
       const { runId } = await withMockNowForTest(startedAt, async () => {
         return await chat.sendAndLaunch(actor, {
           agentId: agent.agentId,
-          prompt: `use the ${selectedModel} OpenRouter fallback`,
+          prompt: `use the ${sourceModel} OpenRouter route`,
           model: selectedModel,
         });
       });
-      // Verify the committed route on the run itself rather than asserting a
-      // retired Codex-specific claim shape.
       onTestFinished(async () => {
         await runs.requestCancelRun(actor, runId, [200]);
       });
@@ -201,20 +188,20 @@ describe("POST /api/test/runtime-state/action", () => {
       expect(detail.body).toMatchObject({
         modelProvider: "built-in",
         selectedModel,
-        modelRuntimeProvider: fallback.provider_type,
-        modelRuntimeModel: fallback.upstream_model,
+        modelRuntimeProvider: route.provider_type,
+        modelRuntimeModel: route.upstream_model,
       });
 
       await setBuiltInCandidateCooldownFixture(
         context,
         selectedModel,
-        fallback,
-        primaryCooldownUntil,
+        route,
+        cooldownUntil,
       );
       const unavailable = await withMockNowForTest(startedAt, async () => {
         return await sendRejectedByUnavailableModel(actor, {
           agentId: agent.agentId,
-          prompt: "reject while both built-in routes are cooling down",
+          prompt: "reject while the built-in OpenRouter route is cooling down",
           model: selectedModel,
         });
       });
@@ -225,12 +212,12 @@ describe("POST /api/test/runtime-state/action", () => {
         error: "model_provider_unavailable",
       });
 
-      await withMockNowForTest(primaryCooldownUntil.getTime(), async () => {
+      await withMockNowForTest(cooldownUntil.getTime(), async () => {
         await expect(
           resolveBuiltInModelRouteFixture(context, selectedModel),
         ).resolves.toMatchObject({
-          provider_type: primary.provider_type,
-          upstream_model: primary.upstream_model,
+          provider_type: route.provider_type,
+          upstream_model: route.upstream_model,
         });
       });
     },
@@ -477,7 +464,7 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         await seedBuiltInModelCandidateKeys(context, "deepseek-v4-flash");
         await expect(
           resolveBuiltInModelRouteFixture(context, "deepseek-v4-flash"),
-        ).resolves.toMatchObject({ provider_type: "deepseek" });
+        ).resolves.toMatchObject({ provider_type: "openrouter-codex" });
 
         await withMockNowForTest(
           startedAt + cooldownSeconds * 1000 - 1,

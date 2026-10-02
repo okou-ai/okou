@@ -105,6 +105,16 @@ QEMU-specific 263 path refuses QEMU 264; it does not claim generic standards
 X509SASL 264 support. The independent positive and negative fixture, cleanup,
 and version pins are in [`tests/QEMU_SASL.md`](tests/QEMU_SASL.md).
 
+`authenticate_rsa_aes` is a separate **engine-only** entry point for RA2 (5),
+RA2_256 (129), RA2ne (6) and RA2ne_256 (130). It requires an independently
+acquired full public-key-wire SHA256 pin and exact 255-byte credential subtype.
+Server RSA parameters are bounded; each attempt uses a fresh fixed client key
+and bounded blocking crypto jobs. Full variants retain owned authenticated EAX
+records for the session; `ne` explicitly returns raw after encrypted credentials
+and requires protective outer transport in any future product. No owner/Runner
+profile is introduced. Protocol, key-pin bytes, backend erasure limits and the
+independent eight-case matrix are in [`tests/RSA_AES.md`](tests/RSA_AES.md).
+
 Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
 are not consumed. The certificate-free returned object retains no client credentials; the
@@ -114,9 +124,11 @@ buffer after key-provider import; Rustls/provider, compiler, kernel and TLS
 record copies are not guaranteed erasable. The SCRAM profile can run a bounded PBKDF2 step in Tokio's blocking pool;
 when an authentication is cancelled, its socket closes immediately while an
 already-started bounded computation finishes and then drops its owned inputs.
-Other profiles start no task. Its owned transport is fixed at authentication: verified TLS for X509 or
-the caller-supplied raw stream for Apple DH, Apple password/type 2 or either
-Apple SRP method. No fallback changes that variant.
+RSA-AES also uses bounded blocking jobs; it retains zeroizing directional keys
+for its authenticated records. Other profiles start no task. The owned transport
+is fixed at authentication: verified TLS for X509, RSA-AES EAX for full RSA modes,
+or the separately selected supplied raw stream for Apple and RSA `ne`.
+No fallback changes that variant.
 
 ## Optional classic password / type-2 engine boundary
 
