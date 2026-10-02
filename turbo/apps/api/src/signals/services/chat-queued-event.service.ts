@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
@@ -18,7 +20,7 @@ import { loadChatQueueHead } from "./chat-event-queue.service";
 import {
   type LoadedChatEventReplacementTarget,
   type NewChatEvent,
-  replaceLoadedChatEvent,
+  chatEventReplacementInsertSql,
 } from "./chat-event.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
 
@@ -383,14 +385,22 @@ export async function claimQueueFirstRunAssociation(
         "api_dispatch_persist_queue_first_replacement",
         "nested",
         async () => {
-          return await replaceLoadedChatEvent(db, snapshot.target, {
-            ...snapshot.replacement,
-            // This fresh server run UUID identifies its initial input claim.
-            // The claim precedes the run INSERT in the same launch transaction;
-            // active-input delivery never assigns this identity. Provenance
-            // readers use its physical sequence as the run's lower bound.
-            id: args.runId,
-          });
+          return (
+            (
+              await executeRawRows(
+                db,
+                chatEventReplacementInsertSql(snapshot.target, {
+                  ...snapshot.replacement,
+                  // This fresh server run UUID identifies its initial input claim.
+                  // The claim precedes the run INSERT in the same launch transaction;
+                  // active-input delivery never assigns this identity. Provenance
+                  // readers use its physical sequence as the run's lower bound.
+                  id: args.runId,
+                }),
+                chatEventCommandResultSchema,
+              )
+            )[0] ?? null
+          );
         },
       );
       // The replacement's unique revoke edge is the claim's only mutual

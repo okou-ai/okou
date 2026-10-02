@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
@@ -71,7 +73,7 @@ import {
   type InsertAssistantEventsInput,
 } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { insertChatEvent } from "./chat-event.service";
+import { chatEventInsertSql } from "./chat-event.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -1127,21 +1129,30 @@ async function insertAssistantErrorEventTransaction(
 ): Promise<
   (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
 > {
-  const insertedEvent = await insertChatEvent(
-    tx,
-    {
-      chatThreadId: input.threadId,
-      eventType:
-        input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled",
-      content: displayErrorMessage,
-      runId: input.runId,
-      error: displayErrorMessage,
-      ...(input.lifecycleEvent === "failed" && input.failureReason !== null
-        ? { failureReason: input.failureReason }
-        : {}),
-    },
-    "run-lifecycle",
-  );
+  const insertedEvent =
+    (
+      await executeRawRows(
+        tx,
+        chatEventInsertSql(
+          {
+            chatThreadId: input.threadId,
+            eventType:
+              input.lifecycleEvent === "failed"
+                ? "run.failed"
+                : "run.cancelled",
+            content: displayErrorMessage,
+            runId: input.runId,
+            error: displayErrorMessage,
+            ...(input.lifecycleEvent === "failed" &&
+            input.failureReason !== null
+              ? { failureReason: input.failureReason }
+              : {}),
+          },
+          "run-lifecycle",
+        ),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
   const event =
     insertedEvent ??
     (await loadRunLifecycleMarker(
@@ -1303,18 +1314,24 @@ async function insertIntegrationCompletionFallback(args: {
   readonly createdAt: Date;
 }): Promise<CanonicalDeliveryEvent> {
   const eventId = integrationCompletionFallbackEventIdForRun(args.runId);
-  const inserted = await insertChatEvent(
-    args.db,
-    {
-      id: eventId,
-      chatThreadId: args.threadId,
-      eventType: "output.message",
-      content: "Task completed successfully.",
-      runId: args.runId,
-      createdAt: args.createdAt,
-    },
-    "id",
-  );
+  const inserted =
+    (
+      await executeRawRows(
+        args.db,
+        chatEventInsertSql(
+          {
+            id: eventId,
+            chatThreadId: args.threadId,
+            eventType: "output.message",
+            content: "Task completed successfully.",
+            runId: args.runId,
+            createdAt: args.createdAt,
+          },
+          "id",
+        ),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
   if (inserted) {
     return { id: inserted.id };
   }
@@ -1477,18 +1494,24 @@ export async function insertRunLifecycleMarkerProjection(args: {
       createdAt: args.markerCreatedAt,
     });
   }
-  const marker = await insertChatEvent(
-    args.tx,
-    {
-      chatThreadId: input.threadId,
-      eventType:
-        input.event === "completed" ? "run.completed" : "run.cancelled",
-      content: null,
-      runId: input.runId,
-      createdAt: args.markerCreatedAt,
-    },
-    "run-lifecycle",
-  );
+  const marker =
+    (
+      await executeRawRows(
+        args.tx,
+        chatEventInsertSql(
+          {
+            chatThreadId: input.threadId,
+            eventType:
+              input.event === "completed" ? "run.completed" : "run.cancelled",
+            content: null,
+            runId: input.runId,
+            createdAt: args.markerCreatedAt,
+          },
+          "run-lifecycle",
+        ),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
   if (
     !marker &&
     !(await loadRunLifecycleMarker(
@@ -1566,17 +1589,23 @@ async function insertRecommendedFollowupsEvent(args: {
   readonly orgId: string;
   readonly followups: readonly ChatRecommendedFollowup[];
 }): Promise<boolean> {
-  const inserted = await insertChatEvent(
-    args.db,
-    {
-      id: followupsEventIdForRun(args.runId),
-      chatThreadId: args.threadId,
-      eventType: "output.followups",
-      content: serializeChatFollowupsContent(args.followups),
-      runId: args.runId,
-    },
-    "id",
-  );
+  const inserted =
+    (
+      await executeRawRows(
+        args.db,
+        chatEventInsertSql(
+          {
+            id: followupsEventIdForRun(args.runId),
+            chatThreadId: args.threadId,
+            eventType: "output.followups",
+            content: serializeChatFollowupsContent(args.followups),
+            runId: args.runId,
+          },
+          "id",
+        ),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null;
 
   if (!inserted) {
     return false;

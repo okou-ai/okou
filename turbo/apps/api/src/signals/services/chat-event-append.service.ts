@@ -2,11 +2,9 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
-  executeRawRows,
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
-import type { ApiDb, Tx } from "../../lib/db-types";
 
 export type ChatEventAppendConflict = "none" | "any" | "id" | "run-lifecycle";
 export type PreparedChatEventRow = Omit<
@@ -24,6 +22,12 @@ export const chatEventAppendResultSchema = z.object({
   seqId: pgInt8ToSafeIntegerSchema,
   sequenceNumber: z.number().int().nullable(),
 });
+
+/** Preserve the single-event command result without leaking batch-only fields. */
+export const chatEventCommandResultSchema =
+  chatEventAppendResultSchema.transform(({ id, createdAt, seqId }) => {
+    return { id, createdAt, seqId };
+  });
 
 function conflictClause(conflict: ChatEventAppendConflict): SQL {
   if (conflict === "any") {
@@ -100,19 +104,4 @@ export function appendCanonicalChatEventsSql(
       inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
     FROM inserted
   `;
-}
-
-export async function appendCanonicalChatEvents(
-  db: ApiDb | Tx,
-  values: readonly PreparedChatEventRow[],
-  conflict: ChatEventAppendConflict,
-) {
-  if (values.length === 0) {
-    return [];
-  }
-  return await executeRawRows(
-    db,
-    appendCanonicalChatEventsSql(values, conflict),
-    chatEventAppendResultSchema,
-  );
 }

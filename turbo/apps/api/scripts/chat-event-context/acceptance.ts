@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
+import { executeRawRows } from "../../src/lib/db-raw-rows";
 import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -9,8 +11,8 @@ import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { createUserMessageDocument } from "../../src/signals/services/chat-user-message.service";
 import {
-  insertChatEvent,
-  insertChatEventContext,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
 } from "../../src/signals/services/chat-event.service";
 import { touchNativeChatThread } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
@@ -33,8 +35,8 @@ databaseUrl.pathname = `/${databaseName}`;
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 const client = new Client({ connectionString: databaseUrl.toString() });
 const schema = `chat_context_${suffix}`;
-// The API writers take the pooled database type; one connection keeps the
-// isolated schema on its search path.
+// One connection keeps this isolated schema on its search path; the fixture
+// executes the pure production SQL on its own connection.
 const pool = new Pool({
   connectionString: databaseUrl.toString(),
   max: 1,
@@ -103,8 +105,19 @@ async function appendEntryInput(
   db: ReturnType<typeof drizzle<Record<string, never>, Pool>>,
   input: ReturnType<typeof agentphoneInput>,
 ) {
-  await insertChatEventContext(db, input);
-  return await insertChatEvent(db, input, "id");
+  const contextInsert = chatEventContextInsertSql(input);
+  if (contextInsert) {
+    await db.execute(contextInsert);
+  }
+  return (
+    (
+      await executeRawRows(
+        db,
+        chatEventInsertSql(input, "id"),
+        chatEventCommandResultSchema,
+      )
+    )[0] ?? null
+  );
 }
 
 async function count(sql: string, values: readonly unknown[]) {

@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -9,9 +11,12 @@ import type { Db } from "../external/db";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
-  insertChatEvent,
-  insertChatEventContext,
-  revokeChatEvent,
+  chatEventContextInsertSql,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
 } from "./chat-event.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
@@ -197,17 +202,27 @@ export async function workflowAutomationQueueEventWriter(
       args.timing,
       "api_dispatch_workflow_enqueue_event_context_insert",
       async () => {
-        await insertChatEventContext(tx, values);
+        const contextInsert = chatEventContextInsertSql(values);
+        if (contextInsert) {
+          await tx.execute(contextInsert);
+        }
       },
     );
     const inserted = await measureWorkflowAdmissionStep(
       args.timing,
       "api_dispatch_workflow_enqueue_event_insert",
       async () => {
-        return await insertChatEvent(
-          tx,
-          values,
-          args.queueEventId === undefined ? "none" : "id",
+        return (
+          (
+            await executeRawRows(
+              tx,
+              chatEventInsertSql(
+                values,
+                args.queueEventId === undefined ? "none" : "id",
+              ),
+              chatEventCommandResultSchema,
+            )
+          )[0] ?? null
         );
       },
     );
@@ -294,10 +309,24 @@ export async function revokePendingScheduleTicks(
     if (eventId === args.excludeEventId) {
       continue;
     }
-    await revokeChatEvent(db, eventId, {
-      chatThreadId: args.chatThreadId,
-      eventType: "control.revoke",
-      runId: null,
-    });
+    await executeRawRows(
+      db,
+      chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(
+          await executeRawRows(
+            db,
+            chatEventReplacementTargetSql(eventId),
+            chatEventReplacementTargetSchema,
+          ),
+        ),
+        {
+          chatThreadId: args.chatThreadId,
+          eventType: "control.revoke",
+          runId: null,
+          content: null,
+        },
+      ),
+      chatEventCommandResultSchema,
+    );
   }
 }

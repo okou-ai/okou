@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
+import { executeRawRows } from "../../src/lib/db-raw-rows";
 import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -14,7 +16,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { insertChatEvent } from "../../src/signals/services/chat-event.service";
+import { chatEventInsertSql } from "../../src/signals/services/chat-event.service";
 import { touchChatThreadLastMessageAtIndependently } from "../../src/signals/services/chat-event-shared.service";
 import { flushLogs } from "../../src/lib/log";
 import { flushWaitUntilForTest } from "../../src/signals/context/wait-until";
@@ -54,12 +56,20 @@ async function fixture() {
     .values({ id: agentId, name: agentId, owner: userId, orgId });
   await db.insert(chatThreads).values({ id: threadId, userId, agentId });
   const append = async () => {
-    return await insertChatEvent(db, {
-      chatThreadId: threadId,
-      eventType: "input.prompt",
-      userMessage: document,
-      contextType: "web",
-    });
+    return (
+      (
+        await executeRawRows(
+          db,
+          chatEventInsertSql({
+            chatThreadId: threadId,
+            eventType: "input.prompt",
+            userMessage: document,
+            contextType: "web",
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null
+    );
   };
   return { threadId, userId, orgId, append };
 }

@@ -1,3 +1,7 @@
+import {
+  chatEventAppendResultSchema,
+  chatEventCommandResultSchema,
+} from "../signals/services/chat-event-append.service";
 import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -32,9 +36,13 @@ import {
   runOwnedChatEventForRunCondition,
 } from "../signals/services/chat-event-type.service";
 import {
-  insertChatEvent,
-  insertChatEvents,
-  replaceChatEvent,
+  type NewChatEvent,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
+  chatEventsInsertSql,
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
@@ -274,6 +282,50 @@ function annotationProjectionSourcePart(
   throw new Error(`Unexpected annotation fixture: ${input.text}`);
 }
 
+function rejectedAnnotationPrompt(
+  chatThreadId: string,
+  rejectedPendingId: string,
+): Extract<NewChatEvent, { readonly eventType: "input.prompt" }> {
+  return {
+    id: rejectedPendingId,
+    chatThreadId,
+    eventType: "input.prompt",
+    userMessage: createUserMessageDocument({
+      text: "rejected annotation",
+      nonContentPart: createChatEventSourcePart({
+        kind: "teams",
+        tenantId: "tenant-2",
+        channelId: "19:reject@thread.tacv2",
+        activityId: "activity-rejected",
+        conversationId: null,
+        conversationType: "channel",
+        botId: null,
+      }),
+    }),
+    runId: null,
+    teamsContext: {
+      tenantId: "tenant-2",
+      teamId: "team-2",
+      channelId: "19:reject@thread.tacv2",
+      conversationId: "19:reject-conversation@thread.tacv2",
+      conversationType: "channel",
+      activityId: "activity-rejected",
+      threadContext: "",
+      messageText: "rejected annotation",
+      messageFiles: [],
+      tenantName: "Tenant Two",
+      teamName: "Team Two",
+      threadId: "activity-rejected",
+      serviceUrl: "https://smba.trafficmanager.net/amer/",
+      teamsAppId: "teams-app-2",
+      senderUserId: "29:user-2",
+      senderDisplayName: "Grace Hopper",
+      senderPrincipalName: "grace@example.com",
+      connectionId: "00000000-0000-4000-8000-000000000004",
+    },
+  };
+}
+
 export async function seedChatEventAnnotationProjectionFixture(
   chatThreadId: string,
 ): Promise<{
@@ -284,103 +336,106 @@ export async function seedChatEventAnnotationProjectionFixture(
   const rejectedPendingId = randomUUID();
   await db().transaction(async (tx) => {
     for (const input of annotationProjectionInputs) {
-      await insertChatEvent(tx, {
+      await executeRawRows(
+        tx,
+        chatEventInsertSql({
+          chatThreadId,
+          eventType: "input.prompt",
+          userMessage: createUserMessageDocument({
+            text: input.text,
+            nonContentPart: annotationProjectionSourcePart(input),
+          }),
+          runId: null,
+          ...input.context,
+        }),
+        chatEventCommandResultSchema,
+      );
+    }
+
+    await executeRawRows(
+      tx,
+      chatEventInsertSql({
+        id: claimedPendingId,
         chatThreadId,
         eventType: "input.prompt",
         userMessage: createUserMessageDocument({
-          text: input.text,
-          nonContentPart: annotationProjectionSourcePart(input),
+          text: "claimed annotation",
+          nonContentPart: {
+            type: "source",
+            kind: "github",
+            href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+          },
         }),
         runId: null,
-        ...input.context,
-      });
-    }
-
-    await insertChatEvent(tx, {
-      id: claimedPendingId,
-      chatThreadId,
-      eventType: "input.prompt",
-      userMessage: createUserMessageDocument({
-        text: "claimed annotation",
-        nonContentPart: {
-          type: "source",
-          kind: "github",
-          href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+        contextType: "web",
+      }),
+      chatEventCommandResultSchema,
+    );
+    await executeRawRows(
+      tx,
+      chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(
+          await executeRawRows(
+            tx,
+            chatEventReplacementTargetSql(claimedPendingId),
+            chatEventReplacementTargetSchema,
+          ),
+        ),
+        {
+          chatThreadId,
+          eventType: "input.prompt",
+          userMessage: createUserMessageDocument({
+            text: "claimed annotation",
+            nonContentPart: {
+              type: "source",
+              kind: "github",
+              href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+            },
+          }),
+          runId: randomUUID(),
         },
-      }),
-      runId: null,
-      contextType: "web",
-    });
-    await replaceChatEvent(tx, claimedPendingId, {
-      chatThreadId,
-      eventType: "input.prompt",
-      userMessage: createUserMessageDocument({
-        text: "claimed annotation",
-        nonContentPart: {
-          type: "source",
-          kind: "github",
-          href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
-        },
-      }),
-      runId: randomUUID(),
-    });
+      ),
+      chatEventCommandResultSchema,
+    );
 
-    await insertChatEvent(tx, {
-      id: rejectedPendingId,
-      chatThreadId,
-      eventType: "input.prompt",
-      userMessage: createUserMessageDocument({
-        text: "rejected annotation",
-        nonContentPart: createChatEventSourcePart({
-          kind: "teams",
-          tenantId: "tenant-2",
-          channelId: "19:reject@thread.tacv2",
-          activityId: "activity-rejected",
-          conversationId: null,
-          conversationType: "channel",
-          botId: null,
-        }),
-      }),
-      runId: null,
-      teamsContext: {
-        tenantId: "tenant-2",
-        teamId: "team-2",
-        channelId: "19:reject@thread.tacv2",
-        conversationId: "19:reject-conversation@thread.tacv2",
-        conversationType: "channel",
-        activityId: "activity-rejected",
-        threadContext: "",
-        messageText: "rejected annotation",
-        messageFiles: [],
-        tenantName: "Tenant Two",
-        teamName: "Team Two",
-        threadId: "activity-rejected",
-        serviceUrl: "https://smba.trafficmanager.net/amer/",
-        teamsAppId: "teams-app-2",
-        senderUserId: "29:user-2",
-        senderDisplayName: "Grace Hopper",
-        senderPrincipalName: "grace@example.com",
-        connectionId: "00000000-0000-4000-8000-000000000004",
-      },
-    });
-    await replaceChatEvent(tx, rejectedPendingId, {
-      chatThreadId,
-      eventType: "input.rejected",
-      userMessage: createUserMessageDocument({
-        text: "rejected annotation",
-        nonContentPart: createChatEventSourcePart({
-          kind: "teams",
-          tenantId: "tenant-2",
-          channelId: "19:reject@thread.tacv2",
-          activityId: "activity-rejected",
-          conversationId: null,
-          conversationType: "channel",
-          botId: null,
-        }),
-      }),
-      runId: null,
-      error: "rejected for annotation coverage",
-    });
+    await executeRawRows(
+      tx,
+      chatEventInsertSql(
+        rejectedAnnotationPrompt(chatThreadId, rejectedPendingId),
+      ),
+      chatEventCommandResultSchema,
+    );
+    await executeRawRows(
+      tx,
+      chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(
+          await executeRawRows(
+            tx,
+            chatEventReplacementTargetSql(rejectedPendingId),
+            chatEventReplacementTargetSchema,
+          ),
+        ),
+        {
+          chatThreadId,
+          eventType: "input.rejected",
+          userMessage: createUserMessageDocument({
+            text: "rejected annotation",
+            nonContentPart: createChatEventSourcePart({
+              kind: "teams",
+              tenantId: "tenant-2",
+              channelId: "19:reject@thread.tacv2",
+              activityId: "activity-rejected",
+              conversationId: null,
+              conversationType: "channel",
+              botId: null,
+            }),
+          }),
+          runId: null,
+          error: "rejected for annotation coverage",
+        },
+      ),
+      chatEventCommandResultSchema,
+    );
   });
   return { claimedPendingId, rejectedPendingId };
 }
@@ -466,27 +521,34 @@ export async function insertQueuedSlackMissingContextFixture(args: {
   readonly content: string;
 }): Promise<string> {
   return await db().transaction(async (tx) => {
-    const event = await insertChatEvent(tx, {
-      chatThreadId: args.threadId,
-      eventType: "input.prompt",
-      userMessage: createUserMessageDocument({ text: args.content }),
-      runId: null,
-      slackContext: {
-        channelId: "C_MONITOR_FAILURE",
-        messageTs: "1.000001",
-        botUserId: "U_MONITOR_FAILURE_BOT",
-        conversationContext: "",
-        messageText: args.content,
-        messageFiles: [],
-        messageAssets: [],
-        mentionDisplayNames: {},
-        senderDisplayName: "Queue Monitor Fixture",
-        senderUserId: "U_MONITOR_FAILURE",
-        channelType: "channel",
-        threadTs: "1.000001",
-        routeThreadTs: null,
-      },
-    });
+    const event =
+      (
+        await executeRawRows(
+          tx,
+          chatEventInsertSql({
+            chatThreadId: args.threadId,
+            eventType: "input.prompt",
+            userMessage: createUserMessageDocument({ text: args.content }),
+            runId: null,
+            slackContext: {
+              channelId: "C_MONITOR_FAILURE",
+              messageTs: "1.000001",
+              botUserId: "U_MONITOR_FAILURE_BOT",
+              conversationContext: "",
+              messageText: args.content,
+              messageFiles: [],
+              messageAssets: [],
+              mentionDisplayNames: {},
+              senderDisplayName: "Queue Monitor Fixture",
+              senderUserId: "U_MONITOR_FAILURE",
+              channelType: "channel",
+              threadTs: "1.000001",
+              routeThreadTs: null,
+            },
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     if (!event) {
       throw new Error("Failed to insert queued Slack fixture");
     }
@@ -517,13 +579,29 @@ export async function replayPendingChatInputQueueEventFixture(args: {
     if (!event?.userMessage) {
       throw new Error("Expected one pending chat input queue event");
     }
-    const replacement = await replaceChatEvent(tx, args.eventId, {
-      id: args.replacementId,
-      chatThreadId: event.chatThreadId,
-      eventType: "input.prompt",
-      userMessage: event.userMessage,
-      runId: null,
-    });
+    const replacement =
+      (
+        await executeRawRows(
+          tx,
+          chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              await executeRawRows(
+                tx,
+                chatEventReplacementTargetSql(args.eventId),
+                chatEventReplacementTargetSchema,
+              ),
+            ),
+            {
+              id: args.replacementId,
+              chatThreadId: event.chatThreadId,
+              eventType: "input.prompt",
+              userMessage: event.userMessage,
+              runId: null,
+            },
+          ),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     if (!replacement) {
       throw new Error("Expected the pending queue event replay to insert");
     }
@@ -1067,12 +1145,19 @@ export async function holdChatEventInsertTransactionFixture(args: {
     if (!holderPid) {
       throw new Error("Expected the chat-message insert holder pid");
     }
-    const event = await insertChatEvent(tx, {
-      chatThreadId: args.threadId,
-      eventType: "output.message",
-      content: args.content,
-      runId: null,
-    });
+    const event =
+      (
+        await executeRawRows(
+          tx,
+          chatEventInsertSql({
+            chatThreadId: args.threadId,
+            eventType: "output.message",
+            content: args.content,
+            runId: null,
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     if (!event) {
       throw new Error("Expected the held chat-message insert");
     }
@@ -1134,8 +1219,20 @@ export async function insertOutputEventWithConflictingLegacyPayloadFixture(args:
     };
     const inserted =
       args.legacyPayload === "run.completed"
-        ? await insertChatEvent(tx, lifecyclePayloadEvent)
-        : await insertChatEvent(tx, usagePayloadEvent);
+        ? ((
+            await executeRawRows(
+              tx,
+              chatEventInsertSql(lifecyclePayloadEvent),
+              chatEventCommandResultSchema,
+            )
+          )[0] ?? null)
+        : ((
+            await executeRawRows(
+              tx,
+              chatEventInsertSql(usagePayloadEvent),
+              chatEventCommandResultSchema,
+            )
+          )[0] ?? null);
     if (!inserted) {
       throw new Error("Expected the conflicting legacy-payload event insert");
     }
@@ -1180,29 +1277,41 @@ async function insertCanonicalSingleWrites(
   const inputUserMessage = createUserMessageDocument({
     text: "rejected canonical input",
   });
-  await insertChatEvent(tx, {
-    id: single.inputRejectedId,
-    chatThreadId: threadId,
-    eventType: "input.rejected",
-    contextType: "web",
-    userMessage: inputUserMessage,
-    runId: null,
-    error: "input rejected",
-  });
-  await insertChatEvent(tx, {
-    id: single.outputErrorId,
-    chatThreadId: threadId,
-    eventType: "output.error",
-    content: "output failed",
-    error: "output error",
-    runId: randomUUID(),
-  });
-  await insertChatEvent(tx, {
-    id: single.interruptId,
-    chatThreadId: threadId,
-    eventType: "control.interrupt",
-    interruptsRunId: single.interruptTargetRunId,
-  });
+  await executeRawRows(
+    tx,
+    chatEventInsertSql({
+      id: single.inputRejectedId,
+      chatThreadId: threadId,
+      eventType: "input.rejected",
+      contextType: "web",
+      userMessage: inputUserMessage,
+      runId: null,
+      error: "input rejected",
+    }),
+    chatEventCommandResultSchema,
+  );
+  await executeRawRows(
+    tx,
+    chatEventInsertSql({
+      id: single.outputErrorId,
+      chatThreadId: threadId,
+      eventType: "output.error",
+      content: "output failed",
+      error: "output error",
+      runId: randomUUID(),
+    }),
+    chatEventCommandResultSchema,
+  );
+  await executeRawRows(
+    tx,
+    chatEventInsertSql({
+      id: single.interruptId,
+      chatThreadId: threadId,
+      eventType: "control.interrupt",
+      interruptsRunId: single.interruptTargetRunId,
+    }),
+    chatEventCommandResultSchema,
+  );
 }
 
 async function insertCanonicalBatchWrites(
@@ -1210,35 +1319,39 @@ async function insertCanonicalBatchWrites(
   threadId: string,
   batch: CanonicalChatEventWriteFixture["batch"],
 ): Promise<void> {
-  await insertChatEvents(tx, [
-    {
-      id: batch.runFailedId,
-      chatThreadId: threadId,
-      eventType: "run.failed",
-      content: "run failed",
-      error: "runner error",
-      failureReason: "future_reason",
-      runId: randomUUID(),
-    },
-    {
-      id: batch.usageId,
-      chatThreadId: threadId,
-      eventType: "usage.recorded",
-      runId: randomUUID(),
-      usagePayload: {
-        version: 1,
-        totalCredits: 9,
-        settledAt: "2026-08-10T00:00:00.000Z",
-        breakdown: [
-          {
-            kind: "model",
-            credits: 9,
-            providers: [{ provider: "test", credits: 9 }],
-          },
-        ],
+  await executeRawRows(
+    tx,
+    chatEventsInsertSql([
+      {
+        id: batch.runFailedId,
+        chatThreadId: threadId,
+        eventType: "run.failed",
+        content: "run failed",
+        error: "runner error",
+        failureReason: "future_reason",
+        runId: randomUUID(),
       },
-    },
-  ]);
+      {
+        id: batch.usageId,
+        chatThreadId: threadId,
+        eventType: "usage.recorded",
+        runId: randomUUID(),
+        usagePayload: {
+          version: 1,
+          totalCredits: 9,
+          settledAt: "2026-08-10T00:00:00.000Z",
+          breakdown: [
+            {
+              kind: "model",
+              credits: 9,
+              providers: [{ provider: "test", credits: 9 }],
+            },
+          ],
+        },
+      },
+    ]),
+    chatEventAppendResultSchema,
+  );
 }
 
 async function insertCanonicalReplacementWrite(
@@ -1249,22 +1362,39 @@ async function insertCanonicalReplacementWrite(
   const userMessage = createUserMessageDocument({
     text: "replacement canonical input",
   });
-  await insertChatEvent(tx, {
-    id: replacement.targetId,
-    chatThreadId: threadId,
-    eventType: "input.prompt",
-    contextType: "web",
-    userMessage,
-    runId: null,
-  });
-  await replaceChatEvent(tx, replacement.targetId, {
-    id: replacement.replacementId,
-    chatThreadId: threadId,
-    eventType: "input.rejected",
-    userMessage,
-    runId: null,
-    error: "replacement rejected",
-  });
+  await executeRawRows(
+    tx,
+    chatEventInsertSql({
+      id: replacement.targetId,
+      chatThreadId: threadId,
+      eventType: "input.prompt",
+      contextType: "web",
+      userMessage,
+      runId: null,
+    }),
+    chatEventCommandResultSchema,
+  );
+  await executeRawRows(
+    tx,
+    chatEventReplacementInsertSql(
+      requireChatEventReplacementTarget(
+        await executeRawRows(
+          tx,
+          chatEventReplacementTargetSql(replacement.targetId),
+          chatEventReplacementTargetSchema,
+        ),
+      ),
+      {
+        id: replacement.replacementId,
+        chatThreadId: threadId,
+        eventType: "input.rejected",
+        userMessage,
+        runId: null,
+        error: "replacement rejected",
+      },
+    ),
+    chatEventCommandResultSchema,
+  );
 }
 
 /** Exercise the three production canonical persistence paths. */

@@ -1,3 +1,5 @@
+import { chatEventCommandResultSchema } from "../signals/services/chat-event-append.service";
+import { executeRawRows } from "../lib/db-raw-rows";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
@@ -13,8 +15,11 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 import { chatSearchIndexText } from "../lib/chat-search-bigram";
 import {
-  insertChatEvent,
-  replaceChatEvent,
+  chatEventInsertSql,
+  chatEventReplacementInsertSql,
+  requireChatEventReplacementTarget,
+  chatEventReplacementTargetSql,
+  chatEventReplacementTargetSchema,
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 
@@ -146,41 +151,67 @@ export async function insertChatSearchProjectionCoverageFixture(args: {
 }> {
   const assistantRunId = randomUUID();
   const messages = await db().transaction(async (tx) => {
-    const prompt = await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.prompt",
-      contextType: "web",
-      userMessage: createUserMessageDocument({ text: args.promptText }),
-      runId: null,
-    });
-    const assistant = await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "output.message",
-      content: args.assistantText,
-      runId: assistantRunId,
-    });
+    const prompt =
+      (
+        await executeRawRows(
+          tx,
+          chatEventInsertSql({
+            chatThreadId: args.chatThreadId,
+            eventType: "input.prompt",
+            contextType: "web",
+            userMessage: createUserMessageDocument({ text: args.promptText }),
+            runId: null,
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
+    const assistant =
+      (
+        await executeRawRows(
+          tx,
+          chatEventInsertSql({
+            chatThreadId: args.chatThreadId,
+            eventType: "output.message",
+            content: args.assistantText,
+            runId: assistantRunId,
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null;
     if (!prompt || !assistant) {
       throw new Error("Expected chat search coverage messages");
     }
-    await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "output.message",
-      content: "   ",
-      runId: randomUUID(),
-    });
-    await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "output.error",
-      content: args.errorText,
-      error: args.errorText,
-      runId: randomUUID(),
-    });
-    await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "run.completed",
-      content: args.terminalText,
-      runId: randomUUID(),
-    });
+    await executeRawRows(
+      tx,
+      chatEventInsertSql({
+        chatThreadId: args.chatThreadId,
+        eventType: "output.message",
+        content: "   ",
+        runId: randomUUID(),
+      }),
+      chatEventCommandResultSchema,
+    );
+    await executeRawRows(
+      tx,
+      chatEventInsertSql({
+        chatThreadId: args.chatThreadId,
+        eventType: "output.error",
+        content: args.errorText,
+        error: args.errorText,
+        runId: randomUUID(),
+      }),
+      chatEventCommandResultSchema,
+    );
+    await executeRawRows(
+      tx,
+      chatEventInsertSql({
+        chatThreadId: args.chatThreadId,
+        eventType: "run.completed",
+        content: args.terminalText,
+        runId: randomUUID(),
+      }),
+      chatEventCommandResultSchema,
+    );
     return { prompt, assistant };
   });
   return { ...messages, assistantRunId };
@@ -287,13 +318,21 @@ export async function insertSearchablePromptFixture(args: {
   readonly text: string;
 }): Promise<{ readonly id: string; readonly seqId: number }> {
   const inserted = await db().transaction(async (tx) => {
-    return await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.prompt",
-      contextType: "web",
-      userMessage: createUserMessageDocument({ text: args.text }),
-      runId: null,
-    });
+    return (
+      (
+        await executeRawRows(
+          tx,
+          chatEventInsertSql({
+            chatThreadId: args.chatThreadId,
+            eventType: "input.prompt",
+            contextType: "web",
+            userMessage: createUserMessageDocument({ text: args.text }),
+            runId: null,
+          }),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null
+    );
   });
   if (!inserted) {
     throw new Error("Expected searchable prompt fixture event");
@@ -307,13 +346,30 @@ export async function rejectSearchablePromptFixture(args: {
   readonly text: string;
 }): Promise<{ readonly id: string; readonly seqId: number }> {
   const inserted = await db().transaction(async (tx) => {
-    return await replaceChatEvent(tx, args.eventId, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.rejected",
-      userMessage: createUserMessageDocument({ text: args.text }),
-      runId: null,
-      error: "Rejected by the chat search projection fixture",
-    });
+    return (
+      (
+        await executeRawRows(
+          tx,
+          chatEventReplacementInsertSql(
+            requireChatEventReplacementTarget(
+              await executeRawRows(
+                tx,
+                chatEventReplacementTargetSql(args.eventId),
+                chatEventReplacementTargetSchema,
+              ),
+            ),
+            {
+              chatThreadId: args.chatThreadId,
+              eventType: "input.rejected",
+              userMessage: createUserMessageDocument({ text: args.text }),
+              runId: null,
+              error: "Rejected by the chat search projection fixture",
+            },
+          ),
+          chatEventCommandResultSchema,
+        )
+      )[0] ?? null
+    );
   });
   if (!inserted) {
     throw new Error("Expected rejected searchable prompt fixture event");
