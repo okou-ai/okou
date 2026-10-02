@@ -64,6 +64,7 @@ import * as agentphoneUserLinkSchema from "./schema/agentphone-user-link";
 import * as agentphoneChatThreadRouteSchema from "./schema/agentphone-chat-thread-route";
 import * as agentphoneMessageSchema from "./schema/agentphone-message";
 import * as agentphoneMessageVisibilitySchema from "./schema/agentphone-message-visibility";
+import * as agentphoneGroupMessageReceiptSchema from "./schema/agentphone-group-message-receipt";
 import * as agentphoneVerificationSendCooldownSchema from "./schema/agentphone-verification-send-cooldown";
 import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
@@ -245,6 +246,7 @@ export const schema = {
   ...agentphoneChatThreadRouteSchema,
   ...agentphoneMessageSchema,
   ...agentphoneMessageVisibilitySchema,
+  ...agentphoneGroupMessageReceiptSchema,
   ...agentphoneVerificationSendCooldownSchema,
   ...orgSchema,
   ...orgPlanEntitlementSchema,

@@ -1,4 +1,8 @@
 import { agents } from "@okouai/db/schema/agent";
+import {
+  getAgentPhoneConversationParticipants,
+  isAgentPhoneApiError,
+} from "../external/agentphone-client";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -7,6 +11,7 @@ import { and, eq, inArray, lte } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 
 export type AgentPhoneChannel = "imessage" | "sms" | "mms";
 export type AgentPhoneUserLink = typeof agentphoneUserLinks.$inferSelect;
@@ -96,6 +101,34 @@ export function describeAgentPhoneHandleShape(
 export interface AgentPhoneMessageVisibilityRecipient {
   readonly orgId: string;
   readonly userId: string;
+}
+
+export async function resolveAgentPhoneConversationVisibilityRecipients(
+  db: Pick<ReadonlyDb, "select">,
+  conversationId: string,
+  asOf: Date,
+  signal: AbortSignal,
+): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> {
+  const result = await settle(
+    getAgentPhoneConversationParticipants({ conversationId }, signal),
+    signal,
+  );
+  if (!result.ok) {
+    if (
+      isAgentPhoneApiError(result.error) ||
+      result.error instanceof TypeError ||
+      result.error instanceof SyntaxError
+    ) {
+      return [];
+    }
+    throw result.error;
+  }
+  return resolveAgentPhoneMessageVisibilityRecipients(
+    db,
+    result.value,
+    "imessage",
+    asOf,
+  );
 }
 
 export async function resolveAgentPhoneMessageVisibilityRecipients(

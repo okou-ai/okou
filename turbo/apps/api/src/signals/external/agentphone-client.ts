@@ -134,7 +134,7 @@ export async function getAgentPhoneConversationParticipants(
     throw makeAgentPhoneApiError(response.status, "");
   }
 
-  const result = (await response.json()) as Record<string, unknown>;
+  const result = valueObject(await response.json());
   const data = valueObject(result.data);
   const conversation =
     valueObject(result.conversation).participants !== undefined

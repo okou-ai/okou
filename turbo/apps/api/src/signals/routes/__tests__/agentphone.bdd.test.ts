@@ -1569,7 +1569,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it("archives group admission-failure replies with the iMessage channel", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const integrations = createBddIntegrationApi(context);
-    const runs = createRunsApi(context);
     const { actor, phone, runnerGroup, sends, ap } =
       await entitledLinkedActor();
     if (!actor.orgId) {
@@ -2188,6 +2187,155 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(
       secondPage.status === 200 ? secondPage.body.messages : [],
     ).toMatchObject([{ id: secondMessageId }]);
+  });
+
+  it("dispatches a non-archivable group webhook only once across provider retries", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    const conversationId = uniqueConversationId();
+    const messageId = `ap-group-no-timestamp-retry-${randomUUID()}`;
+    const message = {
+      channel: "imessage" as const,
+      from: uniquePhoneHandle(),
+      body: "@Okou please help me connect",
+      messageId,
+      conversationId,
+      isGroup: true,
+      receivedAt: null,
+    };
+
+    await ap.postAgentPhoneInboundMessage(message);
+    const sendsAfterFirstDelivery = sends.messages.length;
+    expect(sendsAfterFirstDelivery).toBe(1);
+
+    await ap.postAgentPhoneInboundMessage(message);
+    expect(sends.messages).toHaveLength(sendsAfterFirstDelivery);
+  });
+
+  it("delivers a group run reply when the provider roster lookup fails", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, phone, runnerGroup, sends, ap } =
+      await entitledLinkedActor();
+    if (!actor.orgId) {
+      throw new Error("Expected group reply test user to have an org");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
+    );
+
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou summarize this group",
+      conversationId,
+      isGroup: true,
+      participants: [{ identifier: phone }],
+    });
+    await waitForTyping(sends, [groupId]);
+    const run = await claimDispatchedRun(runnerGroup);
+
+    server.use(
+      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
+        return HttpResponse.json(
+          { detail: "temporary failure" },
+          {
+            status: 503,
+          },
+        );
+      }),
+    );
+    const beforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await waitForSendCount(sends, beforeCompletion + 1);
+    expect(lastSend(sends).toNumber).toBe(groupId);
+
+    const history = await integrations.requestAgentPhoneGroupHistory(
+      actor,
+      { groupId, limit: 100 },
+      [200],
+    );
+    if (history.status !== 200) {
+      throw new Error("Expected visible group history after the run reply");
+    }
+    expect(
+      history.body.messages.map((message) => {
+        return message.direction;
+      }),
+    ).toStrictEqual(["inbound"]);
+  });
+
+  it("sends group connect replies when roster lookup fails and never archives them", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, phone, sends, ap } = await entitledLinkedActor();
+    if (!actor.orgId) {
+      throw new Error("Expected group roster test user to have an org");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.AgentPhoneGroupHistory]: true },
+    );
+
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+    const unlinkedPhone = uniquePhoneHandle();
+    const participants = [{ identifier: phone }, { identifier: unlinkedPhone }];
+    const before = sends.messages.length;
+    server.use(
+      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
+        return HttpResponse.json(
+          { detail: "temporary failure" },
+          {
+            status: 503,
+          },
+        );
+      }),
+    );
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: unlinkedPhone,
+      body: "@Okou please connect this group",
+      conversationId,
+      isGroup: true,
+      participants,
+    });
+    await waitForSendCount(sends, before + 1);
+
+    server.use(
+      http.get("https://api.agentphone.test/v1/conversations/:id", () => {
+        return HttpResponse.json(null);
+      }),
+    );
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: unlinkedPhone,
+      body: "@Okou retry the malformed roster response",
+      conversationId,
+      isGroup: true,
+      participants,
+    });
+    await waitForSendCount(sends, before + 2);
+
+    const history = await integrations.requestAgentPhoneGroupHistory(
+      actor,
+      { groupId, limit: 100 },
+      [200],
+    );
+    if (history.status !== 200) {
+      throw new Error("Expected visible group history after roster failures");
+    }
+    expect(
+      history.body.messages.map((message) => {
+        return message.direction;
+      }),
+    ).toStrictEqual(["inbound", "inbound"]);
   });
 
   it("rejects group webhooks without a conversation identity before creating a run", async () => {

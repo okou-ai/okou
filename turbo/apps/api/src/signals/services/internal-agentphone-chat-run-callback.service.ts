@@ -7,10 +7,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import {
-  getAgentPhoneConversationParticipants,
-  sendAgentPhoneMessage,
-} from "../external/agentphone-client";
+import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
@@ -22,7 +19,7 @@ import {
 import {
   agentPhoneReplyDestination,
   markdownToImessagePlain,
-  resolveAgentPhoneMessageVisibilityRecipients,
+  resolveAgentPhoneConversationVisibilityRecipients,
   resolveAgentPhoneReplyFooterText,
   storeOutboundAgentPhoneMessage,
 } from "./agentphone-shared.service";
@@ -248,14 +245,11 @@ async function sendAgentPhoneReply(
     throw new Error("AgentPhone group reply is missing a conversation id");
   }
   const visibilityRecipients = args.target.isGroup
-    ? await resolveAgentPhoneMessageVisibilityRecipients(
+    ? await resolveAgentPhoneConversationVisibilityRecipients(
         args.db,
-        await getAgentPhoneConversationParticipants(
-          { conversationId: args.target.conversationId! },
-          signal,
-        ),
-        "imessage",
+        args.target.conversationId!,
         nowDate(),
+        signal,
       )
     : [];
   signal.throwIfAborted();

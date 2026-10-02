@@ -137,6 +137,48 @@ export function bddGroupId(conversationId: string): string {
     .slice(0, 16)}`;
 }
 
+function buildAgentPhoneInboundWebhookBody(args: {
+  readonly message: AgentPhoneInboundMessage;
+  readonly messageId: string;
+  readonly groupId: string | null;
+  readonly receivedAt: string | undefined;
+}): string {
+  const { message, messageId, groupId, receivedAt } = args;
+  return JSON.stringify({
+    event: "agent.message",
+    channel: message.channel,
+    ...(message.recentHistory ? { recentHistory: message.recentHistory } : {}),
+    data: {
+      id: messageId,
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      from: message.from,
+      to: AGENTPHONE_BDD_PHONE_NUMBER,
+      body: message.body,
+      ...(receivedAt ? { receivedAt } : {}),
+      ...(message.conversationId
+        ? { conversationId: message.conversationId }
+        : {}),
+      ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
+      ...(groupId
+        ? {
+            group: {
+              isGroup: true,
+              groupId,
+              ...(message.participants === undefined
+                ? {}
+                : { participants: message.participants }),
+            },
+            ...(message.senderIdentifier === undefined
+              ? {}
+              : { senderIdentifier: message.senderIdentifier }),
+          }
+        : {}),
+      ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
+      ...(message.mentions ? { mentions: message.mentions } : {}),
+    },
+  });
+}
+
 function authenticate(
   context: TestContext,
   actor: ApiTestUser,
@@ -217,40 +259,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
         }),
       );
     }
-    const rawBody = JSON.stringify({
-      event: "agent.message",
-      channel: message.channel,
-      ...(message.recentHistory
-        ? { recentHistory: message.recentHistory }
-        : {}),
-      data: {
-        id: messageId,
-        agentId: AGENTPHONE_BDD_AGENT_ID,
-        from: message.from,
-        to: AGENTPHONE_BDD_PHONE_NUMBER,
-        body: message.body,
-        ...(receivedAt ? { receivedAt } : {}),
-        ...(message.conversationId
-          ? { conversationId: message.conversationId }
-          : {}),
-        ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
-        ...(groupId
-          ? {
-              group: {
-                isGroup: true,
-                groupId,
-                ...(message.participants === undefined
-                  ? {}
-                  : { participants: message.participants }),
-              },
-              ...(message.senderIdentifier === undefined
-                ? {}
-                : { senderIdentifier: message.senderIdentifier }),
-            }
-          : {}),
-        ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
-        ...(message.mentions ? { mentions: message.mentions } : {}),
-      },
+    const rawBody = buildAgentPhoneInboundWebhookBody({
+      message,
+      messageId,
+      groupId,
+      receivedAt,
     });
     await integrations.requestAgentPhoneWebhook(
       rawBody,

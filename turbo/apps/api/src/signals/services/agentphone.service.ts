@@ -8,14 +8,16 @@ import { v5 as uuidv5 } from "uuid";
 import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { now, nowDate } from "../../lib/time";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -23,7 +25,6 @@ import {
 } from "../external/realtime";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
-  getAgentPhoneConversationParticipants,
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
@@ -36,6 +37,7 @@ import {
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
+  resolveAgentPhoneConversationVisibilityRecipients,
   resolveAgentPhoneMessageVisibilityRecipients,
   resolveAgentPhoneUserLink,
   type AgentPhoneMessageVisibilityRecipient,
@@ -380,6 +382,48 @@ export async function storeInboundAgentPhoneMessage(
     let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
       [];
     if (isGroup) {
+      const existingConditions = [
+        eq(agentphoneMessages.agentphoneMessageId, params.event.messageId),
+      ];
+      if (params.event.webhookId) {
+        existingConditions.push(
+          eq(agentphoneMessages.webhookId, params.event.webhookId),
+        );
+      }
+      const [existing] = await tx
+        .select({ id: agentphoneMessages.id })
+        .from(agentphoneMessages)
+        .where(or(...existingConditions))
+        .limit(1);
+      if (existing) {
+        return { inserted: false, dispatch: false };
+      }
+
+      // Keep new code usable against an old schema during migration replay.
+      const receiptResult = await settle(
+        tx.transaction(async (receiptTx) => {
+          const [receipt] = await receiptTx
+            .insert(agentphoneGroupMessageReceipts)
+            .values({
+              agentphoneMessageId: params.event.messageId,
+              webhookId: params.event.webhookId,
+            })
+            .onConflictDoNothing()
+            .returning({
+              agentphoneMessageId:
+                agentphoneGroupMessageReceipts.agentphoneMessageId,
+            });
+          return receipt !== undefined;
+        }),
+      );
+      if (receiptResult.ok) {
+        if (!receiptResult.value) {
+          return { inserted: false, dispatch: false };
+        }
+      } else if (safeSqlStateCode(receiptResult.error) !== "42P01") {
+        throw receiptResult.error;
+      }
+
       const receivedAt = params.event.receivedAt;
       if (receivedAt === null) {
         return { inserted: false, dispatch: true };
@@ -815,14 +859,11 @@ export async function sendAgentPhoneText(
     throw new Error("AgentPhone group reply is missing a conversation id");
   }
   const visibilityRecipients = isGroup
-    ? await resolveAgentPhoneMessageVisibilityRecipients(
+    ? await resolveAgentPhoneConversationVisibilityRecipients(
         db!,
-        await getAgentPhoneConversationParticipants(
-          { conversationId: event.conversationId! },
-          signal,
-        ),
-        "imessage",
+        event.conversationId!,
         nowDate(),
+        signal,
       )
     : [];
   signal.throwIfAborted();
