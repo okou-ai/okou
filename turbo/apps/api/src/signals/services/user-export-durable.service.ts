@@ -22,7 +22,7 @@ import {
   userExportZipEntryLayout,
 } from "../../lib/user-export-zip";
 import { writeDb$ } from "../external/db";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   completeMultipartS3Upload,
   createMultipartS3Upload,
@@ -449,15 +449,14 @@ const commitPlacedEntries$ = command(
       .returning({ ordinal: userExportEntries.ordinal });
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
-    const committed = await executeRawRows(
-      db,
-      sql`
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (${changed.getSQL()})
         select id from export_step_progress
-      `,
-      z.object({ id: z.string().uuid() }),
+      `),
     );
     signal.throwIfAborted();
     return committed.length === 1;
@@ -606,15 +605,14 @@ const scanStep$ = command(
       .returning({ ordinal: userExportEntries.ordinal });
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
-    const committed = await executeRawRows(
-      db,
-      sql`
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (${changed.getSQL()})
         select id from export_step_progress
-      `,
-      z.object({ id: z.string().uuid() }),
+      `),
     );
     signal.throwIfAborted();
     return committed.length === 1;
@@ -728,9 +726,9 @@ const inventoryStep$ = command(
       .returning({ id: backgroundJobs.id });
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
-    const committed = await executeRawRows(
-      db,
-      sql`
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
@@ -739,8 +737,7 @@ const inventoryStep$ = command(
           ${state.localSize}::bigint, ${state.centralSize}::bigint, ${sql.param({ etag: head.etag }, userExportEntries.metadata)}
          from export_step_progress returning ordinal)
         select id from export_step_progress
-      `,
-      z.object({ id: z.string().uuid() }),
+      `),
     );
     signal.throwIfAborted();
     return committed.length === 1;
@@ -827,9 +824,9 @@ const manifestStep$ = command(
       .returning({ id: backgroundJobs.id });
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
-    const committed = await executeRawRows(
-      db,
-      sql`
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
@@ -838,8 +835,7 @@ const manifestStep$ = command(
           ${state.localSize}::bigint, ${state.centralSize}::bigint, ${sql.param({ etag: head.etag }, userExportEntries.metadata)}
          from export_step_progress returning ordinal)
         select id from export_step_progress
-      `,
-      z.object({ id: z.string().uuid() }),
+      `),
     );
     signal.throwIfAborted();
     return committed.length === 1;
@@ -929,9 +925,9 @@ const assembleStep$ = command(
       .returning({ id: backgroundJobs.id });
     // Gated mutations and their checkpoint commit in one statement, not
     // separately committing commands. The lease clock is checked after locking.
-    const committed = await executeRawRows(
-      db,
-      sql`
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
         with export_step_lease as materialized (${leased}),
         export_step_progress as (${progress.getSQL()}),
         export_step_inventory as (${
@@ -942,8 +938,7 @@ const assembleStep$ = command(
             : sql`select id from export_step_progress`
         })
         select id from export_step_progress
-      `,
-      z.object({ id: z.string().uuid() }),
+      `),
     );
     signal.throwIfAborted();
     return committed.length === 1;
