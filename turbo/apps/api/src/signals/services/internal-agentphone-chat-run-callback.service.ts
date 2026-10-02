@@ -288,10 +288,14 @@ async function recordAgentPhoneChatDelivery(args: {
     agentphoneAgentId: args.target.agentphoneAgentId,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: args.sent.message.fromNumber ?? args.target.toNumber,
+    fromNumber: args.target.isGroup
+      ? args.target.toNumber
+      : (args.sent.message.fromNumber ?? args.target.toNumber),
     toNumber: args.sent.message.toNumber,
     body: args.body,
-    channel: args.sent.message.channel ?? args.target.channel,
+    channel: args.target.isGroup
+      ? args.target.channel
+      : (args.sent.message.channel ?? args.target.channel),
     userChannel: args.target.channel,
     visibilityRecipients: args.sent.visibilityRecipients,
   });
@@ -453,10 +457,12 @@ export async function deliverAgentPhoneChatAdmissionFailure(
     agentphoneAgentId: args.target.agentphoneAgentId,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: sent.message.fromNumber ?? args.target.toNumber,
+    fromNumber: args.target.isGroup
+      ? args.target.toNumber
+      : (sent.message.fromNumber ?? args.target.toNumber),
     toNumber: sent.message.toNumber,
     body,
-    channel: sent.message.channel,
+    channel: args.target.isGroup ? args.target.channel : sent.message.channel,
     userChannel: args.target.channel,
     visibilityRecipients: sent.visibilityRecipients,
   });

@@ -1085,6 +1085,17 @@ function shouldAcceptAgentPhoneEvent(args: {
     return false;
   }
 
+  if (
+    args.channel === "imessage" &&
+    args.event.isGroup &&
+    !args.event.conversationId
+  ) {
+    log.warn("AgentPhone group webhook is missing a provider conversation id", {
+      webhookId: args.webhookId,
+    });
+    return false;
+  }
+
   return true;
 }
 

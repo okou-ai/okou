@@ -68,7 +68,7 @@ interface AgentPhoneInboundMessage {
     readonly name?: string | null;
   }[];
   readonly senderIdentifier?: string;
-  readonly receivedAt?: string;
+  readonly receivedAt?: string | null;
   readonly mediaUrl?: string;
   readonly mentions?: readonly Readonly<Record<string, unknown>>[];
   readonly recentHistory?: readonly Readonly<Record<string, unknown>>[];
@@ -204,6 +204,11 @@ export function createAgentPhoneBddApi(context: TestContext) {
     const providerRoster = message.participants ?? [
       { identifier: message.senderIdentifier ?? message.from },
     ];
+    const receivedAt =
+      message.receivedAt === null
+        ? undefined
+        : (message.receivedAt ??
+          (message.isGroup ? new Date(now()).toISOString() : undefined));
     if (groupId && message.conversationId) {
       conversationParticipants.set(
         message.conversationId,
@@ -224,7 +229,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
         from: message.from,
         to: AGENTPHONE_BDD_PHONE_NUMBER,
         body: message.body,
-        ...(message.receivedAt ? { receivedAt: message.receivedAt } : {}),
+        ...(receivedAt ? { receivedAt } : {}),
         ...(message.conversationId
           ? { conversationId: message.conversationId }
           : {}),

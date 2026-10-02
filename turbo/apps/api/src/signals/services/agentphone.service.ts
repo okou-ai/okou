@@ -38,6 +38,7 @@ import {
   normalizeAgentPhoneHandle,
   resolveAgentPhoneMessageVisibilityRecipients,
   resolveAgentPhoneUserLink,
+  type AgentPhoneMessageVisibilityRecipient,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage,
   type AgentPhoneChannel,
@@ -113,7 +114,7 @@ export interface AgentPhoneMessageEvent {
   readonly conversationId: string | null;
   readonly groupId: string | null;
   readonly isGroup: boolean;
-  readonly participants?: readonly string[];
+  readonly participants: readonly string[];
   readonly senderIdentifier?: string | null;
   readonly mentioned: boolean;
   readonly agentphoneAgentId: string;
@@ -137,8 +138,11 @@ function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
 }
 
 function agentPhoneThreadRootMessageId(event: AgentPhoneMessageEvent): string {
-  if (!isAgentPhoneGroupEvent(event) || !event.conversationId) {
+  if (!isAgentPhoneGroupEvent(event)) {
     return AGENTPHONE_DM_ROOT_MESSAGE_ID;
+  }
+  if (!event.conversationId) {
+    throw new Error("AgentPhone group message is missing a conversation id");
   }
 
   const root = `group:${event.conversationId}`;
@@ -372,16 +376,21 @@ export async function storeInboundAgentPhoneMessage(
   },
 ): Promise<{ readonly inserted: boolean; readonly dispatch: boolean }> {
   const isGroup = isAgentPhoneGroupEvent(params.event);
-  const receivedAt = params.event.receivedAt ?? nowDate();
   return await db.transaction(async (tx) => {
-    const visibilityRecipients = isGroup
-      ? await resolveAgentPhoneMessageVisibilityRecipients(
-          tx,
-          params.event.participants ?? [],
-          "imessage",
-          receivedAt,
-        )
-      : [];
+    let visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[] =
+      [];
+    if (isGroup) {
+      const receivedAt = params.event.receivedAt;
+      if (receivedAt === null) {
+        return { inserted: false, dispatch: true };
+      }
+      visibilityRecipients = await resolveAgentPhoneMessageVisibilityRecipients(
+        tx,
+        params.event.participants,
+        "imessage",
+        receivedAt,
+      );
+    }
     if (isGroup && visibilityRecipients.length === 0) {
       return { inserted: false, dispatch: true };
     }
@@ -411,7 +420,7 @@ export async function storeInboundAgentPhoneMessage(
         body: params.event.body || null,
         mediaUrl: params.event.mediaUrl,
         isBot: false,
-        receivedAt,
+        receivedAt: params.event.receivedAt,
       })
       .onConflictDoNothing()
       .returning({ id: agentphoneMessages.id });
@@ -841,10 +850,10 @@ export async function sendAgentPhoneText(
       groupId: event.groupId,
       agentphoneAgentId: event.agentphoneAgentId,
       phoneHandle: event.fromNumber,
-      fromNumber: sent.fromNumber ?? event.toNumber,
+      fromNumber: event.toNumber,
       toNumber: sent.toNumber,
       body,
-      channel: sent.channel ?? event.channel,
+      channel: event.channel,
       userChannel: event.channel,
       visibilityRecipients,
     });

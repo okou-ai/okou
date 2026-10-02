@@ -191,6 +191,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     channel: sent.channel,
     userChannel,
     mediaUrl: uploadedFile.fileUrl,
+    visibilityRecipients: [],
   });
   signal.throwIfAborted();
 

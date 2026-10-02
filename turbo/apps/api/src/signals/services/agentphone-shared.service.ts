@@ -102,7 +102,7 @@ export async function resolveAgentPhoneMessageVisibilityRecipients(
   db: Pick<ReadonlyDb, "select">,
   handles: readonly string[],
   channel: AgentPhoneChannel,
-  asOf: Date = nowDate(),
+  asOf: Date,
 ): Promise<readonly AgentPhoneMessageVisibilityRecipient[]> {
   const normalizedHandles = [
     ...new Set(
@@ -200,11 +200,11 @@ export async function storeOutboundAgentPhoneMessage(
     readonly channel: string | null;
     readonly userChannel: AgentPhoneChannel;
     readonly mediaUrl?: string | null;
-    readonly visibilityRecipients?: readonly AgentPhoneMessageVisibilityRecipient[];
+    readonly visibilityRecipients: readonly AgentPhoneMessageVisibilityRecipient[];
   },
 ): Promise<void> {
   const isGroup = Boolean(params.groupId);
-  const visibilityRecipients = params.visibilityRecipients ?? [];
+  const visibilityRecipients = params.visibilityRecipients;
   if (isGroup && visibilityRecipients.length === 0) {
     return;
   }
