@@ -30,8 +30,8 @@ query caches naturally; writes within one claim invalidate only that child's
 relevant snapshots. The factories perform no I/O, create no Store and capture no
 `AbortSignal`. All objects and `waitUntil` work use the one request-owned Store.
 
-The pre-existing Pi background and test-fixture adapters keep their legitimate
-non-chat entrypoints; they do not provide another chat ingress. Domain
+Pi memory maintenance keeps its own non-chat entrypoint (`startMaintenanceRun$`,
+driven by the Phase 2 worker); it does not provide another chat ingress. Domain
 infrastructure can remain shared, but S2/S3 does not call an asynchronous
 preparation/helper chain or pass injected signals through the old execution
 stages. Business reads belong directly in computed nodes; writes and orchestration
