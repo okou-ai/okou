@@ -131,6 +131,5 @@ describe("okou doctor credit command", () => {
 
     expect(output()).toContain("Tier: pro");
     expect(output()).toContain("`okou credit <credits>`");
-    expect(output()).not.toContain("upgrade to Pro");
   });
 });

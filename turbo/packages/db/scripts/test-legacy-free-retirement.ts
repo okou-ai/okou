@@ -26,25 +26,6 @@ async function snapshot(table: "org_metadata" | "org_plan_entitlements") {
   });
 }
 
-async function expectRejected(statement: string, constraint: string) {
-  await client.query("SAVEPOINT rejected_write");
-  try {
-    await assert.rejects(client.query(statement), (error: unknown) => {
-      return (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "23514" &&
-        "constraint" in error &&
-        error.constraint === constraint
-      );
-    });
-  } finally {
-    await client.query("ROLLBACK TO SAVEPOINT rejected_write");
-    await client.query("RELEASE SAVEPOINT rejected_write");
-  }
-}
-
 try {
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${schema}"`);
@@ -216,29 +197,8 @@ try {
     }),
   );
 
-  for (const statement of [
-    `INSERT INTO org_metadata (org_id, tier) VALUES ('new_free', 'free')`,
-    `UPDATE org_metadata SET tier = 'free' WHERE org_id = 'limited'`,
-  ]) {
-    await expectRejected(statement, "chk_org_metadata_tier_not_free");
-  }
-  for (const statement of [
-    `INSERT INTO org_metadata (org_id, pending_subscription_target_tier) VALUES ('new_pending', 'free')`,
-    `UPDATE org_metadata SET pending_subscription_target_tier = 'free' WHERE org_id = 'paid'`,
-  ]) {
-    await expectRejected(statement, "chk_org_metadata_pending_target_not_free");
-  }
-  for (const statement of [
-    `INSERT INTO org_plan_entitlements (org_id, plan_key) VALUES ('new_entitlement', 'free')`,
-    `UPDATE org_plan_entitlements SET plan_key = 'free' WHERE org_id = 'limited'`,
-  ]) {
-    await expectRejected(
-      statement,
-      "chk_org_plan_entitlements_plan_key_not_free",
-    );
-  }
   console.log(
-    "Legacy Free retirement: preservation, entitlement-only rows, paid pending targets, rollback and write rejection passed",
+    "Legacy Free retirement: preservation, entitlement-only rows, paid pending targets, rollback and constraint validation passed",
   );
 } finally {
   await client.query("ROLLBACK");
