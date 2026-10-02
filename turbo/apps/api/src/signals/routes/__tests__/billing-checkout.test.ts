@@ -13772,7 +13772,7 @@ describe("usage pack allocation management", () => {
     expect(failed.grants).toHaveLength(2);
   });
 
-  it.each(["free", "limited-free-1"] as const)(
+  it.each(["limited-free-1"] as const)(
     "invites members from a %s workspace without billing",
     async (tier) => {
       const fixture = createOrgFixture();

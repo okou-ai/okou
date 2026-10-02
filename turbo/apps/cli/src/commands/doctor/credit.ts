@@ -53,14 +53,8 @@ export const creditCommand = new Command()
         return;
       }
 
-      if (billing.tier === "free") {
-        console.log(
-          "\nWorkspace admins can upgrade to Pro from billing or buy credits with `okou credit <credits>`.",
-        );
-      } else {
-        console.log(
-          "\nWorkspace admins can use `okou credit <credits>` to buy more credits.",
-        );
-      }
+      console.log(
+        "\nWorkspace admins can use `okou credit <credits>` to buy more credits.",
+      );
     }),
   );

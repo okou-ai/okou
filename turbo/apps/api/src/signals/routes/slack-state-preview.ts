@@ -166,17 +166,7 @@ const commitSlackStarterDefault$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      const [knownGrant] = await tx
-        .select({ id: creditExpiresRecord.id })
-        .from(creditExpiresRecord)
-        .where(
-          and(
-            eq(creditExpiresRecord.orgId, input.orgId),
-            eq(creditExpiresRecord.source, STARTER_GRANT_SOURCE),
-          ),
-        )
-        .limit(1);
-      const initialTier = knownGrant ? "limited-free-1" : "free";
+      const initialTier = "limited-free-1";
       const [inserted] = await tx
         .insert(orgMetadataCanonicalWrites)
         .values({ orgId: input.orgId, tier: initialTier })

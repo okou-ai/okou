@@ -300,7 +300,7 @@ function buildCreditBreakdown(args: {
 
   const untracked = Math.max(displayedCredits - trackedTotal, 0);
   if (untracked > 0) {
-    const isFreeTier = tier === "free" || tier === "limited-free-1";
+    const isFreeTier = tier === "limited-free-1";
     addSegment({
       category: isFreeTier ? "free" : "payAsYouGo",
       label: isFreeTier ? "Free plan" : "Pay as you go",

@@ -783,7 +783,6 @@ function subscriptionIsTerminalUsageAllowance(
 
 function knownOrgTier(value: string): OrgTier {
   switch (value) {
-    case "free":
     case "limited-free-1":
     case "pro":
     case "team":

@@ -58,8 +58,39 @@ export async function validatePermanentOrgPlanEntitlementState(
           assert.equal(written.baseConcurrencyLimit, 7);
         }
       }
+      for (const [statement, constraint] of [
+        [
+          `INSERT INTO org_metadata (org_id, tier) VALUES ('retired_free_metadata', 'free')`,
+          "chk_org_metadata_tier_not_free",
+        ],
+        [
+          `INSERT INTO org_metadata (org_id, pending_subscription_target_tier) VALUES ('retired_free_pending', 'free')`,
+          "chk_org_metadata_pending_target_not_free",
+        ],
+        [
+          `INSERT INTO org_plan_entitlements (org_id, plan_key, plan_rank, source, restricted_built_in_models) VALUES ('retired_free_entitlement', 'free', 0, 'manual', true)`,
+          "chk_org_plan_entitlements_plan_key_not_free",
+        ],
+      ] as const) {
+        await client.query("SAVEPOINT retired_free_rejected");
+        try {
+          await assert.rejects(client.query(statement), (error: unknown) => {
+            return (
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              error.code === "23514" &&
+              "constraint" in error &&
+              error.constraint === constraint
+            );
+          });
+        } finally {
+          await client.query("ROLLBACK TO SAVEPOINT retired_free_rejected");
+          await client.query("RELEASE SAVEPOINT retired_free_rejected");
+        }
+      }
       console.log(
-        "   ✅ Canonical entitlement writes preserve status and explicit package visibility",
+        "   ✅ Canonical entitlement writes preserve status and package visibility; retired Free writes are rejected",
       );
     } finally {
       await client.query("ROLLBACK");

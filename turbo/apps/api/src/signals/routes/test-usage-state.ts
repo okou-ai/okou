@@ -182,7 +182,7 @@ async function seedUsageStateFixture(db: Db): Promise<UsageStateFixture> {
       .insert(orgMetadataCanonicalWrites)
       .values({
         orgId: fixture.orgId,
-        tier: "free",
+        tier: "limited-free-1",
         credits: 10_000,
       })
       .returning({

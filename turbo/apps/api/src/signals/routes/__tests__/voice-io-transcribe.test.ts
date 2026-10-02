@@ -1079,7 +1079,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "free",
+      tier: "limited-free-1",
       credits: 10_000,
     });
     const headers = { authorization: "Bearer clerk-session" };
@@ -1179,7 +1179,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "free",
+      tier: "limited-free-1",
       credits: 10_000,
     });
     server.use(
@@ -1228,7 +1228,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "free",
+      tier: "limited-free-1",
       credits: 10_000,
     });
     server.use(
@@ -1644,7 +1644,7 @@ describe("voice provider capacity recovery", () => {
       }
       await seedOrgMetadata({
         orgId: actor.orgId,
-        tier: "free",
+        tier: "limited-free-1",
         credits: 10_000,
       });
       const requests: string[] = [];

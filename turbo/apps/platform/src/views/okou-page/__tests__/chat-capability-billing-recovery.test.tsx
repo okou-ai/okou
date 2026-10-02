@@ -153,7 +153,7 @@ async function expectProCheckout(): Promise<void> {
 
 test("Direct a workspace member to an admin when billing blocks a run", async () => {
   installBillingState({
-    tier: "free",
+    tier: "limited-free-1",
     role: "member",
     credits: 0,
     canBuyCredits: false,
@@ -173,7 +173,7 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
 
 test("Let a workspace admin recover from a free-plan billing limit", async () => {
   installBillingState({
-    tier: "free",
+    tier: "limited-free-1",
     role: "admin",
     credits: 0,
     canBuyCredits: false,

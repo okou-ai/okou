@@ -55,7 +55,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type BillingTier = "free" | "limited-free-1" | "pro" | "team" | "custom";
+export type BillingTier = "limited-free-1" | "pro" | "team" | "custom";
 type DowngradeTargetTier = "limited-free-1" | "pro";
 export type CreditCheckoutSelection =
   | { readonly credits: number; readonly customAmount?: false }
@@ -93,7 +93,6 @@ function formatEffectiveDate(effectiveDate: string | null): string | null {
 
 export function apiTierToBillingTier(tier: string | undefined): BillingTier {
   if (
-    tier === "free" ||
     tier === "limited-free-1" ||
     tier === "pro" ||
     tier === "team" ||

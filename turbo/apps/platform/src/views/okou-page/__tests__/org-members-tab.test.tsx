@@ -503,7 +503,7 @@ test("Keep People package controls restricted to administrators", async () => {
   ).not.toBeInTheDocument();
 });
 
-test.each(["free", "pro"])(
+test.each(["limited-free-1", "pro"])(
   "Invite members on active %s plans",
   async (tier) => {
     mockMembersStory();
@@ -552,7 +552,10 @@ test.each(["free", "pro"])(
 
 test("shows a pending-invitation conflict without closing the invite dialog", async () => {
   mockMembersStory(undefined, "admin", "owner");
-  mockMemberInviteEntitlement(false, { tier: "free", status: "active" });
+  mockMemberInviteEntitlement(false, {
+    tier: "limited-free-1",
+    status: "active",
+  });
   context.mocks.api(orgInviteContract.invite, ({ respond }) => {
     return respond(409, {
       error: {

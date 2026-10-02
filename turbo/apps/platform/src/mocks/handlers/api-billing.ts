@@ -37,20 +37,6 @@ type BillingPlanCapabilities = Pick<
 
 export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
   switch (tier) {
-    case "free": {
-      return {
-        status: "active",
-        canBuyConcurrency: false,
-        concurrencyPurchaseReviewAvailable: false,
-        canBuyCredits: true,
-        autoRechargeAllowed: false,
-        supportByok: true,
-        restrictedBuiltInModels: false,
-        videoGenerationAllowed: true,
-        workflowWebhookAutomationAllowed: false,
-        canRestorePlan: false,
-      };
-    }
     case "limited-free-1": {
       return {
         status: "active",
@@ -99,8 +85,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
 
 function defaultBillingStatus(): BillingStatusResponse {
   return {
-    tier: "free",
-    ...billingPlanCapabilities("free"),
+    tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,
@@ -116,7 +102,7 @@ function defaultBillingStatus(): BillingStatusResponse {
     },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 1,
+    concurrencyLimit: 2,
     concurrencySubscriptions: [],
   };
 }

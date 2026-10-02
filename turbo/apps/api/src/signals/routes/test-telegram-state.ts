@@ -191,12 +191,16 @@ async function seedOrgDefaultAgentForAction(
           .values({
             orgId,
             defaultAgentId: agentId,
-            tier: "free",
+            tier: "limited-free-1",
             credits: 10_000,
           })
           .onConflictDoUpdate({
             target: orgMetadataCanonicalWrites.orgId,
-            set: { defaultAgentId: agentId, tier: "free", credits: 10_000 },
+            set: {
+              defaultAgentId: agentId,
+              tier: "limited-free-1",
+              credits: 10_000,
+            },
           })
           .returning({
             orgId: orgMetadataCanonicalWrites.orgId,
@@ -396,14 +400,14 @@ async function seedTelegramPostDefaultAgent(
           .values({
             orgId: seed.orgId,
             defaultAgentId: seed.composeId,
-            tier: "free",
+            tier: "limited-free-1",
             credits: 100_000,
           })
           .onConflictDoUpdate({
             target: orgMetadataCanonicalWrites.orgId,
             set: {
               defaultAgentId: seed.composeId,
-              tier: "free",
+              tier: "limited-free-1",
               credits: 100_000,
             },
           })

@@ -24,6 +24,34 @@
   deployment configuration. Production release and provider-secret deletion
   are separate operations, not performed by this source change.
 
+## Legacy Free organization tier retirement
+
+The owner confirmed that production no longer writes the legacy Free tier and
+approved one PR for code retirement and database contraction. A read-only MaskDB
+check found no legacy Free metadata, entitlement plan keys, or pending targets.
+The two entitlement-only organizations were already migrated to Limited Free
+without creating metadata. These observations do not establish a production
+migration-journal receipt or a deployed constraint.
+
+The retirement migration normalizes remaining legacy rows in other environments
+and prohibits the old value in `org_metadata.tier`, its pending subscription
+target, and `org_plan_entitlements.plan_key`. It preserves credits, grant expiry,
+status, configuration and billing provenance. Missing or conflicting companion
+entitlements and subscription-linked legacy rows fail the transaction for
+operator review; entitlement-only legacy rows are supported. Paid organizations
+with a legacy pending target keep their current plan and get a Limited Free target.
+
+All current creation paths, contracts, capability tables, readers and test
+fixtures use `limited-free-1`; no legacy-tier adapter remains. The Slack starter
+writer is updated in the same PR without changing credit-grant idempotency.
+Deployment must not select an API that can write the old tier after contraction;
+rollback to such a writer is unsupported. This owner-approved single-PR rollout
+does not authorize deployment or production writes.
+
+Historical migrations and external-data migration scripts remain immutable
+records. Credit category `free`, localized Free labels and ChatGPT/Codex Free
+subscription checks are independent contracts and are unchanged.
+
 ## MCP Web-parity protocol simplification
 
 The owner explicitly approved removal of the MCP-specific chat protocol in

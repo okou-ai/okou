@@ -530,7 +530,7 @@ async function seedImageFixture(options: {
 
   await seedOrgMetadata({
     orgId: fixture.orgId,
-    tier: "free",
+    tier: "limited-free-1",
     credits: options.credits ?? 10_000,
   });
   await store.set(
@@ -556,7 +556,11 @@ async function seedAdmittedImageRun(
   runs.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "free", credits: 1 });
+  await seedOrgMetadata({
+    orgId: actor.orgId,
+    tier: "limited-free-1",
+    credits: 1,
+  });
   // Runs snapshot the member's image model when they are created.
   await useImageModel({ orgId: actor.orgId, userId: actor.userId }, imageModel);
   const agent = await bdd.createAgent(actor, {
@@ -583,7 +587,11 @@ async function seedRunScopedImageRun(
   credits: number,
 ): Promise<AdmittedImageFixture> {
   const fixture = await seedAdmittedImageRun(imageModel);
-  await seedOrgMetadata({ orgId: fixture.orgId, tier: "free", credits });
+  await seedOrgMetadata({
+    orgId: fixture.orgId,
+    tier: "limited-free-1",
+    credits,
+  });
   context.mocks.s3.send.mockReset();
   context.mocks.s3.send.mockResolvedValue({});
   return fixture;
@@ -1260,7 +1268,7 @@ describe("POST /api/image-io/generate", () => {
     await useImageModel(fixture, "gpt-image-1");
     await seedOrgMetadata({
       orgId: fixture.orgId,
-      tier: "free",
+      tier: "limited-free-1",
       credits: 10_000,
     });
     const pricingFixture = await createScopedImagePricing({
@@ -1454,7 +1462,11 @@ describe("POST /api/image-io/generate", () => {
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
     });
-    await seedOrgMetadata({ orgId: fixture.orgId, tier: "free", credits: 0 });
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+    });
     let observedRequestUrl: string | null = null;
     server.use(
       http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {

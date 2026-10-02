@@ -35,8 +35,8 @@ function prepareCheckout() {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       showUsagePack: false,
-      tier: "free",
-      ...billingPlanCapabilities("free"),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
       canBuyCredits: false,
       credits: 0,
       onboardingPaymentPending: false,
