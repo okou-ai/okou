@@ -110,7 +110,7 @@ async function createClaimedBuiltInRun(
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "report a built-in model provider failure",
-    model: SEEDED_SYSTEM_DEFAULT_MODEL,
+    model: selectedModel,
   });
   const runnerIdentity = {
     runnerId: randomUUID(),
@@ -501,6 +501,9 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     );
     onTestFinished(mirror.restore);
     const claimed = await createClaimedBuiltInRun(mirror.model);
+    await expect(
+      runs.readRun(claimed.actor, claimed.runId),
+    ).resolves.toMatchObject({ selectedModel: mirror.model });
     const primary = await resolveBuiltInModelRouteFixture(
       context,
       claimed.selectedModel,
