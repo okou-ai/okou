@@ -1,21 +1,13 @@
 import { z } from "zod";
 import { and, eq, lt, sql, type SQL } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   piMemoryStage1Days,
   piMemoryStage1Selections,
 } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { nowDate } from "../../lib/time";
-import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
 import { getPiMemoryStage1AdmissionPrerequisiteSkipReason } from "./pi-memory-stage1-candidate.service";
 import {
   pendingLaunchInsertSql,
@@ -40,15 +32,11 @@ export interface PendingLaunchTailInput {
   readonly bindingThreadId: string | undefined;
   readonly action: ChatThreadSessionResolutionAction | undefined;
   readonly requestMemory: boolean;
+  readonly threadAgentId: string | null;
   readonly needsBinding: boolean;
   readonly binding: Binding | undefined;
 }
 const tailRecordSchema = z.discriminatedUnion("phase", [
-  z.object({
-    phase: z.literal("memory-flags"),
-    userId: z.string(),
-    switches: z.record(z.string(), z.boolean()),
-  }),
   z.object({ phase: z.literal("memory-owner"), id: z.string() }),
   z.object({ phase: z.literal("memory-day"), requested: z.boolean() }),
   z.object({
@@ -64,7 +52,6 @@ type Record = z.output<typeof pendingLaunchTailRowSchema>;
 interface TailStatement {
   readonly kind: "statement";
   readonly phase:
-    | "memory-flags"
     | "memory-owner"
     | "memory-day"
     | "memory-clear"
@@ -100,13 +87,7 @@ export function pendingLaunchTailStart(
   if (!input.requestMemory || reason || !input.chatThreadId) {
     return bindingRead(input);
   }
-  return {
-    kind: "statement",
-    phase: "memory-flags",
-    previousSessionId: null,
-    sql: sql`SELECT 'memory-flags' AS phase, ${userFeatureSwitches.userId} AS "userId", ${userFeatureSwitches.switches} AS switches
-      FROM ${userFeatureSwitches} WHERE ${userFeatureSwitchRowCondition(input.orgId, input.userId)}`,
-  };
+  return memoryOwner(input);
 }
 
 function bindingRead(input: PendingLaunchTailInput): PendingLaunchTailProgress {
@@ -150,31 +131,18 @@ function requestDay(input: PendingLaunchTailInput): TailStatement {
   };
 }
 
-function advanceMemoryFlags(
-  input: PendingLaunchTailInput,
-  rows: readonly Record[],
-): PendingLaunchTailProgress {
-  const flags = rows.filter((row) => {
-    return "phase" in row && row.phase === "memory-flags";
-  });
-  const context = featureSwitchContextFromRows(
-    input.orgId,
-    input.userId,
-    flags,
-  );
-  if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
-    return bindingRead(input);
-  }
+function memoryOwner(input: PendingLaunchTailInput): PendingLaunchTailProgress {
   const threadId = input.chatThreadId;
-  if (!threadId) {
-    throw new Error("Memory ownership requires a captured thread");
+  const agentId = input.threadAgentId;
+  if (!threadId || !agentId) {
+    throw new Error("Memory ownership requires a captured thread and Agent");
   }
   return {
     kind: "statement",
     phase: "memory-owner",
     previousSessionId: null,
     sql: sql`SELECT 'memory-owner' AS phase, ${chatThreads.id} AS id FROM ${chatThreads}
-      INNER JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)} WHERE ${and(eq(chatThreads.id, threadId), eq(chatThreads.userId, input.userId), eq(agents.orgId, input.orgId))} LIMIT 1`,
+      WHERE ${and(eq(chatThreads.id, threadId), eq(chatThreads.userId, input.userId), eq(chatThreads.agentId, agentId))} LIMIT 1`,
   };
 }
 
@@ -211,9 +179,6 @@ export function advancePendingLaunchTail(
   rows: readonly Record[],
 ): PendingLaunchTailProgress {
   switch (step.phase) {
-    case "memory-flags": {
-      return advanceMemoryFlags(input, rows);
-    }
     case "memory-owner": {
       return rows.length === 0 ? bindingRead(input) : requestDay(input);
     }

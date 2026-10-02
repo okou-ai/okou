@@ -135,7 +135,6 @@ interface BillingStatusResponse {
   autoRechargeAllowed: boolean;
   supportByok: boolean;
   restrictedBuiltInModels: boolean;
-  videoGenerationAllowed: boolean;
   workflowWebhookAutomationAllowed: boolean;
   credits: number;
   onboardingPaymentPending: boolean;
@@ -300,7 +299,7 @@ function buildCreditBreakdown(args: {
 
   const untracked = Math.max(displayedCredits - trackedTotal, 0);
   if (untracked > 0) {
-    const isFreeTier = tier === "free" || tier === "limited-free-1";
+    const isFreeTier = tier === "limited-free-1";
     addSegment({
       category: isFreeTier ? "free" : "payAsYouGo",
       label: isFreeTier ? "Free plan" : "Pay as you go",
@@ -576,7 +575,6 @@ function billingStatusResponse(args: {
   autoRechargeAllowed: boolean;
   supportByok: boolean;
   restrictedBuiltInModels: boolean;
-  videoGenerationAllowed: boolean;
   workflowWebhookAutomationAllowed: boolean;
   unsettledExpired: number;
   activeRecords: readonly ActiveCreditRecord[];
@@ -607,7 +605,6 @@ function billingStatusResponse(args: {
     autoRechargeAllowed: args.autoRechargeAllowed,
     supportByok: args.supportByok,
     restrictedBuiltInModels: args.restrictedBuiltInModels,
-    videoGenerationAllowed: args.videoGenerationAllowed,
     workflowWebhookAutomationAllowed: args.workflowWebhookAutomationAllowed,
     credits: displayedCredits,
     onboardingPaymentPending: org.onboardingPaymentPending,
@@ -755,7 +752,6 @@ export function orgBillingStatus(
       autoRechargeAllowed: capabilities?.autoRechargeAllowed ?? false,
       supportByok: capabilities?.supportByok ?? false,
       restrictedBuiltInModels: capabilities?.restrictedBuiltInModels ?? false,
-      videoGenerationAllowed: capabilities?.videoGenerationAllowed ?? false,
       workflowWebhookAutomationAllowed:
         capabilities?.workflowWebhookAutomationAllowed ?? false,
       unsettledExpired: unsettledExpiredRow[0]?.total ?? 0,

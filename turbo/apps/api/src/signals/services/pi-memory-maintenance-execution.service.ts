@@ -94,7 +94,10 @@ import {
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import {
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 import {
   type PreparedUsageAllowanceRefresh,
   createUsageAllowanceRefreshObject,
@@ -732,6 +735,7 @@ interface MaintenanceCommitInput {
   readonly record: MaintenanceRunRecord;
   readonly launch: MaintenanceLaunch;
   readonly allowanceRefresh: PreparedUsageAllowanceRefresh | undefined;
+  readonly planCapabilities: OrgPlanCapabilities | null;
   readonly timing: ApiDispatchTimingCollector;
 }
 
@@ -767,9 +771,8 @@ async function commitMaintenanceRun(
     if (!subscription) {
       throw new PiMaintenanceDispositionError("credential_unavailable");
     }
-    const capabilities = enforceBuiltInCredits
-      ? await loadOrgPlanCapabilities(tx, job.orgId, { forUpdate: true })
-      : null;
+    // Like Thread, Pi uses the captured plan without a launch-time plan lock.
+    const capabilities = args.planCapabilities;
     const rows = await insertPendingMaintenanceRun(tx, {
       record,
       launch: args.launch,
@@ -945,7 +948,13 @@ function createMaintenanceModelReads(
       ? await get(preparedAllowanceRefresh$)
       : undefined;
   });
-  return { source$, model$, usage$, allowanceRefresh$ };
+  const planCapabilities$ = computed(async (get) => {
+    const { modelProvider } = await get(model$);
+    return isBuiltInModelProviderType(modelProvider.type)
+      ? await loadOrgPlanCapabilities(get(db$), job.orgId)
+      : null;
+  });
+  return { source$, model$, usage$, allowanceRefresh$, planCapabilities$ };
 }
 
 /**
@@ -1073,6 +1082,7 @@ const launchMaintenanceRun$ = command(
           signal,
         ),
         get(modelReads.allowanceRefresh$),
+        get(modelReads.planCapabilities$),
       ]),
       signal,
     );
@@ -1083,7 +1093,7 @@ const launchMaintenanceRun$ = command(
         signal,
       );
     }
-    const [launch, allowanceRefresh] = prepared.value;
+    const [launch, allowanceRefresh, planCapabilities] = prepared.value;
     const commitInput = {
       job,
       credential: admitted.credential,
@@ -1091,6 +1101,7 @@ const launchMaintenanceRun$ = command(
       record,
       launch,
       allowanceRefresh,
+      planCapabilities,
       timing,
     };
     const committed = await commitMaintenanceRun(db, commitInput);

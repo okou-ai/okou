@@ -299,7 +299,7 @@ export const checkOrgCreditsForRunAdmission$ = command(
 export function isFreePlanForCreditAdmission(
   planKey: string | null | undefined,
 ): boolean {
-  return planKey === "free" || planKey === "limited-free-1";
+  return planKey === "limited-free-1";
 }
 
 export function runHasActiveCreditAdmission(

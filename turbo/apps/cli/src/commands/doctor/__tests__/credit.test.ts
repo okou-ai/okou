@@ -19,7 +19,6 @@ function stubBillingStatus(
   overrides: {
     readonly tier?: string;
     readonly canBuyCredits?: boolean;
-    readonly videoGenerationAllowed?: boolean;
   } = {},
 ) {
   return http.get("http://localhost:3000/api/billing/status", () => {
@@ -27,7 +26,6 @@ function stubBillingStatus(
       showUsagePack: false,
       tier: overrides.tier ?? "pro",
       canBuyCredits: overrides.canBuyCredits ?? true,
-      videoGenerationAllowed: overrides.videoGenerationAllowed ?? true,
       credits: 12345,
       onboardingPaymentPending: false,
       subscriptionStatus: "active",
@@ -111,7 +109,6 @@ describe("okou doctor credit command", () => {
       stubBillingStatus({
         tier: "limited-free-1",
         canBuyCredits: false,
-        videoGenerationAllowed: false,
       }),
     );
 
@@ -124,13 +121,12 @@ describe("okou doctor credit command", () => {
     );
   });
 
-  it("points free-tier workspaces at both upgrade and credit purchase", async () => {
-    server.use(stubBillingStatus({ tier: "free" }));
+  it("points eligible paid workspaces at credit purchase", async () => {
+    server.use(stubBillingStatus({ tier: "pro" }));
 
     await runDoctorCredit();
 
-    expect(output()).toContain("Tier: free");
-    expect(output()).toContain("upgrade to Pro");
+    expect(output()).toContain("Tier: pro");
     expect(output()).toContain("`okou credit <credits>`");
   });
 });

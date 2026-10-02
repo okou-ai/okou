@@ -88,7 +88,6 @@ const LIMITED_FREE_BILLING_CAPABILITIES = {
   autoRechargeAllowed: false,
   supportByok: true,
   restrictedBuiltInModels: true,
-  videoGenerationAllowed: false,
   workflowWebhookAutomationAllowed: false,
   concurrencyLimit: 2,
 } as const;
@@ -99,7 +98,6 @@ const TEAM_BILLING_CAPABILITIES = {
   autoRechargeAllowed: true,
   supportByok: true,
   restrictedBuiltInModels: false,
-  videoGenerationAllowed: true,
   workflowWebhookAutomationAllowed: true,
   concurrencyLimit: 10,
 } as const;

@@ -428,10 +428,9 @@ finishes in 0.2 s and 1.3 s (see `turbo/packages/db/MIGRATIONS.md`,
 ## Plan restriction (free plans)
 
 `org_plan_entitlements.restricted_built_in_models` marks a free plan. It is
-true for every free plan key: `limited-free-1` and legacy `free` (migration
-1300 backfills legacy Free rows, and `ORG_PLAN_ENTITLEMENT_TIER_VALUES.free`
-writes it for new ones). Paid plans (`pro`, `team`, `custom`) keep it false
-and their model access is unchanged.
+true for `limited-free-1`, the only current free organization tier. Legacy
+Free is retired; the database rejects its tier and plan key. Paid plans
+(`pro`, `team`, `custom`) keep it false and their model access is unchanged.
 
 A free organization may run a model only on:
 

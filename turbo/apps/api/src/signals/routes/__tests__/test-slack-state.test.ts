@@ -320,7 +320,7 @@ describe("GET /api/test/slack-state", () => {
       orgId: fixture.orgId,
       defaultAgentId: fixture.defaultAgentId,
       credits: 10_000,
-      tier: "free",
+      tier: "limited-free-1",
     });
     expect(body.default_agent).toStrictEqual({
       id: fixture.defaultAgentId,
@@ -412,7 +412,7 @@ describe("POST /api/test/slack-state", () => {
       orgId: fixture.orgId,
       defaultAgentId: fixture.defaultAgentId,
       credits: 10_000,
-      tier: "free",
+      tier: "limited-free-1",
     });
   });
 
@@ -479,6 +479,7 @@ describe("POST /api/test/slack-state", () => {
       orgId,
       defaultAgentId: first.default_agent_id,
       credits: 10_000,
+      tier: "limited-free-1",
     });
   });
 });

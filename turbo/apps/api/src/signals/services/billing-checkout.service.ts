@@ -399,7 +399,6 @@ function billingTierRank(tier: string | null | undefined): number {
     case "pro": {
       return 1;
     }
-    case "free":
     case "limited-free-1":
     default: {
       return 0;
@@ -418,7 +417,6 @@ function billingTierLabel(tier: string | null | undefined): string {
     case "pro": {
       return "Pro";
     }
-    case "free":
     case "limited-free-1": {
       return "Free";
     }

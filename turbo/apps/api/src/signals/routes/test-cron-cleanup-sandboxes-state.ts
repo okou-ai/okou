@@ -162,7 +162,7 @@ async function seedRunForAction(
       .insert(orgMetadataCanonicalWrites)
       .values({
         orgId,
-        tier: "free",
+        tier: "limited-free-1",
         credits: 10_000,
       })
       .onConflictDoNothing()

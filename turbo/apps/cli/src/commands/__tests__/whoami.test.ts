@@ -292,7 +292,7 @@ describe("okou whoami command", () => {
       ).toBe(true);
       expect(
         output.some((line) => {
-          return line.includes("Tier:       free");
+          return line.includes("Tier:       limited-free-1");
         }),
       ).toBe(true);
     });

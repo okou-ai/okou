@@ -136,7 +136,7 @@ function allowanceRefreshQuery(orgId: string) {
     .limit(1)
     .as("allowance_refresh");
 }
-async function prepareAllowanceRefresh(
+export async function prepareAllowanceRefresh(
   row:
     | {
         readonly id: string;

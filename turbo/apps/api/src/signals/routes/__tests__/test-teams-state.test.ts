@@ -277,7 +277,7 @@ describe("GET /api/test/teams-state", () => {
       orgId: fixture.orgId,
       defaultAgentId: fixture.defaultAgentId,
       credits: 10_000,
-      tier: "free",
+      tier: "limited-free-1",
     });
     expect(body.default_agent).toStrictEqual({
       id: fixture.defaultAgentId,

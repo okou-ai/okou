@@ -30,27 +30,12 @@ type BillingPlanCapabilities = Pick<
   | "autoRechargeAllowed"
   | "supportByok"
   | "restrictedBuiltInModels"
-  | "videoGenerationAllowed"
   | "workflowWebhookAutomationAllowed"
   | "canRestorePlan"
 >;
 
 export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
   switch (tier) {
-    case "free": {
-      return {
-        status: "active",
-        canBuyConcurrency: false,
-        concurrencyPurchaseReviewAvailable: false,
-        canBuyCredits: true,
-        autoRechargeAllowed: false,
-        supportByok: true,
-        restrictedBuiltInModels: false,
-        videoGenerationAllowed: true,
-        workflowWebhookAutomationAllowed: false,
-        canRestorePlan: false,
-      };
-    }
     case "limited-free-1": {
       return {
         status: "active",
@@ -60,7 +45,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         autoRechargeAllowed: false,
         supportByok: true,
         restrictedBuiltInModels: true,
-        videoGenerationAllowed: false,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
@@ -75,7 +59,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         autoRechargeAllowed: true,
         supportByok: true,
         restrictedBuiltInModels: false,
-        videoGenerationAllowed: true,
         workflowWebhookAutomationAllowed: true,
         canRestorePlan: false,
       };
@@ -89,7 +72,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         autoRechargeAllowed: true,
         supportByok: true,
         restrictedBuiltInModels: false,
-        videoGenerationAllowed: true,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
@@ -97,10 +79,12 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
   }
 }
 
-function defaultBillingStatus(): BillingStatusResponse {
+export function defaultBillingStatus(): BillingStatusResponse {
   return {
-    tier: "free",
-    ...billingPlanCapabilities("free"),
+    // Generic page tests retain unrestricted Built-in access on a current paid
+    // plan; Limited Free scenarios install their restricted capabilities.
+    tier: "pro",
+    ...billingPlanCapabilities("pro"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,
@@ -116,7 +100,7 @@ function defaultBillingStatus(): BillingStatusResponse {
     },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 1,
+    concurrencyLimit: 3,
     concurrencySubscriptions: [],
   };
 }

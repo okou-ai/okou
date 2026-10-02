@@ -517,9 +517,6 @@ function requiredSubscriptionTrialEnd(subscription: SubscriptionInput): Date {
 
 function monthlyCreditsForTier(tier: OrgTier): number {
   switch (tier) {
-    case "free": {
-      return 0;
-    }
     case "limited-free-1": {
       return 0;
     }

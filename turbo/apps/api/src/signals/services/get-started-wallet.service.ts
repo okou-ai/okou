@@ -22,13 +22,13 @@ export const ensureGetStartedRewardWallet$ = command(
       INSERT INTO ${orgPlanEntitlements} (
         org_id, plan_key, plan_rank, source, status, base_concurrency_limit,
         can_buy_concurrency, can_buy_credits, show_usage_pack, auto_recharge_allowed,
-        support_byok, restricted_built_in_models, video_generation_allowed,
+        support_byok, restricted_built_in_models,
         workflow_webhook_trigger_allowed, audio_lifetime_limit, audio_daily_rate_limit,
         audio_daily_duration_seconds, source_metadata, updated_at
       ) SELECT org_id, ${values.planKey}, ${values.planRank}, ${values.source}, ${values.status},
         ${values.baseConcurrencyLimit}, ${values.canBuyConcurrency}, ${values.canBuyCredits},
         ${values.showUsagePack}, ${values.autoRechargeAllowed}, ${values.supportByok},
-        ${values.restrictedBuiltInModels}, ${values.videoGenerationAllowed},
+        ${values.restrictedBuiltInModels},
         ${values.workflowWebhookTriggerAllowed}, ${values.audioLifetimeLimit},
         ${values.audioDailyRateLimit}, ${values.audioDailyDurationSeconds},
         ${sql.param(values.sourceMetadata, orgPlanEntitlements.sourceMetadata)},

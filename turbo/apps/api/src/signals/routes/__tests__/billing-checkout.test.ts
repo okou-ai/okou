@@ -13952,33 +13952,32 @@ describe("usage pack allocation management", () => {
     expect(failed.grants).toHaveLength(2);
   });
 
-  it.each(["free", "limited-free-1"] as const)(
-    "invites members from a %s workspace without billing",
-    async (tier) => {
-      const fixture = createOrgFixture();
-      await seedOrgMetadata({ orgId: fixture.orgId, tier, credits: 0 });
-      authenticateOrg(fixture);
-      const billing = await readBillingStatus(fixture);
-      expect(billing.status).toBe("active");
-      expect(billing.showUsagePack).toBeFalsy();
-      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
-        { id: `inv_${randomUUID()}` },
-      );
-      const invited = await accept(
-        setupApp({ context, routes: orgInviteRoutes })(
-          orgInviteContract,
-        ).invite({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { email: `${tier}@example.test`, role: "member" },
-        }),
-        [200],
-      );
-      expect(invited.body.message).toContain(`${tier}@example.test`);
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).not.toHaveBeenCalled();
-    },
-  );
+  it("invites members from a Limited Free workspace without billing", async () => {
+    const fixture = createOrgFixture();
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+    });
+    authenticateOrg(fixture);
+    const billing = await readBillingStatus(fixture);
+    expect(billing.status).toBe("active");
+    expect(billing.showUsagePack).toBeFalsy();
+    context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+      { id: `inv_${randomUUID()}` },
+    );
+    const invited = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { email: "limited-free-1@example.test", role: "member" },
+      }),
+      [200],
+    );
+    expect(invited.body.message).toContain("limited-free-1@example.test");
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
 
   it.each([
     { sourceTier: "pro", targetTier: "pro" },
