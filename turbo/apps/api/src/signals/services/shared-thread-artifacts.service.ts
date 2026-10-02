@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
@@ -293,6 +294,7 @@ const changeSharedThreadArtifactPhase$ = command(
       .select(
         database
           .select({
+            id: sql`${randomUUID()}::uuid`.mapWith(artifacts.id).as("id"),
             orgId: sql`${current.policy.orgId}`
               .mapWith(artifacts.orgId)
               .as("org_id"),
@@ -304,12 +306,12 @@ const changeSharedThreadArtifactPhase$ = command(
             logicalKey: sql`${sharedThreadArtifactLogicalKey(row.id)}`
               .mapWith(artifacts.logicalKey)
               .as("logical_key"),
-            projectionFileId: sql`NULL`
+            projectionFileId: sql`NULL::uuid`
               .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
               .as("projection_file_id"),
             projectionCreatedAt: sharedThreads.createdAt,
             title: sharedThreads.title,
-            thumbnail: sql`NULL`
+            thumbnail: sql`NULL::jsonb`
               .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
               .as("thumbnail"),
             createdAt: sharedThreads.createdAt,
