@@ -660,7 +660,7 @@ describe("hosted publication scope through host APIs", () => {
     expect(takeover.body.error.message).toBe(
       `Hosted site slug "${organizationSite}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
     );
-  }, 120_000);
+  });
 
   it("serializes concurrent redeploys of one site and rejects other owners", async () => {
     const entitled = await fixture.entitledNativeChatActor();
@@ -708,5 +708,5 @@ describe("hosted publication scope through host APIs", () => {
     expect(conflict.body.error.message).toBe(
       `Hosted site "${organizationSite}" belongs to another owner. Choose a different --site value and rerun the same okou host command.`,
     );
-  }, 120_000);
+  });
 });

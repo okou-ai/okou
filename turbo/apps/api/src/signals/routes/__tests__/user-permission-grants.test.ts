@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type ApplyUserPermissionGrant,
@@ -12,20 +11,14 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { clearMockNow, mockNow } from "../../../lib/time";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  deleteUsageStateFixture$,
-  seedCompose$,
-  seedUsageStateFixture$,
-  type UsageStateFixture,
-} from "./helpers/usage-state";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 
 const TEST_APP_ROUTES = Object.freeze([...userPermissionGrantsRoutes]);
 
 const context = testContext({ connectorCatalog: true });
-const store = createStore();
+const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
 
 const AUTH_HEADERS = { authorization: "Bearer clerk-session" } as const;
@@ -34,37 +27,23 @@ const SLACK_READ_PERMISSION = "conversations:read";
 const SLACK_HISTORY_PERMISSION = "conversations:history";
 const SLACK_WRITE_PERMISSION = "chat:write";
 
-async function seedMember(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly role?: "admin" | "member";
-}): Promise<void> {
-  await store.set(
-    seedOrgMembership$,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      role: args.role ?? "member",
-    },
-    context.signal,
+function memberUser(orgId?: string | null): ApiTestUser {
+  return bdd.user(
+    orgId ? { orgId, orgRole: "org:member" } : { orgRole: "org:member" },
   );
 }
 
-async function seedAgent(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly visibility?: "public" | "private";
-}): Promise<string> {
-  const { agentId } = await store.set(
-    seedCompose$,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      visibility: args.visibility,
-    },
-    context.signal,
-  );
-  return agentId;
+function signIn(user: ApiTestUser): void {
+  mocks.clerk.session(user.userId, user.orgId, "org:member");
+}
+
+async function createAgent(
+  owner: ApiTestUser,
+  visibility?: "public" | "private",
+): Promise<string> {
+  bdd.acceptAgentStorageWrites();
+  const agent = await bdd.createAgent(owner, visibility ? { visibility } : {});
+  return agent.agentId;
 }
 
 function client() {
@@ -150,42 +129,15 @@ async function applyPermissionGrant(
 }
 
 describe("zero user permission grants", () => {
-  const fixtures: UsageStateFixture[] = [];
-
-  async function createFixture(
-    role: "admin" | "member" = "member",
-  ): Promise<UsageStateFixture> {
-    const fixture = await store.set(
-      seedUsageStateFixture$,
-      undefined,
-      context.signal,
-    );
-    fixtures.push(fixture);
-    await store.set(
-      seedOrgMembership$,
-      { orgId: fixture.orgId, userId: fixture.userId, role },
-      context.signal,
-    );
-    return fixture;
-  }
-
-  afterEach(async () => {
+  afterEach(() => {
     clearMockNow();
-
-    while (fixtures.length > 0) {
-      const fixture = fixtures.pop();
-      if (fixture) {
-        await store.set(deleteUsageStateFixture$, fixture, context.signal);
-      }
-    }
   });
 
   it("patches one grant and lists only the authenticated user's active grants", async () => {
-    const fixture = await createFixture();
-    const otherUserId = `user_${randomUUID()}`;
-    await seedMember({ orgId: fixture.orgId, userId: otherUserId });
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const otherUser = memberUser(fixture.orgId);
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
 
     const patched = await applyPermissionGrant({
       agentId,
@@ -202,7 +154,7 @@ describe("zero user permission grants", () => {
     });
     expect(patched.expiresAt).toBeNull();
 
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    signIn(otherUser);
     await applyPermissionGrant({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -210,7 +162,7 @@ describe("zero user permission grants", () => {
       action: "deny",
     });
 
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    signIn(fixture);
     const listed = await listPermissionGrants(agentId);
 
     expect(listed).toHaveLength(1);
@@ -223,9 +175,9 @@ describe("zero user permission grants", () => {
   });
 
   it("accepts canonical connector slugs", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const base = {
       agentId,
       mode: "patch" as const,
@@ -250,27 +202,18 @@ describe("zero user permission grants", () => {
   });
 
   it("uses visible-agent scope for private and cross-org agents", async () => {
-    const owner = await createFixture();
-    const otherOrgUser = await createFixture();
-    const sameOrgUserId = `user_${randomUUID()}`;
-    await seedMember({ orgId: owner.orgId, userId: sameOrgUserId });
-    const publicAgentId = await seedAgent({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      visibility: "public",
-    });
-    const privateAgentId = await seedAgent({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      visibility: "private",
-    });
+    const owner = memberUser();
+    const otherOrgUser = memberUser();
+    const sameOrgUser = memberUser(owner.orgId);
+    const publicAgentId = await createAgent(owner, "public");
+    const privateAgentId = await createAgent(owner, "private");
 
     const client = setupApp({
       context,
       routes: userPermissionGrantsRoutes,
     })(userPermissionGrantsContract);
 
-    mocks.clerk.session(owner.userId, owner.orgId, "org:member");
+    signIn(owner);
     const ownerResponse = await applyPermissionGrant({
       agentId: privateAgentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -279,7 +222,7 @@ describe("zero user permission grants", () => {
     });
     expect(ownerResponse.agentId).toBe(privateAgentId);
 
-    mocks.clerk.session(sameOrgUserId, owner.orgId, "org:member");
+    signIn(sameOrgUser);
     const sameOrgPublicResponse = await applyPermissionGrant({
       agentId: publicAgentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -302,7 +245,7 @@ describe("zero user permission grants", () => {
     );
     expect(sameOrgResponse.body.error.code).toBe("NOT_FOUND");
 
-    mocks.clerk.session(otherOrgUser.userId, otherOrgUser.orgId, "org:member");
+    signIn(otherOrgUser);
     const crossOrgResponse = await accept(
       client.list({
         query: { agentId: privateAgentId },
@@ -323,9 +266,9 @@ describe("zero user permission grants", () => {
   });
 
   it("validates connector slugs, permission names, ask, and __unknown__", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const client = setupApp({
       context,
       routes: userPermissionGrantsRoutes,
@@ -424,12 +367,11 @@ describe("zero user permission grants", () => {
   });
 
   it("replaces connector grants with an empty grant set", async () => {
-    const fixture = await createFixture();
-    const otherUserId = `user_${randomUUID()}`;
-    await seedMember({ orgId: fixture.orgId, userId: otherUserId });
-    const agentId = await seedAgent(fixture);
-    const otherAgentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const otherUser = memberUser(fixture.orgId);
+    const agentId = await createAgent(fixture);
+    const otherAgentId = await createAgent(fixture);
+    signIn(fixture);
     await applyPermissionGrants({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -451,7 +393,7 @@ describe("zero user permission grants", () => {
       action: "deny",
     });
 
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    signIn(otherUser);
     await applyPermissionGrant({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -459,7 +401,7 @@ describe("zero user permission grants", () => {
       action: "allow",
     });
 
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    signIn(fixture);
     const applied = await applyPermissionGrants({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -483,7 +425,7 @@ describe("zero user permission grants", () => {
       },
     ]);
 
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    signIn(otherUser);
     await expect(listPermissionGrants(agentId)).resolves.toMatchObject([
       {
         connectorSlug: SLACK_CONNECTOR,
@@ -494,11 +436,10 @@ describe("zero user permission grants", () => {
   });
 
   it("applies one connector's changed grants transactionally", async () => {
-    const fixture = await createFixture();
-    const otherUserId = `user_${randomUUID()}`;
-    await seedMember({ orgId: fixture.orgId, userId: otherUserId });
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const otherUser = memberUser(fixture.orgId);
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const seededAt = Date.parse("2026-01-01T00:00:00.000Z");
     const oldExpiresAt = "2026-01-08T00:00:00.000Z";
     mockNow(seededAt);
@@ -522,7 +463,7 @@ describe("zero user permission grants", () => {
       action: "deny",
     });
 
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    signIn(otherUser);
     await applyPermissionGrant({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -531,7 +472,7 @@ describe("zero user permission grants", () => {
     });
 
     mockNow(seededAt + 60 * 60 * 1000);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    signIn(fixture);
 
     const applied = await applyPermissionGrants({
       agentId,
@@ -589,7 +530,7 @@ describe("zero user permission grants", () => {
       ]),
     );
 
-    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    signIn(otherUser);
     await expect(listPermissionGrants(agentId)).resolves.toMatchObject([
       {
         connectorSlug: SLACK_CONNECTOR,
@@ -600,9 +541,9 @@ describe("zero user permission grants", () => {
   });
 
   it("validates connector-scoped apply requests", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const client = setupApp({
       context,
       routes: userPermissionGrantsRoutes,
@@ -680,9 +621,9 @@ describe("zero user permission grants", () => {
   });
 
   it("replaces then applies changed grants when requested", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     await applyPermissionGrants({
       agentId,
       connectorSlug: SLACK_CONNECTOR,
@@ -713,15 +654,10 @@ describe("zero user permission grants", () => {
   });
 
   it("rejects connector-scoped apply for invisible agents", async () => {
-    const owner = await createFixture();
-    const sameOrgUserId = `user_${randomUUID()}`;
-    await seedMember({ orgId: owner.orgId, userId: sameOrgUserId });
-    const privateAgentId = await seedAgent({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      visibility: "private",
-    });
-    mocks.clerk.session(sameOrgUserId, owner.orgId, "org:member");
+    const owner = memberUser();
+    const sameOrgUser = memberUser(owner.orgId);
+    const privateAgentId = await createAgent(owner, "private");
+    signIn(sameOrgUser);
     const client = setupApp({
       context,
       routes: userPermissionGrantsRoutes,
@@ -744,9 +680,9 @@ describe("zero user permission grants", () => {
   });
 
   it("filters expired grants and folds active grants into legacy policies", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const checkedAt = Date.parse("2026-01-01T00:00:00.000Z");
 
     mockNow(checkedAt - 60 * 60 * 1000 - 1000);
@@ -803,9 +739,9 @@ describe("zero user permission grants", () => {
   });
 
   it("preserves active allow expiration when expiresIn is omitted", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
 
     const firstAppliedAt = Date.parse("2026-01-01T00:00:00.000Z");
     mockNow(firstAppliedAt);
@@ -833,9 +769,9 @@ describe("zero user permission grants", () => {
   });
 
   it("clears active expiration when action changes to deny", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
 
     await applyPermissionGrant({
       agentId,
@@ -863,9 +799,9 @@ describe("zero user permission grants", () => {
   });
 
   it("clears active expiration only when expiresIn is always", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
 
     await applyPermissionGrant({
       agentId,
@@ -893,9 +829,9 @@ describe("zero user permission grants", () => {
   });
 
   it("revives expired grants as permanent grants when expiresIn is omitted", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
 
     mockNow(Date.parse("2000-01-01T00:00:00.000Z"));
     await applyPermissionGrant({
@@ -918,9 +854,9 @@ describe("zero user permission grants", () => {
   });
 
   it("computes grant expiration from server-side expiresIn", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const timestamp = new Date("2026-02-01T12:00:00.000Z");
     mockNow(timestamp);
 
@@ -969,9 +905,9 @@ describe("zero user permission grants", () => {
   });
 
   it("rejects invalid grant expiration options", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
 
     const response = await app.request("/api/user-permission-grants/apply", {
@@ -997,9 +933,9 @@ describe("zero user permission grants", () => {
   });
 
   it("rejects expiration options for deny grants", async () => {
-    const fixture = await createFixture();
-    const agentId = await seedAgent(fixture);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    const fixture = memberUser();
+    const agentId = await createAgent(fixture);
+    signIn(fixture);
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
 
     const response = await app.request("/api/user-permission-grants/apply", {

@@ -1,13 +1,26 @@
 import { randomUUID } from "node:crypto";
 
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import { describe, expect, it } from "vitest";
+import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  insertChatSearchProjectionCoverageFixture,
+  readChatEventSearchProjectionFixture,
+  readChatEventSearchProjectionRowsFixture,
+} from "../../../test-fixtures/chat-event-search";
+import {
+  holdChatEventInsertTransactionFixture,
+  holdChatThreadDeleteTransactionFixture,
+} from "../../../test-fixtures/chat-events";
+import { withChatSearchStatementFailureFixture } from "../../../test-fixtures/chat-search-statement-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
+import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
@@ -30,19 +43,67 @@ function cronClient() {
 }
 
 /**
- * Runs the production cron tick. It projects every pending thread, so its
- * totals include other suites' threads and are asserted only as lower bounds.
+ * Runs the production projector scoped to this test's own threads, so its
+ * counters describe exactly those threads in the shared database.
  */
-async function projectChatEventSearch() {
-  // Sends only enqueue; let their background picks settle the inputs first.
-  await flushWaitUntilForTest();
+async function projectOwnedChatEventSearch(chatThreadIds: readonly string[]) {
+  const client = setupApp({
+    context,
+    routes: testChatEventSearchProjectionRoutes,
+    rethrowErrors: true,
+  })(testChatEventSearchProjectionContract);
   const response = await accept(
-    cronClient().project({
-      headers: { authorization: `Bearer ${CRON_SECRET}` },
+    client.project({
+      body: { chat_thread_ids: [...chatThreadIds] },
     }),
     [200],
   );
   return response.body;
+}
+
+interface ProjectionFixture {
+  readonly actor: ReturnType<typeof bdd.user>;
+  readonly agentId: string;
+  readonly threadId: string;
+}
+
+async function createProjectionFixture(
+  options: { readonly orgId?: string } = {},
+): Promise<ProjectionFixture> {
+  const actor =
+    options.orgId === undefined
+      ? bdd.user()
+      : bdd.user({ orgId: options.orgId });
+  const agent = await chat.createAgentForChatThread(actor);
+  const thread = await chat.createThread(actor, {
+    agentId: agent.agentId,
+    title: `Projection ${randomUUID()}`,
+  });
+  return { actor, agentId: agent.agentId, threadId: thread.id };
+}
+
+async function createProjectionThread(): Promise<string> {
+  const fixture = await createProjectionFixture();
+  return fixture.threadId;
+}
+
+async function seedProjectionContent(
+  chatThreadId: string,
+  marker: string,
+): Promise<void> {
+  await insertChatSearchProjectionCoverageFixture({
+    chatThreadId,
+    promptText: `${marker} prompt`,
+    assistantText: `${marker} assistant`,
+    errorText: `${marker} error`,
+    terminalText: `${marker} terminal`,
+  });
+}
+
+async function expectNoProjection(chatThreadId: string): Promise<void> {
+  await expect(
+    readChatEventSearchProjectionRowsFixture(chatThreadId),
+  ).resolves.toStrictEqual({ indexedSeqId: null, messages: [] });
 }
 
 /**
@@ -112,14 +173,13 @@ describe("GET /api/cron/project-chat-event-search", () => {
       throw new Error("Expected the failed run to show its error");
     }
 
-    const tick = await projectChatEventSearch();
+    const tick = await projectOwnedChatEventSearch([run.threadId]);
     expect(tick.success).toBeTruthy();
-    expect(tick.threads).toBeGreaterThanOrEqual(1);
-    expect(tick.indexedEvents).toBeGreaterThanOrEqual(3);
-    expect(tick.convergence.durableCaughtUpThreads).toBeGreaterThanOrEqual(1);
-    expect(tick.convergence.eligibleThreads).toBeGreaterThanOrEqual(
-      tick.convergence.durableCaughtUpThreads,
-    );
+    expect(tick.threads).toBe(1);
+    // Both prompts and the assistant reply; error and lifecycle rows are skipped.
+    expect(tick.indexedEvents).toBe(3);
+    expect(tick.convergence.eligibleThreads).toBe(1);
+    expect(tick.convergence.durableCaughtUpThreads).toBe(1);
 
     const prompt = await chat.searchChat(actor, promptText);
     expect(prompt.results).toStrictEqual([
@@ -148,7 +208,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     // Error and terminal lifecycle rows stay out of the index.
     const failed = await chat.searchChat(actor, failureText);
     expect(failed.results).toStrictEqual([]);
-  }, 120_000);
+  });
 
   it("requires the cron secret", async () => {
     const response = await accept(cronClient().project({ headers: {} }), [401]);
@@ -164,26 +224,135 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const threadId = await sendRejectedPrompt(actor, agentId, promptText);
 
     const ticks = await Promise.all([
-      projectChatEventSearch(),
-      projectChatEventSearch(),
+      projectOwnedChatEventSearch([threadId]),
+      projectOwnedChatEventSearch([threadId]),
     ]);
 
-    for (const tick of ticks) {
-      expect(tick.success).toBeTruthy();
-    }
+    expect(
+      ticks.reduce((total, tick) => {
+        return total + tick.indexedEvents;
+      }, 0),
+    ).toBe(1);
     const found = await chat.searchChat(actor, promptText);
     expect(
       found.results.map((result) => {
         return [result.chatThreadId, result.matchedMessage.content];
       }),
     ).toStrictEqual([[threadId, promptText]]);
-  }, 60_000);
+  });
+
+  it("does not take a thread lock that conflicts with event writes", async () => {
+    const chatThreadId = await createProjectionThread();
+    await insertChatSearchProjectionCoverageFixture({
+      chatThreadId,
+      promptText: `nonblocking prompt ${randomUUID()}`,
+      assistantText: `nonblocking assistant ${randomUUID()}`,
+      errorText: `nonblocking error ${randomUUID()}`,
+      terminalText: `nonblocking terminal ${randomUUID()}`,
+    });
+    const appendedText = `writer remains live ${randomUUID()}`;
+    const heldWriter = await holdChatEventInsertTransactionFixture({
+      threadId: chatThreadId,
+      content: appendedText,
+      signal: context.signal,
+    });
+    const firstTick = projectOwnedChatEventSearch([chatThreadId]);
+    onTestFinished(async () => {
+      heldWriter.release();
+      await Promise.allSettled([heldWriter.done, firstTick]);
+    });
+
+    const projected = await firstTick;
+    expect(projected.indexedEvents).toBe(2);
+
+    heldWriter.release();
+    await heldWriter.done;
+    const caughtUp = await projectOwnedChatEventSearch([chatThreadId]);
+    expect(caughtUp.indexedEvents).toBe(1);
+    const projection = await readChatEventSearchProjectionFixture(chatThreadId);
+    expect(projection.indexedSeqId).toBe(projection.lastChatEventSeqId);
+    expect(projection.messages).toContainEqual(
+      expect.objectContaining({
+        seqId: heldWriter.event.seqId,
+        role: "assistant",
+        text: appendedText,
+      }),
+    );
+  });
+
+  it("projects without waiting for an in-flight thread deletion", async () => {
+    const actor = bdd.user();
+    const agent = await chat.createAgentForChatThread(actor);
+    const thread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: `Projection deletion ${randomUUID()}`,
+    });
+    const promptText = `deleting prompt ${randomUUID()}`;
+    await insertChatSearchProjectionCoverageFixture({
+      chatThreadId: thread.id,
+      promptText,
+      assistantText: `deleting assistant ${randomUUID()}`,
+      errorText: `deleting error ${randomUUID()}`,
+      terminalText: `deleting terminal ${randomUUID()}`,
+    });
+    const heldDeletion = await holdChatThreadDeleteTransactionFixture({
+      threadId: thread.id,
+      signal: context.signal,
+    });
+    const tick = projectOwnedChatEventSearch([thread.id]);
+    onTestFinished(async () => {
+      heldDeletion.release();
+      await Promise.all([heldDeletion.done, tick]);
+    });
+
+    const projected = await tick;
+    expect(projected.success).toBeTruthy();
+    expect(projected.threads).toBe(1);
+    await expect(heldDeletion.firstBlockedStatementKind()).resolves.toBeNull();
+
+    heldDeletion.release();
+    await heldDeletion.done;
+
+    const deleted = await chat.requestReadThread(actor, thread.id, [404]);
+    expect(deleted.status).toBe(404);
+    const hidden = await chat.searchChat(actor, promptText);
+    expect(hidden.results).toStrictEqual([]);
+
+    const cleanup = await projectOwnedChatEventSearch([thread.id]);
+    expect(cleanup.orphanedThreads).toBe(1);
+    const clean = await projectOwnedChatEventSearch([thread.id]);
+    expect(clean.orphanedThreads).toBe(0);
+  });
+
+  it("propagates server cancellation and rolls back the interrupted projection", async () => {
+    const { threadId } = await createProjectionFixture();
+    await seedProjectionContent(threadId, `cancel ${randomUUID()}`);
+    const result = await withChatSearchStatementFailureFixture(
+      threadId,
+      "cancel",
+      async () => {
+        return await settleIncludingAbort(
+          projectOwnedChatEventSearch([threadId]),
+        );
+      },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        cause: {
+          code: "57014",
+          message: "canceling statement due to user request",
+        },
+      },
+    });
+    await expectNoProjection(threadId);
+  });
 
   it("removes search projection rows synchronously on normal deletion", async () => {
     const { actor, agentId } = await promptActor("Projection cleanup");
     const promptText = `synchronous cleanup ${randomUUID()}`;
     const threadId = await sendRejectedPrompt(actor, agentId, promptText);
-    await projectChatEventSearch();
+    await projectOwnedChatEventSearch([threadId]);
     const indexed = await chat.searchChat(actor, promptText);
     expect(
       indexed.results.map((result) => {
@@ -195,7 +364,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
 
     const hidden = await chat.searchChat(actor, promptText);
     expect(hidden.results).toStrictEqual([]);
-  }, 60_000);
+    const repair = await projectOwnedChatEventSearch([threadId]);
+    expect(repair.orphanedThreads).toBe(0);
+  });
 
   it("bounds each projection tick to the configured thread batch", async () => {
     const { actor, agentId } = await promptActor("Bounded projection");
@@ -205,14 +376,26 @@ describe("GET /api/cron/project-chat-event-search", () => {
       await sendRejectedPrompt(actor, agentId, `${marker} second`),
     ];
 
-    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "1");
-    const bounded = await projectChatEventSearch();
-    expect(bounded.success).toBeTruthy();
-    expect(bounded.threads).toBeLessThanOrEqual(1);
+    const [selectedThreadId, deferredThreadId] = [...threadIds].sort();
+    if (!selectedThreadId || !deferredThreadId) {
+      throw new Error("Expected two bounded projection threads");
+    }
 
-    // A deferred thread converges on a later tick at the default batch size.
-    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", undefined);
-    await projectChatEventSearch();
+    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "1");
+    const bounded = await projectOwnedChatEventSearch(threadIds);
+    expect(bounded.threads).toBe(1);
+    expect(bounded.indexedEvents).toBe(1);
+    const selected = await chat.searchChat(actor, marker);
+    expect(
+      selected.results.map((result) => {
+        return result.chatThreadId;
+      }),
+    ).toStrictEqual([selectedThreadId]);
+
+    // The deferred thread converges on the next bounded tick.
+    const next = await projectOwnedChatEventSearch(threadIds);
+    expect(next.threads).toBe(1);
+    expect(next.indexedEvents).toBe(1);
     const found = await chat.searchChat(actor, marker);
     expect(
       found.results
@@ -220,8 +403,8 @@ describe("GET /api/cron/project-chat-event-search", () => {
           return result.chatThreadId;
         })
         .sort(),
-    ).toStrictEqual([...threadIds].sort());
-  }, 60_000);
+    ).toStrictEqual([selectedThreadId, deferredThreadId]);
+  });
 
   it("deletes a later-revoked message by thread and sequence", async () => {
     const { actor, agentId, runnerGroup } =
@@ -245,7 +428,8 @@ describe("GET /api/cron/project-chat-event-search", () => {
     if (queued.status !== 201 || queued.body.runId !== null) {
       throw new Error("Expected the chat send to queue while a run is active");
     }
-    await projectChatEventSearch();
+    await flushWaitUntilForTest();
+    await projectOwnedChatEventSearch([blocking.threadId]);
 
     const before = await chat.searchChat(actor, text);
     expect(before.results).toStrictEqual([
@@ -273,8 +457,8 @@ describe("GET /api/cron/project-chat-event-search", () => {
     if (launched?.runId === undefined) {
       throw new Error("Expected the queued message to launch a run");
     }
-    const tick = await projectChatEventSearch();
-    expect(tick.success).toBeTruthy();
+    const tick = await projectOwnedChatEventSearch([blocking.threadId]);
+    expect(tick.deletedDocs).toBeGreaterThanOrEqual(1);
 
     const after = await chat.searchChat(actor, text);
     expect(after.results).toStrictEqual([
@@ -289,5 +473,5 @@ describe("GET /api/cron/project-chat-event-search", () => {
     ]);
     expect(after.results[0]?.matchedMessage.seqId).not.toBe(queuedSeqId);
     await fixture.cancelChatRun(actor, launched.runId);
-  }, 120_000);
+  });
 });
