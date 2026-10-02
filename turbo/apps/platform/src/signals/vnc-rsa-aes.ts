@@ -49,23 +49,3 @@ export function rsaAesProfile(
         : "rsa_aes_ra2ne_256_username_password";
   }
 }
-export function rsaAesProfileLabelKey(profile: RsaAesProfile) {
-  switch (profile) {
-    case "rsa_aes_ra2":
-      return "ra2Password";
-    case "rsa_aes_ra2_256":
-      return "ra2256Password";
-    case "rsa_aes_ra2ne":
-      return "ra2nePassword";
-    case "rsa_aes_ra2ne_256":
-      return "ra2ne256Password";
-    case "rsa_aes_ra2_username_password":
-      return "ra2UsernamePassword";
-    case "rsa_aes_ra2_256_username_password":
-      return "ra2256UsernamePassword";
-    case "rsa_aes_ra2ne_username_password":
-      return "ra2neUsernamePassword";
-    case "rsa_aes_ra2ne_256_username_password":
-      return "ra2ne256UsernamePassword";
-  }
-}

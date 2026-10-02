@@ -15,10 +15,8 @@ import {
   type VncProfile,
 } from "../../signals/vnc.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
-import {
-  isRsaAesProfile,
-  rsaAesProfileLabelKey,
-} from "../../signals/vnc-rsa-aes.ts";
+import { isRsaAesProfile } from "../../signals/vnc-rsa-aes.ts";
+import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
 import { isVncRsaAesAuthenticationOnly } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -46,10 +44,9 @@ function isX509Security(
 
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
+  const rsaAesLabels = useRsaAesProfileLabels();
   if (isRsaAesProfile(profile)) {
-    return t(($) => {
-      return $.vnc.rsaAes[rsaAesProfileLabelKey(profile)];
-    });
+    return rsaAesLabels[profile];
   }
   switch (profile) {
     case "client_certificate_none": {

@@ -1,6 +1,5 @@
 import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { accept, testContext } from "../../../__tests__/test-context";

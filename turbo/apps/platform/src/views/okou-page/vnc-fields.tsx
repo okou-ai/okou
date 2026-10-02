@@ -55,8 +55,8 @@ import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
 import {
   RSA_AES_PROFILES,
   isRsaAesProfile,
-  rsaAesProfileLabelKey,
 } from "../../signals/vnc-rsa-aes.ts";
+import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
 import {
   VNC_RSA_AES_FIELD_MAX_BYTES,
   VNC_RSA_PUBLIC_KEY_MAX_BYTES,
@@ -366,15 +366,14 @@ export function VncSecurityProfileField({
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
+  const rsaAesLabels = useRsaAesProfileLabels();
   const profileItems = [
     ...Object.keys(RSA_AES_PROFILES)
       .filter(isRsaAesProfile)
       .map((value) => {
         return {
           value,
-          label: t(($) => {
-            return $.vnc.rsaAes[rsaAesProfileLabelKey(value)];
-          }),
+          label: rsaAesLabels[value],
         };
       }),
     {
