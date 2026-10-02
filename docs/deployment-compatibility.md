@@ -34,15 +34,15 @@ response field and the shared Drizzle declaration. Generated migration
 `1314_drop_retired_video_entitlement` drops only that column. Historical usage,
 credit records, accepted artifacts and shipped migrations remain unchanged.
 
-**Release gate (not satisfied by this PR):** migrations run before API promotion.
-The outgoing API still selects and writes this column, including bare Drizzle
-INSERT/SELECT/RETURNING, so ordinary overlapping deployment produces `42703`
-errors for Billing, model admission and entitlement/reward writes until it
-drains. Do not release this contraction under the assumption that retiring the
-video endpoints also retired these queries. Before production deployment, the
-owner must approve a coordinated no-old-writer rollout or explicitly accept the
-bounded interruption; otherwise split out a preparatory code release and defer
-physical contraction. This PR does not approve either release action.
+**Accepted rollout interruption:** Ethan explicitly accepted brief unavailability
+during deployment and requested that #37580 be marked ready for review. Migrations
+run before API promotion. The outgoing API still selects and writes this column,
+including bare Drizzle INSERT/SELECT/RETURNING, so ordinary overlapping deployment
+produces `42703` errors for Billing, model admission and entitlement/reward writes
+until it drains. This bounded interruption is accepted for this contraction; no
+preparatory release or old-column compatibility branch is required. Acceptance
+of that risk is not an instruction to merge or deploy this PR, and it does not
+waive the rollback floor below.
 
 New API/new App and CLI use the reduced capability shape. New App/old API works:
 the removed response property is surplus data. The outgoing production App and
