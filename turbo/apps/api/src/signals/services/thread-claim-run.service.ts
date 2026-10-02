@@ -77,7 +77,7 @@ import {
   prepareCallbacks$ as prepareExecutionCallbacks$,
   type ExecutionCallback,
 } from "./execution-callbacks.service";
-import { createBootstrapAgent } from "./agent-bootstrap-agent";
+import { createBootstrapAgent } from "./agent-data.service";
 import {
   agentConnectorScopeFromRows,
   type AgentConnectorScopeSnapshot,
@@ -302,15 +302,13 @@ import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.serv
 import {
   createAgentCatalogIdentity,
   createAgentCatalogProjectionRows,
-} from "./agent-bootstrap-catalog";
+  type ConnectorCatalogRuntimeProjectionRowsRead,
+  validateConnectorCatalogRuntimeProjectionRows,
+} from "./connector-catalog-runtime-projection.service";
 import {
   isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
 } from "./member-subscription-models.service";
-import {
-  type ConnectorCatalogRuntimeProjectionRowsRead,
-  validateConnectorCatalogRuntimeProjectionRows,
-} from "./connector-catalog-runtime-projection.service";
 import {
   clearRuntimeSelectionInFlight,
   getConnectorRuntimeConnector,

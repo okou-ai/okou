@@ -1,15 +1,18 @@
 import { computed, type Computed } from "ccstate";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createBootstrapAgent } from "./agent-bootstrap-agent";
+import {
+  createBootstrapAgent,
+  type BootstrapAgent,
+} from "./agent-data.service";
 
 import {
   createAgentCatalogIdentity,
   createAgentCatalogProjectionRows,
   type AgentBootstrapCatalog,
   type AgentCatalogProjectionRow,
-} from "./agent-bootstrap-catalog";
+  type CapturedConnectorCatalogIdentity,
+} from "./connector-catalog-runtime-projection.service";
 import { requestedProjectionConnectorSlugs } from "./connector-catalog-runtime.service";
-import type { CapturedConnectorCatalogIdentity } from "./connector-catalog-runtime-projection.service";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   type CustomConnectorExecutionDefinition,
@@ -42,20 +45,6 @@ import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { normaliseCustomConnectorRow } from "./custom-connector.service";
-
-export interface BootstrapAgent {
-  readonly id: string;
-  readonly orgId: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-  readonly name: string;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-  readonly defaultAgentId: string | null;
-  readonly modelProviderId: string | null;
-  readonly selectedModel: string | null;
-}
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
