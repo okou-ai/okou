@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.727.0](https://github.com/okou-ai/okou/compare/core-v8.726.1...core-v8.727.0) (2026-10-02)
+
+
+### Features
+
+* retire file transcription and seedream 5 models ([#37575](https://github.com/okou-ai/okou/issues/37575)) ([b7ff2f1](https://github.com/okou-ai/okou/commit/b7ff2f12a14123ca3cd56d5804126c1333662896))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.536.0
+
 ## [8.726.1](https://github.com/okou-ai/okou/compare/core-v8.726.0...core-v8.726.1) (2026-10-02)
 
 

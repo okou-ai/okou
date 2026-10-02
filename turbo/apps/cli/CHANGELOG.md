@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.376.0](https://github.com/okou-ai/okou/compare/cli-v9.375.2...cli-v9.376.0) (2026-10-02)
+
+
+### Features
+
+* retire file transcription and seedream 5 models ([#37575](https://github.com/okou-ai/okou/issues/37575)) ([b7ff2f1](https://github.com/okou-ai/okou/commit/b7ff2f12a14123ca3cd56d5804126c1333662896))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.536.0
+    * @okouai/core bumped to 8.727.0
+    * @okouai/pi-agent-runtime bumped to 1.45.11
+
 ## [9.375.2](https://github.com/okou-ai/okou/compare/cli-v9.375.1...cli-v9.375.2) (2026-10-02)
 
 
