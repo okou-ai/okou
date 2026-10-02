@@ -27,6 +27,7 @@ import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   replaceUnpublishedStorageGenerationFixture,
@@ -38,9 +39,8 @@ import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
-import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext({ connectorCatalog: true });
@@ -48,7 +48,7 @@ const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
 const storages = createStoragesBddApi(context);
 const runs = createRunsApi(context);
-const workflowApi = createWorkflowsBddApi(context);
+const connectors = createConnectorBddApi(context);
 
 type Lifecycle = "agent" | "workflow";
 type Failure = "list" | "partial-delete" | "lost-delete-receipt";
@@ -367,26 +367,75 @@ describe("durable ordinary Storage lifecycle cleanup", () => {
       const s3 = objectStore();
       const agent = await bdd.createAgent(actor, {});
       const workflowId = await createWorkflow(actor, agent.agentId);
-      mockGmailConnectorOAuth({
-        email: `${actor.userId}@example.test`,
-        subject: actor.userId,
-      });
-      await workflowApi.connectConnector(actor, "gmail");
+      // Cancel at a current post-commit provider boundary. Gmail retirement is
+      // local-only; Meet still deletes this test-owned remote subscription.
+      const subscriptionName = `subscriptions/cleanup-${actor.userId}`;
+      const topicName = `projects/test/topics/cleanup-${actor.userId}`;
+      mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "cleanup-google-client-id");
       mockOptionalEnv(
-        "GMAIL_PUBSUB_TOPIC_NAME",
-        "projects/test/topics/gmail-events",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "cleanup-google-client-secret",
       );
+      mockOptionalEnv("GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME", topicName);
       server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          return HttpResponse.json({
+            access_token: `meet-access-${actor.userId}`,
+            refresh_token: `meet-refresh-${actor.userId}`,
+            expires_in: 3600,
+            token_type: "Bearer",
+            scope:
+              "https://www.googleapis.com/auth/meetings.space.readonly https://www.googleapis.com/auth/userinfo.email",
+          });
+        }),
+        http.get("https://www.googleapis.com/oauth2/v2/userinfo", () => {
+          return HttpResponse.json({
+            id: actor.userId,
+            email: `${actor.userId}@example.test`,
+            name: "Cleanup subscription owner",
+          });
+        }),
+        http.get(
+          "https://workspaceevents.googleapis.com/v1/subscriptions",
+          () => {
+            return HttpResponse.json({ subscriptions: [] });
+          },
+        ),
         http.post(
-          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          "https://workspaceevents.googleapis.com/v1/subscriptions",
           () => {
             return HttpResponse.json({
-              historyId: "1",
-              expiration: "4102444800000",
+              response: {
+                name: subscriptionName,
+                targetResource: `//cloudidentity.googleapis.com/users/${actor.userId}`,
+                eventTypes: [
+                  "google.workspace.meet.transcript.v2.fileGenerated",
+                ],
+                notificationEndpoint: { pubsubTopic: topicName },
+                state: "ACTIVE",
+                expireTime: new Date(
+                  now() + 7 * 24 * 60 * 60_000,
+                ).toISOString(),
+              },
             });
           },
         ),
       );
+      const authorization = await connectors.startOauth(
+        actor,
+        "google-meet",
+        "oauth",
+      );
+      const state = new URL(authorization.authorizationUrl).searchParams.get(
+        "state",
+      );
+      if (!state) {
+        throw new Error("Expected the owned Google Meet OAuth state");
+      }
+      await connectors.completeOauthCallback("google-meet", {
+        code: `meet-cleanup-${actor.userId}`,
+        state,
+      });
       await accept(
         setupApp({ context, routes: workflowAutomationsRoutes })(
           workflowAutomationsContract,
@@ -395,18 +444,24 @@ describe("durable ordinary Storage lifecycle cleanup", () => {
           params: { workflowId },
           body: {
             kind: "event",
-            eventType: "gmail-new-message",
-            eventConfig: { provider: "gmail", event: "new_message" },
+            eventType: "google-meet-transcript-generated",
+            eventConfig: {
+              provider: "google-meet",
+              event: "transcript_generated",
+            },
           },
         }),
         [201],
       );
       const controller = new AbortController();
       server.use(
-        http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-          controller.abort();
-          return new HttpResponse(null, { status: 204 });
-        }),
+        http.delete(
+          `https://workspaceevents.googleapis.com/v1/${subscriptionName}`,
+          () => {
+            controller.abort();
+            return new HttpResponse(null, { status: 204 });
+          },
+        ),
       );
       const before = [...s3.objects.keys()];
       const id = kind === "agent" ? agent.agentId : workflowId;

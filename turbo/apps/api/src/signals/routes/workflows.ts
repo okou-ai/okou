@@ -569,15 +569,22 @@ const cleanupUnpublishedWorkflow$ = command(
   },
 );
 
+function workflowCreationCleanupTarget(
+  orgId: string,
+  userId: string,
+  workflowId: string,
+) {
+  return { orgId, userId, workflowId, storageId: randomUUID() };
+}
+
 const prepareAndCreateWorkflow$ = command(
   async ({ set }, args: WorkflowCreationInput, signal: AbortSignal) => {
     const workflowId = randomUUID();
-    const cleanup = {
-      orgId: args.orgId,
-      userId: args.member.userId,
+    const cleanup = workflowCreationCleanupTarget(
+      args.orgId,
+      args.member.userId,
       workflowId,
-      storageId: randomUUID(),
-    };
+    );
     const result = await onRejection(
       (async () => {
         const volume = await set(
@@ -1694,10 +1701,12 @@ function copiedWorkflowVolumeInput(
   orgId: string,
   targetWorkflowId: string,
   source: WorkflowCopySource,
+  storageId: string,
 ) {
   return {
     orgId,
     storageName: getCustomSkillStorageName(targetWorkflowId),
+    storageId,
     piResourceIndex: true as const,
     files: copiedWorkflowVolumeFiles(source.sourceWorkflow, source.files),
   };
@@ -1770,24 +1779,21 @@ const publishCopiedWorkflow$ = command(
       },
       signal,
     );
-    const cleanup = {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: targetWorkflowId,
-      storageId: randomUUID(),
-    };
+    const cleanup = workflowCreationCleanupTarget(
+      args.orgId,
+      args.userId,
+      targetWorkflowId,
+    );
     return await onRejection(
       (async () => {
         const volume = await set(
           prepareVolumeServerSide$,
-          {
-            ...copiedWorkflowVolumeInput(
-              args.orgId,
-              targetWorkflowId,
-              snapshot.source,
-            ),
-            storageId: cleanup.storageId,
-          },
+          copiedWorkflowVolumeInput(
+            args.orgId,
+            targetWorkflowId,
+            snapshot.source,
+            cleanup.storageId,
+          ),
           signal,
         );
         const publication = await settle(
