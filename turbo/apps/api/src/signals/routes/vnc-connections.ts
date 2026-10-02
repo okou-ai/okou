@@ -292,7 +292,9 @@ const inspectRsaKey$ = command(async ({ get, set }, signal: AbortSignal) => {
     return invalidInput;
   }
   // Do not reflect parser errors or supplied key material into observations.
-  const result = safeSync(() => {return inspectVncRsaPublicKey(body.data.publicKeyPem)});
+  const result = safeSync(() => {
+    return inspectVncRsaPublicKey(body.data.publicKeyPem);
+  });
   return "ok" in result
     ? { status: 200 as const, body: result.ok }
     : invalidInput;

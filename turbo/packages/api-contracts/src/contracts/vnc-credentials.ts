@@ -117,10 +117,9 @@ const rsaAesFieldSchema = boundedUtf8String(
   "RSA-AES field",
 )
   .max(VNC_RSA_AES_FIELD_MAX_BYTES)
-  .refine(
-    (value) => {return !/[\uD800-\uDFFF]/u.test(value)},
-    "RSA-AES fields require well-formed Unicode",
-  );
+  .refine((value) => {
+    return !/[\uD800-\uDFFF]/u.test(value);
+  }, "RSA-AES fields require well-formed Unicode");
 export const vncRsaAesAuthenticationSchema = z.discriminatedUnion("method", [
   z
     .object({
