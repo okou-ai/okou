@@ -19,10 +19,7 @@ import {
   createConnectorSourceSnapshots,
   type ConnectorSourceSnapshot,
 } from "./execution-connector-sources.service";
-import {
-  createModelSourceSnapshot,
-  type ModelSourceSnapshot,
-} from "./execution-model-source.service";
+import { createModelSourceSnapshot } from "./execution-model-source.service";
 import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
@@ -8178,55 +8175,12 @@ export function createThreadClaimRunObjects(
       }),
     );
   });
-  // A prepared model runtime is an effect-produced business fact, not a
-  // temporary argument slot. Source identity/read graphs remain immutable.
-  const internalPreparedConfiguredEnvironment$ =
-    state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
-  const prepareRegisteredModelRuntime$ = command(
-    async (
-      { get },
-      source: ModelSourceSnapshot,
-      selectedModel: string,
-      options: {
-        readonly userId: string;
-        readonly sourceId: string;
-        readonly piExecution: boolean | undefined;
-      },
-      signal: AbortSignal,
-    ): Promise<ResolvedModelProviderEnvironment | null> => {
-      const catalog = await get(claimCatalog$);
-      signal.throwIfAborted();
-      return await prepareRegisteredModelEnvironment(
-        get(db$),
-        source,
-        selectedModel,
-        { ...options, catalog },
-        signal,
-      );
-    },
-  );
-  const prepareManagedModelRuntime$ = command(
-    async (
-      { get },
-      source: ModelSourceSnapshot,
-      args: ResolveModelProviderEnvironmentArgs,
-      signal: AbortSignal,
-    ): Promise<ResolvedModelProviderEnvironment | null> => {
-      return await prepareManagedModelEnvironment(
-        get(db$),
-        source,
-        args,
-        signal,
-      );
-    },
-  );
-  const resolveConfiguredModelRuntime$ = command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<ResolvedModelProviderEnvironment | null> => {
+  // The selected source's model runtime. KMS decryption and the exact
+  // managed-key read have no side effects, so the runtime is derived here
+  // (Ethan 2026-10-02); each graph resolves it once.
+  const preparedConfiguredEnvironment$ = computed(
+    async (get): Promise<ResolvedModelProviderEnvironment | null> => {
       const selection = await get(selectionInput$);
-      signal.throwIfAborted();
       if (!selection) {
         return null;
       }
@@ -8234,16 +8188,14 @@ export function createThreadClaimRunObjects(
         get(pinnedContext$),
         get(selectedConfiguredModelSource$),
       ]);
-      signal.throwIfAborted();
       if (!context || !source) {
         return null;
       }
       if (source.identity.kind === "built-in") {
-        return await set(
-          prepareManagedModelRuntime$,
+        return await prepareManagedModelEnvironment(
+          get(db$),
           source,
           context.environmentArgs,
-          signal,
         );
       }
       const config = source.configuration;
@@ -8262,48 +8214,36 @@ export function createThreadClaimRunObjects(
         if (!sourceId) {
           throw new Error("Selected registered source has no identity");
         }
-        return await set(
-          prepareRegisteredModelRuntime$,
+        return await prepareRegisteredModelEnvironment(
+          get(db$),
           source,
           selectedModel,
           {
+            catalog: await get(claimCatalog$),
             userId: context.environmentArgs.userId,
             sourceId,
             piExecution: context.environmentArgs.piExecution,
           },
-          signal,
         );
       }
       if (source.identity.kind !== "gateway") {
         throw new Error("Selected gateway has an invalid source kind");
       }
-      return await prepareGatewayModelEnvironment(
-        get(db$),
-        source,
-        {
-          selectedModel: context.environmentArgs.selectedModelOverride,
-          framework: context.environmentArgs.framework,
-          modelProviderType: context.environmentArgs.modelProviderType,
-        },
-        signal,
-      );
-    },
-  );
-  const prepareConfiguredModelRuntime$ = command(
-    ({ set }, signal: AbortSignal) => {
-      const preparation = set(resolveConfiguredModelRuntime$, signal);
-      set(internalPreparedConfiguredEnvironment$, preparation);
-      return preparation;
+      return await prepareGatewayModelEnvironment(get(db$), source, {
+        selectedModel: context.environmentArgs.selectedModelOverride,
+        framework: context.environmentArgs.framework,
+        modelProviderType: context.environmentArgs.modelProviderType,
+      });
     },
   );
   const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
-    return await get(internalPreparedConfiguredEnvironment$);
+    return await get(preparedConfiguredEnvironment$);
   });
   const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     return context &&
       isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ? await get(internalPreparedConfiguredEnvironment$)
+      ? await get(preparedConfiguredEnvironment$)
       : null;
   });
   const environment$ = computed(
@@ -8322,7 +8262,7 @@ export function createThreadClaimRunObjects(
         args.modelProviderCredentialScope !== "org"
       ) {
         // Member subscription accounts use the exact selected account source.
-        return await get(internalPreparedConfiguredEnvironment$);
+        return await get(preparedConfiguredEnvironment$);
       }
       // Registered, organization-account and gateway sources are all prepared
       // from their exact selected source snapshot.
@@ -9349,47 +9289,28 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const internalPreparedConnectorSecrets$ = state<Promise<
-    Record<string, string>
-  > | null>(null);
-  const resolveConnectorSecrets$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const selection = await get(selectionInput$);
-      signal.throwIfAborted();
-      if (!selection) {
-        return {};
-      }
-      const [plan, rows] = await Promise.all([
-        get(runConnectorEagerSecretPlan$),
-        get(runConnectorEncryptedRows$),
-      ]);
-      signal.throwIfAborted();
-      if (isRouteError(plan)) {
-        return {};
-      }
-      const secrets = await decryptStoredConnectorSecretRows(
-        rows,
-        {
-          featureSwitchContext: plan.input.featureSwitchContext,
-          timingDimensions: plan.timingDimensions,
-        },
-        plan.input.timing,
-      );
-      signal.throwIfAborted();
-      return secrets;
-    },
-  );
-  const prepareConnectorSecrets$ = command(({ set }, signal: AbortSignal) => {
-    const preparation = set(resolveConnectorSecrets$, signal);
-    set(internalPreparedConnectorSecrets$, preparation);
-    return preparation;
-  });
+  // Stored connector secrets, decrypted once per graph; KMS decryption has no
+  // side effects (Ethan 2026-10-02).
   const decryptedSecrets$ = computed(async (get) => {
-    const preparation = get(internalPreparedConnectorSecrets$);
-    if (!preparation) {
-      throw new Error("Connector secrets have not been prepared");
+    const selection = await get(selectionInput$);
+    if (!selection) {
+      return {};
     }
-    return await preparation;
+    const [plan, rows] = await Promise.all([
+      get(runConnectorEagerSecretPlan$),
+      get(runConnectorEncryptedRows$),
+    ]);
+    if (isRouteError(plan)) {
+      return {};
+    }
+    return await decryptStoredConnectorSecretRows(
+      rows,
+      {
+        featureSwitchContext: plan.input.featureSwitchContext,
+        timingDimensions: plan.timingDimensions,
+      },
+      plan.input.timing,
+    );
   });
   const connectorContext$ = computed(
     async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
@@ -11446,11 +11367,6 @@ export function createThreadClaimRunObjects(
         await set(resolveAutomationModelSnapshot$, signal);
         signal.throwIfAborted();
       }
-      const configuredModelPreparation = set(
-        prepareConfiguredModelRuntime$,
-        signal,
-      );
-      const connectorPreparation = set(prepareConnectorSecrets$, signal);
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
       const [encrypted, admission, launch, allowanceRefresh] =
@@ -11460,8 +11376,6 @@ export function createThreadClaimRunObjects(
           set(prepareLaunchResources$, head, signal),
           get(preparedAllowanceRefresh$),
           get(storageMounts$),
-          configuredModelPreparation,
-          connectorPreparation,
         ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {

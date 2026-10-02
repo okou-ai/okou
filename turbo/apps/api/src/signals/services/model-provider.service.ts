@@ -1540,7 +1540,6 @@ async function codexAccountCredentials(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
   piExecution: boolean | undefined,
-  signal: AbortSignal,
 ): Promise<ModelCredentialValues | null> {
   const method =
     source.configuration.kind === "registered-provider"
@@ -1562,16 +1561,12 @@ async function codexAccountCredentials(
   if (piExecution) {
     return references;
   }
-  const account = await resolveModelCredentialValues(
-    db,
-    {
-      ...own,
-      credentials: own.credentials.filter((credential) => {
-        return credential.name === "CHATGPT_ACCOUNT_ID";
-      }),
-    },
-    signal,
-  );
+  const account = await resolveModelCredentialValues(db, {
+    ...own,
+    credentials: own.credentials.filter((credential) => {
+      return credential.name === "CHATGPT_ACCOUNT_ID";
+    }),
+  });
   return account?.CHATGPT_ACCOUNT_ID
     ? { ...references, CHATGPT_ACCOUNT_ID: account.CHATGPT_ACCOUNT_ID }
     : null;
@@ -1580,7 +1575,6 @@ async function codexAccountCredentials(
 async function resolveModelCredentialValues(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
-  signal: AbortSignal,
 ): Promise<ModelCredentialValues | null> {
   const values: Record<string, string> = {};
   for (const credential of source.credentials) {
@@ -1604,7 +1598,6 @@ async function resolveModelCredentialValues(
         .from(builtInModelKeys)
         .where(eq(builtInModelKeys.id, credential.modelKeyId))
         .limit(1);
-      signal.throwIfAborted();
       if (!key?.apiKey) {
         return null;
       }
@@ -1613,7 +1606,6 @@ async function resolveModelCredentialValues(
       }
       values[credential.name] = key.apiKey;
     }
-    signal.throwIfAborted();
   }
   return values;
 }
@@ -1629,7 +1621,6 @@ export async function prepareRegisteredModelEnvironment(
     readonly sourceId: string;
     readonly piExecution: boolean | undefined;
   },
-  signal: AbortSignal,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   const { catalog, userId, sourceId, piExecution } = options;
   const type = modelProviderTypeSchema.parse(source.configuration.providerType);
@@ -1639,7 +1630,7 @@ export async function prepareRegisteredModelEnvironment(
   // capture stays encrypted: the runtime only sees its secret reference.
   const credentials =
     deferred && type === "codex-oauth-token"
-      ? await codexAccountCredentials(db, source, piExecution, signal)
+      ? await codexAccountCredentials(db, source, piExecution)
       : deferred &&
           !capture &&
           !hasAuthMethods(type) &&
@@ -1647,7 +1638,7 @@ export async function prepareRegisteredModelEnvironment(
             return credential.kind === "encrypted";
           })
         ? deferredCredentialReferences(source)
-        : await resolveModelCredentialValues(db, source, signal);
+        : await resolveModelCredentialValues(db, source);
   if (!credentials) {
     return null;
   }
@@ -1738,7 +1729,6 @@ export async function prepareManagedModelEnvironment(
   db: ReadonlyDb,
   source: ModelSourceSnapshot,
   args: ManagedModelEnvironmentRequest,
-  signal: AbortSignal,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (source.identity.kind !== "built-in") {
     throw new Error("Managed preparation requires a managed source");
@@ -1753,7 +1743,7 @@ export async function prepareManagedModelEnvironment(
   ) {
     return null;
   }
-  const credentials = await resolveModelCredentialValues(db, source, signal);
+  const credentials = await resolveModelCredentialValues(db, source);
   if (!credentials) {
     return null;
   }
@@ -1815,7 +1805,6 @@ export async function prepareGatewayModelEnvironment(
     readonly framework: string;
     readonly modelProviderType: string | undefined;
   },
-  signal: AbortSignal,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   const config = source.configuration;
   if (source.identity.kind !== "gateway" || config.kind !== "gateway") {
@@ -1835,7 +1824,7 @@ export async function prepareGatewayModelEnvironment(
   ) {
     return null;
   }
-  const credentials = await resolveModelCredentialValues(db, source, signal);
+  const credentials = await resolveModelCredentialValues(db, source);
   // A blank stored gateway key is an unavailable source, as on main.
   if (!credentials?.[GATEWAY_RUNTIME_SECRET_NAME]?.trim()) {
     return null;

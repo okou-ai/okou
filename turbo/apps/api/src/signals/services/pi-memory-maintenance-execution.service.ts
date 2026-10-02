@@ -334,41 +334,25 @@ async function prepareMaintenanceModel(
   const { catalog, credential, selectedModel, framework } = admitted;
   const resolvedProvider: ResolvedModelProviderEnvironment | null =
     source.identity.kind === "gateway"
-      ? await prepareGatewayModelEnvironment(
-          db,
-          source,
-          {
-            selectedModel,
-            framework,
-            modelProviderType: credential.pin.modelProvider,
-          },
-          signal,
-        )
+      ? await prepareGatewayModelEnvironment(db, source, {
+          selectedModel,
+          framework,
+          modelProviderType: credential.pin.modelProvider,
+        })
       : source.identity.kind === "built-in"
-        ? await prepareManagedModelEnvironment(
-            db,
-            source,
-            {
-              builtInModelRuntimeRoute: credential.route ?? undefined,
-              selectedModelOverride: selectedModel,
-              catalog,
-              framework,
-              featureSwitchContext: admitted.featureSwitchContext,
-            },
-            signal,
-          )
-        : await prepareRegisteredModelEnvironment(
-            db,
-            source,
-            selectedModel,
-            {
-              catalog,
-              userId: job.userId,
-              sourceId: credential.pin.modelProviderId ?? "",
-              piExecution: true,
-            },
-            signal,
-          );
+        ? await prepareManagedModelEnvironment(db, source, {
+            builtInModelRuntimeRoute: credential.route ?? undefined,
+            selectedModelOverride: selectedModel,
+            catalog,
+            framework,
+            featureSwitchContext: admitted.featureSwitchContext,
+          })
+        : await prepareRegisteredModelEnvironment(db, source, selectedModel, {
+            catalog,
+            userId: job.userId,
+            sourceId: credential.pin.modelProviderId ?? "",
+            piExecution: true,
+          });
   signal.throwIfAborted();
   const piInput = { catalog, piExecution: true };
   const modelProvider = resolvedProvider
