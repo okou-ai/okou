@@ -1,6 +1,9 @@
+import "./env";
+import { createStore } from "ccstate";
+import { closeDbPool } from "../../src/lib/db";
+import { mockEnv, clearMockedEnv } from "../../src/lib/env";
 import { chatEventCommandResultSchema } from "../../src/signals/services/chat-event-append.service";
 import { parseRawRows } from "../../src/lib/db-raw-rows";
-import "./env";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -14,7 +17,7 @@ import {
   chatEventContextInsertSql,
   chatEventInsertSql,
 } from "../../src/signals/services/chat-event.service";
-import { touchNativeChatThread } from "../../src/signals/services/native-chat-event-write.service";
+import { touchNativeChatThread$ } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
 import { flushLogs } from "../../src/lib/log";
 
@@ -35,6 +38,8 @@ databaseUrl.pathname = `/${databaseName}`;
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 const client = new Client({ connectionString: databaseUrl.toString() });
 const schema = `chat_context_${suffix}`;
+const commandStore = createStore();
+const commandController = new AbortController();
 // One connection keeps this isolated schema on its search path; the fixture
 // executes the pure production SQL on its own connection.
 const pool = new Pool({
@@ -165,6 +170,13 @@ try {
     [agentId, orgId, userId],
   );
   const db = drizzle(pool);
+  const commandDatabaseUrl = new URL(databaseUrl);
+  commandDatabaseUrl.searchParams.set(
+    "options",
+    `-c search_path=${schema},public`,
+  );
+  mockEnv("DATABASE_URL", commandDatabaseUrl.toString());
+  mockEnv("DB_POOL_MAX", 1);
 
   const controller = new AbortController();
   const failOptionalLookup = () => {
@@ -253,11 +265,15 @@ try {
     db,
     agentphoneInput(committedEventId, touchThreadId),
   );
-  await touchNativeChatThread(db, {
-    chatThreadId: touchThreadId,
-    createdAt: new Date(),
-    eventId: committedEventId,
-  });
+  await commandStore.set(
+    touchNativeChatThread$,
+    {
+      chatThreadId: touchThreadId,
+      createdAt: new Date(),
+      eventId: committedEventId,
+    },
+    commandController.signal,
+  );
   assert.equal(
     await count(
       "SELECT count(*)::int AS count FROM chat_thread_events WHERE chat_thread_id=$1 AND kind='sort_touched'",
@@ -276,6 +292,9 @@ try {
     "Chat context acceptance passed: required context failures reject input and redelivery is accepted.\n",
   );
 } finally {
+  commandController.abort();
+  await closeDbPool();
+  clearMockedEnv();
   await flushLogs();
   await pool.end();
   await client.end();
