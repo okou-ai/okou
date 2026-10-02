@@ -25,7 +25,6 @@ import {
   createMemberModelBootstrap,
   type PrefetchedModelBootstrap,
   type OrgModelBootstrap,
-  type MemberModelBootstrap,
 } from "./model-bootstrap.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import {
@@ -128,7 +127,6 @@ import {
   isFreePlanForCreditAdmission,
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
-  type OrgCreditAvailability,
   type RunAdmissionInput,
 } from "./run-admission.service";
 import {
@@ -2821,24 +2819,17 @@ export interface ThreadClaimRunObjects {
 type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
 
 /** Plan, credit and usage-pack reads for one admission check. */
-function createRunAdmissionCreditReads(
-  input: CapturedRunAdmissionInput,
-  orgModels$: Computed<OrgModelBootstrap | Promise<OrgModelBootstrap>>,
-) {
-  const capturedRunAdmissionReadInput$ = computed(() => {
-    return Promise.resolve(input);
-  });
-  const capturedRunAdmissionCapabilities$ = computed(
-    async (get): Promise<OrgPlanCapabilities | null> => {
-      return (await get(orgModels$)).capabilities;
-    },
-  );
-  const runAdmissionCreditBalance$ = computed(async (get) => {
-    const { orgId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const [models, [expired]] = await Promise.all([
-      get(orgModels$),
-      get(db$)
+const readRunAdmissionCredits$ = command(
+  async (
+    { get },
+    input: CapturedRunAdmissionInput,
+    models: OrgModelBootstrap,
+    signal: AbortSignal,
+  ) => {
+    const { orgId, userId, at } = input;
+    const db = get(db$);
+    const [[expired], [row]] = await Promise.all([
+      db
         .select({
           total: sum(creditExpiresRecord.remaining).mapWith(
             nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
@@ -2852,165 +2843,134 @@ function createRunAdmissionCreditReads(
             gt(creditExpiresRecord.remaining, 0),
           ),
         ),
-    ]);
-    return models.org === null
-      ? null
-      : models.org.credits - (expired?.total ?? 0);
-  });
-  const runAdmissionUsagePack$ = computed(async (get) => {
-    const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
-
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        total: sum(usagePackCreditGrants.remainingAmount).mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-      })
-      .from(usagePackCreditGrants)
-      .where(
-        and(
-          eq(usagePackCreditGrants.orgId, orgId),
-          eq(usagePackCreditGrants.userId, userId),
-          gt(usagePackCreditGrants.remainingAmount, 0),
-          gt(usagePackCreditGrants.expiresAt, at),
-        ),
-      );
-    return row?.total ?? 0;
-  });
-  const runAdmissionAvailability$ = computed(
-    async (get): Promise<OrgCreditAvailability | null> => {
-      const [capabilities, spendableCredits, usagePackCredits] =
-        await Promise.all([
-          get(capturedRunAdmissionCapabilities$),
-          get(runAdmissionCreditBalance$),
-          get(runAdmissionUsagePack$),
-        ]);
-      return capabilities && spendableCredits !== null
-        ? {
-            status: capabilities.status,
-            supportByok: capabilities.supportByok,
-            restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-            spendableCredits,
-            usagePackCredits,
-          }
-        : null;
-    },
-  );
-  return { capturedRunAdmissionCapabilities$, runAdmissionAvailability$ };
-}
-
-/** Allowance window and personal-subscription reads for one admission check. */
-function createRunAdmissionAllowanceReads(
-  input: CapturedRunAdmissionInput,
-  memberModels$: Computed<Promise<MemberModelBootstrap>>,
-) {
-  const capturedRunAdmissionReadInput$ = computed(() => {
-    return Promise.resolve(input);
-  });
-  const usageAllowanceSnapshot$ = computed(
-    async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
-      const input = await get(capturedRunAdmissionReadInput$);
-      const db = get(db$);
-      const { orgId } = input;
-      const at = nowDate();
-      const rows = await db
+      db
         .select({
-          entitlement: {
-            status: orgUsageAllowanceEntitlements.status,
-            expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-            shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
-            weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
-          },
-          window: {
-            kind: orgUsageAllowanceWindows.kind,
-            unitLimit: orgUsageAllowanceWindows.unitLimit,
-            consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-          },
-        })
-        .from(orgUsageAllowanceEntitlements)
-        .leftJoin(
-          orgUsageAllowanceWindows,
-          and(
-            eq(
-              orgUsageAllowanceWindows.entitlementId,
-              orgUsageAllowanceEntitlements.id,
-            ),
-            eq(orgUsageAllowanceWindows.orgId, orgId),
-            inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-            gte(
-              orgUsageAllowanceWindows.startsAt,
-              orgUsageAllowanceEntitlements.effectiveAt,
-            ),
-            lte(orgUsageAllowanceWindows.startsAt, at),
-            gt(orgUsageAllowanceWindows.expiresAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-            ),
+          total: sum(usagePackCreditGrants.remainingAmount).mapWith(
+            nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
           ),
-        )
+        })
+        .from(usagePackCreditGrants)
         .where(
           and(
-            eq(orgUsageAllowanceEntitlements.orgId, orgId),
-            inArray(orgUsageAllowanceEntitlements.status, [
-              ...ACTIVE_ALLOWANCE_STATUSES,
-            ]),
-            lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-            or(
-              isNull(orgUsageAllowanceEntitlements.expiresAt),
-              gt(orgUsageAllowanceEntitlements.expiresAt, at),
-              isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-            ),
+            eq(usagePackCreditGrants.orgId, orgId),
+            eq(usagePackCreditGrants.userId, userId),
+            gt(usagePackCreditGrants.remainingAmount, 0),
+            gt(usagePackCreditGrants.expiresAt, at),
           ),
-        )
-        .orderBy(desc(orgUsageAllowanceWindows.startsAt));
-      const entitlement = rows[0]?.entitlement;
-      if (!entitlement) {
-        return null;
-      }
-      if (
-        entitlement.expiresAt &&
-        entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-      ) {
-        return "allowance_refresh_required";
-      }
-      const shortWindow = rows.find((row) => {
-        return row.window?.kind === "short";
-      })?.window;
-      const weeklyWindow = rows.find((row) => {
-        return row.window?.kind === "weekly";
-      })?.window;
-      const shortRemainingUnits = shortWindow
-        ? remainingUnits(shortWindow)
-        : entitlement.shortWindowUnits;
-      const weeklyRemainingUnits = weeklyWindow
-        ? remainingUnits(weeklyWindow)
-        : entitlement.weeklyWindowUnits;
-      return {
-        shortRemainingUnits,
-        weeklyRemainingUnits,
-        remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
-      };
-    },
-  );
-  const runAdmissionPersonalSubscription$ = computed(async (get) => {
-    const input = await get(capturedRunAdmissionReadInput$);
-    return isMemberSubscriptionRoute({
-      catalog: input.catalog,
-      member: (await get(memberModels$)).member,
-      model: input.selectedModel,
-      providerType: input.modelProviderType,
-      credentialScope: "member",
-    });
-  });
-  return { usageAllowanceSnapshot$, runAdmissionPersonalSubscription$ };
-}
+        ),
+    ]);
+    signal.throwIfAborted();
+    const spendableCredits =
+      models.org === null ? null : models.org.credits - (expired?.total ?? 0);
+    const capabilities = models.capabilities;
+    const usagePackCredits = row?.total ?? 0;
+    return {
+      capabilities,
+      availability:
+        capabilities && spendableCredits !== null
+          ? {
+              status: capabilities.status,
+              supportByok: capabilities.supportByok,
+              restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+              spendableCredits,
+              usagePackCredits,
+            }
+          : null,
+    };
+  },
+);
 
-type RunAdmissionReads = ReturnType<typeof createRunAdmissionCreditReads> &
-  ReturnType<typeof createRunAdmissionAllowanceReads> & {
-    readonly input: CapturedRunAdmissionInput;
-  };
+/** Allowance window and personal-subscription reads for one admission check. */
+const readAdmissionAllowanceSnapshot$ = command(
+  async (
+    { get },
+    input: CapturedRunAdmissionInput,
+    signal: AbortSignal,
+  ): Promise<UsageAllowanceAvailabilitySnapshot> => {
+    const db = get(db$);
+    const { orgId } = input;
+    const at = nowDate();
+    const rows = await db
+      .select({
+        entitlement: {
+          status: orgUsageAllowanceEntitlements.status,
+          expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+          shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+          weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+        },
+        window: {
+          kind: orgUsageAllowanceWindows.kind,
+          unitLimit: orgUsageAllowanceWindows.unitLimit,
+          consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+        },
+      })
+      .from(orgUsageAllowanceEntitlements)
+      .leftJoin(
+        orgUsageAllowanceWindows,
+        and(
+          eq(
+            orgUsageAllowanceWindows.entitlementId,
+            orgUsageAllowanceEntitlements.id,
+          ),
+          eq(orgUsageAllowanceWindows.orgId, orgId),
+          inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+          gte(
+            orgUsageAllowanceWindows.startsAt,
+            orgUsageAllowanceEntitlements.effectiveAt,
+          ),
+          lte(orgUsageAllowanceWindows.startsAt, at),
+          gt(orgUsageAllowanceWindows.expiresAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, orgId),
+          inArray(orgUsageAllowanceEntitlements.status, [
+            ...ACTIVE_ALLOWANCE_STATUSES,
+          ]),
+          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+          ),
+        ),
+      )
+      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+    signal.throwIfAborted();
+    const entitlement = rows[0]?.entitlement;
+    if (!entitlement) {
+      return null;
+    }
+    if (
+      entitlement.expiresAt &&
+      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+    ) {
+      return "allowance_refresh_required";
+    }
+    const shortWindow = rows.find((row) => {
+      return row.window?.kind === "short";
+    })?.window;
+    const weeklyWindow = rows.find((row) => {
+      return row.window?.kind === "weekly";
+    })?.window;
+    const shortRemainingUnits = shortWindow
+      ? remainingUnits(shortWindow)
+      : entitlement.shortWindowUnits;
+    const weeklyRemainingUnits = weeklyWindow
+      ? remainingUnits(weeklyWindow)
+      : entitlement.weeklyWindowUnits;
+    return {
+      shortRemainingUnits,
+      weeklyRemainingUnits,
+      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+    };
+  },
+);
 
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
@@ -10059,10 +10019,17 @@ export function createThreadClaimRunObjects(
     return undefined;
   });
   const resolveAdmissionUsageAllowance$ = command(
-    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
+    async (
+      { get, set },
+      input: CapturedRunAdmissionInput,
+      signal: AbortSignal,
+    ) => {
       const startedAt = performance.now();
-      const { input } = reads;
-      const snapshot = await get(reads.usageAllowanceSnapshot$);
+      const snapshot = await set(
+        readAdmissionAllowanceSnapshot$,
+        input,
+        signal,
+      );
       signal.throwIfAborted();
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
@@ -10087,26 +10054,37 @@ export function createThreadClaimRunObjects(
       return availability;
     },
   );
-  const runAdmissionCheckAdmission$ = command(
-    async ({ get, set }, reads: RunAdmissionReads, signal: AbortSignal) => {
-      const { input } = reads;
-      const personalSubscription = await get(
-        reads.runAdmissionPersonalSubscription$,
-      );
+  const runAdmissionCheckCheckAdmission$ = command(
+    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
+      const captured = { ...input, at: nowDate() };
+      const [models, memberModels] = await Promise.all([
+        get(orgModels$),
+        get(memberModels$),
+      ]);
+      signal.throwIfAborted();
+      const personalSubscription = isMemberSubscriptionRoute({
+        catalog: input.catalog,
+        member: memberModels.member,
+        model: input.selectedModel,
+        providerType: input.modelProviderType,
+        credentialScope: "member",
+      });
       if (!input.enforceBuiltInCredits) {
-        const capabilities = await get(reads.capturedRunAdmissionCapabilities$);
-        signal.throwIfAborted();
         return (
           checkOrgPlanRunAdmission({
             ...input,
-            capabilities,
+            capabilities: models.capabilities,
             personalSubscription,
           }) ?? null
         );
       }
-      const availability = await get(reads.runAdmissionAvailability$);
-      signal.throwIfAborted();
+      const { availability } = await set(
+        readRunAdmissionCredits$,
+        captured,
+        models,
+        signal,
+      );
       const routeFailure = checkCatalogRunRoute(input.catalog, input);
       if (routeFailure) {
         return routeFailure;
@@ -10131,28 +10109,13 @@ export function createThreadClaimRunObjects(
       }
       const allowance = await set(
         resolveAdmissionUsageAllowance$,
-        reads,
+        captured,
         signal,
       );
       signal.throwIfAborted();
       return allowance && allowance.remainingUnits > 0
         ? null
         : insufficientCredits();
-    },
-  );
-  const runAdmissionCheckCheckAdmission$ = command(
-    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const captured = { ...input, at: nowDate() };
-      return await set(
-        runAdmissionCheckAdmission$,
-        {
-          input: captured,
-          ...createRunAdmissionCreditReads(captured, orgModels$),
-          ...createRunAdmissionAllowanceReads(captured, memberModels$),
-        },
-        signal,
-      );
     },
   );
 
