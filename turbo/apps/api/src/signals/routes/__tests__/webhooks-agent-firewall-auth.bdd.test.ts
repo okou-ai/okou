@@ -2286,12 +2286,12 @@ describe("FW-6: manual-grant api-token refresh without a provider client", () =>
 });
 
 describe("FW-7: client-unconfigured and mixed-reason refresh failures", () => {
-  afterEach(publicConnections.cleanup);
-
   it("fails without a failure reason when the provider client is unconfigured", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.notionOAuth(actor, {
+    const { actor, headers } = await firewallRun();
+    await fw.seedTestConnector(actor, {
+      connectorSlug: "notion",
+      authMethod: "oauth",
       accessToken: "stale-notion",
       refreshToken: "notion-refresh",
       expiresIn: -60,
@@ -2322,13 +2322,17 @@ describe("FW-7: client-unconfigured and mixed-reason refresh failures", () => {
 
   it("omits the failure reason when connectors fail for different reasons", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.notionOAuth(actor, {
+    const { actor, headers } = await firewallRun();
+    await fw.seedTestConnector(actor, {
+      connectorSlug: "notion",
+      authMethod: "oauth",
       accessToken: "stale-notion",
       refreshToken: "notion-refresh",
       expiresIn: -60,
     });
-    await publicConnections.testOAuth(actor, {
+    await fw.seedTestConnector(actor, {
+      connectorSlug: "test-oauth",
+      authMethod: "oauth",
       accessToken: "stale-access",
       refreshToken: "refresh-1",
       expiresIn: -60,

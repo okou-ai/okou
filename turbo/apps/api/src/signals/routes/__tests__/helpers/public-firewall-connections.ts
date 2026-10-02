@@ -67,7 +67,7 @@ export function createPublicFirewallConnections(context: TestContext) {
 
   async function completeOAuth(
     actor: ApiTestUser,
-    slug: "test-oauth" | "gmail" | "google-ads" | "notion",
+    slug: "test-oauth" | "gmail" | "google-ads",
     method: "oauth" | "api" = "oauth",
   ) {
     const started = await connectors.startOauth(actor, slug, method);
@@ -146,31 +146,6 @@ export function createPublicFirewallConnections(context: TestContext) {
     await completeOAuth(actor, slug);
   }
 
-  async function notionOAuth(actor: ApiTestUser, token: ProviderToken) {
-    mockOptionalEnv("NOTION_OAUTH_CLIENT_ID", "notion-client-id");
-    mockOptionalEnv("NOTION_OAUTH_CLIENT_SECRET", "notion-client-secret");
-    server.use(
-      http.post("https://api.notion.com/v1/oauth/token", () => {
-        return HttpResponse.json({
-          access_token: token.accessToken,
-          refresh_token: token.refreshToken,
-          expires_in: token.expiresIn,
-          owner: {
-            user: {
-              id: "e2e-test-notion",
-              name: "e2e-notion",
-              person: { email: "e2e-notion@test.vm0.ai" },
-            },
-          },
-        });
-      }),
-    );
-    await completeOAuth(actor, "notion");
-    // These cases exercise credentials retained after operator configuration is removed.
-    mockOptionalEnv("NOTION_OAUTH_CLIENT_ID", undefined);
-    mockOptionalEnv("NOTION_OAUTH_CLIENT_SECRET", undefined);
-  }
-
   async function deviceOAuth(actor: ApiTestUser, token: ProviderToken) {
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
@@ -220,5 +195,5 @@ export function createPublicFirewallConnections(context: TestContext) {
     }
   }
 
-  return { run, testOAuth, googleOAuth, notionOAuth, deviceOAuth, cleanup };
+  return { run, testOAuth, googleOAuth, deviceOAuth, cleanup };
 }

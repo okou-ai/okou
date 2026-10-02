@@ -17,6 +17,7 @@ import { clearAllDetached } from "../../utils";
 import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
@@ -28,6 +29,7 @@ import {
 } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
+const reads = createRunReadsApi(context);
 const {
   bdd,
   api,
@@ -668,11 +670,8 @@ describe("CHAT-02: dispatch failure", () => {
         return message.runId !== undefined;
       }),
     ).toBeFalsy();
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(runs.runs).toStrictEqual([]);
+    const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
+    expect(runs.body.data).toStrictEqual([]);
     expect(routeRequests()).toBe(0);
 
     // The lease was released: the next input on the thread is picked
