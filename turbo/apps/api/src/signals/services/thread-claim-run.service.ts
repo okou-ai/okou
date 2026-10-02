@@ -18,6 +18,14 @@ import {
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
 import {
+  createOrgModelBootstrap,
+  createMemberModelBootstrap,
+  type PrefetchedModelBootstrap,
+  type OrgModelBootstrap,
+  type MemberModelBootstrap,
+} from "./model-bootstrap.service";
+import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
+import {
   prepareGatewayModelEnvironment,
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
@@ -26,7 +34,6 @@ import {
   frameworkForProviderSelection,
   catalogBuiltInCandidates,
   catalogHasProviderRoute,
-  loadModelCatalog,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -281,10 +288,6 @@ import {
 } from "./chat-user-message.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
-  isPersonalSubscriptionRoute,
-  loadMemberSubscriptionModels,
-} from "./member-subscription-models.service";
-import {
   getConnectorRuntimeConnector,
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeMethod,
@@ -338,7 +341,6 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import {
   isMemberSubscriptionRoute,
   memberModelRouteContextFromAccounts,
-  modelPolicyUsesPersonalMetadata,
   providerTypeForSurfaceProtocol,
 } from "./effective-model-route.service";
 import {
@@ -382,11 +384,7 @@ import {
   dispatchConfiguredOfficialWorkflowReconciliation$,
   type OfficialWorkflowReconciliationResult,
 } from "./official-workflow-reconciliation-dispatch.service";
-import {
-  loadOrgPlanCapabilities,
-  type OrgPlanCapabilities,
-  runtimeStatusForEntitlement,
-} from "./org-plan-entitlement-read.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import {
   additionalVolumesForRun,
@@ -486,7 +484,6 @@ import {
 } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -529,7 +526,6 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
@@ -1920,6 +1916,7 @@ interface ClaimRunTiming {
 interface ThreadRunContext {
   readonly kind: "prepared";
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
+  readonly planCapabilities: OrgPlanCapabilities | null;
   readonly input: {
     readonly enforceBuiltInCredits: boolean;
     readonly context: PendingRunContext;
@@ -2868,11 +2865,7 @@ async function persistClaimedRun(
   const persisted = await admissionTiming.measureLeaf(
     "persistence",
     async () => {
-      const capabilities = input.enforceBuiltInCredits
-        ? await loadOrgPlanCapabilities(tx, input.args.orgId, {
-            forUpdate: true,
-          })
-        : null;
+      const capabilities = context.planCapabilities;
       const creditAdmitted =
         input.enforceBuiltInCredits &&
         isFreePlanForCreditAdmission(capabilities?.planKey);
@@ -3038,26 +3031,28 @@ export interface ThreadClaimRunObjects {
 type CapturedRunAdmissionInput = RunAdmissionInput & { readonly at: Date };
 
 /** Plan, credit and usage-pack reads for one admission check. */
-function createRunAdmissionCreditReads(input: CapturedRunAdmissionInput) {
+function createRunAdmissionCreditReads(
+  input: CapturedRunAdmissionInput,
+  orgModels$: Computed<Promise<OrgModelBootstrap>>,
+) {
   const capturedRunAdmissionReadInput$ = computed(() => {
     return Promise.resolve(input);
   });
   const capturedRunAdmissionCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = await get(capturedRunAdmissionReadInput$);
-      return await loadOrgPlanCapabilities(get(db$), orgId);
+      return (await get(orgModels$)).capabilities;
     },
   );
   const runAdmissionCreditBalance$ = computed(async (get) => {
     const { orgId, at } = await get(capturedRunAdmissionReadInput$);
 
-    const db = get(db$);
-    const expired = db.$with("expired").as(
-      db
+    const [models, [expired]] = await Promise.all([
+      get(orgModels$),
+      get(db$)
         .select({
-          total: sum(creditExpiresRecord.remaining)
-            .mapWith(nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder))
-            .as("total"),
+          total: sum(creditExpiresRecord.remaining).mapWith(
+            nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
+          ),
         })
         .from(creditExpiresRecord)
         .where(
@@ -3067,20 +3062,10 @@ function createRunAdmissionCreditReads(input: CapturedRunAdmissionInput) {
             gt(creditExpiresRecord.remaining, 0),
           ),
         ),
-    );
-    const [row] = await db
-      .with(expired)
-      .select({
-        credits: sql`${orgMetadata.credits}`.mapWith(
-          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-        ),
-        unsettledExpired: expired.total,
-      })
-      .from(expired)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgId));
-    return row?.credits === null || row === undefined
+    ]);
+    return models.org === null
       ? null
-      : row.credits - (row.unsettledExpired ?? 0);
+      : models.org.credits - (expired?.total ?? 0);
   });
   const runAdmissionUsagePack$ = computed(async (get) => {
     const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
@@ -3126,7 +3111,10 @@ function createRunAdmissionCreditReads(input: CapturedRunAdmissionInput) {
 }
 
 /** Allowance window and personal-subscription reads for one admission check. */
-function createRunAdmissionAllowanceReads(input: CapturedRunAdmissionInput) {
+function createRunAdmissionAllowanceReads(
+  input: CapturedRunAdmissionInput,
+  memberModels$: Computed<Promise<MemberModelBootstrap>>,
+) {
   const capturedRunAdmissionReadInput$ = computed(() => {
     return Promise.resolve(input);
   });
@@ -3218,11 +3206,9 @@ function createRunAdmissionAllowanceReads(input: CapturedRunAdmissionInput) {
   );
   const runAdmissionPersonalSubscription$ = computed(async (get) => {
     const input = await get(capturedRunAdmissionReadInput$);
-    return await isPersonalSubscriptionRoute({
-      db: get(db$),
+    return isMemberSubscriptionRoute({
       catalog: input.catalog,
-      orgId: input.orgId,
-      userId: input.userId,
+      member: (await get(memberModels$)).member,
       model: input.selectedModel,
       providerType: input.modelProviderType,
     });
@@ -3238,6 +3224,8 @@ type RunAdmissionReads = ReturnType<typeof createRunAdmissionCreditReads> &
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   prefetchedBootstrap?: PrefetchedAgentBootstrap,
+  prefetchedModels?: PrefetchedModelBootstrap,
+  suppliedOrgModels$?: Computed<Promise<OrgModelBootstrap>>,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
   // Stripe entitlement refresh for an allowance window runs outside the
@@ -3245,8 +3233,31 @@ export function createThreadClaimRunObjects(
   const preparedAllowanceRefresh$ = computed(async (get) => {
     return await prepareUsageAllowanceRefresh(get(db$), { orgId: claim.orgId });
   });
-  const claimCatalog$ = computed((get) => {
-    return loadModelCatalog(get(db$));
+  const orgModels$ = computed((get) => {
+    if (suppliedOrgModels$) {
+      return get(suppliedOrgModels$);
+    }
+    return prefetchedModels?.orgId === claim.orgId
+      ? prefetchedModels.org
+      : get(createOrgModelBootstrap(claim.orgId));
+  });
+  const claimCatalog$ = computed(async (get) => {
+    return (await get(orgModels$)).catalog;
+  });
+  const localMemberModels$ = computed(async (get) => {
+    const input = await get(queuedModelInputsInput$);
+    return createMemberModelBootstrap(input.orgId, input.userId);
+  });
+  const memberModels$ = computed(async (get) => {
+    const input = await get(queuedModelInputsInput$);
+    if (
+      prefetchedModels?.orgId === input.orgId &&
+      prefetchedModels.userId === input.userId &&
+      prefetchedModels.agentId === (await get(head$))?.agentId
+    ) {
+      return await prefetchedModels.member;
+    }
+    return await get(await get(localMemberModels$));
   });
   const pickStartedAt$ = computed(() => {
     return now();
@@ -3482,67 +3493,15 @@ export function createThreadClaimRunObjects(
     return head.canonicalModelSelection;
   });
   const orgMetadata$ = computed(async (get) => {
-    const { orgId } = await get(queuedModelInputsInput$);
-    const [org] = await get(db$)
-      .select({
-        credits: orgMetadata.credits,
-        modelMode: orgMetadata.modelMode,
-      })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    return org ?? null;
+    return (await get(orgModels$)).org;
   });
   const queuedModelInputsCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = await get(queuedModelInputsInput$);
-      const [capabilities] = await get(db$)
-        .select({
-          planKey: orgPlanEntitlements.planKey,
-          status: orgPlanEntitlements.status,
-          baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-          canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
-          canBuyCredits: orgPlanEntitlements.canBuyCredits,
-          showUsagePack: orgPlanEntitlements.showUsagePack,
-          autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-          supportByok: orgPlanEntitlements.supportByok,
-          restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-          videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
-          workflowWebhookAutomationAllowed:
-            orgPlanEntitlements.workflowWebhookTriggerAllowed,
-          audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
-          audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
-          audioDailyDurationSeconds:
-            orgPlanEntitlements.audioDailyDurationSeconds,
-        })
-        .from(orgPlanEntitlements)
-        .where(eq(orgPlanEntitlements.orgId, orgId))
-        .limit(1);
-      if (!capabilities) {
-        if (await get(orgMetadata$)) {
-          throw new Error(`Missing org plan entitlement for ${orgId}`);
-        }
-        return null;
-      }
-      if (capabilities.restrictedBuiltInModels === null) {
-        throw new Error(
-          `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
-        );
-      }
-      return {
-        ...capabilities,
-        restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-        status: runtimeStatusForEntitlement(capabilities.status),
-      };
+      return (await get(orgModels$)).capabilities;
     },
   );
   const queuedModelInputsInitialPolicies$ = computed(async (get) => {
-    return await get(db$)
-      .select()
-      .from(orgModelPolicies)
-      .where(
-        eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId),
-      );
+    return (await get(orgModels$)).policies;
   });
   // Policies are projected from the claim's catalog snapshot.
   const policyFacts$ = computed(
@@ -3576,40 +3535,11 @@ export function createThreadClaimRunObjects(
     policyFacts$: policyFacts$,
     policy$: policy$,
   };
-  const {
-    input$: queuedMemberModelRoutesInput$,
-    policy$: queuedMemberModelRoutesPolicy$,
-  } = queuedModelSources;
+  const { input$: queuedMemberModelRoutesInput$ } = queuedModelSources;
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
       const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const [policy, org] = await Promise.all([
-        get(queuedMemberModelRoutesPolicy$),
-        get(orgMetadata$),
-      ]);
-      if (
-        ((!policy ||
-          !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
-          org?.modelMode !== "auto") ||
-        userId === "__no_preference__" ||
-        userId === ORG_SENTINEL_USER_ID
-      ) {
-        return null;
-      }
-      const accounts = await get(db$)
-        .select()
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.orgId, orgId),
-            eq(modelProviderAccounts.userId, userId),
-            inArray(modelProviderAccounts.type, [
-              "claude-code-oauth-token",
-              "codex-oauth-token",
-            ]),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        );
+      const { accounts } = await get(memberModels$);
       return { orgId, userId, accounts };
     },
   );
@@ -3690,7 +3620,10 @@ export function createThreadClaimRunObjects(
       get(queuedModelRoutingMemberRoutes$),
     ]);
     return org?.modelMode === "auto"
-      ? await loadMemberSubscriptionModels(get(db$), member)
+      ? memberSubscriptionModelRoutesFromCatalog(
+          await get(claimCatalog$),
+          member,
+        )
       : [];
   });
   const queuedModelRoutingModelPin$ = computed(async (get) => {
@@ -7504,17 +7437,9 @@ export function createThreadClaimRunObjects(
       )
       .limit(1);
     if (!provider) {
-      const [account] = await db
-        .select({ type: modelProviderAccounts.type })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.id, args.modelProviderId),
-            eq(modelProviderAccounts.orgId, args.orgId),
-            eq(modelProviderAccounts.userId, args.userId),
-          ),
-        )
-        .limit(1);
+      const account = (await get(memberModels$)).accounts.find((account) => {
+        return account.id === args.modelProviderId;
+      });
       return account && isModelProviderType(account.type)
         ? getFrameworkForType(account.type)
         : composeFramework;
@@ -7627,11 +7552,14 @@ export function createThreadClaimRunObjects(
             }
           : { kind: "member" as const, accountId: args.modelProviderId };
       return await get(
-        createModelSourceSnapshot({
-          orgId: args.orgId,
-          userId: args.userId,
-          source,
-        }),
+        createModelSourceSnapshot(
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            source,
+          },
+          await get(memberModels$),
+        ),
       );
     }
     if (
@@ -9807,8 +9735,8 @@ export function createThreadClaimRunObjects(
         runAdmissionCheckAdmission$,
         {
           input: captured,
-          ...createRunAdmissionCreditReads(captured),
-          ...createRunAdmissionAllowanceReads(captured),
+          ...createRunAdmissionCreditReads(captured, orgModels$),
+          ...createRunAdmissionAllowanceReads(captured, memberModels$),
         },
         signal,
       );
@@ -9817,29 +9745,7 @@ export function createThreadClaimRunObjects(
 
   const checkAdmission$ = runAdmissionCheckCheckAdmission$;
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
-    const db = get(db$);
-    const [capabilities] = await db
-      .select({
-        canBuyCredits: orgPlanEntitlements.canBuyCredits,
-        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-      })
-      .from(orgPlanEntitlements)
-      .where(eq(orgPlanEntitlements.orgId, claim.orgId))
-      .limit(1);
-    if (!capabilities) {
-      const [org] = await db
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, claim.orgId))
-        .limit(1);
-      if (org) {
-        throw new Error(`Missing org plan entitlement for ${claim.orgId}`);
-      }
-    } else if (capabilities.restrictedBuiltInModels === null) {
-      throw new Error(
-        `Unexpected NULL restricted_built_in_models for org plan entitlement ${claim.orgId}`,
-      );
-    }
+    const capabilities = (await get(orgModels$)).capabilities;
     const appUrl = env("APP_URL");
     return [
       "Insufficient credits. This workspace has no spendable credits right now.",
@@ -10705,7 +10611,7 @@ export function createThreadClaimRunObjects(
   );
   const prepareRunContext$ = command(
     async (
-      { set },
+      { get, set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<ThreadRunContext | { readonly kind: "passed" }> => {
@@ -10800,6 +10706,7 @@ export function createThreadClaimRunObjects(
         throw new Error("Prepared claim is missing launch resources");
       }
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
+      const planCapabilities = (await get(orgModels$)).capabilities;
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",
@@ -10809,6 +10716,7 @@ export function createThreadClaimRunObjects(
               {
                 kind: "prepared",
                 allowanceRefresh,
+                planCapabilities,
                 input: claimCommitInput(input),
                 identity,
                 callbackRows,
@@ -10955,15 +10863,6 @@ export function createThreadClaimRunObjects(
                 tx,
                 input.context.officialWorkflowRun,
               );
-              // Keep credit-plan acquisition ahead of workflow/automation locks.
-              if (
-                input.context.officialWorkflowRun &&
-                input.enforceBuiltInCredits
-              ) {
-                await loadOrgPlanCapabilities(tx, input.args.orgId, {
-                  forUpdate: true,
-                });
-              }
               admissionTiming.admissionStarted();
               const admission = await validateClaimedRunAdmission(
                 tx,

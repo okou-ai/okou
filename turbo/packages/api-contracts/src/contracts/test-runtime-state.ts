@@ -73,12 +73,8 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     org_id: z.string(),
     now: z.iso.datetime().optional(),
   }),
-  // Test-only boundary: verify digest-only persistence and DB-clock expiry
-  // without giving API tests direct access to database internals.
-  z.object({
-    action: z.literal("read-runner-wss-ticket-digests"),
-    run_id: z.uuid(),
-  }),
+  // Test-only boundary: DB-clock ticket expiry without giving API tests
+  // direct access to database internals.
   z.object({
     action: z.literal("expire-runner-wss-tickets"),
     run_id: z.uuid(),
@@ -161,10 +157,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("read-agent-run-family-counts"),
-    agent_id: z.uuid(),
-  }),
-  z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),
     automation_id: z.uuid(),
     blueprint_key: z.string().min(1).optional(),
@@ -215,7 +207,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
   built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
   autonomy_budget: z.int().min(0).max(10).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
-  wss_ticket_digests: z.array(z.string()).optional(),
   wss_target: z
     .object({
       runId: z.uuid(),
@@ -335,13 +326,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       callback_count: z.int().nonnegative(),
     })
     .nullable()
-    .optional(),
-  agent_run_family_counts: z
-    .object({
-      run_count: z.int().nonnegative(),
-      callback_count: z.int().nonnegative(),
-      runner_job_count: z.int().nonnegative(),
-    })
     .optional(),
   file_id: z.uuid().optional(),
 });

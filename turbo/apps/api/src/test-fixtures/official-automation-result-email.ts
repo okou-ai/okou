@@ -1,31 +1,9 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { users } from "@okouai/db/schema/user";
 import { workflows } from "@okouai/db/schema/workflow";
 import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
-
-export async function clearResultEmailUserStateFixture(
-  userId: string,
-): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx.delete(userCache).where(eq(userCache.userId, userId));
-    await tx.delete(users).where(eq(users.id, userId));
-  });
-}
-
-export async function readResultEmailPreferenceFixture(
-  userId: string,
-): Promise<boolean | null> {
-  const [preference] = await db()
-    .select({ emailUnsubscribed: users.emailUnsubscribed })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  return preference?.emailUnsubscribed ?? null;
-}
 
 export async function completeResultEmailRunWithoutCallbacksFixture(
   runId: string,

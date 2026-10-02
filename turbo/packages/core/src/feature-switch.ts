@@ -402,6 +402,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentPhoneGroupHistory]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Read locally archived iMessage group messages visible to the authenticated member.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "linghan@okou.ai",
     description: "Enable the verified Discord guild and bot DM integration.",

@@ -59,6 +59,8 @@ const COMMAND_CAPABILITY_MAP: Record<
   teams: "teams:write",
   telegram: ["telegram:read", "telegram:write"],
   phone: ["phone:read", "phone:write"],
+  imessage: ["phone:read", "phone:write"],
+  sms: "phone:write",
   whoami: null,
   "computer-use": "computer-use:write",
   browser: ["browser:read", "browser:write"],
@@ -250,6 +252,20 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "Send messages and files to your connected phone, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
+    },
+  },
+  {
+    name: "imessage",
+    description: "Send messages and read group history",
+    load: async () => {
+      return (await import("./commands/imessage")).imessageCommand;
+    },
+  },
+  {
+    name: "sms",
+    description: "Send text messages",
+    load: async () => {
+      return (await import("./commands/sms")).smsCommand;
     },
   },
   {
@@ -590,7 +606,9 @@ export function buildHelpText(
     "  Send Telegram?         okou telegram message send --help",
     "  Upload Telegram?       okou telegram upload-file --help",
     "  Download Telegram?     okou telegram download-file --help",
-    "  Send phone message?   okou phone message --help",
+    "  Read group history?   okou imessage group history --help",
+    "  Send iMessage?        okou imessage message send --help",
+    "  Send SMS?             okou sms message send --help",
     "  Upload phone file?    okou phone upload-file --help",
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",

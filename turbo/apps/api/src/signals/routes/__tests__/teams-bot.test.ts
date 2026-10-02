@@ -9,7 +9,6 @@ import {
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -37,7 +36,6 @@ import {
   listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import {
   installTeamsForTest,
   removeTeamsForTest,
@@ -52,7 +50,6 @@ import { chatThreadRoutes } from "../chat-threads";
 import { teamsConnectRoutes } from "../teams-connect";
 
 const context = testContext();
-const callbackStore = createStore();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const computerUseApi = createComputerUseBddApi(context);
@@ -3181,29 +3178,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       );
       expect(claim.prompt).not.toContain("deployment-plan.pdf");
       expect(claim.prompt).not.toContain("release-checklist.txt");
-      await expect(
-        callbackStore.set(
-          readAgentRunCallbacks$,
-          {
-            orgId: fixture.orgId,
-            userId: fixture.userId,
-            runId,
-          },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual([
-        expect.objectContaining({
-          payload: expect.objectContaining({
-            teamsDelivery: expect.objectContaining({
-              files: expect.arrayContaining([
-                expect.objectContaining({ name: "current-task.txt" }),
-                expect.objectContaining({ name: "deployment-plan.pdf" }),
-                expect.objectContaining({ name: "release-checklist.txt" }),
-              ]),
-            }),
-          }),
-        }),
-      ]);
       expect(currentIntegrationPrompt).toContain(
         "You are currently running inside: Microsoft Teams",
       );

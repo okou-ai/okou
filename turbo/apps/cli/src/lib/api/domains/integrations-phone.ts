@@ -3,6 +3,10 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  integrationsAgentPhoneContract,
+  type AgentPhoneGroupHistoryQuery,
+} from "@okouai/api-contracts/contracts/integrations-agentphone";
+import {
   integrationsPhoneMessageContract,
   integrationsPhoneUploadCompleteContract,
   integrationsPhoneUploadInitContract,
@@ -26,6 +30,20 @@ interface DownloadPhoneFileResult {
   path: string;
   mimetype: string;
   size: number;
+}
+
+export async function readAgentPhoneGroupHistory(
+  query: AgentPhoneGroupHistoryQuery,
+) {
+  const config = await getClientConfig();
+  const client = initClient(integrationsAgentPhoneContract, config);
+  const result = await client.groupHistory({ query, headers: {} });
+
+  if (result.status === 200) {
+    return result.body;
+  }
+
+  handleError(result, "Failed to read iMessage group history");
 }
 
 export async function sendPhoneMessage(

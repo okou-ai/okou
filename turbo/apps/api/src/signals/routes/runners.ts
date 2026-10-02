@@ -108,7 +108,7 @@ import {
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
-import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
+import { reportBuiltInModelProviderFailure$ } from "../services/built-in-model-provider-failure.service";
 import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
@@ -2806,8 +2806,7 @@ const modelProviderFailureInner$ = command(
     const runId = get(
       pathParamsOf(runnersModelProviderFailuresContract.report),
     ).runId;
-    const db = set(writeDb$);
-    const transition = await reportBuiltInModelProviderFailure(db, {
+    const transition = await set(reportBuiltInModelProviderFailure$, {
       runId,
       receivedAt,
       ...body.data,

@@ -605,6 +605,20 @@ async function seedAdmittedImageRun(
   };
 }
 
+// Creates a run through the product flow with the member's image model as its
+// snapshot, then seeds the balance and restores the per-test storage mock so
+// upload assertions only observe the generation's own work.
+async function seedRunScopedImageRun(
+  imageModel: string,
+  credits: number,
+): Promise<AdmittedImageFixture> {
+  const fixture = await seedAdmittedImageRun(imageModel);
+  await seedOrgMetadata({ orgId: fixture.orgId, tier: "free", credits });
+  context.mocks.s3.send.mockReset();
+  context.mocks.s3.send.mockResolvedValue({});
+  return fixture;
+}
+
 async function seedImageRun(
   fixture: ImageFixture,
   options: {
@@ -1726,26 +1740,11 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("limits run-scoped agent token image generations after three active built-ins", async () => {
-    const fixture = await seedImageFixture({});
-    await useImageModel(fixture, "gpt-image-1");
+    const fixture = await seedRunScopedImageRun("gpt-image-1", 10_000);
+    const { runId } = fixture;
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
     });
-    const { composeId } = await store.set(
-      seedCompose$,
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId,
-        triggerSource: "web",
-      },
-      context.signal,
-    );
     // Occupy all three in-flight slots through the product flow: submit
     // generations that stay pending because the provider webhook never fires.
     let falCalls = 0;
@@ -1814,26 +1813,11 @@ describe("POST /api/image-io/generate", () => {
 
   it("generates image files on the Okou CDN for Okou run-scoped agent tokens", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
-    const fixture = await seedImageFixture({});
-    await useImageModel(fixture, "gpt-image-1");
+    const fixture = await seedRunScopedImageRun("gpt-image-1", 10_000);
+    const { runId } = fixture;
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
     });
-    const { composeId } = await store.set(
-      seedCompose$,
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId,
-        triggerSource: "web",
-      },
-      context.signal,
-    );
     const creditsCharged = 50;
     let falCalls = 0;
     let observedAuthorization: string | null = null;
@@ -2072,13 +2056,10 @@ describe("POST /api/image-io/generate", () => {
   ])(
     "settles Fal failures from $detailShape once and releases admission without charging",
     async ({ detail, reportedStatus = 422, providerUnavailable = false }) => {
-      const fixture = await seedImageFixture({ credits: 1000 });
-      await useImageModel(fixture, "gpt-image-1");
+      const fixture = await seedRunScopedImageRun("gpt-image-1", 1000);
+      const { runId } = fixture;
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
-      });
-      const { runId } = await seedImageRun(fixture, {
-        selectedImageModel: null,
       });
       const token = okouToken({
         userId: fixture.userId,
@@ -2355,13 +2336,10 @@ describe("POST /api/image-io/generate", () => {
       publicError,
       reportedStatus = 422,
     }) => {
-      const fixture = await seedImageFixture({ credits: 1000 });
-      await useImageModel(fixture, "gpt-image-1");
+      const fixture = await seedRunScopedImageRun("gpt-image-1", 1000);
+      const { runId } = fixture;
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
-      });
-      const { runId } = await seedImageRun(fixture, {
-        selectedImageModel: null,
       });
       const token = okouToken({
         userId: fixture.userId,
@@ -3273,26 +3251,11 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("generates fal image files and settles megapixel usage asynchronously", async () => {
-    const fixture = await seedImageFixture({ credits: 1000 });
-    await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
+    const fixture = await seedRunScopedImageRun("fal-ai/flux-pro/v1.1", 1000);
+    const { runId } = fixture;
     const pricingFixture = await createScopedImagePricing({
       configured: FLUX_IMAGE_PRICING,
     });
-    const { composeId } = await store.set(
-      seedCompose$,
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId,
-        triggerSource: "web",
-      },
-      context.signal,
-    );
     let falCalls = 0;
     let observedAuthorization: string | null = null;
     let observedBody: unknown = null;

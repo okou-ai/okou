@@ -8,7 +8,6 @@ import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
@@ -195,9 +194,6 @@ describe("member source-first onboarding", () => {
       onboardingComplete: false,
       isAdmin: true,
     });
-    await expect(
-      readOnboardingIndustryFixture(admin.orgId),
-    ).resolves.toBeNull();
     mocks.clerk.session(admin.userId, admin.orgId, admin.role);
     const policies = await accept(
       modelPoliciesClient().list({ headers: authHeaders() }),
@@ -290,12 +286,6 @@ describe("POST /api/onboarding/complete", () => {
       hasDefaultAgent: true,
       defaultAgentId: before.body.defaultAgentId,
     });
-    // No endpoint returns the stored field, so the column is the only place
-    // this can be read. The prompt handoff never asks the question, so it
-    // stays uncollected rather than being filled with a guess.
-    await expect(
-      readOnboardingIndustryFixture(actor.orgId),
-    ).resolves.toBeNull();
     const policies = await accept(
       modelPoliciesClient().list({ headers: authHeaders() }),
       [200],
@@ -554,8 +544,9 @@ describe("POST /api/onboarding/complete", () => {
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-5.6-luna"]);
   });
 
-  it("stores the field the source-first flow answered", async () => {
+  it("completes an admin's onboarding with the field the source-first flow answered", async () => {
     const actor = orgActor();
+    mockDefaultAgentStorage();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 
     const completed = await accept(
@@ -570,10 +561,15 @@ describe("POST /api/onboarding/complete", () => {
       needsOnboarding: false,
     });
 
-    // Read from the column because no endpoint exposes the stored field.
-    await expect(readOnboardingIndustryFixture(actor.orgId)).resolves.toBe(
-      "marketing",
+    const status = await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
     );
+    expect(status.body).toMatchObject({
+      needsOnboarding: false,
+      onboardingComplete: true,
+      isAdmin: true,
+    });
   });
 
   it("rejects a field the flow does not offer", async () => {

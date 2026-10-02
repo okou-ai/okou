@@ -140,42 +140,6 @@ async function makeProjectionDue(
   return actionOk();
 }
 
-async function expireProjectionLease(
-  db: Db,
-  scope: ProjectionScope,
-  signal: AbortSignal,
-) {
-  await db
-    .update(memorySummaryProjections)
-    .set({ leaseExpiresAt: new Date(nowDate().getTime() - 1000) })
-    .where(
-      and(
-        projectionCondition(scope),
-        eq(memorySummaryProjections.status, "running"),
-      ),
-    );
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function corruptReadyProjection(
-  db: Db,
-  body: ProjectionAction<"corrupt-ready">,
-  signal: AbortSignal,
-) {
-  await db
-    .update(memorySummaryProjections)
-    .set({ content: body.content })
-    .where(
-      and(
-        projectionCondition(body),
-        eq(memorySummaryProjections.status, "ready"),
-      ),
-    );
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function seedReadyProjection(
   db: Db,
   body: ProjectionAction<"seed-ready">,
@@ -247,14 +211,8 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
     case "make-due": {
       return await makeProjectionDue(db, body, signal);
     }
-    case "expire-lease": {
-      return await expireProjectionLease(db, body, signal);
-    }
     case "seed-ready": {
       return await seedReadyProjection(db, body, signal);
-    }
-    case "corrupt-ready": {
-      return await corruptReadyProjection(db, body, signal);
     }
     case "run": {
       const result = await set(
