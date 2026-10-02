@@ -17,6 +17,13 @@ The central rule is:
 
 > Data is derived, writes are explicit, and the entry point owns the order.
 
+Side-effect-free reads and computations are written as `computed` wherever
+possible; only operations with side effects belong in a `command` (Ethan,
+2026-10-02). Side effects are database, Stripe and cache writes, OAuth refresh,
+encryption followed by a write, Runner notification or publication, and run
+commit and activation. Telemetry recording in a command's own timing stays with
+that command.
+
 Each node expresses one thing:
 
 - `computed` describes **what the data is**, derived from its source.
