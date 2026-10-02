@@ -3949,6 +3949,7 @@ describe("okou workflow automations", () => {
   });
 
   it("keeps a replacement Calendar channel usable when obsolete cleanup fails", async () => {
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
     const startedAt = Date.parse("2026-08-05T08:00:00.000Z");
     mockNow(startedAt);
     const scenario = await setupFixture();
