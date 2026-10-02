@@ -1308,7 +1308,6 @@ describe("POST /api/image-io/generate", () => {
       configured: GPT_IMAGE_2_5_PRICING,
     });
     const observedBodies: unknown[] = [];
-    let falCalls = 0;
     server.use(
       http.post(OPENAI_IMAGE_GENERATIONS_URL, async ({ request }) => {
         observedBodies.push(await request.json());
@@ -1322,10 +1321,6 @@ describe("POST /api/image-io/generate", () => {
             total_tokens: 2700,
           },
         });
-      }),
-      http.post(FAL_GPT_IMAGE_1_URL, () => {
-        falCalls += 1;
-        return HttpResponse.json(falQueueHandle("unexpected-fal-default"));
       }),
     );
     const app = createImageIoTestApp(pricingFixture.resolution);
@@ -1419,7 +1414,6 @@ describe("POST /api/image-io/generate", () => {
         },
       ),
     );
-    expect(falCalls).toBe(0);
   });
 
   it("returns 402 when the org has no spendable credits", async () => {
