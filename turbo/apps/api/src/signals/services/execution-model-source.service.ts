@@ -1,4 +1,5 @@
 import { computed, type Computed } from "ccstate";
+import type { MemberModelBootstrap } from "./model-bootstrap.service";
 import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
   modelProviderConnections,
@@ -267,6 +268,7 @@ async function loadRegisteredProviderSource(
 /** Read only an already-selected source; never select defaults or decrypt. */
 export function createModelSourceSnapshot(
   request: ModelSourceRequest,
+  memberSnapshot?: MemberModelBootstrap,
 ): Computed<Promise<ModelSourceSnapshot | null>> {
   return computed(async (get): Promise<ModelSourceSnapshot | null> => {
     const db = get(db$);
@@ -275,35 +277,46 @@ export function createModelSourceSnapshot(
       return await loadGatewaySource(db, request, source);
     }
     if (source.kind === "member") {
-      const rows = await db
-        .select({
-          account: modelProviderAccounts,
-          configuredModel: modelProviders.selectedModel,
-          secret: {
-            name: modelProviderAccountSecrets.name,
-            encryptedValue: modelProviderAccountSecrets.encryptedValue,
-          },
-        })
-        .from(modelProviderAccounts)
-        .innerJoin(
-          modelProviders,
-          eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-        )
-        .leftJoin(
-          modelProviderAccountSecrets,
-          eq(
-            modelProviderAccountSecrets.modelProviderAccountId,
-            modelProviderAccounts.id,
-          ),
-        )
-        .where(
-          and(
-            eq(modelProviderAccounts.id, source.accountId),
-            eq(modelProviderAccounts.orgId, request.orgId),
-            eq(modelProviderAccounts.userId, request.userId),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        );
+      if (
+        memberSnapshot &&
+        (memberSnapshot.orgId !== request.orgId ||
+          memberSnapshot.userId !== request.userId)
+      ) {
+        throw new Error("Model source snapshot identity mismatch");
+      }
+      const rows = memberSnapshot
+        ? memberSnapshot.rows.filter((row) => {
+            return row.account.id === source.accountId;
+          })
+        : await db
+            .select({
+              account: modelProviderAccounts,
+              configuredModel: modelProviders.selectedModel,
+              secret: {
+                name: modelProviderAccountSecrets.name,
+                encryptedValue: modelProviderAccountSecrets.encryptedValue,
+              },
+            })
+            .from(modelProviderAccounts)
+            .innerJoin(
+              modelProviders,
+              eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+            )
+            .leftJoin(
+              modelProviderAccountSecrets,
+              eq(
+                modelProviderAccountSecrets.modelProviderAccountId,
+                modelProviderAccounts.id,
+              ),
+            )
+            .where(
+              and(
+                eq(modelProviderAccounts.id, source.accountId),
+                eq(modelProviderAccounts.orgId, request.orgId),
+                eq(modelProviderAccounts.userId, request.userId),
+                isNull(modelProviderAccounts.disconnectedAt),
+              ),
+            );
       const first = rows[0];
       if (!first) {
         return null;

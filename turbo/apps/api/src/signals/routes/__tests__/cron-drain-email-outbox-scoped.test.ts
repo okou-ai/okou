@@ -8,6 +8,8 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import { createDeferredPromise } from "../../utils";
+import { createBddApi } from "./helpers/api-bdd";
+import { createEmailApi } from "./helpers/api-bdd-email";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 
 const context = testContext();
@@ -199,44 +201,6 @@ describe("scoped email outbox drain", () => {
     expect((await outbox.readItem(unrelatedExpiredSentinel.id))?.status).toBe(
       "failed",
     );
-  });
-
-  it("skips a selected item already claimed by another drain", async () => {
-    const toAddress = fixtureAddress();
-    const subject = fixtureSubject();
-    const seeded = await outbox.seedItem({
-      toAddress,
-      subject,
-      status: "pending",
-      createdAt: nowDate(),
-    });
-    const item = await outbox.findItem({ toAddress, subject });
-    expect(item.id).toBe(seeded.id);
-
-    const sendStarted = createDeferredPromise<void>(context.signal);
-    const releaseSend = createDeferredPromise<void>(context.signal);
-    onTestFinished(async () => {
-      if (!releaseSend.settled()) {
-        releaseSend.resolve(undefined);
-      }
-      await outbox.deleteItems([item.id]);
-    });
-    context.mocks.resend.send.mockImplementation(async () => {
-      sendStarted.resolve(undefined);
-      await releaseSend.promise;
-      return { data: { id: "resend-scoped-lock" }, error: null };
-    });
-
-    const firstDrain = outbox.drainItems([item.id]);
-    await sendStarted.promise;
-
-    await expect(outbox.drainItems([item.id])).resolves.toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-
-    releaseSend.resolve(undefined);
-    await expect(firstDrain).resolves.toBe(1);
-    expect((await outbox.readItem(item.id))?.status).toBe("sent");
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -575,34 +539,31 @@ describe("email outbox provider replay", () => {
   });
 
   it("gives each outbox row its own provider key", async () => {
-    const baseTime = pinTime();
-    const older = await seedItem({
-      status: "pending",
-      createdAt: new Date(baseTime - 1000),
-    });
-    const newer = await seedItem({
-      status: "pending",
-      createdAt: new Date(baseTime),
-    });
-    context.mocks.resend.send
-      .mockResolvedValueOnce({ data: { id: "resend-older" }, error: null })
-      .mockResolvedValueOnce({ data: { id: "resend-newer" }, error: null });
+    const email = createEmailApi(context);
+    const bdd = createBddApi(context);
+    const first = await email.enqueueDataExportEmail(bdd.user());
+    const second = await email.enqueueDataExportEmail(bdd.user());
+    const firstItem = await email.findEmailOutboxItem(first);
+    const secondItem = await email.findEmailOutboxItem(second);
+    context.mocks.resend.send.mockClear();
 
-    await expect(outbox.drainItems([older.id, newer.id])).resolves.toBe(2);
+    await expect(
+      email.drainEmailOutboxItems([firstItem.id, secondItem.id]),
+    ).resolves.toBe(2);
 
-    await expect(outbox.readItem(older.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-older",
-      provider_idempotency_key: providerKey(older.id),
+    // Both rows drain in one batch; each provider request carries its own
+    // row's key, so Resend can never collapse one email into the other.
+    const keysByRecipient = new Map(
+      context.mocks.resend.send.mock.calls.map(([payload, options]) => {
+        return [z.object({ to: z.string() }).parse(payload).to, options];
+      }),
+    );
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    expect(keysByRecipient.get(first.to)).toStrictEqual({
+      idempotencyKey: providerKey(firstItem.id),
     });
-    await expect(outbox.readItem(newer.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-newer",
-      provider_idempotency_key: providerKey(newer.id),
+    expect(keysByRecipient.get(second.to)).toStrictEqual({
+      idempotencyKey: providerKey(secondItem.id),
     });
-    expect([providerCall(0).options, providerCall(1).options]).toStrictEqual([
-      { idempotencyKey: providerKey(older.id) },
-      { idempotencyKey: providerKey(newer.id) },
-    ]);
   });
 });

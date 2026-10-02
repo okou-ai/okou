@@ -19,6 +19,7 @@ import {
   resolveDefaultModelFirstPin$,
   resolveModelSelectionPin$,
   isReplacedModelSelection,
+  type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
@@ -43,6 +44,7 @@ export const resolveChatInputModelSelection$ = command(
       readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
       /** The request's catalog snapshot, when the caller already loaded it. */
       readonly catalog?: ModelCatalog;
+      readonly modelBootstrap?: ModelSelectionBootstrap;
     },
     signal: AbortSignal,
   ) => {
@@ -63,6 +65,7 @@ export const resolveChatInputModelSelection$ = command(
             },
             orgPlanCapabilities: args.orgPlanCapabilities,
             catalog,
+            modelBootstrap: args.modelBootstrap,
           },
           signal,
         )
@@ -88,6 +91,7 @@ export const resolveChatInputModelSelection$ = command(
           defaultSource: "workspace",
           orgPlanCapabilities: args.orgPlanCapabilities,
           catalog,
+          modelBootstrap: args.modelBootstrap,
         },
         signal,
       );

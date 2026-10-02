@@ -261,31 +261,6 @@ async function seedRunForAction(
   });
 }
 
-async function seedConnectorDiagnosticRegistrationForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const payload =
-    agentRunConnectorDiagnosticRegistrationPayloadSchema.safeParse(
-      body["payload"],
-    );
-  if (!payload.success) {
-    return actionBadRequest("payload is invalid");
-  }
-  await db.insert(agentRunConnectorDiagnosticRegistrations).values({
-    runId,
-    payload: payload.data,
-    createdAt: readDate(body, "created_at") ?? undefined,
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function getConnectorDiagnosticRegistrationForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -782,35 +757,6 @@ async function deleteRunOwnershipForAction(
   return actionOk();
 }
 
-async function seedRunnerJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  const expiresAt = readDate(body, "expires_at");
-  if (!runId || !expiresAt) {
-    return actionBadRequest("run_id and expires_at are required");
-  }
-  await db.insert(runnerJobQueue).values({
-    runId,
-    runnerGroup: readOptionalString(body, "runner_group") ?? "vm0/test",
-    profile: readOptionalString(body, "profile") ?? "vm0/default",
-    executionContext: {
-      storageMounts: [],
-      environment: null,
-      platformEnvironment: {},
-      resumeSession: null,
-      encryptedSecrets: null,
-      cliAgentType: "claude-code",
-      apiStartTime: readDate(body, "api_start_time")?.getTime() ?? 0,
-    },
-    expiresAt,
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function attachRunThreadForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -926,24 +872,6 @@ async function getRunForAction(
   return actionOk({ run: run ?? null });
 }
 
-async function getRunnerJobForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [job] = await db
-    .select({ runId: runnerJobQueue.runId })
-    .from(runnerJobQueue)
-    .where(eq(runnerJobQueue.runId, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ runner_job: job ?? null });
-}
-
 async function getExportJobForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -1014,15 +942,11 @@ const cronCleanupSandboxesActionHandlers = {
   "delete-run": deleteRunForAction,
   "delete-run-ownership": deleteRunOwnershipForAction,
   "delete-run-thread": deleteRunThreadForAction,
-  "seed-runner-job": seedRunnerJobForAction,
   "seed-export-job": seedExportJobForAction,
   "delete-export-job": deleteExportJobForAction,
   "get-run": getRunForAction,
   "get-run-ownership": getRunOwnershipForAction,
-  "get-runner-job": getRunnerJobForAction,
   "get-export-job": getExportJobForAction,
-  "seed-connector-diagnostic-registration":
-    seedConnectorDiagnosticRegistrationForAction,
   "get-connector-diagnostic-registration":
     getConnectorDiagnosticRegistrationForAction,
   "corrupt-connector-diagnostic-registration":

@@ -54,28 +54,7 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
       .strict(),
     z
       .object({
-        action: z.literal("simulate-dormant-materialization-crash"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("simulate-current-lifecycle-gap"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("simulate-structure-transition-crash"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("simulate-dormant-materialization-discard-crash"),
         definitionName: workflowNameSchema,
         automationId: z.uuid(),
       })

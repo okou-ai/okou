@@ -37,11 +37,9 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
-import {
-  coolDownBuiltInCandidatesFixture,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { ensureCustomModelModeForTest } from "./helpers/org-model-policy-write";
 import { modelPoliciesRoutes } from "../model-policies";
 import { modelProvidersRoutes } from "../model-providers";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
@@ -692,12 +690,17 @@ describe("GET/PUT /api/model-policies", () => {
     const fixture = seedFixture();
     useSession(fixture);
     const client = apiClient();
-    await accept(client.list({ headers: authHeaders() }), [200]);
-    await stagePreAddabilityModelPolicyFixture({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      model: "gpt-6-sol",
-    });
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: listed.body.revision,
+          policies: [...toUpdate(listed.body), makeBuiltInPolicy("gpt-6-sol")],
+        },
+      }),
+      [200],
+    );
 
     const existing = await accept(
       client.list({ headers: authHeaders() }),
@@ -892,6 +895,17 @@ describe("GET/PUT /api/model-policies", () => {
       await insertBuiltInModelMirrorFixture("deepseek-v4-flash");
     onTestFinished(restore);
     await seedBuiltInModelCandidateKeys(context, model);
+    // A paid Custom workspace can start a run on the mirrored model.
+    authOrgApi.acceptAgentStorageWrites();
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    const runnerGroup = runsApi.configureRunnerGroup();
+    await runsApi.grantProEntitlement(fixture);
+    await ensureCustomModelModeForTest(context, fixture, () => {
+      useSession(fixture);
+      return authHeaders();
+    });
+    useSession(fixture);
     const client = apiClient();
     const response = await accept(
       client.update({
@@ -912,12 +926,31 @@ describe("GET/PUT /api/model-policies", () => {
       })?.runtimeProviderType;
     };
     expect(runtimeProviderType(response.body)).toBe("openrouter-codex");
-    await coolDownBuiltInCandidatesFixture(context, model, [
-      {
-        provider_type: "openrouter-codex",
-        upstream_model: "deepseek/deepseek-v4-flash",
-      },
-    ]);
+
+    // The runner reports a billing failure for a run on the only route, which
+    // cools that route down the way production does.
+    const agent = await authOrgApi.createAgent(fixture, {
+      displayName: "Built-in route cooldown agent",
+    });
+    const run = await runsApi.createThreadRun(fixture, {
+      agentId: agent.agentId,
+      prompt: "route through the mirrored built-in model",
+      model,
+    });
+    await runsApi.heartbeatRunner(runnerGroup);
+    await runsApi.claimRunnerJob(run.runId, {
+      runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 7 },
+    });
+    onTestFinished(async () => {
+      await runsApi.requestCancelRun(fixture, run.runId, [200, 400]);
+    });
+    await expect(
+      runsApi.reportRunnerModelProviderFailure(run.runId, {
+        failureKind: "billing",
+      }),
+    ).resolves.toStrictEqual({ outcome: "recorded" });
+
+    useSession(fixture);
     const unavailable = await accept(
       client.list({ headers: authHeaders() }),
       [200],

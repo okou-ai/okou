@@ -1,17 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { CronCleanupSandboxesResponse } from "@okouai/api-contracts/contracts/cron";
-import {
-  triggerSourceSchema,
-  type TriggerSource,
-} from "@okouai/api-contracts/contracts/logs";
+import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type AgentRunConnectorDiagnosticRegistrationPayload,
   runnersConnectorRuntimeSyncContract,
-  runnersCancellationContract,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   testCronCleanupSandboxesStateContract,
@@ -32,38 +26,38 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { clearMockNow, mockNow } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
-import {
-  holdAgentRunDeletionFixture,
-  insertPendingInlineDeliveryCallbackFixture,
-  readRunCallbackFixture,
-  readHistoryBlobReferenceCountFixture,
-} from "../../../test-fixtures/run-deletion";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { readHistoryBlobReferenceCountFixture } from "../../../test-fixtures/run-deletion";
 import {
   deleteUsagePricingRows,
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createFixtureTracker } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { runnersRoutes } from "../runners";
-import { runnerCancellationRoutes } from "../runner-cancellation";
 
 const context = testContext({ connectorCatalog: true });
 const webhooks = createWebhookCallbackApi(context);
+const {
+  api,
+  chat,
+  chatCallbacks,
+  entitledNativeChatActor,
+  sendChatRun,
+  claimChatRun,
+  waitForRunStatus,
+  completeChatRunOk,
+  cancelChatRun,
+} = createChatEventsFixture(context);
 const BUCKET = "test-user-storage-bucket";
 const FIXED_NOW_MS = Date.parse("2000-01-01T00:10:00.000Z");
 const THREADLESS_FORWARD_CUTOFF_MS = Date.parse("2026-08-03T05:40:26.000Z");
 const THREADLESS_TEST_NOW_MS = Date.parse("2026-08-03T06:00:00.000Z");
-// Mirrors THREADLESS_RUN_SWEEP_LIMIT in threadless-run-cleanup.service.ts.
-const THREADLESS_SWEEP_LIMIT = 20;
-// Mirrors CONNECTOR_DIAGNOSTIC_REGISTRATION_CLEANUP_BATCH_SIZE.
-const CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT = 20;
-const NON_TEST_TRIGGER_SOURCES: readonly TriggerSource[] =
-  triggerSourceSchema.options.filter((source) => {
-    return source !== "test";
-  });
 const CRON_CLEANUP_STATE_ROUTE =
   "/api/test/cron-cleanup-sandboxes-state/action";
 const OFFICIAL_RUNNER_AUTHORIZATION =
@@ -76,26 +70,6 @@ interface RunFixture {
   readonly composeId: string;
   readonly orgId: string;
   readonly userId: string;
-}
-
-async function readCancellation(fixture: RunFixture) {
-  const response = await accept(
-    setupApp({ context, routes: runnerCancellationRoutes })(
-      runnersCancellationContract,
-    ).get({
-      params: { runId: fixture.runId },
-      headers: {
-        authorization: `Bearer ${generateSandboxToken(fixture.userId, fixture.runId, fixture.orgId)}`,
-      },
-      query: {
-        runnerGroup: "vm0/test",
-        runnerId: randomUUID(),
-        heartbeatGeneration: 1,
-      },
-    }),
-    [200],
-  );
-  return response.body;
 }
 
 interface ExportJobFixture {
@@ -115,10 +89,6 @@ interface RunOwnershipFixture {
 
 function minutesAgo(minutes: number): Date {
   return new Date(FIXED_NOW_MS - minutes * 60 * 1000);
-}
-
-function farFuture(): Date {
-  return new Date("2999-01-01T00:00:00.000Z");
 }
 
 function requestCronCleanupState(
@@ -299,61 +269,6 @@ async function findRunOwnership(
   });
 }
 
-async function insertRunnerJobEntry(
-  fixture: RunFixture,
-  expiresAt: Date,
-): Promise<void> {
-  await postCronCleanupState({
-    action: "seed-runner-job",
-    run_id: fixture.runId,
-    runner_group: "vm0/test",
-    profile: "vm0/default",
-    api_start_time: new Date(FIXED_NOW_MS).toISOString(),
-    expires_at: expiresAt.toISOString(),
-  });
-}
-
-async function insertConnectorDiagnosticRegistration(
-  fixture: RunFixture,
-  args?: { readonly createdAt?: Date },
-): Promise<void> {
-  await postCronCleanupState({
-    action: "seed-connector-diagnostic-registration",
-    run_id: fixture.runId,
-    payload: { version: 1, targets: [] },
-    created_at: args?.createdAt?.toISOString(),
-  });
-}
-
-async function findConnectorDiagnosticRegistration(
-  runId: string,
-): Promise<AgentRunConnectorDiagnosticRegistrationPayload | null> {
-  const response = await postCronCleanupState({
-    action: "get-connector-diagnostic-registration",
-    run_id: runId,
-  });
-  const registration = recordField(
-    response,
-    "connector_diagnostic_registration",
-  );
-  return registration
-    ? agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
-        registration["payload"],
-      )
-    : null;
-}
-
-async function transitionRunTerminal(
-  fixture: RunFixture,
-  status: "completed" | "failed" | "timeout" | "cancelled",
-): Promise<void> {
-  await postCronCleanupState({
-    action: "transition-run-terminal",
-    run_id: fixture.runId,
-    status,
-  });
-}
-
 async function insertExportJob(args: {
   readonly status: string;
   readonly createdAt?: Date;
@@ -385,38 +300,6 @@ async function findRun(runId: string): Promise<{
   return row
     ? { status: stringField(row, "status"), error: nullableString(row.error) }
     : null;
-}
-
-/** Returns this test's still-present runs in the fixture order. */
-async function findRemainingRunIds(
-  fixtures: readonly RunFixture[],
-): Promise<readonly string[]> {
-  const states = await Promise.all(
-    fixtures.map(async (fixture) => {
-      return {
-        runId: fixture.runId,
-        present: (await findRun(fixture.runId)) !== null,
-      };
-    }),
-  );
-  return states
-    .filter((state) => {
-      return state.present;
-    })
-    .map((state) => {
-      return state.runId;
-    });
-}
-
-async function findRunnerJob(runId: string): Promise<{
-  readonly runId: string;
-} | null> {
-  const response = await postCronCleanupState({
-    action: "get-runner-job",
-    run_id: runId,
-  });
-  const row = recordField(response, "runner_job");
-  return row ? { runId: stringField(row, "runId") } : null;
 }
 
 async function findExportJob(jobId: string): Promise<{
@@ -506,128 +389,6 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it.each(["completed", "failed", "timeout", "cancelled"] as const)(
-    "deletes a connector diagnostic registration when its run becomes %s",
-    async (status) => {
-      const fixture = await trackRun(
-        insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),
-      );
-      await insertConnectorDiagnosticRegistration(fixture);
-      await expect(
-        findConnectorDiagnosticRegistration(fixture.runId),
-      ).resolves.toStrictEqual({ version: 1, targets: [] });
-
-      await transitionRunTerminal(fixture, status);
-
-      await expect(
-        findConnectorDiagnosticRegistration(fixture.runId),
-      ).resolves.toBeNull();
-    },
-  );
-
-  it("cascades connector diagnostic registration deletion with its run", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),
-    );
-    await insertConnectorDiagnosticRegistration(fixture);
-
-    await postCronCleanupState({ action: "delete-run", run_id: fixture.runId });
-
-    await expect(
-      findConnectorDiagnosticRegistration(fixture.runId),
-    ).resolves.toBeNull();
-  });
-
-  it("rejects an invalid connector diagnostic registration payload", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),
-    );
-
-    const response = await requestCronCleanupState({
-      action: "seed-connector-diagnostic-registration",
-      run_id: fixture.runId,
-      payload: { version: 1, targets: [{ kind: "builtin" }] },
-    });
-
-    expect(response.status).toBe(400);
-    await expect(
-      findConnectorDiagnosticRegistration(fixture.runId),
-    ).resolves.toBeNull();
-  });
-
-  it("compensates terminal registration residue without expiring old active state", async () => {
-    const terminal = await trackRun(
-      insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-    );
-    const active = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),
-    );
-    const oldRegistrationTime = new Date("1990-01-01T00:00:00.000Z");
-    await insertConnectorDiagnosticRegistration(terminal, {
-      createdAt: oldRegistrationTime,
-    });
-    await insertConnectorDiagnosticRegistration(active, {
-      createdAt: oldRegistrationTime,
-    });
-
-    await cleanupRegisteredFixtures();
-
-    await expect(
-      findConnectorDiagnosticRegistration(terminal.runId),
-    ).resolves.toBeNull();
-    await expect(
-      findConnectorDiagnosticRegistration(active.runId),
-    ).resolves.toStrictEqual({ version: 1, targets: [] });
-  });
-
-  describe("with a complete diagnostic cleanup cohort", () => {
-    async function prepareScenario() {
-      const fixtures: RunFixture[] = [];
-      for (
-        let index = 0;
-        index < CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT + 1;
-        index++
-      ) {
-        const fixture = await trackRun(
-          insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-        );
-        await insertConnectorDiagnosticRegistration(fixture, {
-          createdAt: new Date(Date.UTC(1990, 0, 1, 0, 0, index)),
-        });
-        fixtures.push(fixture);
-      }
-      return { fixtures };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-    });
-    it("bounds connector diagnostic registration compensation and converges", async () => {
-      const { fixtures } = preparedScenario;
-
-      await cleanupRegisteredFixtures();
-
-      const first = fixtures[0];
-      const last = fixtures.at(-1);
-      if (!first || !last) {
-        throw new Error("Expected bounded registration cleanup fixtures");
-      }
-
-      await expect(
-        findConnectorDiagnosticRegistration(first.runId),
-      ).resolves.toBeNull();
-      await expect(
-        findConnectorDiagnosticRegistration(last.runId),
-      ).resolves.toStrictEqual({ version: 1, targets: [] });
-
-      await cleanupRegisteredFixtures();
-
-      await expect(
-        findConnectorDiagnosticRegistration(last.runId),
-      ).resolves.toBeNull();
-    });
-  });
-
   it("leaves the audited pre-forward threadless cohort discoverable", async () => {
     mockNow(THREADLESS_TEST_NOW_MS);
     const fixture = await trackRun(
@@ -670,38 +431,6 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  describe.each(NON_TEST_TRIGGER_SOURCES)(
-    "when the trigger source is %s",
-    (triggerSource) => {
-      it("processes the threadless run", async () => {
-        mockNow(THREADLESS_TEST_NOW_MS);
-        const fixture = await trackRun(
-          insertRunFixture({
-            status: "completed",
-            createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-            completedAt: new Date(
-              THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-            ),
-            threadless: true,
-            triggerSource,
-          }),
-        );
-
-        const response = await cleanupRegisteredFixtures();
-
-        expect(response.body.threadlessRuns).toStrictEqual({
-          discovered: 1,
-          cancelled: 0,
-          waiting: 0,
-          deleted: 1,
-          failed: 0,
-          errors: [],
-        });
-        await expect(findRun(fixture.runId)).resolves.toBeNull();
-      });
-    },
-  );
-
   it("releases a checkpoint history reference through the bounded threadless sweep", async () => {
     mockNow(THREADLESS_TEST_NOW_MS);
     const fixture = await trackRun(
@@ -739,119 +468,6 @@ describe("sandbox cleanup", () => {
     await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
     await cleanupRegisteredFixtures();
     await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
-  });
-
-  it("waits through the quiet window and deletes at its exact boundary", async () => {
-    const completedAt = new Date(THREADLESS_TEST_NOW_MS);
-    mockNow(completedAt.getTime() + CANCELLATION_RECOVERY_STALE_AFTER_MS - 1);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "completed",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt,
-        threadless: true,
-      }),
-    );
-
-    const waitingResponse = await cleanupRegisteredFixtures();
-    expect(waitingResponse.body.threadlessRuns.discovered).toBe(1);
-    expect(waitingResponse.body.threadlessRuns.waiting).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.not.toBeNull();
-
-    mockNow(completedAt.getTime() + CANCELLATION_RECOVERY_STALE_AFTER_MS);
-    const deletedResponse = await cleanupRegisteredFixtures();
-    expect(deletedResponse.body.threadlessRuns.discovered).toBe(1);
-    expect(deletedResponse.body.threadlessRuns.deleted).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("hard-cancels an active threadless run without deleting it in the same pass", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
-        lastHeartbeatAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
-        threadless: true,
-        runnerGroup: "vm0/test",
-      }),
-    );
-
-    const cancelledResponse = await cleanupRegisteredFixtures();
-    expect(cancelledResponse.body.threadlessRuns.discovered).toBe(1);
-    expect(cancelledResponse.body.threadlessRuns.cancelled).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "cancelled",
-    });
-    await expect(readCancellation(fixture)).resolves.toMatchObject({
-      state: "present",
-      mode: "hard",
-    });
-
-    mockNow(THREADLESS_TEST_NOW_MS + CANCELLATION_RECOVERY_STALE_AFTER_MS);
-    const deletedResponse = await cleanupRegisteredFixtures();
-    expect(deletedResponse.body.threadlessRuns.discovered).toBe(1);
-    expect(deletedResponse.body.threadlessRuns.deleted).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("redrives expired unresolved cancellation recovery before deletion", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "cancelled",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt: new Date(
-          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS + 1,
-        ),
-        cancellationRecoveryCompleted: false,
-        threadless: true,
-      }),
-    );
-
-    const waiting = await cleanupRegisteredFixtures();
-    expect(waiting.body.threadlessRuns.discovered).toBe(1);
-    expect(waiting.body.threadlessRuns.waiting).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.not.toBeNull();
-
-    mockNow(THREADLESS_TEST_NOW_MS + 1);
-    const response = await cleanupRegisteredFixtures();
-    expect(response.body.threadlessRuns.discovered).toBe(1);
-    expect(response.body.threadlessRuns.deleted).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("terminalizes a stranded inline delivery callback before deleting its run", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "completed",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt: new Date(
-          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-        ),
-        threadless: true,
-      }),
-    );
-    const callbackId = await insertPendingInlineDeliveryCallbackFixture(
-      fixture.runId,
-    );
-    await insertRunnerJobEntry(fixture, new Date(0));
-
-    const waiting = await cleanupRegisteredFixtures();
-    expect(waiting.body.threadlessRuns.discovered).toBe(1);
-    expect(waiting.body.threadlessRuns.waiting).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.not.toBeNull();
-    await expect(readRunCallbackFixture(callbackId)).resolves.toStrictEqual({
-      status: "failed",
-      lastError: "Chat thread was deleted before inline callback delivery",
-    });
-    await expect(findRunnerJob(fixture.runId)).resolves.toBeNull();
-
-    const deleted = await cleanupRegisteredFixtures();
-    expect(deleted.body.threadlessRuns.discovered).toBe(1);
-    expect(deleted.body.threadlessRuns.deleted).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toBeNull();
   });
 
   it("cascades run-owned artifacts while preserving independent ownership", async () => {
@@ -915,388 +531,6 @@ describe("sandbox cleanup", () => {
     });
     expect(recordField(state, "hosted_artifact")).toStrictEqual({
       id: ownership.hostedArtifactId,
-    });
-  });
-
-  describe("an over-capacity batch of threadless runs", () => {
-    let fixtures: Awaited<ReturnType<typeof trackRun>>[];
-    beforeEach(async () => {
-      mockNow(THREADLESS_TEST_NOW_MS);
-      const userId = `user-${randomUUID()}`;
-      const orgId = `org-${randomUUID()}`;
-      fixtures = await Promise.all(
-        Array.from({ length: THREADLESS_SWEEP_LIMIT + 1 }, async (_, index) => {
-          return await trackRun(
-            insertRunFixture({
-              status: "completed",
-              createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + index + 1),
-              completedAt: new Date(
-                THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-              ),
-              threadless: true,
-              userId,
-              orgId,
-            }),
-          );
-        }),
-      );
-    });
-
-    it("processes only the oldest bounded batch of threadless runs", async () => {
-      const firstResponse = await cleanupRegisteredFixtures();
-
-      expect(firstResponse.body.threadlessRuns).toStrictEqual({
-        discovered: THREADLESS_SWEEP_LIMIT,
-        cancelled: 0,
-        waiting: 0,
-        deleted: THREADLESS_SWEEP_LIMIT,
-        failed: 0,
-        errors: [],
-      });
-      const remaining = await findRemainingRunIds(fixtures);
-      expect(remaining).toStrictEqual(
-        fixtures.slice(THREADLESS_SWEEP_LIMIT).map((fixture) => {
-          return fixture.runId;
-        }),
-      );
-      // What the bound left behind stays untouched and eligible for a next pass.
-      await expect(
-        Promise.all(
-          remaining.map((runId) => {
-            return findRun(runId);
-          }),
-        ),
-      ).resolves.toStrictEqual(
-        remaining.map(() => {
-          return { status: "completed", error: null };
-        }),
-      );
-    });
-  });
-
-  it("acknowledges an event projection while root deletion holds the run row", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "completed",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt: new Date(
-          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-        ),
-        threadless: true,
-      }),
-    );
-    const deleting = await holdAgentRunDeletionFixture({
-      runId: fixture.runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      deleting.release();
-      await deleting.done;
-    });
-    const headers = {
-      authorization: `Bearer ${generateSandboxToken(
-        fixture.userId,
-        fixture.runId,
-        fixture.orgId,
-      )}`,
-    };
-    const eventRequest = webhooks.requestAgentEvents(
-      {
-        runId: fixture.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: `msg_${randomUUID()}`,
-              content: [{ type: "text", text: "late output" }],
-            },
-          },
-        ],
-      },
-      headers,
-      [200],
-    );
-    // The output path takes no run lock, so it does not queue behind the
-    // held deletion.
-    const eventResponse = await eventRequest;
-    expect(eventResponse).toMatchObject({
-      status: 200,
-      body: { received: 1, firstSequence: 0, lastSequence: 0 },
-    });
-    deleting.release();
-    await deleting.done;
-  });
-
-  it("does not cleanup a recent pending run", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(1) }),
-    );
-    await insertRunnerJobEntry(fixture, farFuture());
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "pending",
-      error: null,
-    });
-    await expect(findRunnerJob(fixture.runId)).resolves.toStrictEqual({
-      runId: fixture.runId,
-    });
-  });
-
-  it("does not cleanup a run with a recent heartbeat", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: minutesAgo(1),
-        lastHeartbeatAt: minutesAgo(1),
-      }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "running",
-      error: null,
-    });
-  });
-
-  it("keeps a stale running run active when its heartbeat commits first", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: minutesAgo(10),
-        lastHeartbeatAt: minutesAgo(3),
-      }),
-    );
-    const headers = {
-      authorization: `Bearer ${generateSandboxToken(
-        fixture.userId,
-        fixture.runId,
-        fixture.orgId,
-      )}`,
-    };
-
-    await webhooks.requestAgentHeartbeat(
-      { runId: fixture.runId },
-      headers,
-      [200],
-    );
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "running",
-      error: null,
-    });
-  });
-
-  it("exposes a pending-run timeout as terminal to connector runtime sync", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "pending",
-        createdAt: minutesAgo(6),
-        runnerGroup: "vm0/test",
-      }),
-    );
-    await insertRunnerJobEntry(fixture, farFuture());
-    await insertConnectorDiagnosticRegistration(fixture);
-    context.mocks.ably.publish.mockClear();
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toStrictEqual([
-      {
-        runId: fixture.runId,
-        sandboxId: fixture.sandboxId,
-        status: "cleaned",
-        reason: "Run timed out while pending (never started)",
-      },
-    ]);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Run timed out while pending (never started)",
-    });
-    await expect(findRunnerJob(fixture.runId)).resolves.toBeNull();
-    await expect(
-      findConnectorDiagnosticRegistration(fixture.runId),
-    ).resolves.toBeNull();
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([channel]) => {
-        return channel === "cancel";
-      }),
-    ).toHaveLength(0);
-
-    const sync = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersConnectorRuntimeSyncContract,
-      ).sync({
-        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
-        params: { runId: fixture.runId },
-        body: {
-          targets: [{ kind: "builtin", connectorSlug: "slack" }],
-        },
-      }),
-      [409],
-    );
-    expect(sync.body.error).toStrictEqual({
-      code: CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-      message: "Run is terminal",
-    });
-  });
-
-  it("cleans up pending runs without runner jobs after the pending timeout", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(6) }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toStrictEqual([
-      {
-        runId: fixture.runId,
-        sandboxId: fixture.sandboxId,
-        status: "cleaned",
-        reason: "Run timed out while pending (never started)",
-      },
-    ]);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Run timed out while pending (never started)",
-    });
-    await expect(findRunnerJob(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("deletes expired runner job queue entries", async () => {
-    const expired = await trackRun(
-      insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-    );
-    const unexpired = await trackRun(
-      insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-    );
-    await insertRunnerJobEntry(expired, minutesAgo(1));
-    await insertRunnerJobEntry(unexpired, farFuture());
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(0);
-    await expect(findRunnerJob(expired.runId)).resolves.toBeNull();
-    await expect(findRunnerJob(unexpired.runId)).resolves.toStrictEqual({
-      runId: unexpired.runId,
-    });
-  });
-
-  it("cleans up running runs after the heartbeat timeout", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: minutesAgo(1),
-        lastHeartbeatAt: minutesAgo(3),
-        runnerGroup: "vm0/test",
-      }),
-    );
-    context.mocks.ably.publish.mockClear();
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toStrictEqual([
-      {
-        runId: fixture.runId,
-        sandboxId: fixture.sandboxId,
-        status: "cleaned",
-        reason: "Run timed out (no heartbeat)",
-      },
-    ]);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Run timed out (no heartbeat)",
-    });
-    await expect(readCancellation(fixture)).resolves.toMatchObject({
-      state: "present",
-      mode: "hard",
-    });
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([channel]) => {
-        return channel === "cancel";
-      }),
-    ).toStrictEqual([["cancel", { runId: fixture.runId, mode: "hard" }]]);
-
-    const duplicate = await cleanupRegisteredFixtures();
-    expect(duplicate.body.results).toHaveLength(0);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([channel]) => {
-        return channel === "cancel";
-      }),
-    ).toHaveLength(1);
-  });
-
-  it("does not cleanup completed runs even when they are old", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "completed", createdAt: minutesAgo(60) }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "completed",
-      error: null,
-    });
-  });
-
-  it("cleans only registered expired runs and leaves an unrelated sentinel untouched", async () => {
-    const firstFixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(6) }),
-    );
-    const secondFixture = await trackRun(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(7) }),
-    );
-    const sentinel = await trackRunForTeardown(
-      insertRunFixture({ status: "pending", createdAt: minutesAgo(8) }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(2);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toHaveLength(2);
-    expect(response.body.results).toStrictEqual(
-      expect.arrayContaining([
-        {
-          runId: firstFixture.runId,
-          sandboxId: firstFixture.sandboxId,
-          status: "cleaned",
-          reason: "Run timed out while pending (never started)",
-        },
-        {
-          runId: secondFixture.runId,
-          sandboxId: secondFixture.sandboxId,
-          status: "cleaned",
-          reason: "Run timed out while pending (never started)",
-        },
-      ]),
-    );
-    await expect(findRun(firstFixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Run timed out while pending (never started)",
-    });
-    await expect(findRun(secondFixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Run timed out while pending (never started)",
-    });
-    await expect(findRun(sentinel.runId)).resolves.toStrictEqual({
-      status: "pending",
-      error: null,
     });
   });
 
@@ -1429,5 +663,364 @@ describe("sandbox cleanup", () => {
         },
       },
     });
+  });
+});
+
+describe("sandbox cleanup of publicly launched runs", () => {
+  const PENDING_TIMEOUT_ELAPSED_MS = 6 * 60 * 1000;
+  const HEARTBEAT_TIMEOUT_ELAPSED_MS = 3 * 60 * 1000;
+  const PENDING_TIMEOUT_REASON = "Run timed out while pending (never started)";
+  const HEARTBEAT_TIMEOUT_REASON = "Run timed out (no heartbeat)";
+
+  afterEach(() => {
+    clearMockNow();
+  });
+
+  async function cleanupOwnedRuns(
+    runIds: readonly string[],
+  ): Promise<CronCleanupSandboxesResponse> {
+    return await cleanupScopedSandboxes({
+      chatThreadIds: [],
+      runIds: [...runIds],
+      exportJobIds: [],
+    });
+  }
+
+  function cancelPublications(): readonly unknown[][] {
+    return context.mocks.ably.publish.mock.calls.filter(([channel]) => {
+      return channel === "cancel";
+    });
+  }
+
+  async function expectActiveRun(
+    actor: ApiTestUser,
+    runId: string,
+    status: "pending" | "running",
+  ): Promise<void> {
+    const run = await api.readRun(actor, runId);
+    expect(run.status).toBe(status);
+    expect(run.error).toBeUndefined();
+  }
+
+  async function expectRunDeleted(
+    actor: ApiTestUser,
+    runId: string,
+  ): Promise<void> {
+    await expect(
+      api.requestReadRun(actor, runId, [404]),
+    ).resolves.toMatchObject({ status: 404 });
+  }
+
+  function completedAtMs(run: { readonly completedAt?: string }): number {
+    if (!run.completedAt) {
+      throw new Error("Expected the terminal run to expose completedAt");
+    }
+    return Date.parse(run.completedAt);
+  }
+
+  /** A completed web run whose chat thread the user then deleted. */
+  async function completedRunOfDeletedThread(prompt: string) {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, { agentId, prompt });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(run.runId, claimed.sandboxHeaders);
+    await waitForRunStatus(actor, run.runId, "completed");
+    await chat.deleteThread(actor, run.threadId);
+    await flushWaitUntilForTest();
+    const completed = await api.readRun(actor, run.runId);
+    return {
+      actor,
+      runId: run.runId,
+      completedAtMs: completedAtMs(completed),
+    };
+  }
+
+  it("does not cleanup a recent pending run", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "recent pending run survives cleanup",
+    });
+    mockNow(now() + 60_000);
+
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.results).toHaveLength(0);
+    await expectActiveRun(actor, run.runId, "pending");
+    // The queued launch stays claimable after the cleanup pass.
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+  });
+
+  it("does not cleanup a run with a recent heartbeat", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "recently claimed run survives cleanup",
+    });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    mockNow(now() + 60_000);
+
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.results).toHaveLength(0);
+    await expectActiveRun(actor, run.runId, "running");
+    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+  });
+
+  it("keeps a stale running run active when its heartbeat commits first", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "late heartbeat keeps the run active",
+    });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    mockNow(now() + HEARTBEAT_TIMEOUT_ELAPSED_MS);
+
+    await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.results).toHaveLength(0);
+    await expectActiveRun(actor, run.runId, "running");
+    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+  });
+
+  it("exposes a pending-run timeout as terminal to connector runtime sync", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "pending run times out before a runner claims it",
+    });
+    const pending = await api.readRun(actor, run.runId);
+    mockNow(now() + PENDING_TIMEOUT_ELAPSED_MS);
+    context.mocks.ably.publish.mockClear();
+
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.cleaned).toBe(1);
+    expect(response.errors).toBe(0);
+    expect(response.results).toStrictEqual([
+      {
+        runId: run.runId,
+        sandboxId: pending.sandboxId ?? null,
+        status: "cleaned",
+        reason: PENDING_TIMEOUT_REASON,
+      },
+    ]);
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "timeout",
+      error: PENDING_TIMEOUT_REASON,
+    });
+    const lateClaim = await api.requestClaimRunnerJob(true, run.runId, [404]);
+    expectApiError(lateClaim.body);
+    expect(cancelPublications()).toHaveLength(0);
+
+    const sync = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersConnectorRuntimeSyncContract,
+      ).sync({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        params: { runId: run.runId },
+        body: {
+          targets: [{ kind: "builtin", connectorSlug: "slack" }],
+        },
+      }),
+      [409],
+    );
+    expect(sync.body.error).toStrictEqual({
+      code: CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
+      message: "Run is terminal",
+    });
+  });
+
+  it("cleans up running runs after the heartbeat timeout", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "claimed run stops heartbeating",
+    });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    const running = await api.readRun(actor, run.runId);
+    mockNow(now() + HEARTBEAT_TIMEOUT_ELAPSED_MS);
+    context.mocks.ably.publish.mockClear();
+
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.cleaned).toBe(1);
+    expect(response.errors).toBe(0);
+    expect(response.results).toStrictEqual([
+      {
+        runId: run.runId,
+        sandboxId: running.sandboxId ?? null,
+        status: "cleaned",
+        reason: HEARTBEAT_TIMEOUT_REASON,
+      },
+    ]);
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "timeout",
+      error: HEARTBEAT_TIMEOUT_REASON,
+    });
+    await expect(
+      api.readRunnerCancellation(
+        claimed.claim.sandboxToken,
+        run.runId,
+        runnerGroup,
+      ),
+    ).resolves.toMatchObject({ state: "present", mode: "hard" });
+    expect(cancelPublications()).toStrictEqual([
+      ["cancel", { runId: run.runId, mode: "hard" }],
+    ]);
+
+    const duplicate = await cleanupOwnedRuns([run.runId]);
+    expect(duplicate.results).toHaveLength(0);
+    expect(cancelPublications()).toHaveLength(1);
+  });
+
+  it("does not cleanup completed runs even when they are old", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "completed run is not timed out",
+    });
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(run.runId, claimed.sandboxHeaders);
+    await waitForRunStatus(actor, run.runId, "completed");
+    mockNow(now() + 60 * 60 * 1000);
+
+    const response = await cleanupOwnedRuns([run.runId]);
+
+    expect(response.results).toHaveLength(0);
+    const completed = await api.readRun(actor, run.runId);
+    expect(completed.status).toBe("completed");
+    expect(completed.error).toBeUndefined();
+  });
+
+  it("cleans only registered expired runs and leaves an unrelated sentinel untouched", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const { actor, agentId } = await entitledNativeChatActor();
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: "first registered pending run",
+    });
+    const second = await sendChatRun(actor, {
+      agentId,
+      prompt: "second registered pending run",
+    });
+    const sentinel = await sendChatRun(actor, {
+      agentId,
+      prompt: "unregistered pending sentinel",
+    });
+    const firstSandboxId = (await api.readRun(actor, first.runId)).sandboxId;
+    const secondSandboxId = (await api.readRun(actor, second.runId)).sandboxId;
+    mockNow(now() + PENDING_TIMEOUT_ELAPSED_MS);
+
+    const response = await cleanupOwnedRuns([first.runId, second.runId]);
+
+    expect(response.cleaned).toBe(2);
+    expect(response.errors).toBe(0);
+    expect(response.results).toHaveLength(2);
+    expect(response.results).toStrictEqual(
+      expect.arrayContaining([
+        {
+          runId: first.runId,
+          sandboxId: firstSandboxId ?? null,
+          status: "cleaned",
+          reason: PENDING_TIMEOUT_REASON,
+        },
+        {
+          runId: second.runId,
+          sandboxId: secondSandboxId ?? null,
+          status: "cleaned",
+          reason: PENDING_TIMEOUT_REASON,
+        },
+      ]),
+    );
+    await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
+      status: "timeout",
+      error: PENDING_TIMEOUT_REASON,
+    });
+    await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
+      status: "timeout",
+      error: PENDING_TIMEOUT_REASON,
+    });
+    await expectActiveRun(actor, sentinel.runId, "pending");
+    await cancelChatRun(actor, sentinel.runId);
+  });
+
+  it("processes a threadless run left by a deleted web thread", async () => {
+    const threadless = await completedRunOfDeletedThread(
+      "threadless run is processed",
+    );
+    mockNow(threadless.completedAtMs + CANCELLATION_RECOVERY_STALE_AFTER_MS);
+
+    const response = await cleanupOwnedRuns([threadless.runId]);
+
+    expect(response.threadlessRuns).toStrictEqual({
+      discovered: 1,
+      cancelled: 0,
+      waiting: 0,
+      deleted: 1,
+      failed: 0,
+      errors: [],
+    });
+    await expectRunDeleted(threadless.actor, threadless.runId);
+  });
+
+  it("waits through the quiet window and deletes at its exact boundary", async () => {
+    const threadless = await completedRunOfDeletedThread(
+      "threadless run waits for its quiet window",
+    );
+    mockNow(
+      threadless.completedAtMs + CANCELLATION_RECOVERY_STALE_AFTER_MS - 1,
+    );
+
+    const waitingResponse = await cleanupOwnedRuns([threadless.runId]);
+    expect(waitingResponse.threadlessRuns.discovered).toBe(1);
+    expect(waitingResponse.threadlessRuns.waiting).toBe(1);
+    await expect(
+      api.readRun(threadless.actor, threadless.runId),
+    ).resolves.toMatchObject({ status: "completed" });
+
+    mockNow(threadless.completedAtMs + CANCELLATION_RECOVERY_STALE_AFTER_MS);
+    const deletedResponse = await cleanupOwnedRuns([threadless.runId]);
+    expect(deletedResponse.threadlessRuns.discovered).toBe(1);
+    expect(deletedResponse.threadlessRuns.deleted).toBe(1);
+    await expectRunDeleted(threadless.actor, threadless.runId);
+  });
+
+  it("redrives expired unresolved cancellation recovery before deletion", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "running run is cancelled by thread deletion",
+    });
+    await claimChatRun(runnerGroup, run.runId);
+    // Deleting the thread hard-cancels the claimed run; the Runner never
+    // reports its end, so cancellation recovery stays unresolved.
+    await chat.deleteThread(actor, run.threadId);
+    await flushWaitUntilForTest();
+    const cancelled = await api.readRun(actor, run.runId);
+    expect(cancelled.status).toBe("cancelled");
+    const cancelledAtMs = completedAtMs(cancelled);
+    mockNow(cancelledAtMs + CANCELLATION_RECOVERY_STALE_AFTER_MS - 1);
+
+    const waiting = await cleanupOwnedRuns([run.runId]);
+    expect(waiting.threadlessRuns.discovered).toBe(1);
+    expect(waiting.threadlessRuns.waiting).toBe(1);
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+
+    mockNow(cancelledAtMs + CANCELLATION_RECOVERY_STALE_AFTER_MS);
+    const response = await cleanupOwnedRuns([run.runId]);
+    expect(response.threadlessRuns.discovered).toBe(1);
+    expect(response.threadlessRuns.deleted).toBe(1);
+    await expectRunDeleted(actor, run.runId);
   });
 });

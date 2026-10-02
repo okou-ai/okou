@@ -46,7 +46,20 @@ import {
   loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import type { MemberSubscriptionModel } from "./member-subscription-models.service";
+import type {
+  MemberSubscriptionModel,
+  MemberSubscriptionModelRoute,
+} from "./member-subscription-models.service";
+
+import type {
+  OrgModelBootstrap,
+  MemberModelBootstrap,
+} from "./model-bootstrap.service";
+
+export interface ModelSelectionBootstrap {
+  readonly org: OrgModelBootstrap;
+  readonly member: MemberModelBootstrap;
+}
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
@@ -189,6 +202,41 @@ function subscriptionModelsFromCatalog(
   });
 }
 
+function requireModelBootstrapIdentity(
+  captured: ModelSelectionBootstrap | undefined,
+  orgId: string,
+  userId: string,
+) {
+  if (
+    captured &&
+    (captured.org.orgId !== orgId ||
+      captured.member.orgId !== orgId ||
+      captured.member.userId !== userId)
+  ) {
+    throw new Error("Model bootstrap identity mismatch");
+  }
+}
+
+const memberModelPreference$ = command(
+  async ({ get }, orgId: string, userId: string, signal?: AbortSignal) => {
+    const rows = await get(db$)
+      .select({
+        selectedModel: orgMembersMetadata.selectedModel,
+        serviceTier: orgMembersMetadata.serviceTier,
+      })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1);
+    signal?.throwIfAborted();
+    return rows;
+  },
+);
+
 const modelRoutingFacts$ = command(
   async (
     { get, set },
@@ -197,10 +245,13 @@ const modelRoutingFacts$ = command(
       readonly userId: string;
       readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
       readonly catalog?: ModelCatalog;
+      readonly modelBootstrap?: ModelSelectionBootstrap;
     },
     signal?: AbortSignal,
   ): Promise<ModelRoutingFacts> => {
     const db = get(db$);
+    const captured = params.modelBootstrap;
+    requireModelBootstrapIdentity(captured, params.orgId, params.userId);
     const memberScoped =
       params.userId !== "__no_preference__" &&
       params.userId !== ORG_SENTINEL_USER_ID;
@@ -214,40 +265,53 @@ const modelRoutingFacts$ = command(
       surfaces,
       [preference],
     ] = await Promise.all([
-      params.catalog ?? set(loadModelCatalog$, signal),
-      params.orgPlanCapabilities === undefined
-        ? set(loadOrgPlanCapabilities$, params.orgId, signal)
-        : params.orgPlanCapabilities,
-      db
-        .select()
-        .from(orgModelPolicies)
-        .where(eq(orgModelPolicies.orgId, params.orgId)),
-      db
-        .select({ mode: orgMetadata.modelMode })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, params.orgId))
-        .limit(1),
-      memberScoped
-        ? db
-            .select({
-              type: modelProviderAccounts.type,
-              providerId: modelProviderAccounts.modelProviderId,
-              isActive: modelProviderAccounts.isActive,
-              needsReconnect: modelProviderAccounts.needsReconnect,
-            })
-            .from(modelProviderAccounts)
-            .where(
-              and(
-                eq(modelProviderAccounts.orgId, params.orgId),
-                eq(modelProviderAccounts.userId, params.userId),
-                inArray(modelProviderAccounts.type, [
-                  "claude-code-oauth-token",
-                  "codex-oauth-token",
-                ]),
-                isNull(modelProviderAccounts.disconnectedAt),
-              ),
-            )
-        : [],
+      captured?.org.catalog ?? params.catalog ?? set(loadModelCatalog$, signal),
+      captured
+        ? captured.org.capabilities
+        : params.orgPlanCapabilities === undefined
+          ? set(loadOrgPlanCapabilities$, params.orgId, signal)
+          : params.orgPlanCapabilities,
+      captured
+        ? captured.org.policies
+        : db
+            .select()
+            .from(orgModelPolicies)
+            .where(eq(orgModelPolicies.orgId, params.orgId)),
+      captured
+        ? [{ mode: captured.org.org?.modelMode }]
+        : db
+            .select({ mode: orgMetadata.modelMode })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, params.orgId))
+            .limit(1),
+      captured
+        ? captured.member.accounts.map((account) => {
+            return {
+              ...account,
+              providerId: account.modelProviderId,
+            };
+          })
+        : memberScoped
+          ? db
+              .select({
+                type: modelProviderAccounts.type,
+                providerId: modelProviderAccounts.modelProviderId,
+                isActive: modelProviderAccounts.isActive,
+                needsReconnect: modelProviderAccounts.needsReconnect,
+              })
+              .from(modelProviderAccounts)
+              .where(
+                and(
+                  eq(modelProviderAccounts.orgId, params.orgId),
+                  eq(modelProviderAccounts.userId, params.userId),
+                  inArray(modelProviderAccounts.type, [
+                    "claude-code-oauth-token",
+                    "codex-oauth-token",
+                  ]),
+                  isNull(modelProviderAccounts.disconnectedAt),
+                ),
+              )
+          : [],
       db
         .select({
           id: modelProviders.id,
@@ -274,19 +338,7 @@ const modelRoutingFacts$ = command(
         )
         .where(eq(modelProviderConnections.orgId, params.orgId)),
       memberScoped
-        ? db
-            .select({
-              selectedModel: orgMembersMetadata.selectedModel,
-              serviceTier: orgMembersMetadata.serviceTier,
-            })
-            .from(orgMembersMetadata)
-            .where(
-              and(
-                eq(orgMembersMetadata.orgId, params.orgId),
-                eq(orgMembersMetadata.userId, params.userId),
-              ),
-            )
-            .limit(1)
+        ? set(memberModelPreference$, params.orgId, params.userId, signal)
         : [],
     ]);
     signal?.throwIfAborted();
@@ -434,6 +486,7 @@ export const resolveDefaultModelFirstPin$ = command(
       readonly defaultSource?: "member" | "workspace";
       readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
       readonly catalog?: ModelCatalog;
+      readonly modelBootstrap?: ModelSelectionBootstrap;
     },
     signal?: AbortSignal,
   ): Promise<DefaultModelFirstPin> => {
@@ -522,6 +575,7 @@ export const resolveModelSelectionPin$ = command(
       readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
       /** The request's catalog snapshot, when the caller already loaded it. */
       readonly catalog?: ModelCatalog;
+      readonly modelBootstrap?: ModelSelectionBootstrap;
     },
     signal: AbortSignal,
   ): Promise<
@@ -708,7 +762,7 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   /** Organization model mode read with the other pick facts. */
   readonly modelMode: "auto" | "custom";
   /** The member's catalog-listed subscription models; empty outside Auto. */
-  readonly subscriptionModels: readonly MemberSubscriptionModel[];
+  readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
 }):
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>

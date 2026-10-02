@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { testContext } from "../../../__tests__/test-context";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
+import { createDeferredPromise } from "../../utils";
 import { mockEnv } from "../../../lib/env";
 import {
   API_TEST_CONNECTOR_CATALOG,
@@ -32,6 +35,73 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat agent bootstrap prefetch", () => {
+  it("keeps the captured model policy when it changes during attachment resolution", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const fileId = randomUUID();
+    const filename = "model-snapshot.txt";
+    const key = buildArtifactKeyV2(fileId, filename);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    if (!originalSend) {
+      throw new Error("Expected the fixture's S3 implementation");
+    }
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand && command.input.Key === key) {
+        entered.resolve(undefined);
+        await release.promise;
+        return {
+          ContentLength: 42,
+          ContentType: "text/plain",
+          LastModified: new Date("2026-10-02T00:00:00Z"),
+          Metadata: {
+            "artifact-id": fileId,
+            filename: encodeURIComponent(filename),
+            "user-id": encodeURIComponent(actor.userId),
+          },
+        };
+      }
+      return await originalSend(command);
+    });
+    const sending = sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "use the captured model policy",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: filename,
+            contentType: "text/plain",
+          },
+          { type: "text", text: "use the captured model policy" },
+        ],
+      },
+    });
+    await entered.promise;
+    // Attachment metadata is an external response awaited after model capture.
+    // Change the real policy through its API before enqueue and admission.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    release.resolve(undefined);
+    const sent = await sending;
+    expect((await api.readRun(actor, sent.runId)).source).toMatchObject({
+      model: "claude-fable-5-1",
+      providerType: "anthropic-api-key",
+      credentialScope: "org",
+    });
+    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+  });
   it("returns the accepted input while bootstrap is still reading", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const orgId = actor.orgId;

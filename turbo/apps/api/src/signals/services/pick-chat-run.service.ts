@@ -14,8 +14,11 @@ import {
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import {
+  createOrgModelBootstrap,
+  type PrefetchedModelBootstrap,
+  type OrgModelBootstrap,
+} from "./model-bootstrap.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
@@ -41,6 +44,7 @@ export interface OrgPickCursor {
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
   readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+  readonly prefetchedModels?: PrefetchedModelBootstrap;
 }
 
 /** Fixed chat thread lease; it is never renewed. */
@@ -53,7 +57,7 @@ export type PickResult =
   | { readonly kind: "none" };
 
 /** An independent observation, evaluated only when its owner first reads it. */
-function createOrgHasCapacity(orgId: string) {
+function createOrgHasCapacity(orgId: string, models: OrgModelBootstrap) {
   const orgActiveRunCount$ = computed(async (get) => {
     const database = get(db$);
     const [row] = await database
@@ -69,32 +73,14 @@ function createOrgHasCapacity(orgId: string) {
   const orgCapacity$ = computed(async (get) => {
     const database = get(db$);
     const at = nowDate();
-    const [[plan], subscriptions] = await Promise.all([
-      database
-        .select({
-          entitlementOrgId: orgPlanEntitlements.orgId,
-          metadataOrgId: orgMetadata.orgId,
-          baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-        })
-        .from(orgPlanEntitlements)
-        .fullJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
-        .where(
-          or(
-            eq(orgPlanEntitlements.orgId, orgId),
-            eq(orgMetadata.orgId, orgId),
-          ),
-        )
-        .limit(1),
-      database
-        .select({ slots: orgConcurrencySubscriptions.slots })
-        .from(orgConcurrencySubscriptions)
-        .where(activeConcurrencySubscriptionPredicate(orgId, at)),
-    ]);
-    if (plan?.entitlementOrgId === null && plan.metadataOrgId !== null) {
-      throw new Error(`Missing org plan entitlement for ${orgId}`);
-    }
+    const subscriptions = await database
+      .select({ slots: orgConcurrencySubscriptions.slots })
+      .from(orgConcurrencySubscriptions)
+      .where(activeConcurrencySubscriptionPredicate(orgId, at));
     const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
+      baseLimit: cappedBaseConcurrencyLimit(
+        models.capabilities?.baseConcurrencyLimit ?? 0,
+      ),
       paidSlots: subscriptions.reduce((total, row) => {
         return total + row.slots;
       }, 0),
@@ -111,7 +97,10 @@ function createOrgHasCapacity(orgId: string) {
   });
 }
 
-function createCapturedClaimObjects(claim: LeasedThreadClaim) {
+function createCapturedClaimObjects(
+  claim: LeasedThreadClaim,
+  models: OrgModelBootstrap,
+) {
   const preparation = createThreadClaimRunObjects(
     {
       orgId: claim.orgId,
@@ -119,11 +108,13 @@ function createCapturedClaimObjects(claim: LeasedThreadClaim) {
       claimId: claim.claimId,
     },
     claim.prefetchedBootstrap,
+    claim.prefetchedModels,
+    models,
   );
-  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId);
+  const orgHasCapacity$ = createOrgHasCapacity(claim.orgId, models);
   // This separate, predeclared graph is first evaluated after an org-full
   // release. Re-reading the initial memoized graph would lose a slot wakeup.
-  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId);
+  const orgHasCapacityAfterRelease$ = createOrgHasCapacity(claim.orgId, models);
   return { ...preparation, orgHasCapacity$, orgHasCapacityAfterRelease$ };
 }
 
@@ -132,6 +123,7 @@ interface PickInput {
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
   readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
+  readonly prefetchedModels?: PrefetchedModelBootstrap;
 }
 
 export interface PickIteration {
@@ -148,7 +140,7 @@ function createPickObjects() {
       ReturnType<typeof createCapturedClaimObjects>
     >();
   });
-  const capturedClaims$ = computed((get) => {
+  const capturedClaims$ = computed(async (get) => {
     const graphCache = get(graphCache$);
     const graphs = new Map<
       string,
@@ -157,7 +149,11 @@ function createPickObjects() {
     for (const claim of get(claimReceipts$)) {
       let graph = graphCache.get(claim);
       if (!graph) {
-        graph = createCapturedClaimObjects(claim);
+        const models =
+          claim.prefetchedModels?.orgId === claim.orgId
+            ? await claim.prefetchedModels.org
+            : await get(createOrgModelBootstrap(claim.orgId));
+        graph = createCapturedClaimObjects(claim, models);
         graphCache.set(claim, graph);
       }
       graphs.set(claim.claimId, graph);
@@ -223,7 +219,7 @@ function createPickObjects() {
 
   const claim$ = command(
     async ({ set }, input: PickInput, signal: AbortSignal) => {
-      const { orgId, prefetchedBootstrap } = input;
+      const { orgId, prefetchedBootstrap, prefetchedModels } = input;
       let threadId = input.chatThreadId;
       let cursor = input.after ?? null;
       if (threadId === undefined) {
@@ -280,6 +276,7 @@ function createPickObjects() {
             ...(prefetchedBootstrap === undefined
               ? {}
               : { prefetchedBootstrap }),
+            ...(prefetchedModels === undefined ? {} : { prefetchedModels }),
           })
         : null;
       if (claim) {
@@ -375,7 +372,7 @@ function createPickObjects() {
       signal: AbortSignal,
     ): Promise<PickResult> => {
       signal.throwIfAborted();
-      const claimed = get(capturedClaims$).get(claim.claimId);
+      const claimed = (await get(capturedClaims$)).get(claim.claimId);
       if (!claimed) {
         throw new Error("Successful queue claim has no captured run graph");
       }

@@ -669,18 +669,6 @@ export function resolveEffectivePolicyRouteFromSnapshot(params: {
   };
 }
 
-/** Whether the exact policy can use the member's logical subscription routes. */
-export function modelPolicyUsesPersonalMetadata(
-  catalog: ModelCatalog,
-  policy: ModelRoutePolicy,
-): boolean {
-  return policyCanUsePersonalMetadata({
-    catalog,
-    policy,
-    credentialScope: parsePolicyRoute(policy).credentialScope,
-  });
-}
-
 /** Share logical-account selection with queue graphs that own the batch read. */
 export function memberModelRouteContextFromAccounts(
   userId: string,
