@@ -4,14 +4,8 @@ import type {
   AgentRunModelPin,
   AgentRunPreCreateSource,
   ResolveModelProviderEnvironmentArgs,
-  RunModelProviderArgs,
-  CreateRunErrorResult,
   ResolvedModelProviderEnvironment,
   PermissionManifest,
-  AgentRunMetadata,
-  ApiErrorResponse,
-  QueueFirstRunClaimed,
-  CreateRunRouteResult,
   BuiltinRuntimeTargetRegistration,
 } from "./agent-run-contracts";
 import {
@@ -120,6 +114,7 @@ import {
   type QueuedUserMessageContextType,
   queuedUserMessageTriggerSource,
   type QueueFirstRunAssociation,
+  type QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import {
   activateUsageAllowanceWindowsForRun,
@@ -669,6 +664,7 @@ import {
 import {
   type RunStatus,
   unifiedRunRequestSchema,
+  type CreateRunResponse,
 } from "@okouai/api-contracts/contracts/runs";
 import {
   type ConnectorSlug,
@@ -20821,3 +20817,74 @@ type StorageManifestSource =
   | "compose_volume"
   | "artifact"
   | "unknown";
+
+interface AgentRunMetadata {
+  // Run provenance for workflow schedule automations.
+  readonly workflowAutomationId?: string;
+  readonly triggerBrief?: string;
+  readonly autonomyBudget?: number;
+  readonly codexServiceTier?: CodexServiceTier;
+  readonly reasoningEffort?: ReasoningEffort | null;
+}
+
+type QueueFirstRunClaimed = Extract<
+  QueueFirstRunClaimResult,
+  { readonly kind: "claimed" }
+>;
+
+type CreateRunSuccessResult = {
+  readonly status: 201;
+  readonly body: CreateRunResponse;
+  readonly queueFirstClaim?: QueueFirstRunClaimed;
+  readonly pendingActivation?: PendingRunActivation;
+};
+
+type ApiErrorResponse<Status extends number, Code extends string> = {
+  readonly status: Status;
+  readonly body: {
+    readonly error: {
+      readonly message: string;
+      readonly code: Code;
+    };
+  };
+};
+
+type CreateRunRouteResult =
+  | CreateRunSuccessResult
+  | ApiErrorResponse<400, "BAD_REQUEST">
+  | ApiErrorResponse<403, "FORBIDDEN">
+  | ApiErrorResponse<404, "NOT_FOUND">
+  | (ApiErrorResponse<409, "CONFLICT"> & {
+      /** Producer-facing classification; the HTTP response body is unchanged. */
+      readonly admissionFailure?: "subscription_account_disconnected";
+    })
+  | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
+  | ApiErrorResponse<402, "PRO_REQUIRED">
+  | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
+
+type CreateRunErrorResult = Exclude<
+  CreateRunRouteResult,
+  { readonly status: 201 }
+>;
+
+/** The model-selection facts of one run that its model environment reads. */
+interface RunModelProviderArgs {
+  /** The run's single catalog snapshot; every model decision reads it. */
+  readonly catalog: ModelCatalog;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly modelProviderId?: string;
+  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
+  readonly modelProviderType?: string;
+  /** Captured by the product entry point for this request only. This skips
+   * an identity lookup, never the fresh environment or admission checks. */
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
+  readonly selectedModelOverride?: string;
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
+  readonly piExecution: boolean;
+  readonly retainedRunId?: string;
+  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly agentRunMetadata?: AgentRunMetadata;
+  readonly queueFirstAssociation?: QueueFirstRunAssociation;
+}
