@@ -1,4 +1,10 @@
 import { z } from "zod";
+import type { RunProducerBinding } from "./pi-memory-producer-contract";
+import {
+  producerBindingStart,
+  advanceProducerBinding,
+  producerBindingRowSchema,
+} from "./run-producer-binding-plan";
 import { and, eq, lt, sql, type SQL } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -40,6 +46,7 @@ export interface PendingLaunchTailInput {
   readonly bindingThreadId: string | undefined;
   readonly action: ChatThreadSessionResolutionAction | undefined;
   readonly requestMemory: boolean;
+  readonly producerRunBinding: RunProducerBinding | undefined;
   readonly needsBinding: boolean;
   readonly binding: Binding | undefined;
 }
@@ -57,6 +64,7 @@ const tailRecordSchema = z.discriminatedUnion("phase", [
   }),
 ]);
 export const pendingLaunchTailRowSchema = z.union([
+  producerBindingRowSchema,
   tailRecordSchema,
   z.object({ id: z.string() }),
 ]);
@@ -73,12 +81,25 @@ interface TailStatement {
   readonly sql: SQL;
   readonly previousSessionId: string | null;
 }
+type ProducerStatement = Extract<
+  ReturnType<typeof producerBindingStart>,
+  { readonly kind: "statement" }
+>;
+type ProducerRecord = z.output<typeof producerBindingRowSchema>;
 type PendingLaunchTailProgress =
   | TailStatement
+  | ProducerStatement
   | { readonly kind: "done"; readonly binding: Binding | undefined };
 
 /** Only facts of the successful inserted Run are needed, not a second Run read. */
 export function pendingLaunchTailStart(
+  input: PendingLaunchTailInput,
+): PendingLaunchTailProgress {
+  const producer = producerBindingStart(input.producerRunBinding);
+  return producer.kind === "statement" ? producer : memoryTailStart(input);
+}
+
+function memoryTailStart(
   input: PendingLaunchTailInput,
 ): PendingLaunchTailProgress {
   const snapshot = input.snapshot;
@@ -205,11 +226,52 @@ function advanceBindingRead(
   };
 }
 
+function producerStep(
+  step: TailStatement | ProducerStatement,
+): step is ProducerStatement {
+  return (
+    step.phase === "storage" ||
+    step.phase === "account" ||
+    step.phase === "key" ||
+    step.phase === "reference" ||
+    step.phase === "connection" ||
+    step.phase === "secret" ||
+    step.phase === "surface" ||
+    step.phase === "quota" ||
+    step.phase === "flags" ||
+    step.phase === "bind"
+  );
+}
+function producerRecord(row: Record): row is ProducerRecord {
+  return (
+    "memory_storage_id" in row ||
+    ("phase" in row &&
+      (row.phase === "storage" ||
+        row.phase === "account" ||
+        row.phase === "key" ||
+        row.phase === "reference" ||
+        row.phase === "connection" ||
+        row.phase === "secret" ||
+        row.phase === "surface" ||
+        row.phase === "quota" ||
+        row.phase === "flags"))
+  );
+}
+
 export function advancePendingLaunchTail(
   input: PendingLaunchTailInput,
-  step: TailStatement,
+  step: TailStatement | ProducerStatement,
   rows: readonly Record[],
 ): PendingLaunchTailProgress {
+  if (producerStep(step)) {
+    const producer = advanceProducerBinding(
+      input.producerRunBinding,
+      { runId: input.runId, status: "pending" },
+      step,
+      rows.filter(producerRecord),
+    );
+    return producer.kind === "statement" ? producer : memoryTailStart(input);
+  }
   switch (step.phase) {
     case "memory-flags": {
       return advanceMemoryFlags(input, rows);

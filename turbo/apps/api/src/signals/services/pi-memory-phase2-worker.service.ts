@@ -16,14 +16,13 @@ import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { createAgentRun$ } from "./background-agent-run.service";
-import type { PersistProducerRunBinding } from "./agent-run-contracts";
-import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,
-  resolvePiMemoryPhase2Credential,
-} from "./pi-memory-phase2-credential.service";
+  type RunProducerBinding,
+} from "./pi-memory-producer-contract";
+import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
+import { resolvePiMemoryPhase2Credential } from "./pi-memory-phase2-credential.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -229,25 +228,19 @@ function createPiMemoryProducerRunBinding(
   claim: ClaimedPiMemoryPhase2Job,
   credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
   selectionDigest: string,
-): PersistProducerRunBinding {
-  // Pi memory's own same-transaction admission fence and claim binding.
-  // A failed launch only re-validates; binding it would strand the job.
-  return async (tx, run) => {
-    await credential.validate(tx);
-    if (run.status === "pending") {
-      await bindPiMemoryPhase2MaintenanceRun(tx, {
-        runId: run.runId,
-        binding: {
-          memoryStorageId: claim.memoryStorageId,
-          orgId: claim.orgId,
-          userId: claim.userId,
-          leaseToken: claim.leaseToken,
-          claimedRevision: claim.claimedRevision,
-          claimedBaseVersionId: claim.baseVersion.versionId,
-          selectionDigest,
-        },
-      });
-    }
+): RunProducerBinding {
+  return {
+    requestStage1: false,
+    phase2: {
+      memoryStorageId: claim.memoryStorageId,
+      orgId: claim.orgId,
+      userId: claim.userId,
+      leaseToken: claim.leaseToken,
+      claimedRevision: claim.claimedRevision,
+      claimedBaseVersionId: claim.baseVersion.versionId,
+      selectionDigest,
+      credential: credential.proof,
+    },
   };
 }
 
@@ -329,7 +322,7 @@ const dispatchClaim$ = command(
         modelProviderCredentialScope:
           credential.pin.modelProviderCredentialScope,
         agentRunModelPin: credential.pin,
-        persistProducerRunBinding: createPiMemoryProducerRunBinding(
+        producerRunBinding: createPiMemoryProducerRunBinding(
           claim,
           credential,
           selectionDigest,

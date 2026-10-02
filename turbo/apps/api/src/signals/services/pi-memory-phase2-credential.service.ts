@@ -5,8 +5,6 @@ import {
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
@@ -17,9 +15,7 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { secrets } from "@okouai/db/schema/secret";
-import { storages } from "@okouai/db/schema/storage";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
@@ -36,22 +32,13 @@ import {
   PI_MEMORY_PHASE2_BYOK_MODEL,
 } from "./pi-memory-phase2-usage.service";
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
+import {
+  PiMemoryPhase2CredentialError,
+  type PiMemoryPhase2CredentialFailure as CredentialFailure,
+} from "./pi-memory-producer-contract";
+import { piMemoryCredentialProof } from "./run-producer-binding-plan";
+
 type ReadDb = Pick<Db, "select">;
-
-type CredentialFailure =
-  | "source_credentials_missing"
-  | "credential_unavailable"
-  | "provider_model_unsupported"
-  | "model_route_unavailable"
-  | "pi_memory_disabled"
-  | "storage_binding_changed";
-
-export class PiMemoryPhase2CredentialError extends Error {
-  constructor(readonly errorClass: CredentialFailure) {
-    super("Pi memory Phase 2 credential admission failed");
-    this.name = "PiMemoryPhase2CredentialError";
-  }
-}
 
 function reject(reason: CredentialFailure): never {
   throw new PiMemoryPhase2CredentialError(reason);
@@ -448,23 +435,13 @@ async function prepareSubscription(
     }
     signal.throwIfAborted();
   }
-  const proof = JSON.stringify(snapshot);
-
   return {
     quota: {
       providerClass: "codex",
       accessToken,
       accountId: externalAccountId,
     } satisfies PiMemoryQuotaSource,
-    validate: async (tx: Tx) => {
-      // Final admission is database-only. Any later row/ciphertext change,
-      // including equivalent re-encryption, requires a fresh admission proof.
-      const current = await readQuotaPairSnapshot(tx, sourceId);
-      signal.throwIfAborted();
-      if (JSON.stringify(current) !== proof) {
-        reject("credential_unavailable");
-      }
-    },
+    quotaPair: snapshot,
   };
 }
 
@@ -512,49 +489,6 @@ export async function resolvePiMemoryPhase2Credential(
     pin,
     route,
     quota,
-    validate: async (tx: Tx) => {
-      signal.throwIfAborted();
-      // Candidate ownership and the entire selection are locked by the claim;
-      // old source runs may have expired before this maintenance attempt.
-      const [storage] = await tx
-        .select({ id: storages.id })
-        .from(storages)
-        .where(
-          and(
-            eq(storages.id, claim.memoryStorageId),
-            eq(storages.orgId, claim.orgId),
-            eq(storages.userId, claim.userId),
-            eq(storages.headVersionId, claim.baseVersion.versionId),
-          ),
-        )
-        .for("share");
-      if (!storage) {
-        reject("storage_binding_changed");
-      }
-      if (
-        JSON.stringify(
-          await credentialSnapshot(catalogSnapshot, tx, selected),
-        ) !== JSON.stringify(captured)
-      ) {
-        reject("credential_unavailable");
-      }
-      await subscription?.validate(tx);
-      const featureSwitchContextRows2 = await tx
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(userFeatureSwitchRowCondition(claim.orgId, claim.userId));
-      const context = featureSwitchContextFromRows(
-        claim.orgId,
-        claim.userId,
-        featureSwitchContextRows2,
-      );
-      signal.throwIfAborted();
-      if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
-        reject("pi_memory_disabled");
-      }
-    },
+    proof: piMemoryCredentialProof(selected, captured, subscription?.quotaPair),
   };
 }

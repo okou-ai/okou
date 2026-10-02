@@ -10,7 +10,7 @@ import {
   allowanceSnapshotSchema as snapshotRow,
 } from "./pending-launch-allowance-plan";
 import { state, computed, command, type State, type Computed } from "ccstate";
-import { settle, onRejection, tapError, safeSync } from "../utils";
+import { settle, onRejection, safeSync } from "../utils";
 import {
   conflict,
   badRequestMessage,
@@ -245,8 +245,6 @@ import {
 } from "./model-provider-account.service";
 import type {
   RunCallback,
-  DispatchFailedRunCallbacks,
-  PersistProducerRunBinding,
   AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
@@ -509,7 +507,12 @@ import {
   agentConnectorScopeFromRows,
   type CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
-import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
+import type { RunProducerBinding } from "./pi-memory-producer-contract";
+import {
+  producerBindingStart,
+  advanceProducerBinding,
+  producerBindingRowSchema as producerRow,
+} from "./run-producer-binding-plan";
 import {
   buildAgentToolsPromptInputs,
   buildAgentToolsPrompt,
@@ -4503,7 +4506,7 @@ export type PendingRunArguments = Pick<
   | "codexServiceTier"
   | "queueFirstAssociation"
   | "timingDimensions"
-  | "persistProducerRunBinding"
+  | "producerRunBinding"
 > & { readonly threadSessionResolution?: PendingThreadSessionResolution };
 
 export interface CommitPreparedLaunchArgs {
@@ -4710,9 +4713,8 @@ export interface CreateAgentRunArgs {
   readonly agentRunMetadata?: AgentRunMetadata;
   /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
-  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
+  readonly producerRunBinding?: RunProducerBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -10950,7 +10952,10 @@ function tailFacts(
     chatThreadId: args.persistence.rows.metadata.chatThreadId,
     bindingThreadId: args.createArgs.chatThreadId,
     action: args.createArgs.threadSessionResolution?.action,
-    requestMemory: Boolean(claim),
+    requestMemory:
+      Boolean(claim) ||
+      (!claim && args.createArgs.producerRunBinding?.requestStage1 === true),
+    producerRunBinding: claim ? undefined : args.createArgs.producerRunBinding,
     needsBinding:
       Boolean(args.createArgs.chatThreadId) &&
       !admission.validatedThreadSession,
@@ -11047,11 +11052,6 @@ export const commitPreparedPendingLaunch$ = command(
               )) {
                 await tx.execute(statement);
               }
-            } else {
-              await args.createArgs.persistProducerRunBinding?.(tx, {
-                runId: rowsPersisted.run.id,
-                status: "pending",
-              });
             }
             const input = tailFacts(args, claim, admission, rowsPersisted);
             let tail = pendingLaunchTailStart(input);
@@ -15291,7 +15291,6 @@ export function flushQueueFirstClaimLostTiming(args: {
 
 export interface AtomicLaunchRunInput {
   readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
-  readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly enforceBuiltInCredits: boolean;
   readonly context: FinalizedPreparedRunContext;
@@ -15440,7 +15439,7 @@ const commitFailedDirectLaunch$ = command(
     const message =
       args.error instanceof Error ? args.error.message : "Run failed";
     const rows = failedDirectLaunchRows(args, message);
-    const committed = await input.db.transaction(async (tx) => {
+    const committed = await set(writeDb$).transaction(async (tx) => {
       await acquireOfficialWorkflowRunCatalogAdmissionLock(
         tx,
         input.context.officialWorkflowRun,
@@ -15487,35 +15486,24 @@ const commitFailedDirectLaunch$ = command(
       if (args.callbackRows.length > 0) {
         await tx.insert(agentRunCallbacks).values([...args.callbackRows]);
       }
-      await input.args.persistProducerRunBinding?.(tx, {
-        runId: identity.runId,
-        status: "failed",
-      });
+      const producer = input.args.producerRunBinding;
+      let binding = producerBindingStart(producer);
+      while (binding.kind === "statement") {
+        const step = binding;
+        const rows = parseRawRows(producerRow, await tx.execute(step.sql));
+        signal.throwIfAborted();
+        binding = advanceProducerBinding(
+          producer,
+          { runId: identity.runId, status: "failed" },
+          step,
+          rows,
+        );
+      }
       return { createdAt };
     });
     signal.throwIfAborted();
     if ("status" in committed) {
       return committed;
-    }
-    if (input.args.dispatchFailedCallbacks) {
-      await tapError(
-        set(
-          input.args.dispatchFailedCallbacks,
-          {
-            db: input.db,
-            runId: identity.runId,
-            error: message,
-            callbacks: input.args.callbacks ?? [],
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to dispatch failed-run callbacks", {
-            runId: identity.runId,
-            error,
-          });
-        },
-      );
     }
     return {
       status: 201,
@@ -15911,7 +15899,6 @@ const completePreparedAgentRun$ = command(
     return await set(
       createAtomicLaunchRun$,
       {
-        db,
         args,
         enforceBuiltInCredits,
         context: launchContext,
@@ -16050,8 +16037,7 @@ export interface CreateAgentRunCommandArgs {
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunsCreateAgentRunMetadata;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
-  readonly persistProducerRunBinding?: PersistProducerRunBinding;
+  readonly producerRunBinding?: RunProducerBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -16648,13 +16634,11 @@ export function buildCreateAgentRunArgs(
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
     },
-    dispatchFailedCallbacks: command.dispatchFailedCallbacks,
-    persistProducerRunBinding: async (tx, run) => {
-      await command.persistProducerRunBinding?.(tx, run);
-      // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
-      if (run.status === "pending" && command.chatThreadId) {
-        await requestPiMemoryStage1DayForAdmittedRun(tx, run.runId);
-      }
+    producerRunBinding: {
+      ...command.producerRunBinding,
+      requestStage1:
+        Boolean(command.chatThreadId) ||
+        command.producerRunBinding?.requestStage1 === true,
     },
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }

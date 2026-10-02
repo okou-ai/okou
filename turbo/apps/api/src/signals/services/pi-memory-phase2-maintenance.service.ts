@@ -223,44 +223,6 @@ function exactActiveMaintenanceCondition(args: {
   );
 }
 
-/** Bind the run before its transaction can make a runner job visible. */
-export async function bindPiMemoryPhase2MaintenanceRun(
-  tx: Tx,
-  args: {
-    readonly binding: PiMemoryPhase2MaintenanceRunBinding;
-    readonly runId: string;
-  },
-): Promise<void> {
-  const [bound] = await tx
-    .update(piMemoryPhase2Jobs)
-    .set({ maintenanceRunId: args.runId, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(piMemoryPhase2Jobs.memoryStorageId, args.binding.memoryStorageId),
-        eq(piMemoryPhase2Jobs.orgId, args.binding.orgId),
-        eq(piMemoryPhase2Jobs.userId, args.binding.userId),
-        eq(piMemoryPhase2Jobs.status, "leased"),
-        eq(piMemoryPhase2Jobs.leaseToken, args.binding.leaseToken),
-        eq(piMemoryPhase2Jobs.sandboxLeaseToken, args.binding.leaseToken),
-        eq(piMemoryPhase2Jobs.claimedRevision, args.binding.claimedRevision),
-        eq(
-          piMemoryPhase2Jobs.claimedBaseVersionId,
-          args.binding.claimedBaseVersionId,
-        ),
-        eq(
-          piMemoryPhase2Jobs.claimedSelectionDigest,
-          args.binding.selectionDigest,
-        ),
-        sql`${piMemoryPhase2Jobs.maintenanceRunId} IS NULL`,
-        sql`${piMemoryPhase2Jobs.leaseExpiresAt} > ${nowDate()}`,
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
-  if (!bound) {
-    throw new Error("Pi memory Phase 2 maintenance run lost its claim fence");
-  }
-}
-
 async function updateSelectionWatermarks(
   tx: Tx,
   payload: PiMemoryPhase2MaintenanceCallbackPayload,

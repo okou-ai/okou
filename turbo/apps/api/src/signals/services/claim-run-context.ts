@@ -1817,7 +1817,7 @@ export interface RunContext {
     readonly context: CommitPreparedLaunchArgs["context"];
     readonly args: Omit<
       CommitPreparedLaunchArgs["createArgs"],
-      "persistProducerRunBinding"
+      "producerRunBinding"
     >;
   };
   readonly identity: CommitPreparedLaunchArgs["identity"];
@@ -2160,7 +2160,7 @@ type PromptDiscordContext = {
 
 type ClaimQueueRunCommandArgs = Omit<
   CreateQueueFirstAgentRunCommandArgs,
-  "dispatchFailedCallbacks" | "persistProducerRunBinding"
+  "producerRunBinding"
 >;
 
 type ClaimRejectionContext =
