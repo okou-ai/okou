@@ -102,6 +102,7 @@ chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
 crypto-bigint = { version = "0.7", default-features = false }
 des = { version = "0.9", default-features = false }
+eax = { version = "0.6.1", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 getrandom = { version = "0.4", default-features = false }
@@ -136,6 +137,7 @@ serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false }
 serde_path_to_error = { version = "0.1", default-features = false }
 serde_yaml_ng = { version = "0.10", default-features = false }
+sha1 = { version = "0.11", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }

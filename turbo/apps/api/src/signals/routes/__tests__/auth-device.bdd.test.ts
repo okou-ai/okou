@@ -1459,101 +1459,22 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       );
     };
 
+    // A new authorization supersedes any unfinished session for this owner.
     for (let index = 0; index < 9; index += 1) {
       await completeClaudeCodeAccount(index, [200]);
     }
-    const candidates = await Promise.all(
-      ["a", "b"].map(async (candidate) => {
-        const started = await authDevice.requestClaudeCodeStart(
-          member,
-          "personal",
-          [200],
-          { mode: "add" },
-        );
-        if (started.status !== 200) {
-          throw new Error("Expected account authorization to start");
-        }
-        const state = new URL(started.body.browserUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Missing account authorization state");
-        }
-        return {
-          sessionToken: started.body.sessionToken,
-          code: `limit-${candidate}#${state}`,
-        };
-      }),
-    );
-    server.use(
-      http.post(
-        "https://platform.claude.com/v1/oauth/token",
-        async ({ request }) => {
-          const body = await request.json();
-          if (
-            !body ||
-            typeof body !== "object" ||
-            !("code" in body) ||
-            typeof body.code !== "string"
-          ) {
-            throw new Error("Expected authorization code exchange");
-          }
-          return HttpResponse.json({
-            access_token: body.code,
-            expires_in: 31_536_000,
-            scope: "user:profile user:inference",
-          });
-        },
-      ),
-      http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
-        const token = request.headers
-          .get("authorization")
-          ?.replace("Bearer ", "");
-        if (token !== "limit-a" && token !== "limit-b") {
-          return new HttpResponse(null, { status: 503 });
-        }
-        return HttpResponse.json({
-          account: {
-            email: `${token}@example.com`,
-            has_claude_max: false,
-            has_claude_pro: true,
-          },
-          organization: {
-            name: token,
-            organization_type: "claude_pro",
-            rate_limit_tier: "default_claude_ai",
-          },
-          application: { name: "Claude Code", slug: "claude-code" },
-        });
-      }),
-    );
-    // Account limits are not protected against concurrent connects.
-    const completions = [];
-    for (const candidate of candidates) {
-      completions.push(
-        await authDevice.requestClaudeCodeComplete(
-          member,
-          candidate.sessionToken,
-          candidate.code,
-          [200, 400],
-        ),
+    const tenthClaudeCodeAccount = await completeClaudeCodeAccount(9, [200]);
+    if (tenthClaudeCodeAccount.status !== 200) {
+      throw new Error("Expected the tenth Claude Code account to connect");
+    }
+    const claudeCodeLimit = await completeClaudeCodeAccount(10, [400]);
+    if (claudeCodeLimit.status !== 400) {
+      throw new Error(
+        "Expected Claude Code account limit to return bad request",
       );
     }
-    expect(
-      completions
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual([200, 400]);
-    const rejected = completions.find((result) => {
-      return result.status === 400;
-    });
-    if (!rejected) {
-      throw new Error("Expected the eleventh account to be rejected");
-    }
-    expectApiError(rejected.body);
-    expect(rejected.body.error).toMatchObject({
+    expectApiError(claudeCodeLimit.body);
+    expect(claudeCodeLimit.body.error).toMatchObject({
       code: "BAD_REQUEST",
       message:
         "A maximum of 10 claude-code-oauth-token accounts can be connected",
@@ -1566,14 +1487,11 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       return provider.type === "claude-code-oauth-token";
     });
     expect(claudeAccounts).toHaveLength(10);
-    expect(
-      claudeAccounts.filter((provider) => {
-        return (
-          provider.accountEmail === "limit-a@example.com" ||
-          provider.accountEmail === "limit-b@example.com"
-        );
+    expect(claudeAccounts).toContainEqual(
+      expect.objectContaining({
+        id: tenthClaudeCodeAccount.body.provider.id,
       }),
-    ).toHaveLength(1);
+    );
 
     await support.deletePersonalModelProvider(
       member,

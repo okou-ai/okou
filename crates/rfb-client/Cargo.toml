@@ -1,6 +1,6 @@
 [package]
 name = "rfb-client"
-version = "0.20.0"
+version = "0.21.0"
 edition.workspace = true
 publish = false
 description = "Bounded RFB authentication, captures and serialized input"
@@ -10,6 +10,7 @@ aes = { workspace = true, features = ["zeroize"] }
 base64 = { workspace = true, features = ["alloc"] }
 crypto-bigint = { workspace = true, features = ["alloc", "zeroize"] }
 des = { workspace = true, features = ["zeroize"] }
+eax = { workspace = true }
 flate2 = { workspace = true, features = ["rust_backend"] }
 getrandom = { workspace = true }
 hmac = { workspace = true, features = ["zeroize"] }
@@ -19,10 +20,11 @@ rand = { version = "0.10", default-features = false, features = ["std", "std_rng
 rsa = { workspace = true, features = ["encoding", "std"] }
 rsasl = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+sha1 = { workspace = true, features = ["zeroize"] }
 sha2 = { workspace = true, features = ["zeroize"] }
 subtle = { workspace = true }
 thiserror = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["io-util", "time", "rt"] }
+tokio = { workspace = true, features = ["io-util", "time", "rt", "sync"] }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 uuid = { workspace = true, features = ["v4"] }
 webpki-roots = { workspace = true }

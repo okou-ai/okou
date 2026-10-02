@@ -22,6 +22,7 @@ mod input;
 mod memory;
 mod pixels;
 mod qemu_sasl;
+mod rsa_aes;
 mod session;
 mod transport;
 mod trust;
@@ -40,6 +41,7 @@ use zeroize::Zeroizing;
 pub use capture::{Capture, CaptureMetadata};
 pub use framebuffer::{Cursor, FramebufferConnection};
 pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
+pub use rsa_aes::{RsaAesCredentials, RsaAesSecurity, RsaServerKeyPin};
 pub use session::{Geometry, Session};
 pub use transport::AuthenticatedStream;
 pub use trust::{ClientIdentity, TrustRoots};
@@ -85,6 +87,8 @@ pub enum AuthenticationStage {
     AppleSrpAuthentication,
     /// Completing Apple RSA/SRP security type 33 and SecurityResult.
     AppleRsaSrpAuthentication,
+    /// Completing exact RSA-AES key/proof/credential and SecurityResult exchange.
+    RsaAesAuthentication,
 }
 
 impl AuthenticationStage {
@@ -101,6 +105,7 @@ impl AuthenticationStage {
             Self::AppleDhAuthentication => "apple_dh_authentication",
             Self::AppleSrpAuthentication => "apple_srp_authentication",
             Self::AppleRsaSrpAuthentication => "apple_rsa_srp_authentication",
+            Self::RsaAesAuthentication => "rsa_aes_authentication",
         }
     }
 }
@@ -519,6 +524,35 @@ where
     Ok(authenticated)
 }
 
+/// Authenticate an owned RFB 3.8 stream using one exact RSA-AES profile.
+///
+/// The caller must acquire the complete SHA256 RSA public-key-wire pin out of
+/// band. Authentication-only `ne` modes do not protect later traffic: a future
+/// product caller must independently enforce its verified outer transport. No
+/// owner/Runner profile is enabled by this engine API. Cancellation/failure drops
+/// the owned stream; bounded CPU jobs may finish separately, retaining permits
+/// and dropping their private inputs without keeping the stream alive.
+/// Server keys are limited to 2048/3072/4096 bits and exponent 65537; every client
+/// handshake generates a fresh, fixed 2048-bit ephemeral key.
+pub async fn authenticate_rsa_aes<S>(
+    stream: S,
+    security: RsaAesSecurity,
+    credentials: RsaAesCredentials,
+    pin: RsaServerKeyPin,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    authentication::phase(
+        AuthenticationStage::RsaAesAuthentication,
+        deadline,
+        rsa_aes::authenticate(stream, security, credentials, pin, deadline),
+    )
+    .await
+}
+
 /// Authenticate an owned stream using one exact certificate-TLS VeNCrypt profile.
 ///
 /// `server_name` is the saved DNS name or unbracketed IP used for certificate
@@ -664,6 +698,12 @@ pub enum Error {
     InvalidAppleRsaSrpPassword,
     #[error("invalid or unsupported Apple RSA/SRP key or framing")]
     InvalidAppleRsaSrpParameters,
+    #[error("RSA-AES credentials require 1-255 UTF-8 bytes without NUL and the exact subtype")]
+    InvalidRsaAesCredential,
+    #[error("invalid or unsupported RSA-AES parameters, proof or transition")]
+    InvalidRsaAesExchange,
+    #[error("RSA-AES server key does not match the required owner pin")]
+    RsaServerKeyMismatch,
     #[error("OS cryptographic randomness failed")]
     Randomness,
     #[error("invalid TLS server name")]
