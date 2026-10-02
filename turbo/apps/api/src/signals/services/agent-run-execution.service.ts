@@ -3551,51 +3551,19 @@ class AgentRunStorageObjects {
   private readonly requestedEntries$ = computed(async (get) => {
     return (await get(this.storagePlan$)).requested;
   });
-  private readonly materializeRequestedEntries$ =
-    this.createStorageEntryMaterializationCommand("requested");
-  private readonly materializeSessionEntries$ =
-    this.createStorageEntryMaterializationCommand("session");
-  private readonly materializeRequestedStorage$ =
-    this.createRequestedStorageMaterializationCommand();
-  readonly materializeAgentRunStorage$ = command(
-    async (
-      { set },
-      plan: AgentRunStoragePlan,
-      signal: AbortSignal,
-    ): Promise<MaterializedAgentRunStorage> => {
-      const [{ requestedPlan, requested }, sessionWriteback] =
-        await Promise.all([
-          set(this.materializeRequestedStorage$, plan, signal),
-          set(this.materializeSessionEntries$, signal),
-        ]);
-      signal.throwIfAborted();
-      const metadataEntries =
-        plan.sessionWriteback === undefined
-          ? storageEntriesMetadata(requestedPlan)
-          : combinePreparedStorageEntries({
-              requested: storageEntriesMetadata(requestedPlan),
-              sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
-            });
-      const [metadata, prepared] = await Promise.all([
-        finalizePreparedStorage({ entries: metadataEntries }),
-        finalizePreparedStorage({
-          entries:
-            sessionWriteback === undefined
-              ? requested
-              : combinePreparedStorageEntries({ requested, sessionWriteback }),
-          timing: requestedPlan.input.timing,
-          stats: requestedPlan.input.stats,
-        }),
+  private readonly requestedMaterialization$ =
+    this.createStorageEntryMaterializationObject("requested");
+  private readonly sessionMaterialization$ =
+    this.createStorageEntryMaterializationObject("session");
+
+  readonly materialization$ = computed(
+    async (get): Promise<AgentRunStorageMaterialization> => {
+      const plan = await get(this.storagePlan$);
+      const [requested, session] = await Promise.all([
+        get(this.requestedMaterialization$),
+        get(this.sessionMaterialization$),
       ]);
-      signal.throwIfAborted();
-      return {
-        resolved: {
-          metadata,
-          requested: requestedPlan,
-          sessionWriteback: plan.sessionWriteback,
-        },
-        prepared,
-      };
+      return { plan, requested, session };
     },
   );
   private createStorageSelectionObject(): Computed<
@@ -3936,7 +3904,7 @@ class AgentRunStorageObjects {
     });
     return { storageRequests$, presignedCacheRows$ };
   }
-  private createStorageEntryMaterializationCommand(
+  private createStorageEntryMaterializationObject(
     branch: "requested" | "session",
   ) {
     const entries$ =
@@ -3945,17 +3913,13 @@ class AgentRunStorageObjects {
         : this.sessionWritebackEntries$;
     const { storageRequests$, presignedCacheRows$ } =
       this.createStoragePresignedUrlObjects(branch);
-    return command(
-      async (
-        { get, set },
-        signal: AbortSignal,
-      ): Promise<PreparedStorageEntries | undefined> => {
+    return computed(
+      async (get): Promise<StorageEntryMaterializationInput | undefined> => {
         const [plan, requests, prefetchedRows] = await Promise.all([
           get(entries$),
           get(storageRequests$),
           get(presignedCacheRows$),
         ]);
-        signal.throwIfAborted();
         if (!plan || !requests) {
           return undefined;
         }
@@ -3964,35 +3928,7 @@ class AgentRunStorageObjects {
             "Storage cache snapshot is missing from the prepared entry graph",
           );
         }
-        return await set(
-          materializeStorageEntries$,
-          { plan, presigned: { ...requests, prefetchedRows } },
-          signal,
-        );
-      },
-    );
-  }
-  private createRequestedStorageMaterializationCommand() {
-    return command(
-      async ({ get, set }, plan: AgentRunStoragePlan, signal: AbortSignal) => {
-        if (plan.missingArtifacts.length > 0) {
-          throw new Error(
-            `Run storage must be initialized before execution: ${plan.missingArtifacts
-              .map((artifact) => {
-                return artifact.name;
-              })
-              .join(", ")}`,
-          );
-        }
-        const [requestedPlan, requested] = await Promise.all([
-          get(this.requestedEntries$),
-          set(this.materializeRequestedEntries$, signal),
-        ]);
-        signal.throwIfAborted();
-        if (!requested) {
-          throw new Error("Requested storage entries were not materialized");
-        }
-        return { requestedPlan, requested };
+        return { plan, presigned: { ...requests, prefetchedRows } };
       },
     );
   }
@@ -4002,9 +3938,77 @@ function createAgentRunStorageObjects(input: AgentRunStorageInput) {
   const owner = new AgentRunStorageObjects(input);
   return {
     storagePlan$: owner.storagePlan$,
-    materializeAgentRunStorage$: owner.materializeAgentRunStorage$,
+    materialization$: owner.materialization$,
   };
 }
+
+type StorageEntryMaterializationInput = Parameters<
+  (typeof materializeStorageEntries$)["write"]
+>[1];
+interface AgentRunStorageMaterialization {
+  readonly plan: AgentRunStoragePlan;
+  readonly requested: StorageEntryMaterializationInput | undefined;
+  readonly session: StorageEntryMaterializationInput | undefined;
+}
+const materializeAgentRunStorage$ = command(
+  async (
+    { set },
+    capture: AgentRunStorageMaterialization,
+    signal: AbortSignal,
+  ): Promise<MaterializedAgentRunStorage> => {
+    const { plan } = capture;
+    // Reads may prefetch before final admission. Reject missing resources only
+    // in materialization, preserving admission and failed-launch ownership.
+    if (plan.missingArtifacts.length > 0) {
+      throw new Error(
+        `Run storage must be initialized before execution: ${plan.missingArtifacts
+          .map((artifact) => {
+            return artifact.name;
+          })
+          .join(", ")}`,
+      );
+    }
+    const requestedInput = capture.requested;
+    if (!requestedInput) {
+      throw new Error("Requested storage entries were not materialized");
+    }
+    const requestedPlan = requestedInput.plan;
+    const [requested, sessionWriteback] = await Promise.all([
+      set(materializeStorageEntries$, requestedInput, signal),
+      capture.session === undefined
+        ? Promise.resolve(undefined)
+        : set(materializeStorageEntries$, capture.session, signal),
+    ]);
+    signal.throwIfAborted();
+    const metadataEntries =
+      plan.sessionWriteback === undefined
+        ? storageEntriesMetadata(requestedPlan)
+        : combinePreparedStorageEntries({
+            requested: storageEntriesMetadata(requestedPlan),
+            sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
+          });
+    const [metadata, prepared] = await Promise.all([
+      finalizePreparedStorage({ entries: metadataEntries }),
+      finalizePreparedStorage({
+        entries:
+          sessionWriteback === undefined
+            ? requested
+            : combinePreparedStorageEntries({ requested, sessionWriteback }),
+        timing: requestedPlan.input.timing,
+        stats: requestedPlan.input.stats,
+      }),
+    ]);
+    signal.throwIfAborted();
+    return {
+      resolved: {
+        metadata,
+        requested: requestedPlan,
+        sessionWriteback: plan.sessionWriteback,
+      },
+      prepared,
+    };
+  },
+);
 
 // Execution context, launch preparation and pending atomic commit.
 
@@ -10400,6 +10404,15 @@ function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
       });
 }
 
+function runnerStorageReadInput(input: StorageMaterializationInput) {
+  return runnerStorageInput(
+    input.args,
+    runnerCheckpointArtifacts(input.args),
+    input.args.body,
+    input.storageManifestStats,
+  );
+}
+
 export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
   const { args, storageManifestStats } = input;
   const body = preparedRunnerJobBody(args);
@@ -10416,56 +10429,25 @@ export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
 }
 
 const prepareStorageInput$ = command(
-  async (
+  (
     _store,
     input: StorageMaterializationInput,
     signal: AbortSignal,
-  ): Promise<ReturnType<typeof prepareRunnerStorageInput>> => {
+  ): ReturnType<typeof prepareRunnerStorageInput> => {
     signal.throwIfAborted();
     // Token generation is owned by this command; the storage read graph only
     // needs the original vars and volume versions, never the random token.
-    return await Promise.resolve(prepareRunnerStorageInput(input));
+    return prepareRunnerStorageInput(input);
   },
 );
-
-function createStoragePreparationObjects(
-  internalInput$: State<StorageMaterializationInput | null>,
-) {
-  const storageInput$ = computed((get) => {
-    const input = get(internalInput$);
-    if (!input) {
-      throw new Error("Storage preparation input is not installed");
-    }
-    return runnerStorageInput(
-      input.args,
-      runnerCheckpointArtifacts(input.args),
-      input.args.body,
-      input.storageManifestStats,
-    );
-  });
-  const storageGraph$ = computed(async (get) => {
-    return createAgentRunStorageObjects(await get(storageInput$));
-  });
-  const storagePlan$ = computed(async (get) => {
-    return await get((await get(storageGraph$)).storagePlan$);
-  });
-  const materializeAgentRunStorage$ = command(
-    async ({ get, set }, plan: AgentRunStoragePlan, signal: AbortSignal) => {
-      const graph = await get(storageGraph$);
-      signal.throwIfAborted();
-      return await set(graph.materializeAgentRunStorage$, plan, signal);
-    },
-  );
-  return { storagePlan$, materializeAgentRunStorage$ };
-}
 
 const prepareStoredContextDraft$ = command(
   async (
     _store,
-    inputPromise: Promise<ReturnType<typeof prepareRunnerStorageInput>>,
+    input: ReturnType<typeof prepareRunnerStorageInput>,
     signal: AbortSignal,
   ): Promise<BuiltStoredExecutionContextDraft> => {
-    const { args, body, platformEnvironment } = await inputPromise;
+    const { args, body, platformEnvironment } = input;
     signal.throwIfAborted();
     // KMS key generation belongs to this explicit resource command, not a
     // computed read. It can run alongside the independent storage plan.
@@ -10510,95 +10492,62 @@ interface MaterializedRunnerStorage {
   readonly piResources: PreparedPiLaunchResources | undefined;
 }
 
-function createMaterializeStorageCommand(
-  storagePlan$: Computed<Promise<AgentRunStoragePlan>>,
-  materializeAgentRunStorage$: ReturnType<
-    typeof createAgentRunStorageObjects
-  >["materializeAgentRunStorage$"],
-) {
-  return command(
-    async (
-      { get, set },
-      inputPromise: Promise<ReturnType<typeof prepareRunnerStorageInput>>,
-      signal: AbortSignal,
-    ): Promise<MaterializedRunnerStorage> => {
-      const [input, plan] = await Promise.all([
-        inputPromise,
-        get(storagePlan$),
-      ]);
-      signal.throwIfAborted();
-      const { args } = input;
-      const storageManifestStats =
-        plan.requested.input.stats ?? input.storageManifestStats;
-      const preparedStorage = await measureApiDispatchTiming(
-        args.timing,
-        "api_dispatch_prepare_storage_manifest",
-        "nested",
-        async () => {
-          return await set(materializeAgentRunStorage$, plan, signal);
+const materializeRunnerStorage$ = command(
+  async (
+    { get, set },
+    input: ReturnType<typeof prepareRunnerStorageInput>,
+    storageInput: AgentRunStorageInput,
+    suppliedCapture: AgentRunStorageMaterialization | undefined,
+    signal: AbortSignal,
+  ): Promise<MaterializedRunnerStorage> => {
+    const capture =
+      suppliedCapture ??
+      (await get(createAgentRunStorageObjects(storageInput).materialization$));
+    signal.throwIfAborted();
+    const plan = capture.plan;
+    const { args } = input;
+    const storageManifestStats =
+      plan.requested.input.stats ?? input.storageManifestStats;
+    const preparedStorage = await measureApiDispatchTiming(
+      args.timing,
+      "api_dispatch_prepare_storage_manifest",
+      "nested",
+      async () => {
+        return await set(materializeAgentRunStorage$, capture, signal);
+      },
+      () => {
+        return storageManifestStats.overallDimensions();
+      },
+    );
+    signal.throwIfAborted();
+    const piResources =
+      args.deferredPiResources ??
+      (await set(
+        preparePiLaunchResources$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          piMemoryEnabled: isFeatureEnabled(
+            FeatureSwitchKey.PiMemory,
+            args.featureSwitchContext,
+          ),
+          runId: args.run.id,
+          resumeSession:
+            args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
+              ? args.resolved.resumeSession
+              : undefined,
+          storagePlan: preparedStorage.resolved,
+          previousRunStorageMounts: args.resolved.previousRunStorageMounts,
+          piSandbox: args.piSandbox,
+          chatThreadId: args.chatThreadId,
+          piLaunchConfig: args.piLaunchConfig,
+          timing: args.timing,
         },
-        () => {
-          return storageManifestStats.overallDimensions();
-        },
-      );
-      signal.throwIfAborted();
-      const piResources =
-        args.deferredPiResources ??
-        (await set(
-          preparePiLaunchResources$,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            piMemoryEnabled: isFeatureEnabled(
-              FeatureSwitchKey.PiMemory,
-              args.featureSwitchContext,
-            ),
-            runId: args.run.id,
-            resumeSession:
-              args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
-                ? args.resolved.resumeSession
-                : undefined,
-            storagePlan: preparedStorage.resolved,
-            previousRunStorageMounts: args.resolved.previousRunStorageMounts,
-            piSandbox: args.piSandbox,
-            chatThreadId: args.chatThreadId,
-            piLaunchConfig: args.piLaunchConfig,
-            timing: args.timing,
-          },
-          signal,
-        ));
-      return { input, preparedStorage, piResources };
-    },
-  );
-}
-
-function createStorageMaterializationObjects(
-  storage?: ReturnType<typeof createAgentRunStorageObjects>,
-) {
-  const internalStorageInput$ = state<StorageMaterializationInput | null>(null);
-  const { storagePlan$, materializeAgentRunStorage$ } =
-    storage ?? createStoragePreparationObjects(internalStorageInput$);
-  const initializeStorageInput$ = command(
-    (
-      { set },
-      args: Omit<StorageMaterializationInput, "storageManifestStats">,
-      signal: AbortSignal,
-    ) => {
-      signal.throwIfAborted();
-      const input = {
-        ...args,
-        storageManifestStats: new StorageManifestBuildStats(),
-      };
-      set(internalStorageInput$, input);
-      return input;
-    },
-  );
-  const materializeStorage$ = createMaterializeStorageCommand(
-    storagePlan$,
-    materializeAgentRunStorage$,
-  );
-  return { initializeStorageInput$, storagePlan$, materializeStorage$ };
-}
+        signal,
+      ));
+    return { input, preparedStorage, piResources };
+  },
+);
 
 function preparedLaunchRowsArgs(args: {
   readonly commit: Omit<CommitPreparedLaunchArgs, "db">;
@@ -15860,40 +15809,42 @@ export function finalizedMaterializedLaunch(
 }
 
 function createLaunchObjects(
-  storage?: ReturnType<typeof createAgentRunStorageObjects>,
   callbackInputs$?: SelectedAgentRunGraphSources["callbackInputs$"],
 ) {
   const prepareCallbacks$ = createPrepareCallbacksCommand(callbackInputs$);
-  const { initializeStorageInput$, materializeStorage$ } =
-    createStorageMaterializationObjects(storage);
   const createAtomicLaunchRun$ = command(
     async (
       { set },
       input: AtomicLaunchRunInput,
+      suppliedStorage: AgentRunStorageMaterialization | undefined,
       signal: AbortSignal,
     ): Promise<QueueFirstAgentRunResult> => {
       const identity = prepareLaunchRunIdentity({
         resolved: input.context.resolved,
       });
-      const storageInput = set(
-        initializeStorageInput$,
-        {
-          args: atomicLaunchPayloadInput({
-            createArgs: input.args,
-            context: input.context,
-            run: {
-              id: identity.runId,
-              sessionId: identity.sessionId,
-              shouldCreateSession: identity.shouldCreateSession,
-            },
-            timing: input.timing,
-          }),
-        },
+      const storageInput = {
+        args: atomicLaunchPayloadInput({
+          createArgs: input.args,
+          context: input.context,
+          run: {
+            id: identity.runId,
+            sessionId: identity.sessionId,
+            shouldCreateSession: identity.shouldCreateSession,
+          },
+          timing: input.timing,
+        }),
+        storageManifestStats: new StorageManifestBuildStats(),
+      };
+      const contextInput = set(prepareStorageInput$, storageInput, signal);
+      const readInput = runnerStorageReadInput(storageInput);
+      // Storage, callbacks, KMS and allowance preparation remain independent.
+      const storage = set(
+        materializeRunnerStorage$,
+        contextInput,
+        readInput,
+        suppliedStorage,
         signal,
       );
-      const contextInput = set(prepareStorageInput$, storageInput, signal);
-      // Start storage and callback preparation together.
-      const storage = set(materializeStorage$, contextInput, signal);
       const callbacks = set(
         prepareCallbacks$,
         {
@@ -16003,6 +15954,7 @@ interface PrepareAgentRunArgs {
 }
 
 interface CompleteAgentRunArgs {
+  readonly storageMaterialization?: AgentRunStorageMaterialization;
   readonly prepared: PreparedAgentRun;
   readonly finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"];
 }
@@ -16254,6 +16206,7 @@ function createCompleteAgentRunCommand(
           timing,
           phaseTiming: input.prepared.phaseTiming,
         },
+        input.storageMaterialization,
         signal,
       );
     },
@@ -19098,16 +19051,12 @@ function createSelectedStorageObjects(
   const selectedStoragePlan$ = computed(async (get) => {
     return await get((await get(storageGraph$)).storagePlan$);
   });
-  const materializeAgentRunStorage$ = command(
-    async ({ get, set }, plan: AgentRunStoragePlan, signal: AbortSignal) => {
-      const graph = await get(storageGraph$);
-      signal.throwIfAborted();
-      return await set(graph.materializeAgentRunStorage$, plan, signal);
-    },
-  );
+  const materialization$ = computed(async (get) => {
+    return await get((await get(storageGraph$)).materialization$);
+  });
   const storage = {
     storagePlan$: selectedStoragePlan$,
-    materializeAgentRunStorage$,
+    materialization$,
   };
   const storagePlan$ = computed(async (get) => {
     const input = await get(selectedStorageInput$);
@@ -19312,11 +19261,23 @@ export function createSelectedAgentRunObjects(
     },
   );
   const { createAtomicLaunchRun$ } = createLaunchObjects(
-    earlyStorage?.storage,
     sources?.callbackInputs$,
   );
-  const completeAgentRun$ = createCompleteAgentRunCommand(
+  const completePrepared$ = createCompleteAgentRunCommand(
     createAtomicLaunchRun$,
+  );
+  const completeAgentRun$ = command(
+    async ({ get, set }, input: CompleteAgentRunArgs, signal: AbortSignal) => {
+      const storageMaterialization = earlyStorage
+        ? await get(earlyStorage.storage.materialization$)
+        : undefined;
+      signal.throwIfAborted();
+      return await set(
+        completePrepared$,
+        { ...input, storageMaterialization },
+        signal,
+      );
+    },
   );
   return {
     runArgs$: graph.runArgs$,

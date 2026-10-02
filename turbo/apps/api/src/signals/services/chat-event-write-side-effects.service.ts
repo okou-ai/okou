@@ -1,18 +1,7 @@
-import { settleIncludingAbort } from "../utils";
+import type { settleIncludingAbort } from "../utils";
 import { logger } from "../../lib/log";
 
 const L = logger("ChatEventWrite");
-
-/** The event already committed; an auxiliary failure must not reject that send. */
-export async function attemptChatEventSideEffect(
-  operation: string,
-  chatThreadId: string,
-  work: () => Promise<unknown>,
-): Promise<void> {
-  const startedAt = performance.now();
-  const result = await settleIncludingAbort(work());
-  reportChatEventSideEffect(operation, chatThreadId, startedAt, result);
-}
 
 /** Report a settled owned operation; takes facts, never execution callbacks. */
 export function reportChatEventSideEffect(
