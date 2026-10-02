@@ -9,6 +9,10 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 
 - `agent$`: Agent configuration and its organization-default identity.
 - `plan$`: organization plan capabilities; capacity consumes only this group.
+- `allowance$`: org-keyed entitlement/window snapshot plus GET-only Stripe
+  subscription preparation. Routing admission, final admission and refresh
+  preparation share this read. Entitlement CAS and allowance window activation
+  remain in the launch transaction; they are not speculative reads.
 - `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
   It shares `plan$` rather than rereading the entitlement.
 - `memberModels$`: connected member model accounts, configured models and encrypted
@@ -53,15 +57,16 @@ preparation admission checks use that snapshot. Expired-credit and usage-pack
 calculations retain their existing reads. Another run's spending or a payment
 between capture and admission does not replace the balance snapshot.
 The captured plan also determines the free-plan admission bit. Thread does not
-restore plan `FOR UPDATE`; the Pi maintenance entrypoint is unchanged and is
-separate work. Account transaction validation, official workflow admission,
+restore plan `FOR UPDATE`; the Pi maintenance entrypoint also captures the plan outside its launch transaction
+and uses that snapshot without `FOR UPDATE`. Its credential, subscription,
+job/version and allowance activation fences remain unchanged. Account transaction validation, official workflow admission,
 thread/session, lease and queue fences remain intact.
 
 ## Scope and acceptance boundary
 
 This change restructures the existing Agent/model sources and the Connector
-sources merged in #37563. It adds no new official-workflow/storage or allowance
-groups. #37563's removed current-catalog revalidation remains removed: a pick
+sources merged in #37563. It adds no new official-workflow/storage groups. The org-only `allowance$`
+group prepares its read once; launch-time allowance activation remains fenced. #37563's removed current-catalog revalidation remains removed: a pick
 uses one captured generation, including when the live catalog changes during
 preload. Thread connector selections still read in S3 but start independently
 of prompt/model material. Per-account credential failures remain settled until
@@ -114,5 +119,11 @@ and does not claim production latency improvements from a small sample.
    fences. Check SQL start times against S3 start, not merely request return.
    Report account-specific/nullable cases and any uncaptured group honestly.
 
-Future official-workflow/storage and allowance work follows this recipe. Adding
-those groups does not authorize changing plan-lock or Pi maintenance behavior.
+Feature switches and member metadata reuse the org+user authority key, including
+when integration reconciliation changes the selected Agent. Agent session
+configuration and memory/Connector thread ownership reuse the captured Agent;
+thread/session/queue conditional checks stay intact without joining `agents`
+again. Memory scheduling uses captured flags, not a transaction-time reread.
+
+Future official-workflow/storage work follows this recipe. Adding those groups
+does not authorize changing other fences or Pi maintenance behavior.

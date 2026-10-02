@@ -92,7 +92,6 @@ export function chatThreadSessionSelection() {
       storageMounts: agentSessions.storageMounts,
       conversationId: agentSessions.conversationId,
     },
-    agent: { id: agents.id, orgId: agents.orgId, owner: agents.owner },
     conversation: {
       id: conversations.id,
       runId: conversations.runId,

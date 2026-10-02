@@ -606,6 +606,59 @@ describe("Usage Allowance", () => {
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(10);
   });
 
+  it("fails the selected allowance preload without rereading Stripe and recovers only on the next request", async () => {
+    const { actor, agentId, orgId } = await builtInAllowanceActor({
+      credits: -10,
+    });
+    const subscriptionId = usageAllowanceSubscriptionId(orgId);
+    await postUsageAllowanceInvoicePaid(context.signal, {
+      orgId,
+      userId: actor.userId,
+      customerId: generatedStripeCustomerId(),
+      subscriptionId,
+      effectiveAt: addDays(nowDate(), -30),
+      expiresAt: addDays(nowDate(), -1),
+      shortWindowSeconds: 5 * 60 * 60,
+      shortWindowUnits: 10,
+      weeklyWindowSeconds: 7 * 24 * 60 * 60,
+      weeklyWindowUnits: 10,
+    });
+    context.mocks.stripe.subscriptions.retrieve
+      .mockRejectedValueOnce(
+        new Error("owned allowance subscription read failed"),
+      )
+      .mockResolvedValue({
+        id: subscriptionId,
+        status: "active",
+        items: {
+          data: [
+            {
+              current_period_end: Math.floor(
+                addDays(nowDate(), 30).getTime() / 1000,
+              ),
+            },
+          ],
+        },
+      });
+    const api = createRunsApi(context);
+    await expect(
+      api.readThreadLaunchFailure(actor, {
+        agentId,
+        prompt: "fail the captured allowance read",
+      }),
+    ).resolves.toStrictEqual({
+      pickError: "owned allowance subscription read failed",
+      inputError: "internal_error",
+    });
+    const next = await createBuiltInRun(
+      actor,
+      agentId,
+      "next request captures healthy allowance",
+    );
+    expect(next.runId).toStrictEqual(expect.any(String));
+    expect(next.status).toBe("pending");
+  });
+
   it("rejects built-in model run admission after allowance is exhausted", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 0,
