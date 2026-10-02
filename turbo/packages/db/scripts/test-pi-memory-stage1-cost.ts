@@ -61,6 +61,15 @@ export async function validatePiMemoryStage1Cost(
       ),
     );
     const oldCapture = await migration("1119_billing_attribution_capture");
+    // Migration 1309 retired the public helpers the historical body calls.
+    await client.query(
+      oldCapture.slice(
+        oldCapture.indexOf("CREATE FUNCTION billing_usage_source("),
+        oldCapture.indexOf(
+          "--> statement-breakpoint\nCREATE FUNCTION capture_billing_run_attribution()",
+        ),
+      ),
+    );
     await client.query(
       oldCapture.slice(
         oldCapture.indexOf(

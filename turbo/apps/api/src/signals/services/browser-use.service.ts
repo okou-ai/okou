@@ -409,12 +409,12 @@ async function withBrowserUseCdpSocket<T>(
   cdpUrl: string,
   signal: AbortSignal,
   operation: (socket: WebSocket) => Promise<T>,
-  observePhase?: BrowserUseCdpPhaseObserver,
+  observeTimeout?: BrowserUseCdpTimeoutObserver,
 ): Promise<T> {
   const websocketUrl = await observeBrowserUseCdpPhase(
     "discovery",
     signal,
-    observePhase,
+    observeTimeout,
     async () => {
       return await browserUseCdpWebSocketUrl(cdpUrl, signal);
     },
@@ -426,7 +426,7 @@ async function withBrowserUseCdpSocket<T>(
       await observeBrowserUseCdpPhase(
         "connection",
         signal,
-        observePhase,
+        observeTimeout,
         async () => {
           return await waitForBrowserUseCdpSocket(socket, signal);
         },
@@ -531,33 +531,30 @@ type BrowserUseCdpPreflightPhase =
   | "connection"
   | "target"
   | "controls";
-type BrowserUseCdpPhaseOutcome = "ok" | "timeout" | "cancelled" | "error";
-type BrowserUseCdpPhaseObserver = (
+type BrowserUseCdpTimeoutObserver = (
   phase: BrowserUseCdpPreflightPhase,
-  outcome: BrowserUseCdpPhaseOutcome,
   durationMs: number,
 ) => void;
 
 async function observeBrowserUseCdpPhase<T>(
   phase: BrowserUseCdpPreflightPhase,
   signal: AbortSignal,
-  observe: BrowserUseCdpPhaseObserver | undefined,
+  observeTimeout: BrowserUseCdpTimeoutObserver | undefined,
   operation: () => Promise<T>,
 ): Promise<T> {
-  if (!observe) {
+  if (!observeTimeout) {
     return await operation();
   }
   const startedAt = performance.now();
   const result = await settleIncludingAbort(operation());
-  const outcome = result.ok
-    ? "ok"
-    : signal.aborted
-      ? signal.reason instanceof Error && signal.reason.name === "TimeoutError"
-        ? "timeout"
-        : "cancelled"
-      : "error";
-  observe(phase, outcome, Math.round(performance.now() - startedAt));
   if (!result.ok) {
+    if (
+      signal.aborted &&
+      signal.reason instanceof Error &&
+      signal.reason.name === "TimeoutError"
+    ) {
+      observeTimeout(phase, Math.round(performance.now() - startedAt));
+    }
     throw result.error;
   }
   return result.value;
@@ -2255,23 +2252,17 @@ export async function preflightBrowserUseUserAction(
   | { readonly kind: "stale" }
 > {
   return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
-    const observePhase: BrowserUseCdpPhaseObserver = (
+    const observeTimeout: BrowserUseCdpTimeoutObserver = (
       phase,
-      outcome,
       durationMs,
     ) => {
-      const fields = {
+      L.warn("Browser input preflight CDP phase", {
         type: "browser_input_preflight_phase",
         attemptId,
         phase,
-        outcome,
+        outcome: "timeout",
         durationMs,
-      };
-      if (outcome === "ok" && durationMs < 1000) {
-        L.debug("Browser input preflight CDP phase", fields);
-      } else {
-        L.warn("Browser input preflight CDP phase", fields);
-      }
+      });
     };
     return await withBrowserUseCdpSocket(
       cdpUrl,
@@ -2280,7 +2271,7 @@ export async function preflightBrowserUseUserAction(
         const attached = await observeBrowserUseCdpPhase(
           "target",
           cdpSignal,
-          observePhase,
+          observeTimeout,
           async () => {
             return await openBrowserUseApplyPage(socket, target, cdpSignal);
           },
@@ -2291,7 +2282,7 @@ export async function preflightBrowserUseUserAction(
         const resolved = await observeBrowserUseCdpPhase(
           "controls",
           cdpSignal,
-          observePhase,
+          observeTimeout,
           async () => {
             return await resolveBrowserUseApplyFields(
               socket,
@@ -2310,7 +2301,7 @@ export async function preflightBrowserUseUserAction(
             }
           : { kind: "stale" };
       },
-      observePhase,
+      observeTimeout,
     );
   });
 }

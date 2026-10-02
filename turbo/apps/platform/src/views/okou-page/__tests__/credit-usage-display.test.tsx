@@ -1,8 +1,10 @@
-import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  type ChatEventUsagePayload,
+  chatThreadUsageContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
   click,
   queryAllByRoleFast,
@@ -11,7 +13,6 @@ import {
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-
 const context = testContext();
 
 function usageButton(total: string): HTMLElement {
@@ -74,7 +75,7 @@ async function openUsage(total: string): Promise<void> {
 test("Credit usage preserves unknown historical model identifiers", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000803",
-    "run-credit-historical-model",
+    "a0000000-0000-4000-a000-000000000803",
     {
       version: 1,
       totalCredits: 40,
@@ -98,7 +99,7 @@ test("Credit usage preserves unknown historical model identifiers", async () => 
 test("Credit usage formats unknown image-provider names for people to read", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000804",
-    "run-credit-image-provider",
+    "a0000000-0000-4000-a000-000000000804",
     {
       version: 1,
       totalCredits: 50,
@@ -122,7 +123,7 @@ test("Credit usage formats unknown image-provider names for people to read", asy
 test("Credit usage merges every Social Search vendor into one row and preserves model totals", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000805",
-    "run-credit-social-platforms",
+    "a0000000-0000-4000-a000-000000000805",
     {
       version: 1,
       totalCredits: 102,
@@ -195,6 +196,55 @@ test("Credit usage merges every Social Search vendor into one row and preserves 
   }
 });
 
+test("Chat stays usable and shows no hint amount when settled usage cannot be read", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000806";
+  const runId = "a0000000-0000-4000-a000-000000000806";
+  mockChatLifecycle(context, {
+    threadId,
+    chatEvents: [
+      {
+        id: "usage-unavailable-input",
+        createdAt: "2026-08-14T12:00:00.000Z",
+        role: "user",
+        content: "Show my answer",
+        runId,
+      },
+      {
+        id: "usage-unavailable-answer",
+        createdAt: "2026-08-14T12:00:01.000Z",
+        role: "assistant",
+        content: "The conversation is still available.",
+        runId,
+      },
+      {
+        id: "usage-unavailable-hint",
+        createdAt: "2026-08-14T12:00:02.000Z",
+        role: "assistant",
+        content: null,
+        runId,
+        usage: {
+          version: 1,
+          totalCredits: 999,
+          settledAt: "2026-08-14T12:00:02.000Z",
+          breakdown: [],
+        },
+      },
+    ],
+  });
+  context.mocks.api(chatThreadUsageContract.read, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+  });
+  await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
+  await expect(
+    screen.findByText("The conversation is still available."),
+  ).resolves.toBeVisible();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label") === "Credit usage 999";
+    }),
+  ).toBeFalsy();
+});
+
 test("Credit usage names each model row from the server catalog, keeping retired models and mapping upstream IDs", async () => {
   const catalog = createMockModelCatalog();
   context.mocks.api(modelCatalogContract.get, ({ respond }) => {
@@ -214,8 +264,8 @@ test("Credit usage names each model row from the server catalog, keeping retired
     });
   });
   await setupUsageChat(
-    "b0000000-0000-4000-a000-000000000806",
-    "run-credit-catalog-names",
+    "b0000000-0000-4000-a000-000000000807",
+    "a0000000-0000-4000-a000-000000000807",
     {
       version: 1,
       totalCredits: 30,

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import { createPinnedSubscriptionRunFixture } from "../../../test-fixtures/personal-subscription";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
   upsertOrgPlanEntitlementFixture,
@@ -13,7 +12,6 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
-
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
@@ -47,7 +45,6 @@ import {
   cleanupTimedOutRun,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
-
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext({ connectorCatalog: true });
 const runs = createRunsApi(context);
@@ -973,6 +970,9 @@ describe("personal subscription run identity", () => {
     ).toStrictEqual([accountB]);
     await runs.requestCancelRun(f.actor, first, [200]);
     await runs.requestCancelRun(f.actor, second, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: accountB }] });
   }, 20_000);
 
   it("reuses the same Claude identity across a reconnect", async () => {
@@ -987,6 +987,9 @@ describe("personal subscription run identity", () => {
       Authorization: `Bearer ${f.connected.token}`,
     });
     await runs.requestCancelRun(f.actor, runId, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: captured }] });
   });
 
   it.each([
@@ -1209,143 +1212,6 @@ describe("exact subscription selection", () => {
           ? { "ChatGPT-Account-ID": "identity-a" }
           : {}),
       });
-    },
-  );
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "rejects missing and foreign %s sources without selecting the owned account",
-    async (type) => {
-      const f = await fixture(type);
-      const foreign = await fixture(type);
-      for (const sourceId of [randomUUID(), foreign.connected.id]) {
-        const rejected = await createPinnedSubscriptionRunFixture(
-          {
-            owner: f.actor,
-            agentId: f.agentId,
-            accountId: sourceId,
-            type,
-            model: f.model,
-          },
-          context.signal,
-        );
-        expect(rejected.status).toBe(409);
-      }
-      const next = await f.start();
-      const claim = await f.claim(next);
-      expect(accountId(claim, type)).toBe(f.connected.id);
-      await expect(resolve(claim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      await runs.requestCancelRun(f.actor, next, [200]);
-    },
-  );
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "admits a captured connected %s account while another account is active",
-    async (type) => {
-      const f = await fixture(type);
-      const auth = createAuthDeviceApiActions(context);
-      let accountB: string;
-      if (type === "claude-code-oauth-token") {
-        mockClaudeCodeTokenEndpoint({
-          accountEmail: "identity-b@example.com",
-          organizationName: "Workspace B",
-        });
-        const started = await auth.requestClaudeCodeStart(
-          f.actor,
-          "personal",
-          [200],
-          { mode: "add" },
-        );
-        if (started.status !== 200) {
-          throw new Error("Expected OAuth start");
-        }
-        const state = new URL(started.body.browserUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Expected OAuth state");
-        }
-        const completed = await auth.requestClaudeCodeComplete(
-          f.actor,
-          started.body.sessionToken,
-          `code#${state}`,
-          [200],
-        );
-        if (completed.status !== 200) {
-          throw new Error("Expected OAuth completion");
-        }
-        accountB = completed.body.provider.id;
-      } else {
-        mockCodexDeviceAuthProvider({
-          tokenScope: "personal",
-          accountId: "identity-b",
-        });
-        const started = await auth.requestCodexStart(
-          f.actor,
-          "personal",
-          [200],
-          {
-            mode: "add",
-          },
-        );
-        if (started.status !== 200) {
-          throw new Error("Expected device auth start");
-        }
-        const completed = await auth.requestCodexComplete(
-          f.actor,
-          started.body.sessionToken,
-          [200],
-        );
-        if (
-          !("status" in completed.body) ||
-          completed.body.status !== "complete"
-        ) {
-          throw new Error("Expected device auth completion");
-        }
-        accountB = completed.body.provider.id;
-      }
-      await support.activatePersonalModelProviderAccount(f.actor, accountB);
-      const listed = await support.listPersonalModelProviders(f.actor, [200]);
-      expect(listed.body).toMatchObject({
-        modelProviders: expect.arrayContaining([
-          expect.objectContaining({ id: f.connected.id, isActive: false }),
-          expect.objectContaining({ id: accountB, isActive: true }),
-        ]),
-      });
-
-      // Current model-first public input cannot select a concrete ID directly.
-      const admitted = await createPinnedSubscriptionRunFixture(
-        {
-          owner: f.actor,
-          agentId: f.agentId,
-          accountId: f.connected.id,
-          type: f.type,
-          model: f.model,
-        },
-        context.signal,
-      );
-      if (admitted.status !== 201) {
-        throw new Error(
-          "Expected the connected captured account to be admitted",
-        );
-      }
-      expect(
-        (await runs.readRun(f.actor, admitted.body.runId)).source,
-      ).toMatchObject({
-        providerType: f.type,
-        credentialScope: "member",
-        account: { status: "connected", id: f.connected.id },
-      });
-      const claim = await f.claim(admitted.body.runId);
-      expect(accountId(claim, f.type)).toBe(f.connected.id);
-      await expect(resolve(claim, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-        ...(type === "codex-oauth-token"
-          ? { "ChatGPT-Account-ID": "identity-a" }
-          : {}),
-      });
-      await runs.requestCancelRun(f.actor, admitted.body.runId, [200]);
     },
   );
 });

@@ -26,6 +26,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readRunUploadedFileSources } from "./helpers/runtime-state";
 
@@ -212,6 +213,7 @@ function mockCloudflareVideoFrame(
 async function artifactActor(
   displayName: string,
   actor: ApiTestUser = bdd.user(),
+  tier: "pro" | "team" = "pro",
 ): Promise<ArtifactActor> {
   const objectStore = chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
@@ -219,7 +221,7 @@ async function artifactActor(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
+  await api.grantProEntitlement(actor, { tier });
   // Artifact scenarios claim the chat run through the native Runner; Fable
   // stays off Pi while Sonnet 5 would run API-first.
   await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
@@ -778,17 +780,21 @@ describe("artifact upload provenance", () => {
   it.each(["automation-schedule", "automation-event"] as const)(
     "attributes run uploads to the %s source",
     async (triggerSource) => {
+      // Webhook automations require a Team workspace.
       const owner = await artifactActor(
         `Artifacts API ${triggerSource} source agent`,
+        bdd.user(),
+        triggerSource === "automation-event" ? "team" : "pro",
       );
-      const run = await api.createDirectRun(owner.actor, {
-        agentId: owner.agentId,
-        prompt: `create ${triggerSource} artifact`,
-        modelProviderType: "anthropic-api-key",
-        triggerSource,
-        vars: { OKOU_AGENT_ID: owner.agentId },
-        secrets: { OKOU_TOKEN: "bdd-artifact-okou-token" },
-      });
+      // A run fired through the real schedule or webhook automation entry.
+      const workflows = createWorkflowsBddApi(context);
+      const run =
+        triggerSource === "automation-schedule"
+          ? await workflows.startScheduledAutomationRun(
+              owner.actor,
+              owner.agentId,
+            )
+          : await workflows.startEventAutomationRun(owner.actor, owner.agentId);
       const fileId = randomUUID();
       owner.objectStore.addObject({
         bucket: "test-user-artifacts",

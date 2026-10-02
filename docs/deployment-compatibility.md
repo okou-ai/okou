@@ -3628,15 +3628,43 @@ JWT claims. Access and refresh tokens remain placeholders; the firewall still
 injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
-Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
-old claimable contexts have drained. An older Runner ignores the additive field.
-A newer Runner served by an older API, or claiming a context without the field,
-still writes the original placeholder account ID; that combination is not
-supported with Codex 0.156.1 and may fail workspace routing. An explicitly
-empty field remains rejected. API rollback before #36402 therefore also
-requires rolling back the Runner. Removing the missing-field compatibility
-branch is tracked by #36420.
+and Pi. PR #36402 deployed the additive selected-ID field before #36422 upgraded
+the Runner to Codex 0.156.1. The guest now requires a non-empty
+`CODEX_OAUTH_ACCOUNT_ID` in OAuth mode: missing, empty, or whitespace-only values
+fail setup before creating or replacing `auth.json` or the runtime model catalog.
+It no longer substitutes a fabricated workspace identity. API-key, no-auth, and
+Pi behavior is unchanged.
+
+An API containing #36402's writer works with both the previous and new guest.
+An older API or persisted context without the selected-ID field remains
+unsupported with Codex 0.156.1; the new guest rejects it before auth publication
+instead of attempting workspace discovery with a placeholder. The existing
+production rollback resolver requires targets to descend from
+`45b537a596a153a91b76c3bc7223187840f52775` (#37242), which contains the selected-ID
+writer at `422349af6b60adf89b7719a440b89ba76c10e25f` (#36402). This cleanup adds no
+rollback restriction or data migration. Any separately authorized rollback
+before #36402 would also need the older compatible Runner.
+
+Removal evidence recorded for #36420 on 2026-09-30 at 16:54 UTC:
+
+- Read-only MaskDB queries returned zero Codex OAuth runs created before
+  `2026-09-24 00:30:00` in `queued`, `pending`, or `running`, and zero persisted
+  `runner_job_queue` rows before that cutoff across all providers. The cutoff
+  conservatively follows the API writer's recorded 00:18:51 UTC deployment.
+  Execution-context JSON was not retrieved; these are old-row inventories, not a
+  direct field-presence census.
+- Production API deployment `6764085091` at main
+  `12bf1328f729cb92261515cb20331d0d49023a77` succeeded at 16:04:04 UTC and contains
+  the writer. GitHub ancestry comparison confirms the enforced rollback boundary
+  above also contains it.
+- #36422 recorded the owner's confirmation that old Runners and claimable old
+  contexts were drained, plus a successful real Codex OAuth run on local-11.
+  Those are historical upgrade receipts, not a new host-version inventory or a
+  live run of this cleanup head.
+
+Recheck these conditions before merge/release if serving or rollback state
+changes. This cleanup does not change the provider credential-rotation policy
+or claim a workspace-switch fix.
 
 ## Chat thread archived flag (2026-09-24)
 
@@ -7624,6 +7652,63 @@ returns the original message instead of creating another. After the one-minute
 replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.
+
+## Browser advisory retirement (2026-09-29)
+
+The Browser thread key is retired after the preparation in #37097
+(`405c21452010c37e4ce2facd51c3f1b231646e7d`). Fresh creation and resume use the
+existing owned-thread partial unique index and exact state predicates. Instance
+publication inserts the provider instance and screen, then conditionally changes
+the observed logical Browser in the same command-local transaction. A lost
+logical claim rolls those inserts back. Stop, retention and profile retirement
+keep their existing exact resource identities and conditional writes.
+
+All eight Browser transaction scopes now belong to local commands. They execute
+SQL directly; neither a transaction parameter nor a transaction-capturing helper
+callback leaves the scope. Provider HTTP, CDP, encryption, object storage and
+realtime stay outside those transactions. Post-commit provider cleanup finishes
+its ownership handoff before the caller observes cancellation. No persisted
+field, public API shape, App floor or Runner contract changes.
+
+At the 2026-09-29 inspection, both public API build-info endpoints returned
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555` (API 1.695.0). Vercel's four production
+aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) all
+resolved to READY deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, promoted at
+01:12:01 UTC. That commit descends from #37097, and more than one hour had elapsed
+since promotion when checked; the API's configured invocation bound is 300
+seconds. The normal rollback resolver also requires
+`45b537a596a153a91b76c3bc7223187840f52775`, a descendant of #37097, so supported
+rollback targets contain the Browser preparation. This is read-only rollout
+verification, not a new production deployment.
+
+Recheck serving and supported rollback versions before deployment if either
+changes. Do not restore a pre-#37097 Browser writer alongside the keyless API.
+The preceding prepared API and this version use the same existing constraints,
+state comparisons and statement order during rolling overlap.
+
+## Custom account advisory retirement (2026-09-29)
+
+The custom account target acquisition is removed after the preparation from
+#37097 (`405c21452010c37e4ce2facd51c3f1b231646e7d`). Exact custom-account deletion
+no longer calls the advisory interface; shared account selection and lifecycle
+paths now take it only for builtin targets. Existing definition protection,
+ordered account row writes, account uniqueness, selection foreign keys and
+whole-transaction rollback recovery continue to arbitrate custom writes.
+
+Read-only deployment checks on 2026-09-29 found all production API aliases
+(`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) at READY
+Vercel deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, commit
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555`. Both public build-info endpoints
+returned that commit and version 1.695.0. This version contains #37097; the
+01:12:01 UTC promotion preceded inspection by more than the configured
+300-second API invocation bound. The existing mandatory rollback floor
+`45b537a596a153a91b76c3bc7223187840f52775` also contains #37097.
+
+Recheck supported serving and rollback writers before deployment if that state
+changes. A pre-#37097 custom-account writer cannot coexist with this retirement.
+No App/Runner contract, persisted field or additional deployment floor changes.
+The remaining builtin target lock and transaction-passing account helpers are
+separate Release 1 work, not exceptions to the confirmed final architecture.
 
 ## Canonical Chat application sessions
 

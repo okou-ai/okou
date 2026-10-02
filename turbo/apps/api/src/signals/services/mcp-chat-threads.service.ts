@@ -10,12 +10,13 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
+import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -23,7 +24,7 @@ import {
 } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 
@@ -122,190 +123,222 @@ function literalTitlePattern(title: string): string {
   return `%${title.replace(/[\\%_]/gu, String.raw`\$&`)}%`;
 }
 
-function threadQuery(
-  db: Db,
-  principal: Principal,
-  input: McpListChatThreadsInput,
-  cursor: Cursor | null,
-  threadId?: string,
-) {
-  const conditions: (SQL | undefined)[] = [
-    eq(chatThreads.userId, principal.userId),
-    eq(agents.orgId, principal.orgId),
-    threadId === undefined ? undefined : eq(chatThreads.id, threadId),
-    input.agentId === undefined
-      ? undefined
-      : eq(chatThreads.agentId, input.agentId),
-    input.title === undefined
-      ? undefined
-      : ilike(chatThreads.title, literalTitlePattern(input.title)),
-    input.since === undefined
-      ? undefined
-      : gte(chatThreads.lastMessageAt, sql`${input.since}::timestamp`),
-    input.before === undefined
-      ? undefined
-      : lt(chatThreads.lastMessageAt, sql`${input.before}::timestamp`),
-    cursor === null
-      ? undefined
-      : sql`(${chatThreads.lastMessageAt}, ${chatThreads.id}) < (${cursor.lastMessageAt}::timestamp, ${cursor.threadId}::uuid)`,
-  ];
-  return db
-    .select({
-      threadId: chatThreads.id,
-      title: sql`left(${chatThreads.title}, ${TEXT_CHARACTER_LIMIT})`.mapWith(
-        nullableDriverValueDecoder(chatThreads.title),
-      ),
-      titleTruncated:
-        sql`coalesce(length(${chatThreads.title}) > ${TEXT_CHARACTER_LIMIT}, false)`.mapWith(
-          pgBooleanDecoder,
-        ),
-      agentId: agents.id,
-      agentName: agents.name,
-      agentDisplayName: agents.displayName,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      selectedModel: chatThreads.selectedModel,
-      createdAt: chatThreads.createdAt,
-      metadataUpdatedAt: chatThreads.updatedAt,
-      lastMessageAt: chatThreads.lastMessageAt,
-      // Preserve all six stored digits in continuation. The public fields have
-      // fixed six-digit syntax, but JavaScript Date projection has millisecond data.
-      cursorTime:
-        sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-          pgTextDecoder,
-        ),
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(and(...conditions))
-    .orderBy(
-      sql`${desc(chatThreads.lastMessageAt)} NULLS LAST`,
-      sql`${desc(chatThreads.id)} NULLS LAST`,
-    )
-    .limit(threadId === undefined ? input.limit + 1 : 1);
-}
+const threadQuery$ = command(
+  async (
+    { set },
+    args: {
+      readonly principal: Principal;
+      readonly input: McpListChatThreadsInput;
+      readonly cursor: Cursor | null;
+      readonly threadId?: string;
+    },
+    signal?: AbortSignal,
+  ) => {
+    const { principal, input, cursor, threadId } = args;
+    const db = set(writeDb$);
+    const conditions: (SQL | undefined)[] = [
+      eq(chatThreads.userId, principal.userId),
+      eq(agents.orgId, principal.orgId),
+      threadId === undefined ? undefined : eq(chatThreads.id, threadId),
+      input.agentId === undefined
+        ? undefined
+        : eq(chatThreads.agentId, input.agentId),
+      input.title === undefined
+        ? undefined
+        : ilike(chatThreads.title, literalTitlePattern(input.title)),
+      input.since === undefined
+        ? undefined
+        : gte(chatThreads.lastMessageAt, sql`${input.since}::timestamp`),
+      input.before === undefined
+        ? undefined
+        : lt(chatThreads.lastMessageAt, sql`${input.before}::timestamp`),
+      cursor === null
+        ? undefined
+        : sql`(${chatThreads.lastMessageAt}, ${chatThreads.id}) < (${cursor.lastMessageAt}::timestamp, ${cursor.threadId}::uuid)`,
+    ];
+    const rows = await db.transaction(
+      async (tx) => {
+        await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
+        return await tx
+          .select({
+            threadId: chatThreads.id,
+            title:
+              sql`left(${chatThreads.title}, ${TEXT_CHARACTER_LIMIT})`.mapWith(
+                nullableDriverValueDecoder(chatThreads.title),
+              ),
+            titleTruncated:
+              sql`coalesce(length(${chatThreads.title}) > ${TEXT_CHARACTER_LIMIT}, false)`.mapWith(
+                pgBooleanDecoder,
+              ),
+            agentId: agents.id,
+            agentName: agents.name,
+            agentDisplayName: agents.displayName,
+            defaultAgentId: orgMetadata.defaultAgentId,
+            selectedModel: chatThreads.selectedModel,
+            createdAt: chatThreads.createdAt,
+            metadataUpdatedAt: chatThreads.updatedAt,
+            lastMessageAt: chatThreads.lastMessageAt,
+            // Preserve all six stored digits in continuation. The public fields have
+            // fixed six-digit syntax, but JavaScript Date projection has millisecond data.
+            cursorTime:
+              sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+                pgTextDecoder,
+              ),
+          })
+          .from(chatThreads)
+          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(and(...conditions))
+          .orderBy(
+            sql`${desc(chatThreads.lastMessageAt)} NULLS LAST`,
+            sql`${desc(chatThreads.id)} NULLS LAST`,
+          )
+          .limit(threadId === undefined ? input.limit + 1 : 1);
+      },
+      { accessMode: "read only" },
+    );
+    signal?.throwIfAborted();
+    return rows;
+  },
+);
 
-type ThreadRow = Awaited<ReturnType<typeof threadQuery>>[number];
+type ThreadRow = {
+  readonly threadId: string;
+  readonly title: string | null;
+  readonly titleTruncated: boolean;
+  readonly agentId: string;
+  readonly agentName: string;
+  readonly agentDisplayName: string | null;
+  readonly defaultAgentId: string | null;
+  readonly selectedModel: string | null;
+  readonly createdAt: Date;
+  readonly metadataUpdatedAt: Date;
+  readonly lastMessageAt: Date;
+  readonly cursorTime: string;
+};
 
-async function projectThreads(
-  db: Db,
-  principal: Principal,
-  rows: readonly ThreadRow[],
-): Promise<McpChatThread[]> {
-  const models = await mcpChatThreadModels(
-    db,
-    principal,
-    rows.map((row) => {
-      return row.selectedModel;
-    }),
-  );
-  return rows.map((row) => {
-    const model = models.get(row.selectedModel);
-    if (!model) {
-      throw new Error("MCP thread model projection is missing");
+const projectThreads$ = command(
+  async (
+    { set },
+    principal: Principal,
+    rows: readonly ThreadRow[],
+    signal?: AbortSignal,
+  ): Promise<McpChatThread[]> => {
+    const models = await mcpChatThreadModels(
+      set(writeDb$),
+      principal,
+      rows.map((row) => {
+        return row.selectedModel;
+      }),
+    );
+    signal?.throwIfAborted();
+    return rows.map((row) => {
+      const model = models.get(row.selectedModel);
+      if (!model) {
+        throw new Error("MCP thread model projection is missing");
+      }
+      return {
+        threadId: row.threadId,
+        title: row.title,
+        titleTruncated: row.titleTruncated,
+        agent: {
+          agentId: row.agentId,
+          name:
+            agentDisplayName({
+              agentId: row.agentId,
+              defaultAgentId: row.defaultAgentId,
+              displayName: row.agentDisplayName,
+            }) ?? row.agentName,
+        },
+        model,
+        createdAt: formatMcpChatTimestamp(row.createdAt),
+        metadataUpdatedAt: formatMcpChatTimestamp(row.metadataUpdatedAt),
+        lastMessageAt: formatMcpChatTimestamp(row.lastMessageAt),
+        url: new URL(`/chats/${row.threadId}`, env("APP_URL")).toString(),
+      };
+    });
+  },
+);
+
+export const listMcpChatThreads$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpListChatThreadsInput,
+    signal?: AbortSignal,
+  ): Promise<McpThreadReadResult<McpListChatThreadsOutput>> => {
+    const filters = filterIdentity(input);
+    const cursor = input.cursor
+      ? decodeCursor(input.cursor, principal, filters)
+      : null;
+    if (input.cursor && !cursor) {
+      return {
+        kind: "invalid_cursor",
+        message:
+          "The thread cursor is invalid, expired, or belongs to different filters or authorization. Restart without cursor.",
+      };
+    }
+    const rows = await set(threadQuery$, { principal, input, cursor }, signal);
+    signal?.throwIfAborted();
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    const issuedAt = cursor?.issuedAt ?? now();
+    const nextCursor =
+      rows.length > input.limit && last
+        ? encodeCursor({
+            version: 1,
+            operation: "list_chat_threads",
+            userId: principal.userId,
+            orgId: principal.orgId,
+            filters,
+            issuedAt,
+            expiresAt: issuedAt + CURSOR_TTL_MS,
+            lastMessageAt: last.cursorTime,
+            threadId: last.threadId,
+          })
+        : null;
+    return {
+      kind: "ok" as const,
+      data: {
+        threads: await set(projectThreads$, principal, page, signal),
+        nextCursor,
+      },
+    };
+  },
+);
+
+export const getMcpChatThread$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpGetChatThreadInput,
+    signal?: AbortSignal,
+  ): Promise<McpThreadReadResult<McpGetChatThreadOutput>> => {
+    const rows = await set(
+      threadQuery$,
+      {
+        principal,
+        input: { limit: 1 },
+        cursor: null,
+        threadId: input.threadId,
+      },
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (rows.length === 0) {
+      return {
+        kind: "not_found" as const,
+        message:
+          "Chat thread not found or unavailable. Use list_chat_threads to find accessible threads.",
+      };
+    }
+    const [thread] = await set(projectThreads$, principal, rows, signal);
+    if (!thread) {
+      throw new Error("MCP thread projection is missing");
     }
     return {
-      threadId: row.threadId,
-      title: row.title,
-      titleTruncated: row.titleTruncated,
-      agent: {
-        agentId: row.agentId,
-        name:
-          agentDisplayName({
-            agentId: row.agentId,
-            defaultAgentId: row.defaultAgentId,
-            displayName: row.agentDisplayName,
-          }) ?? row.agentName,
-      },
-      model,
-      createdAt: formatMcpChatTimestamp(row.createdAt),
-      metadataUpdatedAt: formatMcpChatTimestamp(row.metadataUpdatedAt),
-      lastMessageAt: formatMcpChatTimestamp(row.lastMessageAt),
-      url: new URL(`/chats/${row.threadId}`, env("APP_URL")).toString(),
+      kind: "ok" as const,
+      data: { thread },
     };
-  });
-}
-
-export async function listMcpChatThreads(
-  db: Db,
-  principal: Principal,
-  input: McpListChatThreadsInput,
-): Promise<McpThreadReadResult<McpListChatThreadsOutput>> {
-  const filters = filterIdentity(input);
-  const cursor = input.cursor
-    ? decodeCursor(input.cursor, principal, filters)
-    : null;
-  if (input.cursor && !cursor) {
-    return {
-      kind: "invalid_cursor",
-      message:
-        "The thread cursor is invalid, expired, or belongs to different filters or authorization. Restart without cursor.",
-    };
-  }
-  return await db.transaction(
-    async (tx) => {
-      await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-      const rows = await threadQuery(tx, principal, input, cursor);
-      const page = rows.slice(0, input.limit);
-      const last = page.at(-1);
-      const issuedAt = cursor?.issuedAt ?? now();
-      const nextCursor =
-        rows.length > input.limit && last
-          ? encodeCursor({
-              version: 1,
-              operation: "list_chat_threads",
-              userId: principal.userId,
-              orgId: principal.orgId,
-              filters,
-              issuedAt,
-              expiresAt: issuedAt + CURSOR_TTL_MS,
-              lastMessageAt: last.cursorTime,
-              threadId: last.threadId,
-            })
-          : null;
-      return {
-        kind: "ok" as const,
-        data: {
-          threads: await projectThreads(tx, principal, page),
-          nextCursor,
-        },
-      };
-    },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
-  );
-}
-
-export async function getMcpChatThread(
-  db: Db,
-  principal: Principal,
-  input: McpGetChatThreadInput,
-): Promise<McpThreadReadResult<McpGetChatThreadOutput>> {
-  return await db.transaction(
-    async (tx) => {
-      await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
-      const rows = await threadQuery(
-        tx,
-        principal,
-        { limit: 1 },
-        null,
-        input.threadId,
-      );
-      if (rows.length === 0) {
-        return {
-          kind: "not_found" as const,
-          message:
-            "Chat thread not found or unavailable. Use list_chat_threads to find accessible threads.",
-        };
-      }
-      const [thread] = await projectThreads(tx, principal, rows);
-      if (!thread) {
-        throw new Error("MCP thread projection is missing");
-      }
-      return {
-        kind: "ok" as const,
-        data: { thread },
-      };
-    },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
-  );
-}
+  },
+);

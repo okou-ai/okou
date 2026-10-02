@@ -16,6 +16,7 @@ import { withXResourceClock } from "../../../test-fixtures/x-resource-usage";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -63,15 +64,21 @@ async function createRun(
     throw new Error("X resource test requires an organization");
   }
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  if (modelProvider === "built-in") {
+    await createChatEventsFixture(context).configureBuiltInPiModel(
+      actor,
+      "deepseek-v4.1-flash",
+    );
+  } else {
+    await runs.ensureOrgModelProvider(actor);
+  }
   const agent = await bdd.createAgent(actor, {
     displayName: "X resource accounting",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Read X resources",
-    modelProvider,
   });
   return {
     actor,

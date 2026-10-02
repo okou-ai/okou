@@ -11,9 +11,11 @@ import { and, desc, eq, ne, sql } from "drizzle-orm";
 
 import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 
 export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
@@ -148,38 +150,45 @@ function clerkRoleToCacheRole(role: string): "admin" | "member" {
   return role === "org:admin" ? "admin" : "member";
 }
 
-async function ensureTestOrgBillingRow(
-  writeDb: Db,
-  orgId: string,
-): Promise<void> {
-  await writeDb.transaction(async (tx) => {
-    await writeOrgMetadataWithDefaultPlanEntitlement(
-      tx,
-      orgId,
-      async (writeTx) => {
-        return await writeTx
-          .insert(orgMetadataCanonicalWrites)
-          .values({
-            orgId,
-            tier: "pro",
-            credits: TEST_ORG_CREDITS,
-            updatedAt: nowDate(),
-          })
-          .onConflictDoUpdate({
-            target: orgMetadataCanonicalWrites.orgId,
-            set: {
-              tier: "pro",
-              credits: sql`
-            GREATEST(COALESCE(${orgMetadata.credits}, 0), ${TEST_ORG_CREDITS})
-          `,
-              updatedAt: nowDate(),
-            },
-          })
-          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-      },
-    );
-  });
-}
+/**
+ * One transaction, no retry: expired remainder is cleared by one conditional
+ * statement first, then the top-up is one atomic GREATEST update. A lost clear
+ * throws OrgCreditExpirationConflict for this test-only caller.
+ */
+const ensureTestOrgBillingRow$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$).transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId, tier: "pro" })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      if (inserted) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              { orgId, tier: "pro", source: "org_metadata_migration" },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const at = nowDate();
+      await expireOrgCreditsInTransaction(tx, orgId, at);
+      await tx
+        .update(orgMetadata)
+        .set({
+          tier: "pro",
+          credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
+          updatedAt: at,
+        })
+        .where(eq(orgMetadata.orgId, orgId));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 export const ensureTestOrg$ = command(
   async (
@@ -218,7 +227,7 @@ export const ensureTestOrg$ = command(
       signal.throwIfAborted();
     }
 
-    await ensureTestOrgBillingRow(writeDb, org.id);
+    await set(ensureTestOrgBillingRow$, org.id, signal);
     signal.throwIfAborted();
 
     await writeDb

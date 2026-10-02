@@ -652,17 +652,12 @@ export function queuedChatRunCallbackInputs(
   ];
 }
 
-export function buildQueuedCreateAgentRunArgs(
+export function buildQueuedRunCommand(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
 ) {
   return {
-    auth: {
-      tokenType: "session" as const,
-      userId: input.userId,
-      orgId: input.orgId,
-      orgRole: "member" as const,
-    },
+    owner: { userId: input.userId, orgId: input.orgId },
     // Startup metrics begin when the queued message is admitted for dispatch.
     // The time spent waiting in the chat queue is recorded separately.
     apiStartTime: admissionTime,

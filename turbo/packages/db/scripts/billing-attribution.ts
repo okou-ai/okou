@@ -31,6 +31,14 @@ assert.ok(
   "--org-id is required; global mutation is not supported",
 );
 assert.ok(process.env.DATABASE_URL, "DATABASE_URL is required");
+// Same Run trigger-source mapping the API writers publish; the database keeps
+// no billing function after application trigger retirement.
+function billingUsageSource(column: string): string {
+  return `CASE WHEN ${column} = 'web' THEN 'chat'
+    WHEN ${column} IN ('automation-schedule', 'automation-event', 'goal') THEN 'automation'
+    WHEN ${column} IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN ${column}
+    ELSE 'other' END`;
+}
 function budget(value: string, max: number): number {
   const parsed = Number(value);
   assert.ok(
@@ -144,7 +152,7 @@ function facts(current: Exclude<Phase, "done">, filter: string) {
     (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND (a.run_id IS NOT NULL OR r.id IS NOT NULL)) AS eligible,
     (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND a.run_id IS NULL AND r.id IS NULL) AS missing_source,
     ((a.run_id IS NOT NULL AND (a.org_id <> t.org_id OR a.user_id <> t.user_id ${anchorConflict}
-      OR (r.id IS NOT NULL AND (a.run_started_at <> r.created_at OR a.source <> billing_usage_source(r.trigger_source)))))
+      OR (r.id IS NOT NULL AND (a.run_started_at <> r.created_at OR a.source <> ${billingUsageSource("r.trigger_source")}))))
       OR (r.id IS NOT NULL AND (r.org_id <> t.org_id OR r.user_id <> t.user_id))) AS conflict,
     ${current === "raw" ? "(t.status <> 'processed' AND (t.billing_anchor_at IS NULL OR t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')))" : "false"} AS pending_anchor_gap,
     ${current === "raw" ? "($7::timestamp IS NOT NULL AND t.created_at >= $7::timestamp AND t.billing_context IN ('legacy_unknown', 'missing_run'))" : "false"} AS new_writer_gap,
@@ -168,10 +176,9 @@ async function timeout() {
     performance.now() - startedAt < maxMs,
     "billing attribution time budget exhausted; resume the same checkpoint",
   );
-  await client.query(
-    "SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $2, true)",
-    [`${remainingMs()}ms`, `${Math.min(1000, remainingMs())}ms`],
-  );
+  await client.query("SELECT set_config('statement_timeout', $1, true)", [
+    `${remainingMs()}ms`,
+  ]);
 }
 await client.connect();
 try {
@@ -245,17 +252,16 @@ try {
       await client.query("BEGIN");
       try {
         await timeout();
-        await client.query(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
-        );
+        // Mutation already requires --ack-writer-drain. Compatible compaction
+        // captures parents before consuming sources and records observations
+        // itself; conditional source writes below need no global barrier.
         await client.query(
           `INSERT INTO billing_attribution_backfill (id, org_id, user_id, run_from, run_through)
           VALUES ($5, $1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
           [...scope, jobId],
         );
         const checkpointResult = await client.query(
-          "SELECT * FROM billing_attribution_backfill WHERE id = $1 FOR UPDATE",
+          "SELECT *, xmin::text AS snapshot_version FROM billing_attribution_backfill WHERE id = $1",
           [jobId],
         );
         const checkpoint = record(checkpointResult.rows[0]);
@@ -277,12 +283,12 @@ try {
         }
         const limit = Math.min(batchSize, maxRows - scannedThisInvocation);
         await timeout();
-        // FK checks by concurrent usage writers take KEY SHARE on the run.
-        // NO KEY UPDATE protects its source fields without blocking that check.
-        const sourceLock = current === "runs" ? "NO KEY UPDATE" : "UPDATE";
+        // Read a bounded source page. The writes use existing identities and
+        // exact ownership predicates; a concurrent deletion can reject the
+        // ordinary FK insert and roll back this batch, never skip ahead.
         const idsResult = await client.query(
           `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
-          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6 FOR ${sourceLock} OF t`,
+          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6`,
           [...scope, nullableText(checkpoint.cursor), limit],
         );
         const ids = idsResult.rows.map((value: unknown) => {
@@ -303,7 +309,7 @@ try {
                   // whose identity disagrees with its run stays reported and
                   // unmodified, exactly as the source phases below require.
                   `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context)
-                SELECT id, org_id, user_id, created_at, billing_usage_source(trigger_source), chat_thread_id,
+                SELECT id, org_id, user_id, created_at, ${billingUsageSource("trigger_source")}, chat_thread_id,
                   CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
                 FROM agent_runs WHERE id = ANY($1::uuid[])
                 ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
@@ -315,16 +321,34 @@ try {
                   [ids],
                 )
               : await client.query(
-                  `UPDATE ${tables[current]} t SET billing_run_id = COALESCE(t.billing_run_id, t.run_id), billing_context = 'run'
+                  `UPDATE ${tables[current]} t SET billing_run_id = a.run_id, billing_context = 'run'
+                  ${current === "jobs" ? "" : ", billing_anchor_at = a.run_started_at"}
+                FROM billing_run_attribution a
                 WHERE t.id = ANY($1::uuid[]) AND t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')
-                  AND EXISTS (SELECT 1 FROM billing_run_attribution a WHERE a.run_id = COALESCE(t.billing_run_id, t.run_id)
-                    AND a.org_id = t.org_id AND a.user_id = t.user_id)
-                  AND NOT EXISTS (SELECT 1 FROM agent_runs r JOIN billing_run_attribution a ON a.run_id = r.id
-                    WHERE r.id = COALESCE(t.billing_run_id, t.run_id)
-                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR billing_usage_source(r.trigger_source) <> a.source))`,
+                  AND a.run_id = COALESCE(t.billing_run_id, t.run_id)
+                  AND a.org_id = t.org_id AND a.user_id = t.user_id
+                  ${current === "jobs" ? "" : "AND (t.billing_anchor_at IS NULL OR t.billing_anchor_at = a.run_started_at)"}
+                  AND NOT EXISTS (SELECT 1 FROM agent_runs r
+                    WHERE r.id = a.run_id
+                      AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR ${billingUsageSource("r.trigger_source")} <> a.source))`,
                   [ids],
                 );
           populated = integer(result.rowCount);
+          if (current === "raw" || current === "hourly") {
+            // A repeated batch also repairs a missing monotone observation.
+            // Never manufacture an observation from a conflicting identity.
+            await client.query(
+              `UPDATE billing_run_attribution a SET usage_observed = true
+                WHERE NOT a.usage_observed AND EXISTS (
+                  SELECT 1 FROM ${tables[current]} t
+                  WHERE t.id = ANY($1::uuid[]) AND t.billing_context = 'run'
+                    AND t.billing_run_id = a.run_id
+                    AND t.org_id = a.org_id AND t.user_id = a.user_id
+                    AND t.billing_anchor_at = a.run_started_at
+                )`,
+              [ids],
+            );
+          }
         }
         await timeout();
         const countResult = await client.query(
@@ -339,7 +363,8 @@ try {
         const update = await client.query(
           `UPDATE billing_attribution_backfill SET phase=$2, cursor=$3,
           scanned=scanned+$4, populated=populated+$5, missing_source=missing_source+$6, conflicts=conflicts+$7,
-          updated_at=timezone('UTC', clock_timestamp()) WHERE id=$1 RETURNING *`,
+          updated_at=timezone('UTC', clock_timestamp())
+          WHERE id=$1 AND xmin::text=$8 RETURNING *`,
           [
             jobId,
             nextPhase,
@@ -348,7 +373,13 @@ try {
             populated,
             integer(counts.missing_source),
             integer(counts.conflicts),
+            nullableText(checkpoint.snapshot_version),
           ],
+        );
+        assert.equal(
+          update.rowCount,
+          1,
+          "checkpoint was advanced by another invocation; this batch is rejected",
         );
         lastCheckpoint = record(update.rows[0]);
         await client.query("COMMIT");

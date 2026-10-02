@@ -1,11 +1,11 @@
 import { command } from "ccstate";
-
 import { writeDb$ } from "../external/db";
-import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
+
 import {
   resolveActiveRunCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 
 export const checkBillableOperationCredits$ = command(
   async (
@@ -17,9 +17,8 @@ export const checkBillableOperationCredits$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const writeDb = set(writeDb$);
     const availability = await resolveOrgCreditAvailability({
-      db: writeDb,
+      db: set(writeDb$),
       orgId: args.orgId,
       userId: args.userId,
     });
@@ -29,7 +28,7 @@ export const checkBillableOperationCredits$ = command(
       return false;
     }
     const activeRunAdmission = await resolveActiveRunCreditAdmission({
-      db: writeDb,
+      db: set(writeDb$),
       runId: args.runId,
       orgId: args.orgId,
       userId: args.userId,
@@ -45,9 +44,10 @@ export const checkBillableOperationCredits$ = command(
       return true;
     }
 
-    const allowance = await resolveUsageAllowanceAvailability(
-      writeDb,
+    const allowance = await set(
+      resolveUsageAllowanceAvailability$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     return (allowance?.remainingUnits ?? 0) > 0;

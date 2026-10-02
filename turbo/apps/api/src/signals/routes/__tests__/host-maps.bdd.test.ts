@@ -901,7 +901,8 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    runs.configureRunnerGroup();
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD host maps agent",
       description: "Run-scoped maps and host attribution.",
@@ -916,10 +917,9 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       }),
     );
 
-    const created = await runs.createRun(actor, {
+    const created = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "attribute maps and host usage",
-      modelProvider: "anthropic-api-key",
     });
     const okouToken = runs.okouTokenForRunWithCapabilities(
       actor,

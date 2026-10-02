@@ -10,8 +10,8 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq } from "drizzle-orm";
-import type { Db } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
+import type { Db } from "../external/db";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,

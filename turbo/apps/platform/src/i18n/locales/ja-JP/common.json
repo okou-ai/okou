@@ -4708,7 +4708,6 @@
         },
         "model": {
           "autoDescription": "Okou がタスクごとにモデルを選びます。",
-          "autoLabel": "自動モデル選択",
           "description": "ワークスペースと実行で使用する AI モデルを選択します。",
           "title": "モデル"
         },
@@ -4897,17 +4896,23 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
         "addAccount": "アカウントを追加",
+        "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
+        "autoTitle": "より多くのモデルを使う",
         "claudeDescription": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。",
         "claudeTitle": "Claude",
         "codexDescription": "ChatGPTアカウントを接続してGPTモデルを利用できます。",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "アカウントを接続",
         "description": "自分の実行でのみ、自分の資格情報を使用して使用されます。",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
         "disconnecting": "接続を解除中…",
         "disconnectTitle": "{{account}}の接続を解除しますか？",
+        "loadError": "アカウントを読み込めませんでした。",
+        "loadingAccounts": "アカウントを読み込み中…",
         "noAccounts": "接続済みのアカウントはありません。",
         "reconnectAccount": "再接続",
+        "retry": "再試行",
         "sectionTitle": "個人的な",
         "status": {
           "connected": "接続済み",
@@ -4917,7 +4922,6 @@
           "stale": "注意",
           "week": "週"
         },
-        "subscriptionsSectionTitle": "個人モデルサブスクリプション",
         "useAccount": "使用"
       },
       "picker": {

@@ -115,7 +115,7 @@ function currentConnectionQuery(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
-        runThreadSshAccess(db),
+        runThreadSshAccess(),
       ),
     );
   return lockAuthority

@@ -1,3 +1,4 @@
+import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   connectorRuntimeTargetKey,
   type ConnectorRuntimeCustomAbsentReason,
@@ -6,33 +7,32 @@ import {
   type ConnectorRuntimeTarget,
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import type { FirewallApi } from "@okouai/connectors/firewall-types";
+import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
-import {
-  buildCustomConnectorRuntimeContext,
-  customConnectorRuntimeExecutionState,
-  loadEffectiveCustomConnectorPermissionBundle,
-  type CustomConnectorRuntimeDataRows,
-} from "./connector-runtime-preparation.service";
-import {
-  loadConnectorRuntimeSelection,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
-import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
-import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
+import {
+  loadConnectorRuntimeSelection,
+  type ConnectorRuntimeSelection,
+} from "./connector-catalog-runtime.service";
+import {
+  buildCustomConnectorRuntimeContext,
+  customConnectorRuntimeExecutionState,
+  loadEffectiveCustomConnectorPermissionBundle,
+  type CustomConnectorRuntimeDataRows,
+} from "./connector-runtime-preparation.service";
+import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
+import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 
 const L = logger("connector-runtime-sync");
 

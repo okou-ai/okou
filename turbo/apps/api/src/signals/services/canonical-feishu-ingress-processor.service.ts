@@ -1,61 +1,49 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { command } from "ccstate";
+import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
-import { logger } from "../../lib/log";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
-import { inferMimetype } from "../../lib/mimetype";
 import {
   formatFeishuMessageContent,
   type FeishuPromptFile,
 } from "../../lib/feishu-message-content";
-import {
-  replyWithFeishuMessage,
-  downloadFeishuMessageResource,
-} from "../external/feishu-client";
-import {
-  canonicalInputFilePrompt,
-  integrationInputMessageFiles,
-  materializeIntegrationInputAssets$,
-  readyIntegrationInputAsset,
-  type IntegrationInputFile,
-  type IntegrationInputAsset,
-} from "./integration-input-assets.service";
+import { logger } from "../../lib/log";
+import { inferMimetype } from "../../lib/mimetype";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import {
+  downloadFeishuMessageResource,
+  replyWithFeishuMessage,
+} from "../external/feishu-client";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
+import { createChatEventSourcePart } from "./chat-event-annotation.service";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
-  enqueueChatInput,
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
   notifyRunningChatRunOfPendingInput,
 } from "./chat-thread-queue-drain.service";
+import { createUserMessageDocument } from "./chat-user-message.service";
 import {
-  isFeishuInstallationEnabled,
-  buildFeishuChatOpenUrl,
-} from "./feishu-config";
-import {
-  ensureFeishuChatThreadRoute,
+  ensureFeishuChatThreadRoute$,
   feishuRouteThreadId,
 } from "./feishu-chat-ingress.service";
+import {
+  buildFeishuChatOpenUrl,
+  isFeishuInstallationEnabled,
+} from "./feishu-config";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
 import {
   addFeishuThinkingReaction,
   dispatchConnectedFeishuCommand$,
@@ -68,6 +56,18 @@ import {
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
 } from "./feishu-dispatch.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import {
+  canonicalInputFilePrompt,
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputAsset,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -385,15 +385,26 @@ const persistCanonicalFeishuIngress$ = command(
     signal: AbortSignal,
   ): Promise<PersistedCanonicalFeishuIngress> => {
     const routeThreadId = feishuRouteThreadId(args.message);
-    const route = await ensureFeishuChatThreadRoute(args.db, {
-      connectionId: args.connection.id,
-      chatId: args.message.chatId,
-      threadId: routeThreadId,
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      agentId: args.agentId,
-      currentTime: args.ingress.createdAt,
-    });
+    const route = await set(
+      ensureFeishuChatThreadRoute$,
+      {
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.installation.orgId,
+          args.connection.userId,
+          undefined,
+          undefined,
+        ),
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: routeThreadId,
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        agentId: args.agentId,
+        currentTime: args.ingress.createdAt,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const assets = await set(
@@ -429,7 +440,7 @@ const persistCanonicalFeishuIngress$ = command(
       id: args.ingress.ingressId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
         threadId: route.chatThreadId,
         orgId: args.installation.orgId,
         userId: args.connection.userId,
@@ -442,25 +453,15 @@ const persistCanonicalFeishuIngress$ = command(
       },
       createdAt: args.ingress.createdAt,
     } as const;
-    await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.installation.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        const inserted = await insertChatEvent(tx, values, "id");
-        await tx
-          .update(feishuChatIngress)
-          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-          .where(
-            and(
-              eq(feishuChatIngress.id, args.ingress.ingressId),
-              eq(feishuChatIngress.status, "processing"),
-            ),
-          );
-        return inserted?.id ?? null;
+    await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.installation.orgId,
+        input: values,
+        ingress: { kind: "feishu", ingressId: args.ingress.ingressId },
       },
-    });
+      signal,
+    );
     signal.throwIfAborted();
     return {
       orgId: args.installation.orgId,

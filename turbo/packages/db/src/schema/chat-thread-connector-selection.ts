@@ -46,16 +46,18 @@ export const chatThreadConnectorSelections = pgTable(
         columns: [table.chatThreadId],
         foreignColumns: [chatThreads.id],
       }).onDelete("cascade"),
+      // PostgreSQL deferral is declared in ../constraints/connector-selection.sql;
+      // Drizzle models the identity/action but cannot emit DEFERRABLE.
       foreignKey({
         name: "fk_chat_thread_connector_selections_connector_slug",
         columns: [table.connectorId, table.connectorSlug],
         foreignColumns: [connectors.id, connectors.connectorSlug],
-      }).onDelete("restrict"),
+      }).onDelete("no action"),
       foreignKey({
         name: "fk_chat_thread_connector_selections_custom_connector",
         columns: [table.connectorId, table.customConnectorId],
         foreignColumns: [connectors.id, connectors.customConnectorId],
-      }).onDelete("restrict"),
+      }).onDelete("no action"),
       check(
         "chk_chat_thread_connector_selections_target",
         sql`num_nonnulls(${table.connectorSlug}, ${table.customConnectorId}) = 1`,

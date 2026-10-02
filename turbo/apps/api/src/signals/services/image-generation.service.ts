@@ -1,7 +1,7 @@
+import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";
-import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import {
   DEFAULT_IMAGE_MODEL,
@@ -23,11 +23,11 @@ import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { processUsageEventKeys$ } from "./credit-usage.service";
 import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
 const FAL_IMAGE_QUEUE_URL_PREFIX = "https://queue.fal.run";
@@ -2486,7 +2486,6 @@ export const recordGeneratedImage$ = command(
     },
     signal: AbortSignal,
   ): Promise<RecordedImage> => {
-    const writeDb = set(writeDb$);
     const artifact = await set(
       storeGeneratedArtifactObject$,
       {
@@ -2526,14 +2525,16 @@ export const recordGeneratedImage$ = command(
       return row.quantity > 0;
     });
 
-    await writeDb
-      .insert(usageEvent)
-      .values(
-        usageRows.map((row) => {
+    await set(
+      recordProviderUsageBatch$,
+      {
+        orgId: params.orgId,
+        userId: params.userId,
+        runId: params.runId,
+        billingRunId: params.billingRunId,
+        billingContext: params.billingContext,
+        events: usageRows.map((row) => {
           return {
-            runId: params.runId ?? null,
-            billingRunId: params.billingRunId,
-            billingContext: params.billingContext,
             idempotencyKey: builtInGenerationUsageIdempotencyKey({
               generationId: params.generationId,
               category: row.category,
@@ -2546,11 +2547,24 @@ export const recordGeneratedImage$ = command(
             quantity: row.quantity,
           };
         }),
-      )
-      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    await set(processOrgUsageEvents$, params.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId: params.orgId,
+        idempotencyKeys: usageRows.map((row) => {
+          return builtInGenerationUsageIdempotencyKey({
+            generationId: params.generationId,
+            category: row.category,
+          });
+        }),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {

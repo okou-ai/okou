@@ -1,5 +1,7 @@
 import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 
 import type StripeSDK from "stripe";
 import type { z } from "zod";
@@ -40,7 +42,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   runsCancelContract,
-  runCreateBodySchema,
   runContextContract,
   runRunnerContract,
   runsByIdContract,
@@ -60,13 +61,7 @@ import { now, withNowScopeForTest } from "../../../../lib/time";
 import { createDeferredPromise } from "../../../utils";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import {
-  createDirectAgentExecutionFixture,
-  createDirectRunFixture,
-  listAgentRunsFixture,
-  type DirectAgentExecutionConfig,
-  type DirectRunFixtureRequest,
-} from "../../../../test-fixtures/agent-runs";
+import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
@@ -91,15 +86,12 @@ import { modelProvidersRoutes } from "../../model-providers";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { runsRoutes } from "../../runs";
-import { runFixtureContract, runFixtureRoutes } from "../../test-run-fixture";
 import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-type AgentRunRequest = z.infer<typeof runCreateBodySchema>;
-type DirectRunRequest = DirectRunFixtureRequest;
 interface RunsListQuery {
   readonly status?: string;
   readonly agent?: string;
@@ -187,7 +179,6 @@ const runRoutes = [
   ...modelPoliciesRoutes,
   ...modelProvidersRoutes,
   ...runDetailRoutes,
-  ...runFixtureRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
   ...agentsRoutes,
@@ -310,6 +301,168 @@ export function createRunsApi(
   context: TestContext,
   systemSkillStorageResolution?: SystemSkillStorageResolution,
 ) {
+  /**
+   * A run started through the real Thread entrypoint: a chat send on a new
+   * thread, picked once its enqueue-owned background work completes.
+   */
+  async function createThreadRun(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      /** A member selects the organization's model; the owner's preference is personal. */
+      readonly model?: string;
+      /** Continue an existing thread, which resumes its Agent session. */
+      readonly threadId?: string;
+      /** Request staff-only network body capture for the run. */
+      readonly captureNetworkBodies?: boolean;
+    },
+  ) {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
+      },
+      [201],
+      systemSkillStorageResolution === undefined
+        ? {}
+        : { systemSkillStorageResolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the Thread run send to be accepted");
+    }
+    let runId = sent.body.runId;
+    if (runId === null) {
+      await flushWaitUntilForTest();
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      runId =
+        events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        })?.runId ?? null;
+    }
+    if (!runId) {
+      throw new Error("Expected the Thread run send to launch a run");
+    }
+    const run = await accept(
+      runApp(context)(runsByIdContract).getById({
+        headers: authenticate(context, actor),
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return {
+      runId,
+      threadId: sent.body.threadId,
+      status: run.body.status,
+      createdAt: run.body.createdAt,
+      ...(run.body.error === undefined ? {} : { error: run.body.error }),
+    };
+  }
+
+  /**
+   * A Thread send the background pick rejects: no run is created and the
+   * thread records the rejection error on the revoked input.
+   */
+  async function readThreadRunRejection(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      readonly model?: string;
+      readonly captureNetworkBodies?: boolean;
+    },
+  ): Promise<string | undefined> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the Thread send to be rejected without a run");
+    }
+    return "error" in rejection ? rejection.error : undefined;
+  }
+
+  /**
+   * A Thread send whose pick fails before creating a run: returns the pick's
+   * error message and the error the thread records on the rejected input.
+   */
+  async function readThreadLaunchFailure(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      readonly model?: string;
+      readonly threadId?: string;
+    },
+  ): Promise<{
+    readonly pickError: string;
+    readonly inputError: string | undefined;
+  }> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    const pickError = await flushWaitUntilForTest().then(
+      () => {
+        throw new Error("Expected the Thread pick to fail");
+      },
+      (error: unknown) => {
+        return error instanceof Error ? error.message : String(error);
+      },
+    );
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the failed pick to reject the input");
+    }
+    return {
+      pickError,
+      inputError: "error" in rejection ? rejection.error : undefined,
+    };
+  }
+
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
@@ -370,29 +523,6 @@ export function createRunsApi(
     };
   };
 
-  async function createDirectRunThroughService(
-    actor: ApiTestUser | null,
-    body: DirectRunRequest,
-  ) {
-    if (!actor?.orgId) {
-      return {
-        status: 401 as const,
-        body: {
-          error: {
-            message: "Not authenticated",
-            code: "UNAUTHORIZED" as const,
-          },
-        },
-      };
-    }
-    return await createDirectRunFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      body,
-      signal: context.signal,
-    });
-  }
-
   return {
     configureRunnerGroup(): string {
       const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
@@ -439,7 +569,8 @@ export function createRunsApi(
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
 
-      const suffix = randomUUID().slice(0, 8);
+      // Stripe identities persist across files in the shared test database.
+      const suffix = randomUUID();
       const customerId = options.customerId ?? `cus_bdd_${suffix}`;
       const subscriptionId = options.subscriptionId ?? `sub_bdd_${suffix}`;
       const invoiceId = `in_bdd_${suffix}`;
@@ -517,6 +648,15 @@ export function createRunsApi(
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
+          {
+            cause: {
+              orgId: actor.orgId,
+              customerId,
+              subscriptionId,
+              invoiceId,
+              billingStatus: billingStatus.body,
+            },
+          },
         );
       }
 
@@ -538,20 +678,10 @@ export function createRunsApi(
       return { customerId, subscriptionId, invoiceId };
     },
 
-    async createRun(actor: ApiTestUser, body: AgentRunRequest) {
-      const response = await accept(
-        runApp(
-          context,
-          undefined,
-          systemSkillStorageResolution,
-        )(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body,
-        }),
-        [201],
-      );
-      return response.body;
-    },
+    /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
+    createThreadRun,
+    readThreadRunRejection,
+    readThreadLaunchFailure,
 
     async claimRunnerJob(
       runId: string,
@@ -896,37 +1026,6 @@ export function createRunsApi(
       });
     },
 
-    async createDirectAgent(
-      actor: ApiTestUser,
-      content: DirectAgentExecutionConfig,
-    ): Promise<{ readonly agentId: string; readonly name: string }> {
-      if (!actor.orgId) {
-        throw new Error("Direct Agent fixtures require an org-scoped actor");
-      }
-      return await createDirectAgentExecutionFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        content,
-        signal: context.signal,
-      });
-    },
-
-    async createDirectRun(actor: ApiTestUser, body: DirectRunRequest) {
-      const response = await accept(
-        createDirectRunThroughService(actor, body),
-        [201],
-      );
-      return response.body;
-    },
-
-    async requestDirectRun(
-      actor: ApiTestUser | null,
-      body: DirectRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-    ) {
-      return await accept(createDirectRunThroughService(actor, body), statuses);
-    },
-
     async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
       if (!actor.orgId) {
         throw new Error("Agent run list service requires an organization");
@@ -1161,38 +1260,6 @@ export function createRunsApi(
         [200],
       );
       return response.body;
-    },
-
-    async requestCreateRun(
-      actor: ApiTestUser | null,
-      body: AgentRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: {
-            ...authenticate(context, actor),
-            ...extraHeaders,
-          },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestCreateRunUnchecked(
-      actor: ApiTestUser | null,
-      body: unknown,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 409 | 503)[],
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body: body as AgentRunRequest,
-        }),
-        statuses,
-      );
     },
 
     async readRun(actor: ApiTestUser, runId: string) {

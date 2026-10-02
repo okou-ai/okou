@@ -13,15 +13,17 @@ import { db$, writeDb$ } from "../external/db";
 import { setResHeader$ } from "../context/hono";
 import { readConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
 import type { RouteEntry } from "../route-entry";
-import { bestEffort } from "../utils";
+import { bestEffort, settle } from "../utils";
 import {
   connectorAccountDeletionImpact,
   getConnectorAccount,
+  isConnectorAccountDefaultConflict,
   listConnectorAccountsByIds,
   listConnectorAccountsForTarget,
   listConnectorAccountSummaries,
   renameConnectorAccount,
   setDefaultConnectorAccount,
+  setDefaultGoogleFormsAccount$,
 } from "../services/connector-account-lifecycle.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
 import {
@@ -29,9 +31,9 @@ import {
   deleteBuiltinConnectorLocalState$,
 } from "../services/connector-data.service";
 import { deleteCustomConnectorAccount$ } from "../services/custom-connector.service";
-import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
-import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
-import { reconcileGoogleFormsWatchesForUser } from "../services/google-forms-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
+import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
 import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
 
 function targetFromQuery(
@@ -222,7 +224,6 @@ const renameInner$ = command(
     };
   },
 );
-
 const setDefaultInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -245,9 +246,20 @@ const setDefaultInner$ = command(
     }
     const writeDb = set(writeDb$);
     const updatedAt = await commitConnectorRuntimeMutation(
-      setDefaultConnectorAccount(writeDb, request, signal),
+      request.target.kind === "builtin" &&
+        request.target.connectorSlug === "google-forms"
+        ? set(
+            setDefaultGoogleFormsAccount$,
+            {
+              orgId: request.orgId,
+              userId: request.userId,
+              connectionId: request.connectionId,
+            },
+            signal,
+          )
+        : setDefaultConnectorAccount(writeDb, request, signal),
       (changed) => {
-        return changed
+        return changed instanceof Date
           ? {
               db: writeDb,
               scope: { orgId: auth.orgId, userId: auth.userId },
@@ -257,6 +269,9 @@ const setDefaultInner$ = command(
       },
     );
     signal.throwIfAborted();
+    if (updatedAt === "conflict") {
+      return badRequestMessage("Another default change won; please save again");
+    }
     if (!updatedAt) {
       return notFound("Connector account not found");
     }
@@ -269,18 +284,21 @@ const setDefaultInner$ = command(
     ) {
       await bestEffort(
         body.data.target.connectorSlug === "gmail"
-          ? reconcileGmailWatchesForUser(
-              { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+          ? set(
+              reconcileGmailWatchesForUser$,
+              { orgId: auth.orgId, userId: auth.userId },
               signal,
             )
           : body.data.target.connectorSlug === "google-calendar"
-            ? reconcileGoogleCalendarWatchesForUser(
-                { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+            ? set(
+                reconcileGoogleCalendarWatchesForUser$,
+                { orgId: auth.orgId, userId: auth.userId },
                 signal,
               )
             : body.data.target.connectorSlug === "google-forms"
-              ? reconcileGoogleFormsWatchesForUser(
-                  { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+              ? set(
+                  reconcileGoogleFormsWatchesForUser$,
+                  { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 )
               : reconcileGoogleMeetSubscriptionsForUser(
@@ -342,29 +360,42 @@ const deleteInner$ = command(
     if (!(await getConnectorAccount(get(db$), request))) {
       return notFound("Connector account not found");
     }
-    const result =
+    const deletion =
       body.data.target.kind === "builtin"
-        ? await set(
-            deleteBuiltinConnectorLocalState$,
-            {
-              orgId: auth.orgId,
-              userId: auth.userId,
-              connectorSlug: body.data.target.connectorSlug,
-              sourceId: params.connectionId,
-            },
-            signal,
+        ? await settle(
+            set(
+              deleteBuiltinConnectorLocalState$,
+              {
+                orgId: auth.orgId,
+                userId: auth.userId,
+                connectorSlug: body.data.target.connectorSlug,
+                sourceId: params.connectionId,
+              },
+              signal,
+            ),
           )
-        : await set(
-            deleteCustomConnectorAccount$,
-            {
-              orgId: auth.orgId,
-              userId: auth.userId,
-              connectorId: body.data.target.customConnectorId,
-              memberConnectorId: params.connectionId,
-            },
-            signal,
+        : await settle(
+            set(
+              deleteCustomConnectorAccount$,
+              {
+                orgId: auth.orgId,
+                userId: auth.userId,
+                connectorId: body.data.target.customConnectorId,
+                memberConnectorId: params.connectionId,
+              },
+              signal,
+            ),
           );
     signal.throwIfAborted();
+    if (!deletion.ok) {
+      if (isConnectorAccountDefaultConflict(deletion.error)) {
+        return badRequestMessage(
+          "Another default change won; please delete again",
+        );
+      }
+      throw deletion.error;
+    }
+    const result = deletion.value;
     if (result === "missing") {
       return notFound("Connector account not found");
     }

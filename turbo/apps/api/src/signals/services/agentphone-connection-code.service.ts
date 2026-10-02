@@ -1,15 +1,13 @@
 import { createHmac, randomInt } from "node:crypto";
 
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
-import {
-  linkAgentPhoneUser,
-  normalizeAgentPhoneHandle,
-  type AgentPhoneChannel,
-} from "./agentphone.service";
+import type { AgentPhoneChannel } from "./agentphone-shared.service";
+import { linkAgentPhoneIdentity$ } from "./agentphone-link.service";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
 const AGENTPHONE_CONNECTION_CODE_DIGITS = 8;
 const AGENTPHONE_CONNECTION_CODE_LIMIT =
@@ -80,128 +78,103 @@ function generateFreshAgentPhoneConnectionCode(
   throw new Error("AgentPhone connection code generation failed");
 }
 
-export async function createAgentPhoneConnectionCode(
-  db: Db,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly secret: string;
-  },
-): Promise<AgentPhoneConnectionCode> {
-  const [currentCode] = await db
-    .select({ codeHash: agentphoneConnectionCodes.codeHash })
-    .from(agentphoneConnectionCodes)
-    .where(
-      and(
-        eq(agentphoneConnectionCodes.userId, args.userId),
-        eq(agentphoneConnectionCodes.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-
-  const { code, codeHash } = generateFreshAgentPhoneConnectionCode(
-    args.secret,
-    currentCode?.codeHash,
-  );
-
-  const createdAt = nowDate();
-  const expiresAt = new Date(
-    createdAt.getTime() + AGENTPHONE_CONNECTION_CODE_TTL_MS,
-  );
-  await db
-    .insert(agentphoneConnectionCodes)
-    .values({
-      codeHash,
-      userId: args.userId,
-      orgId: args.orgId,
-      expiresAt,
-      createdAt,
-      updatedAt: createdAt,
-    })
-    .onConflictDoUpdate({
-      target: [
-        agentphoneConnectionCodes.userId,
-        agentphoneConnectionCodes.orgId,
-      ],
-      set: {
-        codeHash,
-        expiresAt,
-        consumedAt: null,
-        consumedPhoneHandle: null,
-        createdAt,
-        updatedAt: createdAt,
-      },
-    });
-
-  return { code, expiresAt };
-}
-
-export async function consumeAgentPhoneConnectionCode(
-  db: Db,
-  args: {
-    readonly message: string;
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly secret: string;
-  },
-): Promise<AgentPhoneConnectionCodeConsumeResult> {
-  const normalizedCode = normalizeAgentPhoneConnectionCode(args.message);
-  if (!normalizedCode) {
-    return { kind: "not-code" };
-  }
-
-  const consumedAt = nowDate();
-  const codeHash = hashAgentPhoneConnectionCode(normalizedCode, args.secret);
-  const phoneHandle = normalizeAgentPhoneHandle(args.phoneHandle, args.channel);
-
-  return await db.transaction(async (tx) => {
-    const rows = await tx
-      .select({
-        id: agentphoneConnectionCodes.id,
-        userId: agentphoneConnectionCodes.userId,
-        orgId: agentphoneConnectionCodes.orgId,
-      })
+export const createAgentPhoneConnectionCode$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly secret: string;
+    },
+    signal: AbortSignal,
+  ): Promise<AgentPhoneConnectionCode> => {
+    const db = set(writeDb$);
+    const [currentCode] = await db
+      .select({ codeHash: agentphoneConnectionCodes.codeHash })
       .from(agentphoneConnectionCodes)
       .where(
         and(
-          eq(agentphoneConnectionCodes.codeHash, codeHash),
-          isNull(agentphoneConnectionCodes.consumedAt),
-          gt(agentphoneConnectionCodes.expiresAt, consumedAt),
+          eq(agentphoneConnectionCodes.userId, args.userId),
+          eq(agentphoneConnectionCodes.orgId, args.orgId),
         ),
       )
-      .for("update")
-      .limit(2);
+      .limit(1);
+    signal.throwIfAborted();
 
-    if (rows.length !== 1 || !rows[0]) {
-      return { kind: "invalid" };
-    }
+    const { code, codeHash } = generateFreshAgentPhoneConnectionCode(
+      args.secret,
+      currentCode?.codeHash,
+    );
 
-    const code = rows[0];
-    const linkResult = await linkAgentPhoneUser(tx, {
-      phoneHandle,
-      channel: args.channel,
-      userId: code.userId,
-      orgId: code.orgId,
-    });
-
-    await tx
-      .update(agentphoneConnectionCodes)
-      .set({
-        consumedAt,
-        consumedPhoneHandle: phoneHandle,
-        updatedAt: consumedAt,
+    const createdAt = nowDate();
+    const expiresAt = new Date(
+      createdAt.getTime() + AGENTPHONE_CONNECTION_CODE_TTL_MS,
+    );
+    await db
+      .insert(agentphoneConnectionCodes)
+      .values({
+        codeHash,
+        userId: args.userId,
+        orgId: args.orgId,
+        expiresAt,
+        createdAt,
+        updatedAt: createdAt,
       })
-      .where(eq(agentphoneConnectionCodes.id, code.id));
+      .onConflictDoUpdate({
+        target: [
+          agentphoneConnectionCodes.userId,
+          agentphoneConnectionCodes.orgId,
+        ],
+        set: {
+          codeHash,
+          expiresAt,
+          consumedAt: null,
+          consumedPhoneHandle: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
 
-    if (!linkResult.ok) {
-      return { kind: "conflict", reason: linkResult.reason };
+    signal.throwIfAborted();
+    return { code, expiresAt };
+  },
+);
+
+export const consumeAgentPhoneConnectionCode$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: string;
+      readonly phoneHandle: string;
+      readonly channel: AgentPhoneChannel;
+      readonly secret: string;
+    },
+    signal: AbortSignal,
+  ): Promise<AgentPhoneConnectionCodeConsumeResult> => {
+    const normalizedCode = normalizeAgentPhoneConnectionCode(args.message);
+    if (!normalizedCode) {
+      return { kind: "not-code" };
     }
-
+    const result = await set(
+      linkAgentPhoneIdentity$,
+      {
+        source: {
+          kind: "code",
+          codeHash: hashAgentPhoneConnectionCode(normalizedCode, args.secret),
+        },
+        phoneHandle: args.phoneHandle,
+        channel: args.channel,
+      },
+      signal,
+    );
+    if (result.kind !== "linked") {
+      return result;
+    }
     return {
       kind: "linked",
-      userId: code.userId,
-      orgId: code.orgId,
-      phoneHandle,
+      userId: result.userLink.userId,
+      orgId: result.userLink.orgId,
+      phoneHandle: result.userLink.phoneHandle,
     };
-  });
-}
+  },
+);

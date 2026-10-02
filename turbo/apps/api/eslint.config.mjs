@@ -231,7 +231,7 @@ export default [
   {
     files: [
       "src/signals/services/pick-chat-run.service.ts",
-      "src/signals/services/claim-run-context.ts",
+      "src/signals/services/thread-claim-run.service.ts",
     ],
     plugins: { api: apiLintPlugin },
     rules: {
@@ -242,7 +242,7 @@ export default [
         "error",
         {
           max: 128,
-          owners: ["createPickObjects", "createClaimRunObjects"],
+          owners: ["createPickObjects", "createThreadClaimRunObjects"],
         },
       ],
     },
@@ -697,30 +697,6 @@ export default [
     },
   },
   {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "src/**/__tests__/**/*.ts",
-      "src/**/*.test.ts",
-      "src/test-fixtures/thread-bound-run-admission.ts",
-      "src/signals/routes/test-run-fixture.ts",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     // Keep finite persisted/state-machine contract matrices as narrow
     // exceptions. Route tests cover constructible behavior, while these exact
     // transition inputs are not available through production APIs. Being an
@@ -748,6 +724,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
@@ -807,9 +787,6 @@ export default [
       // any product endpoint. The suite seeds only those states directly and
       // observes recovery through the real GET and scoped cron routes.
       "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
-      // An incompatible retained Personal Access binding is impossible through
-      // production APIs; an isolated real-DB schema proves its promotion guard.
-      "src/signals/services/__tests__/cloudflare-access-promotion.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -860,12 +837,6 @@ export default [
               group: ["**/routes/cli-auth-test"],
               message: productionRouteTestImportMessage,
             },
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
-            },
           ],
         },
       ],
@@ -905,12 +876,6 @@ export default [
               ],
               message: lowerLayerRouteImportMessage,
             },
-            {
-              group: ["**/test-agent-run-fixture.service"],
-              importNames: ["createTestFixtureAgentRun$"],
-              message:
-                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
-            },
           ],
         },
       ],
@@ -943,6 +908,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
+      // The post-commit presigned URL cache write is log-only. Every value an
+      // endpoint can produce fits the cache columns, so only the command's
+      // data parameter can carry a row PostgreSQL rejects.
+      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
@@ -997,8 +966,6 @@ export default [
       // #36466's old/corrupt cache JSONB and active claim are not HTTP inputs;
       // only those states are seeded directly, then the real routes are asserted.
       "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
-      // The same impossible retained Personal Access state needs real DB rows.
-      "src/signals/services/__tests__/cloudflare-access-promotion.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [

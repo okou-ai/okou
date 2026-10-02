@@ -11,11 +11,7 @@ import {
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import {
-  createBddApi,
-  expectApiError,
-  type ApiTestUser,
-} from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -147,11 +143,7 @@ async function createBuiltInRun(
   prompt: string,
 ): Promise<{ readonly runId: string; readonly status: string }> {
   const api = createRunsApi(context);
-  return await api.createRun(actor, {
-    agentId,
-    prompt,
-    modelProvider: "built-in",
-  });
+  return await api.createThreadRun(actor, { agentId, prompt });
 }
 
 async function recordPendingUsageEvents(args: {
@@ -634,18 +626,12 @@ describe("Usage Allowance", () => {
     });
     await processOrgUsageEvents(actor);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId,
         prompt: "built-in model run rejected after allowance exhaustion",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
@@ -704,17 +690,12 @@ describe("Usage Allowance", () => {
     await expect(readOrgCredits(actor)).resolves.toBe(-3);
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(5);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId,
         prompt: "new run after admitted run exhausted credits",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("uses run allowance for billable firewall fallback under shared debt", async () => {
@@ -724,10 +705,9 @@ describe("Usage Allowance", () => {
     });
     const api = createRunsApi(context);
     await api.ensureOrgModelProvider(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "BYOK run uses allowance for billable firewall",
-      modelProvider: "anthropic-api-key",
     });
     const client = setupApp({
       context,
@@ -753,6 +733,62 @@ describe("Usage Allowance", () => {
     expect(leased.body.expiresAt).not.toBeNull();
     expect(leased.body.expiresAt ?? 0).toBeGreaterThanOrEqual(before + 4);
     expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(after + 6);
+  });
+
+  it("reuses one allowance identity across concurrent firewall admissions for a Run", async () => {
+    const { actor, agentId } = await builtInAllowanceActor({
+      credits: -10,
+      allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
+    });
+    const api = createRunsApi(context);
+    await api.ensureOrgModelProvider(actor);
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "concurrent billable allowance admission",
+    });
+    const client = setupApp({
+      context,
+      routes: webhooksAgentFirewallAuthRoutes,
+    })(webhookFirewallAuthContract);
+    const headers = {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+    };
+    const body = {
+      encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+      authHeaders: { Authorization: "Bearer static-token" },
+      firewallBillable: true,
+    };
+    await Promise.all(
+      [0, 1, 2].map(() => {
+        return accept(client.resolve({ headers, body }), [200]);
+      }),
+    );
+    const before = await api.readBillingStatus(actor);
+    expect(before.usageAllowance?.windows).toHaveLength(2);
+    expect(
+      before.usageAllowance?.windows.map((window) => {
+        return window.consumedUnits;
+      }),
+    ).toStrictEqual([0, 0]);
+    const provider = usageProvider();
+    await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 2,
+    });
+    await processOrgUsageEvents(actor);
+    // Repeated admission must not refill the now exhausted window.
+    await accept(client.resolve({ headers, body }), [402]);
+    const after = await api.readBillingStatus(actor);
+    expect(after.usageAllowance?.windows).toHaveLength(2);
+    expect(
+      after.usageAllowance?.windows.map((window) => {
+        return window.consumedUnits;
+      }),
+    ).toStrictEqual([2, 2]);
+    await expect(readOrgCredits(actor)).resolves.toBe(-10);
+    await expect(readVisibleUsageCredits(actor)).resolves.toBe(2);
   });
 
   it("does not let built-in credit admission bypass workspace suspension", async () => {
@@ -813,10 +849,9 @@ describe("Usage Allowance", () => {
       displayName: "Usage allowance agent",
       visibility: "private",
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "non-built-in run uses allowance",
-      modelProvider: "anthropic-api-key",
     });
     const provider = usageProvider();
     await recordPendingUsage({
@@ -843,10 +878,9 @@ describe("Usage Allowance", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.ensureOrgModelProvider(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "non-built-in run inside active allowance window",
-      modelProvider: "anthropic-api-key",
     });
     const provider = usageProvider();
     await recordPendingUsage({
@@ -1092,10 +1126,9 @@ describe("Usage Allowance", () => {
     await api.ensureOrgModelProvider(actor);
     // A BYOK run starts during entitlement but does not issue built-in
     // allowance windows at admission. First settlement must not backdate one.
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run before canceled entitlement without issued windows",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(addHours(startedAt, 1));
     await cancelUsageAllowanceSubscription(orgId);
@@ -1213,10 +1246,9 @@ describe("Usage Allowance", () => {
     await api.ensureOrgModelProvider(actor);
     // BYOK runs do not receive built-in credit admission, and this run
     // predates the entitlement, so it has no allowance windows.
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run without windows",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(addHours(runCreatedAt, 1));
     await seedAllowanceEntitlement(actor, orgId, {

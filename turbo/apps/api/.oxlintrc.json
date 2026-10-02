@@ -6,7 +6,7 @@
     {
       "files": [
         "src/signals/services/pick-chat-run.service.ts",
-        "src/signals/services/claim-run-context.ts"
+        "src/signals/services/thread-claim-run.service.ts"
       ],
       "rules": {
         "max-lines-per-function": "allow"

@@ -3,7 +3,7 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 import type { Db } from "../external/db";
 import { reprojectGmailAutomationsForOwner } from "./gmail-automation-account.service";
 import { reprojectGoogleCalendarAutomationsForOwner } from "./google-calendar-automation-account.service";
-import { reprojectGoogleFormsAutomationsForOwner } from "./google-forms-automation-account.service";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 import { reprojectNotionAutomationsForOwner } from "./notion-automation-account.service";
 import { reprojectStripeInvoicePaidAutomationsForOwner } from "./stripe-invoice-paid-workflow-automation.service";
@@ -36,7 +36,7 @@ export async function reprojectWorkflowAutomationsForOwner(
       return;
     }
     case "google-forms": {
-      await reprojectGoogleFormsAutomationsForOwner(db, args);
+      await db.execute(googleFormsAccountProjectionStatement(args));
       signal.throwIfAborted();
       return;
     }

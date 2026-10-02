@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
-  runnersCancellationContract,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
+  runnersCancellationContract,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -24,7 +24,7 @@ function client() {
   );
 }
 
-async function fixture(triggerSource: "test" | "web" = "test") {
+async function fixture() {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
@@ -34,16 +34,14 @@ async function fixture(triggerSource: "test" | "web" = "test") {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
-  const agentName = `cancel-state-${randomUUID().slice(0, 8)}`;
-  const agent = await runs.createDirectAgent(actor, {
-    version: "1",
-    agents: { [agentName]: { framework: "claude-code" } },
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Cancellation state agent",
+    description: "Exercises cancellation reconciliation.",
+    visibility: "private",
   });
-  const run = await runs.createDirectRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "exercise cancellation reconciliation",
-    modelProviderType: "anthropic-api-key",
-    triggerSource,
   });
   onTestFinished(async () => {
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
@@ -83,6 +81,69 @@ async function read(f: Fixture) {
 }
 
 describe("Run cancellation reconciliation", () => {
+  it("redrives threadless cleanup of a historical run without escalating the user's cooperative stop", async () => {
+    // New runs always belong to a Thread or to protected Pi maintenance; a
+    // user-cancellable threadless run exists only as historical state.
+    const actor = createBddApi(context).user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization actor");
+    }
+    const state = setupApp({
+      context,
+      routes: testCronCleanupSandboxesStateRoutes,
+    })(testCronCleanupSandboxesStateContract);
+    const seeded = await accept(
+      state.action({
+        body: {
+          action: "seed-run",
+          status: "running",
+          threadless: true,
+          // Created under the cancellation-recovery protocol.
+          cancellation_recovery_completed: false,
+          user_id: actor.userId,
+          org_id: actor.orgId,
+          runner_group: createRunsApi(context).configureRunnerGroup(),
+        },
+      }),
+      [200],
+    );
+    const runId = String(seeded.body.run_id);
+    // Threadless deletion lists the run's session-history objects.
+    context.mocks.s3.send.mockResolvedValue({});
+    const runs = createRunsApi(context);
+    await runs.requestCancelRun(actor, runId, [200]);
+    await flushWaitUntilForTest();
+    await withMockNowForTest(
+      now() + CANCELLATION_RECOVERY_STALE_AFTER_MS,
+      async () => {
+        const cleanup = await accept(
+          state.cleanup({
+            body: { runIds: [runId], chatThreadIds: [], exportJobIds: [] },
+          }),
+          [200],
+        );
+        expect(cleanup.body.threadlessRuns).toMatchObject({
+          deleted: 1,
+          failed: 0,
+        });
+      },
+    );
+    const cancellations = context.mocks.ably.publish.mock.calls.filter(
+      ([channel, payload]) => {
+        return (
+          channel === "cancel" &&
+          typeof payload === "object" &&
+          payload !== null &&
+          "runId" in payload &&
+          payload.runId === runId
+        );
+      },
+    );
+    expect(cancellations).toStrictEqual([
+      ["cancel", { runId, mode: "cooperative" }],
+    ]);
+  });
+
   it("recovers committed cooperative cancellation after publication fails", async () => {
     const f = await fixture();
     const healthy = await read(f);
@@ -117,49 +178,6 @@ describe("Run cancellation reconciliation", () => {
       runId: f.runId,
       state: "gone",
     });
-  });
-
-  it("redrives threadless cleanup without escalating the user's cooperative stop", async () => {
-    const f = await fixture("web");
-    await f.runs.requestCancelRun(f.actor, f.runId, [200]);
-    await flushWaitUntilForTest();
-    await withMockNowForTest(
-      now() + CANCELLATION_RECOVERY_STALE_AFTER_MS,
-      async () => {
-        // The existing test endpoint restricts the real cron to this fixture's IDs.
-        const cleanup = await accept(
-          setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-            testCronCleanupSandboxesStateContract,
-          ).cleanup({
-            body: {
-              runIds: [f.runId],
-              chatThreadIds: [],
-              exportJobIds: [],
-            },
-          }),
-          [200],
-        );
-        expect(cleanup.body.threadlessRuns).toMatchObject({
-          deleted: 1,
-          failed: 0,
-        });
-      },
-    );
-    expect((await read(f)).body).toMatchObject({ state: "gone" });
-    const cancellations = context.mocks.ably.publish.mock.calls.filter(
-      ([channel, payload]) => {
-        return (
-          channel === "cancel" &&
-          typeof payload === "object" &&
-          payload !== null &&
-          "runId" in payload &&
-          payload.runId === f.runId
-        );
-      },
-    );
-    expect(cancellations).toStrictEqual([
-      ["cancel", { runId: f.runId, mode: "cooperative" }],
-    ]);
   });
 
   it("does not mistake a present row with another group or official claim for deletion", async () => {

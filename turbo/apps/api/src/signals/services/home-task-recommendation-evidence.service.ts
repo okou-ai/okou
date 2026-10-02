@@ -7,21 +7,21 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, desc, eq, inArray, isNull, notExists } from "drizzle-orm";
 
 import { stripMarkdown } from "../../lib/strip-markdown";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { command } from "ccstate";
 import {
   canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { revokedChatEventIds } from "./chat-event-queue.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import {
-  collectHomeTaskGmailEvidence,
+  collectHomeTaskGmailEvidence$,
   type HomeTaskGmailEvidence,
 } from "./home-task-recommendation-gmail.service";
 
@@ -77,10 +77,9 @@ function excerpt(value: string, cap: number): string {
   return text.length <= cap ? text : `${text.slice(0, cap)}…`;
 }
 
-async function recentThreads(
-  db: Pick<Db, "select">,
-  args: HomeTaskEvidenceScope,
-) {
+const recentThreads$ = command(async ({ set }, args: HomeTaskEvidenceScope) => {
+  const db = set(writeDb$);
+
   return await db
     .select({
       id: chatThreads.id,
@@ -92,7 +91,7 @@ async function recentThreads(
       and(
         eq(chatThreads.userId, args.userId),
         eq(chatThreads.agentId, args.agentId),
-        chatThreadOrganizationCondition(db, args.orgId),
+        chatThreadOrganizationPredicate(args.orgId),
         notExists(
           db
             .select({ id: agentRuns.id })
@@ -108,7 +107,7 @@ async function recentThreads(
     )
     .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
     .limit(THREAD_LIMIT);
-}
+});
 
 /**
  * The given threads that still hold pending (run-less, unrevoked) queue input,
@@ -116,193 +115,217 @@ async function recentThreads(
  * rows, then the revocations of those rows. Input held by an open active
  * delivery belongs to an active run, which already excludes its thread.
  */
-export async function threadIdsWithPendingInput(
-  db: Pick<Db, "select">,
-  threadIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  if (threadIds.length === 0) {
-    return new Set();
-  }
-  const candidates = await db
-    .select({ id: chatEvents.id, chatThreadId: chatEvents.chatThreadId })
-    .from(chatEvents)
-    .where(
-      and(
-        inArray(chatEvents.chatThreadId, [...threadIds]),
-        isNull(chatEvents.runId),
-        chatEventTypeIn(["input.prompt", "input.automation"]),
-      ),
-    );
-  const revoked = await revokedChatEventIds(
-    db,
-    candidates.map(({ id }) => {
+export const threadIdsWithPendingInput$ = command(
+  async (
+    { set },
+    threadIds: readonly string[],
+  ): Promise<ReadonlySet<string>> => {
+    const db = set(writeDb$);
+
+    if (threadIds.length === 0) {
+      return new Set();
+    }
+    const candidates = await db
+      .select({ id: chatEvents.id, chatThreadId: chatEvents.chatThreadId })
+      .from(chatEvents)
+      .where(
+        and(
+          inArray(chatEvents.chatThreadId, [...threadIds]),
+          isNull(chatEvents.runId),
+          chatEventTypeIn(["input.prompt", "input.automation"]),
+        ),
+      );
+    const eventIds = candidates.map(({ id }) => {
       return id;
-    }),
-  );
-  return new Set(
-    candidates.flatMap((event) => {
-      return revoked.has(event.id) ? [] : [event.chatThreadId];
-    }),
-  );
-}
+    });
+    const revokedRows =
+      eventIds.length === 0
+        ? []
+        : await db
+            .select({ eventId: chatEvents.revokesEventId })
+            .from(chatEvents)
+            .where(inArray(chatEvents.revokesEventId, eventIds));
+    const revoked = new Set(
+      revokedRows.flatMap(({ eventId }) => {
+        return eventId === null ? [] : [eventId];
+      }),
+    );
+    return new Set(
+      candidates.flatMap((event) => {
+        return revoked.has(event.id) ? [] : [event.chatThreadId];
+      }),
+    );
+  },
+);
 
 /**
  * Recent visible user requests and assistant answers for the selected threads.
  * Control, hidden/revoked and thinking events never enter recommendation input.
  */
-async function recentMessages(
-  db: Pick<Db, "select">,
-  threadIds: readonly string[],
-): Promise<Map<string, RecentMessage[]>> {
-  const rows = await db
-    .select({
-      chatThreadId: chatEvents.chatThreadId,
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        inArray(chatEvents.chatThreadId, threadIds),
-        chatEventTypeIn(["input.prompt", "output.message"]),
-        visibleChatEventCondition(db),
-      ),
-    )
-    // `seqId` is only monotonic inside one thread. Ordering a cross-thread
-    // query by it would let an old, long conversation crowd out a newer
-    // one whose sequence happens to be short.
-    .orderBy(desc(chatEvents.createdAt), desc(chatEvents.id))
-    .limit(MESSAGE_LIMIT);
+const recentMessages$ = command(
+  async (
+    { set },
+    threadIds: readonly string[],
+  ): Promise<Map<string, RecentMessage[]>> => {
+    const db = set(writeDb$);
 
-  const byThread = new Map<string, RecentMessage[]>();
-  for (const row of rows) {
-    const existing = byThread.get(row.chatThreadId) ?? [];
-    if (existing.length >= MESSAGE_PER_THREAD_LIMIT) {
-      continue;
-    }
-    const userMessage = requiredUserMessageForEvent(
-      row.eventType,
-      row.userMessage,
-    );
-    const raw = userMessage
-      ? projectUserMessage(userMessage).agentPrompt
-      : row.content;
-    if (raw === null || raw.trim().length === 0) {
-      continue;
-    }
-    existing.push({
-      runId: row.runId,
-      role: chatEventCompatibilityRole(row.eventType),
-      text: excerpt(raw, MESSAGE_EXCERPT_CHARS),
-    });
-    byThread.set(row.chatThreadId, existing);
-  }
-  return byThread;
-}
+    const rows = await db
+      .select({
+        chatThreadId: chatEvents.chatThreadId,
+        runId: chatEvents.runId,
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          inArray(chatEvents.chatThreadId, threadIds),
+          chatEventTypeIn(["input.prompt", "output.message"]),
+          visibleChatEventPredicate(),
+        ),
+      )
+      // `seqId` is only monotonic inside one thread. Ordering a cross-thread
+      // query by it would let an old, long conversation crowd out a newer
+      // one whose sequence happens to be short.
+      .orderBy(desc(chatEvents.createdAt), desc(chatEvents.id))
+      .limit(MESSAGE_LIMIT);
 
-export async function collectHomeTaskEvidence(
-  db: Db,
-  args: HomeTaskEvidenceScope,
-  signal: AbortSignal,
-): Promise<HomeTaskEvidence> {
-  const [recentThreadRows, gmail] = await Promise.all([
-    recentThreads(db, args),
-    collectHomeTaskGmailEvidence(db, args, signal),
-  ]);
-  signal.throwIfAborted();
-  const pendingThreadIds = await threadIdsWithPendingInput(
-    db,
-    recentThreadRows.map((row) => {
-      return row.id;
-    }),
-  );
-  signal.throwIfAborted();
-  const threadRows = recentThreadRows.filter((row) => {
-    return !pendingThreadIds.has(row.id);
-  });
-  const messages =
-    threadRows.length === 0
-      ? new Map<string, RecentMessage[]>()
-      : await recentMessages(
-          db,
-          threadRows.map((row) => {
-            return row.id;
-          }),
-        );
-  signal.throwIfAborted();
-
-  const runIds = [
-    ...new Set(
-      [...messages.values()].flatMap((items) => {
-        return items.flatMap((item) => {
-          return item.runId === null ? [] : [item.runId];
-        });
-      }),
-    ),
-  ];
-  const completedRuns =
-    runIds.length === 0
-      ? []
-      : await db
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              inArray(agentRuns.id, runIds),
-              eq(agentRuns.userId, args.userId),
-              eq(agentRuns.orgId, args.orgId),
-              eq(agentRuns.status, "completed"),
-            ),
-          );
-  signal.throwIfAborted();
-  const completedRunIds = new Set(
-    completedRuns.map((run) => {
-      return run.id;
-    }),
-  );
-  const seenCompletedRunIds = new Set<string>();
-  const completedRequests: { threadRef: string; text: string }[] = [];
-
-  const threadIdByRef = new Map<string, string>();
-  const threads = threadRows.map((row, index): HomeTaskEvidenceThread => {
-    const ref = `t${(index + 1).toString()}`;
-    threadIdByRef.set(ref, row.id);
-    const recent = messages.get(row.id) ?? [];
-    for (const message of recent) {
-      if (
-        message.role === "user" &&
-        message.runId !== null &&
-        completedRunIds.has(message.runId) &&
-        !seenCompletedRunIds.has(message.runId)
-      ) {
-        seenCompletedRunIds.add(message.runId);
-        completedRequests.push({ threadRef: ref, text: message.text });
+    const byThread = new Map<string, RecentMessage[]>();
+    for (const row of rows) {
+      const existing = byThread.get(row.chatThreadId) ?? [];
+      if (existing.length >= MESSAGE_PER_THREAD_LIMIT) {
+        continue;
       }
+      const userMessage = requiredUserMessageForEvent(
+        row.eventType,
+        row.userMessage,
+      );
+      const raw = userMessage
+        ? projectUserMessage(userMessage).agentPrompt
+        : row.content;
+      if (raw === null || raw.trim().length === 0) {
+        continue;
+      }
+      existing.push({
+        runId: row.runId,
+        role: chatEventCompatibilityRole(row.eventType),
+        text: excerpt(raw, MESSAGE_EXCERPT_CHARS),
+      });
+      byThread.set(row.chatThreadId, existing);
     }
-    return {
-      ref,
-      title:
-        row.title === null ? null : excerpt(row.title, TITLE_EXCERPT_CHARS),
-      lastActivityAt: row.lastMessageAt.toISOString(),
-      messages: recent.map(({ role, text }) => {
-        return { role, text };
+    return byThread;
+  },
+);
+
+export const collectHomeTaskEvidence$ = command(
+  async (
+    { set },
+    args: HomeTaskEvidenceScope,
+    signal: AbortSignal,
+  ): Promise<HomeTaskEvidence> => {
+    const db = set(writeDb$);
+
+    const [recentThreadRows, gmail] = await Promise.all([
+      set(recentThreads$, args),
+      set(collectHomeTaskGmailEvidence$, args, signal),
+    ]);
+    signal.throwIfAborted();
+    const pendingThreadIds = await set(
+      threadIdsWithPendingInput$,
+      recentThreadRows.map((row) => {
+        return row.id;
       }),
+    );
+    signal.throwIfAborted();
+    const threadRows = recentThreadRows.filter((row) => {
+      return !pendingThreadIds.has(row.id);
+    });
+    const messages =
+      threadRows.length === 0
+        ? new Map<string, RecentMessage[]>()
+        : await set(
+            recentMessages$,
+            threadRows.map((row) => {
+              return row.id;
+            }),
+          );
+    signal.throwIfAborted();
+
+    const runIds = [
+      ...new Set(
+        [...messages.values()].flatMap((items) => {
+          return items.flatMap((item) => {
+            return item.runId === null ? [] : [item.runId];
+          });
+        }),
+      ),
+    ];
+    const completedRuns =
+      runIds.length === 0
+        ? []
+        : await db
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                inArray(agentRuns.id, runIds),
+                eq(agentRuns.userId, args.userId),
+                eq(agentRuns.orgId, args.orgId),
+                eq(agentRuns.status, "completed"),
+              ),
+            );
+    signal.throwIfAborted();
+    const completedRunIds = new Set(
+      completedRuns.map((run) => {
+        return run.id;
+      }),
+    );
+    const seenCompletedRunIds = new Set<string>();
+    const completedRequests: { threadRef: string; text: string }[] = [];
+
+    const threadIdByRef = new Map<string, string>();
+    const threads = threadRows.map((row, index): HomeTaskEvidenceThread => {
+      const ref = `t${(index + 1).toString()}`;
+      threadIdByRef.set(ref, row.id);
+      const recent = messages.get(row.id) ?? [];
+      for (const message of recent) {
+        if (
+          message.role === "user" &&
+          message.runId !== null &&
+          completedRunIds.has(message.runId) &&
+          !seenCompletedRunIds.has(message.runId)
+        ) {
+          seenCompletedRunIds.add(message.runId);
+          completedRequests.push({ threadRef: ref, text: message.text });
+        }
+      }
+      return {
+        ref,
+        title:
+          row.title === null ? null : excerpt(row.title, TITLE_EXCERPT_CHARS),
+        lastActivityAt: row.lastMessageAt.toISOString(),
+        messages: recent.map(({ role, text }) => {
+          return { role, text };
+        }),
+      };
+    });
+    const providerEvidence = { threads, gmail, completedRequests };
+    const destinationIdentity = threads.map((thread) => {
+      return { ref: thread.ref, threadId: threadIdByRef.get(thread.ref) };
+    });
+    return {
+      ...providerEvidence,
+      threadIdByRef,
+      digest: createHash("sha256")
+        .update(
+          JSON.stringify({ providerEvidence, destinationIdentity }),
+          "utf8",
+        )
+        .digest("hex"),
     };
-  });
-  const providerEvidence = { threads, gmail, completedRequests };
-  const destinationIdentity = threads.map((thread) => {
-    return { ref: thread.ref, threadId: threadIdByRef.get(thread.ref) };
-  });
-  return {
-    ...providerEvidence,
-    threadIdByRef,
-    digest: createHash("sha256")
-      .update(JSON.stringify({ providerEvidence, destinationIdentity }), "utf8")
-      .digest("hex"),
-  };
-}
+  },
+);
 
 export function isHomeTaskEvidenceEmpty(evidence: HomeTaskEvidence): boolean {
   return (

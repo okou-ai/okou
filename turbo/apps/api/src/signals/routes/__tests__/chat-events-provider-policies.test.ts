@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
@@ -1585,15 +1586,13 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     (["deepseek-v4.1-flash", "deepseek-v4-flash"] as const).flatMap((model) => {
-      return [false, true].flatMap((alternativeRoutingEnabled) => {
-        return [false, true].map((usRoutingEnabled) => {
-          return { model, alternativeRoutingEnabled, usRoutingEnabled };
-        });
+      return [false, true].map((usRoutingEnabled) => {
+        return { model, usRoutingEnabled };
       });
     }),
   )(
-    "routes built-in $model with alternative routing $alternativeRoutingEnabled and US routing $usRoutingEnabled",
-    async ({ model, alternativeRoutingEnabled, usRoutingEnabled }) => {
+    "routes built-in $model through global OpenRouter with US routing $usRoutingEnabled",
+    async ({ model, usRoutingEnabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
@@ -1609,8 +1608,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
-          alternativeRoutingEnabled,
         [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
       });
       await preparePiResourceHandoff(actor, agentId);
@@ -1621,80 +1618,21 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "capture the managed DeepSeek route",
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
-          !alternativeRoutingEnabled,
         [FeatureSwitchKey.OpenRouterUsRouting]: !usRoutingEnabled,
       });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
-      const expectedProvider = alternativeRoutingEnabled
-        ? "openrouter-codex"
-        : "deepseek";
-      const expectedModel = alternativeRoutingEnabled
-        ? `deepseek/${model}`
-        : model === "deepseek-v4.1-flash"
-          ? "deepseek-flash"
-          : model;
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piModelConfig).toMatchObject({
-        provider: alternativeRoutingEnabled ? "openrouter" : "deepseek",
-        baseUrl: alternativeRoutingEnabled
-          ? "https://openrouter.ai/api/v1"
-          : "https://api.deepseek.com/",
-        model: expectedModel,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: `deepseek/${model}`,
       });
       expect(claim.billableFirewalls).toContain(
-        `model-provider:${expectedProvider}`,
-      );
-      expect(claim.billableFirewalls).not.toContain(
-        `model-provider:${alternativeRoutingEnabled ? "deepseek" : "openrouter-codex"}`,
+        "model-provider:openrouter-codex",
       );
       await cancelChatRun(actor, run.runId);
     },
     90_000,
-  );
-
-  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
-    "uses direct built-in %s when the OpenRouter fallback is unavailable",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      if (selectedModel === "deepseek-v4.1-flash") {
-        configureNativeCliArtifact();
-      }
-      // A test-owned mirror keeps the shared model's OpenRouter candidate
-      // available to concurrent tests while this one cools down.
-      const model = await builtInModelWithOpenRouterCoolingDown(selectedModel);
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          preferred: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
-        [FeatureSwitchKey.OpenRouterUsRouting]: true,
-      });
-      await preparePiResourceHandoff(actor, agentId);
-
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: "retain the managed DeepSeek direct priority",
-        model,
-      });
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "deepseek",
-        baseUrl: "https://api.deepseek.com/",
-        model:
-          selectedModel === "deepseek-v4.1-flash"
-            ? "deepseek-flash"
-            : selectedModel,
-      });
-      await cancelChatRun(actor, run.runId);
-    },
   );
 
   it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
@@ -1714,11 +1652,6 @@ describe("CHAT-02: model-first provider policies", () => {
           modelProviderId: null,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-        [FeatureSwitchKey.OpenRouterUsRouting]: false,
-      });
-
       const { picked } = await sendUntilPicked(actor, {
         agentId,
         prompt: "require the managed OpenRouter DeepSeek route",
@@ -1915,13 +1848,13 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   }, 90_000);
 
-  it("runs built-in DeepSeek through the native Pi API credential", async () => {
+  it("runs built-in DeepSeek through the managed OpenRouter Pi credential", async () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const keyFixtureId = randomUUID();
     const requestedApiKey = `built-in-key-bdd-dev-seed-${keyFixtureId}`;
 
-    // Keep a second DeepSeek fixture owner alive to cover vendor-unique row
+    // Keep a second OpenRouter fixture owner alive to cover vendor-unique row
     // arbitration instead of relying on another test file's scheduling.
     await seedBuiltInModelKey("deepseek-v4-flash");
     let runId: string | null = null;
@@ -1933,7 +1866,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const selectedApiKey = await acquireBddBuiltInModelKey({
       fixtureId: keyFixtureId,
-      vendor: "deepseek",
+      vendor: "openrouter",
       apiKey: requestedApiKey,
     });
 
@@ -1961,8 +1894,9 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "deepseek/deepseek-v4-flash",
     });
     if (!claim.encryptedSecrets) {
       throw new Error("Expected the built-in claim to carry encrypted secrets");
@@ -1972,7 +1906,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         encryptedSecrets: claim.encryptedSecrets,
         authHeaders: {
-          Authorization: `Bearer ${secretTemplate("DEEPSEEK_API_KEY")}`,
+          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
         },
       },
       [200],
@@ -2069,6 +2003,42 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(authorization?.length ?? 0).toBeGreaterThan("Bearer ".length);
     expect(authorization === `Bearer ${acquiredApiKey}`).toBeTruthy();
   }, 90_000);
+
+  it("rejects a firewall-injected provider that was deleted before run admission", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const { providerId } = await upsertOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "sk-ant-api03-deleted-provider",
+    });
+    // claude-fable-5-1 has no Pi route, so its key would be a firewall
+    // reference; the policy still pins the provider that is deleted below.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    // Deleting the provider through the public API removes the pinned source
+    // (and its stored secret) before the queued input is picked.
+    await createMiscRoutesApi(context).deleteOrgModelProvider(
+      actor,
+      "anthropic-api-key",
+      [204],
+    );
+
+    const { picked } = await sendUntilPicked(actor, {
+      agentId,
+      prompt: "run with a deleted provider",
+      model: "claude-fable-5-1",
+    });
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "model_provider_unavailable",
+    });
+  }, 60_000);
 
   it("rejects legacy blank OpenRouter provider secrets before run admission", async () => {
     const { actor, agentId } = await entitledChatActor();

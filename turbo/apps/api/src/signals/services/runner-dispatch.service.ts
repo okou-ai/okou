@@ -40,9 +40,7 @@ interface RunnerJobNotificationTiming {
   readonly preActivation: RunnerJobPreActivationTiming;
   readonly activationScheduledAt: number;
   readonly activationEnteredAt: number;
-  readonly sameThreadMarkersCompletedAt: number;
   readonly databaseReadyAt: number;
-  readonly sameThreadMarkers: "recorded" | "not_applicable";
 }
 
 interface RunnerNotificationAttributionMilestone {
@@ -101,10 +99,6 @@ function runnerNotificationAttributionEvents(
     {
       actionType: "runner_notification_queue_to_activation_entry",
       completedAt: timing.activationEnteredAt,
-    },
-    {
-      actionType: "runner_notification_queue_to_same_thread_markers_complete",
-      completedAt: timing.sameThreadMarkersCompletedAt,
     },
     {
       actionType: "runner_notification_queue_to_database_ready",
@@ -189,7 +183,6 @@ export async function notifyRunnerJob(
     profile: args.profile,
     notification_target: "broadcast",
     activation_origin: timing.preActivation.activationOrigin,
-    same_thread_markers: timing.sameThreadMarkers,
   };
   const dimensions: Record<string, string> = {
     ...attributionDimensions,

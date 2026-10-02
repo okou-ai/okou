@@ -36,8 +36,7 @@ const RAW_MUTATIONS = new Set<MutationName>([
   "upsertUsagePricingRows",
 ]);
 const RUN_FACTORY_NAMES = new Set([
-  "createDirectRunFixture",
-  "createRun",
+  "createThreadRun",
   "insertRunFixture",
   "sendChatRun",
 ]);
@@ -48,14 +47,6 @@ function isPricingFixtureModule(source: string): boolean {
     source.endsWith("/test-fixtures/system-config-seeds.ts") ||
     source.endsWith("/test-fixtures/usage-pricing") ||
     source.endsWith("/test-fixtures/usage-pricing.ts")
-  );
-}
-
-function isApprovedRunFactory(source: string, exportName: string): boolean {
-  return (
-    exportName === "createDirectRunFixture" &&
-    (source.endsWith("/test-fixtures/agent-runs") ||
-      source.endsWith("/test-fixtures/agent-runs.ts"))
   );
 }
 
@@ -932,16 +923,7 @@ export const noUnownedUsagePricing = createRule({
             ? memberName(current.callee)
             : null;
       if (calleeName && RUN_FACTORY_NAMES.has(calleeName)) {
-        if (current.callee.type === AST_NODE_TYPES.Identifier) {
-          const imported = importReference(context.sourceCode, current.callee);
-          if (
-            imported &&
-            imported.importedName === calleeName &&
-            isApprovedRunFactory(imported.source, imported.importedName)
-          ) {
-            return true;
-          }
-        } else if (
+        if (
           current.callee.type === AST_NODE_TYPES.MemberExpression &&
           current.callee.object.type !== AST_NODE_TYPES.Super &&
           isRunClientSource(current.callee.object, nextSeen)

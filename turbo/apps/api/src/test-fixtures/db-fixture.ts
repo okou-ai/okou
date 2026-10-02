@@ -1,13 +1,12 @@
-import { withUsageEventCompactionLockScopeForTest } from "../signals/services/usage-event-compaction-lock.service";
-
 export type DbFixture = <T>(
   scope: string,
   work: () => Promise<T>,
 ) => Promise<T>;
 
+/** Fixture queries own their rows by business scope; there is no lock namespace. */
 export async function usageEventCompactionDbFixture<T>(
-  scope: string,
+  _scope: string,
   work: () => Promise<T>,
 ): Promise<T> {
-  return await withUsageEventCompactionLockScopeForTest(scope, work);
+  return await work();
 }

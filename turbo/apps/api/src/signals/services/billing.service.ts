@@ -11,7 +11,7 @@ import {
   getStripeClient,
 } from "../external/stripe-client";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 export function autoRechargeConfig(
   orgId: string,
@@ -119,7 +119,7 @@ export const updateAutoRechargeConfig$ = command(
     const writeDb = set(writeDb$);
 
     if (enabled) {
-      const capabilities = await loadOrgPlanCapabilities(writeDb, orgId);
+      const capabilities = await set(loadOrgPlanCapabilities$, orgId, signal);
       signal.throwIfAborted();
 
       if (capabilities?.autoRechargeAllowed !== true) {

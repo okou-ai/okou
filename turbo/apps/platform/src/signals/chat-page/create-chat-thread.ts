@@ -1,3 +1,4 @@
+import { createChatRunUsageSignals } from "./chat-run-usage.ts";
 import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
 import {
@@ -47,6 +48,7 @@ import {
   type ChatRunOptionsRequest,
   type GenerationTemplateRequest,
   type ChatEvent as PersistedChatEvent,
+  type ChatEventUsagePayload,
   type FeedbackNotePart,
   type ResolvedAttachFile,
   type ChatThreadArtifactRun,
@@ -57,7 +59,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   chatEventCompatibilityRole,
-  foldLatestChatUsageByRunId,
   isChatEventContentTextType,
   isChatRunTerminalEventType,
   revokedChatEventIds,
@@ -822,10 +823,12 @@ function orderEventsByRunTurn(
     });
 }
 
-function groupEventsForDisplay(events: EnrichedChatEvent[]): ChatEventGroup[] {
+function groupEventsForDisplay(
+  events: EnrichedChatEvent[],
+  usageByRunId: ReadonlyMap<string, ChatEventUsagePayload>,
+): ChatEventGroup[] {
   const activeEvents: EnrichedChatEvent[] = [];
   const queuedEvents: EnrichedChatEvent[] = [];
-  const usageByRunId = foldLatestChatUsageByRunId(events);
   for (const event of events) {
     if (isUsageEvent(event)) {
       continue;
@@ -892,11 +895,13 @@ function withPendingAssistantGroup(
 function createRenderedChatGroups(
   semanticEvents$: Computed<SemanticChatEvent[]>,
   runActive$: Computed<boolean>,
+  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>,
 ) {
   const allChatGroups$ = computed((get): ChatEventGroup[] => {
     return withPendingAssistantGroup(
       groupEventsForDisplay(
         enrichedChatEventsFromSemantic(get(semanticEvents$)),
+        get(usageByRunId$),
       ),
       get(runActive$),
     );
@@ -2036,12 +2041,14 @@ interface ThinkingIndicatorSources {
 
 function createPagedEventProjections({
   chatEvents$,
+  usageByRunId$,
   thinkingSources,
   registeredEvents$,
   eventTrees$,
   eventTreeErrors$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
+  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>;
   thinkingSources: ThinkingIndicatorSources;
   registeredEvents$: State<RegisteredChatEvent[]>;
   eventTrees$: Computed<ReadonlyMap<string, Root>>;
@@ -2068,7 +2075,7 @@ function createPagedEventProjections({
       ...thinkingSources,
       runActive$,
     }),
-    ...createRenderedChatGroups(semanticEvents$, runActive$),
+    ...createRenderedChatGroups(semanticEvents$, runActive$, usageByRunId$),
   };
 }
 
@@ -2231,12 +2238,14 @@ function createEventChangeEffects({
 
 function createChatEventPresentationLifecycle({
   chatEvents,
+  usage,
   eventChangeHandler,
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
 }: {
   readonly chatEvents: ChatEventSignals;
+  readonly usage: ReturnType<typeof createChatRunUsageSignals>;
   readonly eventChangeHandler: ChatEventChangeHandler;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
@@ -2253,6 +2262,7 @@ function createChatEventPresentationLifecycle({
         eventChangeHandler,
         signal,
       );
+      set(usage.subscribe$, signal);
       await set(syncVisibleEventTrees$, false, signal);
       set(enableSidebarEntryAnimations$);
       const result = await settle(set(chatEvents.setup$, signal), signal);
@@ -2260,6 +2270,7 @@ function createChatEventPresentationLifecycle({
         set(initialEventsReady$, true);
         throw result.error;
       }
+      set(usage.refresh$, false, signal);
     },
   );
   const catchUp$ = command(
@@ -2269,6 +2280,7 @@ function createChatEventPresentationLifecycle({
       if (!result.ok) {
         throw result.error;
       }
+      set(usage.refresh$, true, signal);
     },
   );
   return { setup$, catchUp$ };
@@ -2329,8 +2341,10 @@ function createChatThreadMessagePipeline({
     previewCatalogReady$,
     connector,
   });
+  const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
+    usageByRunId$: usage.usageByRunId$,
     thinkingSources: {
       serverRunState$: chatEvents.serverRunState$,
       hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
@@ -2391,6 +2405,7 @@ function createChatThreadMessagePipeline({
   });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
+    usage,
     eventChangeHandler: effects.eventChangeHandler,
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,

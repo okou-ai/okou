@@ -117,6 +117,43 @@ function snapshotObjectDigest(objectKey: string): string {
   return digest;
 }
 
+/** Read and validate one immutable snapshot using only its published values. */
+export function readChatEventSnapshotObject(
+  bucket: string,
+  chatThreadId: string,
+  head: {
+    readonly objectKey: string;
+    readonly archiveSchemaVersion: number;
+    readonly lastSeqId: number;
+    readonly terminalEventId: string | null;
+    readonly terminalSeqId: number | null;
+  },
+  signal: AbortSignal,
+): Computed<Promise<readonly ChatEventRow[]>> {
+  return computed(async (get) => {
+    const compressed = await get(downloadS3Buffer(bucket, head.objectKey));
+    signal.throwIfAborted();
+    if (
+      createHash("sha256").update(compressed).digest("hex") !==
+      snapshotObjectDigest(head.objectKey)
+    ) {
+      throw new Error("Chat event snapshot checksum is invalid");
+    }
+    const decompressed = await gunzipAsync(compressed);
+    const snapshot = decodeSnapshotRows(
+      decompressed,
+      chatThreadId,
+      head.lastSeqId,
+      {
+        eventId: head.terminalEventId,
+        seqId: head.terminalSeqId,
+      },
+    );
+    signal.throwIfAborted();
+    return snapshot;
+  });
+}
+
 export function readCurrentChatEventHistoryAtSnapshot(
   runtime: Omit<ChatEventHistoryRuntime, "db"> & {
     readonly db: ChatEventHistoryQueryDb;
@@ -131,6 +168,7 @@ export function readCurrentChatEventHistoryAtSnapshot(
         terminalSeqId: chatEventSnapshots.terminalSeqId,
         terminalEventId: chatEventSnapshots.terminalEventId,
         objectKey: chatEventSnapshots.objectKey,
+        archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
       })
       .from(chatEventSnapshots)
       .where(
@@ -152,25 +190,8 @@ export function readCurrentChatEventHistoryAtSnapshot(
       throw new Error("Chat event snapshot head is not reusable");
     }
 
-    const compressed = await get(
-      downloadS3Buffer(runtime.bucket, head.objectKey),
-    );
-    signal.throwIfAborted();
-    if (
-      createHash("sha256").update(compressed).digest("hex") !==
-      snapshotObjectDigest(head.objectKey)
-    ) {
-      throw new Error("Chat event snapshot checksum is invalid");
-    }
-    const decompressed = await gunzipAsync(compressed);
-    const snapshot = decodeSnapshotRows(
-      decompressed,
-      chatThreadId,
-      head.lastSeqId,
-      {
-        eventId: head.terminalEventId,
-        seqId: head.terminalSeqId,
-      },
+    const snapshot = await get(
+      readChatEventSnapshotObject(runtime.bucket, chatThreadId, head, signal),
     );
     signal.throwIfAborted();
     const tail = await readPostgresTail(

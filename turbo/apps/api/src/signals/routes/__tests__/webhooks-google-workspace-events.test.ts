@@ -1231,7 +1231,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
   });
 
-  it("serializes last-consumer cleanup with a concurrent enable", async () => {
+  it("keeps a consumer enabled during last-consumer cleanup subscribed", async () => {
     const deleteStarted = createDeferredPromise<void>(context.signal);
     const deleteRelease = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
@@ -1253,11 +1253,23 @@ describe("Google Workspace Events subscription lifecycle", () => {
       params: { id: active.body.id },
     });
     await deleteStarted.promise;
-    const enableRequest = automationsClient().enable({
-      headers: authHeaders(fixture.actor),
-      params: { id: disabled.body.id },
-    });
+    // Remote cleanup happens after the local decision; enabling another
+    // consumer does not wait for it and prepares its own subscription.
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(fixture.actor),
+        params: { id: disabled.body.id },
+      }),
+      [200],
+    );
+    deleteRelease.resolve();
+    await accept(disableRequest, [200]);
 
+    expect(fixture.provider.createdNames).toHaveLength(2);
+    expect(fixture.provider.deletedUrls).toHaveLength(1);
+    expect(fixture.provider.deletedUrls[0]).toContain(
+      `/${fixture.provider.createdNames[0]}?allowMissing=true`,
+    );
     const listed = await accept(
       automationsClient().list({
         headers: authHeaders(fixture.actor),
@@ -1269,19 +1281,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       listed.body.find((automation) => {
         return automation.id === disabled.body.id;
       })?.enabled,
-    ).toBeFalsy();
-    expect(fixture.provider.createdNames).toHaveLength(1);
-    deleteRelease.resolve();
-
-    await accept(disableRequest, [200]);
-    await accept(enableRequest, [200]);
-    expect(fixture.provider.createdNames).toHaveLength(2);
-    expect(fixture.provider.operations).toStrictEqual([
-      `create:${fixture.provider.createdNames[0]}`,
-      `delete-start:${fixture.provider.createdNames[0]}`,
-      `delete-end:${fixture.provider.createdNames[0]}`,
-      `create:${fixture.provider.createdNames[1]}`,
-    ]);
+    ).toBeTruthy();
 
     await accept(
       automationsClient().disable({

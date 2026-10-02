@@ -18,6 +18,8 @@ enum Inner<S> {
     AppleVncPasswordRaw(S),
     AppleSrpRaw(S),
     AppleRsaSrpRaw(S),
+    RsaAes(Box<crate::rsa_aes::records::Records<S>>),
+    RsaAesAuthenticationOnly(S),
 }
 
 impl<S> AuthenticatedStream<S> {
@@ -50,6 +52,18 @@ impl<S> AuthenticatedStream<S> {
             inner: Inner::AppleRsaSrpRaw(stream),
         }
     }
+
+    pub(crate) fn rsa_aes(stream: crate::rsa_aes::records::Records<S>) -> Self {
+        Self {
+            inner: Inner::RsaAes(Box::new(stream)),
+        }
+    }
+
+    pub(crate) fn rsa_aes_raw(stream: S) -> Self {
+        Self {
+            inner: Inner::RsaAesAuthenticationOnly(stream),
+        }
+    }
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for AuthenticatedStream<S> {
@@ -64,6 +78,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for AuthenticatedStream<S> {
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_read(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_read(cx, buf),
             Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_read(cx, buf),
+            Inner::RsaAes(stream) => Pin::new(stream.as_mut()).poll_read(cx, buf),
+            Inner::RsaAesAuthenticationOnly(stream) => Pin::new(stream).poll_read(cx, buf),
         }
     }
 }
@@ -80,6 +96,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_write(cx, buf),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_write(cx, buf),
             Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_write(cx, buf),
+            Inner::RsaAes(stream) => Pin::new(stream.as_mut()).poll_write(cx, buf),
+            Inner::RsaAesAuthenticationOnly(stream) => Pin::new(stream).poll_write(cx, buf),
         }
     }
 
@@ -90,6 +108,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_flush(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_flush(cx),
             Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_flush(cx),
+            Inner::RsaAes(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
+            Inner::RsaAesAuthenticationOnly(stream) => Pin::new(stream).poll_flush(cx),
         }
     }
 
@@ -100,6 +120,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for AuthenticatedStream<S> {
             Inner::AppleVncPasswordRaw(stream) => Pin::new(stream).poll_shutdown(cx),
             Inner::AppleSrpRaw(stream) => Pin::new(stream).poll_shutdown(cx),
             Inner::AppleRsaSrpRaw(stream) => Pin::new(stream).poll_shutdown(cx),
+            Inner::RsaAes(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
+            Inner::RsaAesAuthenticationOnly(stream) => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }

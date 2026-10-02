@@ -5,8 +5,9 @@ build ccstate graphs. It records the rules applied in
 [#37421](https://github.com/okou-ai/okou/issues/37421) /
 [#37430](https://github.com/okou-ai/okou/pull/37430), where the chat pick, claim,
 and enqueue path was rewritten from helper-driven orchestration into derived
-graphs. That rewrite reduced the mutable state in `createClaimRunObjects` from
-nine `state` atoms to three.
+graphs. That rewrite reduced the mutable state in the claim graph (then
+`createClaimRunObjects`, now `createThreadClaimRunObjects`) from nine `state`
+atoms to three.
 
 The general ccstate rules live in the [ccstate skill](../.claude/skills/ccstate/SKILL.md)
 and its [command reference](../.claude/skills/ccstate/references/commands.md).
@@ -18,6 +19,13 @@ building API graphs.
 The central rule is:
 
 > Data is derived, writes are explicit, and the entry point owns the order.
+
+Side-effect-free reads and computations are written as `computed` wherever
+possible; only operations with side effects belong in a `command` (Ethan,
+2026-10-02). Side effects are database, Stripe and cache writes, OAuth refresh,
+encryption followed by a write, Runner notification or publication, and run
+commit and activation. Telemetry recording in a command's own timing stays with
+that command.
 
 Each node expresses one thing:
 
@@ -53,7 +61,7 @@ The target shape is:
 
 ### 1. Factories take plain values
 
-A signal factory such as `createClaimRunObjects(claim)` receives a plain value
+A signal factory such as `createThreadClaimRunObjects(claim)` receives a plain value
 that is already decided. Nodes read it through the closure. Each claim builds a
 fresh graph, so a value scoped to one claim needs no reset.
 
@@ -88,7 +96,7 @@ Derive the input from its source instead, or take it from the factory argument:
 
 ```ts
 // Right: read the source once and derive everything else from it
-export function createClaimRunObjects(claim: ThreadClaim) {
+export function createThreadClaimRunObjects(claim: ThreadClaim) {
   const pickedEvent$ = computed(async (get) => {
     // Reads the full queue-head row once.
   });
@@ -182,7 +190,11 @@ tasks; one was dropped and later restored during #37430.
   When the signal aborts, the remaining steps are skipped. This is the intended
   abort semantics, not a bug to compensate for.
 - A `computed` cannot capture a signal (`ccstate/no-computed-signal`). External
-  reads started from a computed are owned by their own request timeout. If such
+  reads started from a computed are owned by their own request timeout.
+  Side-effect-free reads, including KMS decryption and an exact managed-key
+  read, may run in a computed (Ethan, 2026-10-02); side effects such as OAuth
+  refresh, encryption followed by a database write, Stripe or cache writes stay
+  in commands. If such
   a read must follow the caller's cancellation, move it into a command that
   receives the signal.
 
@@ -291,11 +303,14 @@ Answer these questions when you add or review an API ccstate node:
 
 ## Allowed State
 
-After #37430, `createClaimRunObjects` keeps exactly these atoms:
+`createThreadClaimRunObjects` allows only these atoms:
 
-- `promptAllowanceWriteResult$` and `automationAllowanceWriteResult$`: results
-  of the usage-allowance refresh command, read by later computeds.
-- `internalTargetRevision$`: a revision counter that triggers recomputation.
+- `internalCommittedRunId$`: the run id the commit wrote, read after commit.
+- `queuedAllowanceWriteResult$`: the result of the usage-allowance refresh
+  command, read by the derived queued model resolution. Prompt and automation
+  heads share one queued model graph, so one atom covers both.
+- `internalTargetRevision$`: a revision counter that triggers recomputation
+  after an Official Workflow reconciliation.
 
 When you need a new state atom, check that it is a write result or a revision.
 Anything else should be a factory argument or a `computed`.
@@ -309,9 +324,9 @@ node-valued parameters, or command construction during execution are migration
 work, not patterns to copy. Transaction and handle cleanup is tracked in
 [#37513](https://github.com/okou-ai/okou/issues/37513).
 
-- `turbo/apps/api/src/signals/services/claim-run-context.ts`: the claim graph
-  (`createClaimRunObjects`), with derived head, model inputs, and early-exit
-  assembly.
+- `turbo/apps/api/src/signals/services/thread-claim-run.service.ts`: the claim
+  graph (`createThreadClaimRunObjects`), with derived head, model inputs, model
+  resolution and early-exit assembly.
 - `turbo/apps/api/src/signals/services/chat-thread-queue-drain.service.ts`:
   `pickEnqueuedChatThread$` and `enqueuedChatQueueWaitReason$`, with no
   callbacks.

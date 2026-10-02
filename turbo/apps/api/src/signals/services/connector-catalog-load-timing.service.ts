@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import { now } from "../../lib/time";
+import { safeSync } from "../utils";
 import {
   measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
@@ -11,7 +12,6 @@ import type {
   ConnectorCatalogRuntimeProjectionFallbackReason,
   ConnectorCatalogRuntimeProjectionValidationTiming,
 } from "./connector-catalog-runtime-projection.service";
-import { safeSync } from "../utils";
 
 type AcceptedConnectorCatalogCacheOutcome = "hit" | "miss" | "in_flight";
 type AcceptedConnectorCatalogCacheMissReason =

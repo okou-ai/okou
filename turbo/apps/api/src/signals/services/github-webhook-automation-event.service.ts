@@ -1,5 +1,3 @@
-import { command } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
 import {
   githubDeploymentStatusCreatedEventConfigSchema,
   githubIssueCommentCreatedEventConfigSchema,
@@ -7,6 +5,7 @@ import {
   githubPullRequestEventConfigSchema,
   githubPullRequestReviewSubmittedEventConfigSchema,
   githubWorkflowJobCompletedEventConfigSchema,
+  type GithubAutomationEventConfig,
   type GithubDeploymentState,
   type GithubDeploymentStatusCreatedEventConfig,
   type GithubIssueCommentCreatedEventConfig,
@@ -16,31 +15,32 @@ import {
   type GithubPullRequestReviewSubmittedEventConfig,
   type GithubWorkflowJobCompletedEventConfig,
   type GithubWorkflowRunConclusion,
-  type GithubAutomationEventConfig,
   type WorkflowAutomationEventType,
 } from "@okouai/api-contracts/contracts/workflows";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflowGithubProcessedEvents,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-enqueue.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const log = logger("api:github-webhook-automation-event");
 
@@ -237,7 +237,7 @@ interface GithubWebhookAutomationRow {
   readonly config: GithubWebhookAutomationEventConfig;
 }
 
-function parseConfigForEventType(
+export function parseGithubWebhookAutomationConfig(
   eventType: GithubWebhookAutomationEventType,
   eventConfig: unknown,
 ): GithubWebhookAutomationEventConfig | null {
@@ -269,47 +269,6 @@ function parseConfigForEventType(
       return parsed.success ? parsed.data : null;
     }
   }
-}
-
-export async function prepareGithubWebhookEventConfigForPersist(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly eventType: GithubWebhookAutomationEventType;
-    readonly eventConfig: GithubWebhookAutomationEventConfig;
-  },
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: GithubWebhookAutomationEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const [installation] = await db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (!installation) {
-    return {
-      kind: "bad-request",
-      message: "Install GitHub before creating GitHub webhook automations",
-    };
-  }
-
-  const eventConfig = parseConfigForEventType(args.eventType, args.eventConfig);
-  if (!eventConfig) {
-    return {
-      kind: "bad-request",
-      message: "eventConfig must match the GitHub automation type",
-    };
-  }
-  return { kind: "ok", eventConfig };
 }
 
 function normalized(value: string): string {
@@ -566,94 +525,99 @@ async function findActiveInstallation(args: {
   return installation ?? null;
 }
 
-async function loadGithubWebhookAutomations(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly eventType: GithubWebhookAutomationEventType;
-  },
-  signal: AbortSignal,
-): Promise<readonly GithubWebhookAutomationRow[]> {
-  const rows = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+const loadGithubWebhookAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly eventType: GithubWebhookAutomationEventType;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly GithubWebhookAutomationRow[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, args.eventType),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, args.eventType),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.createdAt));
-  signal.throwIfAborted();
+      )
+      .orderBy(asc(workflowAutomations.createdAt));
+    signal.throwIfAborted();
 
-  const automations: GithubWebhookAutomationRow[] = [];
-  const currentTime = nowDate();
-  for (const row of rows) {
-    const config = parseConfigForEventType(
-      args.eventType,
-      row.automation.eventConfig,
-    );
-    if (!config) {
-      continue;
-    }
-    const canFire = await workflowAutomationCanFire(
-      args.db,
-      {
+    const automations: GithubWebhookAutomationRow[] = [];
+    const currentTime = nowDate();
+    for (const row of rows) {
+      const config = parseGithubWebhookAutomationConfig(
+        args.eventType,
+        row.automation.eventConfig,
+      );
+      if (!config) {
+        continue;
+      }
+      const canFire = await set(
+        workflowAutomationCanFire$,
+        {
+          automation: row.automation,
+          agentId: row.agentId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!canFire) {
+        continue;
+      }
+      const chatThreadId =
+        row.chatThreadId ??
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
+            orgId: row.automation.orgId,
+            userId: row.automation.ownerUserId,
+            workflowId: row.automation.workflowId,
+            agentId: row.agentId,
+            workflowTitle: row.workflowDisplayName ?? row.workflowName,
+            currentTime,
+          },
+          signal,
+        ));
+      signal.throwIfAborted();
+      automations.push({
         automation: row.automation,
         agentId: row.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!canFire) {
-      continue;
+        workflowName: row.workflowName,
+        chatThreadId,
+        config,
+      });
     }
-    const chatThreadId =
-      row.chatThreadId ??
-      (await args.db.transaction(async (tx) => {
-        return await ensureWorkflowUserAutomationThread(tx, {
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-          workflowId: row.automation.workflowId,
-          agentId: row.agentId,
-          workflowTitle: row.workflowDisplayName ?? row.workflowName,
-          currentTime,
-        });
-      }));
-    signal.throwIfAborted();
-    automations.push({
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      chatThreadId,
-      config,
-    });
-  }
-  return automations;
-}
+    return automations;
+  },
+);
 
 function eventRepository(event: GithubWebhookAutomationEvent) {
   return event.payload.repository;
@@ -1041,9 +1005,9 @@ export const dispatchGithubWebhookAutomations$ = command(
     const automations = await sourceTiming.measure(
       "api_dispatch_pre_create_agent_automation_event_load_automations",
       async () => {
-        return await loadGithubWebhookAutomations(
+        return await set(
+          loadGithubWebhookAutomations$,
           {
-            db,
             orgId: installation.orgId,
             eventType: args.event.eventType,
           },

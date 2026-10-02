@@ -122,10 +122,9 @@ describe("builtin Automatic firewall credential destinations", () => {
         [200],
       )
     ).body.connectionId;
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the refreshed MCP identity",
-      modelProvider: "anthropic-api-key",
     });
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(run.runId);
@@ -314,10 +313,9 @@ describe("builtin Automatic firewall credential destinations", () => {
         [200],
       );
       const connectionId = receipt.body.connectionId;
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the selected MCP account",
-        modelProvider: "anthropic-api-key",
       });
       const outcome = await settleIncludingAbort(
         (async () => {

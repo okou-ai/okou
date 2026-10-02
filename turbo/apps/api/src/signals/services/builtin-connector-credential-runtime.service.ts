@@ -1,3 +1,4 @@
+import { isTransientOAuthRefreshFailure } from "./oauth-refresh-failure.service";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
 import { refreshConnectorAuthProviderAccessTokenWithMethod } from "@okouai/connectors/auth-providers";
@@ -15,7 +16,6 @@ import { logger } from "../../lib/log";
 import type { Db, ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import type {
   ConnectorRuntimeMethod,
   ConnectorRuntimeSnapshot,
@@ -52,7 +52,7 @@ export interface BuiltinConnectorCredentialConnection {
   readonly tokenExpiresAt: Date | null;
 }
 
-type BuiltinConnectorCredentialConnectionResult =
+export type BuiltinConnectorCredentialConnectionResult =
   | { readonly kind: "missing" }
   | { readonly kind: "unavailable" }
   | {
@@ -66,7 +66,19 @@ interface BuiltinConnectorStoredValueRef {
   readonly valueRef: string;
 }
 
-type BuiltinConnectorCredentialRefreshResult =
+type PreparedConnectorRefreshOutput =
+  | {
+      readonly kind: "secret";
+      readonly name: string;
+      readonly encryptedValue: string;
+    }
+  | {
+      readonly kind: "variable";
+      readonly name: string;
+      readonly value: string;
+    };
+
+export type BuiltinConnectorCredentialRefreshResult =
   | {
       readonly kind: "ok";
       readonly accessToken: string;
@@ -239,13 +251,7 @@ export async function loadBuiltinConnectorCredentialValues(args: {
     .from(secrets)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
-        groups: [
-          {
-            access: args.connection.access,
-            names: secretNames,
-          },
-        ],
+        groups: [{ access: args.connection.access, names: secretNames }],
       }),
     );
   const variableQuery = args.db
@@ -257,17 +263,9 @@ export async function loadBuiltinConnectorCredentialValues(args: {
     .from(variables)
     .where(
       builtinConnectorCredentialVariableReadCondition({
-        db: args.db,
-        groups: [
-          {
-            access: args.connection.access,
-            names: variableNames,
-          },
-        ],
+        groups: [{ access: args.connection.access, names: variableNames }],
       }),
     );
-  // A single statement snapshot prevents same-contract replacement from
-  // combining a secret from one stored state with a variable from another.
   const rows = await secretQuery.unionAll(variableQuery);
   const values = new Map<string, string>();
   for (const row of rows) {
@@ -303,17 +301,15 @@ function refreshTokenExpiresAt(
     : new Date(nowDate().getTime() + defaultExpiresInMs);
 }
 
-async function persistConnectorRefreshOutputs(
+async function prepareConnectorRefreshOutputs(
   args: {
     readonly access: BuiltinConnectorRefreshTokenAccess;
     readonly connection: BuiltinConnectorCredentialConnection;
-    readonly db: Db;
-    readonly orgId: string;
     readonly outputs: Readonly<Record<string, string | undefined>>;
-    readonly userId: string;
   },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<readonly PreparedConnectorRefreshOutput[]> {
+  const prepared: PreparedConnectorRefreshOutput[] = [];
   for (const [outputName, value] of Object.entries(args.outputs)) {
     if (value === undefined) {
       continue;
@@ -323,39 +319,42 @@ async function persistConnectorRefreshOutputs(
       throw new Error("Connector refresh returned an undeclared output");
     }
     const target = builtinConnectorStoredValueRef(valueRef);
-    if (target.kind === "secret") {
-      const encryptedValue = await encryptStoredSecretValue(value);
-      await upsertConnectorOwnedSecret(args.db, {
-        connectorId: args.connection.connectorId,
-        storage: args.connection.runtimeMethod.method.storage,
-        description: `Connector token output for ${args.connection.connectorSlug}: ${target.name}`,
-        encryptedValue,
-        name: target.name,
-        orgId: args.orgId,
-        userId: args.userId,
-      });
-    } else {
-      await upsertConnectorOwnedVariable(args.db, {
-        connectorId: args.connection.connectorId,
-        storage: args.connection.runtimeMethod.method.storage,
-        description: null,
-        name: target.name,
-        orgId: args.orgId,
-        userId: args.userId,
-        value,
-      });
-    }
+    prepared.push(
+      target.kind === "secret"
+        ? {
+            kind: "secret",
+            name: target.name,
+            encryptedValue: await encryptStoredSecretValue(value),
+          }
+        : { kind: "variable", name: target.name, value },
+    );
     signal.throwIfAborted();
   }
+  return prepared;
 }
 
+function connectorOwnershipCondition(args: {
+  readonly connection: BuiltinConnectorCredentialConnection;
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return and(
+    eq(connectors.id, args.connection.connectorId),
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    eq(connectors.connectorSlug, args.connection.connectorSlug),
+  );
+}
+
+/**
+ * Plainly writes refreshed tokens for the owned account. Concurrent refreshes
+ * are last-writer-wins; a lost rotation surfaces as a reconnect.
+ */
 async function persistConnectorRefresh(
   args: {
     readonly connection: BuiltinConnectorCredentialConnection;
     readonly db: Db;
     readonly defaultExpiresInMs?: number;
-    readonly featureSwitchContext?: FeatureSwitchContext;
-    readonly inputs: Readonly<Record<string, string>>;
     readonly orgId: string;
     readonly outputs: Readonly<Record<string, string | undefined>>;
     readonly scopes?: readonly string[];
@@ -375,93 +374,57 @@ async function persistConnectorRefresh(
     args.expiresIn,
     args.defaultExpiresInMs,
   );
-  const result = await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: args.connection.connectorSlug,
-    });
-    signal.throwIfAborted();
-    const [currentConnector] = await tx
-      .select({
-        authMethod: connectors.authMethod,
-        externalEmail: connectors.externalEmail,
-        externalId: connectors.externalId,
-        needsReconnect: connectors.needsReconnect,
-        reconnectReason: connectors.reconnectReason,
-        stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
-          pgTextDecoder,
-        ),
-        storageVersion: connectors.storageVersion,
-      })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, args.connection.connectorId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, args.connection.connectorSlug),
-        ),
-      )
-      .limit(1);
-    const currentRevisionCanAcceptRefresh =
-      currentConnector?.stateRevision === args.connection.stateRevision ||
-      (currentConnector !== undefined &&
-        !args.connection.needsReconnect &&
-        currentConnector.needsReconnect &&
-        currentConnector.reconnectReason === null);
-    if (
-      currentConnector?.authMethod !==
-        args.connection.runtimeMethod.authMethodId ||
-      currentConnector.externalEmail !== args.connection.externalEmail ||
-      currentConnector.externalId !== args.connection.externalId ||
-      currentConnector.storageVersion !==
-        args.connection.runtimeMethod.method.storage.version ||
-      !currentRevisionCanAcceptRefresh
-    ) {
-      return { kind: "connection-changed" } as const;
-    }
-    const currentInputValues = await loadBuiltinConnectorCredentialValues({
-      connection: args.connection,
-      db: tx,
-      valueRefs: Object.values(access.inputs),
-      ...(args.featureSwitchContext === undefined
-        ? {}
-        : { featureSwitchContext: args.featureSwitchContext }),
-    });
-    for (const [inputName, valueRef] of Object.entries(access.inputs)) {
-      if (currentInputValues.get(valueRef) !== args.inputs[inputName]) {
-        return { kind: "connection-changed" } as const;
-      }
-    }
-    await persistConnectorRefreshOutputs(
-      {
-        access,
-        connection: args.connection,
-        db: tx,
-        orgId: args.orgId,
-        outputs: args.outputs,
-        userId: args.userId,
-      },
-      signal,
-    );
-    await tx
+  // Encryption may call KMS, so it runs before the transaction opens.
+  const prepared = await prepareConnectorRefreshOutputs(
+    { access, connection: args.connection, outputs: args.outputs },
+    signal,
+  );
+  const storage = args.connection.runtimeMethod.method.storage;
+  const persisted = await args.db.transaction(async (tx) => {
+    const [updated] = await tx
       .update(connectors)
       .set({
         ...(args.scopes === undefined
           ? {}
           : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
         tokenExpiresAt,
-        storageVersion: args.connection.runtimeMethod.method.storage.version,
         needsReconnect: false,
         reconnectReason: null,
         updatedAt: sql`clock_timestamp()`,
       })
-      .where(eq(connectors.id, args.connection.connectorId));
-    return { kind: "ok", tokenExpiresAt } as const;
+      .where(connectorOwnershipCondition(args))
+      .returning({ id: connectors.id });
+    if (!updated) {
+      return false;
+    }
+    for (const output of prepared) {
+      const identity = {
+        connectorId: args.connection.connectorId,
+        storage,
+        name: output.name,
+        orgId: args.orgId,
+        userId: args.userId,
+      };
+      if (output.kind === "secret") {
+        await upsertConnectorOwnedSecret(tx, {
+          ...identity,
+          description: `Connector token output for ${args.connection.connectorSlug}: ${output.name}`,
+          encryptedValue: output.encryptedValue,
+        });
+      } else {
+        await upsertConnectorOwnedVariable(tx, {
+          ...identity,
+          description: null,
+          value: output.value,
+        });
+      }
+    }
+    return true;
   });
   signal.throwIfAborted();
-  return result;
+  return persisted
+    ? { kind: "ok", tokenExpiresAt }
+    : { kind: "connection-changed" };
 }
 
 async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(
@@ -482,16 +445,7 @@ async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(
       reconnectReason: args.reconnectReason,
       updatedAt: sql`clock_timestamp()`,
     })
-    .where(
-      and(
-        eq(connectors.id, args.connection.connectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.connectorSlug, args.connection.connectorSlug),
-        eq(connectors.authMethod, args.connection.runtimeMethod.authMethodId),
-        eq(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
-      ),
-    )
+    .where(connectorOwnershipCondition(args))
     .returning({ id: connectors.id });
   signal.throwIfAborted();
   return row !== undefined;
@@ -547,7 +501,10 @@ async function connectorCredentialRefreshFailure(
   kind: "invalid-output" | "missing-input" | "provider-failed",
   signal: AbortSignal,
 ): Promise<BuiltinConnectorCredentialRefreshResult> {
-  if (args.persist?.markNeedsReconnectOnFailure === true) {
+  if (
+    kind !== "invalid-output" &&
+    args.persist?.markNeedsReconnectOnFailure === true
+  ) {
     await markConnectorCredentialNeedsReconnectAfterRefreshFailure(
       {
         connection: args.connection,
@@ -565,10 +522,7 @@ async function connectorCredentialRefreshFailure(
 async function loadConnectorRefreshInputs(
   args: BuiltinConnectorCredentialRefreshArgs,
   access: BuiltinConnectorRefreshTokenAccess,
-): Promise<
-  | { readonly kind: "ok"; readonly inputs: Readonly<Record<string, string>> }
-  | { readonly kind: "missing-input" }
-> {
+): Promise<Readonly<Record<string, string>> | null> {
   const inputValues = await loadBuiltinConnectorCredentialValues({
     connection: args.connection,
     db: args.db,
@@ -581,11 +535,11 @@ async function loadConnectorRefreshInputs(
   for (const [inputName, valueRef] of Object.entries(access.inputs)) {
     const value = inputValues.get(valueRef);
     if (value === undefined) {
-      return { kind: "missing-input" };
+      return null;
     }
     inputs[inputName] = value;
   }
-  return { kind: "ok", inputs };
+  return inputs;
 }
 
 function connectorRefreshAccessToken(args: {
@@ -634,8 +588,8 @@ export async function refreshBuiltinConnectorCredentialAccess(
   if (args.connection.runtimeMethod.method.client && !authClient) {
     return { kind: "configuration-unavailable" };
   }
-  const loadedInputs = await loadConnectorRefreshInputs(args, access);
-  if (loadedInputs.kind === "missing-input") {
+  const inputs = await loadConnectorRefreshInputs(args, access);
+  if (inputs === null) {
     return await connectorCredentialRefreshFailure(
       args,
       "missing-input",
@@ -649,7 +603,7 @@ export async function refreshBuiltinConnectorCredentialAccess(
         authMethodId: args.connection.runtimeMethod.authMethodId,
         method: args.connection.runtimeMethod.method,
         ...(authClient === undefined ? {} : { authClient }),
-        inputs: loadedInputs.inputs,
+        inputs,
       },
       signal,
     ),
@@ -672,6 +626,9 @@ export async function refreshBuiltinConnectorCredentialAccess(
       orgId: args.orgId,
       userId: args.userId,
     });
+    if (isTransientOAuthRefreshFailure(refreshed.error)) {
+      return { kind: "provider-failed" };
+    }
     return await connectorCredentialRefreshFailure(
       args,
       "provider-failed",
@@ -696,7 +653,6 @@ export async function refreshBuiltinConnectorCredentialAccess(
         {
           connection: args.connection,
           db: args.persist.db,
-          inputs: loadedInputs.inputs,
           orgId: args.orgId,
           outputs: refreshed.value.outputs,
           userId: args.userId,
@@ -704,9 +660,6 @@ export async function refreshBuiltinConnectorCredentialAccess(
           ...(refreshed.value.scopes === undefined
             ? {}
             : { scopes: refreshed.value.scopes }),
-          ...(args.featureSwitchContext === undefined
-            ? {}
-            : { featureSwitchContext: args.featureSwitchContext }),
           ...(args.persist.defaultExpiresInMs === undefined
             ? {}
             : { defaultExpiresInMs: args.persist.defaultExpiresInMs }),

@@ -15,7 +15,6 @@
  * for those persisted states.
  */
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { createStore } from "ccstate";
@@ -50,24 +49,6 @@ export async function upsertOrgMetadataFixture(values: {
         source: "org_metadata_migration",
       });
     });
-}
-
-export async function expireAtomGrantFixture(values: {
-  readonly orgId: string;
-  readonly expiredAt: Date;
-}): Promise<void> {
-  const db = createStore().set(writeDb$);
-  await db
-    .update(orgMetadata)
-    .set({
-      currentPeriodEnd: values.expiredAt,
-      updatedAt: values.expiredAt,
-    })
-    .where(eq(orgMetadata.orgId, values.orgId));
-  await db
-    .update(creditExpiresRecord)
-    .set({ expiresAt: values.expiredAt })
-    .where(eq(creditExpiresRecord.orgId, values.orgId));
 }
 
 /**

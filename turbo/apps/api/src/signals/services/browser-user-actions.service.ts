@@ -1405,23 +1405,10 @@ async function inspectPendingBrowserUserAction(
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserInputInspection>> {
   const attemptId = randomUUID();
-  const providerStartedAt = performance.now();
   const provider = await settle(
     getBrowserUseSession(row.providerSessionId, signal),
   );
   signal.throwIfAborted();
-  const providerPhase = {
-    type: "browser_input_preflight_phase",
-    attemptId,
-    phase: "provider_session",
-    outcome: provider.ok ? "ok" : "error",
-    durationMs: Math.round(performance.now() - providerStartedAt),
-  };
-  if (provider.ok && providerPhase.durationMs < 1000) {
-    L.debug("Browser input preflight provider phase", providerPhase);
-  } else {
-    L.warn("Browser input preflight provider phase", providerPhase);
-  }
   if (!provider.ok) {
     return providerFailure(provider.error);
   }

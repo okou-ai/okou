@@ -38,6 +38,7 @@ import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-sla
 import {
   integrationsAgentPhoneContract,
   type AgentPhoneConnectRequest,
+  type AgentPhoneGroupHistoryQuery,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -189,7 +190,7 @@ type SlackIngressPath =
   | "/api/webhooks/slack/interactive";
 type SlackIngressStatus = 200 | 400 | 401 | 500 | 503;
 type SlackDownloadStatus = 200 | 400 | 401 | 404 | 413 | 502;
-type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404;
+type AgentPhoneWebhookStatus = 200 | 400 | 401 | 404 | 500;
 type TelegramWebhookStatus = 200 | 400 | 401 | 404;
 
 type SlackIngressResponse = {
@@ -499,6 +500,9 @@ async function requestRawAgentPhoneWebhook(
     }
     case 404: {
       return { status: 404, ...result };
+    }
+    case 500: {
+      return { status: 500, ...result };
     }
     default: {
       throw new Error(
@@ -1673,6 +1677,24 @@ export function createBddIntegrationApi(context: TestContext) {
       return response.body;
     },
 
+    async requestAgentPhoneGroupHistory(
+      actor: ApiTestUser | null,
+      query: AgentPhoneGroupHistoryQuery,
+      statuses: readonly (200 | 400 | 401 | 404)[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.groupHistory({
+          headers: authenticate(context, routeMocks, actor),
+          query,
+        }),
+        statuses,
+      );
+    },
+
     async requestStartAgentPhoneLink(
       actor: ApiTestUser | null,
       body: { readonly phoneHandle: string },
@@ -1755,7 +1777,7 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly "x-webhook-event"?: string;
         readonly "x-webhook-id"?: string;
       },
-      statuses: readonly (200 | 400 | 401 | 404)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         requestRawAgentPhoneWebhook(context, body, headers),

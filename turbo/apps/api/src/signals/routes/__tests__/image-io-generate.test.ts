@@ -593,10 +593,9 @@ async function seedAdmittedImageRun(
     displayName: "Admitted image agent",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Generate after credit exhaustion",
-    modelProvider: "built-in",
   });
   return {
     actor,

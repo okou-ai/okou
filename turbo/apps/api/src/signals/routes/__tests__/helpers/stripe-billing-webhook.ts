@@ -405,6 +405,42 @@ export async function postConcurrencyEntitlementsInvoicePaid(
     stripeCustomer(args.customerId, args.orgId),
   );
 
+  const activeLines = args.lines.filter((line) => {
+    return line.expiresAt.getTime() > now();
+  });
+  const subscriptionLines = activeLines.length > 0 ? activeLines : args.lines;
+  const currentPeriodEnd = Math.max(
+    ...subscriptionLines.map((line) => {
+      return seconds(line.expiresAt);
+    }),
+  );
+  const subscription = {
+    id: args.subscriptionId,
+    customer: args.customerId,
+    status: args.subscriptionStatus ?? "active",
+    metadata: { purpose: "concurrency_subscription" },
+    cancel_at_period_end: args.cancelAtPeriodEnd ?? false,
+    cancel_at: args.cancelAtPeriodEnd ? currentPeriodEnd : null,
+    schedule: null,
+    trial_end: null,
+    items: {
+      data: [
+        {
+          price: {
+            id: subscriptionLines[0]?.priceId ?? TEST_PRICE_CONCURRENCY,
+          },
+          quantity: subscriptionLines.reduce((sum, line) => {
+            return sum + line.slots;
+          }, 0),
+          current_period_end: currentPeriodEnd,
+        },
+      ],
+    },
+  };
+  getApiTestMocks().stripe.subscriptions.retrieve.mockResolvedValue(
+    subscription,
+  );
+
   await postStripeEvent(signal, {
     type: "invoice.paid",
     data: {
@@ -445,41 +481,10 @@ export async function postConcurrencyEntitlementsInvoicePaid(
     return;
   }
 
-  const activeLines = args.lines.filter((line) => {
-    return line.expiresAt.getTime() > now();
-  });
-  const subscriptionLines = activeLines.length > 0 ? activeLines : args.lines;
-  const currentPeriodEnd = Math.max(
-    ...subscriptionLines.map((line) => {
-      return seconds(line.expiresAt);
-    }),
-  );
   await postStripeEvent(signal, {
     type: "customer.subscription.updated",
     data: {
-      object: {
-        id: args.subscriptionId,
-        customer: args.customerId,
-        status: args.subscriptionStatus ?? "active",
-        metadata: { purpose: "concurrency_subscription" },
-        cancel_at_period_end: args.cancelAtPeriodEnd ?? false,
-        cancel_at: args.cancelAtPeriodEnd ? currentPeriodEnd : null,
-        schedule: null,
-        trial_end: null,
-        items: {
-          data: [
-            {
-              price: {
-                id: subscriptionLines[0]?.priceId ?? TEST_PRICE_CONCURRENCY,
-              },
-              quantity: subscriptionLines.reduce((sum, line) => {
-                return sum + line.slots;
-              }, 0),
-              current_period_end: currentPeriodEnd,
-            },
-          ],
-        },
-      },
+      object: subscription,
     },
   });
 }

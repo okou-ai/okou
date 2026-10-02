@@ -36,12 +36,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
-import {
-  stageBrowserUserActionClosureFixture,
-  stageBrowserUserActionCompletedAtFixture,
-  stageRetiredDirectBrowserUserActionFixture,
-  stageStuckBrowserUserActionFixture,
-} from "../../../test-fixtures/browser-user-action";
+import { stageRetiredDirectBrowserUserActionFixture } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -974,125 +969,186 @@ function browserUserActionTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
 
+async function setupNativeFileScenario() {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Choose a local file for the website",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  acceptBrowserUseCdpSessions([providerId]);
+  const temporaryObjects = new Map<string, Buffer>();
+  const deletedKeys: string[] = [];
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (command instanceof GetObjectCommand) {
+      const bytes = temporaryObjects.get(String(command.input.Key));
+      if (!bytes) {
+        throw new Error("Synthetic temporary object missing");
+      }
+      return Promise.resolve({
+        ContentLength: bytes.length,
+        Body: Readable.from([bytes]),
+      });
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      for (const entry of command.input.Delete?.Objects ?? []) {
+        const key = String(entry.Key);
+        deletedKeys.push(key);
+        temporaryObjects.delete(key);
+      }
+      return Promise.resolve({});
+    }
+    return Promise.resolve({});
+  });
+  const state = {
+    files: [] as readonly { name: string; size: number; type: string }[],
+    siteAccept: ".txt",
+    multiple: true,
+    writable: true,
+    fileInMainDocument: true,
+    missingNode: false,
+    readback: true,
+  };
+  mockNativeFileTarget({
+    current: () => {
+      return state.files;
+    },
+    writable: () => {
+      return state.writable;
+    },
+    mainDocument: () => {
+      return state.fileInMainDocument;
+    },
+    missingNode: () => {
+      return state.missingNode;
+    },
+    readback: () => {
+      return state.readback;
+    },
+    accept: () => {
+      return state.siteAccept;
+    },
+    multiple: () => {
+      return state.multiple;
+    },
+    write: (next) => {
+      state.files = next;
+    },
+  });
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const create = async (required = false) => {
+    return await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after selecting the file",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "document",
+              label: "Document",
+              fieldKind: "file",
+              required,
+              backendNodeId: 45,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+  };
+  const stageSyntheticFile = async (
+    requestToken: string,
+    bytes = Buffer.from("test"),
+    index = 0,
+  ) => {
+    const prepared = await accept(
+      userActionClient().prepareFileUpload({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+        body: {
+          key: "document",
+          index,
+          size: bytes.length,
+        },
+      }),
+      [200],
+    );
+    expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
+    const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
+    const signedCommand = signing?.[1];
+    if (!(signedCommand instanceof PutObjectCommand)) {
+      throw new Error("Expected a synthetic signed PUT command");
+    }
+    expect(signedCommand.input).toMatchObject({
+      Bucket: "test-user-storages",
+      ContentLength: bytes.length,
+      ContentType: "application/octet-stream",
+    });
+    expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
+    expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
+    expect(prepared.body).toStrictEqual({
+      uploadUrl: expect.stringMatching(/^https?:\/\//u),
+    });
+    expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
+    const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
+    temporaryObjects.set(key, bytes);
+    return key;
+  };
+  return {
+    state,
+    current,
+    create,
+    stageSyntheticFile,
+    temporaryObjects,
+    deletedKeys,
+  };
+}
+
+function nativeFileValue(fingerprint: string) {
+  return {
+    key: "document",
+    observedFingerprint: fingerprint,
+    operation: "replace" as const,
+    files: [{ name: "note.txt", size: 4, type: "text/plain" }],
+  };
+}
+
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
 });
 
 describe("Browser user-action route", () => {
-  it("accepts only exact native file targets, bounds transfer and independently verifies selection", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const current = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Choose a local file for the website",
-    );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
-    const providerId = randomUUID();
-    acceptBrowserUseCdpSessions([providerId]);
-    const temporaryObjects = new Map<string, Buffer>();
-    const deletedKeys: string[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof GetObjectCommand) {
-        const bytes = temporaryObjects.get(String(command.input.Key));
-        if (!bytes) {
-          throw new Error("Synthetic temporary object missing");
-        }
-        return Promise.resolve({
-          ContentLength: bytes.length,
-          Body: Readable.from([bytes]),
-        });
-      }
-      if (command instanceof DeleteObjectsCommand) {
-        for (const entry of command.input.Delete?.Objects ?? []) {
-          const key = String(entry.Key);
-          deletedKeys.push(key);
-          temporaryObjects.delete(key);
-        }
-        return Promise.resolve({});
-      }
-      return Promise.resolve({});
-    });
-    let files: readonly { name: string; size: number; type: string }[] = [];
-    let siteAccept = ".txt";
-    const multiple = true;
-    let writable = true;
-    let fileInMainDocument = true;
-    let missingNode = false;
-    let readback = true;
-    mockNativeFileTarget({
-      current: () => {
-        return files;
-      },
-      writable: () => {
-        return writable;
-      },
-      mainDocument: () => {
-        return fileInMainDocument;
-      },
-      missingNode: () => {
-        return missingNode;
-      },
-      readback: () => {
-        return readback;
-      },
-      accept: () => {
-        return siteAccept;
-      },
-      multiple: () => {
-        return multiple;
-      },
-      write: (next) => {
-        files = next;
-      },
-    });
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-    );
-    await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
-      [200],
-    );
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const create = async (required = false) => {
-      return await accept(
-        userActionClient().create({
-          headers: current.claim.browserHeaders,
-          body: {
-            kind: "input",
-            callbackPrompt: "Continue after selecting the file",
-            pageTargetId: "native-input-target",
-            fields: [
-              {
-                key: "document",
-                label: "Document",
-                fieldKind: "file",
-                required,
-                backendNodeId: 45,
-              },
-            ],
-          },
-        }),
-        [201],
-      );
-    };
+  it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
+    const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
+      await setupNativeFileScenario();
     const created = await create();
     const token = created.body.action.requestToken;
     expect(created.body.action.fields[0]?.control).toMatchObject({
@@ -1130,56 +1186,7 @@ describe("Browser user-action route", () => {
     });
     const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
     expect(fingerprint).toMatch(/^[0-9a-f]{64}$/u);
-    const value = {
-      key: "document",
-      observedFingerprint: fingerprint ?? "",
-      operation: "replace" as const,
-      files: [
-        {
-          name: "note.txt",
-          size: 4,
-          type: "text/plain",
-        },
-      ],
-    };
-    const stageSyntheticFile = async (
-      requestToken: string,
-      bytes = Buffer.from("test"),
-      index = 0,
-    ) => {
-      const prepared = await accept(
-        userActionClient().prepareFileUpload({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { requestToken },
-          body: {
-            key: "document",
-            index,
-            size: bytes.length,
-          },
-        }),
-        [200],
-      );
-      expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
-      const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
-      const signedCommand = signing?.[1];
-      if (!(signedCommand instanceof PutObjectCommand)) {
-        throw new Error("Expected a synthetic signed PUT command");
-      }
-      expect(signedCommand.input).toMatchObject({
-        Bucket: "test-user-storages",
-        ContentLength: bytes.length,
-        ContentType: "application/octet-stream",
-      });
-      expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
-      expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
-      expect(prepared.body).toStrictEqual({
-        uploadUrl: expect.stringMatching(/^https?:\/\//u),
-      });
-      expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
-      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
-      temporaryObjects.set(key, bytes);
-      return key;
-    };
+    const value = nativeFileValue(fingerprint ?? "");
     const firstKey = await stageSyntheticFile(token);
     const invalidMime = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
@@ -1191,8 +1198,8 @@ describe("Browser user-action route", () => {
       },
     });
     expect(invalidMime.status).toBe(400);
-    expect(files).toHaveLength(0);
-    siteAccept = ".pdf";
+    expect(state.files).toHaveLength(0);
+    state.siteAccept = ".pdf";
     const drifted = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -1202,13 +1209,13 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(drifted.body.state).toBe("stale");
-    expect(files).toHaveLength(0);
-    siteAccept = ".txt";
+    expect(state.files).toHaveLength(0);
+    state.siteAccept = ".txt";
     const preflightCandidate = await create();
     const preflightKey = await stageSyntheticFile(
       preflightCandidate.body.action.requestToken,
     );
-    missingNode = true;
+    state.missingNode = true;
     const preflightStale = await accept(
       userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
@@ -1222,9 +1229,9 @@ describe("Browser user-action route", () => {
     expect(preflightStale.body.state).toBe("stale");
     expect(deletedKeys).toContain(preflightKey);
     expect(temporaryObjects.has(preflightKey)).toBeFalsy();
-    expect(files).toHaveLength(0);
-    missingNode = false;
-    files = [];
+    expect(state.files).toHaveLength(0);
+    state.missingNode = false;
+    state.files = [];
     const next = await create();
     const nextToken = next.body.action.requestToken;
     const nextKey = await stageSyntheticFile(nextToken);
@@ -1239,7 +1246,7 @@ describe("Browser user-action route", () => {
     expect(applied.body.state).toBe("succeeded");
     expect(deletedKeys).toContain(firstKey);
     expect(deletedKeys).toContain(nextKey);
-    expect(files).toStrictEqual([
+    expect(state.files).toStrictEqual([
       { name: "note.txt", size: 4, type: "text/plain" },
     ]);
     expect(JSON.stringify(applied.body)).not.toContain("note.txt");
@@ -1248,7 +1255,16 @@ describe("Browser user-action route", () => {
         return command.method === "Page.createIsolatedWorld";
       }),
     ).toBeTruthy();
-    writable = false;
+  });
+
+  it("preserves selected files for unavailable controls and reports failed independent readback", async () => {
+    const { state, current, create, stageSyntheticFile } =
+      await setupNativeFileScenario();
+    // Model an existing user selection at the provider boundary. This scenario
+    // verifies it survives an unavailable/replaced control without another upload.
+    state.files = [{ name: "note.txt", size: 4, type: "text/plain" }];
+    const value = nativeFileValue("");
+    state.writable = false;
     const unavailable = await userActionClient().create({
       headers: current.claim.browserHeaders,
       body: {
@@ -1267,9 +1283,9 @@ describe("Browser user-action route", () => {
       },
     });
     expect(unavailable.status).toBe(409);
-    writable = true;
+    state.writable = true;
     const movedToShadow = await create();
-    fileInMainDocument = false;
+    state.fileInMainDocument = false;
     const staleRoot = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -1279,7 +1295,7 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(staleRoot.body.state).toBe("stale");
-    expect(files).toStrictEqual([
+    expect(state.files).toStrictEqual([
       { name: "note.txt", size: 4, type: "text/plain" },
     ]);
     const unsupportedFileRoot = await userActionClient().create({
@@ -1303,9 +1319,9 @@ describe("Browser user-action route", () => {
       status: 409,
       body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
     });
-    fileInMainDocument = true;
+    state.fileInMainDocument = true;
     const missing = await create();
-    missingNode = true;
+    state.missingNode = true;
     const staleNode = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -1315,7 +1331,7 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(staleNode.body.state).toBe("stale");
-    missingNode = false;
+    state.missingNode = false;
     const noReadback = await create();
     const changedFingerprint =
       (
@@ -1328,7 +1344,7 @@ describe("Browser user-action route", () => {
           [200],
         )
       ).body.fields[0]?.control.fileSetFingerprint ?? "";
-    readback = false;
+    state.readback = false;
     await stageSyntheticFile(noReadback.body.action.requestToken);
     const uncertain = await accept(
       userActionClient().apply({
@@ -1341,10 +1357,23 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(uncertain.body.state).toBe("uncertain");
+  });
 
-    files = [];
-    readback = true;
+  it("bounds staged file transfer, supports multiple files and cleans cancelled uploads", async () => {
+    const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
+      await setupNativeFileScenario();
     const tampered = await create();
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: tampered.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const value = nativeFileValue(
+      observed.body.fields[0]?.control.fileSetFingerprint ?? "",
+    );
     const tamperedKey = await stageSyntheticFile(
       tampered.body.action.requestToken,
     );
@@ -1381,7 +1410,7 @@ describe("Browser user-action route", () => {
     );
     expect(acceptedChangedBytes.body.state).toBe("succeeded");
     expect(browserInputWrites()).toHaveLength(writesBeforeTamper + 1);
-    files = [];
+    state.files = [];
 
     const maxBytes = Buffer.alloc(10 * 1024 * 1024, 0x61);
     const maxAction = await create();
@@ -1407,11 +1436,11 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(maxApplied.body.state).toBe("succeeded");
-    expect(files).toStrictEqual([
+    expect(state.files).toStrictEqual([
       { name: "note.txt", size: maxBytes.length, type: "text/plain" },
     ]);
 
-    files = [];
+    state.files = [];
     const multiAction = await create();
     const parts = [
       Buffer.from("first"),
@@ -1439,7 +1468,7 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(multiApplied.body.state).toBe("succeeded");
-    expect(files).toStrictEqual(
+    expect(state.files).toStrictEqual(
       multiValues.map(({ name, size, type }) => {
         return { name, size, type };
       }),
@@ -4923,10 +4952,18 @@ describe("Browser user-action route", () => {
       [201],
     );
     const writesBeforeStuckRecovery = browserInputWrites().length;
-    await stageStuckBrowserUserActionFixture({
-      requestToken: stuckCandidate.body.action.requestToken,
-      applyStartedAt: new Date(STARTED_AT_MS - MINUTE_MS - 1),
+    // Hold a claimed apply at its provider read, then let the app clock pass
+    // the stuck-apply deadline so the public read performs recovery.
+    const stuckEntered = createDeferredPromise<void>(context.signal);
+    const stuckRelease = createDeferredPromise<void>(context.signal);
+    providerReadBarrier = { entered: stuckEntered, release: stuckRelease };
+    const stalledApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: stuckCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "001234" }] },
     });
+    await stuckEntered.promise;
+    mockNow(STARTED_AT_MS + MINUTE_MS + 1);
     const recovered = await accept(
       userActionClient().get({
         headers: { authorization: "Bearer clerk-session" },
@@ -4941,6 +4978,20 @@ describe("Browser user-action route", () => {
       body: { values: [{ key: "code", value: "must-not-replay" }] },
     });
     expect(stuckRetry.status).toBe(409);
+    providerStopped = true;
+    stuckRelease.resolve(undefined);
+    const stalled = await stalledApply;
+    providerStopped = false;
+    expect(stalled).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: stuckCandidate.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({ status: 200, body: { state: "uncertain" } });
     expect(browserInputWrites()).toHaveLength(writesBeforeStuckRecovery);
 
     const concurrentCandidate = await accept(
@@ -5204,6 +5255,13 @@ describe("Browser user-action route", () => {
     });
 
     const providerId = randomUUID();
+    let providerStopped = false;
+    let providerReadBarrier:
+      | {
+          readonly entered: ReturnType<typeof createDeferredPromise<void>>;
+          readonly release: ReturnType<typeof createDeferredPromise<void>>;
+        }
+      | undefined;
     acceptBrowserUseCdpSessions([providerId]);
     mockNativeInputTarget();
     server.use(
@@ -5218,8 +5276,18 @@ describe("Browser user-action route", () => {
       http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
-        return HttpResponse.json(providerBrowser(providerId));
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async () => {
+        const barrier = providerReadBarrier;
+        if (barrier) {
+          providerReadBarrier = undefined;
+          barrier.entered.resolve(undefined);
+          await barrier.release.promise;
+        }
+        return HttpResponse.json(
+          providerBrowser(providerId, {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
     );
     await accept(
@@ -5243,10 +5311,6 @@ describe("Browser user-action route", () => {
     const cancelled = await createInputAction("cancelled completion");
     const raced = await createInputAction("concurrent completion or closure");
 
-    await stageStuckBrowserUserActionFixture({
-      requestToken: applying.body.action.requestToken,
-      applyStartedAt: new Date(STARTED_AT_MS),
-    });
     await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -5263,13 +5327,28 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
+    // Hold one claimed apply at its provider read so it is still applying
+    // when the Browser closes.
+    const applyingEntered = createDeferredPromise<void>(context.signal);
+    const applyingRelease = createDeferredPromise<void>(context.signal);
+    providerReadBarrier = {
+      entered: applyingEntered,
+      release: applyingRelease,
+    };
+    const heldApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: applying.body.action.requestToken },
+      body: { values: [{ key: "password", value: "secret" }] },
+    });
+    await applyingEntered.promise;
+
+    // The provider reports the Browser stopped; the public reconciler records
+    // the closure at the app clock while apply and cancel race it.
     const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
     mockNow(finishedAt.getTime());
-    const [capturedProviderId, applyRace, cancelRace] = await Promise.all([
-      stageBrowserUserActionClosureFixture({
-        requestToken: raced.body.action.requestToken,
-        finishedAt,
-      }),
+    providerStopped = true;
+    const [closure, applyRace, cancelRace] = await Promise.all([
+      reconcileBrowsers(current.threadId),
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: raced.body.action.requestToken },
@@ -5281,8 +5360,8 @@ describe("Browser user-action route", () => {
         body: {},
       }),
     ]);
-    expect(capturedProviderId).toBe(providerId);
-    expect([200, 409, 410]).toContain(applyRace.status);
+    expect(closure.body).toMatchObject({ errors: 0 });
+    expect([200, 409, 410, 502]).toContain(applyRace.status);
     expect([200, 409, 410]).toContain(cancelRace.status);
     expect(
       [applyRace, cancelRace].filter((response) => {
@@ -5291,6 +5370,20 @@ describe("Browser user-action route", () => {
     ).toHaveLength(
       applyRace.status === 200 || cancelRace.status === 200 ? 1 : 0,
     );
+    applyingRelease.resolve(undefined);
+    await expect(heldApply).resolves.toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "suspended", suspensionReason: "provider" } },
+    });
 
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: false,
@@ -5346,7 +5439,7 @@ describe("Browser user-action route", () => {
     expect(convertedActions[2]?.body.state).toBe("succeeded");
     expect(convertedActions[3]?.body.state).toBe("cancelled");
     expect(convertedActions[4]?.body.state).toMatch(
-      /^(succeeded|cancelled|stale|uncertain)$/u,
+      /^(cancelled|stale|uncertain)$/u,
     );
 
     const repeated = await reconcileBrowsers(current.threadId);
@@ -5394,6 +5487,7 @@ describe("Browser user-action route", () => {
     const providerId = randomUUID();
     const providerProfileId = randomUUID();
     const deletedProfiles: string[] = [];
+    let providerStopped = false;
     acceptBrowserUseCdpSessions([providerId]);
     mockNativeInputTarget();
     server.use(
@@ -5416,7 +5510,11 @@ describe("Browser user-action route", () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
       http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
-        return HttpResponse.json(providerBrowser(providerId));
+        return HttpResponse.json(
+          providerBrowser(providerId, {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
     );
     await accept(
@@ -5445,6 +5543,11 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
+    const laterCompletedAt = new Date(finishedAt.getTime() + MINUTE_MS);
+    // The later terminal action commits its completion after the Browser's
+    // finish boundary; the app clock records that order through public routes.
+    mockNow(laterCompletedAt.getTime());
     await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -5453,18 +5556,6 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
-
-    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
-    const laterCompletedAt = new Date(finishedAt.getTime() + MINUTE_MS);
-    const capturedProviderId = await stageBrowserUserActionClosureFixture({
-      requestToken: tokens[0] ?? "",
-      finishedAt,
-    });
-    expect(capturedProviderId).toBe(providerId);
-    await stageBrowserUserActionCompletedAtFixture({
-      requestToken: laterTerminal.body.action.requestToken,
-      completedAt: laterCompletedAt,
-    });
 
     const sortedTokens = [...tokens].sort((left, right) => {
       return browserUserActionTokenHash(left).localeCompare(
@@ -5477,8 +5568,20 @@ describe("Browser user-action route", () => {
         params: { requestToken },
       });
     };
+    // The provider reports the Browser stopped, so the public reconciler
+    // records its finish at the app clock and converts the first batch.
     mockNow(finishedAt.getTime());
+    providerStopped = true;
     await reconcileBrowsers(current.threadId);
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "suspended" } },
+    });
     const firstConversion = await Promise.all(sortedTokens.map(getAction));
     for (const response of firstConversion.slice(0, 20)) {
       expect(response).toMatchObject({
@@ -6207,6 +6310,46 @@ describe("okou browser route", () => {
       }
     }
 
+    mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
+    await reconcileBrowsers(current.threadId);
+    const suspended = await accept(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+      [200],
+    );
+    expect(suspended.body.browser.status).toBe("suspended");
+
+    const resumed = await Promise.all(
+      Array.from({ length: 3 }, () => {
+        return client().use({
+          headers: current.claim.browserHeaders,
+          body: {},
+        });
+      }),
+    );
+    const active = await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    expect(active.body.browser).toMatchObject({
+      threadId: current.threadId,
+      status: "active",
+    });
+    expect(active.body.cdpUrl).not.toBe(attached.body.cdpUrl);
+    expect(
+      resumed.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    for (const result of resumed) {
+      expect([200, 409]).toContain(result.status);
+      if (result.status === 200) {
+        expect(result.body.cdpUrl).toBe(active.body.cdpUrl);
+      }
+    }
+
     await chat.deleteThread(actor, current.threadId);
     await flushWaitUntilForTest();
   });
@@ -6676,10 +6819,8 @@ describe("okou browser route", () => {
       }),
     ).toHaveLength(1);
 
-    // Root deletion preserves browser ownership, so the missing-thread
-    // reconciler remains the sole durable provider teardown path.
-    await deleteAgentRunRootFixture(first.runId);
-    await deleteAgentRunRootFixture(other.runId);
+    // The missing-thread reconciler remains the durable provider teardown
+    // path after the thread is gone.
     await reconcileBrowsers(first.threadId, other.threadId);
     expect(providerStops()).toBe(3);
     expect(

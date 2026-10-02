@@ -12,7 +12,9 @@ export type MessageIntegration =
   | "teams"
   | "telegram"
   | "discord"
-  | "phone";
+  | "phone"
+  | "imessage"
+  | "sms";
 
 export interface DeliveredMessage {
   readonly id: string;

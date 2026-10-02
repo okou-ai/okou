@@ -27,6 +27,12 @@ import {
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import {
+  billingRunAttributionWrite,
+  type BillingRun,
+} from "../services/managed-usage-attribution";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, sql } from "drizzle-orm";
 
@@ -185,28 +191,49 @@ async function seedRunForAction(
   const runMetadata = threadless
     ? normalizeRunMetadata({ triggerSource: triggerSource.data })
     : null;
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId,
-      orgId,
-      sessionId: session.id,
-      storageMounts:
-        readOptionalBoolean(body, "checkpoint_ready") === true ? [] : null,
-      status,
-      prompt: readOptionalString(body, "prompt") ?? "cleanup sandboxes test",
-      sandboxId:
-        readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
-      createdAt: readDate(body, "created_at") ?? undefined,
-      completedAt: readNullableDate(body, "completed_at"),
-      runnerGroup: readOptionalString(body, "runner_group"),
-      cancellationRecoveryCompleted: readOptionalBoolean(
-        body,
-        "cancellation_recovery_completed",
-      ),
-      ...runMetadata,
-    })
-    .returning({ id: agentRuns.id, sandboxId: agentRuns.sandboxId });
+  const run = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(agentRuns)
+      .values({
+        userId,
+        orgId,
+        sessionId: session.id,
+        storageMounts:
+          readOptionalBoolean(body, "checkpoint_ready") === true ? [] : null,
+        status,
+        prompt: readOptionalString(body, "prompt") ?? "cleanup sandboxes test",
+        sandboxId:
+          readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
+        createdAt: readDate(body, "created_at") ?? undefined,
+        completedAt: readNullableDate(body, "completed_at"),
+        runnerGroup: readOptionalString(body, "runner_group"),
+        cancellationRecoveryCompleted: readOptionalBoolean(
+          body,
+          "cancellation_recovery_completed",
+        ),
+        ...runMetadata,
+      })
+      .returning({
+        id: agentRuns.id,
+        sandboxId: agentRuns.sandboxId,
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+        triggerSource: agentRuns.triggerSource,
+        threadId: agentRuns.chatThreadId,
+      });
+    signal.throwIfAborted();
+    if (!created) {
+      return undefined;
+    }
+    const capture = billingRunAttributionWrite(created);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+    return created;
+  });
   signal.throwIfAborted();
   if (!run) {
     return actionBadRequest("failed to seed run");
@@ -482,6 +509,51 @@ async function seedHostedPublication(
   return { hostedSiteId, hostedDeploymentId, hostedArtifactId };
 }
 
+async function seedOwnershipUsage(
+  db: Db,
+  run: BillingRun,
+  signal: AbortSignal,
+): Promise<string> {
+  const usageEventId = randomUUID();
+  await db.transaction(async (tx) => {
+    const capture = billingRunAttributionWrite(run);
+    await tx
+      .insert(billingRunAttribution)
+      .values(capture.values)
+      .onConflictDoNothing();
+    await tx.insert(usageEvent).values({
+      id: usageEventId,
+      runId: run.id,
+      idempotencyKey: randomUUID(),
+      orgId: run.orgId,
+      userId: run.userId,
+      kind: "model",
+      provider: `cleanup-test-${run.id}`,
+      category: "tokens.input",
+      quantity: 1,
+      status: "pending",
+      billingRunId: run.id,
+      billingContext: "run",
+      billingAnchorAt: sql`${run.startedAt}::timestamp`,
+    });
+    await tx
+      .update(billingRunAttribution)
+      .set({ usageObserved: true })
+      .where(
+        and(
+          eq(billingRunAttribution.runId, run.id),
+          eq(billingRunAttribution.orgId, run.orgId),
+          eq(billingRunAttribution.userId, run.userId),
+          eq(billingRunAttribution.usageObserved, false),
+        ),
+      );
+    signal.throwIfAborted();
+  });
+  signal.throwIfAborted();
+
+  return usageEventId;
+}
+
 async function seedRunOwnershipForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -496,6 +568,9 @@ async function seedRunOwnershipForAction(
       id: agentRuns.id,
       userId: agentRuns.userId,
       orgId: agentRuns.orgId,
+      startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+      triggerSource: agentRuns.triggerSource,
+      threadId: agentRuns.chatThreadId,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -505,20 +580,7 @@ async function seedRunOwnershipForAction(
     return actionBadRequest("run not found");
   }
 
-  const usageEventId = randomUUID();
-  await db.insert(usageEvent).values({
-    id: usageEventId,
-    runId,
-    idempotencyKey: randomUUID(),
-    orgId: run.orgId,
-    userId: run.userId,
-    kind: "model",
-    provider: `cleanup-test-${runId}`,
-    category: "tokens.input",
-    quantity: 1,
-    status: "pending",
-  });
-  signal.throwIfAborted();
+  const usageEventId = await seedOwnershipUsage(db, run, signal);
 
   const [uploadedFile] = await db
     .insert(runUploadedFiles)
@@ -576,6 +638,8 @@ async function seedRunOwnershipForAction(
     orgId: run.orgId,
     userId: run.userId,
     runId,
+    billingRunId: run.id,
+    billingContext: "run",
     request: {},
   });
   signal.throwIfAborted();

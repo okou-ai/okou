@@ -1,8 +1,8 @@
-import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { command } from "ccstate";
 import {
   and,
   count,
@@ -13,19 +13,20 @@ import {
   notExists,
   or,
 } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
-import { createPickObjects } from "./pick-chat-run.service";
-import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
-import type { Tx } from "../../lib/db-types";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
 } from "./chat-input-enqueue-observation";
+import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
+import { createPickObjects } from "./pick-chat-run.service";
 import {
   listQueuedChatThreadOrgIds,
   markChatThreadQueued,
@@ -219,6 +220,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
     },
     signal: AbortSignal,
   ) => {
@@ -228,7 +230,11 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
+    const { pick$ } = createPickObjects(
+      input.orgId,
+      input.chatThreadId,
+      input.prefetchedBootstrap,
+    );
     return await set(pick$, signal);
   },
 );

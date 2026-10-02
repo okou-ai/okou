@@ -8,12 +8,16 @@ import {
   type ChatEvent,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronProjectChatEventSearchContract,
+  cronCompactUsageEventsContract,
+} from "@okouai/api-contracts/contracts/cron";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
@@ -41,7 +45,6 @@ import {
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
 } from "../../../test-fixtures/chat-thread-events";
-
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
 import {
   seedOrgMetadata,
@@ -84,12 +87,8 @@ import {
   generatedStripeSubscriptionId,
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
-import {
-  insertUsageEvent$,
-  materializeHourlyUsage$,
-} from "./helpers/usage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 const TEST_APP_ROUTES = Object.freeze([
   ...cronProjectChatEventSearchRoutes,
   ...chatThreadRoutes,
@@ -118,7 +117,6 @@ const cu = createComputerUseBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
-const store = createStore();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FORWARD_CLEANUP_CUTOFF_MS = Date.parse("2026-08-03T05:40:26.000Z");
 const FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:26.001Z";
@@ -362,6 +360,26 @@ async function usageEventsForRun(
   return page.events.filter((event): event is UsageRecordedEvent => {
     return event.eventType === "usage.recorded" && event.runId === runId;
   });
+}
+
+async function settledUsageForRun(
+  actor: ApiTestUser,
+  threadId: string,
+  runId: string,
+): Promise<ChatEventUsagePayload | undefined> {
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadUsageContract,
+    ).read({
+      headers: authHeaders(actor),
+      params: { id: threadId },
+      body: { runIds: [runId] },
+    }),
+    [200],
+  );
+  return response.body.runs.find((run) => {
+    return run.runId === runId;
+  })?.usage;
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -3125,77 +3143,93 @@ describe("CHAT-01 chat thread read state", () => {
 });
 
 describe("CHAT-03 run usage events", () => {
-  it("emits aggregate-only usage with the run completion timestamp", async () => {
+  it("reads the settled ledger after compaction and checks current thread ownership", async () => {
+    mockNow(now() - 7 * DAY_MS);
+    onTestFinished(() => {
+      clearMockNow();
+    });
     const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Hourly usage event agent",
+      "Compacted usage display agent",
     );
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
+    const provider = `hourly-chat-${randomUUID().slice(0, 8)}`;
+    await seedUsagePricingRows([
+      {
+        kind: "connector",
+        provider,
+        category: "api_request",
+        unitPrice: 7,
+        unitSize: 3,
+      },
+    ]);
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "record compacted usage",
     });
     const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-    const provider = `hourly-chat-${randomUUID().slice(0, 8)}`;
-    await store.set(
-      insertUsageEvent$,
+    await webhooks.requestAgentUsageEvent(
       {
-        orgId: actor.orgId,
-        userId: actor.userId,
         runId: run.runId,
-        kind: "connector",
-        provider,
-        category: "api_request",
-        quantity: 3,
-        status: "processed",
-        creditsCharged: 7,
-        processedAt: new Date("2020-01-01T12:25:00.000Z"),
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "connector",
+            provider,
+            category: "api_request",
+            quantity: 3,
+          },
+        ],
       },
-      context.signal,
+      sandboxHeaders,
+      [200],
     );
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(1);
-
     const completedAt = new Date(now() + 1000);
     mockNow(completedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
     await completeChatRunOk(run.runId, sandboxHeaders);
     await flushWaitUntilForTest();
-
-    const usageEvents = await usageEventsForRun(actor, run.threadId, run.runId);
-    expect(usageEvents).toStrictEqual([
-      expect.objectContaining({
-        createdAt: completedAt.toISOString(),
-        usage: {
-          version: 1,
-          totalCredits: 7,
-          settledAt: completedAt.toISOString(),
-          breakdown: [
-            {
-              kind: "connector",
-              credits: 7,
-              providers: [{ provider, credits: 7 }],
-            },
-          ],
+    const expected = {
+      version: 1,
+      totalCredits: 7,
+      settledAt: completedAt.toISOString(),
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 7,
+          providers: [{ provider, credits: 7 }],
         },
+      ],
+    };
+    await expect(
+      settledUsageForRun(actor, run.threadId, run.runId),
+    ).resolves.toStrictEqual(expected);
+    clearMockNow();
+    mockEnv("CRON_SECRET", "chat-ledger-compaction-secret");
+    await accept(
+      setupApp({ context, routes: cronCompactUsageEventsRoutes })(
+        cronCompactUsageEventsContract,
+      ).compact({
+        headers: { authorization: "Bearer chat-ledger-compaction-secret" },
       }),
-    ]);
+      [200],
+    );
+    await expect(
+      settledUsageForRun(actor, run.threadId, run.runId),
+    ).resolves.toStrictEqual(expected);
+    const other = bdd.user();
+    await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadUsageContract,
+      ).read({
+        headers: authHeaders(other),
+        params: { id: run.threadId },
+        body: { runIds: [run.runId] },
+      }),
+      [404],
+    );
   }, 60_000);
 
-  it("revises run usage when later usage settles", async () => {
+  it("keeps ledger totals stable when concurrent settlement requests repeat", async () => {
     const { actor, agentId } = await entitledChatActor("Usage message agent");
+
     const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
     const missingProvider = `${provider}-free`;
     const category = "api_request";
@@ -3208,6 +3242,9 @@ describe("CHAT-03 run usage events", () => {
       prompt: "record billable usage",
     });
     await cancelChatRun(actor, runId);
+    // Cancellation also settles usage in waitUntil. Finish that owner before
+    // submitting the later batch, so its settlement cannot race this one.
+    await flushWaitUntilForTest();
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };
@@ -3234,49 +3271,34 @@ describe("CHAT-03 run usage events", () => {
       sandboxHeaders,
       [200],
     );
-    const conflicting =
-      await insertOutputEventWithConflictingLegacyPayloadFixture({
-        threadId,
-        runId,
-        content: "explicit output event with stale usage payload",
-        legacyPayload: "usage.recorded",
-      });
-    const page = await chat.listThreadEvents(actor, threadId);
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        id: conflicting.id,
-        eventType: "output.message",
-      }),
-    );
-
     const billing = createBillingMediaApi(context);
-    await billing.processOrgUsageEvents(actor);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
 
-    let usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    const initialUsageEvent = usageEvents[0];
-    if (!initialUsageEvent) {
-      throw new Error("Expected one usage event");
-    }
-    expect(initialUsageEvent).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        totalCredits: 18,
-        settledAt: expect.any(String),
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 18,
-            providers: expect.arrayContaining([
-              { provider, credits: 18 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    const initialUsage = await settledUsageForRun(actor, threadId, runId);
+    expect(initialUsage).toMatchObject({
+      version: 1,
+      totalCredits: 18,
+      settledAt: expect.any(String),
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 18,
+          providers: expect.arrayContaining([
+            { provider, credits: 18 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
+    // Existing Apps still receive compatible hints, but their count is not a
+    // settlement or monetary correctness contract.
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toContainEqual(expect.objectContaining({ usage: initialUsage }));
 
     onTestFinished(() => {
       clearMockNow();
@@ -3300,9 +3322,14 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toStrictEqual([initialUsageEvent]);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toStrictEqual(initialUsage);
 
     clearMockNow();
     await webhooks.requestAgentUsageEvent(
@@ -3322,32 +3349,27 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:01.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(2);
-    const firstRevision = usageEvents[1];
-    if (!firstRevision) {
-      throw new Error("Expected the first usage revision");
-    }
-    expect(firstRevision).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: initialUsageEvent.id,
-      usage: {
-        version: 1,
-        totalCredits: 29,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 29,
-            providers: expect.arrayContaining([
-              { provider, credits: 29 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      totalCredits: 29,
+      settledAt: initialUsage?.settledAt,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 29,
+          providers: expect.arrayContaining([
+            { provider, credits: 29 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
 
     clearMockNow();
@@ -3368,32 +3390,31 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:02.000Z"));
-    await billing.processOrgUsageEvents(actor);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(3);
-    expect(usageEvents[2]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: firstRevision.id,
-      usage: {
-        version: 1,
-        totalCredits: 36,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 36,
-            providers: expect.arrayContaining([
-              { provider, credits: 36 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      totalCredits: 36,
+      settledAt: initialUsage?.settledAt,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 36,
+          providers: expect.arrayContaining([
+            { provider, credits: 36 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
   }, 60_000);
 
-  it("emits complete allowance-covered usage in one event", async () => {
+  it("reads complete allowance-covered usage from the settled ledger", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
     const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
@@ -3405,7 +3426,6 @@ describe("CHAT-03 run usage events", () => {
     if (!orgId) {
       throw new Error("Expected allowance chat actor to have an org");
     }
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 10 });
     await postUsageAllowanceInvoicePaid(context.signal, {
       orgId,
       userId: actor.userId,
@@ -3460,23 +3480,19 @@ describe("CHAT-03 run usage events", () => {
     );
     await createBillingMediaApi(context).processOrgUsageEvents(actor);
 
-    const usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    expect(usageEvents[0]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 70,
-            providers: [{ provider, credits: 70 }],
-          },
-        ],
-        totalCredits: 70,
-        settledAt: expect.any(String),
-      },
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 70,
+          providers: [{ provider, credits: 70 }],
+        },
+      ],
+      totalCredits: 70,
+      settledAt: expect.any(String),
     });
     const billingStatus = await api.readBillingStatus(actor);
     if (!billingStatus.usageAllowance) {
@@ -3491,7 +3507,7 @@ describe("CHAT-03 run usage events", () => {
     ).toStrictEqual({ short: 70, weekly: 70 });
   }, 60_000);
 
-  it("emits zero-credit usage events and skips runs without usage", async () => {
+  it("reads zero-credit usage and omits runs without settled usage", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Zero-credit usage message agent",
     );
@@ -3523,12 +3539,9 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(agentRun.runId, okouSandboxHeaders);
     await flushWaitUntilForTest();
 
-    const [zeroUsageEvent] = await usageEventsForRun(
-      actor,
-      agentRun.threadId,
-      agentRun.runId,
-    );
-    expect(zeroUsageEvent?.usage).toMatchObject({
+    await expect(
+      settledUsageForRun(actor, agentRun.threadId, agentRun.runId),
+    ).resolves.toMatchObject({
       version: 1,
       totalCredits: 0,
       breakdown: [
@@ -3540,10 +3553,8 @@ describe("CHAT-03 run usage events", () => {
       ],
     });
 
-    // A run that never recorded usage settles nothing, so completion must not
-    // append a usage message. (The former pending-suppression variant is not
-    // product-reachable: both production emitters settle the org's pending
-    // usage immediately before emitting.)
+    // A run with no usage has no monetary receipt; it must not inherit another
+    // run's amount merely because both belong to the same member.
     const quietRun = await sendChatRun(actor, {
       agentId,
       prompt: "complete without recording usage",
@@ -3555,8 +3566,11 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(quietRun.runId, quietSandboxHeaders);
     await flushWaitUntilForTest();
     await expect(
-      usageEventsForRun(actor, quietRun.threadId, quietRun.runId),
-    ).resolves.toHaveLength(0);
+      settledUsageForRun(actor, quietRun.threadId, quietRun.runId),
+    ).resolves.toBeUndefined();
+    await expect(
+      settledUsageForRun(actor, quietRun.threadId, agentRun.runId),
+    ).resolves.toBeUndefined();
   }, 60_000);
 });
 
@@ -4626,6 +4640,69 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Bearer drive-access-refreshed",
       "Bearer drive-access-refreshed",
     ]);
+
+    // Upload refresh must publish its token before retrying the provider. A
+    // later status request can use it even when Google refuses another refresh.
+    mockGoogleDriveConnectorOAuth({
+      refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+    });
+    mockGoogleDriveArtifactUpload({
+      id: "drive-upload-after-refresh",
+      name: "data.csv",
+    });
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [{ id: "drive-folder", name: "artifacts" }],
+      };
+    });
+    const refreshedUpload = await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: csvId },
+      [200],
+    );
+    expect(refreshedUpload.body).toMatchObject({
+      id: "drive-upload-after-refresh",
+    });
+    mockGoogleDriveConnectorOAuth();
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [
+          {
+            id: "drive-upload-after-refresh",
+            name: "data.csv",
+            appProperties: {
+              vm0Artifact: "true",
+              vm0ThreadId: run.threadId,
+              vm0RunId: run.runId,
+              vm0FileId: csvId,
+            },
+          },
+        ],
+      };
+    });
+    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    expect(
+      artifacts.runs[0]?.files.find((file) => {
+        return file.id === csvId;
+      })?.googleDriveSync,
+    ).toMatchObject({
+      status: "synced",
+      accountReady: true,
+      id: "drive-upload-after-refresh",
+    });
 
     // Transient OAuth failures remain connected and retry on later polls.
     const transientRefresh = mockGoogleDriveConnectorOAuth({

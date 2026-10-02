@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -7,8 +7,8 @@ import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { setQueuedInputModelSelectionFixture } from "../../../test-fixtures/chat-input-model-selection";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
@@ -16,11 +16,11 @@ import { workflowAutomationsRoutes } from "../workflow-automations";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventAutomationPart } from "./helpers/chat-event";
-import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing-webhook";
 import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 /**
  * CHAT-02: at organization capacity, chat input waits in its thread without a

@@ -742,10 +742,8 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("uses the owner's DeepSeek alternative routing switch and extracts on the secondary candidate", async () => {
-    // Both V4.1 Flash candidates publish `low`, so the secondary built-in
-    // candidate carries the pinned extraction effort and the work proceeds
-    // whenever the native candidate is filtered out, keyless or cooling.
+  it("extracts built-in memory through the global OpenRouter route", async () => {
+    // V4.1 Flash's OpenRouter candidate carries the pinned extraction effort.
     const selectedModel = "deepseek-v4.1-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const storage = createStorageFixture();
@@ -754,15 +752,6 @@ describe("Pi memory Stage 1 worker", () => {
       piSessionId,
       raw: settledHistory(piSessionId, "secondary built-in candidate"),
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: storage.org_id, userId: storage.user_id },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-        [FeatureSwitchKey.OpenRouterUsRouting]: false,
-      },
-    );
     const provider = installProvider();
     await expect(runScoped(storage)).resolves.toMatchObject({
       scanned: 1,
@@ -786,7 +775,7 @@ describe("Pi memory Stage 1 worker", () => {
       successful_source_history_hash: candidate.source_history_hash,
       last_error_class: null,
     });
-    // The secondary route still bills the built-in owner on base categories.
+    // The route bills the built-in owner on base categories.
     await expect(inspectUsageCategories(storage)).resolves.toStrictEqual([
       "tokens.cache_creation",
       "tokens.cache_read",
@@ -917,7 +906,7 @@ describe("Pi memory Stage 1 worker", () => {
         expect(serialized).not.toContain(INPUT_SECRET);
         expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
         expect(invocation.request).toMatchObject({
-          model: "deepseek-flash",
+          model: "deepseek/deepseek-v4.1-flash",
           reasoning: { effort: "low" },
           text: {
             format: {
@@ -1005,11 +994,11 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
-    // An operator sets a long-context band on the served DeepSeek route; the
+    // An operator sets a long-context band on the served OpenRouter route; the
     // extraction must bill that band from the same catalog it routed with.
     const restore = await setBuiltInRouteLongContextThresholdFixture({
       model: "deepseek-v4.1-flash",
-      concreteProviderType: "deepseek",
+      concreteProviderType: "openrouter-codex",
       longContextMinTotalInputTokens: 272_001,
     });
     onTestFinished(restore);
@@ -1885,7 +1874,7 @@ describe("Stage 1 source credentials", () => {
       await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
       expect(provider.calls).toHaveLength(1);
       expect(provider.calls[0]?.request).toMatchObject({
-        model: "deepseek-flash",
+        model: "deepseek/deepseek-v4.1-flash",
         reasoning: { effort: "low" },
       });
       const usage = await inspectUsage(storage);
@@ -1995,10 +1984,12 @@ describe("Stage 1 source credentials", () => {
     expect(custom.headers.get("x-source-key")).toBe("Key gateway-only-secret");
     expect(custom.headers.get("authorization")).toBeNull();
     expect(custom.request).toMatchObject({ model: "mapped-luna" });
-    // Only the built-in source moves to DeepSeek; every BYOK source keeps Luna.
+    // Built-in sources use DeepSeek on OpenRouter; every BYOK source keeps Luna.
     const builtInCall = callFor("builtin evidence");
-    expect(builtInCall.url).toBe("https://api.deepseek.com/responses");
-    expect(builtInCall.request).toMatchObject({ model: "deepseek-flash" });
+    expect(builtInCall.url).toBe("https://openrouter.ai/api/v1/responses");
+    expect(builtInCall.request).toMatchObject({
+      model: "deepseek/deepseek-v4.1-flash",
+    });
     for (const call of provider.calls) {
       expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
       expect(call.request).not.toHaveProperty("service_tier");

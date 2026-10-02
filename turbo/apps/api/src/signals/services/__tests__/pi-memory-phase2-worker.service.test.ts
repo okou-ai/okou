@@ -1,4 +1,5 @@
 import { readPiMemoryBuiltinQuota } from "../pi-memory-builtin-quota.service";
+import { captureFixtureRunBilling } from "../billing-run-fixture";
 import { checkPiMemoryQuota } from "../pi-memory-quota.service";
 import {
   orgUsageAllowanceEntitlements,
@@ -14,12 +15,14 @@ import {
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -29,11 +32,12 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { conversations } from "@okouai/db/schema/agent-run-session-conversation";
 import { createStore } from "ccstate";
 import { createDeferredPromise } from "../../utils";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
+import { executeRawRows } from "../../../lib/db-raw-rows";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
@@ -51,6 +55,8 @@ import {
 } from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
+import { personalSubscriptionAccountIdentity } from "../personal-subscription-recovery.service";
+import { mockStripeClient } from "../../external/stripe-client";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
 import {
   createPhase2TestScope,
@@ -70,6 +76,10 @@ import {
 } from "../../../test-fixtures/pi-memory-phase2-credential";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
+import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createMiscRoutesApi } from "../../routes/__tests__/helpers/api-bdd-misc";
 import { http, HttpResponse } from "msw";
@@ -239,19 +249,22 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       userId: scope.userId,
       agentId,
     });
-    await db().insert(agentRuns).values({
-      id: sourceRunId,
-      sessionId: sourceSessionId,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      status: "completed",
-      prompt: "Remember this while the organization is busy.",
-      modelProvider: "built-in",
-      modelProviderId: null,
-      modelProviderCredentialScope: "org",
-      triggerSource: "agent",
-      autonomyBudget: 0,
-      completedAt: now,
+    await db().transaction(async (tx) => {
+      await tx.insert(agentRuns).values({
+        id: sourceRunId,
+        sessionId: sourceSessionId,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        status: "completed",
+        prompt: "Remember this while the organization is busy.",
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: "org",
+        triggerSource: "agent",
+        autonomyBudget: 0,
+        completedAt: now,
+      });
+      await captureFixtureRunBilling(tx, sourceRunId);
     });
     onTestFinished(async () => {
       await deleteRunSessionsForScope(scope);
@@ -542,6 +555,93 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     );
   });
 
+  it("records the failed run when the built-in allowance refresh fails", async () => {
+    const now = new Date("2026-09-05T02:00:00.000Z");
+    const scope = await createPhase2TestScope("allowance-refresh-failure", {
+      emptyBase: true,
+    });
+    await enablePiMemoryForScope(scope);
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    onTestFinished(async () => {
+      await deleteRunSessionsForScope(scope);
+      await db()
+        .delete(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, scope.orgId));
+    });
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    configureNativeCliArtifact();
+    // An expired Stripe-backed allowance must be refreshed from Stripe before
+    // the run can open its allowance windows.
+    await db()
+      .insert(orgUsageAllowanceEntitlements)
+      .values({
+        orgId: scope.orgId,
+        source: "stripe",
+        status: "active",
+        shortWindowSeconds: 18_000,
+        shortWindowUnits: 10_000,
+        weeklyWindowUnits: 100_000,
+        effectiveAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(now.getTime() - 60 * 60 * 1000),
+        stripeSubscriptionId: `sub_${randomUUID()}`,
+      });
+    mockStripeClient(testContext().mocks.stripe);
+    testContext().mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+      new Error("Stripe subscription read failed"),
+    );
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        rawMemory: "candidate survives a failed allowance refresh",
+      },
+    ]);
+    await insertPendingPhase2Job(scope, { updatedAt: now });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const store = createStore();
+
+    await expect(
+      withMockNowForTest(now, async () => {
+        return await store.set(
+          executePiMemoryPhase2Work$,
+          { scope, currentTime: now },
+          testContext().signal,
+        );
+      }),
+    ).resolves.toStrictEqual({
+      outcome: "failed",
+      errorClass: "maintenance_dispatch_failed",
+    });
+    expect(
+      testContext().mocks.stripe.subscriptions.retrieve,
+    ).toHaveBeenCalledTimes(1);
+    // As in the shared launch preparation, the failed run is recorded.
+    await expect(
+      db()
+        .select({ status: agentRuns.status, error: agentRuns.error })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.triggerSource, "agent"),
+            eq(agentRuns.orgId, scope.orgId),
+            eq(agentRuns.userId, scope.userId),
+          ),
+        ),
+    ).resolves.toStrictEqual([
+      { status: "failed", error: "Stripe subscription read failed" },
+    ]);
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "retryable_failure",
+      maintenanceRunId: null,
+      leaseToken: null,
+      retryCount: 1,
+      lastErrorClass: "maintenance_dispatch_failed",
+    });
+  });
+
   it("dispatches one isolated threadless run after a shared public Agent source", async () => {
     const now = new Date("2026-09-05T02:00:00.000Z");
     const scope = await createPhase2TestScope("sandbox-dispatch", {
@@ -577,20 +677,23 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       agentId,
       title: "Shared Pi source",
     });
-    await db().insert(agentRuns).values({
-      id: sourceRunId,
-      sessionId: sourceSessionId,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      status: "completed",
-      prompt: "Remember this from a shared public Agent.",
-      modelProvider: "built-in",
-      modelProviderId: null,
-      modelProviderCredentialScope: "org",
-      triggerSource: "agent",
-      autonomyBudget: 0,
-      chatThreadId: sourceThreadId,
-      completedAt: now,
+    await db().transaction(async (tx) => {
+      await tx.insert(agentRuns).values({
+        id: sourceRunId,
+        sessionId: sourceSessionId,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        status: "completed",
+        prompt: "Remember this from a shared public Agent.",
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: "org",
+        triggerSource: "agent",
+        autonomyBudget: 0,
+        chatThreadId: sourceThreadId,
+        completedAt: now,
+      });
+      await captureFixtureRunBilling(tx, sourceRunId);
     });
     await db()
       .update(chatThreads)
@@ -646,6 +749,41 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     expect(run).toMatchObject({ status: "pending", error: null });
     expect(run?.triggerSource).toBe("agent");
     expect(run?.chatThreadId).toBeNull();
+    // Assistant text from the threadless maintenance run changes no thread.
+    const owner = {
+      userId: scope.userId,
+      orgId: scope.orgId,
+      orgRole: "org:admin" as const,
+      email: `${scope.userId}@example.test`,
+    };
+    const chatApi = createChatFilesBddApi(testContext());
+    const threadEventsBefore = await chatApi.listThreadEvents(
+      owner,
+      sourceThreadId,
+    );
+    await createWebhookCallbackApi(testContext()).requestAgentEvents(
+      {
+        runId: result.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 1,
+            message: {
+              id: "msg_maintenance_detached",
+              content: [{ type: "text", text: "No thread receives this" }],
+            },
+          },
+        ],
+      },
+      {
+        authorization: `Bearer ${createRunsApi(testContext()).sandboxTokenForRun(owner, result.runId)}`,
+      },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      chatApi.listThreadEvents(owner, sourceThreadId),
+    ).resolves.toStrictEqual(threadEventsBefore);
     expect(run?.prompt).not.toContain("candidate stays inside");
     expect(run?.storageMounts).toStrictEqual([
       expect.objectContaining({
@@ -1454,6 +1592,19 @@ test.each([false, true])(
           `Expected subscription launch: ${JSON.stringify(result)}`,
         );
       }
+      // The exact subscription account is recorded on the run, as on main.
+      const [run] = await db()
+        .select({ identity: agentRuns.modelProviderAccountIdentity })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, result.runId));
+      expect(run?.identity).toBe(
+        personalSubscriptionAccountIdentity({
+          type: "codex-oauth-token",
+          externalAccountId: account,
+          accountEmail: null,
+          workspaceName: null,
+        }),
+      );
       const actual = await executePhase2Runtime(testContext(), result.runId);
       expect(actual.requests).toHaveLength(3);
       for (const request of actual.requests) {
@@ -1990,6 +2141,87 @@ test.each([
     expect(quotaReads).toBe(0);
   },
 );
+
+test("writes the memory archive URL cache only after committing the run", async () => {
+  const job = await createPhase2WorkerFixture("cache-after-commit", false);
+  const provider = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "openai-api-key",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    provider.binding,
+  );
+  // The non-empty memory archive is signed fresh, so the run caches its URL.
+  onMemoryArchivePresign(job, () => {});
+  const versionId = job.scope.baseVersion.versionId;
+  onTestFinished(async () => {
+    await db()
+      .delete(systemStoragePresignedUrlCache)
+      .where(eq(systemStoragePresignedUrlCache.storageVersionId, versionId));
+  });
+
+  const result = await job.work();
+  if (result.outcome !== "dispatched") {
+    throw new Error("Expected maintenance run");
+  }
+
+  // Transaction IDs order the writes: the run's callback row is written once,
+  // by the commit transaction, and the cache row by a later transaction.
+  const [xids] = await executeRawRows(
+    db(),
+    sql`
+      select
+        (select xmin::text from ${agentRunCallbacks}
+          where ${agentRunCallbacks.runId} = ${result.runId}) as "commitXid",
+        (select xmin::text from ${systemStoragePresignedUrlCache}
+          where ${systemStoragePresignedUrlCache.storageVersionId} = ${versionId})
+          as "cacheXid"
+    `,
+    z.object({ commitXid: z.string(), cacheXid: z.string() }),
+  );
+  if (!xids) {
+    throw new Error("Expected the run and cache rows");
+  }
+  expect(BigInt(xids.cacheXid)).toBeGreaterThan(BigInt(xids.commitXid));
+});
+
+test("reports a run committed before an abort on the next pass, never as stale", async () => {
+  const job = await createPhase2WorkerFixture("abort-after-commit");
+  await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }]);
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, testContext().signal]);
+  // The Runner notification is published only after the run commits.
+  testContext().mocks.ably.publish.mockImplementation((event: unknown) => {
+    if (event === "job") {
+      controller.abort();
+    }
+    return Promise.resolve();
+  });
+
+  await expect(job.work(undefined, signal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
+
+  const bound = await readPhase2Job(job.scope);
+  expect(bound).toMatchObject({ status: "leased", lastErrorClass: null });
+  const runId = bound?.maintenanceRunId;
+  if (!runId) {
+    throw new Error("Expected the committed run to stay bound");
+  }
+  await expect(
+    db()
+      .select({ status: agentRuns.status })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId)),
+  ).resolves.toStrictEqual([{ status: "pending" }]);
+  await expect(job.work()).resolves.toStrictEqual({
+    outcome: "dispatched",
+    runId,
+  });
+});
 
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
   const job = await createPhase2WorkerFixture("quota-max3");

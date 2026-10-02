@@ -101,6 +101,13 @@ export const orgUsageAllowanceWindows = pgTable(
   },
   (table) => {
     return [
+      // Window creation identity: concurrent creators anchored at the same
+      // instant converge through INSERT … ON CONFLICT instead of a row lock.
+      uniqueIndex("uq_org_usage_allowance_windows_entitlement_kind_starts").on(
+        table.entitlementId,
+        table.kind,
+        table.startsAt,
+      ),
       index("idx_org_usage_allowance_windows_org_kind_starts").on(
         table.orgId,
         table.kind,

@@ -1646,6 +1646,307 @@ describe("usage pack subscription Stripe lifecycle", () => {
     },
   );
 
+  describe("duplicate initial Plan and usage pack purchases", () => {
+    // Both purchases are created before either is paid: neither was the
+    // organization's entitlement when the other was bought.
+    const createdAt = period(0).start - 600;
+
+    function legacyPlanPurchase(
+      fixture: UsagePackLifecycleFixture,
+      tier: "pro" | "team" = "pro",
+      created = createdAt,
+    ) {
+      const subscriptionId = `sub_legacy_${randomUUID()}`;
+      const priceId = tier === "team" ? TEST_PRICE_TEAM : TEST_PRICE_PRO;
+      const paidPeriod = period(0);
+      return {
+        subscription: {
+          id: subscriptionId,
+          created,
+          customer: fixture.customerId,
+          status: "active",
+          cancel_at: null,
+          cancel_at_period_end: false,
+          schedule: null,
+          trial_end: null,
+          metadata: { orgId: fixture.orgId, tier },
+          items: { data: [{ price: { id: priceId }, quantity: 1 }] },
+        },
+        invoice: {
+          id: `in_legacy_${randomUUID()}`,
+          customer: fixture.customerId,
+          status: "paid",
+          paid: true,
+          billing_reason: "subscription_create",
+          amount_paid: tier === "team" ? 9900 : 2900,
+          status_transitions: { paid_at: period(0).start },
+          metadata: { orgId: fixture.orgId },
+          parent: {
+            subscription_details: { subscription: subscriptionId },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                price: { id: priceId },
+                quantity: 1,
+                period: paidPeriod,
+                parent: { type: "subscription_item_details" },
+              },
+            ],
+          },
+        },
+      };
+    }
+
+    function usagePackPurchase(fixture: UsagePackLifecycleFixture) {
+      const paidPeriod = period(0);
+      const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
+      return {
+        subscription: {
+          ...stripeSubscription(fixture, paidPeriod, quantities),
+          created: createdAt,
+        },
+        invoice: {
+          ...paidInvoice(fixture, {
+            invoiceId: `in_${randomUUID()}`,
+            paidPeriod,
+            quantities,
+          }),
+          amount_paid: 4900,
+          status_transitions: { paid_at: period(0).start },
+        },
+      };
+    }
+
+    type Purchase = {
+      readonly subscription: { readonly id: string };
+      readonly invoice: { readonly id: string };
+    };
+
+    function mockDuplicateStripe(purchases: readonly Purchase[]) {
+      const canceled = new Set<unknown>();
+      context.mocks.stripe.subscriptions.retrieve.mockImplementation((id) => {
+        const subscription = purchases.find((purchase) => {
+          return purchase.subscription.id === id;
+        })?.subscription;
+        return Promise.resolve(
+          subscription && canceled.has(id)
+            ? { ...subscription, status: "canceled" }
+            : subscription,
+        );
+      });
+      context.mocks.stripe.invoices.list.mockImplementation((params) => {
+        const requested = JSON.stringify(params);
+        return Promise.resolve({
+          data: purchases
+            .filter((purchase) => {
+              return requested.includes(`"${purchase.subscription.id}"`);
+            })
+            .map((purchase) => {
+              return purchase.invoice;
+            }),
+          has_more: false,
+        });
+      });
+      const notes: string[] = [];
+      context.mocks.stripe.creditNotes.list.mockImplementation((params) => {
+        const requested = JSON.stringify(params);
+        return Promise.resolve({
+          data: notes
+            .filter((note) => {
+              return requested.includes(JSON.parse(note).invoice);
+            })
+            .map((note) => {
+              return JSON.parse(note);
+            }),
+          has_more: false,
+        });
+      });
+      context.mocks.stripe.creditNotes.create.mockImplementation((params) => {
+        notes.push(JSON.stringify(params));
+        return Promise.resolve({ id: `cn_${randomUUID()}` });
+      });
+      context.mocks.stripe.subscriptions.cancel.mockImplementation((id) => {
+        canceled.add(id);
+        return Promise.resolve({ id, status: "canceled" });
+      });
+    }
+
+    function expectRefundedOnce(purchase: Purchase) {
+      const invoiceId = purchase.invoice.id;
+      const subscriptionId = purchase.subscription.id;
+      expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(1);
+      expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledWith(
+        expect.objectContaining({ invoice: invoiceId, reason: "duplicate" }),
+        { idempotencyKey: `duplicate-subscription:${invoiceId}:refund` },
+      );
+      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
+        subscriptionId,
+        { invoice_now: false, prorate: false },
+        {
+          idempotencyKey: `duplicate-subscription:${subscriptionId}:cancel`,
+        },
+      );
+    }
+
+    async function deliver(...purchases: readonly Purchase[]) {
+      for (const purchase of purchases) {
+        await postStripeEvent(
+          stripeEvent("invoice.paid", purchase.invoice),
+          200,
+        );
+      }
+    }
+
+    it("grants a Plan once and refunds the later usage pack payment once", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const plan = legacyPlanPurchase(fixture);
+      const pack = usagePackPurchase(fixture);
+      mockDuplicateStripe([plan, pack]);
+
+      await deliver(plan, pack, pack, plan);
+
+      const state = await readUsagePackState(fixture);
+      expect(state.org?.tier).toBe("pro");
+      expect(state.legacyCredits).toHaveLength(1);
+      expect(state.grants).toStrictEqual([]);
+      expect(state.fulfillmentInvoiceIds).toStrictEqual([]);
+      expectRefundedOnce(pack);
+    });
+
+    it("grants a usage pack once and refunds the later Plan payment once", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const plan = legacyPlanPurchase(fixture);
+      const pack = usagePackPurchase(fixture);
+      mockDuplicateStripe([plan, pack]);
+
+      await deliver(pack, plan, plan, pack);
+
+      const state = await readUsagePackState(fixture);
+      expect(state.org?.tier).toBe("pro");
+      expect(state.legacyCredits).toStrictEqual([]);
+      expect(state.grants).toHaveLength(2);
+      expect(state.fulfillmentInvoiceIds).toStrictEqual([pack.invoice.id]);
+      expectRefundedOnce(plan);
+    });
+
+    it("grants one of two concurrently paid initial purchases and refunds the other once", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const plan = legacyPlanPurchase(fixture);
+      const pack = usagePackPurchase(fixture);
+      mockDuplicateStripe([plan, pack]);
+
+      const deliveries = await Promise.allSettled([
+        deliver(plan),
+        deliver(pack),
+      ]);
+      // A loser whose conditional publication lost the race is redelivered.
+      await deliver(plan, pack);
+      expect(
+        deliveries.some((delivery) => {
+          return delivery.status === "fulfilled";
+        }),
+      ).toBeTruthy();
+
+      const state = await readUsagePackState(fixture);
+      const planWon = state.legacyCredits.length === 1;
+      expect(state.grants).toHaveLength(planWon ? 0 : 2);
+      expect(state.legacyCredits).toHaveLength(planWon ? 1 : 0);
+      expectRefundedOnce(planWon ? pack : plan);
+    });
+
+    it.each([
+      ["lower tier first", "pro", "team"],
+      ["higher tier first", "team", "pro"],
+    ] as const)(
+      "keeps the first effective Plan of duplicate initial purchases with the %s",
+      async (_order, firstTier, secondTier) => {
+        const fixture = await seedUsagePackLifecycle([
+          { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+        ]);
+        const first = legacyPlanPurchase(fixture, firstTier);
+        const second = legacyPlanPurchase(fixture, secondTier);
+        mockDuplicateStripe([first, second]);
+
+        await deliver(first, second, second, first);
+
+        const state = await readUsagePackState(fixture);
+        expect(state.org?.tier).toBe(firstTier);
+        expect(state.legacyCredits).toHaveLength(1);
+        expectRefundedOnce(second);
+        expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+          1,
+        );
+      },
+    );
+
+    it("grants one of two concurrently paid initial Plans and refunds the other once", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const first = legacyPlanPurchase(fixture, "team");
+      const second = legacyPlanPurchase(fixture, "team");
+      mockDuplicateStripe([first, second]);
+      // Both deliveries pass the duplicate check before either publishes: the
+      // Team replacement lookup between them waits for the other delivery.
+      const bothChecked = createDeferredPromise<void>(context.signal);
+      let lookups = 0;
+      context.mocks.stripe.subscriptions.list.mockImplementation(async () => {
+        lookups += 1;
+        if (lookups === 2) {
+          bothChecked.resolve();
+        }
+        await bothChecked.promise;
+        return { data: [], has_more: false };
+      });
+
+      await Promise.all([deliver(first), deliver(second)]);
+
+      const state = await readUsagePackState(fixture);
+      expect(state.org?.tier).toBe("team");
+      expect(state.legacyCredits).toHaveLength(1);
+      const refunded = JSON.stringify(
+        context.mocks.stripe.creditNotes.create.mock.calls[0],
+      );
+      const loser = refunded.includes(`"${first.invoice.id}"`) ? first : second;
+      expectRefundedOnce(loser);
+      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+        1,
+      );
+
+      await deliver(first, second);
+
+      await expect(readUsagePackState(fixture)).resolves.toStrictEqual(state);
+      expectRefundedOnce(loser);
+      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it("upgrades a paid Plan created earlier without refunding it", async () => {
+      const fixture = await seedUsagePackLifecycle([
+        { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+      ]);
+      const pro = legacyPlanPurchase(fixture, "pro");
+      // Bought after the Pro subscription was already paid: a real upgrade.
+      const team = legacyPlanPurchase(fixture, "team", period(0).start + 60);
+      mockDuplicateStripe([pro, team]);
+
+      await deliver(pro, team, team);
+
+      const state = await readUsagePackState(fixture);
+      expect(state.org?.tier).toBe("team");
+      expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(["pro", "custom"])(
     "preserves debt for a returning legacy %s subscriber after its old billing period",
     async (tier) => {

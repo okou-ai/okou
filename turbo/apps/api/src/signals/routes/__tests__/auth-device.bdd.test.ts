@@ -668,6 +668,159 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
+  it("keeps a newer Codex authorization when an earlier setup returns late", async () => {
+    const actor = bdd.user();
+    let newestSessionToken = "";
+    let supersede = true;
+    server.use(
+      http.post(
+        "https://auth.openai.com/api/accounts/deviceauth/usercode",
+        async () => {
+          if (supersede) {
+            supersede = false;
+            const newer = await authDevice.requestCodexStart(
+              actor,
+              "personal",
+              [200],
+            );
+            if (newer.status !== 200) {
+              throw new Error("Expected replacement authorization to start");
+            }
+            newestSessionToken = newer.body.sessionToken;
+          }
+          return HttpResponse.json({
+            device_auth_id: "replacement-device",
+            user_code: "LATEST",
+            interval: 5,
+          });
+        },
+      ),
+    );
+    const old = await authDevice.requestCodexStart(actor, "personal", [503]);
+    expectApiError(old.body);
+    expect(old.body.error.code).toBe("CODEX_DEVICE_AUTH_UNAVAILABLE");
+    const cancelled = await authDevice.requestCodexCancel(
+      actor,
+      newestSessionToken,
+      [200],
+    );
+    expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+    const final = await authDevice.requestCodexComplete(
+      actor,
+      newestSessionToken,
+      [200],
+    );
+    expect(final.body).toStrictEqual({
+      status: "pending",
+      errorMessage: "Codex device auth session was cancelled",
+    });
+  });
+
+  it.each(["org", "personal"] as const)(
+    "does not publish %s Codex credentials after cancellation during token exchange",
+    async (scope) => {
+      const actor = bdd.user();
+      await support.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      });
+      let sessionToken = "";
+      mockCodexDeviceAuthProvider({
+        tokenScope: scope,
+        beforeTokenResponse: async () => {
+          const cancelled = await authDevice.requestCodexCancel(
+            actor,
+            sessionToken,
+            [200],
+          );
+          expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+        },
+      });
+      const started = await authDevice.requestCodexStart(actor, scope, [200]);
+      if (started.status !== 200) {
+        throw new Error("Expected device authorization to start");
+      }
+      sessionToken = started.body.sessionToken;
+      const completed = await authDevice.requestCodexComplete(
+        actor,
+        sessionToken,
+        [503],
+      );
+      expectApiError(completed.body);
+      expect(completed.body.error.message).toBe(
+        "Device authorization was cancelled or expired",
+      );
+      const providers =
+        scope === "org"
+          ? await support.listModelProviders(actor)
+          : await support.listPersonalModelProviders(actor, [200]);
+      expect(providers.body).toMatchObject({
+        modelProviders: expect.not.arrayContaining([
+          expect.objectContaining({ type: "codex-oauth-token" }),
+        ]),
+      });
+      const repeated = await authDevice.requestCodexComplete(
+        actor,
+        sessionToken,
+        [200],
+      );
+      expect(repeated.body).toStrictEqual({
+        status: "pending",
+        errorMessage: "Codex device auth session was cancelled",
+      });
+    },
+  );
+
+  it("does not publish org Claude credentials after cancellation during token exchange", async () => {
+    const actor = bdd.user();
+    let sessionToken = "";
+    mockClaudeCodeTokenEndpoint({
+      beforeTokenResponse: async () => {
+        const cancelled = await authDevice.requestClaudeCodeCancel(
+          actor,
+          sessionToken,
+          [200],
+        );
+        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+      },
+    });
+    const started = await authDevice.requestClaudeCodeStart(
+      actor,
+      "org",
+      [200],
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected device authorization to start");
+    }
+    sessionToken = started.body.sessionToken;
+    const state = new URL(started.body.browserUrl).searchParams.get("state");
+    const completed = await authDevice.requestClaudeCodeComplete(
+      actor,
+      sessionToken,
+      `auth_code_test#${state}`,
+      [503],
+    );
+    expectApiError(completed.body);
+    expect(completed.body.error.message).toBe(
+      "Device authorization was cancelled or expired",
+    );
+    const providers = await support.listModelProviders(actor);
+    expect(providers.body.modelProviders).not.toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "claude-code-oauth-token" }),
+      ]),
+    );
+    const repeated = await authDevice.requestClaudeCodeComplete(
+      actor,
+      sessionToken,
+      `auth_code_test#${state}`,
+      [400],
+    );
+    expectApiError(repeated.body);
+    expect(repeated.body.error.message).toBe(
+      "Claude Code device auth session is not ready",
+    );
+  });
+
   it("completes org-scope Codex device auth and exposes the imported provider", async () => {
     const calls = mockCodexDeviceAuthProvider({ tokenScope: "org" });
     const admin = bdd.user();
@@ -935,10 +1088,34 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       isActive: true,
     });
 
+    await connectPersonalCodexTestAccount(member, {
+      accountId: "codex-account-d",
+      workspaceName: "Account D",
+      accessTokenExpiresAt: Math.floor(now() / 1000) + 3600,
+      refreshToken: "codex-account-d-refresh",
+    });
+    const beforeDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    if (!("modelProviders" in beforeDeleteAll.body)) {
+      throw new Error("Expected personal model provider list response");
+    }
+    expect(beforeDeleteAll.body.modelProviders).toHaveLength(2);
     await support.deletePersonalModelProvider(
       member,
       "codex-oauth-token",
       [204],
+    );
+    const afterDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    expect(afterDeleteAll.body).toMatchObject({ modelProviders: [] });
+    await support.deletePersonalModelProvider(
+      member,
+      "codex-oauth-token",
+      [404],
     );
   });
 
@@ -1209,7 +1386,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     );
   });
 
-  it("returns bad requests after the tenth personal subscription account", async () => {
+  it("enforces the tenth personal account boundary for sequential connects", async () => {
     const member = bdd.user({ orgRole: "org:member" });
     await support.updateFeatureSwitches(member, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
@@ -1282,8 +1459,13 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       );
     };
 
-    for (let index = 0; index < 10; index += 1) {
+    // A new authorization supersedes any unfinished session for this owner.
+    for (let index = 0; index < 9; index += 1) {
       await completeClaudeCodeAccount(index, [200]);
+    }
+    const tenthClaudeCodeAccount = await completeClaudeCodeAccount(9, [200]);
+    if (tenthClaudeCodeAccount.status !== 200) {
+      throw new Error("Expected the tenth Claude Code account to connect");
     }
     const claudeCodeLimit = await completeClaudeCodeAccount(10, [400]);
     if (claudeCodeLimit.status !== 400) {
@@ -1297,6 +1479,19 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       message:
         "A maximum of 10 claude-code-oauth-token accounts can be connected",
     });
+    const listed = await support.listPersonalModelProviders(member, [200]);
+    if (!("modelProviders" in listed.body)) {
+      throw new Error("Expected account list");
+    }
+    const claudeAccounts = listed.body.modelProviders.filter((provider) => {
+      return provider.type === "claude-code-oauth-token";
+    });
+    expect(claudeAccounts).toHaveLength(10);
+    expect(claudeAccounts).toContainEqual(
+      expect.objectContaining({
+        id: tenthClaudeCodeAccount.body.provider.id,
+      }),
+    );
 
     await support.deletePersonalModelProvider(
       member,

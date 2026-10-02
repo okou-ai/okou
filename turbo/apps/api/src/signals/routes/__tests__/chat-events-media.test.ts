@@ -97,30 +97,4 @@ describe("CHAT-02: run image model through public prompts", () => {
     );
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
-
-  it("re-resolves direct session continuation without changing earlier run guidance", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "direct image model guidance",
-      modelProvider: "anthropic-api-key",
-    });
-    await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
-    await chat.updateUserModelPreference(
-      actor,
-      "claude-fable-5-1",
-      "fal-ai/flux-pro/v1.1",
-    );
-    const resumed = await api.createRun(actor, {
-      agentId,
-      sessionId: first.sessionId,
-      prompt: "continued session image model guidance",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(resumed.sessionId).toBe(first.sessionId);
-    await expectImageGuidance(actor, resumed.runId, "flux-pro-1.1");
-    await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
-    await cancelChatRun(actor, first.runId);
-    await cancelChatRun(actor, resumed.runId);
-  }, 90_000);
 });

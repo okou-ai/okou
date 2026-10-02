@@ -48,7 +48,6 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
-import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import {
   appendOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueInputFixture,
@@ -137,7 +136,6 @@ const NOTION_FIRST_PAGE_URL = `https://www.notion.so/First-${NOTION_FIRST_PAGE_I
 const NOTION_SECOND_PAGE_ID = "22222222-2222-4222-8222-222222222222";
 const NOTION_SECOND_PAGE_URL = `https://www.notion.so/Second-${NOTION_SECOND_PAGE_ID.replaceAll("-", "")}`;
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
@@ -304,6 +302,7 @@ function gmailLabelBlueprint(): OfficialWorkflowBlueprint {
 
 function googleFormsBlueprint(
   autonomyBudget: number,
+  formUrl = GOOGLE_FORM_URL,
 ): OfficialWorkflowBlueprint {
   return {
     key: "google-forms-trigger",
@@ -314,7 +313,7 @@ function googleFormsBlueprint(
       eventConfig: {
         provider: "google-forms",
         event: "response_submitted",
-        formUrl: GOOGLE_FORM_URL,
+        formUrl,
       },
       autonomyBudget,
     },
@@ -374,8 +373,14 @@ function structureTransitionGoogleMeetBlueprint(): OfficialWorkflowBlueprint {
   };
 }
 
-function configureOfficialGoogleFormsMock() {
-  const recorder = { watchCalls: 0 };
+function configureOfficialGoogleFormsMock(args: {
+  readonly formIds: readonly string[];
+  readonly creatingWatch: (formId: string) => Promise<void>;
+}): void {
+  const watches = new Map<
+    string,
+    { readonly id: string; readonly expireTime: string }
+  >();
   mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", GOOGLE_FORMS_TOPIC_NAME);
   mockOptionalEnv(
     "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
@@ -387,22 +392,19 @@ function configureOfficialGoogleFormsMock() {
   );
   server.use(
     http.get("https://forms.googleapis.com/v1/forms/:formId", ({ params }) => {
-      expect(params.formId).toBe(GOOGLE_FORM_ID);
+      expect(args.formIds).toContain(params.formId);
       return HttpResponse.json({
-        formId: GOOGLE_FORM_ID,
+        formId: params.formId,
         info: { title: "Official workflow survey" },
         publishSettings: {
-          publishState: {
-            isPublished: true,
-            isAcceptingResponses: true,
-          },
+          publishState: { isPublished: true, isAcceptingResponses: true },
         },
       });
     }),
     http.get(
       "https://forms.googleapis.com/v1/forms/:formId/responses",
       ({ request, params }) => {
-        expect(params.formId).toBe(GOOGLE_FORM_ID);
+        expect(args.formIds).toContain(params.formId);
         expect(new URL(request.url).searchParams.get("pageSize")).toBeNull();
         return HttpResponse.json({
           responses: [
@@ -415,29 +417,55 @@ function configureOfficialGoogleFormsMock() {
         });
       },
     ),
-    http.post(
+    http.get(
       "https://forms.googleapis.com/v1/forms/:formId/watches",
       ({ params }) => {
-        expect(params.formId).toBe(GOOGLE_FORM_ID);
-        recorder.watchCalls += 1;
+        const watch = watches.get(String(params.formId));
         return HttpResponse.json({
+          watches: watch
+            ? [
+                {
+                  ...watch,
+                  target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+                  eventType: "RESPONSES",
+                  state: "ACTIVE",
+                },
+              ]
+            : [],
+        });
+      },
+    ),
+    http.post(
+      "https://forms.googleapis.com/v1/forms/:formId/watches",
+      async ({ params }) => {
+        const formId = String(params.formId);
+        expect(args.formIds).toContain(formId);
+        await args.creatingWatch(formId);
+        const watch = {
           id: `official-google-forms-watch-${randomUUID()}`,
+          expireTime: new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+        watches.set(formId, watch);
+        return HttpResponse.json({
+          ...watch,
           target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
           eventType: "RESPONSES",
-          createTime: "2026-09-01T08:00:00Z",
-          expireTime: "2026-09-08T08:00:00Z",
+          createTime: new Date(now()).toISOString(),
           state: "ACTIVE",
         });
       },
     ),
     http.delete(
       "https://forms.googleapis.com/v1/forms/:formId/watches/:watchId",
-      () => {
+      ({ params }) => {
+        const formId = String(params.formId);
+        if (watches.get(formId)?.id === params.watchId) {
+          watches.delete(formId);
+        }
         return HttpResponse.json({});
       },
     ),
   );
-  return recorder;
 }
 
 function configureOfficialNotionPageMock(): void {
@@ -2213,6 +2241,67 @@ describe("Morning Brief preference", () => {
     }
   });
 
+  it("does not treat outstanding membership qualification as enable intent", async () => {
+    const actor = bdd.user();
+    mockBriefMemberships([
+      { actor, createdAt: new Date("2020-01-01T00:00:00.000Z") },
+    ]);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const respond = membershipReads.getMockImplementation();
+    if (!respond) {
+      throw new Error("Expected the historical membership response");
+    }
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    membershipReads.mockImplementation(async (...args) => {
+      if (!started.settled()) {
+        started.resolve(undefined);
+      }
+      await release.promise;
+      return await respond(...args);
+    });
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await flushWaitUntilForTest();
+    });
+
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    await started.promise;
+    // The worker revisit can finish while the timezone request still owns
+    // the qualification attempt. Unknown eligibility is not an enable choice.
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+
+    // A user's explicit enable is real intent even before qualification or
+    // prerequisites complete, and the older eligibility read cannot erase it.
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+  });
+
   it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
@@ -2721,6 +2810,52 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
+  it("keeps a brief disabled after enrollment once the member turns it off", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    const device = createAuthDeviceApiActions(context);
+    const started = await device.startCliDevice();
+    await device.requestCliApproval(
+      actor,
+      { device_code: started.device_code, timezone: "Asia/Shanghai" },
+      [200],
+    );
+    mockBriefMemberships([{ actor, createdAt }]);
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+    });
+
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    // Later enrollment and preference passes re-run completion; a disabled
+    // enrollment must not be completed (and re-enabled) again.
+    mockBriefMemberships([{ actor, createdAt }]);
+    await tickBriefEnrollment(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      unavailableReason: null,
+    });
+    await expect(readBriefSchedule(actor)).resolves.toMatchObject({
+      nextRunAt: null,
+    });
+  });
+
   it("waits locally for a known member's timezone and installs as soon as initialization supplies it", async () => {
     const { actor, createdAt } = await prepareBriefMember();
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
@@ -2963,7 +3098,7 @@ describe("Morning Brief default onboarding", () => {
       ]);
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
-        enabled: true,
+        enabled: false,
         status: "error",
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
@@ -3019,7 +3154,7 @@ describe("Morning Brief default onboarding", () => {
       ).rejects.toBe(interrupted);
       expect(membershipReads).toHaveBeenCalledTimes(1);
       expect((await readBriefPreference(actor)).body).toMatchObject({
-        enabled: true,
+        enabled: false,
         status: "preparing",
       });
       await expect(readUserTimezone(actor)).resolves.toBe(timezone);
@@ -4968,7 +5103,7 @@ describe("Official Workflow installations", () => {
             return workflow.name === definitionName;
           }),
         ).toBeFalsy();
-        expect(stopCalls).toBeGreaterThan(0);
+        expect(stopCalls).toBe(0);
       } else {
         blockNextWatch = false;
         const installed = await accept(
@@ -5422,7 +5557,6 @@ describe("Official Workflow installations", () => {
         return;
       }
 
-      const stopCallsBeforeAgentDeletion = stopCalls;
       await bdd.deleteAgent(actor, agentId);
       agentDeleted = true;
       await accept(
@@ -5432,14 +5566,138 @@ describe("Official Workflow installations", () => {
         }),
         [404],
       );
-      expect(stopCalls).toBeGreaterThan(stopCallsBeforeAgentDeletion);
+      expect(stopCalls).toBe(0);
     },
   );
 
-  it("preserves the Google Forms account projection across same-target reconfiguration", async () => {
+  it.each(["same source", "different form"])(
+    "publishes the Official Forms %s with its watch interval",
+    async (change) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-google-forms-${suffix}`;
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [googleFormsBlueprint(4)])]),
+      );
+
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      if (!actor.orgId) {
+        throw new Error("Expected organization-scoped actor");
+      }
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      mockGoogleFormsConnectorOAuth();
+      await workflowBdd.connectConnector(actor, "google-forms");
+      const nextFormId =
+        change === "same source"
+          ? GOOGLE_FORM_ID
+          : `${GOOGLE_FORM_ID}${suffix}`;
+      let installedWorkflowId: string | null = null;
+      configureOfficialGoogleFormsMock({
+        formIds: [GOOGLE_FORM_ID, nextFormId],
+        creatingWatch: async (formId) => {
+          if (formId === GOOGLE_FORM_ID || installedWorkflowId === null) {
+            return;
+          }
+          const preparing = await accept(
+            installationClient().get({
+              headers: authHeaders(actor),
+              params: { workflowId: installedWorkflowId },
+            }),
+            [200],
+          );
+          expect(preparing.body.workflow.automations).toContainEqual(
+            expect.objectContaining({
+              eventType: "google-forms-response-submitted",
+              eventConfig: expect.objectContaining({
+                form: expect.objectContaining({ id: GOOGLE_FORM_ID }),
+              }),
+            }),
+          );
+        },
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: actor.orgId, userId: actor.userId },
+        {
+          [FeatureSwitchKey.OfficialWorkflows]: true,
+        },
+      );
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [
+              { blueprintKey: "google-forms-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      installedWorkflowId = installed.body.workflow.id;
+      const initial = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "google-forms-trigger";
+      });
+      if (
+        !initial ||
+        initial.kind !== "event" ||
+        initial.eventType !== "google-forms-response-submitted" ||
+        !initial.official
+      ) {
+        throw new Error("Expected an Official Google Forms automation");
+      }
+      const connectorId = initial.eventConfig.connectorId;
+      const initialFingerprint = initial.official.appliedFingerprint;
+
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            googleFormsBlueprint(
+              7,
+              `https://docs.google.com/forms/d/${nextFormId}/edit`,
+            ),
+          ]),
+        ]),
+      );
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+
+      const reconciled = await accept(
+        installationClient().get({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+        }),
+        [200],
+      );
+      const current = reconciled.body.workflow.automations.find(
+        (automation) => {
+          return automation.id === initial.id;
+        },
+      );
+      expect(current).toMatchObject({
+        eventConfig: { connectorId, form: { id: nextFormId } },
+        official: { reconciliationStatus: "current" },
+      });
+      expect(current?.official?.appliedFingerprint).not.toBe(
+        initialFingerprint,
+      );
+    },
+  );
+
+  it("keeps an Official Forms automation paused during reconfiguration", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-google-forms-${suffix}`;
+    const definitionName = `api-test-google-forms-pause-${suffix}`;
     await syncCatalog(
       catalog([activeDefinition(definitionName, [googleFormsBlueprint(4)])]),
     );
@@ -5458,7 +5716,30 @@ describe("Official Workflow installations", () => {
     });
     mockGoogleFormsConnectorOAuth();
     await workflowBdd.connectConnector(actor, "google-forms");
-    const forms = configureOfficialGoogleFormsMock();
+    const headers = authHeaders(actor);
+    const nextFormId = `${GOOGLE_FORM_ID}${suffix}`;
+    let automationId: string | null = null;
+    let pausedDuringReconfiguration = false;
+    configureOfficialGoogleFormsMock({
+      formIds: [GOOGLE_FORM_ID, nextFormId],
+      creatingWatch: async (formId) => {
+        if (
+          formId !== nextFormId ||
+          automationId === null ||
+          pausedDuringReconfiguration
+        ) {
+          return;
+        }
+        pausedDuringReconfiguration = true;
+        await accept(
+          automationClient().disable({
+            headers,
+            params: { id: automationId },
+          }),
+          [200],
+        );
+      },
+    });
     await updateFeatureSwitchesForUser(
       context,
       { orgId: actor.orgId, userId: actor.userId },
@@ -5466,7 +5747,6 @@ describe("Official Workflow installations", () => {
         [FeatureSwitchKey.OfficialWorkflows]: true,
       },
     );
-    const headers = authHeaders(actor);
     const installed = await accept(
       officialClient().install({
         headers,
@@ -5481,24 +5761,27 @@ describe("Official Workflow installations", () => {
     const initial = installed.body.workflow.automations.find((automation) => {
       return automation.official?.blueprintKey === "google-forms-trigger";
     });
-    if (
-      !initial ||
-      initial.kind !== "event" ||
-      initial.eventType !== "google-forms-response-submitted" ||
-      !initial.official
-    ) {
+    if (!initial) {
       throw new Error("Expected an Official Google Forms automation");
     }
-    const connectorId = initial.eventConfig.connectorId;
-    const initialFingerprint = initial.official.appliedFingerprint;
-    expect(forms.watchCalls).toBe(1);
+    automationId = initial.id;
 
     await syncCatalog(
-      catalog([activeDefinition(definitionName, [googleFormsBlueprint(7)])]),
+      catalog([
+        activeDefinition(definitionName, [
+          googleFormsBlueprint(
+            7,
+            `https://docs.google.com/forms/d/${nextFormId}/edit`,
+          ),
+        ]),
+      ]),
     );
+    // The pause commits while the new form watch is being prepared; the
+    // reconfiguration observed the enabled row and must not overwrite it.
     await expect(
       runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+    ).resolves.toMatchObject({ completed: 0, retried: 1 });
+    expect(pausedDuringReconfiguration).toBeTruthy();
 
     const reconciled = await accept(
       installationClient().get({
@@ -5511,11 +5794,10 @@ describe("Official Workflow installations", () => {
       return automation.id === initial.id;
     });
     expect(current).toMatchObject({
-      eventConfig: { connectorId },
-      official: { reconciliationStatus: "current" },
+      enabled: false,
+      eventConfig: { form: { id: GOOGLE_FORM_ID } },
+      official: { intendedEnabled: false },
     });
-    expect(current?.official?.appliedFingerprint).not.toBe(initialFingerprint);
-    expect(forms.watchCalls).toBe(1);
   });
 
   it("reconfigures an Official Notion automation without a feature override", async () => {
@@ -6686,7 +6968,7 @@ describe("Official Workflow installations", () => {
             [200],
           );
           expect(compensated.body.workflow.automations).toHaveLength(0);
-          expect(preparedScenario.stopCalls).toBe(1);
+          expect(preparedScenario.stopCalls).toBe(0);
           expect(preparedScenario.watchCalls).toBe(0);
           const compensatedState =
             await readOfficialWorkflowReconciliationState({
@@ -7245,7 +7527,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(1);
-    expect(stopCalls).toBe(1);
+    expect(stopCalls).toBe(0);
 
     await syncCatalog(
       catalog([
@@ -7286,7 +7568,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(4);
-    expect(stopCalls).toBe(2);
+    expect(stopCalls).toBe(0);
     await expect(
       readLatestWorkflowAutomationRunFixture(context, automationId),
     ).resolves.toMatchObject({ runId: historicalRunId });
@@ -7319,7 +7601,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(5);
-    expect(stopCalls).toBe(2);
+    expect(stopCalls).toBe(0);
     await expect(
       readLatestWorkflowAutomationRunFixture(context, automationId),
     ).resolves.toMatchObject({ runId: historicalRunId });
@@ -7643,7 +7925,7 @@ describe("Official Workflow installations", () => {
     ]);
   });
 
-  it("compensates event-watch update and removal failures before committing current state", async () => {
+  it("compensates failed Gmail watch updates and removes local consumption without remote stop", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-reconcile-watch-${suffix}`;
@@ -7670,7 +7952,6 @@ describe("Official Workflow installations", () => {
     await workflowBdd.connectConnector(actor, "gmail");
     mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
     let watchShouldFail = false;
-    let stopShouldFail = false;
     let watchCalls = 0;
     let stopCalls = 0;
     server.use(
@@ -7693,9 +7974,10 @@ describe("Official Workflow installations", () => {
       }),
       http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
         stopCalls++;
-        return stopShouldFail
-          ? HttpResponse.json({ error: "stop failed" }, { status: 500 })
-          : new HttpResponse(null, { status: 204 });
+        return HttpResponse.json(
+          { error: "stop must not be called" },
+          { status: 500 },
+        );
       }),
     );
     await setOfficialWorkflowsEnabled(actor, true);
@@ -7787,41 +8069,22 @@ describe("Official Workflow installations", () => {
       },
     });
 
-    stopShouldFail = true;
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
     await expect(
       runOfficialWorkflowReconciliationWorker(),
     ).resolves.toStrictEqual({
       claimed: 1,
-      completed: 0,
+      completed: 1,
       advanced: 0,
-      retried: 1,
-      installations: 0,
+      retried: 0,
+      installations: 1,
     });
-    const compensatedRemoval = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(compensatedRemoval.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: true,
-      eventConfig: expect.objectContaining({ labelName: "Follow Up" }),
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "failed",
-      },
-    });
-
-    stopShouldFail = false;
-    await makeOfficialWorkflowReconciliationWorkDue(definitionName);
-    await runOfficialWorkflowReconciliationWorker();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
     );
     expect(removed.body.workflow.automations).toStrictEqual([]);
-    expect(watchCalls).toBeGreaterThan(1);
-    expect(stopCalls).toBeGreaterThan(1);
+    expect(stopCalls).toBe(0);
   });
 });
 
@@ -7981,7 +8244,7 @@ describe("Official Workflow Run admission", () => {
       [200],
     );
 
-    const later = await runs.createRun(actor, {
+    const later = await runs.createThreadRun(actor, {
       agentId,
       prompt: "resolve the newly accepted Official Definition revision",
     });

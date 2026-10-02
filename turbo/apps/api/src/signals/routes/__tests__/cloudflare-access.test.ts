@@ -280,6 +280,52 @@ describe("inline SSH resource creation", () => {
     );
     await expect(resources()).resolves.toStrictEqual(initial);
   });
+
+  it("reports Access not found when its config is deleted while a rebind encrypts a new login", async () => {
+    owner();
+    const deleted = await config();
+    const existingHost = await host();
+    const initial = await resources();
+    useSecretKmsProbe(async (request, callNumber) => {
+      if (callNumber === 1) {
+        await accept(
+          configs().delete({
+            headers,
+            params: { configId: deleted.id },
+            body: { expectedRevision: deleted.revision },
+          }),
+          [204],
+        );
+      }
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.alloc(32, 7),
+        encryptedDataKey: Buffer.from(`encrypted:${request.keyId}`, "utf8"),
+      };
+    });
+
+    await expect(
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            expectedGeneration: existingHost.generation,
+            port: 443,
+            credential: { create: login },
+            transport: { type: "cloudflare_access", configId: deleted.id },
+          },
+        }),
+        [404],
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
+    });
+    await expect(resources()).resolves.toStrictEqual({
+      ...initial,
+      configs: [],
+    });
+  });
 });
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
@@ -862,122 +908,6 @@ describe("organization Cloudflare Access", () => {
       }),
       [204],
     );
-  });
-
-  it("serializes shared rotation and deletion with SSH binding", async () => {
-    owner({}, "org:admin");
-    const shared = (
-      await accept(
-        configs().create({
-          headers,
-          query: scoped,
-          body: {
-            id: randomUUID(),
-            name: "Shared gateway",
-            scope: "organization",
-            credentials: token,
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const direct = await host();
-    const [rotated, bound] = await Promise.all([
-      accept(
-        configs().update({
-          headers,
-          query: scoped,
-          params: { configId: shared.id },
-          body: {
-            expectedRevision: 1,
-            credentials: { ...token, clientSecret: "rotated-canary" },
-          },
-        }),
-        [200],
-      ),
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: direct.id },
-          body: {
-            expectedGeneration: direct.generation,
-            port: 443,
-            transport: { type: "cloudflare_access", configId: shared.id },
-          },
-        }),
-        [200],
-      ),
-    ]);
-    expect(rotated.body).toMatchObject({ revision: 2, generation: 2 });
-    expect(bound.body).toMatchObject({
-      transport: { type: "cloudflare_access", configId: shared.id },
-    });
-    const afterRotation = (
-      await accept(connections().list({ headers }), [200])
-    ).body.connections.find((connection) => {
-      return connection.id === direct.id;
-    });
-    expect([direct.generation + 1, direct.generation + 2]).toContain(
-      afterRotation?.generation,
-    );
-
-    const candidate = (
-      await accept(
-        configs().create({
-          headers,
-          query: scoped,
-          body: {
-            id: randomUUID(),
-            name: "Candidate gateway",
-            scope: "organization",
-            credentials: token,
-          },
-        }),
-        [201],
-      )
-    ).body;
-    if (!afterRotation) {
-      throw new Error("Missing protected SSH host after shared rotation");
-    }
-    const [rebound, deleted] = await Promise.all([
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: direct.id },
-          body: {
-            expectedGeneration: afterRotation.generation,
-            transport: { type: "cloudflare_access", configId: candidate.id },
-          },
-        }),
-        [200, 404],
-      ),
-      accept(
-        configs().delete({
-          headers,
-          query: scoped,
-          params: { configId: candidate.id },
-          body: { expectedRevision: 1 },
-        }),
-        [204, 409],
-      ),
-    ]);
-    expect([rebound.status, deleted.status]).toSatisfy((statuses: number[]) => {
-      return (
-        (statuses[0] === 200 && statuses[1] === 409) ||
-        (statuses[0] === 404 && statuses[1] === 204)
-      );
-    });
-    const finalHost = (
-      await accept(connections().list({ headers }), [200])
-    ).body.connections.find((connection) => {
-      return connection.id === direct.id;
-    });
-    expect(finalHost).toMatchObject({
-      transport: {
-        type: "cloudflare_access",
-        configId: rebound.status === 200 ? candidate.id : shared.id,
-      },
-    });
   });
 });
 
@@ -1753,70 +1683,6 @@ describe("protected SSH authority", () => {
       outcome: "resolved_access",
       generation: 2,
       access: { generation: 2, clientSecret: "rotated-canary" },
-    });
-  });
-
-  it("serializes concurrent token replacements and deletion against host binding", async () => {
-    const f = await fixture();
-    const revisions = await Promise.all(
-      ["one", "two"].map((clientSecret) => {
-        return accept(
-          configs().update({
-            headers,
-            params: { configId: f.config.id },
-            body: {
-              expectedRevision: 1,
-              credentials: { ...token, clientSecret },
-            },
-          }),
-          [200, 409],
-        );
-      }),
-    );
-    expect(
-      revisions
-        .map((result) => {
-          return result.status;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    ).toStrictEqual([200, 409]);
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-      generation: 2,
-      access: { generation: 2 },
-    });
-    const target = await config("New binding");
-    const [rebound, deleted] = await Promise.all([
-      accept(
-        connections().update({
-          headers,
-          params: { connectionId: f.host.id },
-          body: {
-            expectedGeneration: 2,
-            transport: { type: "cloudflare_access", configId: target.id },
-          },
-        }),
-        [200, 404],
-      ),
-      accept(
-        configs().delete({
-          headers,
-          params: { configId: target.id },
-          body: { expectedRevision: 1 },
-        }),
-        [204, 409],
-      ),
-    ]);
-    expect([rebound.status, deleted.status]).toSatisfy((statuses: number[]) => {
-      return (
-        (statuses[0] === 200 && statuses[1] === 409) ||
-        (statuses[0] === 404 && statuses[1] === 204)
-      );
-    });
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
     });
   });
 

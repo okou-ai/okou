@@ -372,7 +372,6 @@ async function loadStoredRuntimeState(
               .from(variables)
               .where(
                 builtinConnectorCredentialVariableReadCondition({
-                  db: tx,
                   groups: readGroups,
                 }),
               );

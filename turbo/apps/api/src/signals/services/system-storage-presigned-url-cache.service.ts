@@ -1,24 +1,24 @@
-import { createHash } from "node:crypto";
 import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { z } from "zod";
-import { onRejection, safeSync } from "../utils";
-import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
+import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
 } from "../external/s3";
-import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
+import { onRejection, safeSync } from "../utils";
 import {
   measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
@@ -90,8 +90,6 @@ type StoragePresignedUrlCacheStatus = "hit" | "miss";
 export type SystemStoragePresignedUrlCacheStatus =
   StoragePresignedUrlCacheStatus;
 export type WorkflowSkillStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
-export type ReadOnlyStoragePresignedUrlCacheStatus =
   StoragePresignedUrlCacheStatus;
 
 export interface SystemStoragePresignedUrlRequest {
@@ -1672,68 +1670,6 @@ interface RunStoragePresignedUrlsArgs {
   readonly observation?: StorageManifestCacheObservationContext;
   readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
-
-function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
-  const { requests, ...common } = args;
-  switch (requests.kind) {
-    case "system": {
-      return prepareStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "system_storage",
-        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: systemStoragePresignedUrlCacheKey,
-        normalize: systemStorageRequest,
-      });
-    }
-    case "workflow": {
-      return prepareStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "workflow_skill_storage",
-        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: workflowSkillStoragePresignedUrlCacheKey,
-        normalize: workflowSkillStorageRequest,
-      });
-    }
-    case "readonly": {
-      return prepareStoragePresignedUrls({
-        ...common,
-        requests: requests.values,
-        scope: "readonly_storage",
-        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-        cacheKey: readOnlyStoragePresignedUrlCacheKey,
-        normalize: readOnlyStorageRequest,
-      });
-    }
-  }
-}
-
-/** Shared run preparation signs from a captured cache snapshot without persisting. */
-export const materializeRunStoragePresignedUrls$ = command(
-  async ({ get }, args: RunStoragePresignedUrlsArgs, signal: AbortSignal) => {
-    const requests = await prepareRunStoragePresignedUrls(args);
-    signal.throwIfAborted();
-    const signingRequests = requests.needsFresh.map((entry) => {
-      return {
-        ...entry,
-        sign: get(
-          presignedGetUrlSignerForBucket(
-            entry.request.bucket,
-            entry.request.publicEndpoint,
-          ),
-        ),
-      };
-    });
-    const prepared = await signPreparedStoragePresignedUrls(
-      requests,
-      signingRequests,
-    );
-    signal.throwIfAborted();
-    prepared.timing?.flush();
-    return prepared.results;
-  },
-);
 
 export function resolveSystemStoragePresignedUrls(args: {
   readonly db: Db;

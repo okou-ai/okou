@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_org_usage_allowance_windows_entitlement_kind_starts" ON "org_usage_allowance_windows" USING btree ("entitlement_id","kind","starts_at");

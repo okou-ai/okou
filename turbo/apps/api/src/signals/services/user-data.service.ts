@@ -35,11 +35,9 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
-
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { isValidTimeZone } from "../utils";
-
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;

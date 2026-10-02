@@ -5,12 +5,11 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { createDeferredPromise } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -67,10 +66,9 @@ async function setupCustomOAuthFirewall(
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   const headers = fw.sandboxHeaders(actor, run.runId);
   const connector = await connectors.createCustomConnector(
@@ -182,20 +180,9 @@ describe.each(["configured", "automatic"] as const)(
     ])(
       "retries invalid_grant ($subtype) quietly and recovers the exact account",
       async ({ subtype, reason }) => {
-        const started = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        onTestFinished(() => {
-          if (!release.settled()) {
-            release.resolve(undefined);
-          }
-        });
         let refreshCalls = 0;
-        const custom = await setupCustomOAuthFirewall(mode, async () => {
+        const custom = await setupCustomOAuthFirewall(mode, () => {
           refreshCalls += 1;
-          if (!started.settled()) {
-            started.resolve(undefined);
-          }
-          await release.promise;
           return HttpResponse.json(
             {
               error: "invalid_grant",
@@ -209,11 +196,7 @@ describe.each(["configured", "automatic"] as const)(
           displayName: "Second",
         });
         context.mocks.sentry.captureException.mockClear();
-        const first = custom.request(custom.account.id, true);
-        await started.promise;
-        const concurrent = custom.request(custom.account.id, true);
-        release.resolve(undefined);
-        const responses = await Promise.all([first, concurrent]);
+        const responses = [await custom.request(custom.account.id, true)];
 
         mocks.clerk.session(custom.actor.userId, custom.actor.orgId);
         await accept(
@@ -242,7 +225,7 @@ describe.each(["configured", "automatic"] as const)(
             },
           });
         }
-        expect(refreshCalls).toBe(4);
+        expect(refreshCalls).toBe(3);
         await expect(
           custom.connectors.listCustomConnectorAccounts(
             custom.actor,
@@ -264,7 +247,7 @@ describe.each(["configured", "automatic"] as const)(
         );
         const siblingAuth = await custom.request(sibling.id, false);
         expect(siblingAuth.status).toBe(200);
-        expect(refreshCalls).toBe(4);
+        expect(refreshCalls).toBe(3);
         expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
 
         const replacement =

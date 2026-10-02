@@ -114,10 +114,9 @@ async function createRunUploadFixture(
     });
     runId = sent.runId;
   } else {
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "produce an uploaded artifact",
-      modelProvider: "anthropic-api-key",
     });
     runId = run.runId;
   }

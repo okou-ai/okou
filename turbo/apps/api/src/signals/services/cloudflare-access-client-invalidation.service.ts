@@ -26,16 +26,6 @@ function publishCloudflareAccessChanged(
   });
 }
 
-export async function publishCloudflareAccessMutationInvalidation(
-  owner: Owner,
-  publishSshInvalidation: () => Promise<void>,
-): Promise<void> {
-  await Promise.all([
-    publishCloudflareAccessChanged(owner),
-    publishSshInvalidation(),
-  ]);
-}
-
 export function publishCloudflareAccessClientInvalidation(
   owner: Owner,
   scope: "personal" | "organization" = "personal",

@@ -68,12 +68,9 @@ async function setupRun() {
   const agent = await bdd.createAgent(actor, {
     displayName: "Account discovery Agent",
   });
-  const run = await runs.createDirectRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Discover admitted accounts",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: agent.agentId },
-    secrets: { OKOU_TOKEN: "discovery-test-token" },
   });
   return { actor, run };
 }

@@ -12,6 +12,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -503,6 +504,51 @@ describe("PUT /api/billing/auto-recharge", () => {
       );
     },
   );
+
+  it("clears a failed recharge after its organization row is rewritten", async () => {
+    const { admin, entitlement } = await createProActor();
+    const before = await billingApi.readBillingStatus(admin);
+    const config = {
+      enabled: true,
+      threshold: before.credits + 1000,
+      amount: before.credits + 6000,
+    };
+    const invoiceId = acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    const started = createDeferredPromise<void>(context.signal);
+    const failedResponse = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.customers.retrieve.mockImplementationOnce(async () => {
+      started.resolve();
+      await failedResponse.promise;
+      throw new Error("Stripe temporarily unavailable");
+    });
+    const failing = billingApi.updateAutoRecharge(admin, config, [200]);
+    onTestFinished(async () => {
+      if (!failedResponse.settled()) {
+        failedResponse.resolve();
+      }
+      if (!started.settled()) {
+        started.resolve();
+      }
+      await Promise.allSettled([failing]);
+    });
+    await started.promise;
+
+    // Another organization write (here a config save; settlement debits
+    // rewrite the same row) lands while the recharge is still pending.
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    failedResponse.resolve();
+    await failing;
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+
+    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.invoices.pay).toHaveBeenCalledWith(invoiceId);
+    expect((await billingApi.readBillingStatus(admin)).credits).toBe(
+      before.credits,
+    );
+  });
 
   it("disables auto-recharge after a public recharge trigger", async () => {
     const { admin, entitlement } = await createProActor();

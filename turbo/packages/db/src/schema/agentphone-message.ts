@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   pgTable,
   text,
@@ -23,6 +24,7 @@ export const agentphoneMessages = pgTable(
       length: 255,
     }).notNull(),
     conversationId: varchar("conversation_id", { length: 255 }),
+    groupId: varchar("group_id", { length: 255 }),
     agentphoneAgentId: varchar("agentphone_agent_id", {
       length: 255,
     }).notNull(),
@@ -55,7 +57,17 @@ export const agentphoneMessages = pgTable(
         table.phoneHandle,
         table.createdAt,
       ),
+      index("idx_agentphone_messages_group_time").on(
+        table.agentphoneAgentId,
+        table.groupId,
+        table.receivedAt,
+        table.createdAt,
+      ),
       index("idx_agentphone_messages_user_link").on(table.agentphoneUserLinkId),
+      check(
+        "chk_agentphone_messages_group_received_at",
+        sql`${table.groupId} IS NULL OR ${table.receivedAt} IS NOT NULL`,
+      ),
     ];
   },
 );

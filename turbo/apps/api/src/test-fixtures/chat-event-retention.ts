@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { and, desc, eq, inArray, lte, max } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, max, sql } from "drizzle-orm";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { pgTextDecoder } from "../lib/db-structured-result";
+import { billingRunAttributionWrite } from "../signals/services/managed-usage-attribution";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -227,28 +230,43 @@ export const seedRetentionRun$ = command(
     if (session === undefined) {
       throw new Error("Expected retention agent session insertion");
     }
-    const [run] = await database
-      .insert(agentRuns)
-      .values({
-        userId: owner.userId,
-        orgId: owner.orgId,
-        sessionId: session.id,
-        status: args.status,
-        prompt: "Retention fixture run",
-        ...(args.threadBound
-          ? {
-              triggerSource: "web",
-              autonomyBudget: 0,
-              chatThreadId: args.chatThreadId,
-            }
-          : {}),
-      })
-      .returning({ id: agentRuns.id });
-    signal.throwIfAborted();
-    if (run === undefined) {
-      throw new Error("Expected retention run insertion");
-    }
-    return run.id;
+    return await database.transaction(async (tx) => {
+      const [run] = await tx
+        .insert(agentRuns)
+        .values({
+          userId: owner.userId,
+          orgId: owner.orgId,
+          sessionId: session.id,
+          status: args.status,
+          prompt: "Retention fixture run",
+          ...(args.threadBound
+            ? {
+                triggerSource: "web",
+                autonomyBudget: 0,
+                chatThreadId: args.chatThreadId,
+              }
+            : {}),
+        })
+        .returning({
+          id: agentRuns.id,
+          orgId: agentRuns.orgId,
+          userId: agentRuns.userId,
+          startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+          triggerSource: agentRuns.triggerSource,
+          threadId: agentRuns.chatThreadId,
+        });
+      signal.throwIfAborted();
+      if (!run) {
+        throw new Error("Expected retention run insertion");
+      }
+      const capture = billingRunAttributionWrite(run);
+      await tx
+        .insert(billingRunAttribution)
+        .values(capture.values)
+        .onConflictDoNothing();
+      signal.throwIfAborted();
+      return run.id;
+    });
   },
 );
 

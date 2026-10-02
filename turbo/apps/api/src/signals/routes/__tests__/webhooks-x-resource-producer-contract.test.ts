@@ -71,10 +71,9 @@ async function createRun() {
     displayName: "X producer contract",
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Read X resources",
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,

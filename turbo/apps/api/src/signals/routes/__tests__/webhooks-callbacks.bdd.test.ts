@@ -12,20 +12,15 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
-import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
+import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
-import { readUsageAllowanceEntitlementFixture } from "../../../test-fixtures/usage-allowance";
 import {
   createBddApi,
   expectApiError,
@@ -85,6 +80,30 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
+// Billing-status capability projections of the limited-free and Team plans.
+const LIMITED_FREE_BILLING_CAPABILITIES = {
+  tier: "limited-free-1",
+  status: "active",
+  canBuyConcurrency: false,
+  autoRechargeAllowed: false,
+  supportByok: true,
+  restrictedBuiltInModels: true,
+  videoGenerationAllowed: false,
+  workflowWebhookAutomationAllowed: false,
+  concurrencyLimit: 2,
+} as const;
+const TEAM_BILLING_CAPABILITIES = {
+  tier: "team",
+  status: "active",
+  canBuyConcurrency: true,
+  autoRechargeAllowed: true,
+  supportByok: true,
+  restrictedBuiltInModels: false,
+  videoGenerationAllowed: true,
+  workflowWebhookAutomationAllowed: true,
+  concurrencyLimit: 10,
+} as const;
+
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -135,10 +154,9 @@ async function createEventWebhookRun(prompt: string) {
     displayName: `BDD Event Consumer ${randomUUID()}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt,
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,
@@ -191,10 +209,9 @@ async function sandboxStorageWriteFixture(label: string) {
     displayName: `BDD sandbox storage ${label}`,
     visibility: "private",
   });
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: `write ${label} from the sandbox`,
-    modelProvider: "anthropic-api-key",
   });
   const claim = await runs.claimRunnerJob(run.runId);
   const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -340,18 +357,71 @@ function expectExpiresAboutThirtyDaysFromNow(value: unknown): void {
   expect(expiresInMs).toBeLessThanOrEqual(THIRTY_DAYS_MS + 5000);
 }
 
-function expectIsoTimestampBetween(
-  value: string | null | undefined,
-  before: Date,
-  after: Date,
+interface UsageAllowanceLimits {
+  readonly shortWindowSeconds: number;
+  readonly shortWindowUnits: number;
+  readonly weeklyWindowSeconds: number;
+  readonly weeklyWindowUnits: number;
+}
+
+function expectUsageAllowanceLimits(
+  usageAllowance: unknown,
+  limits: UsageAllowanceLimits,
 ): void {
-  expect(typeof value).toBe("string");
-  if (typeof value !== "string") {
-    throw new Error("Expected an ISO timestamp");
+  expect(usageAllowance).toMatchObject({
+    windows: [
+      {
+        kind: "short",
+        windowSeconds: limits.shortWindowSeconds,
+        unitLimit: limits.shortWindowUnits,
+      },
+      {
+        kind: "weekly",
+        windowSeconds: limits.weeklyWindowSeconds,
+        unitLimit: limits.weeklyWindowUnits,
+      },
+    ],
+  });
+}
+
+async function readUsageAllowanceAt(
+  actor: ApiTestUser,
+  at: number,
+): Promise<unknown> {
+  mockNow(at);
+  const status = await createBillingMediaApi(context).readBillingStatus(actor);
+  return status.usageAllowance ?? null;
+}
+
+/**
+ * Reads the public usage allowance on both sides of its expiry (and
+ * optionally its effective start), then restores the real clock.
+ */
+async function expectUsageAllowanceActiveWindow(
+  actor: ApiTestUser,
+  args: {
+    readonly effectiveAtUnix?: number;
+    readonly expiresAtUnix: number;
+    readonly limits: UsageAllowanceLimits;
+  },
+): Promise<void> {
+  if (args.effectiveAtUnix !== undefined) {
+    await expect(
+      readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000 - 1),
+    ).resolves.toBeNull();
+    expectUsageAllowanceLimits(
+      await readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000),
+      args.limits,
+    );
   }
-  const timestamp = Date.parse(value);
-  expect(timestamp).toBeGreaterThanOrEqual(before.getTime());
-  expect(timestamp).toBeLessThanOrEqual(after.getTime() + 1000);
+  expectUsageAllowanceLimits(
+    await readUsageAllowanceAt(actor, args.expiresAtUnix * 1000 - 1),
+    args.limits,
+  );
+  await expect(
+    readUsageAllowanceAt(actor, args.expiresAtUnix * 1000),
+  ).resolves.toBeNull();
+  clearMockNow();
 }
 
 async function waitForExpectation(
@@ -758,28 +828,16 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       tier: "limited-free-1",
       onboardingPaymentPending: false,
     });
-    await expect(
-      readOrgPlanEntitlementFixture(orgOf(admin)),
-    ).resolves.toMatchObject({
-      orgId: orgOf(admin),
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "org_metadata_bootstrap",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
+    expect(billing).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(billing).toMatchObject({
+      subscriptionStatus: null,
       currentPeriodEnd: null,
-      expiresAt: null,
+      hasSubscription: false,
+    });
+    await expect(
+      createBillingMediaApi(context).readVoiceQuota(admin),
+    ).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
     const onboardingCreditGrant = billing.creditGrants.find((grant) => {
       return grant.source === "onboarding";
@@ -1315,10 +1373,9 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       displayName: "BDD Axiom Event Consumer Agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "emit events to Axiom",
-      modelProvider: "anthropic-api-key",
     });
     const headers = {
       authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
@@ -2508,10 +2565,9 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
       displayName: "BDD sandbox storage agent",
       visibility: "private",
     });
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "write artifacts from the sandbox",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await runs.claimRunnerJob(run.runId);
     const manifest = expectCanonicalStorageManifest(claim.storageManifest);
@@ -3153,26 +3209,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         source: "subscription_renewal",
       }),
     ]);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_atom_grant",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: null,
-      stripePriceId: "price_bdd_atom_grant",
-      currentPeriodEnd: isoOf(grantExpiresAtUnix),
-      expiresAt: isoOf(grantExpiresAtUnix),
+    expect(granted).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
     await api.postStripeEvent(
@@ -3230,16 +3269,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         }),
       ]),
     );
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      currentPeriodStart: isoOf(grantExpiresAtUnix),
-      currentPeriodEnd: isoOf(renewedGrantExpiresAtUnix),
-      expiresAt: isoOf(renewedGrantExpiresAtUnix),
-    });
+    expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
 
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
-
+    // The app clock passes the renewed grant end before reconciliation runs.
+    mockNow(renewedGrantExpiresAtUnix * 1000 + 1000);
     await runs.reconcileBillingOrganizations([orgId]);
 
     const downgraded = await billing.readBillingStatus(actor);
@@ -3247,16 +3280,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(downgraded.credits).toBe(0);
     expect(downgraded.hasSubscription).toBeFalsy();
     expect(downgraded.creditGrants).toHaveLength(0);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_atom_grant",
-      status: "active",
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodEnd: null,
-      expiresAt: null,
+    expect(downgraded).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(downgraded.subscriptionStatus).toBe("expired");
+    expect(downgraded.currentPeriodEnd).toBeNull();
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
   });
 
@@ -3311,19 +3339,24 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "active",
+    const billing = createBillingMediaApi(context);
+    const invoiced = await billing.readBillingStatus(actor);
+    expect(invoiced.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(invoiced.usageAllowance, {
       shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
       weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      effectiveAt: isoOf(effectiveAtUnix),
-      expiresAt: isoOf(expiresAtUnix),
-      stripeCustomerId: `cus_bdd_allowance_${suffix}`,
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-      stripeInvoiceId: `in_bdd_usage_allowance_${suffix}`,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      effectiveAtUnix,
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
 
     const subscriptionPeriodEndUnix = epochSeconds(21);
@@ -3351,17 +3384,18 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const canceledAtPeriod = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceledAtPeriod).toMatchObject({
-      orgId,
-      status: "active",
-      shortWindowUnits: 9000,
-      weeklyWindowUnits: 90_000,
-      expiresAt: isoOf(subscriptionPeriodEndUnix),
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
+    const canceledAtPeriod = await billing.readBillingStatus(actor);
+    expect(canceledAtPeriod.hasSubscription).toBeTruthy();
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: subscriptionPeriodEndUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 9000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 90_000,
+      },
     });
 
-    const beforeCancel = nowDate();
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.updated",
@@ -3375,15 +3409,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterCancel = nowDate();
 
-    const canceled = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(canceled).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: `sub_bdd_allowance_${suffix}`,
-    });
-    expectIsoTimestampBetween(canceled?.expiresAt, beforeCancel, afterCancel);
+    const canceled = await billing.readBillingStatus(actor);
+    expect(canceled.usageAllowance ?? null).toBeNull();
+    expect(canceled.hasSubscription).toBeFalsy();
   });
 
   it("ignores a canceled usage allowance invoice from an obsolete subscription", async () => {
@@ -3453,14 +3482,23 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
+    const status =
+      await createBillingMediaApi(context).readBillingStatus(actor);
+    expect(status.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(status.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
-      expiresAt: isoOf(expiresAtUnix),
-      stripeSubscriptionId: currentSubscriptionId,
+    });
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix,
+      limits: {
+        shortWindowSeconds: 3600,
+        shortWindowUnits: 5000,
+        weeklyWindowSeconds: 604_800,
+        weeklyWindowUnits: 50_000,
+      },
     });
   });
 
@@ -3513,7 +3551,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    const beforeDelete = nowDate();
+    const billing = createBillingMediaApi(context);
+    const active = await billing.readBillingStatus(actor);
+    expect(active.hasSubscription).toBeTruthy();
+    expectUsageAllowanceLimits(active.usageAllowance, {
+      shortWindowSeconds: 3600,
+      shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
+      weeklyWindowUnits: 50_000,
+    });
+
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.deleted",
@@ -3521,19 +3568,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
       [200],
     );
-    const afterDelete = nowDate();
 
-    const entitlement = await readUsageAllowanceEntitlementFixture(orgId);
-    expect(entitlement).toMatchObject({
-      orgId,
-      status: "canceled",
-      stripeSubscriptionId: subscriptionId,
-    });
-    expectIsoTimestampBetween(
-      entitlement?.expiresAt,
-      beforeDelete,
-      afterDelete,
-    );
+    const deleted = await billing.readBillingStatus(actor);
+    expect(deleted.usageAllowance ?? null).toBeNull();
+    expect(deleted.hasSubscription).toBeFalsy();
   });
 
   it("expires Atom day-grant subscription credits at the Atom grant end", async () => {
@@ -3592,7 +3630,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     ]);
   });
 
-  it("cancels replaced subscriptions and reads the Custom grant billing period", async () => {
+  it("retries Atom replacement cleanup without repeating credits and reads the Custom period", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
     const runs = createRunsApi(context);
@@ -3613,44 +3651,57 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       ],
     });
-    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-      id: granted.subscriptionId,
-    });
+    context.mocks.stripe.subscriptions.cancel
+      .mockRejectedValueOnce(new Error("Temporary Atom replacement failure"))
+      .mockResolvedValue({ id: granted.subscriptionId });
 
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_atom_team_${suffix}`,
-          customer: granted.customerId,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            orgId,
-            tier: "team",
-            duration: "7d",
-            atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
-          },
-          parent: null,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_atom_team_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: grantStartsAtUnix,
-                  end: grantExpiresAtUnix,
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
+    const teamEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_atom_team_${suffix}`,
+        customer: granted.customerId,
+        metadata: {
+          type: "atom_grant",
+          purpose: "atom_grant",
+          source: "atom_entitlement",
+          orgId,
+          tier: "team",
+          duration: "7d",
+          atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
         },
+        parent: null,
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_bdd_atom_team_${suffix}`,
+              quantity: 1,
+              price: { id: "price_bdd_atom_grant" },
+              period: {
+                start: grantStartsAtUnix,
+                end: grantExpiresAtUnix,
+              },
+              parent: { type: "invoice_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(teamEvent, [500]);
+    const afterFailedCleanup = await billing.readBillingStatus(actor);
+    expect(afterFailedCleanup.tier).toBe("team");
+    expect(afterFailedCleanup.credits).toBe(140_000);
+    expect(
+      afterFailedCleanup.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
       }),
-      [200],
+    ).toHaveLength(1);
+    await api.postStripeEvent(teamEvent, [200]);
+    await api.postStripeEvent(teamEvent, [200]);
+    const afterRetry = await billing.readBillingStatus(actor);
+    expect(afterRetry.credits).toBe(140_000);
+    expect(afterRetry.creditGrants).toStrictEqual(
+      afterFailedCleanup.creditGrants,
     );
 
     expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
@@ -3834,11 +3885,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const status = await billing.readBillingStatus(actor);
     expect(status.tier).toBe("custom");
     expect(status.hasSubscription).toBeTruthy();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      stripeSubscriptionId: sharedSubscriptionId,
-      stripePriceId: customPriceId,
-    });
     expect((await billing.readUsageMembers(actor)).body.period).toStrictEqual({
       start: isoOf(allowanceStartsAtUnix),
       end: isoOf(allowanceEndsAtUnix),
@@ -3880,14 +3926,14 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       [200],
     );
 
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      shortWindowUnits: 625_000,
-      weeklyWindowUnits: 5_000_000,
-      expiresAt: isoOf(allowanceEndsAtUnix),
-      stripeSubscriptionId: sharedSubscriptionId,
+    await expectUsageAllowanceActiveWindow(actor, {
+      expiresAtUnix: allowanceEndsAtUnix,
+      limits: {
+        shortWindowSeconds: 5 * 60 * 60,
+        shortWindowUnits: 625_000,
+        weeklyWindowSeconds: 7 * 86_400,
+        weeklyWindowUnits: 5_000_000,
+      },
     });
   });
 
@@ -3978,8 +4024,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect((await billing.readBillingStatus(actor)).tier).toBe("custom");
 
-    const expiredAt = new Date(now() - 1000);
-    await expireAtomGrantFixture({ orgId, expiredAt });
+    // The app clock passes the Custom grant end before reconciliation runs.
+    mockNow(grantExpiresAtUnix * 1000 + 1000);
     await runs.reconcileBillingOrganizations([orgId]);
 
     const downgraded = await billing.readBillingStatus(actor);
@@ -4361,6 +4407,36 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const afterTrialCheckout = await billing.readBillingStatus(actor);
     expect(afterTrialCheckout.credits).toBe(20_000);
+
+    // Once the existing credits have expired, a later trial extension cannot
+    // revive them. All state changes still enter through signed Stripe events.
+    mockNow(trialEnd3 * 1000 + 1000);
+    const laterTrialEnd = epochSeconds(10);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      proSubscription({
+        id: subscriptionId,
+        customerId,
+        status: "trialing",
+        trialEnd: laterTrialEnd,
+      }),
+    );
+    const extensionEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_expired_trial_${suffix}`,
+        customer: customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: subscriptionId } },
+        lines: subscriptionLines(epochSeconds(30)),
+      },
+    });
+    await api.postStripeEvent(extensionEvent, [200]);
+    const afterExpiredExtension = await billing.readBillingStatus(actor);
+    expect(afterExpiredExtension.credits).toBe(0);
+    expect(afterExpiredExtension.creditGrants).toHaveLength(0);
+    expect(afterExpiredExtension.subscriptionStatus).toBe("trialing");
+    await api.postStripeEvent(extensionEvent, [200]);
+    expect((await billing.readBillingStatus(actor)).credits).toBe(0);
   });
 
   it("upgrades to team, picks queued chat threads, and cancels the replaced pro subscription", async () => {
@@ -4380,20 +4456,17 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       visibility: "private",
     });
 
-    const first = await runs.createRun(actor, {
+    const first = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run one",
-      modelProvider: "anthropic-api-key",
     });
-    const second = await runs.createRun(actor, {
+    const second = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run two",
-      modelProvider: "anthropic-api-key",
     });
-    const third = await runs.createRun(actor, {
+    const third = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "team upgrade run three",
-      modelProvider: "anthropic-api-key",
     });
     const queuedThreadId = await sendChatInputAtCapacity(
       actor,
@@ -4472,27 +4545,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         return grant.amount === 120_000;
       }),
     ).toHaveLength(1);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "team",
-      planRank: 2,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 10,
-      canBuyConcurrency: true,
-      autoRechargeAllowed: true,
-      supportByok: true,
-      restrictedBuiltInModels: false,
-      videoGenerationAllowed: true,
-      workflowWebhookAutomationAllowed: true,
-      audioLifetimeLimit: null,
-      audioDailyRateLimit: 500,
-      audioDailyDurationSeconds: 30_000,
-      stripeSubscriptionId: teamSubscriptionId,
-      stripePriceId: "price_bdd_team",
+    expect(upgraded).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(upgraded).toMatchObject({
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(teamPeriodEnd),
-      cancelAt: null,
-      expiresAt: null,
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      hasSubscription: true,
+    });
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
     });
 
     const pickedRunId = await waitForPickedThreadRun(actor, queuedThreadId);
@@ -4512,11 +4574,9 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(
       context.mocks.stripe.subscriptions.cancel.mock.calls.length,
     ).toBeGreaterThan(cancelCallsBefore);
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "team",
-      stripeSubscriptionId: teamSubscriptionId,
-    });
-    expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+    const repaired = await billing.readBillingStatus(actor);
+    expect(repaired).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    expect(repaired.credits).toBe(140_000);
 
     // A lower-tier subscription invoice cannot replace the team subscription.
     await api.postStripeEvent(
@@ -4646,28 +4706,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.subscriptionStatus).toBe("canceled");
     expect(suspended.hasSubscription).toBeFalsy();
     expect(suspended.scheduledChange).toBeNull();
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      orgId,
-      planKey: "limited-free-1",
-      planRank: 0,
-      source: "stripe_subscription",
-      status: "active",
-      baseConcurrencyLimit: 2,
-      canBuyConcurrency: false,
-      autoRechargeAllowed: false,
-      supportByok: true,
-      restrictedBuiltInModels: true,
-      videoGenerationAllowed: false,
-      workflowWebhookAutomationAllowed: false,
-      audioLifetimeLimit: 10,
-      audioDailyRateLimit: 10,
-      audioDailyDurationSeconds: 600,
-      stripeSubscriptionId: null,
-      stripePriceId: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      cancelAt: null,
-      expiresAt: null,
+    expect(suspended).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
+    expect(suspended.currentPeriodEnd).toBeNull();
+    expect(suspended.cancelAtPeriodEnd).toBeFalsy();
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: 10 },
     });
 
     await runs.requestCancelRun(actor, first.runId, [200]);
@@ -4719,6 +4762,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
           {
             price: { id: "price_bdd_concurrency" },
             quantity: 3,
+            current_period_start: epochSeconds(0),
+            current_period_end: periodEnd,
           },
         ],
       },
@@ -4738,7 +4783,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       },
     });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       customSubscription,
     );
     context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
@@ -4805,22 +4850,22 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         quantity: 3,
       }),
     ]);
-    await expect(
-      readUsageAllowanceEntitlementFixture(orgId),
-    ).resolves.toMatchObject({
-      status: "active",
-      stripeSubscriptionId: customSubscriptionId,
+    expectUsageAllowanceLimits(customStatus.usageAllowance, {
+      shortWindowSeconds: 3600,
       shortWindowUnits: 5000,
+      weeklyWindowSeconds: 604_800,
       weeklyWindowUnits: 50_000,
     });
-    await expect(readOrgPlanEntitlementFixture(orgId)).resolves.toMatchObject({
-      planKey: "custom",
-      source: "stripe_subscription",
-      stripeSubscriptionId: customSubscriptionId,
-      stripePriceId: customPriceId,
+    expect(customStatus).toMatchObject({
+      status: "active",
+      subscriptionStatus: "active",
       currentPeriodEnd: isoOf(periodEnd),
-      cancelAt: isoOf(periodEnd),
-      expiresAt: isoOf(periodEnd),
+      cancelAtPeriodEnd: true,
+      scheduledChange: {
+        type: "cancel",
+        targetTier: "limited-free-1",
+        effectiveDate: isoOf(periodEnd),
+      },
     });
 
     await api.postStripeEvent(
@@ -4907,6 +4952,221 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.hasSubscription).toBeFalsy();
   });
 
+  it("redelivers replacement cancellation after the paid grant commits without granting twice", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const granted = await runs.grantProEntitlement(actor);
+    const teamSubscriptionId = `sub_team_cancel_retry_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...proSubscription({
+        id: teamSubscriptionId,
+        customerId: granted.customerId,
+      }),
+      items: { data: [{ price: { id: "price_bdd_team" } }] },
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [
+        proSubscription({
+          id: granted.subscriptionId,
+          customerId: granted.customerId,
+        }),
+      ],
+    });
+    context.mocks.stripe.subscriptions.cancel.mockRejectedValueOnce(
+      new Error("Temporary Stripe cancellation failure"),
+    );
+    const event = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_team_cancel_retry_${randomUUID()}`,
+        customer: granted.customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: teamSubscriptionId } },
+        lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+      },
+    });
+    await api.postStripeEvent(event, [500]);
+    const committed = await billing.readBillingStatus(actor);
+    expect(committed.tier).toBe("team");
+    expect(committed.credits).toBe(140_000);
+    expect(
+      committed.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
+      }),
+    ).toHaveLength(1);
+
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      id: granted.subscriptionId,
+      status: "canceled",
+    });
+    await api.postStripeEvent(event, [200]);
+    await api.postStripeEvent(event, [200]);
+    const redelivered = await billing.readBillingStatus(actor);
+    expect(redelivered.credits).toBe(140_000);
+    expect(redelivered.creditGrants).toStrictEqual(committed.creditGrants);
+
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "customer.subscription.deleted",
+        object: { id: granted.subscriptionId, metadata: {} },
+      }),
+      [200],
+    );
+    const afterReplacedCancellation = await billing.readBillingStatus(actor);
+    expect(afterReplacedCancellation.tier).toBe("team");
+    expect(afterReplacedCancellation.hasSubscription).toBeTruthy();
+    expect(afterReplacedCancellation.credits).toBe(140_000);
+  });
+
+  it.each(["legacy", "atom"] as const)(
+    "keeps a newer purchase when the previous %s invoice is redelivered",
+    async (source) => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const billing = createBillingMediaApi(context);
+      const actor = bdd.user();
+      const granted = await runs.grantProEntitlement(actor);
+      const teamSubscriptionId = `sub_team_previous_${randomUUID()}`;
+      const teamSubscription = {
+        ...proSubscription({
+          id: teamSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: { data: [{ price: { id: "price_bdd_team" } }] },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        teamSubscription,
+      );
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
+      context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+        id: granted.subscriptionId,
+        status: "canceled",
+      });
+      const event = stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_previous_${randomUUID()}`,
+          customer: granted.customerId,
+          ...(source === "legacy"
+            ? {
+                metadata: {},
+                parent: {
+                  subscription_details: { subscription: teamSubscriptionId },
+                },
+                lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+              }
+            : {
+                metadata: {
+                  type: "atom_grant",
+                  purpose: "atom_grant",
+                  source: "atom_entitlement",
+                  orgId: orgOf(actor),
+                  tier: "team",
+                  duration: "7d",
+                  atomGrantExpiresAt: isoOf(epochSeconds(7)),
+                },
+                parent: null,
+                lines: {
+                  data: [
+                    {
+                      price: { id: "price_bdd_atom_grant" },
+                      quantity: 1,
+                      period: { start: epochSeconds(0), end: epochSeconds(7) },
+                      parent: { type: "invoice_item_details" },
+                    },
+                  ],
+                },
+              }),
+        },
+      });
+      await api.postStripeEvent(event, [200]);
+      expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+      if (source === "legacy") {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: teamSubscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+
+      // Checkout binds the new subscription before its paid invoice arrives.
+      // The previous invoice ID still names the earlier paid grant.
+      const nextSubscriptionId = `sub_next_${randomUUID()}`;
+      mockEnv("OKOU_PRICE_CUSTOM", "price_bdd_next_custom");
+      const nextSubscription = {
+        ...proSubscription({
+          id: nextSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: {
+          data: [
+            {
+              price: {
+                id:
+                  source === "legacy"
+                    ? "price_bdd_pro"
+                    : "price_bdd_next_custom",
+              },
+            },
+          ],
+        },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+        nextSubscription,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_next_${randomUUID()}`,
+            customer: granted.customerId,
+            subscription: nextSubscriptionId,
+            metadata: null,
+          },
+        }),
+        [200],
+      );
+      const before = await billing.readBillingStatus(actor);
+      expect(before.hasSubscription).toBeTruthy();
+      expect(before.subscriptionStatus).toBe("active");
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [nextSubscription],
+      });
+      const canceledSubscriptions: string[] = [];
+      context.mocks.stripe.subscriptions.cancel.mockImplementation(
+        (subscriptionId) => {
+          if (typeof subscriptionId !== "string") {
+            throw new TypeError("Expected a Stripe subscription ID");
+          }
+          canceledSubscriptions.push(subscriptionId);
+          return Promise.resolve({ id: subscriptionId, status: "canceled" });
+        },
+      );
+      await api.postStripeEvent(event, [200]);
+      // Deliver the provider's cancellation notifications through the public
+      // webhook API, so an accidental cancellation changes observable billing.
+      for (const subscriptionId of canceledSubscriptions) {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: subscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+      const after = await billing.readBillingStatus(actor);
+      expect(after.hasSubscription).toBeTruthy();
+      expect(after.subscriptionStatus).toBe("active");
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      expect(after.creditGrants).toStrictEqual(before.creditGrants);
+    },
+  );
+
   it("grants concurrency slots from Stripe subscription and picks queued chat threads until full", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
@@ -4924,20 +5184,17 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       visibility: "private",
     });
 
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run one",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run two",
-      modelProvider: "anthropic-api-key",
     });
-    await runs.createRun(actor, {
+    await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on run three",
-      modelProvider: "anthropic-api-key",
     });
     const queuedThreadIds = [
       await sendChatInputAtCapacity(
@@ -5378,6 +5635,117 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
     ]);
 
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "customer.subscription.deleted",
+        object: { id: subscriptionId },
+      }),
+      [200],
+    );
+  });
+
+  it("reconciles stale concurrent Stripe deliveries after redelivery", async () => {
+    const bdd = createBddApi(context);
+    const billing = createBillingMediaApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    const orgId = orgOf(actor);
+    const granted = await runs.grantProEntitlement(actor);
+    const suffix = randomUUID().slice(0, 8);
+    const subscriptionId = `sub_bdd_concurrency_redelivery_${suffix}`;
+    const periodStart = epochSeconds(-1);
+    const periodEnd = epochSeconds(30);
+    const staleState = concurrencySubscription({
+      id: subscriptionId,
+      customerId: granted.customerId,
+      quantity: 10,
+      periodEnd,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(staleState);
+    const paidEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_concurrency_initial_${suffix}`,
+        customer: granted.customerId,
+        metadata: {},
+        parent: {
+          subscription_details: {
+            subscription: subscriptionId,
+            metadata: { purpose: "concurrency_subscription", orgId },
+          },
+        },
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_bdd_concurrency_initial_${suffix}`,
+              amount: 0,
+              quantity: 10,
+              price: { id: "price_bdd_concurrency" },
+              period: { start: periodStart, end: periodEnd },
+              parent: { type: "subscription_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(paidEvent, [200]);
+    const before = await billing.readBillingStatus(actor);
+    expect(before.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({ id: subscriptionId, quantity: 10 }),
+    ]);
+
+    const currentState = concurrencySubscription({
+      id: subscriptionId,
+      customerId: granted.customerId,
+      quantity: 2,
+      periodEnd,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(currentState);
+    const events = [
+      stripeEvent({
+        type: "customer.subscription.updated",
+        object: staleState,
+      }),
+      stripeEvent({
+        type: "customer.subscription.updated",
+        object: currentState,
+      }),
+    ];
+    const deliveries = await Promise.all(
+      events.map(async (event) => {
+        const response = await api.postStripeEvent(event, [200, 500]);
+        return { event, response };
+      }),
+    );
+    expect(
+      deliveries.some(({ response }) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    // Stripe redelivers the same failed event, including its original event ID.
+    // A competing publication may fail its first request without losing state.
+    for (const { event, response } of deliveries) {
+      if (response.status === 500) {
+        await api.postStripeEvent(event, [200]);
+      }
+    }
+    const reconciled = await billing.readBillingStatus(actor);
+    expect(reconciled.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({ id: subscriptionId, quantity: 2 }),
+    ]);
+    expect(reconciled.credits).toBe(before.credits);
+    expect((await runs.readRunQueue(actor)).body.concurrency.limit).toBe(5);
+
+    // Duplicate payment evidence must neither restore its old quantity nor add
+    // another grant to the capacity visible through the production run API.
+    await api.postStripeEvent(paidEvent, [200]);
+    const replayed = await billing.readBillingStatus(actor);
+    expect(replayed.concurrencySubscriptions).toStrictEqual(
+      reconciled.concurrencySubscriptions,
+    );
+    expect(replayed.credits).toBe(before.credits);
+    expect((await runs.readRunQueue(actor)).body.concurrency.limit).toBe(5);
     await api.postStripeEvent(
       stripeEvent({
         type: "customer.subscription.deleted",
@@ -6391,10 +6759,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agent.agentId,
       ),
     );
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "survive until teardown",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
     const usageProvider = `org-teardown-${randomUUID().slice(0, 8)}`;
@@ -7095,10 +7462,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         agentId: doomedPublicAgent.agentId,
         title: "BDD peer thread on the deleted user's Agent",
       });
-      const peerRun = await runs.createRun(peer, {
+      // The peer's first run needs the member's initialized memory.
+      await bdd.completeOnboarding(peer);
+      const peerRun = await runs.createThreadRun(peer, {
         agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
-        modelProvider: "anthropic-api-key",
+        model: "claude-sonnet-5",
       });
       const doomedThread = await chat.createThread(doomed, {
         agentId: doomedAgent.agentId,
@@ -7113,10 +7482,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expect(chat.listThreadDrafts(doomed)).resolves.toContain(
         doomedThread.id,
       );
-      const doomedRun = await runs.createRun(doomed, {
+      const doomedRun = await runs.createThreadRun(doomed, {
         agentId: doomedAgent.agentId,
         prompt: "doomed run on the private Agent",
-        modelProvider: "anthropic-api-key",
       });
 
       await startUserDeletion(fixture);
@@ -7180,10 +7548,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       visibility: "private",
     });
 
-    const run = await runs.createRun(banned, {
+    const run = await runs.createThreadRun(banned, {
       agentId: agent.agentId,
       prompt: "banned user cleanup run",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
 

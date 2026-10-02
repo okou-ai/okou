@@ -17,6 +17,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -44,6 +45,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
+const runReadsApi = createRunReadsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
 const trackTeamsFixture = createFixtureTracker<TeamsConnectFixture>(
   async (fixture) => {
@@ -328,8 +330,8 @@ async function runIdForPrompt(
   actor: ReturnType<typeof authOrgApi.user>,
   prompt: string,
 ): Promise<string> {
-  const list = await runsApi.listAgentRuns(actor, { limit: 20 });
-  const run = list.runs.find((item) => {
+  const list = await runReadsApi.requestListLogs(actor, { limit: 20 }, [200]);
+  const run = list.body.data.find((item) => {
     return item.prompt === prompt;
   });
   if (!run) {
@@ -679,14 +681,10 @@ describe("Teams chat callbacks", () => {
           runnerGroup: teams.runnerGroup,
           runId: queuedRunId,
         });
-        const queuedRun = (
-          await runsApi.listAgentRuns(teams.actor, { limit: 20 })
-        ).runs.find((run) => {
-          return run.id === queuedRunId;
-        });
-        expect(queuedClaim.prompt).toBe(queuedRun?.prompt);
+        const queuedRun = await runsApi.readRun(teams.actor, queuedRunId);
+        expect(queuedClaim.prompt).toBe(queuedRun.prompt);
         expect(queuedClaim.appendSystemPrompt).toBe(
-          queuedRun?.appendSystemPrompt,
+          queuedRun.appendSystemPrompt,
         );
         expect(queuedClaim.appendSystemPrompt).toContain(
           "You are currently running inside: Microsoft Teams",
@@ -793,12 +791,15 @@ describe("Teams chat callbacks", () => {
         text: expect.stringContaining("Add credits"),
       }),
     ]);
+    const listed = await runReadsApi.requestListLogs(
+      teams.actor,
+      { limit: 20 },
+      [200],
+    );
     expect(
-      (await runsApi.listAgentRuns(teams.actor, { limit: 20 })).runs.filter(
-        (run) => {
-          return run.prompt === queuedPrompt;
-        },
-      ),
+      listed.body.data.filter((run) => {
+        return run.prompt === queuedPrompt;
+      }),
     ).toHaveLength(0);
   });
 
@@ -944,32 +945,28 @@ describe("Teams chat callbacks", () => {
     },
   );
 
-  it.each([
-    "canonical input",
-    "completed delivery",
-    "participant reply",
-    "participant session",
-  ] as const)("preserves Teams %s", async (phase) => {
-    setupTeamsConnectTestEnv("https://app.okou.ai");
-    const teams = await setupConnectedTeamsActor({
-      okouDebug: true,
-    });
-    const teamsApi = teamsApiMocks({ fixture: teams.fixture });
-    mockOptionalEnv("OPENROUTER_API_KEY", "teams-summary-key");
-    const summaryRequests = mockOpenRouterSummary("Teams completed summary");
-    const activityId = teamsFixtureExternalId(
-      teams.fixture,
-      "activity-completed-1",
-    );
-    const threadId = teamsFixtureExternalId(teams.fixture, "root-completed");
-    const runId = await dispatchTeamsRun({
-      fixture: teams.fixture,
-      activityId,
-      threadId,
-      text: "finish the task",
-    });
+  it.each(["canonical input", "completed delivery"] as const)(
+    "preserves Teams %s",
+    async (phase) => {
+      setupTeamsConnectTestEnv("https://app.okou.ai");
+      const teams = await setupConnectedTeamsActor({
+        okouDebug: true,
+      });
+      const teamsApi = teamsApiMocks({ fixture: teams.fixture });
+      mockOptionalEnv("OPENROUTER_API_KEY", "teams-summary-key");
+      const summaryRequests = mockOpenRouterSummary("Teams completed summary");
+      const activityId = teamsFixtureExternalId(
+        teams.fixture,
+        "activity-completed-1",
+      );
+      const threadId = teamsFixtureExternalId(teams.fixture, "root-completed");
+      const runId = await dispatchTeamsRun({
+        fixture: teams.fixture,
+        activityId,
+        threadId,
+        text: "finish the task",
+      });
 
-    if (phase === "canonical input" || phase === "completed delivery") {
       mocks.clerk.session(
         teams.fixture.userId,
         teams.fixture.orgId,
@@ -1089,21 +1086,41 @@ describe("Teams chat callbacks", () => {
           "finish the task",
         );
       }
-    } else {
+    },
+  );
+
+  describe("participant callbacks", () => {
+    async function setupParticipantScenario() {
+      setupTeamsConnectTestEnv("https://app.okou.ai");
+      const teams = await setupConnectedTeamsActor({ okouDebug: true });
+      const teamsApi = teamsApiMocks({ fixture: teams.fixture });
+      mockOptionalEnv("OPENROUTER_API_KEY", "teams-summary-key");
+      const summaryRequests = mockOpenRouterSummary("Teams completed summary");
+      const threadId = teamsFixtureExternalId(teams.fixture, "root-completed");
+      const runId = await dispatchTeamsRun({
+        fixture: teams.fixture,
+        activityId: teamsFixtureExternalId(
+          teams.fixture,
+          "activity-completed-1",
+        ),
+        threadId,
+        text: "finish the task",
+      });
       const claim = await claimTeamsRun({
         runnerGroup: teams.runnerGroup,
         runId,
       });
       clearTeamsApiCalls(teamsApi);
-
       const cliAgentSessionId = await completeSandboxRun({
         runId,
         sandboxToken: claim.sandboxToken,
         exitCode: 0,
       });
-
-      const firstRunOpenRouterRequestCount = summaryRequests.length;
-
+      if (!cliAgentSessionId) {
+        throw new Error(
+          "Expected the original participant's completed session",
+        );
+      }
       const secondFixture = await trackTeamsFixture(
         Promise.resolve(
           teamsConnectFixture({
@@ -1136,15 +1153,30 @@ describe("Teams chat callbacks", () => {
 
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;
       const postedActivityCountBeforeConnect = teamsApi.postedActivities.length;
-      const secondPrincipalName = secondFixture.teamsUserPrincipalName;
-      await connectTeamsFixture(secondFixture, {
-        displayName: "Grace Hopper",
-        principalName: secondPrincipalName,
-      });
+      await connectTeamsFixture(secondFixture, { displayName: "Grace Hopper" });
       await flushWaitUntilForTest();
       teamsApi.tokenRequests.splice(tokenRequestCountBeforeConnect);
       teamsApi.postedActivities.splice(postedActivityCountBeforeConnect);
-      const secondRunId = await dispatchTeamsRun({
+
+      return {
+        teams,
+        teamsApi,
+        threadId,
+        cliAgentSessionId,
+        secondFixture,
+        summaryRequests,
+      };
+    }
+
+    let prepared: Awaited<ReturnType<typeof setupParticipantScenario>>;
+    beforeEach(async () => {
+      // Rebuild the completed thread and connected participant for every case.
+      prepared = await setupParticipantScenario();
+    });
+
+    async function claimParticipantRun() {
+      const { teams, secondFixture, threadId } = prepared;
+      const runId = await dispatchTeamsRun({
         fixture: secondFixture,
         activityId: teamsFixtureExternalId(
           secondFixture,
@@ -1153,39 +1185,71 @@ describe("Teams chat callbacks", () => {
         threadId,
         text: "finish the follow-up",
         senderName: "Grace Hopper",
-        senderPrincipalName: secondPrincipalName,
+        senderPrincipalName: secondFixture.teamsUserPrincipalName,
       });
-      const secondClaim = await claimTeamsRun({
+      const claim = await claimTeamsRun({
         runnerGroup: teams.runnerGroup,
-        runId: secondRunId,
+        runId,
       });
+      return { runId, claim };
+    }
+
+    it("delivers a reply naming the new participant with a fresh summary", async () => {
+      const { teamsApi, summaryRequests } = prepared;
+      const { runId, claim } = await claimParticipantRun();
+      const summaryRequestCountBeforeCompletion = summaryRequests.length;
       dropLastTeamsIndicatorRequest(teamsApi);
       await completeSandboxRun({
-        runId: secondRunId,
-        sandboxToken: secondClaim.sandboxToken,
+        runId,
+        sandboxToken: claim.sandboxToken,
         exitCode: 0,
       });
       expect(teamsApi.postedActivities).toHaveLength(2);
       expect(teamsApi.postedActivities[1]?.text).toContain(
         "Reply to Grace Hopper",
       );
-      expect(summaryRequests.length).toBeGreaterThan(
-        firstRunOpenRouterRequestCount,
+      const participantSummaryRequests = summaryRequests.slice(
+        summaryRequestCountBeforeCompletion,
       );
-
-      if (phase === "participant session") {
-        const followUpClaim = await claimFollowUpInThread({
-          fixture: teams.fixture,
-          runnerGroup: teams.runnerGroup,
-          threadId,
-          activityId: teamsFixtureExternalId(
-            teams.fixture,
-            "activity-completed-follow-up",
-          ),
-        });
-        expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+      expect(participantSummaryRequests.length).toBeGreaterThan(0);
+      for (const request of participantSummaryRequests) {
+        expect(request).toStrictEqual(
+          expect.objectContaining({
+            messages: expect.arrayContaining([
+              expect.objectContaining({
+                role: "user",
+                content: expect.stringContaining("finish the follow-up"),
+              }),
+            ]),
+          }),
+        );
       }
-    }
+    });
+
+    it("starts a separate session for the new participant", async () => {
+      const { claim } = await claimParticipantRun();
+      expect(claim.resumeSession).toBeNull();
+    });
+
+    it("resumes the original session after another participant completes", async () => {
+      const { teams, threadId, cliAgentSessionId } = prepared;
+      const { runId, claim } = await claimParticipantRun();
+      await completeSandboxRun({
+        runId,
+        sandboxToken: claim.sandboxToken,
+        exitCode: 0,
+      });
+      const followUpClaim = await claimFollowUpInThread({
+        fixture: teams.fixture,
+        runnerGroup: teams.runnerGroup,
+        threadId,
+        activityId: teamsFixtureExternalId(
+          teams.fixture,
+          "activity-completed-follow-up",
+        ),
+      });
+      expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+    });
   });
 
   it("posts readable failed run replies without persisting a thread session", async () => {

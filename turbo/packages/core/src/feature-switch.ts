@@ -308,13 +308,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.DeepSeekAlternativeRouting]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Skip direct DeepSeek candidates when selecting built-in DeepSeek routes.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -406,6 +399,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AgentPhoneGroupHistory]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Read locally archived iMessage group messages visible to the authenticated member.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

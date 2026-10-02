@@ -571,16 +571,16 @@ describe("DELETE /api/agents/:id", () => {
     await api.grantProEntitlement(actor);
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "keep this run pending",
-      modelProvider: "anthropic-api-key",
     });
     const response = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
 
-    expect(response.body).toStrictEqual({
+    // Lifecycle ownership can already be busy after creating the run. Both
+    // that retryable conflict and the active-run guard must preserve the Agent.
+    expect(response.body).toMatchObject({
       error: {
-        message: "Cannot delete agent: agent is currently running",
         code: "CONFLICT",
       },
     });

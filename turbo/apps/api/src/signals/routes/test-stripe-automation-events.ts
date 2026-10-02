@@ -7,7 +7,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   isTestEndpointAllowed,
@@ -17,85 +17,6 @@ import {
 const fixtureBody$ = bodyResultOf(
   testStripeAutomationEventFixtureContract.apply,
 );
-
-async function installIngressFailureTrigger(db: Db): Promise<void> {
-  await db.execute(sql`
-    CREATE OR REPLACE FUNCTION test_fail_stripe_workflow_ingress()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM stripe_workflow_deliveries marker
-        WHERE marker.automation_id = NEW.automation_id
-          AND marker.last_error = 'test_force_ingress_failure'
-      ) THEN
-        RAISE EXCEPTION 'forced Stripe workflow ingress failure';
-      END IF;
-      RETURN NEW;
-    END;
-    $$
-  `);
-  await db.execute(
-    sql`DROP TRIGGER IF EXISTS test_fail_stripe_workflow_ingress ON stripe_workflow_deliveries`,
-  );
-  await db.execute(sql`
-    CREATE TRIGGER test_fail_stripe_workflow_ingress
-    BEFORE INSERT ON stripe_workflow_deliveries
-    FOR EACH ROW EXECUTE FUNCTION test_fail_stripe_workflow_ingress()
-  `);
-}
-
-async function installQueueAdmissionFailureTrigger(db: Db): Promise<void> {
-  await db.execute(sql`
-    CREATE OR REPLACE FUNCTION test_fail_stripe_workflow_queue_admission()
-    RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      IF NEW.event_type = 'input.automation' AND EXISTS (
-        SELECT 1
-        FROM workflow_user_automation_threads thread
-        INNER JOIN workflow_automations automation
-          ON automation.workflow_id = thread.workflow_id
-          AND automation.org_id = thread.org_id
-          AND automation.owner_user_id = thread.user_id
-        INNER JOIN stripe_workflow_deliveries marker
-          ON marker.automation_id = automation.id
-        WHERE thread.chat_thread_id = NEW.chat_thread_id
-          AND marker.last_error = 'test_force_queue_admission_failure'
-      ) THEN
-        RAISE EXCEPTION 'forced Stripe workflow queue admission failure';
-      END IF;
-      RETURN NEW;
-    END;
-    $$
-  `);
-  await db.execute(
-    sql`DROP TRIGGER IF EXISTS test_fail_stripe_workflow_queue_admission ON chat_events`,
-  );
-  await db.execute(sql`
-    CREATE TRIGGER test_fail_stripe_workflow_queue_admission
-    BEFORE INSERT ON chat_events
-    FOR EACH ROW EXECUTE FUNCTION test_fail_stripe_workflow_queue_admission()
-  `);
-}
-
-async function clearFailureTriggers(db: Db): Promise<void> {
-  await db.execute(
-    sql`DROP TRIGGER IF EXISTS test_fail_stripe_workflow_ingress ON stripe_workflow_deliveries`,
-  );
-  await db.execute(
-    sql`DROP FUNCTION IF EXISTS test_fail_stripe_workflow_ingress()`,
-  );
-  await db.execute(
-    sql`DROP TRIGGER IF EXISTS test_fail_stripe_workflow_queue_admission ON chat_events`,
-  );
-  await db.execute(
-    sql`DROP FUNCTION IF EXISTS test_fail_stripe_workflow_queue_admission()`,
-  );
-}
 
 const applyStripeAutomationEventFixture$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -179,47 +100,6 @@ const applyStripeAutomationEventFixture$ = command(
             updatedAt: currentTime,
           })
           .where(eq(stripeWorkflowDeliveries.id, delivery.id));
-        signal.throwIfAborted();
-        break;
-      }
-      case "fail-next-ingress-for-automation": {
-        await db
-          .update(stripeWorkflowDeliveries)
-          .set({
-            lastError: "test_force_ingress_failure",
-            updatedAt: currentTime,
-          })
-          .where(eq(stripeWorkflowDeliveries.id, delivery.id));
-        signal.throwIfAborted();
-        await installIngressFailureTrigger(db);
-        signal.throwIfAborted();
-        break;
-      }
-      case "fail-next-queue-admission-for-automation": {
-        await db
-          .update(stripeWorkflowDeliveries)
-          .set({
-            lastError: "test_force_queue_admission_failure",
-            updatedAt: currentTime,
-          })
-          .where(eq(stripeWorkflowDeliveries.id, delivery.id));
-        signal.throwIfAborted();
-        await installQueueAdmissionFailureTrigger(db);
-        signal.throwIfAborted();
-        break;
-      }
-      case "clear-forced-failures": {
-        await db
-          .update(stripeWorkflowDeliveries)
-          .set({ lastError: null, updatedAt: currentTime })
-          .where(
-            eq(
-              stripeWorkflowDeliveries.automationId,
-              bodyResult.data.automation_id,
-            ),
-          );
-        signal.throwIfAborted();
-        await clearFailureTriggers(db);
         signal.throwIfAborted();
         break;
       }

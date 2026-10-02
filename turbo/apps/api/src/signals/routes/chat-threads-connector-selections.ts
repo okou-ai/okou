@@ -13,9 +13,9 @@ import {
   listChatThreadConnectorSelections,
   updateChatThreadConnectorSelection,
 } from "../services/chat-thread-connector-selection.service";
-import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
-import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
-import { reconcileGoogleFormsWatchesForUser } from "../services/google-forms-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
+import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
 import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -38,7 +38,6 @@ const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
     },
   };
 });
-
 const updateSelectionInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -79,18 +78,21 @@ const updateSelectionInner$ = command(
     ) {
       await bestEffort(
         body.data.target.connectorSlug === "gmail"
-          ? reconcileGmailWatchesForUser(
-              { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+          ? set(
+              reconcileGmailWatchesForUser$,
+              { orgId: auth.orgId, userId: auth.userId },
               signal,
             )
           : body.data.target.connectorSlug === "google-calendar"
-            ? reconcileGoogleCalendarWatchesForUser(
-                { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+            ? set(
+                reconcileGoogleCalendarWatchesForUser$,
+                { orgId: auth.orgId, userId: auth.userId },
                 signal,
               )
             : body.data.target.connectorSlug === "google-forms"
-              ? reconcileGoogleFormsWatchesForUser(
-                  { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+              ? set(
+                  reconcileGoogleFormsWatchesForUser$,
+                  { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 )
               : reconcileGoogleMeetSubscriptionsForUser(
@@ -105,7 +107,6 @@ const updateSelectionInner$ = command(
     return { status: 200 as const, body: result.selection };
   },
 );
-
 const clearSelectionInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -143,18 +144,21 @@ const clearSelectionInner$ = command(
     ) {
       await bestEffort(
         body.data.connectorSlug === "gmail"
-          ? reconcileGmailWatchesForUser(
-              { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+          ? set(
+              reconcileGmailWatchesForUser$,
+              { orgId: auth.orgId, userId: auth.userId },
               signal,
             )
           : body.data.connectorSlug === "google-calendar"
-            ? reconcileGoogleCalendarWatchesForUser(
-                { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+            ? set(
+                reconcileGoogleCalendarWatchesForUser$,
+                { orgId: auth.orgId, userId: auth.userId },
                 signal,
               )
             : body.data.connectorSlug === "google-forms"
-              ? reconcileGoogleFormsWatchesForUser(
-                  { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+              ? set(
+                  reconcileGoogleFormsWatchesForUser$,
+                  { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 )
               : reconcileGoogleMeetSubscriptionsForUser(

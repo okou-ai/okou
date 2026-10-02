@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-
 import type {
   McpDiscoveryResult,
   McpListAgentsInput,
@@ -14,7 +13,6 @@ import { loadMemberSubscriptionModels } from "./member-subscription-models.servi
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -33,7 +31,6 @@ import {
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -46,7 +43,6 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import { loadOrgModelPolicyFacts } from "./model-policy.service";
-
 interface Principal {
   readonly orgId: string;
   readonly userId: string;
@@ -480,12 +476,6 @@ export async function listMcpModels(
         principal.orgId,
         principal.userId,
       );
-      await budget.beforeQuery(tx);
-      const featureSwitchContext = await loadUserFeatureSwitchContext(
-        tx,
-        principal.orgId,
-        principal.userId,
-      );
       const subscriptions = member.subscriptions;
       budget.check();
       const models: McpListModelsOutput["models"] = [];
@@ -524,11 +514,7 @@ export async function listMcpModels(
           isBuiltInModelProviderType(route.modelProviderType)
         ) {
           await budget.beforeQuery(tx);
-          const runtime = await resolveBuiltInModelRuntimeRoute(
-            tx,
-            model,
-            featureSwitchContext,
-          );
+          const runtime = await resolveBuiltInModelRuntimeRoute(tx, model);
           budget.check();
           if (!runtime) {
             entry.availability = "unavailable";

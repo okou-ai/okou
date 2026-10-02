@@ -405,9 +405,8 @@ This preparation does not introduce such an endpoint or move existing data.
 
 ### Lock order and old/new writer protocol
 
-1. If the caller already needs the `usage_pack_billing:<org>` advisory lock,
-   acquire all needed organization locks in sorted order first. Never acquire
-   this lock inside a pending callback.
+1. The former `usage_pack_billing:<org>` advisory lock is retired; no caller
+   acquires it before this protocol.
 2. Acquire `billing_purchase:<org>` advisory transaction locks for every
    affected organization in sorted, deduplicated order. Current outgoing
    purchase creation already shares this lock.

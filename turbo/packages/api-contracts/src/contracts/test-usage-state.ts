@@ -118,12 +118,6 @@ export const testUsageStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.string(),
   }),
   z.object({
-    action: z.literal("seed-usage-overflow-grain"),
-    org_id: z.string(),
-    user_id: z.string(),
-    processed_at: z.string(),
-  }),
-  z.object({
     action: z.literal("set-usage-event-created-at"),
     id: z.string(),
     created_at: z.string(),

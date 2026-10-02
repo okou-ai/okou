@@ -1,8 +1,23 @@
-import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
-import type { Command } from "ccstate";
-import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
+import type {
+  ModelProviderCredentialScope,
+  ModelProviderType,
+  ModelProviderCodexRuntimeConfig,
+} from "@okouai/api-contracts/contracts/model-providers";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
+import type {
+  PiModelConfig,
+  SecretConnectorMetadata,
+  PiModelConfigLegacy,
+  StoredConnectorPermissionBaseline,
+  ConnectorRuntimeTargetRegistration,
+} from "@okouai/api-contracts/contracts/runners";
+import type { PiModelConfigV4 } from "@okouai/api-contracts/contracts/pi-native";
+import type {
+  ExpandedFirewallConfig,
+  ExecutionFirewalls,
+  NetworkPolicies,
+} from "@okouai/connectors/firewall-types";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 
 export interface AgentRunModelPin {
   readonly modelProvider: string | null;
@@ -24,28 +39,6 @@ export interface InternalRunCallback {
 
 export type RunCallback = HttpRunCallback | InternalRunCallback;
 
-export interface DispatchFailedRunCallbackInput {
-  readonly db: Db;
-  readonly runId: string;
-  readonly error: string;
-  readonly callbacks: readonly RunCallback[];
-}
-
-export type DispatchFailedRunCallbacks = Command<
-  Promise<void>,
-  [DispatchFailedRunCallbackInput, AbortSignal]
->;
-
-/**
- * A producer write committed with the run insert, before terminal callbacks.
- * Lost claims and rolled-back launches leave no producer binding. This callback
- * is in memory only and is never serialized into run metadata.
- */
-export type PersistProducerRunBinding = (
-  tx: Tx,
-  run: { readonly runId: string; readonly status: "pending" | "failed" },
-) => Promise<void>;
-
 export type AgentRunPreCreateSource =
   | "chat_callback_auto_send"
   | "workflow_slash_command";
@@ -62,4 +55,43 @@ export interface AgentRunRequestAgent {
   readonly sound: string | null;
   readonly modelProviderId: string | null;
   readonly selectedModel: string | null;
+}
+
+export interface ResolvedModelProviderEnvironment {
+  readonly credentialOwner: PiModelConfigV4["credentialOwner"];
+  readonly authMethod?: string | null;
+  readonly piModelConfig?: PiModelConfig;
+  readonly id: string | null;
+  readonly type: ModelProviderType;
+  readonly concreteType?: ModelProviderType;
+  readonly environment: Record<string, string>;
+  readonly secrets: Record<string, string>;
+  readonly selectedModel: string | null;
+  readonly firewall?: ExpandedFirewallConfig;
+  readonly inlineFirewall?: boolean;
+  readonly secretConnectorMap?: Record<string, string>;
+  readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
+  readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;
+  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  /** Catalog route `upstream_model` placed into the provider environment. */
+  readonly upstreamModel?: string;
+  readonly credentialHeader?: NonNullable<
+    PiModelConfigLegacy["credentialHeader"]
+  >;
+}
+
+type BuiltinRuntimeTargetRegistration = Extract<
+  ConnectorRuntimeTargetRegistration,
+  { readonly kind: "builtin" }
+>;
+
+export interface PermissionManifest {
+  readonly firewalls: ExecutionFirewalls;
+  readonly networkPolicies: NetworkPolicies;
+  readonly builtinRuntimeTargets?: readonly BuiltinRuntimeTargetRegistration[];
+  readonly connectorPermissionBaseline?: StoredConnectorPermissionBaseline;
+  readonly environmentSecretPlaceholders:
+    | Readonly<Record<string, string>>
+    | undefined;
+  readonly billableFirewalls: readonly string[];
 }

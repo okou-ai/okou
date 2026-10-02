@@ -194,10 +194,9 @@ async function markOrgCodexProviderStaleViaFirewall(
   if (!actor.orgId) {
     throw new Error("Entitled actor must be org-scoped");
   }
-  const run = await api.createRun(actor, {
+  const run = await api.createThreadRun(actor, {
     agentId,
     prompt: "trigger firewall auth token refresh",
-    modelProvider: "anthropic-api-key",
   });
 
   server.use(
@@ -972,6 +971,93 @@ describe("POST /api/model-providers", () => {
         "AWS_REGION",
       ]),
     );
+  });
+
+  it("recovers after concurrent first saves with different auth methods", async () => {
+    const fixture = uniqueOrgUser("zmp-concurrent-bedrock");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProvidersMainContract,
+    );
+    const accessKeysBody = {
+      type: "aws-bedrock",
+      authMethod: "access-keys",
+      secrets: {
+        AWS_ACCESS_KEY_ID: "test-access-key",
+        AWS_SECRET_ACCESS_KEY: "test-secret-key",
+        AWS_REGION: "us-east-1",
+      },
+    } as const;
+
+    // Either request may lose the race; only the follow-up outcome matters.
+    await Promise.allSettled([
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: accessKeysBody,
+      }),
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          type: "aws-bedrock",
+          authMethod: "api-key",
+          secrets: {
+            AWS_BEARER_TOKEN_BEDROCK: "test-bearer-token",
+            AWS_REGION: "us-west-2",
+          },
+        },
+      }),
+    ]);
+
+    await accept(
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: accessKeysBody,
+      }),
+      [200, 201],
+    );
+    const list = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    const providers = list.body.modelProviders.filter(
+      (candidate: ModelProviderResponse) => {
+        return candidate.type === "aws-bedrock";
+      },
+    );
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.authMethod).toBe("access-keys");
+  });
+
+  it("rejects secrets outside the selected provider auth method", async () => {
+    const fixture = uniqueOrgUser("zmp-unknown-multi-secret");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProvidersMainContract,
+    );
+    const response = await accept(
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          type: "aws-bedrock",
+          authMethod: "access-keys",
+          secrets: {
+            AWS_ACCESS_KEY_ID: "test-access-key",
+            AWS_SECRET_ACCESS_KEY: "test-secret-key",
+            AWS_REGION: "us-east-1",
+            ANTHROPIC_API_KEY: "unrelated-provider-secret",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toBe(
+      "Unsupported secrets for access-keys: ANTHROPIC_API_KEY",
+    );
+    const list = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(list.body.modelProviders).toStrictEqual([]);
   });
 
   it("rejects invalid multi-auth shape for single-secret providers", async () => {

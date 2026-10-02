@@ -1,19 +1,18 @@
-import { command } from "ccstate";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command } from "ccstate";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
+import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
-import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 import {
-  activatePersonalModelProviderAccount,
-  deletePersonalModelProviderAccount,
+  activatePersonalModelProviderAccount$,
+  disconnectPersonalModelProviderAccounts$,
   personalModelProviderAccountById,
   personalModelProviderAccountResponseById,
 } from "../services/model-provider-account.service";
@@ -22,11 +21,12 @@ import {
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
-import type { RouteEntry } from "../route-entry";
+import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -110,12 +110,15 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
-  const result = await activatePersonalModelProviderAccount({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-    id: params.id,
-  });
+  const result = await set(
+    activatePersonalModelProviderAccount$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      id: params.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return "status" in result ? result : { status: 200 as const, body: result };
 });
@@ -141,13 +144,13 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.delete),
   );
-  const result = await deletePersonalModelProviderAccount(
+  const result = await set(
+    disconnectPersonalModelProviderAccounts$,
     {
       featureSwitchContext,
-      db: set(writeDb$),
       orgId: auth.orgId,
       userId: auth.userId,
-      id: params.id,
+      selection: { kind: "account", id: params.id },
     },
     signal,
   );

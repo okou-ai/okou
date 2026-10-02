@@ -308,6 +308,8 @@ export const createImageGenerationJob$ = command(
         orgId: args.orgId,
         userId: args.userId,
         runId: args.runId ?? null,
+        billingRunId: args.runId ?? null,
+        billingContext: args.runId === undefined ? "runless" : "run",
         request: builtInGenerationRequestWithInternal(args.request, {
           ...readBuiltInGenerationRequestInternal(args.request),
           privateArtifacts,

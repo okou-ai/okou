@@ -41,6 +41,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
+  VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import {
   UNKNOWN_PERMISSION_GRANT,
@@ -61,7 +62,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
+import { verifyOkouToken } from "../../auth/tokens";
 import {
   deleteUsagePricingRows,
   seedOrgMetadata,
@@ -83,7 +84,6 @@ import {
   replaceApiTestConnectorCatalogFilteredAuthMethods,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   readSessionHistoryBlobRefCountFixture,
   setRunModelProviderFixture,
@@ -756,19 +756,6 @@ async function entitledRunActor(
   return { actor, agentId: agent.agentId, runnerGroup, granted };
 }
 
-function agentBackedDirectRunBody(args: {
-  readonly agentId: string;
-  readonly prompt: string;
-}) {
-  return {
-    agentId: args.agentId,
-    prompt: args.prompt,
-    modelProviderType: "anthropic-api-key" as const,
-    vars: { OKOU_AGENT_ID: args.agentId },
-    secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
-  };
-}
-
 const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
 
 function failIfChatCallbackRouteIsFetched(): void {
@@ -981,17 +968,18 @@ async function scopedRuntimeScenario() {
   const catalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
   await installApiTestConnectorCatalog({ catalogVersion });
   const { actor, agentId, runnerGroup } = await entitledRunActor();
+  let enabledSlugs: readonly string[] = [];
   const createScopedRun = async (
     prompt: string,
     allowedConnectorSlugs: readonly string[],
   ) => {
-    return await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({ agentId, prompt }),
-      connectorScope: {
-        allowedConnectorSlugs,
-        allowedCustomConnectorIds: [],
-      },
-    });
+    // The Agent's enabled connectors are the Thread run's connector scope;
+    // they are validated when enabled, not again after catalog rotation.
+    const slugs = [...new Set(allowedConnectorSlugs)].sort();
+    if (slugs.join(",") !== enabledSlugs.join(",")) {
+      enabledSlugs = await api.enableAgentConnectors(actor, agentId, slugs);
+    }
+    return await api.createThreadRun(actor, { agentId, prompt });
   };
   return { api, actor, runnerGroup, catalogVersion, createScopedRun };
 }
@@ -1001,10 +989,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "turn this deck into a template",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -1026,10 +1013,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Okou CLI",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -1049,10 +1035,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PrivateArtifacts]: enabled,
       });
-      const created = await api.createRun(actor, {
+      const created = await api.createThreadRun(actor, {
         agentId,
         prompt: "share the report with my organization",
-        modelProvider: "anthropic-api-key",
       });
       const run = await api.readRun(actor, created.runId);
       const prompt = run.appendSystemPrompt ?? "";
@@ -1075,10 +1060,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("advertises current Run usage and grants its Run capability", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "inspect this Run's provider-token usage",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
@@ -1099,10 +1083,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const disabled = await api.createRun(actor, {
+    const disabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "send a message",
-      modelProvider: "anthropic-api-key",
     });
     const disabledRun = await api.readRun(actor, disabled.runId);
     expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
@@ -1114,10 +1097,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.LarkIntegration]: true,
     });
-    const enabled = await api.createRun(actor, {
+    const enabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "send a message",
-      modelProvider: "anthropic-api-key",
     });
     const enabledRun = await api.readRun(actor, enabled.runId);
     expect(enabledRun.appendSystemPrompt).toContain(
@@ -1136,10 +1118,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const apiCommitSha = "a".repeat(40);
     mockEnv("GIT_COMMIT_SHA", apiCommitSha);
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -1159,14 +1140,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const firstRun = await createScopedRun("cold scoped connector runtime", [
       "x",
-      "x",
-      "catalog-runtime-unknown",
     ]);
     await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     const repeatedRun = await createScopedRun(
       "warm repeated scoped connector runtime",
-      ["x", "x", "catalog-runtime-unknown"],
+      ["x"],
     );
     await api.requestCancelRun(actor, repeatedRun.runId, [200]);
 
@@ -1298,15 +1277,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       refreshToken: "x-reusable-authority-refresh",
     });
 
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "reuse unchanged catalog validation authority",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
+    await api.enableAgentConnectors(actor, agentId, ["x"]);
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "reuse unchanged catalog validation authority",
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -1329,22 +1303,22 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
       runtimeProjection: true,
     });
-    await invalidateApiTestConnectorCatalogCompatibility();
     const { actor, agentId } = await entitledRunActor();
+    await api.enableAgentConnectors(actor, agentId, ["x"]);
+    // A rotated catalog that no request has read yet becomes incompatible.
+    await installApiTestConnectorCatalog({
+      catalogVersion: `api-test-invalid-projection-compatibility-${randomUUID()}`,
+      runtimeProjection: true,
+    });
+    await invalidateApiTestConnectorCatalogCompatibility();
     const rejectedPrompt = "invalid projection compatibility rejection";
 
     await expect(
-      api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({
-          agentId,
-          prompt: rejectedPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
-    ).rejects.toThrow("Accepted external connector catalog is unavailable");
+      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
+    ).resolves.toStrictEqual({
+      pickError: "Accepted external connector catalog is unavailable",
+      inputError: "internal_error",
+    });
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -1356,87 +1330,21 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
   });
 
-  it("retains direct plan admission", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-    const prompt = "direct service dispatch timing should not leak prompt";
-    const composeName = `bdd-direct-service-timing-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-
-    context.mocks.s3.send.mockClear();
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt,
-    });
-
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(created.runId);
-    expect(claim.userTimezone).toBe("Asia/Shanghai");
-    expect(claim.connectorRuntimeTargets).toStrictEqual([]);
-    await api.requestCancelRun(actor, created.runId, [200]);
-
-    if (!actor.orgId) {
-      throw new Error("Expected suspended direct-run actor to have an org");
-    }
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-    });
-    const suspendedPrompt = `suspended direct ${randomUUID()}`;
-    const rejected = await api.requestDirectRun(
-      actor,
-      { agentId: compose.agentId, prompt: suspendedPrompt },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((run) => {
-        return run.prompt === suspendedPrompt;
-      }),
-    ).toHaveLength(0);
-  });
-
   it("returns a context encryption failure while storage presigning is still pending", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const storageName = `bdd-overlap-${randomUUID().slice(0, 8)}`;
-    const storageFile = storageTextFile(
-      "overlap.txt",
-      `overlap payload ${storageName}`,
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    // An Agent workflow gives the run a Storage mount to presign.
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      `overlap-${randomUUID().slice(0, 8)}`,
+      { content: "# Overlap\nUse for preparation overlap." },
+      [201],
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const prompt = `storage and context preparation should overlap ${randomUUID()}`;
 
     const kmsStarted = createDeferredPromise<void>(context.signal);
     const storageStarted = createDeferredPromise<void>(context.signal);
@@ -1469,43 +1377,44 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw contextError;
     });
 
-    const failed = await api.createRun(actor, {
-      agentId,
-      prompt: "storage and context preparation should overlap",
-      modelProvider: "anthropic-api-key",
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath: "/overlap",
-        },
-      ],
-    });
-
-    expect(kmsStarted.settled()).toBeTruthy();
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(contextError.message);
-    expect(storageStarted.settled()).toBeTruthy();
+    // A Thread launch failure creates no run and surfaces from the pick;
+    // the first preparation failure wins over the later storage failure.
+    const failed = api.readThreadLaunchFailure(actor, { agentId, prompt });
+    await kmsStarted.promise;
+    await storageStarted.promise;
     releaseStorage.resolve(undefined);
+    await expect(failed).resolves.toStrictEqual({
+      pickError: contextError.message,
+      inputError: "internal_error",
+    });
     await storageFinished.promise;
-    const stored = await api.readRun(actor, failed.runId);
-    expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(contextError.message);
-    await api.requestClaimRunnerJob(true, failed.runId, [404]);
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === prompt;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("returns a session storage failure while large request storage is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped actor");
+    }
     await api.heartbeatRunner(runnerGroup);
 
-    const initialRun = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "establish canonical storage for overlap",
-      }),
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "establish canonical storage for overlap",
     });
     const initialClaim = await api.claimRunnerJob(initialRun.runId);
     const initialMemory = expectCanonicalStorageManifest(
@@ -1517,6 +1426,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the canonical memory mount");
     }
 
+    storages.mockStorageObjectsExist(4096);
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `session overlap ${initialRun.runId}`,
@@ -1524,6 +1434,8 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const preparedMemory = await storages.prepareStorage(actor, {
       storageName: "memory",
       storageOwner: "user",
+      baseVersion: initialMemory.versionId,
+      changes: { added: [memoryFile.path], modified: [], deleted: [] },
       files: [memoryFile],
     });
     const sessionArchiveKey = preparedMemory.uploads?.archive.key;
@@ -1560,26 +1472,43 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       [200],
     );
 
-    const requestStorageName = `bdd-request-overlap-${randomUUID().slice(0, 8)}`;
-    const requestFile = storageTextFile(
-      "request.txt",
-      `request overlap ${requestStorageName}`,
-    );
-    const preparedRequest = await storages.prepareStorage(actor, {
-      storageName: requestStorageName,
-      storageOwner: "organization",
-      files: [requestFile],
-    });
-    const requestArchiveKey = preparedRequest.uploads?.archive.key;
-    if (!requestArchiveKey) {
-      throw new Error("Expected a request storage archive upload");
+    // Seventeen Agent workflows are the run's large set of read-only Storages.
+    const misc = createMiscRoutesApi(context);
+    const requestMounts: {
+      readonly name: string;
+      readonly mountPath: string;
+      readonly versionId: string;
+    }[] = [];
+    const requestArchiveKeys = new Set<string>();
+    for (let index = 0; index < 17; index += 1) {
+      const workflowName = `request-overlap-${String(index)}-${randomUUID().slice(0, 8)}`;
+      const workflow = await misc.createWorkflow(
+        actor,
+        agentId,
+        workflowName,
+        { content: `# Request overlap ${String(index)}\nUse for overlap.` },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      const name = getCustomSkillStorageName(workflow.body.id);
+      const stored = await storages.downloadStorage(actor, {
+        name,
+        owner: "organization",
+      });
+      const prefix = await readStorageS3PrefixFixture({
+        orgId: actor.orgId,
+        userId: VOLUME_ORG_USER_ID,
+        name,
+      });
+      requestArchiveKeys.add(`${prefix}/${stored.versionId}/archive.tar.gz`);
+      requestMounts.push({
+        name,
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+        versionId: stored.versionId,
+      });
     }
-    await storages.commitStorage(actor, {
-      storageName: requestStorageName,
-      storageOwner: "organization",
-      versionId: preparedRequest.versionId,
-      files: [requestFile],
-    });
 
     const requestPresignStarted = createDeferredPromise<void>(context.signal);
     const sessionPresignStarted = createDeferredPromise<void>(context.signal);
@@ -1595,7 +1524,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     context.mocks.s3.getSignedUrl.mockImplementation(
       async (_client: unknown, command: unknown) => {
         const key = s3CommandKey(command);
-        if (key === requestArchiveKey) {
+        if (key !== undefined && requestArchiveKeys.has(key)) {
           if (!requestPresignStarted.settled()) {
             requestPresignStarted.resolve(undefined);
           }
@@ -1615,35 +1544,34 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     );
 
-    const requestMountPaths = Array.from({ length: 17 }, (_, index) => {
-      return `/request-overlap-${index}`;
-    });
-    const continuationBody = {
-      sessionId: initialRun.sessionId,
-      prompt: "overlap request and canonical session storage",
-      secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
-      additionalVolumes: requestMountPaths.map((mountPath) => {
-        return {
-          name: requestStorageName,
-          version: preparedRequest.versionId,
-          mountPath,
-        };
-      }),
+    // A Thread launch failure creates no run and surfaces from the pick; the
+    // session failure wins while the large Storage presigns are pending.
+    const continueSession = (prompt: string) => {
+      return api.createThreadRun(actor, {
+        agentId,
+        threadId: initialRun.threadId,
+        prompt,
+      });
     };
-    const continuedRunPromise = api.createDirectRun(actor, continuationBody);
+    const failedContinuation = (prompt: string) => {
+      return api.readThreadLaunchFailure(actor, {
+        agentId,
+        threadId: initialRun.threadId,
+        prompt,
+      });
+    };
+    const overlapPrompt = `overlap request and canonical session storage ${randomUUID()}`;
+    const overlapped = failedContinuation(overlapPrompt);
     await Promise.all([
       requestPresignStarted.promise,
       sessionPresignStarted.promise,
     ]);
-    const failed = await continuedRunPromise;
-    expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(sessionError.message);
     releaseRequestPresign.resolve(undefined);
+    await expect(overlapped).resolves.toStrictEqual({
+      pickError: sessionError.message,
+      inputError: "internal_error",
+    });
     await requestPresignFinished.promise;
-    const stored = await api.readRun(actor, failed.runId);
-    expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(sessionError.message);
-    await api.requestClaimRunnerJob(true, failed.runId, [404]);
 
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {
@@ -1655,14 +1583,26 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         );
       },
     );
-    const sessionFailed = await api.createDirectRun(actor, continuationBody);
-    expect(sessionFailed.status).toBe("failed");
-    expect(sessionFailed.error).toBe(sessionError.message);
+    await expect(
+      failedContinuation("session storage alone fails"),
+    ).resolves.toStrictEqual({
+      pickError: sessionError.message,
+      inputError: "internal_error",
+    });
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === overlapPrompt;
+      }),
+    ).toStrictEqual([]);
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
     );
-    const largeRun = await api.createDirectRun(actor, continuationBody);
+    const largeRun = await continueSession("large Storage continuation");
     const largeClaim = await api.claimRunnerJob(largeRun.runId);
     const largeManifest = expectCanonicalStorageManifest(
       largeClaim.storageManifest,
@@ -1670,20 +1610,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!largeManifest) {
       throw new Error("Expected a canonical large Storage manifest");
     }
-    const requestMounts = largeManifest.storageMounts.filter((mount) => {
-      return mount.name === requestStorageName;
-    });
-    expect(
-      requestMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).toStrictEqual(requestMountPaths);
-    expect(requestMounts).toHaveLength(17);
     for (const mount of requestMounts) {
-      expect(mount).toMatchObject({
-        storageId: expect.any(String),
-        versionId: preparedRequest.versionId,
-      });
+      expect(largeManifest.storageMounts).toContainEqual(
+        expect.objectContaining({ ...mount, storageId: expect.any(String) }),
+      );
     }
     expect(largeManifest.storageMounts).toContainEqual(
       expect.objectContaining({
@@ -1703,56 +1633,22 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("prepares the storage manifest without uploading empty artifact objects", async () => {
     const api = createRunsApi(context);
-    const storages = createStoragesBddApi(context);
-    const { actor } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
     const prompt = "storage manifest dimensions should not leak prompt";
-    const storageName = `bdd-manifest-shape-${randomUUID().slice(0, 8)}`;
-    const mountPath = "/cache";
-    const storageFile = storageTextFile(
-      "cache.txt",
-      `manifest shape payload ${storageName}`,
+    // An Agent workflow is the run's read-only organization Storage mount.
+    const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      { content: "# Manifest shape\nUse for manifest tests." },
+      [201],
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
 
-    const composeName = `bdd-manifest-shape-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        cache: {
-          name: storageName,
-          version: prepared.versionId,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: [`cache:${mountPath}`],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt,
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath,
-        },
-      ],
-    });
+    const created = await api.createThreadRun(actor, { agentId, prompt });
 
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -1773,9 +1669,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(emptyArtifactPutCount).toBe(0);
 
     const claim = await api.claimRunnerJob(created.runId);
-    const memoryArtifact = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts.find((mount) => {
+    const mounts =
+      expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
+      [];
+    expect(mounts).toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(workflow.body.id),
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+      }),
+    );
+    const memoryArtifact = mounts.find((mount) => {
       return mount.name === "memory";
     });
     expect(memoryArtifact).toMatchObject({
@@ -1788,72 +1691,46 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the claim manifest to include memory");
     }
     expect(memoryArtifact.archiveUrl).toBeUndefined();
-
-    const initialized = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "storage manifest dimensions initialized artifact path",
-      additionalVolumes: [
-        {
-          name: storageName,
-          version: prepared.versionId,
-          mountPath,
-        },
-      ],
-    });
-
     await api.requestCancelRun(actor, created.runId, [200]);
+
+    const initialized = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "storage manifest dimensions initialized artifact path",
+    });
     await api.requestCancelRun(actor, initialized.runId, [200]);
   });
 
   it("preserves missing-volume and artifact resolution with exact candidates", async () => {
-    const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const storageName = `bdd-exact-candidate-${randomUUID().slice(0, 8)}`;
-    const missingComposeName = `bdd-missing-compose-${randomUUID().slice(0, 8)}`;
-    const missingAdditionalName = `bdd-missing-additional-${randomUUID().slice(0, 8)}`;
-    const storageFile = storageTextFile(
-      "candidate.txt",
-      `exact candidate ${storageName}`,
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
     );
-    const prepared = await storages.prepareStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      files: [storageFile],
+    // An Agent workflow is an exact Storage candidate; a seed system skill
+    // resolved to a Storage that does not exist is a missing volume, which
+    // production skips instead of failing the run.
+    const workflowName = `exact-candidate-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      { content: "# Exact candidate\nUse only exact Storage candidates." },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const workflowStorageName = getCustomSkillStorageName(workflow.body.id);
+    const workflowStorage = await storages.downloadStorage(actor, {
+      name: workflowStorageName,
+      owner: "organization",
     });
-    await storages.commitStorage(actor, {
-      storageName,
-      storageOwner: "organization",
-      versionId: prepared.versionId,
-      files: [storageFile],
-    });
-
-    const composeName = `bdd-exact-candidate-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        primary: { name: storageName, version: prepared.versionId },
-        optional: {
-          name: missingComposeName,
-          version: "latest",
-          optional: true,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["primary:/primary", "optional:/optional"],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    const missingStorageName = `bdd-missing-system-${randomUUID().slice(0, 8)}`;
+    const api = createRunsApi(context, { gen: missingStorageName });
     await api.heartbeatRunner(runnerGroup);
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const created = await api.createThreadRun(actor, {
+      agentId,
       prompt: "resolve only exact storage candidates",
-      additionalVolumes: [
-        { name: missingAdditionalName, mountPath: "/additional" },
-      ],
     });
     expect(created.status).toBe("pending");
 
@@ -1862,15 +1739,24 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!manifest) {
       throw new Error("Expected canonical Storage mounts");
     }
+    const workflowMountPath = `/home/user/.claude/skills/${workflowName}`;
     expect(manifest.storageMounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          mountPath: "/primary",
-          name: storageName,
-          versionId: prepared.versionId,
+          mountPath: workflowMountPath,
+          name: workflowStorageName,
+          versionId: workflowStorage.versionId,
         }),
       ]),
     );
+    expect(
+      manifest.storageMounts.filter((mount) => {
+        return (
+          mount.name === missingStorageName ||
+          mount.mountPath === "/home/user/.claude/skills/gen"
+        );
+      }),
+    ).toStrictEqual([]);
     const memoryMount = manifest.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
@@ -1883,10 +1769,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         runId: created.runId,
         volumes: expect.arrayContaining([
           {
-            name: "primary",
-            mountPath: "/primary",
-            vasStorageName: storageName,
-            vasVersionId: prepared.versionId,
+            name: workflowStorageName,
+            mountPath: workflowMountPath,
+            vasStorageName: workflowStorageName,
+            vasVersionId: workflowStorage.versionId,
           },
         ]),
         artifact: {
@@ -1902,21 +1788,14 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("returns canonical storage manifests without API-only ownership fields", async () => {
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const composeName = `bdd-storage-manifest-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     await api.heartbeatRunner(runnerGroup);
 
-    const canonicalRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const canonicalRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "canonical storage claim",
     });
     const canonicalClaim = await api.claimRunnerJob(canonicalRun.runId);
@@ -1948,68 +1827,41 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
-    const readOnlyStorageName = `bdd-phase3-volume-${randomUUID().slice(0, 8)}`;
-    const readOnlyFile = storageTextFile(
-      "phase3.txt",
-      `canonical read-only Storage ${readOnlyStorageName}`,
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
     );
-    const preparedReadOnlyStorage = await storages.prepareStorage(actor, {
-      storageName: readOnlyStorageName,
-      storageOwner: "organization",
-      files: [readOnlyFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: readOnlyStorageName,
-      storageOwner: "organization",
-      versionId: preparedReadOnlyStorage.versionId,
-      files: [readOnlyFile],
-    });
-    const additionalStorageName = `bdd-phase3-additional-${randomUUID().slice(0, 8)}`;
-    const additionalFile = storageTextFile(
-      "additional.txt",
-      `canonical additional Storage ${additionalStorageName}`,
-    );
-    const preparedAdditionalStorage = await storages.prepareStorage(actor, {
-      storageName: additionalStorageName,
-      storageOwner: "organization",
-      files: [additionalFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: additionalStorageName,
-      storageOwner: "organization",
-      versionId: preparedAdditionalStorage.versionId,
-      files: [additionalFile],
-    });
-    const composeName = `bdd-storage-persistence-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      volumes: {
-        checkpoint: {
-          name: readOnlyStorageName,
-          version: preparedReadOnlyStorage.versionId,
-        },
-      },
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          volumes: ["checkpoint:/phase3-compose"],
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
+    // Two Agent workflows are the run's read-only organization Storages.
+    const misc = createMiscRoutesApi(context);
+    const workflowMounts = [];
+    for (const label of ["primary", "additional"]) {
+      const workflowName = `phase3-${label}-${randomUUID().slice(0, 8)}`;
+      const workflow = await misc.createWorkflow(
+        actor,
+        agentId,
+        workflowName,
+        { content: `# Phase 3 ${label}\nUse for Storage persistence.` },
+        [201],
+      );
+      if (workflow.status !== 201) {
+        throw new Error("Expected workflow creation to succeed");
+      }
+      const name = getCustomSkillStorageName(workflow.body.id);
+      const stored = await storages.downloadStorage(actor, {
+        name,
+        owner: "organization",
+      });
+      workflowMounts.push({
+        name,
+        versionId: stored.versionId,
+        mountPath: `/home/user/.claude/skills/${workflowName}`,
+      });
+    }
     await api.heartbeatRunner(runnerGroup);
 
-    const initialRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "persist canonical storage mounts",
-      additionalVolumes: [
-        {
-          name: additionalStorageName,
-          version: preparedAdditionalStorage.versionId,
-          mountPath: "/phase3-additional",
-        },
-      ],
     });
     const initialClaim = await api.claimRunnerJob(initialRun.runId);
     const initialManifest = initialClaim.storageManifest;
@@ -2022,27 +1874,21 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (!initialMemory) {
       throw new Error("Expected the canonical memory mount");
     }
-    expect(initialManifest.storageMounts).toContainEqual(
-      expect.objectContaining({
-        name: readOnlyStorageName,
-        versionId: preparedReadOnlyStorage.versionId,
-        mountPath: "/phase3-compose",
-      }),
-    );
-    expect(initialManifest.storageMounts).toContainEqual(
-      expect.objectContaining({
-        name: additionalStorageName,
-        versionId: preparedAdditionalStorage.versionId,
-        mountPath: "/phase3-additional",
-      }),
-    );
+    for (const mount of workflowMounts) {
+      expect(initialManifest.storageMounts).toContainEqual(
+        expect.objectContaining(mount),
+      );
+    }
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `canonical memory ${initialRun.runId}`,
     );
+    storages.mockStorageObjectsExist(4096);
     const preparedMemory = await storages.prepareStorage(actor, {
       storageName: "memory",
       storageOwner: "user",
+      baseVersion: initialMemory.versionId,
+      changes: { added: [memoryFile.path], modified: [], deleted: [] },
       files: [memoryFile],
     });
     await storages.commitStorage(actor, {
@@ -2080,8 +1926,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the canonical checkpoint to persist");
     }
 
-    const sessionRun = await api.createDirectRun(actor, {
-      sessionId: initialRun.sessionId,
+    const sessionRun = await api.createThreadRun(actor, {
+      agentId,
+      threadId: initialRun.threadId,
       prompt: "continue canonical storage session",
     });
     const sessionClaim = await api.claimRunnerJob(sessionRun.runId);
@@ -2109,19 +1956,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("keeps a committed artifact head after initial empty artifact creation", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
-    const { actor } = await entitledRunActor();
-    const composeName = `bdd-artifact-head-commit-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const initialRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    const initialRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "initial empty artifact creation should not block later commits",
     });
     onTestFinished(async () => {
@@ -2219,8 +2056,8 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       }),
     );
 
-    const committedRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const committedRun = await api.createThreadRun(actor, {
+      agentId,
       prompt: "committed artifact head should stay non-empty",
     });
     onTestFinished(async () => {
@@ -2267,10 +2104,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       return true;
     });
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     expect(created.status).toBe("pending");
@@ -2295,10 +2131,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       datasets: [SANDBOX_OP_LOG_DATASET],
     });
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt,
-      modelProvider: "anthropic-api-key",
     });
 
     expect(created.status).toBe("pending");
@@ -2311,12 +2146,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("resumes the Agent execution session for a continued run", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a checkpointed timing session",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(first.runId);
     const history = `bdd timing session history ${first.runId}`;
@@ -2337,12 +2171,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       { authorization: `Bearer ${claim.sandboxToken}` },
       [200],
     );
-    const resumed = await api.createRun(actor, {
-      sessionId: first.sessionId,
+    // Continuing the thread resumes its Agent session: the claim carries the
+    // first run's checkpointed CLI session.
+    const resumed = await api.createThreadRun(actor, {
+      agentId,
+      threadId: first.threadId,
       prompt: "continue checkpointed timing session",
-      modelProvider: "anthropic-api-key",
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toMatchObject({
       sessionId: `bdd-timing-cli-${first.runId}`,
@@ -2359,15 +2194,17 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("creates, dispatches, claims, reports, and completes a run through public APIs", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "summarize the repository",
-      modelProvider: "anthropic-api-key",
     });
     expect(created.status).toBe("pending");
-    expect(created.sessionId).toMatch(/[0-9a-f-]{36}/);
+    expect(created.threadId).toMatch(/[0-9a-f-]{36}/);
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.tier).toBe("pro");
@@ -2475,10 +2312,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim concurrently",
-      modelProvider: "anthropic-api-key",
     });
 
     const candidates = [
@@ -2554,10 +2390,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("rejects an official runner claim without process identity", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim without rollout identity",
-      modelProvider: "anthropic-api-key",
     });
 
     const rejected = await api.requestRawClaimRunnerJob(
@@ -2587,10 +2422,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("rejects malformed runner attribution before the claim transition", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const hostnameRun = await api.createRun(actor, {
+    const hostnameRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "reject an oversized runner hostname",
-      modelProvider: "anthropic-api-key",
     });
     const invalidHostname = await api.requestRawClaimRunnerJob(
       true,
@@ -2610,10 +2444,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       status: "pending",
     });
 
-    const versionRun = await api.createRun(actor, {
+    const versionRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "reject an oversized runner version",
-      modelProvider: "anthropic-api-key",
     });
     const invalidVersion = await api.requestClaimRunnerJob(
       true,
@@ -2637,10 +2470,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const apiKey = await api.createCliToken(actor);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim with untrusted identity",
-      modelProvider: "anthropic-api-key",
     });
 
     const claim = await api.requestClaimRunnerJobAs(
@@ -2679,10 +2511,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const created = await api.createRun(actor, {
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim previous profile context",
-      modelProvider: "anthropic-api-key",
     });
     await setRunnerJobContextProfileAsPreviousApi(
       context,
@@ -2704,7 +2535,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("filters runner polls by supported profiles without widening malformed polls", async () => {
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const missingSupport = await api.requestRawPollRunner(
       true,
@@ -2719,19 +2553,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expectApiError(emptySupport.body);
 
-    const composeName = `bdd-runner-profile-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          experimental_profile: "vm0/large",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    // Product Agents run on the default Runner profile.
+    const created = await api.createThreadRun(actor, {
+      agentId,
       prompt: "poll with explicit support list",
     });
     expect(created.status).toBe("pending");
@@ -2740,7 +2564,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       true,
       {
         group: runnerGroup,
-        supportedProfiles: ["vm0/default"],
+        supportedProfiles: ["vm0/large"],
       },
       [200],
     );
@@ -2755,7 +2579,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       true,
       {
         group: runnerGroup,
-        supportedProfiles: ["vm0/large"],
+        supportedProfiles: ["vm0/default"],
       },
       [200],
     );
@@ -2765,7 +2589,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       );
     }
     expect(compatiblePoll.body.job?.runId).toBe(created.runId);
-    expect(compatiblePoll.body.job?.experimentalProfile).toBe("vm0/large");
+    expect(compatiblePoll.body.job?.experimentalProfile).toBe("vm0/default");
     const claim = await api.claimRunnerJob(created.runId);
     expect(claim.cliAgentType).toBe("claude-code");
     await api.requestCancelRun(actor, created.runId, [200]);
@@ -2773,19 +2597,20 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
   it("skips runner-local exclusions without mutating shared queue state", async () => {
     const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const firstCreatedAt = now();
     mockNow(firstCreatedAt);
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "first temporarily rejected runner job",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(firstCreatedAt + 1);
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: "second eligible runner job",
-      modelProvider: "anthropic-api-key",
     });
     const pollBody = {
       group: runnerGroup,
@@ -2856,25 +2681,71 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("resumes the previous session when a run is created with the same sessionId", async () => {
+  it("resumes the previous session when a run continues the same thread", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const chat = createChatFilesBddApi(context);
+    const webhooks = createWebhookCallbackApi(context);
+    const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    // A public Agent, so other members reach the thread ownership check.
+    const { agentId } = await bdd.createAgent(actor, {
+      displayName: "Shared continuation Agent",
+      visibility: "public",
+    });
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a session",
-      modelProvider: "anthropic-api-key",
     });
-    const resumed = await api.createRun(actor, {
+    const checkpointed = async (
+      runId: string,
+      sandboxToken: string,
+    ): Promise<{ readonly cliSessionId: string; readonly hash: string }> => {
+      const history = `bdd continued session history ${runId}`;
+      const hash = createHash("sha256").update(history).digest("hex");
+      mockSessionHistoryBlob(hash, history);
+      const cliSessionId = `bdd-continued-cli-${runId}`;
+      await webhooks.requestAgentComplete(
+        {
+          runId,
+          exitCode: 0,
+          lastEventSequence: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: cliSessionId,
+            cliAgentSessionHistoryHash: hash,
+          },
+        },
+        { authorization: `Bearer ${sandboxToken}` },
+        [200],
+      );
+      return { cliSessionId, hash };
+    };
+    const firstClaim = await api.claimRunnerJob(first.runId);
+    const firstCheckpoint = await checkpointed(
+      first.runId,
+      firstClaim.sandboxToken,
+    );
+    await flushWaitUntilForTest();
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue the session",
-      modelProvider: "anthropic-api-key",
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
-    expect(resumedClaim.resumeSession).toBeNull();
+    expect(resumedClaim.resumeSession).toMatchObject({
+      sessionId: firstCheckpoint.cliSessionId,
+      historyRef: { kind: "blob", hash: firstCheckpoint.hash },
+    });
+    await checkpointed(resumed.runId, resumedClaim.sandboxToken);
+    await flushWaitUntilForTest();
+    // Both runs complete in the thread's single Agent session.
+    const firstSession = (await api.readRun(actor, first.runId)).result
+      ?.agentSessionId;
+    expect(firstSession).toStrictEqual(expect.any(String));
+    expect(
+      (await api.readRun(actor, resumed.runId)).result?.agentSessionId,
+    ).toBe(firstSession);
 
     if (!actor.orgId) {
       throw new Error("Expected session owner to have an organization");
@@ -2884,25 +2755,18 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       description: "Must not continue a Session owned by another Agent.",
       visibility: "private",
     });
-    // The public create response and Run listing prove the rejected launch.
-    // Private callback, checkpoint and Runner-job row counts are not inspected.
-
     const mismatchPrompt = `reject mismatched Agent Session ${randomUUID()}`;
-    const mismatch = await api.requestCreateRun(
+    const mismatch = await chat.requestSendEvent(
       actor,
       {
         agentId: otherAgent.agentId,
-        sessionId: first.sessionId,
+        threadId: first.threadId,
         prompt: mismatchPrompt,
-        modelProvider: "anthropic-api-key",
       },
-      [400],
+      [404],
     );
     expectApiError(mismatch.body);
-    expect(mismatch.body.error.message).toBe(
-      "agentId does not match sessionId",
-    );
-
+    expect(mismatch.body.error.message).toBe("Chat thread not found");
     const ownedRuns = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -2914,12 +2778,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
 
     const sameOrgUser = bdd.user({ orgId: actor.orgId });
-    const crossUser = await api.requestDirectRun(
+    const crossUser = await chat.requestSendEvent(
       sameOrgUser,
-      {
-        sessionId: first.sessionId,
-        prompt: "steal the session",
-      },
+      { agentId, threadId: first.threadId, prompt: "steal the session" },
       [404],
     );
     expectApiError(crossUser.body);
@@ -2927,10 +2788,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const otherOrgUser = createBddApi(context).user();
     await api.grantProEntitlement(otherOrgUser);
-    const crossOrg = await api.requestDirectRun(
+    const crossOrg = await chat.requestSendEvent(
       otherOrgUser,
       {
-        sessionId: first.sessionId,
+        agentId,
+        threadId: first.threadId,
         prompt: "steal the session from another organization",
       },
       [404],
@@ -2938,119 +2800,46 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
 
-    await api.requestCancelRun(actor, resumed.runId, [200]);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    const cancelled = await api.readRun(actor, first.runId);
-    expect(cancelled.status).toBe("cancelled");
+    expect((await api.readRun(actor, first.runId)).status).toBe("completed");
   });
 
-  it("resumes a CLI session without a reuse key when no chat thread exists", async () => {
+  it("resumes thread sessions only on the same runtime and family", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "start a no-thread CLI session",
-      modelProvider: "anthropic-api-key",
-    });
-    const firstClaim = await api.claimRunnerJob(first.runId);
-    const cliAgentSessionId = `bdd-no-thread-cli-${first.runId}`;
-    const history = `bdd no-thread history ${first.runId}`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    mockSessionHistoryBlob(historyHash, history);
-    await webhooks.requestAgentComplete(
-      {
-        runId: first.runId,
-        exitCode: 0,
-        lastEventSequence: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
-      [200],
+    // gpt-6-astra has no Pi route, so its built-in route runs a native CLI.
+    const selectedModel = await seedBuiltInModelKey("gpt-6-astra");
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
     );
-    await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
-      source: {
-        providerType: "anthropic-api-key",
-        runtimeProviderType: null,
+    const anthropic = (await api.listOrgModelProviders(actor)).find(
+      (provider) => {
+        return provider.type === "anthropic-api-key";
       },
-    });
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: randomUUID(),
-      group: runnerGroup,
-      admittableProfiles: [],
-    });
-
-    const resumed = await api.createRun(actor, {
-      agentId,
-      sessionId: first.sessionId,
-      prompt: "continue the no-thread CLI session",
-      modelProvider: "anthropic-api-key",
-    });
-    const poll = await api.requestPollRunner(
-      true,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
     );
-    if (poll.status !== 200) {
-      throw new Error("Expected no-thread continuation poll to succeed");
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
     }
-    expect(poll.body.job?.runId).toBe(resumed.runId);
-    expect(poll.body.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(poll.body.job?.reuseKey).toBeNull();
-    expect(runnerPreference(poll.body.job)).toStrictEqual({
-      kind: "noPreference",
-      reason: "noReuseKey",
-    });
-
-    const resumedClaim = await api.claimRunnerJob(resumed.runId);
-    expect(resumedClaim.reuseKey).toBeNull();
-    expect(resumedClaim.resumeSession).toMatchObject({
-      sessionId: cliAgentSessionId,
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: expect.any(String),
-      },
-    });
-
-    const resumedHistory = `bdd resumed no-thread history ${resumed.runId}`;
-    const resumedHistoryHash = createHash("sha256")
-      .update(resumedHistory)
-      .digest("hex");
-    mockSessionHistoryBlob(resumedHistoryHash, resumedHistory);
-    await webhooks.requestAgentComplete(
+    await api.updateOrgModelPolicies(actor, [
       {
-        runId: resumed.runId,
-        exitCode: 0,
-        lastEventSequence: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId,
-          cliAgentSessionHistoryHash: resumedHistoryHash,
-        },
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
       },
-      { authorization: `Bearer ${resumedClaim.sandboxToken}` },
-      [200],
-    );
-    const completed = await api.readRun(actor, resumed.runId);
-    expect(completed.status).toBe("completed");
-  });
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+    ]);
 
-  it("resumes direct sessions only on the same runtime and family", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const selectedModel = await seedBuiltInDefaultModelKey();
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "start a managed direct session",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
     const firstClaim = await api.claimRunnerJob(first.runId);
     const initialStorageManifest = expectCanonicalStorageManifest(
@@ -3086,13 +2875,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       admittableProfiles: [],
     });
 
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue on the same runtime and model family",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
-    expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toMatchObject({
       sessionId: cliAgentSessionId,
@@ -3114,12 +2902,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
-
-    const changedRuntime = await api.createRun(actor, {
+    await finishCancelledRun(resumed.runId, resumedClaim.sandboxToken);
+    await flushWaitUntilForTest();
+    const changedRuntime = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue on a different native runtime",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
     const changedRuntimeClaim = await api.claimRunnerJob(changedRuntime.runId);
     expect(changedRuntimeClaim.cliAgentType).toBe("claude-code");
@@ -4252,10 +4041,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
     await flushWaitUntilForTest();
 
-    const olderGeneric = await api.createRun(actor, {
+    const olderGeneric = await api.createThreadRun(actor, {
       agentId,
       prompt: "older generic FIFO work",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(priorityBase + 1);
     const newerReusable = await sendChatRunMessage(actor, {
@@ -4390,10 +4178,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       ],
     });
 
-    const olderGeneric = await api.createRun(actor, {
+    const olderGeneric = await api.createThreadRun(actor, {
       agentId,
       prompt: "older workspace-priority FIFO work",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(priorityBase + 1);
     const newerWorkspace = await sendChatRunMessage(actor, {
@@ -4453,7 +4240,24 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       throw new Error("Expected suspended run actor to have an org");
     }
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 20_000 });
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    // A BYOK default route and a selectable built-in route.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "deepseek-v4.1-flash",
+        preferred: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
       description: "Covers the suspended entitlement admission branch.",
@@ -4471,30 +4275,21 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       status: "suspended",
     });
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: byokPrompt,
-        modelProvider: "anthropic-api-key",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     // The suspension applies to built-in model runs as well.
-    const builtInRejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(builtInRejected.body);
-    expect(builtInRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        model: "deepseek-v4.1-flash",
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
@@ -4517,10 +4312,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     mockNow(requestStartedAt);
     advanceNowOnFirstGenerateDataKey(payloadPreparedAt);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "pending launch timestamp should reflect durable insert",
-      modelProvider: "anthropic-api-key",
     });
 
     expect(run.status).toBe("pending");
@@ -4550,10 +4344,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     mockNow(now() - 3 * 60 * 60 * 1000);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "runner ttl should use the database insertion clock",
-      modelProvider: "anthropic-api-key",
     });
 
     const poll = await api.requestPollRunner(
@@ -4581,15 +4374,13 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     mockNow(now());
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: "same timestamp runner job one",
-      modelProvider: "anthropic-api-key",
     });
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: "same timestamp runner job two",
-      modelProvider: "anthropic-api-key",
     });
     const orderedRunIds = [first.runId, second.runId].sort();
 
@@ -4625,10 +4416,9 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before claim",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, run.runId, [200]);
 
@@ -4648,20 +4438,18 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const sessionRun = await api.createRun(actor, {
+    const sessionRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel with a Clerk session",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, sessionRun.runId, [200]);
     expect((await api.readRun(actor, sessionRun.runId)).status).toBe(
       "cancelled",
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel with accepted credential types",
-      modelProvider: "anthropic-api-key",
     });
 
     const sandboxDenied = await api.requestCancelRunAs(
@@ -4687,15 +4475,17 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
     expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
   });
 
-  it("limits private agents to their owner and infers the agent from a session", async () => {
+  it("limits private agents to their owner", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const chat = createChatFilesBddApi(context);
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const memberRejected = await api.requestCreateRun(
+    const memberPrompt = `run someone else's private agent ${randomUUID()}`;
+    const memberRejected = await chat.requestSendEvent(
       member,
-      { agentId, prompt: "run someone else's private agent" },
+      { agentId, prompt: memberPrompt, model: NATIVE_RUNNER_ROUTE.model },
       [403],
     );
     expectApiError(memberRejected.body);
@@ -4703,20 +4493,11 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
       "Only the private agent owner can run this agent",
     );
 
-    const first = await api.createRun(actor, {
+    const owned = await api.createThreadRun(actor, {
       agentId,
       prompt: "open a session",
-      modelProvider: "anthropic-api-key",
     });
-    const inferred = await api.createRun(actor, {
-      sessionId: first.sessionId,
-      prompt: "continue without naming the agent",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(inferred.sessionId).toBe(first.sessionId);
-
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, inferred.runId, [200]);
+    await api.requestCancelRun(actor, owned.runId, [200]);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -4736,17 +4517,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       displayName: "BDD uninitialized-org agent",
       visibility: "private",
     });
-    const noBilling = await api.requestCreateRun(
-      uninitialized,
-      {
+    await expect(
+      api.readThreadRunRejection(uninitialized, {
         agentId: bareAgent.agentId,
         prompt: "built-in model run",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(noBilling.body);
-    expect(noBilling.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     // The credit expiry is the subscription period end plus one month, so a
     // period that ended two months ago grants credits that are already
@@ -4760,17 +4536,12 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       displayName: "BDD expired-credits agent",
       visibility: "private",
     });
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: "built-in model run",
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
   });
 
   it("enforces staff entitlement status at final run admission", async () => {
@@ -4800,7 +4571,24 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    await api.ensureOrgModelProvider(actor);
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    // A BYOK default route and a selectable built-in route.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "deepseek-v4.1-flash",
+        preferred: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD staff entitlement admission agent",
       visibility: "private",
@@ -4819,10 +4607,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       restrictedBuiltInModels: false,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "staff entitlement BYOK run",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -4841,28 +4628,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
     const byokPrompt = `staff suspended BYOK ${randomUUID()}`;
     const builtInPrompt = `staff suspended built-in ${randomUUID()}`;
-    const byokRejected = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: byokPrompt,
-        modelProvider: "anthropic-api-key",
-      },
-      [402],
-    );
-    expectApiError(byokRejected.body);
-    expect(byokRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    const builtInRejected = await api.requestCreateRun(
-      actor,
-      {
+      }),
+    ).resolves.toBe("insufficient_credits");
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId: agent.agentId,
         prompt: builtInPrompt,
-        modelProvider: "built-in",
-      },
-      [402],
-    );
-    expectApiError(builtInRejected.body);
-    expect(builtInRejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+        model: "deepseek-v4.1-flash",
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     const runs = await api.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
@@ -4981,10 +4759,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       [FeatureSwitchKey.OpenRouterUsRouting]: true,
     });
 
-    const run = await api.createRun(actor, {
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "built-in model provider",
-      modelProvider: "built-in",
+      model: selectedModel,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5004,7 +4791,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("runs a provider-prefixed ID of a model the catalog frees for restricted plans", async () => {
+  it("runs a built-in model the catalog frees for restricted plans", async () => {
     const api = createRunsApi(context);
     const selectedModel = "deepseek-v4-flash";
     await seedBuiltInModelKey(selectedModel);
@@ -5015,14 +4802,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         builtInOnRestrictedPlans: true,
       }),
     );
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
     if (!actor.orgId) {
       throw new Error("Expected the restricted-plan actor to have an org");
     }
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: { main: { framework: "codex" } },
-    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     await upsertOrgPlanEntitlementFixture({
       orgId: actor.orgId,
       status: "active",
@@ -5030,13 +4822,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       restrictedBuiltInModels: true,
     });
 
-    // The OpenRouter upstream ID names exactly one catalog model, which the
-    // catalog now allows on restricted plans.
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "provider-prefixed built-in model",
-      selectedModelProviderType: "built-in",
-      selectedModelOverride: "deepseek/deepseek-v4-flash",
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "restricted-plan built-in model",
+      model: selectedModel,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5154,75 +4943,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
-  it.each([undefined, "deepseek-flash", "deepseek-v4-flash"] as const)(
-    "claims native DeepSeek with saved selection %s or the provider default",
-    async (selectedModel) => {
-      const api = createRunsApi(context);
-      const { actor, runnerGroup } = await entitledRunActor();
-      const { providerId } = await api.createOrgModelProvider(actor, {
-        type: "deepseek",
-        secret: "native-deepseek-key",
-      });
-      if (selectedModel !== undefined) {
-        // The current credential API cannot write a saved model. Seed the
-        // historical state to verify the default cannot overwrite it.
-        if (!actor.orgId) {
-          throw new Error(
-            "Expected a workspace for the native DeepSeek fixture",
-          );
-        }
-        await setHistoricalModelProviderSelectionFixture({
-          orgId: actor.orgId,
-          providerId,
-          selectedModel,
-        });
-      }
-      // Model-first chat supplies a canonical selection. The direct-run
-      // fixture exercises provider-default resolution without that override.
-      const compose = await api.createDirectAgent(actor, {
-        version: "1",
-        agents: { main: { framework: "codex" } },
-      });
-      const run = await api.createDirectRun(actor, {
-        agentId: compose.agentId,
-        modelProviderType: "deepseek",
-        prompt: "native DeepSeek provider selection",
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const runtimeModel = selectedModel ?? "deepseek-flash";
-
-      expect(claim.environment).toMatchObject({
-        OPENAI_MODEL: runtimeModel,
-        OPENAI_BASE_URL: "https://api.deepseek.com/",
-      });
-      expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: "deepseek",
-        modelCatalog: {
-          models: expect.arrayContaining([
-            expect.objectContaining({
-              slug: runtimeModel,
-              input_modalities: ["text", "image"],
-            }),
-          ]),
-        },
-      });
-      const providers = await api.listOrgModelProviders(actor);
-      expect(
-        providers.find((provider) => {
-          return provider.id === providerId;
-        }),
-      ).toMatchObject({
-        selectedModel: selectedModel ?? null,
-      });
-      expect(claim.modelUsageProvider).toBe(
-        runtimeModel === "deepseek-flash" ? undefined : runtimeModel,
-      );
-      expect(claim.billableFirewalls).not.toContain("model-provider:deepseek");
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
-
   it.each(["deepseek-v4-flash", "deepseek-v4.1-flash"] as const)(
     "claims built-in %s chat runs through the Pi Responses route",
     async (selectedModel) => {
@@ -5256,12 +4976,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       const claim = await api.claimRunnerJob(sent.runId);
       await expectBuiltInModelRunRuntimeRoute(actor, sent.runId, selectedModel);
 
-      // DeepSeek is Pi-eligible: chat runs use Pi's Responses dialect rather
-      // than the native Codex Responses adapter.
+      // Built-in DeepSeek uses Pi's OpenRouter Responses route.
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piModelConfig).toMatchObject({
-        provider: "deepseek",
-        baseUrl: "https://api.deepseek.com/",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
         model: (await readPrimaryBuiltInRouteFixture(selectedModel))
           .upstreamModel,
       });
@@ -5269,8 +4988,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         claim.firewalls?.map((firewall) => {
           return firewallEntryName(firewall);
         }),
-      ).toContain("model-provider:deepseek");
-      expect(claim.billableFirewalls).toContain("model-provider:deepseek");
+      ).toContain("model-provider:openrouter-codex");
+      expect(claim.billableFirewalls).toContain(
+        "model-provider:openrouter-codex",
+      );
       expect(claim.modelUsageProvider).toBe(selectedModel);
       const token = claim.platformEnvironment.OKOU_TOKEN;
       if (!token) {
@@ -5278,12 +4999,22 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           "Expected the built-in DeepSeek run to expose OKOU_TOKEN",
         );
       }
-      expect(claim.appendSystemPrompt ?? "").not.toContain(
-        "okou image-recognition",
-      );
-      expect(verifyOkouToken(token)?.capabilities).not.toContain(
-        "image-recognition:write",
-      );
+      if (selectedModel === "deepseek-v4-flash") {
+        // This OpenRouter route needs the existing image-recognition tool.
+        expect(claim.appendSystemPrompt ?? "").toContain(
+          "okou image-recognition",
+        );
+        expect(verifyOkouToken(token)?.capabilities).toContain(
+          "image-recognition:write",
+        );
+      } else {
+        expect(claim.appendSystemPrompt ?? "").not.toContain(
+          "okou image-recognition",
+        );
+        expect(verifyOkouToken(token)?.capabilities).not.toContain(
+          "image-recognition:write",
+        );
+      }
 
       await api.requestCancelRun(actor, sent.runId, [200]);
     },
@@ -5450,125 +5181,16 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, unknown.runId, [200]);
   });
 
-  it("injects codex multi-auth provider credentials and proves them via firewall auth", async () => {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    await fw.seedOrgCodexProvider(actor, {
-      accessToken: "chatgpt-access",
-      refreshToken: "chatgpt-refresh",
-      accountId: "workspace-id",
-      idToken: "chatgpt-id-token",
-      expiresIn: 3600,
-    });
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "codex oauth provider",
-      modelProvider: "codex-oauth-token",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({
-      CHATGPT_ACCESS_TOKEN: modelProviderPlaceholder(
-        "codex-oauth-token",
-        "CHATGPT_ACCESS_TOKEN",
-      ),
-      CHATGPT_ACCOUNT_ID: modelProviderPlaceholder(
-        "codex-oauth-token",
-        "CHATGPT_ACCOUNT_ID",
-      ),
-      CODEX_OAUTH_ACCOUNT_ID: "workspace-id",
-      OPENAI_MODEL: "gpt-5.6-sol",
-    });
-    expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
-    expect(claim.environment).not.toHaveProperty("CHATGPT_ID_TOKEN");
-    expect(claim.secretConnectorMap).toMatchObject({
-      CHATGPT_ACCESS_TOKEN: "codex-oauth-token",
-    });
-    expect(claim.secretConnectorMap).not.toHaveProperty(
-      "CHATGPT_REFRESH_TOKEN",
-    );
-    expect(
-      claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
-    ).toStrictEqual({
-      sourceType: "model-provider",
-      sourceUserId: "__org__",
-      metadataKey: "codex-oauth-token",
-    });
-    expect(
-      claim.firewalls?.map((firewall) => {
-        return firewallEntryName(firewall);
-      }),
-    ).toContain("model-provider:codex-oauth-token");
-    expect(claim.billableFirewalls).toStrictEqual([]);
-    expect(claim.modelUsageProvider).toBe("gpt-5.6-sol");
-
-    // The encrypted secrets resolve to the seeded plaintext through the
-    // firewall-auth webhook, which is the production read surface for them.
-    if (!claim.encryptedSecrets) {
-      throw new Error("Expected the codex claim to carry encrypted secrets");
-    }
-    const resolved = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
-          "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
-        },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the codex firewall auth to resolve");
-    }
-    expect(resolved.body.headers).toStrictEqual({
-      Authorization: "Bearer chatgpt-access",
-      "ChatGPT-Account-ID": "workspace-id",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await api.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
-  });
-
   it("does not add Codex image upload guidance outside web chat Codex runs", async () => {
     const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    await fw.seedOrgCodexProvider(actor, {
-      accessToken: "chatgpt-access-image-guidance",
-      refreshToken: "chatgpt-refresh-image-guidance",
-      accountId: "workspace-id-image-guidance",
-      idToken: "chatgpt-id-token-image-guidance",
-      expiresIn: 3600,
-    });
-
-    const codexWebRun = await api.createRun(actor, {
-      agentId,
-      prompt: "generate an image with codex without a chat thread",
-      modelProvider: "codex-oauth-token",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const codexWebClaim = await api.claimRunnerJob(codexWebRun.runId);
-    const codexWebPrompt = codexWebClaim.appendSystemPrompt ?? "";
-    expect(codexWebClaim.cliAgentType).toBe("codex");
-    expect(codexWebPrompt).not.toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
-    expect(codexWebPrompt).not.toContain("When running in Codex");
-    await api.requestCancelRun(actor, codexWebRun.runId, [200]);
-
-    const claudeWebRun = await api.createRun(actor, {
+    const claudeWebRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate an image with claude",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claudeWebClaim = await api.claimRunnerJob(claudeWebRun.runId);
@@ -5578,53 +5200,33 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     );
     await api.requestCancelRun(actor, claudeWebRun.runId, [200]);
 
-    const codexSlackRun = await api.createDirectRun(actor, {
-      agentId,
-      prompt: "generate an image from slack",
-      modelProviderType: "codex-oauth-token",
-      triggerSource: "slack",
-      vars: { OKOU_AGENT_ID: agentId },
-      secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
+    // A native Codex route (gpt-6-astra has no Pi route) for a scheduled run.
+    const openai = await api.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "bdd-codex-schedule-key",
     });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-astra",
+        preferred: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openai.providerId,
+      },
+    ]);
+    const scheduled = await createWorkflowsBddApi(
+      context,
+    ).startScheduledAutomationRun(actor, agentId);
     await api.heartbeatRunner(runnerGroup);
-    const codexSlackClaim = await api.claimRunnerJob(codexSlackRun.runId);
-    expect(codexSlackClaim.cliAgentType).toBe("codex");
-    expect(codexSlackClaim.appendSystemPrompt ?? "").not.toContain(
+    const scheduledClaim = await api.claimRunnerJob(scheduled.runId);
+    expect(scheduledClaim.cliAgentType).toBe("codex");
+    expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
       CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
     );
-    await api.requestCancelRun(actor, codexSlackRun.runId, [200]);
-  });
-
-  it("uses the requested provider instead of the caller's personal default", async () => {
-    const api = createRunsApi(context);
-    const misc = createMiscRoutesApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    await misc.upsertPersonalModelProvider(
-      actor,
-      { type: "claude-code-oauth-token", secret: "sk-ant-oat-bdd" },
-      [200, 201],
+    expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
+      "When running in Codex",
     );
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "requested provider wins",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.cliAgentType).toBe("claude-code");
-    expect(claim.environment?.ANTHROPIC_API_KEY).toBe(
-      modelProviderPlaceholder("anthropic-api-key", "ANTHROPIC_API_KEY"),
-    );
-    expect(claim.environment?.ANTHROPIC_MODEL).toMatch(/.+/);
-    expect(claim.environment).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
-    expect(claim.billableFirewalls).toStrictEqual([]);
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await api.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
+    await api.requestCancelRun(actor, scheduled.runId, [200]);
   });
 
   it("runs thread-pinned member-scope providers and mounts codex workflows", async () => {
@@ -5828,82 +5430,42 @@ describe("RUN-02: persisted run environment resolution", () => {
       value: "unreferenced-secret-value",
     });
 
-    const composeName = `bdd-persisted-environment-${suffix.toLowerCase()}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            ORG_ONLY_VARIABLE: `\${{ vars.${names.orgOnlyVariable} }}`,
-            USER_VARIABLE: `\${{ vars.${names.userVariable} }}`,
-            REQUEST_VARIABLE: `\${{ vars.${names.requestVariable} }}`,
-            ORG_ONLY_SECRET: `\${{ secrets.${names.orgOnlySecret} }}`,
-            USER_SECRET: `\${{ secrets.${names.userSecret} }}`,
-            REQUEST_SECRET: `\${{ secrets.${names.requestSecret} }}`,
-          },
-        },
-      },
+    // Product Agents reference only platform values, so stored variables
+    // reach the run through its vars and stored secrets stay unreferenced.
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD persisted environment agent",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "resolve persisted environment",
-      vars: { [names.requestVariable]: "request-variable-value" },
-      secrets: { [names.requestSecret]: "request-secret-value" },
     });
     const claim = await api.claimRunnerJob(run.runId);
 
-    expect(claim.environment).toMatchObject({
-      ORG_ONLY_VARIABLE: "org-only-variable-value",
-      USER_VARIABLE: "user-variable-value",
-      REQUEST_VARIABLE: "request-variable-value",
-      ORG_ONLY_SECRET: "org-only-secret-value",
-      USER_SECRET: "user-secret-value",
-      REQUEST_SECRET: "request-secret-value",
+    expect(claim.vars).toMatchObject({
+      [names.orgOnlyVariable]: "org-only-variable-value",
+      [names.userVariable]: "user-variable-value",
+      [names.requestVariable]: "user-request-variable-value",
     });
-    expect(claim.secretValues).not.toContain("unreferenced-secret-value");
+    for (const storedSecret of [
+      "org-only-secret-value",
+      "org-user-secret-value",
+      "user-secret-value",
+      "org-request-secret-value",
+      "user-request-secret-value",
+      "unreferenced-secret-value",
+    ]) {
+      expect(claim.secretValues).not.toContain(storedSecret);
+      expect(Object.values(claim.environment ?? {})).not.toContain(
+        storedSecret,
+      );
+    }
     expect(claim.environment).not.toHaveProperty(names.unreferencedSecret);
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
-
-    const variableOnlyComposeName = `bdd-persisted-vars-${suffix.toLowerCase()}`;
-    const variableOnlyCompose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [variableOnlyComposeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            ORG_ONLY_VARIABLE: `\${{ vars.${names.orgOnlyVariable} }}`,
-            USER_VARIABLE: `\${{ vars.${names.userVariable} }}`,
-          },
-        },
-      },
-    });
-    const variableOnlyRun = await api.createDirectRun(actor, {
-      agentId: variableOnlyCompose.agentId,
-      prompt: "resolve persisted variables without secret references",
-    });
-    const variableOnlyClaim = await api.claimRunnerJob(variableOnlyRun.runId);
-
-    expect(variableOnlyClaim.environment).toMatchObject({
-      ORG_ONLY_VARIABLE: "org-only-variable-value",
-      USER_VARIABLE: "user-variable-value",
-    });
-    expect(variableOnlyClaim.secretValues).toBeNull();
-    expect(variableOnlyClaim.environment).not.toHaveProperty(
-      names.unreferencedSecret,
-    );
-
-    await api.requestCancelRun(actor, variableOnlyRun.runId, [200]);
-    const variableOnlyCancelled = await api.readRun(
-      actor,
-      variableOnlyRun.runId,
-    );
-    expect(variableOnlyCancelled.status).toBe("cancelled");
   });
 });
 
@@ -5920,10 +5482,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       refreshToken: "x-bdd-unallowed-refresh",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run without enabled stored connectors",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -5969,10 +5530,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       catalogVersion: `okou-scoped-runtime-run-${randomUUID()}`,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the x connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6037,132 +5597,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("does not decrypt stored connector secrets overridden by body secrets", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    const runnerGroup = api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "x",
-      authMethod: "oauth",
-      accessToken: "x-bdd-overridden-access",
-      refreshToken: "x-bdd-overridden-refresh",
-    });
-    const composeName = `bdd-overridden-connector-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-
-    const kms = useSecretKmsProbe();
-
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "use overridden x connector secret",
-      secrets: { X_TOKEN: "body-x-token" },
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    expect(kms.decryptCalls).toBe(0);
-
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.environment?.X_TOKEN).toBe(
-      connectorPlaceholder("x", "X_TOKEN"),
-    );
-    expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
-    expect(findFirewallEntry(claim.firewalls, "x")).toStrictEqual({
-      kind: "builtin",
-      name: "x",
-      sourceId: expect.any(String),
-    });
-    expect(claim.billableFirewalls).toContain("x");
-
-    if (!claim.encryptedSecrets) {
-      throw new Error("Expected the x claim to carry encrypted secrets");
-    }
-    const resolved = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: { Authorization: `Bearer \${{ secrets.X_TOKEN }}` },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error("Expected the overridden x firewall auth to resolve");
-    }
-    expect(resolved.body.headers).toStrictEqual({
-      Authorization: "Bearer body-x-token",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("does not decrypt stored connector secrets overridden by compose environment", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    const runnerGroup = api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-
-    await connectors.connectManualGrant(actor, "gitlab", "api-token", {
-      accessToken: "glpat-stored-token",
-      host: "gitlab.example.com",
-    });
-    const composeName = `bdd-compose-overrides-connector-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            GITLAB_TOKEN: "glpat-inline-token",
-          },
-        },
-      },
-    });
-
-    const kms = useSecretKmsProbe();
-
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "use compose-overridden gitlab token",
-      connectorScope: {
-        allowedConnectorSlugs: ["gitlab"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    expect(kms.decryptCalls).toBe(0);
-
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    expect(claim.environment?.GITLAB_TOKEN).toBe("glpat-inline-token");
-    expect(claim.environment?.GITLAB_HOST).toBe("gitlab.example.com");
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("maps stored connector variable sources to runtime aliases for permission manifests", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
@@ -6180,24 +5614,17 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       accessToken: "test-oauth-bdd-access",
       refreshToken: "test-oauth-bdd-refresh",
     });
-    const composeName = `bdd-connector-var-alias-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD test-oauth connector agent",
+      description: "Uses the test-oauth connector.",
+      visibility: "private",
     });
+    await api.enableAgentConnectors(actor, agent.agentId, ["test-oauth"]);
 
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "use stored connector variable aliases",
-      connectorScope: {
-        allowedConnectorSlugs: ["test-oauth"],
-        allowedCustomConnectorIds: [],
-      },
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -6230,10 +5657,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     );
     await api.enableAgentConnectors(actor, agentId, ["gitlab"]);
 
-    const withoutHost = await api.createRun(actor, {
+    const withoutHost = await api.createThreadRun(actor, {
       agentId,
       prompt: "use gitlab without the optional host",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const bareClaim = await api.claimRunnerJob(withoutHost.runId);
@@ -6257,10 +5683,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       undefined,
       { intent: "reconnect", connectionId: gitlabConnection.id },
     );
-    const withHost = await api.createRun(actor, {
+    const withHost = await api.createThreadRun(actor, {
       agentId,
       prompt: "use gitlab with the optional host",
-      modelProvider: "anthropic-api-key",
     });
     const hostClaim = await api.claimRunnerJob(withHost.runId);
     expect(hostClaim.environment?.GITLAB_TOKEN).toBe(
@@ -6283,7 +5708,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
     await fw.seedTestConnector(actor, {
       connectorSlug: "x",
@@ -6301,10 +5726,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
 
     const kms = useSecretKmsProbe();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use lazy connector auth credentials",
-      modelProvider: "anthropic-api-key",
     });
     expect(kms.decryptCalls).toBe(0);
 
@@ -6324,10 +5748,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["figma"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use figma personal access token",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();
@@ -6418,10 +5841,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     );
     await api.enableAgentConnectors(actor, agentId, ["lark"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use lark before any cached access token exists",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6586,10 +6008,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     }
     expect(customGrantResponse.body.grants).toStrictEqual(customGrants);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "refresh lark through exact runtime projections",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6724,10 +6145,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["google-ads"]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use google ads",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6857,80 +6277,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("filters platform-secret metadata when request secrets override the alias", async () => {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", "platform-developer-token");
-
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "google-ads",
-      authMethod: "oauth",
-      accessToken: "google-ads-bdd-access",
-      refreshToken: "google-ads-bdd-refresh",
-    });
-    await api.enableAgentConnectors(actor, agentId, ["google-ads"]);
-
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "use google ads with explicit developer token",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["google-ads"],
-        allowedCustomConnectorIds: [],
-      },
-      secrets: {
-        OKOU_TOKEN: "bdd-okou-direct-token",
-        GOOGLE_ADS_DEVELOPER_TOKEN: "body-developer-token",
-      },
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.environment).not.toHaveProperty("GOOGLE_ADS_DEVELOPER_TOKEN");
-    expect(claim.secretConnectorMap).toMatchObject({
-      GOOGLE_ADS_TOKEN: "google-ads",
-    });
-    expect(claim.secretConnectorMap ?? {}).not.toHaveProperty(
-      "GOOGLE_ADS_DEVELOPER_TOKEN",
-    );
-    expect(claim.secretConnectorMetadataMap ?? {}).not.toHaveProperty(
-      "GOOGLE_ADS_DEVELOPER_TOKEN",
-    );
-    if (!claim.encryptedSecrets) {
-      throw new Error(
-        "Expected the google ads claim to carry encrypted secrets",
-      );
-    }
-
-    const resolved = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      {
-        encryptedSecrets: claim.encryptedSecrets,
-        authHeaders: {
-          "developer-token": `\${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}`,
-        },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
-        secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
-      },
-      [200],
-    );
-    if (resolved.status !== 200) {
-      throw new Error(
-        "Expected explicit google ads developer token to resolve",
-      );
-    }
-    expect(resolved.body.headers).toStrictEqual({
-      "developer-token": "body-developer-token",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await api.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
-  });
-
   it("ignores plain user secrets named like connector tokens", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -6945,10 +6291,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       value: "sk-plain-user-secret",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "run without a connected axiom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -6975,10 +6320,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async ({ config: piModelConfig }) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "read a future native context",
-        modelProvider: "anthropic-api-key",
       });
       await setRunnerJobPiContextAsVersionedWriter(
         context,
@@ -7011,10 +6355,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async (generation) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "claim a dialect-aware Pi route",
-        modelProvider: "anthropic-api-key",
       });
       const piModelConfig: PiModelConfig =
         generation === 1
@@ -7109,10 +6452,9 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     async (route) => {
       const api = createRunsApi(context);
       const { actor, agentId, runnerGroup } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "claim only a supported exact Pi route",
-        modelProvider: "anthropic-api-key",
       });
       await setRunnerJobPiContextAsVersionedWriter(context, run.runId, {
         schemaVersion: route.schemaVersion,
@@ -7142,60 +6484,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       }
     },
   );
-
-  it("restores prepared masking values from direct run environments", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-    const kms = useSecretKmsProbe();
-    const composeName = `bdd-secret-refs-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            FIRST_TOKEN: `\${{ secrets.FIRST_TOKEN }}`,
-            SECOND_TOKEN: `\${{ secrets.SECOND_TOKEN }}`,
-          },
-        },
-      },
-    });
-
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "restore prepared masking values",
-      secrets: {
-        FIRST_TOKEN: "first-secret-value",
-        SECOND_TOKEN: "second-secret-value",
-        REPEATED_TOKEN: "first-secret-value",
-        UNUSED_TOKEN: "unused-secret-value",
-      },
-    });
-    const decryptCountBeforeClaim = kms.decryptCalls;
-    const claim = await api.claimRunnerJob(run.runId);
-    expect(claim.environment?.FIRST_TOKEN).toBe("first-secret-value");
-    expect(claim.environment?.SECOND_TOKEN).toBe("second-secret-value");
-    expect(claim.secretValues).toStrictEqual([
-      "first-secret-value",
-      "second-secret-value",
-      "first-secret-value",
-    ]);
-    expect(kms.decryptCalls).toBe(decryptCountBeforeClaim);
-    expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-    expect(claim.firewalls ?? []).toStrictEqual([]);
-    expect(claim.networkPolicies ?? {}).toStrictEqual({});
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await api.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
-  });
 });
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
@@ -7271,10 +6559,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       mcpConnector.id,
       automaticConnector.id,
     ]);
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the no-auth HTTP and MCP connectors",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7371,10 +6658,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await connectors.setCustomConnectorValues(actor, custom.id, []);
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the explicitly connected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7422,10 +6708,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the custom connector instead of the built-in connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7491,10 +6776,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use custom auth for Figma files and built-in auth elsewhere",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -7572,10 +6856,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8084,10 +7367,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       http.id,
     ]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the admitted MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8247,10 +7529,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       code: "CONNECTOR_NOT_CONFIGURED",
     });
 
-    const disconnectedRun = await api.createRun(actor, {
+    const disconnectedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not advertise a disconnected MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     const disconnectedClaim = await api.claimRunnerJob(disconnectedRun.runId);
     expect(
@@ -8309,7 +7590,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -8406,10 +7690,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("bounds admitted MCP awareness for an initial Claude run", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const run = await fixture.api.createRun(fixture.actor, {
+    const run = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const claim = await fixture.api.claimRunnerJob(run.runId);
@@ -8420,10 +7703,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("preserves bounded MCP awareness across continuation", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const first = await fixture.api.createRun(fixture.actor, {
+    const first = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const firstClaim = await fixture.api.claimRunnerJob(first.runId);
@@ -8448,11 +7730,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { authorization: `Bearer ${firstClaim.sandboxToken}` },
       [200],
     );
-    const resumed = await fixture.api.createRun(fixture.actor, {
+    const resumed = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: "continue with bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     const resumedClaim = await fixture.api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.appendSystemPrompt).toContain("# Agent Tools");
@@ -8464,10 +7745,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
   it("keeps bounded MCP awareness identical across Claude and Codex", async () => {
     const fixture = await setupBoundedMcpAwareness();
-    const claude = await fixture.api.createRun(fixture.actor, {
+    const claude = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
     });
     await fixture.api.heartbeatRunner(fixture.runnerGroup);
     const claudeClaim = await fixture.api.claimRunnerJob(claude.runId);
@@ -8476,41 +7756,56 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       fixture,
     );
     await fixture.api.requestCancelRun(fixture.actor, claude.runId, [200]);
-    await fixture.fw.seedOrgCodexProvider(fixture.actor, {
-      accessToken: "mcp-awareness-codex-access",
-      refreshToken: "mcp-awareness-codex-refresh",
-      accountId: "mcp-awareness-codex-account",
-      idToken: "mcp-awareness-codex-id",
-      expiresIn: 3600,
+    // A member-scoped native Codex route (gpt-6-astra has no Pi route) through
+    // the caller's personal Codex provider.
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      fixture.actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
+      },
+      [200, 201],
+    );
+    const anthropic = (
+      await fixture.api.listOrgModelProviders(fixture.actor)
+    ).find((provider) => {
+      return provider.type === "anthropic-api-key";
     });
-    const codex = await fixture.api.createRun(fixture.actor, {
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
+    }
+    await fixture.api.updateOrgModelPolicies(fixture.actor, [
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+      {
+        model: "gpt-6-astra",
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const codex = await fixture.api.createThreadRun(fixture.actor, {
       agentId: fixture.agentId,
       prompt: "inspect MCP awareness with Codex",
-      modelProvider: "codex-oauth-token",
+      model: "gpt-6-astra",
     });
     const codexClaim = await fixture.api.claimRunnerJob(codex.runId);
     expect(codexClaim.cliAgentType).toBe("codex");
-    expect(mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "")).toBe(
-      claudePrompt,
+    // Web chat Codex runs append their image-upload guidance after the
+    // identical MCP section, without a heading of its own.
+    const codexSection =
+      mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "") ?? "";
+    expect(codexSection.slice(0, claudePrompt.length)).toBe(claudePrompt);
+    expect(codexSection.slice(claudePrompt.length)).toMatch(
+      /^\n\nIf you use the built-in image generation tool and it saves generated output image file\(s\) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>`/,
     );
     await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
-  });
-
-  it("omits MCP awareness from generic direct runs", async () => {
-    const fixture = await setupBoundedMcpAwareness();
-    const direct = await fixture.api.createDirectRun(
-      fixture.actor,
-      agentBackedDirectRunBody({
-        agentId: fixture.agentId,
-        prompt: "do not advertise MCP without a server-issued Okou run token",
-      }),
-    );
-    await fixture.api.heartbeatRunner(fixture.runnerGroup);
-    const claim = await fixture.api.claimRunnerJob(direct.runId);
-    expect(
-      mcpConnectorPromptSection(claim.appendSystemPrompt ?? ""),
-    ).toBeUndefined();
-    await fixture.api.requestCancelRun(fixture.actor, direct.runId, [200]);
   });
 
   it("reads a seeded canonical connector through runtime auth", async () => {
@@ -8569,10 +7864,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { intent: "reconnect", connectionId: runtimeConnectionId },
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the seeded canonical connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -8614,7 +7908,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-custom-permission-setup-${randomUUID()}`,
     });
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
     const custom = await connectors.createCustomConnector(actor, {
       slug,
@@ -8662,10 +7959,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantResponse.body.grants).toStrictEqual([grant]);
 
     const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-    const disconnectedRun = await api.createRun(actor, {
+    const disconnectedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the disconnected custom connector skill",
-      modelProvider: "anthropic-api-key",
     });
     await connectors.updateCustomConnector(actor, custom.id, {
       displayName: custom.displayName,
@@ -8716,10 +8012,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       runtimeProjection: true,
     });
 
-    const restoredRun = await api.createRun(actor, {
+    const restoredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the reconnected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const restoredClaim = await api.claimRunnerJob(restoredRun.runId);
     const customApis = inlineFirewallApis(
@@ -8764,26 +8059,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(restoredSkillMount?.versionId).toBe(updatedSkill.versionId);
 
     await api.requestCancelRun(actor, restoredRun.runId, [200]);
-
-    const directRun = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "use the direct scoped custom connector",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: [],
-        allowedCustomConnectorIds: [custom.id],
-      },
-    });
-    const directClaim = await api.claimRunnerJob(directRun.runId);
-    expect(
-      inlineFirewallApis(directClaim.firewalls, internalName)[0]?.permissions,
-    ).toStrictEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "chat:write" })]),
-    );
-    expect(findFirewallEntry(directClaim.firewalls, "slack")).toBeUndefined();
-    expect(directClaim.networkPolicies ?? {}).not.toHaveProperty("slack");
-    await api.requestCancelRun(actor, directRun.runId, [200]);
   });
 
   it("fails closed when a custom skill version belongs to another storage", async () => {
@@ -8796,7 +8071,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       context,
       routes: testCustomConnectorSkillVersionAssociationRoutes,
     })(testCustomConnectorSkillVersionAssociationContract);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
     const suffix = randomUUID().slice(0, 8);
     const target = await connectors.createCustomConnector(actor, {
       displayName: "BDD Exact Skill Target",
@@ -8859,14 +8134,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }),
       [200],
     );
-    const wrongStorageRun = await api.createRun(actor, {
+    // A Thread launch failure creates no run; the thread rejects the input.
+    const failure = await api.readThreadLaunchFailure(actor, {
       agentId,
       prompt: "reject the wrong custom skill storage owner",
-      modelProvider: "anthropic-api-key",
     });
-    expect(wrongStorageRun).toMatchObject({
-      status: "failed",
-      error: "Custom connector skill registration is unavailable",
+    expect(failure).toStrictEqual({
+      pickError: "Custom connector skill registration is unavailable",
+      inputError: "internal_error",
     });
   });
 
@@ -8930,10 +8205,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       kind: "custom",
       customConnectorId: custom.id,
     });
-    const currentRun = await api.createRun(actor, {
+    const currentRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the current unrefreshable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const currentClaim = await api.claimRunnerJob(currentRun.runId);
@@ -8948,10 +8222,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connected: false,
       missingRequiredFields: ["oauth"],
     });
-    const expiredRun = await api.createRun(actor, {
+    const expiredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "try the expired unrefreshable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const expiredClaim = await api.claimRunnerJob(expiredRun.runId);
     expect(expiredClaim.connectorRuntimeTargets).toContainEqual(target);
@@ -9068,10 +8341,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       missingRequiredFields: ["oauth"],
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const expectedBasicAuthorization = `Basic ${Buffer.from(
       "runtime-client-id:runtime-client-secret",
@@ -9355,10 +8627,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     }
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const firstRun = await api.createRun(actor, {
+    const firstRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the revoked OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(
       provider.tokenBodies.map((body) => {
@@ -9419,10 +8690,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       missingRequiredFields: ["oauth"],
     });
 
-    const secondRun = await api.createRun(actor, {
+    const secondRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "retry the revoked OAuth custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(provider.tokenBodies).toHaveLength(2);
     const secondClaim = await api.claimRunnerJob(secondRun.runId);
@@ -9569,10 +8839,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [mcp.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the OAuth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9635,10 +8904,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           firewallAuth: resolution,
         });
       }
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `use builtin Automatic ${resolution}`,
-        modelProvider: "anthropic-api-key",
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
@@ -9775,10 +9043,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use builtin Automatic OAuth through catalog no-auth",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9888,10 +9155,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         ...catalog,
         issuer: provider.issuer,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "change the connected builtin MCP authentication method",
-        modelProvider: "anthropic-api-key",
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
@@ -10004,7 +9270,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
-  it("rotates builtin Automatic credentials once for concurrent expiry and requires reconnect after revocation", async () => {
+  it("rotates expired builtin Automatic credentials and requires reconnect after revocation", async () => {
     const catalog = await installAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -10032,10 +9298,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "refresh builtin Automatic credentials",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10056,15 +9321,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    const concurrent = await Promise.all([
-      fw.requestFirewallAuth(headers, body, [200]),
-      fw.requestFirewallAuth(headers, body, [200]),
-    ]);
-    for (const resolved of concurrent) {
-      expect(resolved.body).toMatchObject({
-        headers: { Authorization: "Bearer builtin-rotated-access-1" },
-      });
-    }
+    const expired = await fw.requestFirewallAuth(headers, body, [200]);
+    expect(expired.body).toMatchObject({
+      headers: { Authorization: "Bearer builtin-rotated-access-1" },
+    });
     expect(
       provider.tokenBodies.map((tokenBody) => {
         return tokenBody.get("grant_type");
@@ -10150,10 +9410,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...catalog,
       issuer: provider.issuer,
     });
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use builtin Automatic without refresh token",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10238,10 +9497,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [mcp.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Automatic OAuth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10282,10 +9540,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       storageVersion: 1,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
-    const noAuthRun = await api.createRun(actor, {
+    const noAuthRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the Automatic MCP connector without credentials",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const noAuthClaim = await api.claimRunnerJob(noAuthRun.runId);
@@ -10323,7 +9580,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped run actor");
     }
@@ -10380,10 +9640,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     const kms = useSecretKmsProbe();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the proposed custom connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(kms.decryptCalls).toBe(0);
     await api.heartbeatRunner(runnerGroup);
@@ -10493,10 +9752,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       scope: "later-scope",
     });
 
-    const laterRun = await api.createRun(actor, {
+    const laterRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the updated custom connector route",
-      modelProvider: "anthropic-api-key",
     });
     const laterClaim = await api.claimRunnerJob(laterRun.runId);
     expect(laterClaim.connectorRuntimeTargets).toContainEqual({
@@ -10574,10 +9832,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       agentId,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the optional custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10722,10 +9979,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(updated.storageVersion).toBe(2);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not use the incompatible custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -10804,10 +10060,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connectors.readCustomConnector(actor, saved.connector.id),
     ).resolves.toMatchObject({ connected: false });
 
-    const blockedRun = await api.createRun(actor, {
+    const blockedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not use the reconnect-required custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const blockedClaim = await api.claimRunnerJob(blockedRun.runId);
@@ -10848,10 +10103,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       connectors.readCustomConnector(actor, saved.connector.id),
     ).resolves.toMatchObject({ connected: true });
 
-    const admittedRun = await api.createRun(actor, {
+    const admittedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the reconnected custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const admittedClaim = await api.claimRunnerJob(admittedRun.runId);
     expect(
@@ -10914,10 +10168,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       saved.connector.id,
     );
 
-    const incompleteRun = await api.createRun(actor, {
+    const incompleteRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not admit an incomplete custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const incompleteClaim = await api.claimRunnerJob(incompleteRun.runId);
@@ -10972,10 +10225,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authMode: "manual",
     });
 
-    const unroutableRun = await api.createRun(actor, {
+    const unroutableRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "do not admit an unroutable custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const unroutableClaim = await api.claimRunnerJob(unroutableRun.runId);
     expect(
@@ -11002,10 +10254,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
     );
 
-    const recoveredRun = await api.createRun(actor, {
+    const recoveredRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the fully recovered custom connector",
-      modelProvider: "anthropic-api-key",
     });
     const recoveredClaim = await api.claimRunnerJob(recoveredRun.runId);
     expect(recoveredClaim.connectorRuntimeTargets).toContainEqual({
@@ -11072,10 +10323,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     expect(saved.authorizedAgentId).toBe(agentId);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the optional-only custom connector",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -11183,10 +10433,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await connectors.setCustomConnectorSecret(actor, custom.id, "custom-bdd");
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "expand custom and connector bases",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -11229,21 +10478,11 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["jira"]);
 
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
-        agentId,
-        prompt: "use jira",
-        modelProvider: "anthropic-api-key",
-      },
-      [400],
-    );
-    expect(rejected.body).toStrictEqual({
-      error: {
-        message: `Invalid base URL "https://\${{ vars.JIRA_DOMAIN }}" in firewall "jira": host policy does not allow resolved host "attacker.example"`,
-        code: "BAD_REQUEST",
-      },
-    });
+    // The pick rejects the input without a run; the exact host-policy message
+    // is asserted by packages/connectors firewall-expander.test.ts.
+    await expect(
+      api.readThreadRunRejection(actor, { agentId, prompt: "use jira" }),
+    ).resolves.toBe("bad_request");
   });
 
   it("refreshes queued connector grants from the stored permission baseline", async () => {
@@ -11270,10 +10509,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       action: "allow",
       expiresIn: "1h",
     });
-    const expiringRun = await api.createRun(actor, {
+    const expiringRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "expire a queued permission",
-      modelProvider: "anthropic-api-key",
     });
     mockNow(now() + 2 * 3_600_000);
     const expiredClaim = await api.claimRunnerJob(expiringRun.runId);
@@ -11289,10 +10527,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       permission: "chat:write",
       action: "allow",
     });
-    const revokedRun = await api.createRun(actor, {
+    const revokedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "revoke a queued permission",
-      modelProvider: "anthropic-api-key",
     });
     await expect(
       api.replaceUserPermissionGrants(actor, {
@@ -11319,10 +10556,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "claim without built-in connectors",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -11337,7 +10573,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     // The grants agent is public so a same-org member can write their own
     // grants for it without being the owner.
@@ -11360,10 +10599,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         readonly unknownPolicy?: string;
       };
     }> {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -11506,10 +10744,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       permission: "chat:write",
       action: "allow",
     });
-    const snapshotRun = await api.createRun(actor, {
+    const snapshotRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "snapshot the grant state",
-      modelProvider: "anthropic-api-key",
     });
     await api.applyUserPermissionGrant(actor, {
       agentId,
@@ -11646,17 +10883,19 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   it("distinguishes terminal connector runtime sync from missing runs", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const member = createBddApi(context).user({
       orgId: actor.orgId,
       orgRole: "org:member",
     });
     await api.heartbeatRunner(runnerGroup);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete before runner policy cleanup",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const history = `terminal refresh history ${run.runId}`;
@@ -11712,10 +10951,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(missingSync.body.error.code).toBe("NOT_FOUND");
 
-    const failedRun = await api.createRun(actor, {
+    const failedRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "fail before runner policy cleanup",
-      modelProvider: "anthropic-api-key",
     });
     const failedClaim = await api.claimRunnerJob(failedRun.runId);
     await webhooks.requestAgentComplete(
@@ -11745,10 +10983,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const { actor, agentId } = await entitledRunActor();
     const runnerKey = await api.createCliToken(actor);
     const createNonTerminalRun = async (prompt: string) => {
-      return await api.createRun(actor, {
+      return await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
     };
 
@@ -11775,7 +11012,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     await fw.seedTestConnector(actor, {
       connectorSlug: "slack",
@@ -11786,10 +11026,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.heartbeatRunner(runnerGroup);
 
     const firstPrompt = "start combined claim response timing";
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: firstPrompt,
-      modelProvider: "anthropic-api-key",
     });
     const firstClaim = await api.claimRunnerJob(first.runId);
     expect(firstClaim.networkPolicies?.slack).toBeDefined();
@@ -11816,11 +11055,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
     const resumedPrompt = "continue combined claim response timing";
     context.mocks.ably.publish.mockClear();
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: first.sessionId,
+      threadId: first.threadId,
       prompt: resumedPrompt,
-      modelProvider: "anthropic-api-key",
     });
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "job",
@@ -11888,10 +11126,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       readonly deny: readonly string[];
       readonly unknownPolicy?: string;
     }> {
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -11928,7 +11165,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(overridden.unknownPolicy).toBe("allow");
   });
 
-  it("loads stored connectors and applies default named policies to direct runs without explicit policies", async () => {
+  it("loads stored connectors and applies default named policies to runs without explicit policies", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -11944,24 +11181,17 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authMethod: "oauth",
       accessToken: "cloudflare-direct-bdd-token",
     });
-    const composeName = `bdd-cloudflare-direct-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD cloudflare connector agent",
+      description: "Uses the cloudflare connector.",
+      visibility: "private",
     });
+    await api.enableAgentConnectors(actor, agent.agentId, ["cloudflare"]);
 
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "direct run cloudflare defaults",
-      connectorScope: {
-        allowedConnectorSlugs: ["cloudflare"],
-        allowedCustomConnectorIds: [],
-      },
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "thread run cloudflare defaults",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -11990,79 +11220,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 });
 
 describe("RUN-01: agent runner context, queue promotion, and skills", () => {
-  it("keeps direct-run execution config isolated from product execution", async () => {
-    const appUrl = "https://app.writer-stop.example.test";
-    mockEnv("APP_URL", appUrl);
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("The direct Agent fixture requires an organization");
-    }
-
-    const directEnvironment = {
-      CUSTOM_AGENT_ID: `\${{ vars.CUSTOM_AGENT_ID }}`,
-      CUSTOM_API_TOKEN: `\${{ secrets.CUSTOM_API_TOKEN }}`,
-    };
-    const directAgent = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        "direct-run-fixture": {
-          framework: "claude-code",
-          environment: directEnvironment,
-        },
-      },
-    });
-
-    const directOkouToken = generateOkouToken(
-      actor.userId,
-      "direct-context-fixture",
-      actor.orgId,
-    );
-    const direct = await api.createDirectRun(actor, {
-      agentId: directAgent.agentId,
-      prompt: "consume an application-owned Nova context",
-      modelProviderType: "anthropic-api-key",
-      vars: { CUSTOM_AGENT_ID: directAgent.agentId },
-      secrets: { CUSTOM_API_TOKEN: directOkouToken },
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const directClaim = await api.claimRunnerJob(direct.runId);
-    expect(directClaim.environment).toMatchObject({
-      CUSTOM_AGENT_ID: directAgent.agentId,
-      CUSTOM_API_TOKEN: directOkouToken,
-    });
-    expect(directClaim.environment ?? {}).not.toHaveProperty("OKOU_TOKEN");
-    expect(sandboxTokenPayload(directOkouToken)).toMatchObject({
-      scope: "okou",
-    });
-    expect(directClaim.secretValues).toContain(directOkouToken);
-    await api.requestCancelRun(actor, direct.runId, [200]);
-
-    const current = await api.createRun(actor, {
-      agentId,
-      prompt: "build a canonical product context",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const currentClaim = await api.claimRunnerJob(current.runId);
-    expectCanonicalOkouRunEnvironment({
-      environment: currentClaim.environment,
-      platformEnvironment: currentClaim.platformEnvironment,
-      secretValues: currentClaim.secretValues,
-      appUrl,
-      agentId,
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: current.runId,
-    });
-    expect(
-      Object.values(currentClaim.environment ?? {}).some((value) => {
-        return value.includes("${{");
-      }),
-    ).toBeFalsy();
-    await api.requestCancelRun(actor, current.runId, [200]);
-  });
-
   it("injects agent identity, tool hints, and user info into the runner context", async () => {
     const appUrl = "https://app.example.test";
     mockEnv("APP_URL", appUrl);
@@ -12087,7 +11244,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     // run context's user-info section.
     await bdd.readMe(actor);
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
     const agent = await bdd.createAgent(actor, {
       displayName: "Research Bot",
       description: "Finds release details",
@@ -12131,10 +11288,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [201],
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "summarize release",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12258,7 +11414,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       appendSystemPrompt.indexOf("- Cross-thread chat run completion:"),
     );
     expect(appendSystemPrompt).toContain("okou upgrade pro");
-    expect(appendSystemPrompt).not.toContain(
+    // The run's chat thread owns its Cloud Browser.
+    expect(appendSystemPrompt).toContain(
       "`okou browser use` creates, reuses, or resumes a remote browser",
     );
     expect(appendSystemPrompt).not.toContain(
@@ -12331,10 +11488,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "summarize the safety policy",
-      modelProvider: "anthropic-api-key",
     });
     const stored = await api.readRun(actor, run.runId);
     const appendSystemPrompt = stored.appendSystemPrompt ?? "";
@@ -12363,13 +11519,15 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
   it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
     const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "image-generation", true);
-    const queued = await api.createRun(actor, {
+    const queued = await api.createThreadRun(actor, {
       agentId,
       prompt: "capture my paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     await setPaidToolDisabled(context, actor, "web-search", false);
     await setPaidToolDisabled(context, actor, "image-generation", false);
@@ -12388,10 +11546,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, queued.runId, [200]);
     await finishCancelledRun(queued.runId, claim.sandboxToken);
 
-    const enabled = await api.createRun(actor, {
+    const enabled = await api.createThreadRun(actor, {
       agentId,
       prompt: "use the updated paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     const enabledClaim = await api.claimRunnerJob(enabled.runId);
     expect(enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
@@ -12405,10 +11562,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "video-generation", true);
-    const latest = await api.createRun(actor, {
+    const latest = await api.createThreadRun(actor, {
       agentId,
       prompt: "apply the latest paid tool preferences",
-      modelProvider: "anthropic-api-key",
     });
     const latestClaim = await api.claimRunnerJob(latest.runId);
     expect(latestClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
@@ -12420,14 +11576,45 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, latest.runId, [200]);
     await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
-    await api.createOrgModelProvider(actor, {
+    const openai = await api.createOrgModelProvider(actor, {
       type: "openai-api-key",
       secret: "bdd-native-web-search-openai-key",
     });
-    const codexByok = await api.createRun(actor, {
+    const anthropic = (await api.listOrgModelProviders(actor)).find(
+      (provider) => {
+        return provider.type === "anthropic-api-key";
+      },
+    );
+    if (!anthropic) {
+      throw new Error("Expected the org Anthropic provider");
+    }
+    const builtInModel = await seedBuiltInDefaultModelKey();
+    // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: NATIVE_RUNNER_ROUTE.model,
+        preferred: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.id,
+      },
+      {
+        model: "gpt-6-astra",
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openai.providerId,
+      },
+      {
+        model: builtInModel,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const codexByok = await api.createThreadRun(actor, {
       agentId,
       prompt: "use Codex native web search",
-      modelProvider: "openai-api-key",
+      model: "gpt-6-astra",
     });
     const codexByokClaim = await api.claimRunnerJob(codexByok.runId);
     expect(codexByokClaim.cliAgentType).toBe("codex");
@@ -12437,34 +11624,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, codexByok.runId, [200]);
     await finishCancelledRun(codexByok.runId, codexByokClaim.sandboxToken);
 
-    const explicitKeyAgent = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        main: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const explicitKeyRun = await api.createDirectRun(actor, {
-      agentId: explicitKeyAgent.agentId,
-      prompt: "use native search with an explicit framework key",
-    });
-    const explicitKeyClaim = await api.claimRunnerJob(explicitKeyRun.runId);
-    expect(
-      explicitKeyClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
-    ).toBe("true");
-    await api.requestCancelRun(actor, explicitKeyRun.runId, [200]);
-    await finishCancelledRun(
-      explicitKeyRun.runId,
-      explicitKeyClaim.sandboxToken,
-    );
-
-    await seedBuiltInDefaultModelKey();
-    const builtIn = await api.createRun(actor, {
+    const builtIn = await api.createThreadRun(actor, {
       agentId,
       prompt: "keep native web search disabled for built-in routing",
-      modelProvider: "built-in",
+      model: builtInModel,
     });
     const builtInClaim = await api.claimRunnerJob(builtIn.runId);
     expect(builtInClaim.platformEnvironment).not.toHaveProperty(
@@ -12477,7 +11640,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   it("uses the executing member's paid tool preferences for a shared agent", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const agent = await bdd.createAgent(actor, {
       displayName: "Shared paid tool preferences agent",
       visibility: "public",
@@ -12486,10 +11652,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await bdd.completeOnboarding(member);
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
-    const run = await api.createRun(member, {
+    const run = await api.createThreadRun(member, {
       agentId: agent.agentId,
       prompt: "respect the executing member's paid tool preferences",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12507,10 +11673,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.Banking]: false,
     });
-    const gatedOff = await api.createRun(actor, {
+    const gatedOff = await api.createThreadRun(actor, {
       agentId,
       prompt: "review my recent banking activity",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const gatedOffClaim = await api.claimRunnerJob(gatedOff.runId);
@@ -12522,10 +11687,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.Banking]: true,
     });
-    const gatedOn = await api.createRun(actor, {
+    const gatedOn = await api.createThreadRun(actor, {
       agentId,
       prompt: "review my recent banking activity",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const gatedOnClaim = await api.claimRunnerJob(gatedOn.runId);
@@ -12554,10 +11718,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "inspect my SSH hosts",
-      modelProvider: "anthropic-api-key",
     });
     const prompt =
       (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
@@ -12596,10 +11759,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.VncAccess]: enabled,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "inspect my remote VNC desktop",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await api.heartbeatRunner(runnerGroup);
@@ -12647,10 +11809,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PresentationConvert]: enabled,
       });
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: "make me a deck about our quarterly plan",
-        modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
       await api.heartbeatRunner(runnerGroup);
@@ -12690,7 +11851,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const workflows = createWorkflowsBddApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     if (!actor.orgId) {
       throw new Error("Expected a workflow run actor with an organization");
     }
@@ -12720,10 +11884,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       visibility: "private",
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "use the private workflow override",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12754,10 +11917,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "continue the task",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12779,7 +11941,10 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const misc = createMiscRoutesApi(context);
-    const { actor, runnerGroup } = await entitledRunActor();
+    const { actor, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
     const workflowName = "bdd-claude-kit";
     const agent = await bdd.createAgent(actor, {
@@ -12795,10 +11960,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [201],
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "use the workflow",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -12822,10 +11986,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel while running",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     await api.claimRunnerJob(run.runId);
@@ -12857,10 +12020,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
       }),
     );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel without redelivering ordinary callbacks",
-      modelProvider: "anthropic-api-key",
     });
     await callbackStore.set(
       seedAgentRunCallback$,
@@ -12891,10 +12053,9 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "claim while cancelling",
-      modelProvider: "anthropic-api-key",
     });
 
     const [claim, cancellation] = await Promise.all([
@@ -12915,6 +12076,7 @@ describe("RUN-03: cancellation of dispatched and terminal runs", () => {
 describe("RUN-03: user-runner protocol and runner authentication", () => {
   it("passes a valid preview bypass header or cookie into the run environment", async () => {
     const api = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
     const { actor, agentId } = await entitledRunActor();
     const previewBypass = "bdd-preview-bypass";
     const requests = [
@@ -12933,42 +12095,53 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     for (const request of requests) {
       mockEnv("ENV", "preview");
       mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", previewBypass);
-      const created = await api.requestCreateRun(
+      // The send carries the bypass; its pick runs inside that request.
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
           prompt: request.prompt,
-          modelProvider: "anthropic-api-key",
+          model: "claude-sonnet-5",
+          clientEventId,
         },
         [201],
-        request.headers,
+        { extraHeaders: request.headers },
       );
+      await flushWaitUntilForTest();
       mockEnv("ENV", "development");
 
-      expect(created.status).toBe(201);
-      if (created.status !== 201) {
-        throw new Error("Expected preview run creation to succeed");
+      expect(sent.status).toBe(201);
+      if (sent.status !== 201) {
+        throw new Error("Expected the preview send to be accepted");
       }
-      const claim = await api.claimRunnerJob(created.body.runId);
+      const runId = (
+        await chat.listThreadEvents(actor, sent.body.threadId)
+      ).events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the preview send to launch a run");
+      }
+      const claim = await api.claimRunnerJob(runId);
       expect(claim.platformEnvironment).toMatchObject({
         VERCEL_AUTOMATION_BYPASS_SECRET: previewBypass,
       });
       expect(claim.environment).not.toHaveProperty(
         "VERCEL_AUTOMATION_BYPASS_SECRET",
       );
-      await api.requestCancelRun(actor, created.body.runId, [200]);
+      await api.requestCancelRun(actor, runId, [200]);
     }
   });
 
   it("returns 500 when claim response construction fails", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const source = await api.createRun(actor, {
+    const source = await api.createThreadRun(actor, {
       agentId,
       prompt: "create history for a failed claim response",
-      modelProvider: "anthropic-api-key",
     });
     const sourceClaim = await api.claimRunnerJob(source.runId);
     const historyHash = createHash("sha256")
@@ -12989,11 +12162,10 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
       [200],
     );
 
-    const resumed = await api.createRun(actor, {
+    const resumed = await api.createThreadRun(actor, {
       agentId,
-      sessionId: source.sessionId,
+      threadId: source.threadId,
       prompt: "fail while constructing the claim response",
-      modelProvider: "anthropic-api-key",
     });
     context.mocks.s3.send.mockRejectedValueOnce(
       new Error("session history metadata unavailable"),
@@ -13015,10 +12187,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     const bearer = `Bearer ${apiKey.token}`;
     const firstPrompt = "user runner job one";
 
-    const first = await api.createRun(actor, {
+    const first = await api.createThreadRun(actor, {
       agentId,
       prompt: firstPrompt,
-      modelProvider: "anthropic-api-key",
     });
     const polled = await api.requestPollRunnerAs(
       bearer,
@@ -13058,10 +12229,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     expect(claimedRun.status).toBe("running");
 
     const secondPrompt = "user runner job two";
-    const second = await api.createRun(actor, {
+    const second = await api.createThreadRun(actor, {
       agentId,
       prompt: secondPrompt,
-      modelProvider: "anthropic-api-key",
     });
 
     const outsider = createBddApi(context).user();
@@ -13179,10 +12349,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "terminal before claim",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
 
@@ -13210,92 +12379,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     const reclaim = await api.requestClaimRunnerJob(true, run.runId, [404]);
     expectApiError(reclaim.body);
     expect(reclaim.body.error.message).toBe("Job not found in queue");
-  });
-
-  it("returns null claim secretValues for direct compose runs without stored secrets", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-    const kms = useSecretKmsProbe();
-
-    // A plain compose carries inline environment values but no body, model
-    // provider, or connector secrets, so no encrypted secrets map is stored
-    // with the queued job.
-    const composeName = `bdd-no-secrets-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "claim without stored secrets",
-    });
-    expect(run.status).toBe("pending");
-
-    const decryptCountBeforeNullClaim = kms.decryptCalls;
-    const claim = await api.claimRunnerJob(run.runId);
-    expect(claim.secretValues).toBeNull();
-    expect(claim.prompt).toBe("claim without stored secrets");
-    expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-    expect(kms.decryptCalls).toBe(decryptCountBeforeNullClaim);
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const cancelled = await api.readRun(actor, run.runId);
-    expect(cancelled.status).toBe("cancelled");
-    await finishCancelledRun(run.runId, claim.sandboxToken);
-
-    const emptyRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "claim without matching environment secrets",
-      secrets: { UNUSED_TOKEN: "unused-secret-value" },
-    });
-    const decryptCountBeforeEmptyClaim = kms.decryptCalls;
-    const emptyClaim = await api.claimRunnerJob(emptyRun.runId);
-    expect(emptyClaim.secretValues).toStrictEqual([]);
-    expect(emptyClaim).not.toHaveProperty("secretValueEnvironmentKeys");
-    expect(kms.decryptCalls).toBe(decryptCountBeforeEmptyClaim);
-    await api.requestCancelRun(actor, emptyRun.runId, [200]);
-    await finishCancelledRun(emptyRun.runId, emptyClaim.sandboxToken);
-
-    // A compose pinned to a non-vm0 runner group fails dispatch at creation.
-    const foreignName = `bdd-foreign-${randomUUID().slice(0, 8)}`;
-    const foreignCompose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [foreignName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-          experimental_runner: { group: "other/test" },
-          experimental_profile: "vm0/large",
-        },
-      },
-    });
-    const failedRun = await api.createDirectRun(actor, {
-      agentId: foreignCompose.agentId,
-      prompt: "dispatch to a foreign runner group",
-    });
-    expect(failedRun.status).toBe("failed");
-    expect(failedRun.error).toBe("Only vm0/* runner groups are supported");
-    const storedFailedRun = await api.readRun(actor, failedRun.runId);
-    expect(storedFailedRun.status).toBe("failed");
-    const failedClaim = await api.requestClaimRunnerJob(
-      true,
-      failedRun.runId,
-      [404],
-    );
-    expectApiError(failedClaim.body);
-    expect(failedClaim.body.error.message).toBe("Job not found in queue");
   });
 });
 
@@ -13388,20 +12471,17 @@ describe("RUN-03: timed-out run webhook admission", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const completed = await api.createRun(actor, {
+    const completed = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
-    const failed = await api.createRun(actor, {
+    const failed = await api.createThreadRun(actor, {
       agentId,
       prompt: "fail before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
-    const cancelled = await api.createRun(actor, {
+    const cancelled = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before heartbeat",
-      modelProvider: "anthropic-api-key",
     });
 
     await webhooks.requestAgentComplete(
@@ -13435,11 +12515,13 @@ describe("RUN-03: timed-out run webhook admission", () => {
   it("rejects runtime mutations while accepting reporting webhooks", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const created = await api.createRun(actor, {
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
+    const created = await api.createThreadRun(actor, {
       agentId,
       prompt: "ignore runtime webhooks after timeout",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
@@ -13570,10 +12652,9 @@ describe("HOOK-02: event-consumer dispatch failures", () => {
       [FeatureSwitchKey.OkouDebug]: true,
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "report events",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -14092,44 +13173,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     expect(matchingDuplicateRows).toHaveLength(1);
     expect(matchingDuplicateRows[0]?.content).toBe("Hello from BDD events");
 
-    // Assistant text on a run without a chat thread changes no thread state.
-    const eventsBefore = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(eventsBefore.status).toBe(200);
-    if (eventsBefore.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    const detachedRun = await api.createRun(actor, {
-      agentId,
-      prompt: "report events without a thread",
-      modelProvider: "anthropic-api-key",
-    });
-    const detachedClaim = await api.claimRunnerJob(detachedRun.runId);
-    await webhooks.requestAgentEvents(
-      {
-        runId: detachedRun.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 1,
-            message: {
-              id: "msg_bdd_detached",
-              content: [{ type: "text", text: "No thread receives this" }],
-            },
-          },
-        ],
-      },
-      { authorization: `Bearer ${detachedClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const eventsAfter = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(eventsAfter.status).toBe(200);
-    if (eventsAfter.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(eventsAfter.body.events).toStrictEqual(eventsBefore.body.events);
-
-    await api.requestCancelRun(actor, detachedRun.runId, [200]);
+    // Threadless assistant text is covered by the Pi maintenance run in
+    // pi-memory-phase2-worker.service.test.ts, the only threadless producer.
     await api.requestCancelRun(actor, runId, [200]);
     const cancelled = await api.readRun(actor, runId);
     expect(cancelled.status).toBe("cancelled");
@@ -14454,7 +13499,16 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await seedBuiltInDefaultModelKey();
+    const builtInModel = await seedBuiltInDefaultModelKey();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: builtInModel,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const modelProvider = `bdd-model-pricing-${randomUUID()}`;
     onTestFinished(async () => {
       await deleteUsagePricingRows({
@@ -14473,10 +13527,10 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       },
     ]);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate server-priced model usage",
-      modelProvider: "built-in",
+      model: builtInModel,
     });
     await setRunModelProviderFixture({
       runId: run.runId,
@@ -14506,7 +13560,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     expect(usageRecord.body.totalCredits).toBe(17);
     expect(usageRecord.body.rows).toContainEqual(
       expect.objectContaining({
-        title: "Unavailable thread",
+        threadId: run.threadId,
         credits: 17,
       }),
     );
@@ -14516,12 +13570,14 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const api = createRunsApi(context);
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "generate usage",
-      modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -14549,7 +13605,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
 
     const record = await billing.readUsageRecord(actor);
     const listedUsage = record.body.rows.find((entry) => {
-      return entry.title === "Unavailable thread";
+      return entry.threadId === run.threadId;
     });
     expect(listedUsage).toBeDefined();
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
@@ -14563,7 +13619,10 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     const api = createRunsApi(context);
     const billing = createBillingMediaApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
     const nonAdmin = bdd.user({
       orgId: actor.orgId,
       orgRole: "org:member",
@@ -14610,15 +13669,14 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       visibility: "private",
     });
 
-    const actorRun = await api.createRun(actor, {
+    const actorRun = await api.createThreadRun(actor, {
       agentId,
       prompt: "actor usage",
-      modelProvider: "anthropic-api-key",
     });
-    const memberRun = await api.createRun(member, {
+    const memberRun = await api.createThreadRun(member, {
       agentId: memberAgent.agentId,
       prompt: "member usage",
-      modelProvider: "anthropic-api-key",
+      model: NATIVE_RUNNER_ROUTE.model,
     });
 
     await api.heartbeatRunner(runnerGroup);
@@ -14728,53 +13786,34 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { actor, agentId, runnerGroup } = await entitledRunActor(
+      {},
+      NATIVE_RUNNER_ROUTE,
+    );
 
-    // A committed volume version backs the versioned additional volume; the
-    // scratch volume stays versionless and storage-less on purpose.
-    const cacheVolume = `bdd-cache-${randomUUID().slice(0, 8)}`;
-    const scratchVolume = `bdd-scratch-${randomUUID().slice(0, 8)}`;
-    const cacheFile = {
-      path: "cache.txt",
-      hash: createHash("sha256")
-        .update(`bdd cache ${cacheVolume}`)
-        .digest("hex"),
-      size: 9,
-    };
-    const cachePrepared = await storages.prepareStorage(actor, {
-      storageName: cacheVolume,
-      storageOwner: "organization",
-      files: [cacheFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: cacheVolume,
-      storageOwner: "organization",
-      versionId: cachePrepared.versionId,
-      files: [cacheFile],
-    });
-
-    const createdResponse = await api.requestCreateRunUnchecked(
+    // An Agent workflow's Storage is the run's versioned read-only volume.
+    const workflowName = `bdd-cache-${randomUUID().slice(0, 8)}`;
+    const workflow = await createMiscRoutesApi(context).createWorkflow(
       actor,
-      {
-        agentId,
-        prompt: "report snapshots and telemetry",
-        modelProvider: "anthropic-api-key",
-        additionalVolumes: [
-          {
-            name: cacheVolume,
-            version: cachePrepared.versionId,
-            mountPath: "/cache",
-            baselineCandidate: true,
-          },
-          { name: scratchVolume, mountPath: "/scratch" },
-        ],
-      },
+      agentId,
+      workflowName,
+      { content: "# Cache\nUse for snapshot reporting." },
       [201],
     );
-    if (createdResponse.status !== 201) {
-      throw new Error("Expected unchecked run creation to succeed");
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
     }
-    const created = createdResponse.body;
+    const cacheVolume = getCustomSkillStorageName(workflow.body.id);
+    const cachePrepared = await storages.downloadStorage(actor, {
+      name: cacheVolume,
+      owner: "organization",
+    });
+    const cacheMountPath = `/home/user/.claude/skills/${workflowName}`;
+
+    const created = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "report snapshots and telemetry",
+    });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
     const storageMounts =
@@ -14783,7 +13822,7 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     const mountPaths = storageMounts.map((storage) => {
       return storage.mountPath;
     });
-    expect(mountPaths).toContain("/cache");
+    expect(mountPaths).toContain(cacheMountPath);
     const seedMountPaths = new Set(
       SEED_SKILLS.map((skillName) => {
         return `/home/user/.claude/skills/${skillName}`;
@@ -15107,14 +14146,27 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
       const modelProvider = args.modelProvider ?? "anthropic-api-key";
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
+      let model: string = NATIVE_RUNNER_ROUTE.model;
       if (modelProvider === "built-in") {
-        await seedBuiltInDefaultModelKey();
+        model = await seedBuiltInDefaultModelKey();
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model,
+            preferred: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
       }
-      const { actor, agentId } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `fail ${modelProvider} with ${args.failureReason ?? "no reason"}`,
-        modelProvider,
+        model,
       });
       if (args.persistedModelProvider !== undefined) {
         await setRunModelProviderStateFixture(
@@ -15319,17 +14371,32 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     async (cliAgentType) => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
-      const { actor, agentId } = await entitledRunActor();
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
       const modelProvider =
         cliAgentType === "codex" ? "openai-api-key" : "anthropic-api-key";
-      await api.createOrgModelProvider(actor, {
+      const { providerId } = await api.createOrgModelProvider(actor, {
         type: modelProvider,
         secret: `bdd-${cliAgentType}-key`,
       });
-      const run = await api.createRun(actor, {
+      // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
+      const model =
+        cliAgentType === "codex" ? "gpt-6-astra" : NATIVE_RUNNER_ROUTE.model;
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          preferred: true,
+          defaultProviderType: modelProvider,
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `complete with ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const claim = await api.claimRunnerJob(run.runId);
       expect(claim.cliAgentType).toBe(cliAgentType);
@@ -15365,7 +14432,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       expect(settled.status).toBe("completed");
       expect(settled.result).toMatchObject({
         checkpointId: expect.any(String),
-        agentSessionId: run.sessionId,
+        agentSessionId: expect.any(String),
         conversationId: expect.any(String),
       });
       await expect(
@@ -15424,11 +14491,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       expect(stillSettled.result).toStrictEqual(settled.result);
       expect(stillSettled.error ?? null).toBeNull();
 
-      const continued = await api.createRun(actor, {
+      const continued = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume combined ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       expect(continuedClaim.resumeSession).toMatchObject({
@@ -15455,6 +14522,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         [200],
       );
 
+      // The continuation completes in the same Agent session.
+      expect(
+        (await api.readRun(actor, continued.runId)).result?.agentSessionId,
+      ).toBe(settled.result?.agentSessionId);
+
       const repeatedAfterSuccessor = await webhooks.requestAgentComplete(
         body,
         sandboxHeaders,
@@ -15462,11 +14534,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       );
       expect(repeatedAfterSuccessor.body).toStrictEqual(completed.body);
 
-      const afterRetry = await api.createRun(actor, {
+      const afterRetry = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume successor ${cliAgentType} checkpoint`,
-        modelProvider,
+        model,
       });
       const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
       expect(afterRetryClaim.resumeSession).toMatchObject({
@@ -15482,11 +14554,13 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     async (ordering) => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
-      const { actor, agentId } = await entitledRunActor();
-      const run = await api.createRun(actor, {
+      const { actor, agentId } = await entitledRunActor(
+        {},
+        NATIVE_RUNNER_ROUTE,
+      );
+      const run = await api.createThreadRun(actor, {
         agentId,
         prompt: `recover a ${ordering} failure`,
-        modelProvider: "anthropic-api-key",
       });
       const claim = await api.claimRunnerJob(run.runId);
       const history = `bdd ${ordering} recovery history ${run.runId}`;
@@ -15539,11 +14613,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         ordering === "runner-first" ? "provider_overloaded" : "usage_limit",
       );
 
-      const continued = await api.createRun(actor, {
+      const continued = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume ${ordering} recovery`,
-        modelProvider: "anthropic-api-key",
       });
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       expect(continuedClaim.resumeSession).toMatchObject({
@@ -15582,11 +14655,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         ordering === "runner-first" ? "provider_overloaded" : "usage_limit",
       );
 
-      const afterRetry = await api.createRun(actor, {
+      const afterRetry = await api.createThreadRun(actor, {
         agentId,
-        sessionId: run.sessionId,
+        threadId: run.threadId,
         prompt: `resume the ${ordering} successor`,
-        modelProvider: "anthropic-api-key",
       });
       const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
       expect(afterRetryClaim.resumeSession).toMatchObject({
@@ -15601,10 +14673,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "preserve a reasonless first failure",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -15642,10 +14713,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "preserve a future failure reason",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -15693,10 +14763,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const syntheticFailure = await api.createRun(actor, {
+    const syntheticFailure = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete successfully without a checkpoint",
-      modelProvider: "anthropic-api-key",
     });
     const syntheticClaim = await api.claimRunnerJob(syntheticFailure.runId);
     await webhooks.requestAgentComplete(
@@ -15715,10 +14784,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       readRunFailureReasonFixture(context, syntheticFailure.runId),
     ).resolves.toBeNull();
 
-    const cancelled = await api.createRun(actor, {
+    const cancelled = await api.createThreadRun(actor, {
       agentId,
       prompt: "ignore a late classified failure",
-      modelProvider: "anthropic-api-key",
     });
     const cancelledClaim = await api.claimRunnerJob(cancelled.runId);
     await api.requestCancelRun(actor, cancelled.runId, [200]);
@@ -15742,11 +14810,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("preserves generic cancellation recovery in a combined request", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before combined recovery",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const history = `bdd cancellation recovery ${run.runId}`;
@@ -15774,11 +14841,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       status: "cancelled",
     });
 
-    const continued = await api.createRun(actor, {
+    const continued = await api.createThreadRun(actor, {
       agentId,
-      sessionId: run.sessionId,
+      threadId: run.threadId,
       prompt: "resume cancellation recovery",
-      modelProvider: "anthropic-api-key",
     });
     const continuedClaim = await api.claimRunnerJob(continued.runId);
     expect(continuedClaim.resumeSession).toMatchObject({
@@ -15792,10 +14858,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "time out before combined completion",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const historyHash = createHash("sha256")
@@ -15850,10 +14915,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       clearMockNow();
     });
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "time out after the runner execution budget",
-      modelProvider: "anthropic-api-key",
     });
     const claim = await api.claimRunnerJob(run.runId);
     const sandboxHeaders = {
@@ -15907,12 +14971,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("continues from a recovery checkpoint posted after timeout completion", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const source = await api.createRun(actor, {
+    const source = await api.createThreadRun(actor, {
       agentId,
       prompt: "run until the execution deadline",
-      modelProvider: "anthropic-api-key",
     });
     const sourceClaim = await api.claimRunnerJob(source.runId);
     const history = `bdd timeout recovery history ${source.runId}`;
@@ -15949,11 +15012,10 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       [200],
     );
 
-    const continued = await api.createRun(actor, {
+    const continued = await api.createThreadRun(actor, {
       agentId,
-      sessionId: source.sessionId,
+      threadId: source.threadId,
       prompt: "continue after the execution deadline",
-      modelProvider: "anthropic-api-key",
     });
     const continuedClaim = await api.claimRunnerJob(continued.runId);
     expect(continuedClaim.resumeSession).toMatchObject({
@@ -15973,10 +15035,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "complete without a checkpoint",
-      modelProvider: "anthropic-api-key",
     });
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
@@ -16018,10 +15079,9 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "cancel before the completion report",
-      modelProvider: "anthropic-api-key",
     });
     await api.requestCancelRun(actor, run.runId, [200]);
 
@@ -16070,12 +15130,11 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
   it("keeps a cancelled run settled when its checkpointed completion arrives late", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
+    const { actor, agentId } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
-    const run = await api.createRun(actor, {
+    const run = await api.createThreadRun(actor, {
       agentId,
       prompt: "checkpoint, cancel, then complete",
-      modelProvider: "anthropic-api-key",
     });
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
@@ -16109,7 +15168,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("checkpoints direct compose runs without vars", async () => {
+  it("rejects a standalone checkpoint while pending and checkpoints on completion", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -16120,20 +15179,13 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
 
-    // Direct compose runs created without vars leave the stored vars null,
-    // and their agent-run rows carry no model provider or pinned model.
-    const composeName = `bdd-null-vars-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
+    await api.ensureOrgModelProvider(actor, NATIVE_RUNNER_ROUTE);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "BDD checkpoint agent",
+      visibility: "private",
     });
-    const run = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
       prompt: "checkpoint without vars",
     });
     const sandboxHeaders = {

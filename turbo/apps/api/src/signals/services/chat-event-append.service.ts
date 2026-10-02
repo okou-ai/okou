@@ -18,7 +18,7 @@ export type PreparedChatEventRow = Omit<
   readonly contextType?: string | null;
 };
 
-const resultSchema = z.object({
+export const chatEventAppendResultSchema = z.object({
   id: z.string().uuid(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   seqId: pgInt8ToSafeIntegerSchema,
@@ -43,14 +43,10 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * Sorted reservations establish a common lock order. Intentional conflicts consume
  * positions; a SQL error rolls allocation back together with the insert.
  */
-export async function appendCanonicalChatEvents(
-  db: ApiDb | Tx,
+export function appendCanonicalChatEventsSql(
   values: readonly PreparedChatEventRow[],
   conflict: ChatEventAppendConflict,
-) {
-  if (values.length === 0) {
-    return [];
-  }
+): SQL {
   const input = JSON.stringify(
     values.map((value, ordinal) => {
       return {
@@ -60,9 +56,7 @@ export async function appendCanonicalChatEvents(
       };
     }),
   );
-  const rows = await executeRawRows(
-    db,
-    sql`
+  return sql`
     WITH input AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
         id uuid, "chatThreadId" uuid, "runId" uuid, "revokesEventId" uuid,
@@ -105,8 +99,20 @@ export async function appendCanonicalChatEvents(
     SELECT inserted.id, inserted.created_at::text AS "createdAt",
       inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
     FROM inserted
-  `,
-    resultSchema,
+  `;
+}
+
+export async function appendCanonicalChatEvents(
+  db: ApiDb | Tx,
+  values: readonly PreparedChatEventRow[],
+  conflict: ChatEventAppendConflict,
+) {
+  if (values.length === 0) {
+    return [];
+  }
+  return await executeRawRows(
+    db,
+    appendCanonicalChatEventsSql(values, conflict),
+    chatEventAppendResultSchema,
   );
-  return rows;
 }

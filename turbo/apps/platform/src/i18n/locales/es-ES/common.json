@@ -4790,7 +4790,6 @@
         },
         "model": {
           "autoDescription": "Okou elige el modelo para cada tarea.",
-          "autoLabel": "Selección automática",
           "description": "Elige qué modelos de IA utilizarán tu espacio de trabajo y tus ejecuciones.",
           "title": "Modelos"
         },
@@ -4979,17 +4978,23 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Activa",
         "addAccount": "Añadir cuenta",
+        "autoDescription": "Conecta tu cuenta de Claude o ChatGPT para usar más modelos.",
+        "autoTitle": "Usa más modelos",
         "claudeDescription": "Inicia sesión con tu suscripción a Claude para usar modelos Claude con agentes basados en Claude Code.",
         "claudeTitle": "Claude",
         "codexDescription": "Conecta tu cuenta de ChatGPT para usar modelos GPT.",
         "codexTitle": "ChatGPT (Codex)",
+        "connectAccount": "Conectar cuenta",
         "description": "Solo se usa en tus ejecuciones y con tus propias credenciales.",
         "disconnectAccount": "Desconectar cuenta",
         "disconnectDescription": "Esto elimina la cuenta de Okou. No cancelará tu suscripción con el proveedor.",
         "disconnecting": "Desconectando…",
         "disconnectTitle": "¿Desconectar {{account}}?",
+        "loadError": "No se pudieron cargar tus cuentas.",
+        "loadingAccounts": "Cargando cuentas…",
         "noAccounts": "No hay cuentas conectadas.",
         "reconnectAccount": "Volver a conectar",
+        "retry": "Reintentar",
         "sectionTitle": "Personal",
         "status": {
           "connected": "Conectado",
@@ -4999,7 +5004,6 @@
           "stale": "Atención",
           "week": "Semana"
         },
-        "subscriptionsSectionTitle": "Suscripciones de modelos personales",
         "useAccount": "Usar"
       },
       "picker": {

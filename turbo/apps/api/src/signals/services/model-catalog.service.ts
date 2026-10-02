@@ -3,11 +3,15 @@ import {
   getBuiltInRouteProviderVendor,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
+  type ModelProviderType,
+  getFrameworkForType,
+  MODEL_PROVIDER_TYPES,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import type { ReadonlyDb } from "../external/db";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
@@ -478,4 +482,28 @@ export async function loadSystemDefaultRunModel(
   db: ReadonlyDb,
 ): Promise<string> {
   return (await loadModelCatalog(db)).systemDefaultModel;
+}
+
+export function frameworkForProviderSelection(
+  catalog: ModelCatalog,
+  providerType: ModelProviderType,
+  selectedModel: string | null | undefined,
+): SupportedFramework | null {
+  if (!isBuiltInModelProviderType(providerType)) {
+    return getFrameworkForType(providerType);
+  }
+  // The Built-in framework follows the primary catalog candidate's concrete
+  // provider protocol.
+  const [primary] = catalogBuiltInCandidates(
+    catalog,
+    selectedModel ?? catalog.systemDefaultModel,
+  );
+  const concrete = primary?.concreteProviderType;
+  return concrete !== undefined && isModelProviderType(concrete)
+    ? getFrameworkForType(concrete)
+    : null;
+}
+
+function isModelProviderType(type: string): type is ModelProviderType {
+  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }

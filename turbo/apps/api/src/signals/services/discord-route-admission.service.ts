@@ -1,8 +1,9 @@
-import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
+import { command } from "ccstate";
+import { and, eq, isNull, or } from "drizzle-orm";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 
 import {
   discordMessageCreateSchema,
@@ -19,7 +20,7 @@ import {
 } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
-  ensureCanonicalDiscordChatThreadRoute,
+  ensureCanonicalDiscordChatThreadRoute$,
   findDiscordChatThreadRoute,
   refreshDiscordDirectMessageRouteDestination,
   type DiscordChatThreadRouteBinding,
@@ -329,13 +330,24 @@ const createDiscordAdmissionRoute$ = command(
       signal.throwIfAborted();
       return undefined;
     }
-    const route = await ensureCanonicalDiscordChatThreadRoute(db, {
-      ...routeKey,
-      orgId: binding.orgId,
-      agentId: agent.id,
-      currentTime: context.ingress.createdAt,
-      ...context.claim,
-    });
+    const route = await set(
+      ensureCanonicalDiscordChatThreadRoute$,
+      {
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          binding.orgId,
+          binding.userId,
+          undefined,
+          undefined,
+        ),
+        ...routeKey,
+        orgId: binding.orgId,
+        agentId: agent.id,
+        currentTime: context.ingress.createdAt,
+        ...context.claim,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return route;
   },

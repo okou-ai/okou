@@ -1,5 +1,5 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { delay } from "signal-timers";
+import { debounceCommand } from "../command-scheduling.ts";
 import {
   connectorAccountTargetKey,
   connectorAccountsContract,
@@ -10,7 +10,7 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { onRejection } from "../utils.ts";
+import { onRejection, resetSignal } from "../utils.ts";
 import {
   connectorOverview$,
   invalidateConnectorOverview$,
@@ -188,6 +188,15 @@ interface ConnectorAccountQuery {
 function createConnectorAccountQuerySignals() {
   const query$ = state<ConnectorAccountQuery | null>(null);
   const search$ = state("");
+  const debouncedSearch$ = state(Promise.resolve(""));
+  const resetSearchDebounceSignal$ = resetSignal();
+  const readSearch$ = command(({ get }, _signal: AbortSignal) => {
+    return get(search$);
+  });
+  const debounceSearch$ = debounceCommand(
+    readSearch$,
+    CONNECTOR_ACCOUNT_SEARCH_DEBOUNCE_MS,
+  );
   const lastPage$ = state<Computed<Promise<ConnectorAccountList>> | null>(null);
   const setTarget$ = command(
     ({ get, set }, target: ConnectorAccountTarget, _signal: AbortSignal) => {
@@ -199,8 +208,10 @@ function createConnectorAccountQuerySignals() {
       ) {
         return;
       }
+      set(resetSearchDebounceSignal$);
       set(search$, "");
       set(lastPage$, null);
+      set(debouncedSearch$, Promise.resolve(""));
       set(query$, {
         target,
         search: "",
@@ -209,12 +220,14 @@ function createConnectorAccountQuerySignals() {
     },
   );
   const clearTarget$ = command(({ set }) => {
+    set(resetSearchDebounceSignal$);
+    set(debouncedSearch$, Promise.resolve(""));
     set(query$, null);
     set(search$, "");
     set(lastPage$, null);
   });
   const setSearch$ = command(
-    ({ get, set }, search: string, _signal: AbortSignal) => {
+    ({ get, set }, search: string, signal: AbortSignal) => {
       const normalized = search.trimStart();
       if (get(search$) === normalized) {
         return;
@@ -225,6 +238,13 @@ function createConnectorAccountQuerySignals() {
         return;
       }
       set(lastPage$, null);
+      if (normalized.length > 0) {
+        const searchSignal = set(resetSearchDebounceSignal$, signal);
+        set(debouncedSearch$, set(debounceSearch$, searchSignal));
+      } else {
+        set(resetSearchDebounceSignal$);
+        set(debouncedSearch$, Promise.resolve(""));
+      }
       set(query$, {
         target: current.target,
         search: normalized,
@@ -233,9 +253,13 @@ function createConnectorAccountQuerySignals() {
     },
   );
   const resetSearch$ = command(({ set }) => {
+    set(resetSearchDebounceSignal$);
+    set(debouncedSearch$, Promise.resolve(""));
     set(search$, "");
   });
   const reload$ = command(({ get, set }, _signal: AbortSignal) => {
+    set(resetSearchDebounceSignal$);
+    set(debouncedSearch$, Promise.resolve(""));
     const current = get(query$);
     if (!current) {
       return;
@@ -252,6 +276,9 @@ function createConnectorAccountQuerySignals() {
     lastPage$,
     search$: computed((get) => {
       return get(search$);
+    }),
+    debouncedSearch$: computed((get) => {
+      return get(debouncedSearch$);
     }),
     setTarget$,
     clearTarget$,
@@ -273,8 +300,11 @@ export function createConnectorAccountListSignals(
       return emptyConnectorAccountPage();
     }
     if (query.debounce) {
-      await delay(CONNECTOR_ACCOUNT_SEARCH_DEBOUNCE_MS);
-      if (get(querySignals.query$) !== query) {
+      const debouncedSearch = await get(querySignals.debouncedSearch$);
+      if (
+        get(querySignals.query$) !== query ||
+        debouncedSearch !== query.search
+      ) {
         return emptyConnectorAccountPage();
       }
     }

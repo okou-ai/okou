@@ -6,17 +6,12 @@ import {
   type MorningBriefExecutionTarget,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
-import {
-  loadMorningBriefMigrationState,
-  type MorningBriefMigrationState,
-  type MorningBriefStateReader,
-} from "./morning-brief-migration-state.service";
 import { calculateNextRun } from "./time-automation";
 
 /**
@@ -26,13 +21,9 @@ import { calculateNextRun } from "./time-automation";
  * [native scheduling](../../../../../../docs/morning-brief-native-scheduling.md).
  * Two of them are load-bearing everywhere else:
  *
- * - **Lock order.** A writer that touches both the legacy automation and this
- *   row takes the member's Morning Brief preference/admission lock first when
- *   applicable, then the owner key while this row is still absent, then this
- *   row's `FOR UPDATE`, the selected legacy automation, its S7a
- *   claim/Run/callback rows, and finally any native occurrence row. Nothing
- *   else is allowed, so Settings, reconciliation, deletion and cron writers
- *   cannot deadlock against each other.
+ * - **No configuration coordination.** Preference and first-materialization
+ *   races may fail or temporarily use an earlier configuration; a later save
+ *   or scheduled task recovers. Existing owner/occurrence uniqueness remains.
  * - **Fresh predicates.** Every mutation revalidates the epoch and phase it
  *   read before it commits. External preflight (Clerk, provider, Slack) happens
  *   outside the transaction, and the transaction re-reads what it depends on.
@@ -57,25 +48,7 @@ type MorningBriefNativeWriter = Tx;
  */
 const NATIVE_DRAIN_REPORT_AFTER_MS = 60 * 60 * 1000;
 
-/** The materialization refused, with the reason a caller can act on. */
-type MorningBriefMaterializationRefusal =
-  | "not-installed"
-  | "installation-pending"
-  | "installation-inconsistent"
-  | "missing-timezone"
-  | "missing-membership";
-
-type MorningBriefMaterializationResult =
-  | {
-      readonly kind: "materialized";
-      readonly row: MorningBriefNativeScheduleRow;
-    }
-  | {
-      readonly kind: "refused";
-      readonly reason: MorningBriefMaterializationRefusal;
-    };
-
-function scheduleWhere(owner: MorningBriefMemberIdentity) {
+export function morningBriefScheduleWhere(owner: MorningBriefMemberIdentity) {
   return and(
     eq(morningBriefNativeSchedules.orgId, owner.orgId),
     eq(morningBriefNativeSchedules.userId, owner.userId),
@@ -83,7 +56,7 @@ function scheduleWhere(owner: MorningBriefMemberIdentity) {
 }
 
 /**
- * Take the row lock in the documented order.
+ * Read the native row without acquiring a lock.
  *
  * Returns `undefined` when the member has no native row yet, which is the
  * normal pre-materialization state rather than an error.
@@ -95,57 +68,89 @@ export async function lockMorningBriefNativeSchedule(
   const [row] = await tx
     .select()
     .from(morningBriefNativeSchedules)
-    .where(scheduleWhere(owner))
-    .limit(1)
-    .for("update");
+    .where(morningBriefScheduleWhere(owner))
+    .limit(1);
   return row;
-}
-
-/**
- * Serialize this owner's Morning Brief writers while no durable row exists.
- *
- * `SELECT ... FOR UPDATE` locks rows, so it cannot fence an owner key that has
- * no row yet: reading the absence inside a transaction is not a lock on it.
- * First materialization would otherwise publish a legacy snapshot it sampled
- * without holding anything, while a selected legacy writer that classified the
- * same absent key as `ordinary` mutated the automation and skipped the durable
- * mirror it now owes. This transaction-scoped advisory lock is that missing
- * boundary.
- *
- * It sits between the member preference/admission lock and the durable schedule
- * row in the documented order, and is taken only while the row is absent, so a
- * materialized owner keeps its existing row-lock fence and pays nothing.
- */
-async function lockAbsentMorningBriefOwnerKey(
-  tx: Pick<Tx, "execute">,
-  owner: MorningBriefMemberIdentity,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended('morning-brief-native-owner:' || ${owner.orgId}::text || ':' || ${owner.userId}::text, 0))`,
-  );
 }
 
 /**
  * Take durable authority over this owner, including before its first row.
  *
- * Every writer that decides what the member's selected legacy automation may do
- * enters here, so first materialization and that decision share one real
- * database boundary. A writer that finds no row waits on the owner key and then
- * re-reads it: it either observes the first row that committed while it waited
- * and continues under it, or it holds the key and no first row can appear until
- * it commits.
+ * Read the current row once, including the normal absent-row state. The
+ * historical helper name no longer implies a lock or first-row fence.
  */
 export async function lockMorningBriefNativeScheduleForWrite(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefNativeScheduleRow | undefined> {
-  const existing = await lockMorningBriefNativeSchedule(tx, owner);
-  if (existing !== undefined) {
-    return existing;
-  }
-  await lockAbsentMorningBriefOwnerKey(tx, owner);
   return await lockMorningBriefNativeSchedule(tx, owner);
+}
+
+/** A native row together with the exact row version it was read at. */
+export interface MorningBriefNativeScheduleSnapshot {
+  readonly row: MorningBriefNativeScheduleRow;
+}
+
+async function readMorningBriefNativeScheduleSnapshot(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+): Promise<MorningBriefNativeScheduleSnapshot | undefined> {
+  const [snapshot] = await tx
+    .select({
+      row: morningBriefNativeSchedules,
+    })
+    .from(morningBriefNativeSchedules)
+    .where(morningBriefScheduleWhere(owner))
+    .limit(1);
+  return snapshot;
+}
+
+/**
+ * Read durable authority for a writer that commits with a conditional UPDATE.
+ *
+ * No row lock, version CAS or absent-owner key is taken. Low-frequency
+ * configuration can recover through another save or the next scheduled task.
+ */
+export async function readMorningBriefNativeScheduleForWrite(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+): Promise<MorningBriefNativeScheduleSnapshot | undefined> {
+  return await readMorningBriefNativeScheduleSnapshot(tx, owner);
+}
+
+/**
+ * A conditional Morning Brief write lost to a concurrent commit.
+ *
+ * Thrown inside the writer's transaction so every write it already made rolls
+ * back; {@link commitMorningBriefSnapshotOnce} turns it into a `changed`
+ * result that the caller maps to its deterministic conflict outcome.
+ */
+export class MorningBriefSnapshotChanged extends Error {}
+
+export type MorningBriefSnapshotCommit<T> =
+  | { readonly kind: "committed"; readonly value: T }
+  | { readonly kind: "changed" };
+
+/**
+ * Run one read-compute-conditional-write transaction exactly once.
+ *
+ * A lost race is a result, never a retry: the transaction rolled back and the
+ * caller returns its own deterministic conflict/deferral outcome. The winner's
+ * commit is the current state; nothing here re-reads it.
+ */
+export async function commitMorningBriefSnapshotOnce<T>(
+  attempt: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<MorningBriefSnapshotCommit<T>> {
+  signal?.throwIfAborted();
+  const result = await settle(attempt(), signal);
+  if (result.ok) {
+    return { kind: "committed", value: result.value };
+  }
+  if (result.error instanceof MorningBriefSnapshotChanged) {
+    return { kind: "changed" };
+  }
+  throw result.error;
 }
 
 /** The selected legacy row a reconciliation, claim or callback may mutate. */
@@ -270,6 +275,15 @@ export async function lockMorningBriefLegacyWriterAuthority(
   expected?: MorningBriefLegacyWriterFence,
 ): Promise<MorningBriefLegacyWriterAuthority> {
   const row = await lockMorningBriefNativeScheduleForWrite(tx, lineage);
+  return morningBriefLegacyWriterAuthorityFromRow(row, lineage, expected);
+}
+
+/** Classify an already-locked row without carrying its database handle. */
+export function morningBriefLegacyWriterAuthorityFromRow(
+  row: MorningBriefNativeScheduleRow | undefined,
+  lineage: MorningBriefLegacyLineage,
+  expected?: MorningBriefLegacyWriterFence,
+): MorningBriefLegacyWriterAuthority {
   const current = legacyWriterFence(row, lineage);
   if (expected !== undefined && !sameLegacyWriterFence(expected, current)) {
     return { kind: "stale" };
@@ -318,189 +332,6 @@ function computeNativeNextRunAt(args: {
   return calculateNextRun(args.cronExpression, args.timezone, args.from);
 }
 
-async function replaceMorningBriefMembershipGeneration(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
-  existing: MorningBriefNativeScheduleRow,
-  args: {
-    readonly membershipId: string;
-    readonly at: Date;
-    readonly installed: Extract<
-      MorningBriefMigrationState,
-      { kind: "installed" }
-    >;
-  },
-): Promise<MorningBriefMaterializationResult> {
-  // A remove/rejoin creates a new immutable Clerk membership id. Replace the
-  // whole owner generation under the schedule lock: old work becomes terminal.
-  await tx
-    .update(morningBriefNativeOccurrences)
-    .set({
-      state: "settled",
-      outcome: "revoked",
-      settledAt: args.at,
-      leaseToken: null,
-      leaseExpiresAt: null,
-      deferredUntil: null,
-      deliveryPending: false,
-      updatedAt: args.at,
-    })
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-        eq(morningBriefNativeOccurrences.userId, owner.userId),
-        eq(morningBriefNativeOccurrences.membershipId, existing.membershipId),
-        isNull(morningBriefNativeOccurrences.settledAt),
-      ),
-    );
-  const nextRunAt = computeNativeNextRunAt({
-    enabled: args.installed.automation.enabled,
-    cronExpression: args.installed.automation.cronExpression,
-    timezone: args.installed.automation.timezone,
-    from: args.at,
-  });
-  await restoreLegacyMorningBriefObligation(
-    tx,
-    args.installed.automation.id,
-    nextRunAt,
-  );
-  const [replaced] = await tx
-    .update(morningBriefNativeSchedules)
-    .set({
-      enabled: args.installed.automation.enabled,
-      cronExpression: args.installed.automation.cronExpression,
-      timezone: args.installed.automation.timezone,
-      nextRunAt,
-      scheduleOwner: nextRunAt === null ? null : "legacy",
-      phase: "legacy",
-      target: "legacy",
-      ownerEpoch: existing.ownerEpoch + 1,
-      membershipId: args.membershipId,
-      agentId: args.installed.installation.agentId,
-      chatThreadId: args.installed.chatThreadId,
-      legacyWorkflowId: args.installed.installation.id,
-      legacyAutomationId: args.installed.automation.id,
-      materializedAt: args.at,
-      drainingEpoch: null,
-      drainDeadlineAt: null,
-      drainUnresolvedReason: null,
-      updatedAt: args.at,
-    })
-    .where(
-      and(
-        scheduleWhere(owner),
-        eq(morningBriefNativeSchedules.ownerEpoch, existing.ownerEpoch),
-        eq(morningBriefNativeSchedules.membershipId, existing.membershipId),
-      ),
-    )
-    .returning();
-  return replaced === undefined
-    ? { kind: "refused", reason: "not-installed" }
-    : { kind: "materialized", row: replaced };
-}
-
-/**
- * Materialize the durable native row from the member's installed legacy state.
- *
- * The authority is the selected installation and *its automation's* enabled
- * state and schedule — never enrollment completion, never the disposable S3a
- * projection, never a title match. Additional installations stay inventory and
- * are neither adopted nor mutated. A disabled installed choice materializes as
- * disabled, and a disabled row is never given a scheduling obligation.
- *
- * It is idempotent: an existing row is authority and is returned untouched, so
- * re-running the migration can never overwrite a choice made after cutover.
- *
- * The first row is sampled and inserted under the owner key, so the legacy
- * state it publishes is the one no selected writer may still be changing. An
- * owner that already has a row is fenced by that row instead and is not
- * resampled.
- */
-export async function materializeMorningBriefNativeSchedule(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
-  args: {
-    /** The membership generation the caller resolved from Clerk. */
-    readonly membershipId: string;
-    readonly at: Date;
-    readonly state?: MorningBriefMigrationState;
-  },
-): Promise<MorningBriefMaterializationResult> {
-  const { membershipId, at } = args;
-  const existing = await lockMorningBriefNativeScheduleForWrite(tx, owner);
-  if (existing?.membershipId === membershipId) {
-    return { kind: "materialized", row: existing };
-  }
-
-  const installed =
-    args.state ??
-    (await loadMorningBriefMigrationState(
-      tx as unknown as MorningBriefStateReader,
-      owner,
-    ));
-  if (installed.kind === "absent") {
-    return { kind: "refused", reason: "not-installed" };
-  }
-  if (installed.kind === "pending") {
-    return { kind: "refused", reason: "installation-pending" };
-  }
-  if (installed.kind === "inconsistent") {
-    return { kind: "refused", reason: "installation-inconsistent" };
-  }
-  if (!isValidTimeZone(installed.automation.timezone)) {
-    return { kind: "refused", reason: "missing-timezone" };
-  }
-
-  if (existing !== undefined) {
-    return await replaceMorningBriefMembershipGeneration(tx, owner, existing, {
-      membershipId,
-      at,
-      installed,
-    });
-  }
-
-  // The first row keeps the legacy owner: materialization is bootstrap, never
-  // a cutover. Only an explicit transition may move the schedule obligation.
-  const [row] = await tx
-    .insert(morningBriefNativeSchedules)
-    .values({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      enabled: installed.automation.enabled,
-      cronExpression: installed.automation.cronExpression,
-      timezone: installed.automation.timezone,
-      nextRunAt: installed.automation.enabled
-        ? installed.automation.nextRunAt
-        : null,
-      scheduleOwner:
-        installed.automation.enabled && installed.automation.nextRunAt !== null
-          ? "legacy"
-          : null,
-      phase: "legacy",
-      target: "legacy",
-      ownerEpoch: 1,
-      membershipId,
-      agentId: installed.installation.agentId,
-      chatThreadId: installed.chatThreadId,
-      legacyWorkflowId: installed.installation.id,
-      legacyAutomationId: installed.automation.id,
-      materializedAt: at,
-      updatedAt: at,
-    })
-    // The owner key already serialized this insert, so the clause is the
-    // table's own last-resort idempotency: any row that exists is authority and
-    // this one must not overwrite any of its fields.
-    .onConflictDoNothing()
-    .returning();
-  if (row !== undefined) {
-    return { kind: "materialized", row };
-  }
-  const raced = await lockMorningBriefNativeSchedule(tx, owner);
-  return raced === undefined
-    ? { kind: "refused", reason: "not-installed" }
-    : { kind: "materialized", row: raced };
-}
-
 /** What a logical-choice writer intends to change. */
 interface MorningBriefLogicalChoicePatch {
   readonly enabled?: boolean;
@@ -519,11 +350,6 @@ interface MorningBriefLogicalChoicePatch {
    */
   readonly expectedEpoch?: number;
 }
-
-export type MorningBriefChoiceApplication =
-  | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
-  | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
-  | { readonly kind: "absent" };
 
 interface MorningBriefReconciledAutomationState {
   readonly kind: string;
@@ -634,7 +460,7 @@ export async function prepareMorningBriefLegacyReconciliationMutation(
     .set({ ...schedulePatch, updatedAt: args.at })
     .where(
       and(
-        scheduleWhere(lineage),
+        morningBriefScheduleWhere(lineage),
         eq(morningBriefNativeSchedules.ownerEpoch, schedule.ownerEpoch),
         eq(morningBriefNativeSchedules.phase, schedule.phase),
         eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
@@ -656,115 +482,6 @@ export async function prepareMorningBriefLegacyReconciliationMutation(
 }
 
 /**
- * Consume the durable legacy obligation with the exact S7a claim transaction.
- */
-export async function consumeSelectedLegacyMorningBriefObligation(
-  tx: MorningBriefNativeWriter,
-  lineage: MorningBriefLegacyLineage,
-  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
-  args: { readonly occurrenceAt: Date; readonly claimedAt: Date },
-): Promise<boolean> {
-  if (authority.kind === "ordinary") {
-    return true;
-  }
-  if (
-    authority.row.phase !== "legacy" ||
-    !authority.row.enabled ||
-    authority.row.scheduleOwner !== "legacy" ||
-    authority.row.nextRunAt?.getTime() !== args.occurrenceAt.getTime()
-  ) {
-    return false;
-  }
-  const [consumed] = await tx
-    .update(morningBriefNativeSchedules)
-    .set({
-      nextRunAt: null,
-      scheduleOwner: null,
-      updatedAt: args.claimedAt,
-    })
-    .where(
-      and(
-        scheduleWhere(lineage),
-        eq(morningBriefNativeSchedules.ownerEpoch, authority.row.ownerEpoch),
-        eq(morningBriefNativeSchedules.phase, "legacy"),
-        eq(morningBriefNativeSchedules.enabled, true),
-        eq(morningBriefNativeSchedules.scheduleOwner, "legacy"),
-        eq(morningBriefNativeSchedules.nextRunAt, args.occurrenceAt),
-        eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
-        eq(
-          morningBriefNativeSchedules.legacyAutomationId,
-          lineage.automationId,
-        ),
-      ),
-    )
-    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
-  return consumed !== undefined;
-}
-
-/**
- * Mirror a selected legacy settlement into durable choice and obligation.
- *
- * Callers invoke this only after the locked legacy row accepted the settlement.
- * Drain/native phases deliberately do nothing: their returning callback may
- * close its journal fact, but may not publish or pause either scheduler.
- */
-export async function settleSelectedLegacyMorningBriefObligation(
-  tx: MorningBriefNativeWriter,
-  lineage: MorningBriefLegacyLineage,
-  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
-  args: {
-    readonly enabled: boolean;
-    readonly cronExpression: string | null;
-    readonly timezone: string;
-    readonly nextRunAt: Date | null;
-    readonly at: Date;
-  },
-): Promise<boolean> {
-  if (authority.kind !== "selected" || authority.row.phase !== "legacy") {
-    return false;
-  }
-  const applied = await applyMorningBriefLogicalChoice(
-    tx,
-    lineage,
-    {
-      enabled: args.enabled,
-      cronExpression: args.cronExpression,
-      timezone: args.timezone,
-      expectedEpoch: authority.row.ownerEpoch,
-    },
-    args.at,
-  );
-  if (applied.kind !== "applied" || applied.row.phase !== "legacy") {
-    throw new Error("Morning Brief settlement authority changed");
-  }
-  const nextRunAt = args.enabled ? args.nextRunAt : null;
-  const [settled] = await tx
-    .update(morningBriefNativeSchedules)
-    .set({
-      nextRunAt,
-      scheduleOwner: nextRunAt === null ? null : "legacy",
-      updatedAt: args.at,
-    })
-    .where(
-      and(
-        scheduleWhere(lineage),
-        eq(morningBriefNativeSchedules.ownerEpoch, applied.row.ownerEpoch),
-        eq(morningBriefNativeSchedules.phase, "legacy"),
-        eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
-        eq(
-          morningBriefNativeSchedules.legacyAutomationId,
-          lineage.automationId,
-        ),
-      ),
-    )
-    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
-  if (settled === undefined) {
-    throw new Error("Morning Brief settlement obligation changed");
-  }
-  return true;
-}
-
-/**
  * Apply a logical Settings-level change coherently.
  *
  * The contract this encodes:
@@ -781,23 +498,13 @@ export async function settleSelectedLegacyMorningBriefObligation(
  *   obligation or an admitted occurrence that owes its settlement. It is never
  *   left wedged at `next_run_at = NULL` with no owner.
  */
-export async function applyMorningBriefLogicalChoice(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
+export function morningBriefLogicalChoicePlan(
+  current: MorningBriefNativeScheduleRow,
   patch: MorningBriefLogicalChoicePatch,
+  inFlight: MorningBriefNativeOccurrenceRow | undefined,
+  legacyInFlight: boolean,
   at: Date,
-): Promise<MorningBriefChoiceApplication> {
-  const current = await lockMorningBriefNativeSchedule(tx, owner);
-  if (current === undefined) {
-    return { kind: "absent" };
-  }
-  if (
-    patch.expectedEpoch !== undefined &&
-    patch.expectedEpoch !== current.ownerEpoch
-  ) {
-    return { kind: "stale", row: current };
-  }
-
+) {
   const enabled = patch.enabled ?? current.enabled;
   const cronExpression =
     patch.cronExpression === undefined
@@ -812,12 +519,6 @@ export async function applyMorningBriefLogicalChoice(
     (patch.chatThreadId !== undefined &&
       patch.chatThreadId !== current.chatThreadId);
   const revokes = enabledChanged || destinationReplaced;
-
-  const inFlight = await loadUnsettledOccurrence(tx, owner);
-  const legacyInFlight =
-    current.phase === "legacy" && current.legacyAutomationId !== null
-      ? await hasCurrentUnsettledLegacyClaim(tx, current.legacyAutomationId)
-      : false;
 
   // Only an enabled-choice change or a destination replacement revokes. A
   // schedule or timezone edit is deliberately not a revocation.
@@ -834,9 +535,9 @@ export async function applyMorningBriefLogicalChoice(
     at,
   });
 
-  const [row] = await tx
-    .update(morningBriefNativeSchedules)
-    .set({
+  return {
+    revokes,
+    values: {
       enabled,
       cronExpression,
       timezone,
@@ -848,50 +549,14 @@ export async function applyMorningBriefLogicalChoice(
         : { chatThreadId: patch.chatThreadId }),
       ...(patch.agentId === undefined ? {} : { agentId: patch.agentId }),
       updatedAt: at,
-    })
-    .where(
-      and(
-        scheduleWhere(owner),
-        // The fresh predicate: a compensation that read an older epoch cannot
-        // restore that epoch's state over a newer writer.
-        eq(morningBriefNativeSchedules.ownerEpoch, current.ownerEpoch),
-      ),
-    )
-    .returning();
-  if (row !== undefined && revokes) {
-    // Disable/re-enable and destination replacement revoke the old occurrence
-    // immediately. A provider call that already escaped may still finish, but
-    // its pinned attempt remains only deduplication evidence: it cannot deliver,
-    // settle again or be resumed under the new epoch.
-    await tx
-      .update(morningBriefNativeOccurrences)
-      .set({
-        state: "settled",
-        outcome: "revoked",
-        settledAt: at,
-        leaseToken: null,
-        leaseExpiresAt: null,
-        deferredUntil: null,
-        deliveryPending: false,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-          eq(morningBriefNativeOccurrences.userId, owner.userId),
-          eq(morningBriefNativeOccurrences.ownerEpoch, current.ownerEpoch),
-          isNull(morningBriefNativeOccurrences.settledAt),
-        ),
-      );
-  }
-  return row === undefined ? { kind: "absent" } : { kind: "applied", row };
+    },
+  };
 }
 
 /**
  * Where the scheduling obligation stands after a logical-choice write.
  *
- * Split out of {@link applyMorningBriefLogicalChoice} so each branch is
- * readable on its own: a disabled choice owes nothing, a revocation restarts
+ * The pure choice planner keeps each branch readable: a disabled choice owes nothing, a revocation restarts
  * from now, an in-flight execution keeps the obligation it already holds, and a
  * future unconsumed slot is recomputed under the edited recurrence.
  */
@@ -1051,7 +716,7 @@ export async function revokeMorningBriefNativeAuthority(
     })
     .where(
       and(
-        scheduleWhere(owner),
+        morningBriefScheduleWhere(owner),
         eq(morningBriefNativeSchedules.ownerEpoch, current.ownerEpoch),
       ),
     )
@@ -1123,23 +788,5 @@ export async function lockMorningBriefNativeAgentAuthorities(
     .orderBy(
       morningBriefNativeSchedules.orgId,
       morningBriefNativeSchedules.userId,
-    )
-    .for("update");
-}
-
-/**
- * Hand a future obligation back to the legacy scheduler on rollback.
- *
- * It writes the same instant the native row records, so exactly one owner holds
- * the member's next occurrence after the transaction commits.
- */
-async function restoreLegacyMorningBriefObligation(
-  tx: MorningBriefNativeWriter,
-  automationId: string,
-  nextRunAt: Date | null,
-): Promise<void> {
-  await tx
-    .update(workflowAutomations)
-    .set({ nextRunAt })
-    .where(eq(workflowAutomations.id, automationId));
+    );
 }

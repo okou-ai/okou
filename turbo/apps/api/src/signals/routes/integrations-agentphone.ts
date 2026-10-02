@@ -1,9 +1,13 @@
+import { linkAgentPhoneIdentity$ } from "../services/agentphone-link.service";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
 import { agentphoneVerificationSendCooldowns } from "@okouai/db/schema/agentphone-verification-send-cooldown";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, gte, ilike, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -12,15 +16,16 @@ import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
-  consumeAgentPhoneConnectionCode,
-  createAgentPhoneConnectionCode,
+  consumeAgentPhoneConnectionCode$,
+  createAgentPhoneConnectionCode$,
   isAgentPhoneConnectionCodeMessage,
   type AgentPhoneConnectionCodeConsumeResult,
 } from "../services/agentphone-connection-code.service";
@@ -30,7 +35,6 @@ import {
   handleAgentPhoneMessage$,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
-  linkAgentPhoneUser,
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
   publishAgentPhoneUserLinked,
@@ -67,16 +71,26 @@ const agentPhoneAuthOptions = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
+const agentPhoneGroupHistoryAuthOptions = {
+  ...agentPhoneAuthOptions,
+  requiredCapability: "phone:read",
+} as const;
 
 const VERIFICATION_SEND_COOLDOWN_MS = 60_000;
 const log = logger("api:agentphone:link");
 
 const startLinkBody$ = bodyResultOf(integrationsAgentPhoneContract.startLink);
+const groupHistoryQuery$ = queryOf(integrationsAgentPhoneContract.groupHistory);
 const connectBody$ = bodyResultOf(
   integrationsAgentPhoneContract.connectAgentPhone,
 );
 
 const webhookBodySchema = z.record(z.string(), z.unknown());
+const groupHistoryCursorSchema = z.object({
+  groupId: z.string(),
+  receivedAt: z.iso.datetime(),
+  id: z.string().uuid(),
+});
 
 type VerificationSendCooldownScope = "phone" | "user_org";
 
@@ -280,11 +294,15 @@ const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
     return connectConflict("org-linked");
   }
 
-  const code = await createAgentPhoneConnectionCode(set(writeDb$), {
-    userId: auth.userId,
-    orgId: auth.orgId,
-    secret: env("SECRETS_ENCRYPTION_KEY"),
-  });
+  const code = await set(
+    createAgentPhoneConnectionCode$,
+    {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      secret: env("SECRETS_ENCRYPTION_KEY"),
+    },
+    signal,
+  );
   signal.throwIfAborted();
 
   return {
@@ -595,8 +613,12 @@ const connectAgentPhone$ = command(
     }
 
     const body = bodyResult.data;
-    const channel: AgentPhoneChannel =
-      body.channel && isAgentPhoneChannel(body.channel) ? body.channel : "sms";
+    const channel = body.channel ?? "sms";
+    if (!isAgentPhoneChannel(channel)) {
+      return badRequestMessage(
+        "Invalid or expired connection link. Send /connect again.",
+      );
+    }
     const phoneHandle = normalizeAgentPhoneHandle(body.phoneHandle, channel);
     if (
       !phoneHandle ||
@@ -614,18 +636,21 @@ const connectAgentPhone$ = command(
       );
     }
 
-    const result = await set(writeDb$).transaction((tx) => {
-      return linkAgentPhoneUser(tx, {
+    const result = await set(
+      linkAgentPhoneIdentity$,
+      {
         phoneHandle,
         channel,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      });
-    });
+        source: { kind: "direct", userId: auth.userId, orgId: auth.orgId },
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
-    if (!result.ok) {
-      return connectConflict(result.reason);
+    if (result.kind !== "linked") {
+      return connectConflict(
+        result.kind === "conflict" ? result.reason : "conflict",
+      );
     }
 
     await publishAgentPhoneUserLinked(auth.userId);
@@ -733,11 +758,8 @@ function arrayValue(source: Record<string, unknown>, keys: readonly string[]) {
 }
 
 function parseDate(value: unknown): Date | null {
-  if (typeof value !== "string" || !value.trim()) {
-    return null;
-  }
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const parsed = z.iso.datetime().safeParse(value);
+  return parsed.success ? new Date(parsed.data) : null;
 }
 
 function mentionMatchesAgentPhoneHandle(value: unknown): boolean {
@@ -759,20 +781,29 @@ function extractAgentPhoneIsGroup(
   body: Record<string, unknown>,
   data: Record<string, unknown>,
 ): boolean {
-  const group = valueObject(data.group);
+  const groupMarkers = [
+    "group",
+    "groupId",
+    "group_id",
+    "senderIdentifier",
+    "sender_identifier",
+  ];
   if (
-    data.group !== null &&
-    typeof data.group === "object" &&
-    !Array.isArray(data.group)
+    groupMarkers.some((key) => {
+      return Object.prototype.hasOwnProperty.call(data, key);
+    }) ||
+    groupMarkers.some((key) => {
+      return Object.prototype.hasOwnProperty.call(body, key);
+    })
   ) {
     return true;
   }
+
   const explicit =
-    booleanValue(group, ["isGroup", "is_group"]) ??
     booleanValue(data, ["isGroup", "is_group", "group"]) ??
     booleanValue(body, ["isGroup", "is_group", "group"]);
-  if (explicit !== undefined) {
-    return explicit;
+  if (explicit === true) {
+    return true;
   }
 
   const type = (
@@ -790,6 +821,19 @@ function extractAgentPhoneIsGroup(
     arrayValue(body, ["participants", "participantNumbers", "recipients"])
       .length > 2
   );
+}
+
+function extractAgentPhoneParticipants(
+  data: Record<string, unknown>,
+): readonly string[] {
+  const participants = arrayValue(valueObject(data.group), ["participants"])
+    .map((participant) => {
+      return stringValue(valueObject(participant), ["identifier"]);
+    })
+    .filter((participant): participant is string => {
+      return Boolean(participant?.trim());
+    });
+  return [...new Set(participants)];
 }
 
 function extractAgentPhoneMentioned(
@@ -867,42 +911,60 @@ function extractAgentPhoneRecentHistory(
     });
 }
 
+function extractAgentPhoneMessageFields(
+  body: Record<string, unknown>,
+  data: Record<string, unknown>,
+) {
+  const isGroup = extractAgentPhoneIsGroup(body, data);
+  const messageId = stringValue(data, ["id"]);
+  const agentphoneAgentId = stringValue(body, ["agentId"]);
+  const senderIdentifier = stringValue(data, ["senderIdentifier"]);
+  const fromNumber = isGroup ? senderIdentifier : stringValue(data, ["from"]);
+  const toNumber = stringValue(data, ["to"]);
+  const messageBody = stringValue(data, ["message"]) ?? "";
+
+  return {
+    messageId,
+    agentphoneAgentId,
+    isGroup,
+    senderIdentifier,
+    fromNumber,
+    toNumber,
+    messageBody,
+  };
+}
+
 function extractAgentPhoneEvent(
   body: Record<string, unknown>,
   webhookId: string | null,
   channel: AgentPhoneChannel,
 ): AgentPhoneMessageEvent | null {
   const data = valueObject(body.data);
-  const messageId =
-    stringValue(data, ["messageId", "id"]) ??
-    stringValue(body, ["messageId", "id"]) ??
-    webhookId;
-  const agentphoneAgentId =
-    stringValue(body, ["agentId", "agent_id"]) ??
-    stringValue(data, ["agentId", "agent_id"]);
-  const fromNumber = stringValue(data, ["from", "fromNumber", "from_number"]);
-  const toNumber = stringValue(data, ["to", "toNumber", "to_number"]);
-  const messageBody =
-    stringValue(data, ["message", "body", "text"]) ??
-    stringValue(body, ["message", "body", "text"]) ??
-    "";
-  const mediaUrl =
-    stringValue(data, ["mediaUrl", "media_url"]) ??
-    stringValue(body, ["mediaUrl", "media_url"]) ??
-    null;
-  const conversationId =
-    stringValue(data, ["conversationId", "conversation_id"]) ??
-    stringValue(body, ["conversationId", "conversation_id"]) ??
-    null;
-  const groupId =
-    stringValue(valueObject(data.group), ["groupId", "group_id"]) ??
-    stringValue(data, ["groupId", "group_id"]) ??
-    null;
-  const isGroup = extractAgentPhoneIsGroup(body, data);
+  const fields = extractAgentPhoneMessageFields(body, data);
+  const { messageId, agentphoneAgentId, fromNumber, toNumber, messageBody } =
+    fields;
+  const group = valueObject(data.group);
+  const mediaUrl = stringValue(data, ["mediaUrl"]) ?? null;
+  const conversationId = stringValue(data, ["conversationId"]) ?? null;
+  const groupId = stringValue(group, ["groupId"]) ?? null;
+  const participantHandles = extractAgentPhoneParticipants(data);
+  const senderHandle = fields.isGroup
+    ? fields.senderIdentifier
+    : fields.fromNumber;
+  const participants =
+    fields.isGroup && senderHandle
+      ? [...new Set([...participantHandles, senderHandle])]
+      : participantHandles;
   const mentioned = extractAgentPhoneMentioned(body, data, messageBody);
   const recentHistory = extractAgentPhoneRecentHistory(body, data);
 
-  if (!messageId || !agentphoneAgentId || !fromNumber || !toNumber) {
+  if (
+    !messageId ||
+    !agentphoneAgentId ||
+    !fromNumber ||
+    !toNumber ||
+    (!messageBody.trim() && !mediaUrl)
+  ) {
     log.warn("Missing required fields in AgentPhone webhook", {
       webhookId,
       hasMessageId: Boolean(messageId),
@@ -921,19 +983,76 @@ function extractAgentPhoneEvent(
     messageId,
     conversationId,
     groupId,
-    isGroup,
+    isGroup: fields.isGroup,
+    participants,
+    senderIdentifier: fields.senderIdentifier ?? null,
     mentioned,
     agentphoneAgentId,
     fromNumber,
     toNumber,
     body: messageBody,
     mediaUrl,
-    receivedAt:
-      parseDate(data.receivedAt) ??
-      parseDate(data.received_at) ??
-      parseDate(body.timestamp),
+    receivedAt: parseDate(data.receivedAt) ?? parseDate(body.timestamp),
     recentHistory,
   };
+}
+
+function missingAgentPhoneRequiredFieldResponse(
+  body: Record<string, unknown>,
+  channel: AgentPhoneChannel,
+  officialPhoneNumber: string,
+) {
+  const fields = extractAgentPhoneMessageFields(body, valueObject(body.data));
+  const normalizedToNumber = fields.toNumber
+    ? normalizeAgentPhoneHandle(fields.toNumber, "sms")
+    : null;
+  const normalizedOfficialNumber = normalizeAgentPhoneHandle(
+    officialPhoneNumber,
+    "sms",
+  );
+  if (
+    normalizedToNumber &&
+    normalizedOfficialNumber &&
+    normalizedToNumber !== normalizedOfficialNumber
+  ) {
+    return null;
+  }
+
+  const missingField = !fields.messageId
+    ? "message id"
+    : !fields.agentphoneAgentId
+      ? "agent id"
+      : !fields.fromNumber
+        ? "sender identity"
+        : !normalizedToNumber
+          ? "recipient"
+          : !fields.messageBody.trim() &&
+              !stringValue(valueObject(body.data), ["mediaUrl"])
+            ? "message content"
+            : null;
+  if (!missingField) {
+    return null;
+  }
+
+  const eventKind =
+    channel === "imessage" && fields.isGroup
+      ? "iMessage group"
+      : "AgentPhone message";
+  return textResponse(`${eventKind} webhook is missing ${missingField}`, 500);
+}
+
+function agentPhoneInvalidEventResponse(
+  body: Record<string, unknown>,
+  channel: AgentPhoneChannel,
+  officialPhoneNumber: string,
+) {
+  return (
+    missingAgentPhoneRequiredFieldResponse(
+      body,
+      channel,
+      officialPhoneNumber,
+    ) ?? okText()
+  );
 }
 
 interface AgentPhoneWebhookConfig {
@@ -950,17 +1069,34 @@ function agentPhoneWebhookConfig(): AgentPhoneWebhookConfig | undefined {
   return { webhookSecret, officialPhoneNumber };
 }
 
-function shouldAcceptAgentPhoneEvent(args: {
+type AgentPhoneEventAcceptance =
+  | "accept"
+  | "ignore"
+  | "invalid-recipient"
+  | "invalid-sender"
+  | "missing-group-id"
+  | "invalid-group-id"
+  | "missing-conversation-id";
+
+function classifyAgentPhoneEvent(args: {
   readonly event: AgentPhoneMessageEvent;
   readonly config: AgentPhoneWebhookConfig;
   readonly channel: AgentPhoneChannel;
   readonly webhookId: string | null;
-}): boolean {
-  if (
-    normalizeAgentPhoneHandle(args.event.toNumber, "sms") !==
-    normalizeAgentPhoneHandle(args.config.officialPhoneNumber, "sms")
-  ) {
-    return false;
+}): AgentPhoneEventAcceptance {
+  const normalizedToNumber = normalizeAgentPhoneHandle(
+    args.event.toNumber,
+    "sms",
+  );
+  const normalizedOfficialNumber = normalizeAgentPhoneHandle(
+    args.config.officialPhoneNumber,
+    "sms",
+  );
+  if (!normalizedToNumber || !normalizedOfficialNumber) {
+    return "invalid-recipient";
+  }
+  if (normalizedToNumber !== normalizedOfficialNumber) {
+    return "ignore";
   }
 
   const normalizedFrom = normalizeAgentPhoneHandle(
@@ -984,7 +1120,7 @@ function shouldAcceptAgentPhoneEvent(args: {
       channel: args.channel,
       fromShape: describeAgentPhoneHandleShape(args.event.fromNumber),
     });
-    return false;
+    return "invalid-sender";
   }
 
   if (
@@ -995,14 +1131,129 @@ function shouldAcceptAgentPhoneEvent(args: {
     log.warn("AgentPhone group webhook is missing a provider group id", {
       webhookId: args.webhookId,
     });
-    return false;
+    return "missing-group-id";
   }
 
-  return true;
+  if (
+    args.channel === "imessage" &&
+    args.event.isGroup &&
+    !/^grp_.+$/u.test(args.event.groupId ?? "")
+  ) {
+    log.warn("AgentPhone group webhook has an invalid provider group id", {
+      webhookId: args.webhookId,
+    });
+    return "invalid-group-id";
+  }
+
+  if (
+    args.channel === "imessage" &&
+    args.event.isGroup &&
+    !args.event.conversationId
+  ) {
+    log.warn("AgentPhone group webhook is missing a provider conversation id", {
+      webhookId: args.webhookId,
+    });
+    return "missing-conversation-id";
+  }
+
+  return "accept";
+}
+
+function agentPhoneWebhookAdmissionResponse(args: {
+  readonly event: AgentPhoneMessageEvent;
+  readonly config: AgentPhoneWebhookConfig;
+  readonly channel: AgentPhoneChannel;
+  readonly webhookId: string | null;
+}) {
+  switch (classifyAgentPhoneEvent(args)) {
+    case "ignore": {
+      return okText();
+    }
+    case "invalid-recipient": {
+      return textResponse(
+        "AgentPhone message webhook has an invalid recipient",
+        500,
+      );
+    }
+    case "invalid-sender": {
+      return textResponse(
+        "AgentPhone message webhook has an invalid sender",
+        500,
+      );
+    }
+    case "missing-group-id": {
+      return textResponse("iMessage group webhook is missing groupId", 500);
+    }
+    case "invalid-group-id": {
+      return textResponse("iMessage group webhook has an invalid groupId", 500);
+    }
+    case "missing-conversation-id": {
+      return textResponse(
+        "iMessage group webhook is missing conversationId",
+        500,
+      );
+    }
+    case "accept": {
+      return isMissingAgentPhoneGroupTimestamp(args.event)
+        ? textResponse("iMessage group webhook is missing receivedAt", 500)
+        : null;
+    }
+  }
 }
 
 function shouldDispatchAgentPhoneEvent(event: AgentPhoneMessageEvent): boolean {
   return !(event.channel === "imessage" && event.isGroup && !event.mentioned);
+}
+
+function isMissingAgentPhoneGroupTimestamp(
+  event: AgentPhoneMessageEvent,
+): boolean {
+  return (
+    event.channel === "imessage" && event.isGroup && event.receivedAt === null
+  );
+}
+
+function isIdlessAgentPhoneTestWebhook(body: Record<string, unknown>): boolean {
+  return (
+    valueObject(body.conversationState).testMode === true &&
+    !stringValue(valueObject(body.data), ["id"])
+  );
+}
+
+type AgentPhoneWebhookRoutingResult =
+  | { readonly kind: "ignore" }
+  | { readonly kind: "error"; readonly response: Response }
+  | { readonly kind: "message"; readonly channel: AgentPhoneChannel };
+
+function parseAgentPhoneWebhookRouting(
+  body: Record<string, unknown>,
+  eventHeader: string | undefined,
+): AgentPhoneWebhookRoutingResult {
+  const eventType = stringValue(body, ["event"]) ?? eventHeader;
+  if (!eventType) {
+    return {
+      kind: "error",
+      response: textResponse("AgentPhone webhook is missing event type", 500),
+    };
+  }
+  if (eventType !== "agent.message") {
+    return { kind: "ignore" };
+  }
+
+  const rawChannel = stringValue(body, ["channel"])?.trim().toLowerCase();
+  if (!rawChannel) {
+    return {
+      kind: "error",
+      response: textResponse(
+        "AgentPhone message webhook is missing channel",
+        500,
+      ),
+    };
+  }
+  if (!isAgentPhoneChannel(rawChannel)) {
+    return { kind: "ignore" };
+  }
+  return { kind: "message", channel: rawChannel };
 }
 
 /** A connection code binds an unlinked sender, so a sender that already has a
@@ -1028,60 +1279,67 @@ function agentPhoneEventForStorage(
   return { ...event, body: "[connection code redacted]" };
 }
 
-async function handleAgentPhoneConnectionCode(
-  db: Db,
-  event: AgentPhoneMessageEvent,
-  userLink: AgentPhoneUserLink | null,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
-    return false;
-  }
+const handleAgentPhoneConnectionCode$ = command(
+  async (
+    { set },
+    event: AgentPhoneMessageEvent,
+    userLink: AgentPhoneUserLink | null,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
+      return false;
+    }
 
-  const result = await consumeAgentPhoneConnectionCode(db, {
-    message: event.body,
-    phoneHandle: event.fromNumber,
-    channel: event.channel,
-    secret: env("SECRETS_ENCRYPTION_KEY"),
-  });
-  signal.throwIfAborted();
-  if (result.kind === "not-code") {
-    return false;
-  }
-
-  if (result.kind === "linked") {
-    await publishAgentPhoneUserLinked(result.userId);
+    const result = await set(
+      consumeAgentPhoneConnectionCode$,
+      {
+        message: event.body,
+        phoneHandle: event.fromNumber,
+        channel: event.channel,
+        secret: env("SECRETS_ENCRYPTION_KEY"),
+      },
+      signal,
+    );
     signal.throwIfAborted();
-  }
+    if (result.kind === "not-code") {
+      return false;
+    }
 
-  await tapError(
-    result.kind === "linked"
-      ? sendAgentPhoneConnectedMessages(
-          {
-            agentphoneAgentId: event.agentphoneAgentId,
-            toNumber: event.fromNumber,
-            ...(event.channel === "imessage"
-              ? { replyToMessageId: event.messageId }
-              : {}),
-          },
-          signal,
-        )
-      : sendAgentPhoneText(
-          event,
-          agentPhoneConnectionCodeFailureReply(result),
-          signal,
-        ),
-    (error) => {
-      log.warn("Handled AgentPhone connection code but reply failed", {
-        result: result.kind,
-        phoneHandle: maskPhoneHandle(event.fromNumber),
-        error,
-      });
-    },
-  );
-  signal.throwIfAborted();
-  return true;
-}
+    if (result.kind === "linked") {
+      await publishAgentPhoneUserLinked(result.userId);
+      signal.throwIfAborted();
+    }
+
+    await tapError(
+      result.kind === "linked"
+        ? sendAgentPhoneConnectedMessages(
+            {
+              agentphoneAgentId: event.agentphoneAgentId,
+              toNumber: event.fromNumber,
+              ...(event.channel === "imessage"
+                ? { replyToMessageId: event.messageId }
+                : {}),
+            },
+            signal,
+          )
+        : sendAgentPhoneText(
+            event,
+            agentPhoneConnectionCodeFailureReply(result),
+            undefined,
+            signal,
+          ),
+      (error) => {
+        log.warn("Handled AgentPhone connection code but reply failed", {
+          result: result.kind,
+          phoneHandle: maskPhoneHandle(event.fromNumber),
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
@@ -1116,37 +1374,39 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const body = parsed.data;
-  const eventType =
-    stringValue(body, ["event"]) ?? request.header("x-webhook-event");
-  if (eventType !== "agent.message") {
+  const routing = parseAgentPhoneWebhookRouting(
+    body,
+    request.header("x-webhook-event"),
+  );
+  if (routing.kind === "error") {
+    return routing.response;
+  }
+  if (routing.kind === "ignore") {
     return okText();
   }
-
-  const data = valueObject(body.data);
-  const rawChannel = (
-    stringValue(body, ["channel"]) ??
-    stringValue(data, ["channel"]) ??
-    ""
-  ).toLowerCase();
-  if (!isAgentPhoneChannel(rawChannel)) {
+  const rawChannel = routing.channel;
+  if (isIdlessAgentPhoneTestWebhook(body)) {
     return okText();
   }
 
   const webhookId = request.header("x-webhook-id") ?? null;
   const event = extractAgentPhoneEvent(body, webhookId, rawChannel);
   if (!event) {
-    return okText();
+    return agentPhoneInvalidEventResponse(
+      body,
+      rawChannel,
+      config.officialPhoneNumber,
+    );
   }
 
-  if (
-    !shouldAcceptAgentPhoneEvent({
-      event,
-      config,
-      channel: rawChannel,
-      webhookId,
-    })
-  ) {
-    return okText();
+  const admissionResponse = agentPhoneWebhookAdmissionResponse({
+    event,
+    config,
+    channel: rawChannel,
+    webhookId,
+  });
+  if (admissionResponse) {
+    return admissionResponse;
   }
 
   const writeDb = set(writeDb$);
@@ -1158,11 +1418,11 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     userLinkId: userLink?.id ?? null,
   });
   signal.throwIfAborted();
-  if (!stored.inserted) {
+  if (!stored.dispatch) {
     return okText();
   }
 
-  if (await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)) {
+  if (await set(handleAgentPhoneConnectionCode$, event, userLink, signal)) {
     return okText();
   }
 
@@ -1182,6 +1442,123 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   return okText();
 });
 
+const groupHistory$ = command(async ({ get }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(groupHistoryQuery$);
+  const featureContext = await get(
+    userFeatureSwitchContext(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.AgentPhoneGroupHistory, featureContext)
+  ) {
+    return notFound("iMessage group history is not available");
+  }
+
+  const config = getAgentPhoneConfig();
+  if (!config.agentphoneAgentId) {
+    return notFound("iMessage group history is not available");
+  }
+
+  const messageAt = agentphoneMessages.receivedAt;
+  const conditions = [
+    eq(agentphoneMessages.agentphoneAgentId, config.agentphoneAgentId),
+    eq(agentphoneMessages.groupId, query.groupId),
+    eq(agentphoneMessages.channel, "imessage"),
+    eq(agentphoneMessageVisibility.orgId, auth.orgId),
+    eq(agentphoneMessageVisibility.userId, auth.userId),
+  ];
+  let cursor: z.infer<typeof groupHistoryCursorSchema> | undefined;
+  if (query.cursor) {
+    const parsed = groupHistoryCursorSchema.safeParse(
+      safeJsonParse(Buffer.from(query.cursor, "base64url").toString("utf8")),
+    );
+    if (parsed.success && parsed.data.groupId === query.groupId) {
+      cursor = parsed.data;
+    }
+    if (!cursor) {
+      return badRequestMessage("Invalid history cursor");
+    }
+    const cursorAt = new Date(cursor.receivedAt);
+    const cursorCondition = or(
+      gt(messageAt, cursorAt),
+      and(eq(messageAt, cursorAt), gt(agentphoneMessages.id, cursor.id)),
+    );
+    if (cursorCondition) {
+      conditions.push(cursorCondition);
+    }
+  }
+  if (query.after) {
+    conditions.push(gte(messageAt, new Date(query.after)));
+  }
+  if (query.before) {
+    conditions.push(lte(messageAt, new Date(query.before)));
+  }
+  if (query.query) {
+    const pattern = `%${query.query.replace(/[\\%_]/gu, String.raw`\$&`)}%`;
+    conditions.push(ilike(agentphoneMessages.body, pattern));
+  }
+
+  const rows = await get(db$)
+    .select({
+      id: agentphoneMessages.agentphoneMessageId,
+      cursorId: agentphoneMessages.id,
+      conversationId: agentphoneMessages.conversationId,
+      fromNumber: agentphoneMessages.fromNumber,
+      toNumber: agentphoneMessages.toNumber,
+      direction: agentphoneMessages.direction,
+      channel: agentphoneMessages.channel,
+      body: agentphoneMessages.body,
+      mediaUrl: agentphoneMessages.mediaUrl,
+      receivedAt: messageAt,
+    })
+    .from(agentphoneMessages)
+    .innerJoin(
+      agentphoneMessageVisibility,
+      eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+    )
+    .where(and(...conditions))
+    .orderBy(asc(messageAt), asc(agentphoneMessages.id))
+    .limit(query.limit + 1);
+  signal.throwIfAborted();
+
+  const page = rows.slice(0, query.limit);
+  const receivedAtFor = (message: (typeof rows)[number]): Date => {
+    if (message.receivedAt === null) {
+      throw new Error(
+        `AgentPhone group message ${message.cursorId} is missing receivedAt`,
+      );
+    }
+    return message.receivedAt;
+  };
+  const last = page.at(-1);
+  const nextCursor =
+    rows.length > query.limit && last
+      ? Buffer.from(
+          JSON.stringify({
+            groupId: query.groupId,
+            receivedAt: receivedAtFor(last).toISOString(),
+            id: last.cursorId,
+          }),
+        ).toString("base64url")
+      : null;
+  return {
+    status: 200 as const,
+    body: {
+      groupId: query.groupId,
+      messages: page.map((message) => {
+        const { cursorId: _cursorId, ...responseMessage } = message;
+        return {
+          ...responseMessage,
+          receivedAt: receivedAtFor(message).toISOString(),
+        };
+      }),
+      hasMore: rows.length > query.limit,
+      nextCursor,
+    },
+  };
+});
+
 export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.connectAgentPhone,
@@ -1190,6 +1567,10 @@ export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.webhook,
     handler: webhook$,
+  },
+  {
+    route: integrationsAgentPhoneContract.groupHistory,
+    handler: authRoute(agentPhoneGroupHistoryAuthOptions, groupHistory$),
   },
   {
     route: integrationsAgentPhoneContract.getLinkStatus,

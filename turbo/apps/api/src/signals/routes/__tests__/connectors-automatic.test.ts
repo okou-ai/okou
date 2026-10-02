@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -7,6 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -179,6 +181,7 @@ describe("builtin MCP automatic authentication", () => {
       externalId: null,
       externalUsername: null,
       externalEmail: null,
+      oauthScopes: ["read", "write"],
     });
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",
@@ -385,7 +388,7 @@ describe("builtin MCP automatic authentication", () => {
     ).toStrictEqual([]);
   });
 
-  it("does not resurrect a deleted reconnect account", async () => {
+  it("does not resurrect an account deleted during its reconnect token exchange", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -398,13 +401,23 @@ describe("builtin MCP automatic authentication", () => {
     );
     const connectionId = receiptResult.body.connectionId;
     const reconnect = await beginOAuth(f, connectionId);
-    await accept(
-      accounts().delete({
-        headers,
-        params: { connectionId },
-        body: { target: f.target },
+    server.use(
+      http.post(`${provider.issuer}/token`, async () => {
+        await accept(
+          accounts().delete({
+            headers,
+            params: { connectionId },
+            body: { target: f.target },
+          }),
+          [200],
+        );
+        return HttpResponse.json({
+          access_token: "deleted-account-access-token",
+          refresh_token: "deleted-account-refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
       }),
-      [200],
     );
     expect((await callback(reconnect.state, provider.issuer)).body.status).toBe(
       "error",

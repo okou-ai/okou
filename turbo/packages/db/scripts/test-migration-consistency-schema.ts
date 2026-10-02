@@ -247,7 +247,6 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
 async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
-  await client.query("BEGIN");
 
   try {
     const sourceConstraint = await client.query<{ validated: boolean }>(`
@@ -256,53 +255,8 @@ async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
         AND conname = 'billing_run_attribution_source_check'
     `);
     assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
-    const sources = await client.query<{
-      triggerSource: string | null;
-      source: string;
-    }>(`
-      SELECT trigger_source AS "triggerSource",
-        billing_usage_source(trigger_source) AS source
-      FROM unnest(ARRAY[
-        'web', 'automation-schedule', 'automation-event', 'goal',
-        'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone',
-        'github', 'agent', 'unsupported', NULL
-      ]::text[]) WITH ORDINALITY AS inputs(trigger_source, position)
-      ORDER BY position
-    `);
-    assert.deepEqual(sources.rows, [
-      { triggerSource: "web", source: "chat" },
-      { triggerSource: "automation-schedule", source: "automation" },
-      { triggerSource: "automation-event", source: "automation" },
-      { triggerSource: "goal", source: "automation" },
-      { triggerSource: "slack", source: "slack" },
-      { triggerSource: "discord", source: "discord" },
-      { triggerSource: "teams", source: "teams" },
-      { triggerSource: "telegram", source: "telegram" },
-      { triggerSource: "email", source: "email" },
-      { triggerSource: "agentphone", source: "agentphone" },
-      { triggerSource: "github", source: "github" },
-      { triggerSource: "agent", source: "agent" },
-      { triggerSource: "unsupported", source: "other" },
-      { triggerSource: null, source: "other" },
-    ]);
-
-    await client.query(`
-      SELECT ensure_billing_run_attribution(
-        '3ae9c61f-3d08-4a8b-9810-3c627ed746de',
-        'discord-source-validation-org', 'discord-source-validation-user',
-        '2026-09-24 00:00:00'::timestamp, billing_usage_source('discord')
-      )
-    `);
-    const attribution = await client.query<{ source: string }>(`
-      SELECT source FROM billing_run_attribution
-      WHERE run_id = '3ae9c61f-3d08-4a8b-9810-3c627ed746de'
-    `);
-    assert.deepEqual(attribution.rows, [{ source: "discord" }]);
-    console.log(
-      "   ✅ Discord billing capture preserves existing source mappings\n",
-    );
+    console.log("   ✅ Billing attribution source constraint is validated\n");
   } finally {
-    await client.query("ROLLBACK");
     await client.end();
   }
 }
@@ -960,6 +914,26 @@ async function generateFreshMigrations(): Promise<void> {
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
   await addExtensionPreludesToGeneratedMigrations();
+  // Drizzle models the account FK identity/action, but not PostgreSQL deferral.
+  // Install the same checked-in current-schema contract on the generated side;
+  // normalized comparison must still compare the complete constraint definition.
+  const generatedSql = (await fs.readdir(MIGRATIONS_DIR))
+    .filter((file) => {
+      return file.endsWith(".sql");
+    })
+    .sort();
+  const finalSql = generatedSql.at(-1);
+  if (finalSql === undefined) {
+    throw new Error("Generated schema has no SQL migration");
+  }
+  const deferral = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/constraints/connector-selection.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${deferral}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
@@ -1233,132 +1207,9 @@ type PermanentFunction = {
 
 // Exported from a database built by the existing migration chain. Extension-owned
 // pgcrypto and vector functions are deliberately absent from the function list.
-const EXPECTED_PERMANENT_TRIGGERS = [
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
-    schemaName: "public",
-    tableName: "agent_runs",
-    triggerName: "capture_billing_run_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER billing_run_attribution_immutable BEFORE UPDATE ON public.billing_run_attribution FOR EACH ROW EXECUTE FUNCTION reject_billing_attribution_update()",
-    schemaName: "public",
-    tableName: "billing_run_attribution",
-    triggerName: "billing_run_attribution_immutable",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "capture_usage_billing_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_hourly_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "capture_hourly_billing_attribution",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER capture_generation_billing_identity BEFORE INSERT OR UPDATE OF billing_run_id, billing_context ON public.built_in_generation_jobs FOR EACH ROW EXECUTE FUNCTION capture_generation_billing_identity()",
-    schemaName: "public",
-    tableName: "built_in_generation_jobs",
-    triggerName: "capture_generation_billing_identity",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER mark_raw_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event",
-    triggerName: "mark_raw_billing_usage_observed",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER mark_hourly_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
-    schemaName: "public",
-    tableName: "usage_event_hourly_rollup",
-    triggerName: "mark_hourly_billing_usage_observed",
-  },
-] as const satisfies readonly PermanentTrigger[];
+const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
-const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "31c9604bf9c9306578d884bc8aa9e5ce",
-    functionName: "billing_usage_source",
-    identityArguments: "trigger_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "56fbba07cf9d2a5877b03524c215c28b",
-    functionName: "ensure_billing_run_attribution",
-    identityArguments:
-      "billing_id uuid, billed_org text, billed_user text, original_start timestamp without time zone, billing_source text",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "58e58b34a3eb3679ad3ba9d984bf2b8b",
-    functionName: "capture_billing_run_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "8699ee12596b337ac2df0a58e1ec6d59",
-    functionName: "ensure_billing_run_thread",
-    identityArguments: "billing_id uuid, original_thread uuid",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "a1cded319d3a0e285807a877e8d85b74",
-    functionName: "reject_billing_attribution_update",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "b002912b7bba9df6783801b84490bada",
-    functionName: "capture_usage_billing_attribution",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "81ad11f2d8edaa5b6d708e02e21b792a",
-    functionName: "capture_generation_billing_identity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "edb73467bdfa0f1f58e388f2df908b89",
-    functionName: "mark_billing_usage_observed",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "9d5c181a9f7d32a4a02430ee95af739c",
-    functionName: "purge_quiescent_provisional_billing_attribution",
-    identityArguments:
-      "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-] as const satisfies readonly PermanentFunction[];
+const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [];
 
 function assertPermanentInventory(args: {
   readonly actual: readonly string[];

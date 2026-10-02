@@ -15,6 +15,37 @@ SSH hop only; it cannot establish isolation of the downstream VNC listener.
 The owner must choose and manage the destination's exposure accordingly.
 The feature remains unavailable until a separate activation decision.
 
+## Advisory Lock Cleanup Release 1
+
+VNC is not GA. Configuration and owner cleanup no longer acquire advisory
+locks, and no compatibility fallback is added for its old writer shape.
+
+A configuration write checks live Clerk membership in its route before any
+SQL; Clerk remains the membership authority. KMS encryption and endpoint
+preparation run outside the transaction. The mutation then checks the requested
+credential revision or host generation with an ordinary read and executes its
+bounded conditional SQL in a short transaction. It takes no member-row or other
+explicit row lock and reads no `org_members_metadata` lifecycle identity.
+
+User, organization and membership erasure delete the scoped VNC hosts and then
+their credentials in one local transaction, without locking member rows. VNC is
+a non-money path, so no concurrency protection is added against a write admitted
+before erasure that commits after it; Runner access still rechecks live Clerk
+membership before use. Read-only VNC admission does not initialize member
+preferences.
+
+Credential rotation retains the existing revision and advances every referencing
+host's generation. Connection updates and deletes use their existing generation
+conditions. Override writes insert through ordinary cascading foreign keys to
+their host and thread, so deleting a host also removes its access overrides. Live Runner
+membership and credential revision checks remain unchanged. No App/Runner wire
+contract, persisted field, coordination table or authorization flag is added.
+
+The separate obsolete Agent grant-table contraction is not part of this change.
+Shared initial-chat creation still has its own transaction-aware override
+validation/insert helpers; retiring that wider command graph is tracked by the
+Release 1 API transaction inventory, not certified by the VNC lock removal.
+
 ## Supported profiles and rollout state
 
 | Boundary                           | X509None                                     | X509Vnc                                      | X509Plain                                     | Activation meaning                     |
@@ -372,12 +403,10 @@ Current membership authorizes access to that owner's configuration. If the user 
 the configuration, it remains the same owner's data and is accessible again.
 Each saved connection retains its own identity across membership changes.
 
-Mutation transactions use shared cleanup-scope locks and an exclusive owner
-lock. Cleanup takes an exclusive scope lock and
-deletes hosts before credentials. These locks serialize overlapping transactions
-without retaining a VNC authority ledger or creation receipts. They do not cancel
-a request that passed membership admission before cleanup and only enters its
-write transaction afterward; such an in-flight request can still finish.
+Mutations and cleanup take no locks (see Advisory Lock Cleanup Release 1).
+Cleanup deletes hosts before credentials. A request that passed membership
+admission before cleanup and only enters its write transaction afterward can
+still finish; no VNC authority ledger or creation receipt prevents it.
 
 Current user, organization and member cleanup removes hosts before credentials.
 Member cleanup removes the organization's configuration for that user. It follows

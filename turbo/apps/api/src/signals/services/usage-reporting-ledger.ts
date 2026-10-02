@@ -1,11 +1,9 @@
 import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-
 import {
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import type { Db } from "../external/db";
 import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
@@ -19,13 +17,11 @@ import {
   MODEL_TOKEN_USAGE_KINDS,
 } from "./model-token-categories";
 import {
-  buildUsageBreakdowns,
+  usageDisplayProviderExpr,
   usageBreakdownKindExpr,
   usageCreditsExpr,
-  usageDisplayProviderExpr,
-  type UsageBreakdownSqlRow,
 } from "./usage-reporting-breakdown";
-
+import { QueryBuilder } from "drizzle-orm/pg-core";
 interface BillingWindow {
   readonly start: Date;
   readonly end: Date;
@@ -40,13 +36,10 @@ interface UsageMemberTotalsRow {
   readonly creditsCharged: number;
 }
 
-type UsageReportingDb = Pick<Db, "select">;
-
-export async function getMemberUsageTotals(
-  db: UsageReportingDb,
+export function memberUsageTotalsQuery(
   orgId: string,
   billingWindow: BillingWindow,
-): Promise<UsageMemberTotalsRow[]> {
+) {
   const usage = buildFinalizedUsageRelation(
     normalizeFinalizedUsagePeriod(billingWindow),
   );
@@ -75,25 +68,25 @@ export async function getMemberUsageTotals(
     creditsCharged: usageCreditsSum(usage, "credits_charged"),
   } satisfies Record<keyof UsageMemberTotalsRow, unknown>;
 
-  return await db
+  return new QueryBuilder()
     .select(totalsSelect)
     .from(usage)
     .where(eq(usage.orgId, orgId))
-    .groupBy(usage.userId);
+    .groupBy(usage.userId)
+    .as("member_usage_totals");
 }
 
-export async function getMemberUsageBreakdowns(
-  db: UsageReportingDb,
+export function memberUsageBreakdownQuery(
   orgId: string,
   billingWindow: BillingWindow,
 ) {
   const usage = buildFinalizedUsageRelation(
     normalizeFinalizedUsagePeriod(billingWindow),
   );
+  const provider = usageDisplayProviderExpr(usage);
   const kind = usageBreakdownKindExpr(usage);
   const credits = usageCreditsExpr(usage);
-  const provider = usageDisplayProviderExpr(usage);
-  const rows: UsageBreakdownSqlRow[] = await db
+  return new QueryBuilder()
     .select({
       key: sql`${usage.userId}`.mapWith(pgTextDecoder).as("key"),
       kind: kind.as("kind"),
@@ -108,9 +101,8 @@ export async function getMemberUsageBreakdowns(
     .where(eq(usage.orgId, orgId))
     .groupBy(usage.userId, kind, usage.kind, provider)
     .having(gt(sum(credits), sql`0`))
-    .orderBy(asc(usage.userId), asc(kind), asc(provider), asc(usage.kind));
-
-  return buildUsageBreakdowns(rows);
+    .orderBy(asc(usage.userId), asc(kind), asc(provider), asc(usage.kind))
+    .as("member_usage_breakdown");
 }
 
 function finalizedUsageTokenSum(

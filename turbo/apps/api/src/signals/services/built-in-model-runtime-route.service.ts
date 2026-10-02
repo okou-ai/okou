@@ -2,11 +2,6 @@ import {
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { computed, type Computed } from "ccstate";
@@ -128,30 +123,18 @@ function routeFromTarget(
 function eligibleBuiltInModelRouteCandidates(
   catalog: ModelCatalog,
   selectedModel: string,
-  featureSwitchContext: FeatureSwitchContext,
   routePricing: BuiltInRoutePricing | undefined,
 ): readonly BuiltInModelRouteTarget[] {
-  const candidates = getCatalogBuiltInModelRouteCandidates(
+  return getCatalogBuiltInModelRouteCandidates(
     catalog,
     selectedModel,
     routePricing,
-  );
-  const useAlternativeRouting =
-    isFeatureEnabled(
-      FeatureSwitchKey.DeepSeekAlternativeRouting,
-      featureSwitchContext,
-    ) &&
-    candidates.some((candidate) => {
-      return candidate.providerType === "deepseek";
-    });
-  if (!useAlternativeRouting) {
-    return candidates;
-  }
-  return candidates.filter((candidate) => {
+  ).filter((candidate) => {
     return candidate.providerType !== "deepseek";
   });
 }
 
+/** Captured routes remain valid independently of the new-selection policy. */
 export function isBuiltInModelRuntimeRoutePermitted(
   catalog: ModelCatalog,
   route: BuiltInModelRuntimeRoute,
@@ -194,7 +177,6 @@ export const builtInModelKeyIdsByVendor$: Computed<
 export async function resolveBuiltInModelRuntimeRoute(
   db: ReadonlyDb,
   selectedModel: string,
-  featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const [catalog, keyIdsByVendor] = await Promise.all([
     loadModelCatalog(db),
@@ -204,7 +186,6 @@ export async function resolveBuiltInModelRuntimeRoute(
     db,
     catalog,
     selectedModel,
-    featureSwitchContext,
     keyIdsByVendor,
   );
 }
@@ -217,18 +198,12 @@ export async function resolveBuiltInModelRuntimeRouteFromCatalog(
   db: ReadonlyDb,
   catalog: ModelCatalog,
   selectedModel: string,
-  featureSwitchContext: FeatureSwitchContext,
   routePricing?: BuiltInRoutePricing,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   return await firstAvailableBuiltInModelRoute(
     db,
     selectedModel,
-    eligibleBuiltInModelRouteCandidates(
-      catalog,
-      selectedModel,
-      featureSwitchContext,
-      routePricing,
-    ),
+    eligibleBuiltInModelRouteCandidates(catalog, selectedModel, routePricing),
     await loadBuiltInModelKeyIdsByVendor(db),
   );
 }
@@ -237,18 +212,12 @@ export async function resolveBuiltInModelRuntimeRouteWithKeys(
   db: ReadonlyDb,
   catalog: ModelCatalog,
   selectedModel: string,
-  featureSwitchContext: FeatureSwitchContext,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   return await firstAvailableBuiltInModelRoute(
     db,
     selectedModel,
-    eligibleBuiltInModelRouteCandidates(
-      catalog,
-      selectedModel,
-      featureSwitchContext,
-      undefined,
-    ),
+    eligibleBuiltInModelRouteCandidates(catalog, selectedModel, undefined),
     keyIdsByVendor,
   );
 }
@@ -303,7 +272,6 @@ async function firstAvailableBuiltInModelRoute(
 export function builtInModelRuntimeRouteFromSnapshot(args: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly keyIdsByVendor: BuiltInModelKeyIdsByVendor;
   readonly cooldowns: readonly {
     readonly modelRuntimeProvider: string;
@@ -315,7 +283,6 @@ export function builtInModelRuntimeRouteFromSnapshot(args: {
   for (const target of eligibleBuiltInModelRouteCandidates(
     args.catalog,
     args.selectedModel,
-    args.featureSwitchContext,
     args.routePricing,
   )) {
     const id = args.keyIdsByVendor.get(target.vendor);

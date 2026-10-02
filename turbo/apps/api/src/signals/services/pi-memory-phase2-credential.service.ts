@@ -31,7 +31,6 @@ import {
   PI_MEMORY_PHASE2_BYOK_MODEL,
 } from "./pi-memory-phase2-usage.service";
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
-
 type ReadDb = Pick<Db, "select">;
 
 type CredentialFailure =
@@ -479,22 +478,13 @@ export async function resolvePiMemoryPhase2Credential(
   const quota: PiMemoryQuotaSource = subscription?.quota ?? {
     providerClass: pin.modelProvider === "built-in" ? "builtin" : "api_key",
   };
-  let route:
-    | Awaited<ReturnType<typeof resolveBuiltInModelRuntimeRoute>>
-    | undefined;
-  if (pin.modelProvider === "built-in") {
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      claim.orgId,
-      claim.userId,
-    );
-    signal.throwIfAborted();
-    route = await resolveBuiltInModelRuntimeRoute(
-      db,
-      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-      featureSwitchContext,
-    );
-  }
+  const route =
+    pin.modelProvider === "built-in"
+      ? await resolveBuiltInModelRuntimeRoute(
+          db,
+          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        )
+      : undefined;
   signal.throwIfAborted();
   if (route === null) {
     reject("model_route_unavailable");

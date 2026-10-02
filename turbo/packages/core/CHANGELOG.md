@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.725.7](https://github.com/okou-ai/okou/compare/core-v8.725.6...core-v8.725.7) (2026-10-02)
+
+
+### Refactoring
+
+* **model-provider:** graduate deepseek alternative routing ([#37493](https://github.com/okou-ai/okou/issues/37493)) ([489ea16](https://github.com/okou-ai/okou/commit/489ea1657a4e6e83dcd1bc8f8757abda1960a1ef))
+
+## [8.725.6](https://github.com/okou-ai/okou/compare/core-v8.725.5...core-v8.725.6) (2026-10-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.533.2
+
 ## [8.725.5](https://github.com/okou-ai/okou/compare/core-v8.725.4...core-v8.725.5) (2026-10-01)
 
 

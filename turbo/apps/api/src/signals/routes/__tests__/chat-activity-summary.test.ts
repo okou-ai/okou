@@ -12,11 +12,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  advanceRunActivityClockFixture,
-  deleteActiveAgentRunFixture,
-  readActiveAgentRunFixture,
-} from "../../../test-fixtures/run-activity";
+import { advanceRunActivityClockFixture } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
@@ -223,6 +219,17 @@ function brokenBody(error: Error) {
         controller.error(error);
       },
     }),
+  );
+}
+// Runs the production sandbox cleanup sweep scoped to one run.
+async function sweepRun(runId: string) {
+  await accept(
+    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+      testCronCleanupSandboxesStateContract,
+    ).cleanup({
+      body: { runIds: [runId], chatThreadIds: [], exportJobIds: [] },
+    }),
+    [200],
   );
 }
 describe("thread activity summary", () => {
@@ -978,52 +985,39 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("treats a run without an active row as having no activity", async () => {
+  it("keeps a heartbeating cancelled run's compute through the recovery grace", async () => {
     const f = await fixture();
-    const inputs = provider();
-    // An already released run has no active row.
-    await deleteActiveAgentRunFixture(f.run.runId);
-    await deliver(f, [tool(0)]);
-    await expect(
-      readActiveAgentRunFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "ineligible",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(0);
-  });
-
-  it("heartbeats the active row", async () => {
-    const f = await fixture();
-    const heartbeatAt = now() + 30_000;
+    const cancelledAt = now();
+    mockNow(cancelledAt);
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    const heartbeatAt = cancelledAt + 30_000;
     mockNow(heartbeatAt);
-
+    // A cancelled run's sandbox still heartbeats: the route records it before
+    // answering 404 for the no longer active public run.
     await webhooks.requestAgentHeartbeat(
       { runId: f.run.runId },
       f.headers,
-      [200],
+      [404],
     );
-
-    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
-      { lastHeartbeatAt: new Date(heartbeatAt) },
-    );
+    // The cancellation is older than the grace, but the runner's latest
+    // heartbeat is not, so the sweep keeps the run's compute slot.
+    mockNow(cancelledAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    await sweepRun(f.run.runId);
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+    mockNow(heartbeatAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    await sweepRun(f.run.runId);
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 
-  it("keeps a cancelled running run's active row until its runner reports completion", async () => {
+  it("keeps a cancelled running run's compute until its runner reports completion", async () => {
     const f = await fixture();
-    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
-      { chatThreadId: f.run.threadId },
-    );
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
     // A cancelled run still occupies compute until its runner reports back.
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
-    // The runner is still recovering: its row, heartbeat and activity remain.
+    // The runner is still recovering, but the cancelled run never summarizes.
     await deliver(f, [tool(0)]);
-    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
-      { chatThreadId: f.run.threadId },
-    );
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
       status: "ineligible",
       messages: [],
@@ -1034,36 +1028,17 @@ describe("thread activity summary", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    await expect(
-      readActiveAgentRunFixture(f.run.runId),
-    ).resolves.toBeUndefined();
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 
-  it("releases a silent terminal run's row after the recovery grace", async () => {
+  it("releases a silent terminal run's compute after the recovery grace", async () => {
     const f = await fixture();
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
-    const sweep = async () => {
-      await accept(
-        setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-          testCronCleanupSandboxesStateContract,
-        ).cleanup({
-          body: {
-            runIds: [f.run.runId],
-            chatThreadIds: [],
-            exportJobIds: [],
-          },
-        }),
-        [200],
-      );
-    };
-    await sweep();
-    await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toBeDefined();
+    await sweepRun(f.run.runId);
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     // The run's completion and last heartbeat are both older than the grace.
     mockNow(now() + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    await sweep();
-    await expect(
-      readActiveAgentRunFixture(f.run.runId),
-    ).resolves.toBeUndefined();
+    await sweepRun(f.run.runId);
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 });

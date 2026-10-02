@@ -47,7 +47,7 @@ import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
 import {
-  readIntegrationChatThreadModel,
+  readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
@@ -265,17 +265,19 @@ function discordModelThreadTag(chatThreadId: string): string {
     .slice(0, 11);
 }
 
+interface DiscordModelPickerArgs {
+  readonly actor: DiscordInteractionActor;
+  readonly botToken: string;
+  readonly binding: DiscordVerifiedBinding;
+  readonly page?: number;
+  readonly selection?: string;
+  readonly modelThreadTag?: string;
+}
+
 const discordModelPicker$ = command(
   async (
     { set },
-    args: {
-      readonly actor: DiscordInteractionActor;
-      readonly botToken: string;
-      readonly binding: DiscordVerifiedBinding;
-      readonly page?: number;
-      readonly selection?: string;
-      readonly modelThreadTag?: string;
-    },
+    args: DiscordModelPickerArgs,
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
     if (args.selection !== undefined) {
@@ -308,11 +310,15 @@ const discordModelPicker$ = command(
       },
     );
     signal.throwIfAborted();
-    const currentModel = await readIntegrationChatThreadModel(set(writeDb$), {
-      orgId: args.binding.orgId,
-      userId: args.binding.userId,
-      chatThreadId,
-    });
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.binding.orgId,
+        userId: args.binding.userId,
+        chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!chatThreadId || !currentModel) {
       return discordAccountMessage(NO_MODEL_CONVERSATION);

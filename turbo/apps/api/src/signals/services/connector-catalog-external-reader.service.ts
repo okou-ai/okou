@@ -26,12 +26,11 @@ import {
   connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
 import { and, eq } from "drizzle-orm";
-import { computed, type Computed } from "ccstate";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
-import { onRejection, safeSync, settle } from "../utils";
+import { onRejection, settle } from "../utils";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -610,128 +609,6 @@ async function loadAcceptedConnectorCatalogSnapshotAtIdentity(args: {
       });
     },
   });
-}
-
-interface CapturedConnectorCatalogSnapshotInput {
-  readonly db: ReadonlyDb;
-  readonly identity: ExternalCatalogIdentity;
-  readonly timing: ConnectorCatalogLoadTiming;
-}
-
-/** The only payload query is bound to the identity captured by this graph. */
-export function createCapturedConnectorCatalogSnapshotObject(
-  input$: Computed<Promise<CapturedConnectorCatalogSnapshotInput | undefined>>,
-) {
-  const snapshotPayload$ = computed(async (get) => {
-    const args = await get(input$);
-    if (args === undefined) {
-      return undefined;
-    }
-    const row = await args.timing.measure(
-      "api_dispatch_connector_catalog_query_payload",
-      async () => {
-        const [row] = await args.db
-          .select({
-            catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-            catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-            catalogValidationBackendVersion:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-            catalogValidationBuildCommitSha:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-            executableCapabilityDigest:
-              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            filteredAuthMethods:
-              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-          })
-          .from(connectorCatalogActiveSnapshot)
-          .leftJoin(
-            connectorCatalogCompatibilityEvaluation,
-            externalCatalogJoin(args.identity.capabilityDigest),
-          )
-          .where(
-            and(
-              eq(
-                connectorCatalogActiveSnapshot.sourceId,
-                args.identity.sourceId,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.schemaVersion,
-                args.identity.schemaVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogVersion,
-                args.identity.catalogVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogDigest,
-                args.identity.catalogDigest,
-              ),
-            ),
-          )
-          .limit(1);
-        return row;
-      },
-    );
-    if (row === undefined) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "captured_identity_unavailable",
-      );
-    }
-    const result = safeSync(() => {
-      return decodeAcceptedConnectorCatalogPayload({
-        identity: args.identity,
-        capability: connectorCatalogExecutableCapabilityState(),
-        timing: args.timing,
-        row,
-      });
-    });
-    if ("ok" in result) {
-      return result.ok;
-    }
-    // Preserve the public domain error; this never selects another snapshot.
-    const failureCode = connectorCatalogArtifactFailureCode(result.error);
-    if (failureCode === undefined) {
-      throw result.error;
-    }
-    log.error("Rejected persisted connector catalog snapshot", {
-      ...identityLogFields(args.identity),
-      failureCode,
-    });
-    throw new ExternalConnectorCatalogUnavailableError(
-      `invalid_artifact:${failureCode}`,
-    );
-  });
-  const completeSnapshot$ = computed(async (get) => {
-    const input = await get(input$);
-    if (input === undefined) {
-      return undefined;
-    }
-    const capability = connectorCatalogExecutableCapabilityState();
-    if (
-      input.identity.sourceId !== connectorCatalogSource().sourceId ||
-      input.identity.schemaVersion !==
-        SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
-      input.identity.capabilityDigest !== capability.digest
-    ) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "runtime_identity_mismatch",
-      );
-    }
-    const snapshot = await readCachedConnectorCatalogSnapshot({
-      identity: input.identity,
-      timing: input.timing,
-      load: async () => {
-        return await get(snapshotPayload$);
-      },
-    });
-    if (snapshot === undefined) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "captured_identity_unavailable",
-      );
-    }
-    return snapshot;
-  });
-  return completeSnapshot$;
 }
 
 async function loadAcceptedConnectorCatalogSnapshotAttempt(

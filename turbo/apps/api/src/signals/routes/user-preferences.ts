@@ -1,34 +1,35 @@
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
-import { and, eq } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
-import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
-import { command, computed } from "ccstate";
 import {
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
   userPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { command, computed } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { writeDb$, type Db } from "../external/db";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
+import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
 
-import { badRequestMessage } from "../../lib/error";
+import { badRequestMessage, conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
+import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
+import { prepareMorningBriefEnrollment$ } from "../services/morning-brief-enrollment-retry.service";
 import {
   ensureMorningBriefDefaultEnabled$,
-  synchronizeMorningBriefTimezone$,
   type EnsureMorningBriefDefaultEnabledResult,
 } from "../services/morning-brief-preference.service";
 import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
-import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
-import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
+
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
@@ -119,7 +120,7 @@ const updateUserPreferencesInner$ = command(
       ]);
     }
     if (body.data.timezone !== undefined) {
-      await set(
+      const synchronized = await set(
         synchronizeMorningBriefTimezone$,
         {
           orgId: auth.orgId,
@@ -127,6 +128,13 @@ const updateUserPreferencesInner$ = command(
         },
         signal,
       );
+      if (synchronized === "conflict") {
+        // The preference is saved; the Morning Brief schedule lost a race and
+        // is left unchanged. Repeating the same update re-applies it.
+        return conflict(
+          "Morning Brief schedule changed concurrently. Retry the time zone update.",
+        );
+      }
       enqueueMorningBriefProvisioning(
         set(
           ensureMorningBriefDefaultEnabled$,
@@ -256,7 +264,8 @@ const initializeUserPreferencesInner$ = command(
         },
       };
     }
-    await prepareMorningBriefEnrollment(db, identity);
+    await set(prepareMorningBriefEnrollment$, identity, signal);
+
     signal.throwIfAborted();
     const enrollment = await settle(
       set(

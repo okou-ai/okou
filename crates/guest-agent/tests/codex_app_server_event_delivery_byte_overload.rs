@@ -96,7 +96,7 @@ async fn codex_app_server_event_delivery_byte_overload_terminates_promptly()
 
     let error = error.to_string();
     assert!(
-        error.contains("event delivery byte buffer exhausted") && error.contains("16777216 bytes"),
+        error.contains("event delivery byte buffer exhausted") && error.contains("33554432 bytes"),
         "unexpected byte-overload error: {error}"
     );
     assert!(

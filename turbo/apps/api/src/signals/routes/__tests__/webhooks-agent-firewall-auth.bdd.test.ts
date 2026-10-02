@@ -67,8 +67,6 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  * an old deployment can leave behind but no production API exposes.
  *
  * Unreachable through public APIs (kept out of this file deliberately):
- * - Advisory-lock concurrency branches (locked refresh divergence and
- *   mid-request row deletion) need pg locks or row deletes.
  * - TOKEN_ACCESS_RESOLUTION_FAILED needs a current token whose backing secret
  *   row is missing; public seeding writes both atomically.
  * - The 402/5s low-credit billable lease needs a public API that drains an
@@ -103,10 +101,9 @@ async function firewallRun(existingActor?: ApiTestUser): Promise<{
     description: "Exercises firewall auth resolution.",
     visibility: "private",
   });
-  const run = await runsApi.createRun(actor, {
+  const run = await runsApi.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve firewall auth",
-    modelProvider: "anthropic-api-key",
   });
   return {
     actor,
@@ -716,7 +713,7 @@ describe("FW-3: billable firewall lease", () => {
       {
         ...body,
         // The forced snapshot must match the stored token, otherwise the
-        // request is served from the concurrently refreshed current access.
+        // request is served from the newer stored access.
         encryptedSecrets: fw.encryptedSecretsBody({
           TEST_OAUTH_TOKEN: "long-lived-access",
         }),
@@ -754,10 +751,9 @@ describe("FW-3: billable firewall lease", () => {
       displayName: "BDD billable suspension agent",
       visibility: "private",
     });
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "billable auth across a subscription deletion",
-      modelProvider: "anthropic-api-key",
     });
     const headers = fw.sandboxHeaders(actor, run.runId);
     const body = {
@@ -828,10 +824,9 @@ describe("FW-3: billable firewall lease", () => {
       displayName: "BDD expired-credit billable agent",
       visibility: "private",
     });
-    const run = await runsApi.createRun(actor, {
+    const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "billable auth with expired credits",
-      modelProvider: "anthropic-api-key",
     });
 
     const denied = await fw.requestFirewallAuth(

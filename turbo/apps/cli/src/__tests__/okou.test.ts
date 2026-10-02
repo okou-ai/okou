@@ -73,6 +73,8 @@ describe("Okou CLI program", () => {
       "telegram",
       "github",
       "phone",
+      "imessage",
+      "sms",
       "whoami",
       "intro",
       "computer-use",
@@ -124,8 +126,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 46 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(46);
+  it("should have exactly 48 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(48);
   });
 });
 

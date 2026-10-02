@@ -41,8 +41,8 @@ const TURN_INTERRUPT_READY_EVENT: &str = "codex_mock_turn_interrupt_ready";
 const NOTIFICATION_OVERFLOW_COUNT: usize = 129;
 const STDOUT_STREAM_CHUNK_BYTES: usize = 8 * 1024;
 const EVENT_DELIVERY_FLOOD_COUNT: usize = 640;
-// One in-flight payload plus seven queued payloads crosses the shared 16 MiB budget.
-const EVENT_DELIVERY_LARGE_EVENT_COUNT: usize = 8;
+// One in-flight payload plus fifteen queued payloads crosses the shared 32 MiB budget.
+const EVENT_DELIVERY_LARGE_EVENT_COUNT: usize = 16;
 const EVENT_DELIVERY_LARGE_EVENT_BYTES: usize = 2 * 1024 * 1024;
 const SECONDARY_THREAD_ID: &str = "00000000-0000-4000-8000-000000000def";
 const SECONDARY_ITEM_STARTED_AT_MS: u64 = 1_700_000_000_000;

@@ -14,9 +14,7 @@ import {
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { and, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -42,21 +40,22 @@ import {
 } from "../services/discord-run-typing.service";
 import { settle } from "../utils";
 import {
+  recordRunnerUsageBatch$,
+  RunnerUsageRunMissingError,
+} from "../services/provider-usage-publication.service";
+import {
   getSandboxAuthForRun,
   resolveSandboxAuthForRun,
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 import { usageUnderbillingFields } from "../usage-underbilling";
 import { readUsageEventBody } from "./webhooks-usage-body";
-import {
-  ingestXResourceUsage,
-  XResourceUsageError,
-} from "../services/x-resource-usage.service";
+import { ingestXResourceUsage$ } from "../services/x-resource-usage.service";
+import { XResourceUsageError } from "../services/x-resource-usage-values";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
-const MODEL_USAGE_KIND = "model";
 const TELEMETRY_INGEST_TIMEOUT_MS = 10_000;
 const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
@@ -473,8 +472,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       return "protocol" in event;
     })
   ) {
-    const db = set(writeDb$);
-    const result = await settle(ingestXResourceUsage(db, body, auth, signal));
+    const result = await settle(set(ingestXResourceUsage$, body, auth, signal));
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof XResourceUsageError) {
@@ -495,64 +493,19 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 200 as const, body: { success: true } };
   }
 
-  const db = set(writeDb$);
-  const hasModelEvents = body.events.some((event) => {
-    return event.kind === MODEL_USAGE_KIND;
-  });
-  const [runModelContext] = hasModelEvents
-    ? await db
-        .select({
-          modelProvider: agentRuns.modelProvider,
-        })
-        .from(agentRuns)
-        .where(
-          and(eq(agentRuns.id, body.runId), isNotNull(agentRuns.triggerSource)),
-        )
-        .limit(1)
-    : [];
-  signal.throwIfAborted();
-
-  const modelProviderType = runModelContext?.modelProvider ?? null;
-  const usageEventValues = body.events
-    .filter((event) => {
-      return (
-        event.quantity > 0 &&
-        (event.kind !== MODEL_USAGE_KIND ||
-          modelProviderType === null ||
-          isBuiltInModelProviderType(modelProviderType))
-      );
-    })
-    .map((event) => {
-      return {
-        runId: body.runId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-        kind: event.kind,
-        provider: event.provider,
-        category: event.category,
-        quantity: event.quantity,
-        idempotencyKey: event.idempotencyKey,
-      };
-    })
-    .sort((left, right) => {
-      // Match resource/mixed batches when a retry is regrouped by a producer.
-      return left.idempotencyKey
-        .toLowerCase()
-        .localeCompare(right.idempotencyKey.toLowerCase());
-    });
   const insertResult = await settle(
-    (async () => {
-      if (usageEventValues.length > 0) {
-        await db
-          .insert(usageEvent)
-          .values(usageEventValues)
-          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-      }
-    })(),
+    set(
+      recordRunnerUsageBatch$,
+      { ...auth, runId: body.runId, events: body.events },
+      signal,
+    ),
   );
   signal.throwIfAborted();
   if (!insertResult.ok) {
-    if (isForeignKeyViolation(insertResult.error)) {
+    if (
+      insertResult.error instanceof RunnerUsageRunMissingError ||
+      isForeignKeyViolation(insertResult.error)
+    ) {
       L.error("Run not found for usage event, dropping", {
         ...usageUnderbillingFields("run_not_found", "confirmed"),
         runId: body.runId,

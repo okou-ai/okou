@@ -42,7 +42,6 @@ import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-
 /*
 helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
@@ -1145,10 +1144,11 @@ function uniquePhoneHandle() {
 function agentPhoneWebhookHeaders(
   body: string,
   webhookId = "evt-bdd-agentphone",
+  eventType: string | null = "agent.message",
 ): {
   readonly "x-webhook-signature": string;
   readonly "x-webhook-timestamp": string;
-  readonly "x-webhook-event": string;
+  readonly "x-webhook-event"?: string;
   readonly "x-webhook-id": string;
 } {
   const timestamp = String(Math.floor(now() / 1000));
@@ -1160,7 +1160,7 @@ function agentPhoneWebhookHeaders(
       .update(`${timestamp}.${body}`)
       .digest("hex")}`,
     "x-webhook-timestamp": timestamp,
-    "x-webhook-event": "agent.message",
+    ...(eventType === null ? {} : { "x-webhook-event": eventType }),
     "x-webhook-id": webhookId,
   };
 }
@@ -6062,6 +6062,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "BAD_REQUEST" },
     });
 
+    const unsupportedConnectChannel =
+      await integrations.requestConnectAgentPhone(
+        actor,
+        { ...connectBody, channel: "voice" },
+        [400],
+      );
+    expect(unsupportedConnectChannel.body).toMatchObject({
+      error: { code: "BAD_REQUEST" },
+    });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: false });
+
     const connected = await integrations.requestConnectAgentPhone(
       actor,
       connectBody,
@@ -6103,6 +6116,26 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       channel: "sms",
       toNumber: phoneHandle,
     });
+
+    server.use(
+      http.post("https://api.agentphone.test/v1/messages", () => {
+        return HttpResponse.json({ status: "sent" });
+      }),
+    );
+    // The real endpoint must fail instead of reporting a fabricated message ID.
+    // The typed client exposes an undeclared server-error response as an error.
+    await expect(
+      integrations.requestSendPhoneMessage(
+        actor,
+        {
+          agentphoneAgentId: connectBody.agentphoneAgentId,
+          text: "BDD AgentPhone send without a provider message id",
+        },
+        [200],
+      ),
+    ).rejects.toThrow(
+      "Unknown response status 500 for POST /api/integrations/phone/message",
+    );
 
     server.use(agentPhoneVerificationSend(503));
     const failedPhoneMessage = await integrations.requestSendPhoneMessage(
@@ -6218,11 +6251,57 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(ignoredLifecycle.body).toBe("OK");
 
+    const missingEventTypeEvent = JSON.stringify({
+      channel: "sms",
+      agentId: "agt-bdd-agentphone",
+      data: {
+        id: `msg-bdd-agentphone-${randomUUID()}`,
+        from: "+15555551212",
+        to: "+19039853128",
+        message: "missing event type",
+      },
+    });
+    const missingEventType = await integrations.requestAgentPhoneWebhook(
+      missingEventTypeEvent,
+      agentPhoneWebhookHeaders(
+        missingEventTypeEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+        null,
+      ),
+      [500],
+    );
+    expect(missingEventType.body).toBe(
+      "AgentPhone webhook is missing event type",
+    );
+
+    const missingChannelEvent = JSON.stringify({
+      event: "agent.message",
+      agentId: "agt-bdd-agentphone",
+      data: {
+        channel: "sms",
+        id: `msg-bdd-agentphone-${randomUUID()}`,
+        from: "+15555551212",
+        to: "+19039853128",
+        message: "missing channel",
+      },
+    });
+    const missingChannel = await integrations.requestAgentPhoneWebhook(
+      missingChannelEvent,
+      agentPhoneWebhookHeaders(
+        missingChannelEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+      ),
+      [500],
+    );
+    expect(missingChannel.body).toBe(
+      "AgentPhone message webhook is missing channel",
+    );
+
     const unsupportedChannelEvent = JSON.stringify({
       event: "agent.message",
       channel: "fax",
+      agentId: "agt-bdd-agentphone",
       data: {
-        agentId: "agt-bdd-agentphone",
         from: "+15555551212",
         to: "+19039853128",
         message: "unsupported channel",
@@ -6241,8 +6320,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     const missingFieldsEvent = JSON.stringify({
       event: "agent.message",
       channel: "sms",
+      agentId: "agt-bdd-agentphone",
       data: {
-        agentId: "agt-bdd-agentphone",
+        id: `msg-bdd-agentphone-${randomUUID()}`,
         to: "+19039853128",
         message: "missing sender",
       },
@@ -6253,15 +6333,89 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         missingFieldsEvent,
         `evt-bdd-agentphone-${randomUUID()}`,
       ),
-      [200],
+      [500],
     );
-    expect(missingFields.body).toBe("OK");
+    expect(missingFields.body).toBe(
+      "AgentPhone message webhook is missing sender identity",
+    );
+
+    const emptyMessageEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: "agt-bdd-agentphone",
+      data: {
+        id: `msg-bdd-agentphone-${randomUUID()}`,
+        from: "+15555551212",
+        to: "+19039853128",
+        message: "",
+        mediaUrl: null,
+      },
+    });
+    const emptyMessage = await integrations.requestAgentPhoneWebhook(
+      emptyMessageEvent,
+      agentPhoneWebhookHeaders(
+        emptyMessageEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+      ),
+      [500],
+    );
+    expect(emptyMessage.body).toBe(
+      "AgentPhone message webhook is missing message content",
+    );
+
+    const nonCanonicalMessageIdEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: "agt-bdd-agentphone",
+      id: `msg-root-alias-${randomUUID()}`,
+      data: {
+        messageId: `msg-data-alias-${randomUUID()}`,
+        from: "+15555551212",
+        to: "+19039853128",
+        message: "identity aliases are not provider message ids",
+      },
+    });
+    const nonCanonicalMessageId = await integrations.requestAgentPhoneWebhook(
+      nonCanonicalMessageIdEvent,
+      agentPhoneWebhookHeaders(
+        nonCanonicalMessageIdEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+      ),
+      [500],
+    );
+    expect(nonCanonicalMessageId.body).toBe(
+      "AgentPhone message webhook is missing message id",
+    );
+
+    const nonCanonicalAgentIdEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      data: {
+        id: `msg-bdd-agentphone-${randomUUID()}`,
+        agentId: "agt-bdd-agentphone",
+        from: "+15555551212",
+        to: "+19039853128",
+        message: "agent id belongs in the documented webhook envelope",
+      },
+    });
+    const nonCanonicalAgentId = await integrations.requestAgentPhoneWebhook(
+      nonCanonicalAgentIdEvent,
+      agentPhoneWebhookHeaders(
+        nonCanonicalAgentIdEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+      ),
+      [500],
+    );
+    expect(nonCanonicalAgentId.body).toBe(
+      "AgentPhone message webhook is missing agent id",
+    );
 
     const wrongDestinationEvent = JSON.stringify({
       event: "agent.message",
       channel: "sms",
+      agentId: "agt-bdd-agentphone",
       data: {
-        agentId: "agt-bdd-agentphone",
+        id: `msg-bdd-agentphone-${randomUUID()}`,
         from: "+15555551212",
         to: "+15555550000",
         message: "wrong destination",
@@ -6277,6 +6431,29 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(wrongDestination.body).toBe("OK");
 
+    const invalidRecipientEvent = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: "agt-bdd-agentphone",
+      data: {
+        id: `msg-bdd-agentphone-${randomUUID()}`,
+        from: "+15555551212",
+        to: "not-a-phone-number",
+        message: "invalid recipient identity",
+      },
+    });
+    const invalidRecipient = await integrations.requestAgentPhoneWebhook(
+      invalidRecipientEvent,
+      agentPhoneWebhookHeaders(
+        invalidRecipientEvent,
+        `evt-bdd-agentphone-${randomUUID()}`,
+      ),
+      [500],
+    );
+    expect(invalidRecipient.body).toBe(
+      "AgentPhone message webhook has an invalid recipient",
+    );
+
     integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();
     server.use(agentPhoneVerificationSend());
@@ -6284,9 +6461,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     const incomingSmsEvent = JSON.stringify({
       event: "agent.message",
       channel: "sms",
+      agentId: "agt-bdd-agentphone",
       data: {
         id: `msg-bdd-agentphone-${randomUUID()}`,
-        agentId: "agt-bdd-agentphone",
         from: uniquePhoneHandle(),
         to: "+19039853128",
         message: "/connect",
@@ -6306,17 +6483,24 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(duplicateSms.body).toBe("OK");
 
+    const unmentionedGroupSender = `sender-${randomUUID()}@example.test`;
     const unmentionedGroupEvent = JSON.stringify({
       event: "agent.message",
       channel: "imessage",
+      agentId: "agt-bdd-agentphone",
+      timestamp: new Date(now()).toISOString(),
       data: {
         id: `msg-bdd-agentphone-${randomUUID()}`,
-        agentId: "agt-bdd-agentphone",
-        from: `sender-${randomUUID()}@example.test`,
+        from: unmentionedGroupSender,
+        senderIdentifier: unmentionedGroupSender,
         to: "+19039853128",
         message: "group update without a Nova mention",
-        conversationId: `group-${randomUUID()}`,
-        isGroup: true,
+        conversationId: `conv-${randomUUID()}`,
+        group: {
+          isGroup: true,
+          groupId: `grp_${randomUUID()}`,
+          participants: [{ identifier: unmentionedGroupSender }],
+        },
         mentioned: false,
       },
     });

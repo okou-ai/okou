@@ -22,8 +22,6 @@ import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { updateRestrictedPlanAccessFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
-  stageUnrepairedOrgModelPolicyFixture,
-  readUnrepairedOrgModelPolicyFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
@@ -55,15 +53,6 @@ const TEST_APP_ROUTES = Object.freeze([
   ...modelProviderGatewayRoutes,
   ...userModelPreferenceRoutes,
 ]);
-
-// Built-in candidates of deepseek-v4-flash in the global model catalog.
-const DEEPSEEK_V4_FLASH_CANDIDATES = {
-  deepseek: { provider_type: "deepseek", upstream_model: "deepseek-v4-flash" },
-  openrouterCodex: {
-    provider_type: "openrouter-codex",
-    upstream_model: "deepseek/deepseek-v4-flash",
-  },
-} as const;
 
 type ModelPolicyFixture = ApiTestUser & { readonly orgId: string };
 
@@ -922,30 +911,12 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model === model;
       })?.runtimeProviderType;
     };
-    expect(runtimeProviderType(response.body)).toBe("deepseek");
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
-    });
-    const alternativeRoute = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(runtimeProviderType(alternativeRoute.body)).toBe("openrouter-codex");
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
-    });
-    // A provider failure cools the DeepSeek candidate down; the OpenRouter
-    // candidate keeps serving the model.
+    expect(runtimeProviderType(response.body)).toBe("openrouter-codex");
     await coolDownBuiltInCandidatesFixture(context, model, [
-      DEEPSEEK_V4_FLASH_CANDIDATES.deepseek,
-    ]);
-    const fallback = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(runtimeProviderType(fallback.body)).toBe("openrouter-codex");
-    await coolDownBuiltInCandidatesFixture(context, model, [
-      DEEPSEEK_V4_FLASH_CANDIDATES.openrouterCodex,
+      {
+        provider_type: "openrouter-codex",
+        upstream_model: "deepseek/deepseek-v4-flash",
+      },
     ]);
     const unavailable = await accept(
       client.list({ headers: authHeaders() }),
@@ -2769,80 +2740,6 @@ describe("conditional organization model policy writes", () => {
         selectedModel: "gpt-5.6-luna",
         serviceTier: null,
       });
-    },
-  );
-});
-
-describe("conditional policy writes and persisted repair boundaries", () => {
-  it.each(["unseeded"] as const)(
-    "rejects missing and stale preconditions for %s policies",
-    async (state) => {
-      const fixture = seedFixture();
-      useSession(fixture);
-      await accept(
-        apiClient().update({
-          headers: authHeaders(),
-          body: {
-            revision: await currentPolicyRevision(),
-            policies: [
-              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-              makeBuiltInPolicy("gpt-5.6-luna"),
-              makeBuiltInPolicy("gpt-6-astra"),
-            ],
-          },
-        }),
-        [200],
-      );
-      const preferences = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      await accept(
-        preferences.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-6-astra", serviceTier: null },
-        }),
-        [200],
-      );
-      useSession(fixture);
-      const previous = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      await stageUnrepairedOrgModelPolicyFixture({
-        orgId: fixture.orgId,
-        state,
-      });
-      const before = await readUnrepairedOrgModelPolicyFixture(fixture.orgId);
-      for (const revision of [undefined, previous.body.revision]) {
-        const rejected = await accept(
-          apiClient().update({
-            headers: authHeaders(),
-            body: {
-              policies: [
-                makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
-                makeBuiltInPolicy("gpt-5.6-luna"),
-              ],
-              revision,
-            },
-          }),
-          [409],
-        );
-        expect(rejected.body.error.message).toContain("Refresh model settings");
-        await expect(
-          readUnrepairedOrgModelPolicyFixture(fixture.orgId),
-        ).resolves.toStrictEqual(before);
-      }
-      // The system default is projected on every read.
-      const repaired = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(
-        repaired.body.policies.map((policy) => {
-          return policy.model;
-        }),
-      ).toContain(SEEDED_SYSTEM_DEFAULT_MODEL);
     },
   );
 });

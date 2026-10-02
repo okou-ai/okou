@@ -23,7 +23,6 @@ import {
 } from "./model-catalog.service";
 import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-
 const ORG_SENTINEL_USER_ID = "__org__";
 const PERSONAL_TYPES = [
   "claude-code-oauth-token",
