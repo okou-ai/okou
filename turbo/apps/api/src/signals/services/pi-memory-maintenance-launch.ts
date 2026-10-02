@@ -29,6 +29,7 @@ import { expandVariables } from "@okouai/core/variable-expander";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
+import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -50,7 +51,6 @@ import {
   type ResolvedModelProviderEnvironment,
   nativeCredentialEnvironment,
 } from "./execution-model-source.service";
-import type { PreparedAgentRunStorage } from "./execution-storage.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
@@ -464,7 +464,10 @@ export interface MaintenanceLaunch {
   readonly secretValues: readonly string[];
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly sessionStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: PreparedAgentRunStorage["runContextStorage"];
+  readonly runContextStorage: {
+    readonly volumes: RunContextResponse["volumes"];
+    readonly artifact: RunContextResponse["artifact"];
+  };
 }
 
 /** Session, run, callback, attribution, diagnostic registration and job. */

@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import {
+  PI_MEMORY_ROOT,
+  type StoredStorageMountEntry,
+} from "@okouai/api-contracts/contracts/runners";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import {
   getModelProviderFirewall,
   isBuiltInModelProviderType,
@@ -58,11 +62,9 @@ import {
 } from "./execution-model-source.service";
 import {
   createExecutionStorageObjects,
-  AUTO_MEMORY_ARTIFACT_NAME,
-  finalizePreparedStorage,
-  storedMountFromPrepared,
-  writebackStorageEntryMetadata,
+  type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
   MAINTENANCE_RUNNER_PROFILE,
@@ -346,45 +348,66 @@ async function prepareMaintenanceModel(
 /** The single exact memory writeback mount at the claimed base version. */
 async function prepareMaintenanceStorage(
   job: ClaimedPiMemoryPhase2Job,
-  preparedMounts: readonly Parameters<typeof storedMountFromPrepared>[0][],
+  preparedMounts: readonly PreparedExecutionStorageMount[],
   timing: ApiDispatchTimingCollector,
 ) {
   const artifact = {
-    name: AUTO_MEMORY_ARTIFACT_NAME,
+    name: MEMORY_ARTIFACT_NAME,
     mountPath: PI_MEMORY_ROOT,
     version: job.baseVersion.versionId,
     missingRootPolicy: "fail" as const,
   };
-  const entry = writebackStorageEntryMetadata({
-    artifact,
-    resolved: {
-      storageId: job.baseVersion.storageId,
-      versionId: job.baseVersion.versionId,
-      s3Prefix: job.s3Prefix,
-      s3Key: job.baseVersion.s3Key,
-      archiveSize: job.baseVersion.archiveSize,
-      fileCount: job.baseVersion.fileCount,
-      resolvedOrgId: job.orgId,
-      resolvedUserId: job.userId,
-    },
-    source: "artifact",
-  });
   const [prepared] = preparedMounts;
-  if (!prepared || preparedMounts.length !== 1) {
+  if (!prepared?.writeback || preparedMounts.length !== 1) {
     throw new Error("Pi maintenance expects exactly one prepared mount");
   }
-  const storage = await finalizePreparedStorage({
-    entries: {
-      composeEntries: [],
-      additionalEntries: [],
-      writebackEntries: [
-        { ...entry, storedMount: storedMountFromPrepared(prepared, true) },
-      ],
-      resolvedComposeEntryCount: 0,
-      resolvedAdditionalEntryCount: 0,
-    },
+  const storedMount: StoredStorageMountEntry = {
+    orgId: prepared.orgId,
+    userId: prepared.userId,
+    storageId: prepared.storageId,
+    versionId: prepared.versionId,
+    name: prepared.name,
+    mountPath: prepared.mountPath,
+    writeback: true,
+    ...(prepared.empty
+      ? { empty: true }
+      : {
+          archiveUrl: prepared.archiveUrl,
+          ...(prepared.archiveSize > 0
+            ? { archiveSize: prepared.archiveSize }
+            : {}),
+        }),
+    missingRootPolicy: prepared.missingRootPolicy,
+  };
+  const persistedMount: PersistedStorageMount = {
+    orgId: job.orgId,
+    userId: job.userId,
+    name: artifact.name,
+    storageId: job.baseVersion.storageId,
+    version: job.baseVersion.versionId,
+    mountPath: artifact.mountPath,
+    writeback: true,
+    missingRootPolicy: artifact.missingRootPolicy,
+  };
+  const storage = await measureApiDispatchTiming(
     timing,
-  });
+    "api_dispatch_prepare_storage_manifest_assemble",
+    "nested",
+    () => {
+      return Promise.resolve({
+        runContextStorage: {
+          volumes: [],
+          artifact: {
+            mountPath: artifact.mountPath,
+            vasStorageName: artifact.name,
+            vasVersionId: job.baseVersion.versionId,
+          },
+        },
+        storageMounts: normalizeMountOverlay([storedMount]),
+        persistedStorageMounts: normalizeMountOverlay([persistedMount]),
+      });
+    },
+  );
   return { artifact, storage };
 }
 
@@ -834,7 +857,7 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
     userId: job.userId,
     storageId: job.baseVersion.storageId,
     versionId: job.baseVersion.versionId,
-    name: AUTO_MEMORY_ARTIFACT_NAME,
+    name: MEMORY_ARTIFACT_NAME,
     mountPath: PI_MEMORY_ROOT,
     missingRootPolicy: "fail" as const,
   };
