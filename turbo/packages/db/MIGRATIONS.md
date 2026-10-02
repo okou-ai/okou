@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-legacy-free-retirement.ts` protects migration
-  `1314_retire_legacy_free_tier`: safe legacy and entitlement-only normalization,
+  `1315_retire_legacy_free_tier`: safe legacy and entitlement-only normalization,
   unchanged credits/configuration/billing provenance/suspension, paid pending
   targets, rejected ambiguous or subscription-linked rows with full DDL/data
   rollback, and all three validated constraints.

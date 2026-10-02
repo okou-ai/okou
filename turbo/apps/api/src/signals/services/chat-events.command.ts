@@ -6,10 +6,10 @@ import {
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import {
-  createOrgModelBootstrap,
-  createMemberModelBootstrap,
-  type PrefetchedModelBootstrap,
-} from "./model-bootstrap.service";
+  createAgentRunContextSignals,
+  preloadAgentRunContext$,
+  type AgentRunContextSignals,
+} from "./agent-run-context.signals";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   chatEventsContract,
@@ -26,7 +26,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import {
   chatEvents,
   type ChatEventAttachFileMetadata,
@@ -55,11 +54,7 @@ import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
 } from "./agent-run-contracts";
-import { logger } from "../../lib/log";
-import {
-  createAgentBootstrap,
-  type PrefetchedAgentBootstrap,
-} from "./agent-bootstrap.service";
+
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import {
   canonicalChatEventContent,
@@ -81,7 +76,7 @@ import {
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import {
   catalogModelOffersUltrafast,
   isCatalogFastServiceTierSupported,
@@ -113,10 +108,7 @@ import {
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
-import {
-  organizationPlanCapabilities$,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import {
   cancelRun$,
@@ -565,27 +557,6 @@ const resolveIncomingAttachFileMetadata$ = command(
     return metadata;
   },
 );
-const loadAgentForChatSend$ = command(
-  async (
-    { get },
-    agentId: string,
-    signal: AbortSignal,
-  ): Promise<AgentForChatSend | undefined> => {
-    const db = get(db$);
-    const [agent] = await db
-      .select({
-        id: agents.id,
-        orgId: agents.orgId,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(agents)
-      .where(eq(agents.id, agentId))
-      .limit(1);
-    signal.throwIfAborted();
-    return agent;
-  },
-);
 function authorizeSendAgent(
   args: NormalSendArgs,
   agent: AgentForChatSend | undefined,
@@ -600,15 +571,13 @@ function authorizeSendAgent(
 }
 const loadAuthorizedAgent$ = command(
   async (
-    { set },
-    args: NormalSendArgs,
+    { get },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
     signal: AbortSignal,
   ): Promise<AgentForChatSend | NormalSendFailure> => {
-    return authorizeSendAgent(
-      args,
-      args.preloadedAgent ??
-        (await set(loadAgentForChatSend$, args.body.agentId, signal)),
-    );
+    const agent = await get(args.context.agent$);
+    signal.throwIfAborted();
+    return authorizeSendAgent(args, agent ?? undefined);
   },
 );
 const loadExistingSendThreadRow$ = command(
@@ -643,8 +612,8 @@ type ExistingSendThreadRow = NonNullable<
 >;
 const loadAuthorizedExistingSendThread$ = command(
   async (
-    { set },
-    args: NormalSendArgs,
+    { get, set },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
     threadId: string,
     signal: AbortSignal,
   ): Promise<
@@ -656,11 +625,10 @@ const loadAuthorizedExistingSendThread$ = command(
   > => {
     const [thread, loadedAgent] = await Promise.all([
       set(loadExistingSendThreadRow$, args, threadId, signal),
-      args.preloadedAgent ??
-        set(loadAgentForChatSend$, args.body.agentId, signal),
+      get(args.context.agent$),
     ]);
     signal.throwIfAborted();
-    const agent = authorizeSendAgent(args, loadedAgent);
+    const agent = authorizeSendAgent(args, loadedAgent ?? undefined);
     if ("status" in agent) {
       return agent;
     }
@@ -1375,8 +1343,8 @@ const appendNormalSendInput$ = command(
 );
 const prepareNormalSend$ = command(
   async (
-    { set },
-    args: NormalSendArgs,
+    { get, set },
+    args: NormalSendArgs & { readonly context: AgentRunContextSignals },
     signal: AbortSignal,
   ): Promise<
     | {
@@ -1445,7 +1413,7 @@ const prepareNormalSend$ = command(
     if (invalidTemplate) {
       return invalidTemplate;
     }
-    const catalog = await set(loadModelCatalog$, signal);
+    const catalog = (await get(args.context.modelFacts$)).catalog;
     signal.throwIfAborted();
     if (
       args.body.model !== undefined &&
@@ -1502,19 +1470,11 @@ const publishEnqueuedNormalSend$ = command(
       readonly thread: SendThread;
       readonly touchedAt: Date;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
-      readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
-      readonly prefetchedModels: PrefetchedModelBootstrap;
+      readonly context: AgentRunContextSignals;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const {
-      args,
-      thread,
-      touchedAt,
-      enqueueCommit,
-      prefetchedBootstrap,
-      prefetchedModels,
-    } = input;
+    const { args, thread, touchedAt, enqueueCommit, context } = input;
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,
@@ -1522,8 +1482,7 @@ const publishEnqueuedNormalSend$ = command(
           orgId: args.orgId,
           chatThreadId: thread.threadId,
           ...(enqueueCommit ? { enqueueCommit } : {}),
-          ...(prefetchedBootstrap ? { prefetchedBootstrap } : {}),
-          prefetchedModels,
+          context,
         },
         signal,
       ),
@@ -1617,45 +1576,6 @@ function preparedNormalSendEvent(
  * pick; a rejection appears in the thread as `input.rejected`. A direct
  * message's sidebar touch runs after the pick.
  */
-const bootstrapLog = logger("ChatAgentBootstrapPrefetch");
-
-const prefetchAgentBootstrap$ = command(
-  (
-    { get },
-    args: NormalSendArgs,
-    signal: AbortSignal,
-  ): PrefetchedAgentBootstrap | undefined => {
-    signal.throwIfAborted();
-    if (
-      args.agentRunPreCreateSource !== undefined ||
-      (args.auth.tokenType !== "session" && args.mcpSource === undefined)
-    ) {
-      return undefined;
-    }
-    const identity = {
-      userId: args.userId,
-      orgId: args.orgId,
-      agentId: args.body.agentId,
-    };
-    const bootstrap = get(
-      createAgentBootstrap(identity.userId, identity.orgId, identity.agentId),
-    );
-    // Own speculative work even when enqueue collides, a run is already
-    // active, or the FIFO head belongs to another identity. Keep the original
-    // Promise so a matching pick still receives its rejection.
-    waitUntil(
-      (async () => {
-        const result = await settle(bootstrap);
-        if (!result.ok) {
-          bootstrapLog.error("Agent bootstrap prefetch failed", {
-            error: result.error,
-          });
-        }
-      })(),
-    );
-    return { ...identity, bootstrap };
-  },
-);
 function settledNormalSendResponse(
   body: NormalSendBody,
   threadId: string,
@@ -1696,50 +1616,37 @@ const validateSendThreadRevocation$ = command(
   },
 );
 
-function normalSendModelInput(args: NormalSendArgs, catalog: ModelCatalog) {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    agentId: args.body.agentId,
-    orgPlanCapabilities: args.orgPlanCapabilities,
-    catalog,
-  };
-}
-
 const prepareNormalSendModels$ = command(
-  async (
-    { get },
-    input: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly agentId: string;
-      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
-      readonly catalog: ModelCatalog;
-    },
-    signal: AbortSignal,
-  ) => {
-    const prefetchedModels: PrefetchedModelBootstrap = {
-      orgId: input.orgId,
-      userId: input.userId,
-      agentId: input.agentId,
-      org: get(
-        createOrgModelBootstrap(input.orgId, {
-          capabilities: input.orgPlanCapabilities,
-          catalog: input.catalog,
-        }),
-      ),
-      member: get(createMemberModelBootstrap(input.orgId, input.userId)),
-    };
+  async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
     const [orgModels, memberModels] = await Promise.all([
-      prefetchedModels.org,
-      prefetchedModels.member,
+      get(context.modelFacts$),
+      get(context.memberModels$),
     ]);
     signal.throwIfAborted();
     return {
-      prefetchedModels,
       orgModels,
       modelBootstrap: { org: orgModels, member: memberModels },
     };
+  },
+);
+
+const prepareNormalSendContext$ = command(
+  async ({ set }, args: NormalSendArgs, signal: AbortSignal) => {
+    const context = createAgentRunContextSignals(
+      args.userId,
+      args.orgId,
+      args.body.agentId,
+    );
+    const prepared = await set(
+      prepareNormalSend$,
+      { ...args, context },
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    const models = await set(prepareNormalSendModels$, context, signal);
+    return { ...prepared, ...models, context };
   },
 );
 
@@ -1750,16 +1657,18 @@ export const sendNormalEvent$ = command(
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
     signal.throwIfAborted();
-    const prepared = await set(prepareNormalSend$, args, signal);
+    const prepared = await set(prepareNormalSendContext$, args, signal);
     if ("status" in prepared) {
       return prepared;
     }
-    const { authorized, agentRunSource, catalog } = prepared;
-    const { prefetchedModels, orgModels, modelBootstrap } = await set(
-      prepareNormalSendModels$,
-      normalSendModelInput(args, catalog),
-      signal,
-    );
+    const {
+      authorized,
+      agentRunSource,
+      catalog,
+      orgModels,
+      modelBootstrap,
+      context,
+    } = prepared;
     const thread = await set(
       resolveSendThread$,
       {
@@ -1809,7 +1718,6 @@ export const sendNormalEvent$ = command(
       modelSelection,
       agentRunSource,
     );
-    const prefetchedBootstrap = set(prefetchAgentBootstrap$, args, signal);
     const enqueued = await settle(
       (async () => {
         const committed = await set(
@@ -1825,6 +1733,7 @@ export const sendNormalEvent$ = command(
           inserted: { createdAt },
           enqueueCommit,
         } = committed;
+        set(preloadAgentRunContext$, context, signal);
         // Schedule before observing abort; touch/realtime follow this pick's outcome.
         waitUntil(
           set(
@@ -1834,8 +1743,7 @@ export const sendNormalEvent$ = command(
               thread,
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
-              ...(prefetchedBootstrap ? { prefetchedBootstrap } : {}),
-              prefetchedModels,
+              context,
             },
             signal,
           ),
@@ -2336,8 +2244,6 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
-    const orgPlanCapabilities = await get(organizationPlanCapabilities$);
-    signal.throwIfAborted();
     return await set(
       sendNormalEvent$,
       {
@@ -2345,7 +2251,6 @@ export const handleSendChatEvent$ = command(
         auth,
         userId: auth.userId,
         orgId: auth.orgId,
-        orgPlanCapabilities,
       },
       signal,
     );

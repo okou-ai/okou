@@ -54,7 +54,11 @@ function renderMetadata(response: MapsSearchResponse): void {
   console.log(
     chalk.dim(`  Provider cost: $${response.providerCostUsd.toFixed(6)}`),
   );
-  console.log(chalk.dim(`  Credits charged: ${response.creditsCharged}`));
+  console.log(
+    chalk.dim(
+      `  Credits charged: ${response.creditsCharged === null ? "pending" : response.creditsCharged}`,
+    ),
+  );
 }
 
 const searchCommand = new Command()

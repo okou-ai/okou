@@ -11,7 +11,7 @@ import { requestSignal$ } from "../context/hono";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 import {
@@ -118,14 +118,14 @@ interface ScrapeSuccessArgs {
   readonly request: ScrapeRequest;
   readonly requestedUrl: URL;
   readonly normalized: NormalizedScrape;
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
 }
 
 interface ScrapeSuccessBase {
   readonly requestedUrl: string;
   readonly finalUrl?: string;
   readonly provider: "firecrawl";
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
   readonly billingQuantity: number;
   readonly metadata?: ScrapeResponse["metadata"];
 }
@@ -139,14 +139,14 @@ interface CompleteScrapeSuccessArgs {
   readonly request: ScrapeRequest;
   readonly requestedUrl: URL;
   readonly firecrawlResult: FirecrawlBodyResult;
-  readonly recordUsage: () => Promise<number>;
+  readonly recordUsage: () => Promise<number | null>;
 }
 
 interface CompleteScrapeAfterProviderArgs {
   readonly apiKey: string;
   readonly request: ScrapeRequest;
   readonly requestedUrl: URL;
-  readonly recordUsage: () => Promise<number>;
+  readonly recordUsage: () => Promise<number | null>;
 }
 
 function errorBody(message: string, code: string) {
@@ -665,7 +665,7 @@ export const scrape$ = command(
           // Firecrawl has completed successfully, so a client disconnect must not
           // skip billing. The instance lifecycle still owns the usage commit.
           return set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,

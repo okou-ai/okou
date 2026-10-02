@@ -6,8 +6,6 @@ import {
   type PricedUsageEvent,
   type UsageEventRecord,
 } from "./credit-usage-pricing";
-import { QueryBuilder } from "drizzle-orm/pg-core";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
@@ -21,20 +19,12 @@ export class UsageSettlementSnapshotConflict extends Error {}
 export const USAGE_SETTLEMENT_BATCH_SIZE = 100;
 export interface PendingUsageSnapshot {
   readonly event: typeof usageEvent.$inferSelect;
-  readonly xmin: string;
-}
-export interface PricingSnapshot {
-  readonly price: typeof usagePricing.$inferSelect;
-  readonly xmin: string;
 }
 export function usageSnapshotCondition(rows: readonly PendingUsageSnapshot[]) {
   return (
     or(
-      ...rows.map(({ event, xmin }) => {
-        return and(
-          eq(usageEvent.id, event.id),
-          sql`${usageEvent}.xmin::text = ${xmin}`,
-        );
+      ...rows.map(({ event }) => {
+        return eq(usageEvent.id, event.id);
       }),
     ) ?? sql`false`
   );
@@ -78,23 +68,6 @@ export function settlementPricingCondition(
     ) ?? sql`false`
   );
 }
-export function requireSettlementPricingSnapshot(
-  prepared: readonly PricingSnapshot[],
-  current: readonly { id: string; xmin: string }[],
-) {
-  if (
-    prepared.length !== current.length ||
-    prepared.some(({ price, xmin }) => {
-      return !current.some((row) => {
-        return row.id === price.id && row.xmin === xmin;
-      });
-    })
-  ) {
-    throw new UsageSettlementSnapshotConflict(
-      "Usage pricing changed during settlement preparation",
-    );
-  }
-}
 export function requireCompleteUsageClaim(
   expected: number,
   actual: number,
@@ -105,20 +78,6 @@ export function requireCompleteUsageClaim(
       "Usage batch changed during settlement preparation",
     );
   }
-}
-
-/** Pricing is a read-only input; the xmin comparison rejects a changed row. */
-export function settlementPricingQuery(
-  keys: ReturnType<typeof settlementPricingKeys>,
-) {
-  return new QueryBuilder()
-    .select({
-      id: usagePricing.id,
-      xmin: sql`${usagePricing}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
-    })
-    .from(usagePricing)
-    .where(settlementPricingCondition(keys))
-    .as("current_settlement_pricing");
 }
 
 export function preparedSettlementPrices(
@@ -159,8 +118,6 @@ export interface PreparedUsageBatch {
   readonly lots: PreparedUsageExpiryPrefix;
   readonly social?: PreparedSocialSettlement;
   readonly events: PendingUsageSnapshot[];
-  readonly pricing: PricingSnapshot[];
-  readonly pricingKeys: ReturnType<typeof settlementPricingKeys>;
   readonly prices: (typeof usagePricing.$inferSelect)[];
   readonly records: (typeof usageEvent.$inferSelect)[];
   readonly priced: PricedUsageEvent[];

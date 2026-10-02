@@ -1657,8 +1657,15 @@
     {
       "idx": 1314,
       "version": "7",
-      "when": 1790948071651,
-      "tag": "1314_retire_legacy_free_tier",
+      "when": 1790946319947,
+      "tag": "1314_allow-concurrent-usage-pack-overdraft",
+      "breakpoints": true
+    },
+    {
+      "idx": 1315,
+      "version": "7",
+      "when": 1790951589381,
+      "tag": "1315_retire_legacy_free_tier",
       "breakpoints": true
     }
   ]

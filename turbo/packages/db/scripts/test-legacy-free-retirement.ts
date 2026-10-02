@@ -10,7 +10,7 @@ await client.connect();
 const schema = `legacy_free_retirement_${randomUUID().replaceAll("-", "")}`;
 const migration = await readFile(
   new URL(
-    "../src/migrations/1314_retire_legacy_free_tier.sql",
+    "../src/migrations/1315_retire_legacy_free_tier.sql",
     import.meta.url,
   ),
   "utf8",

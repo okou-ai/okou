@@ -279,6 +279,28 @@ function providerHandler(
 }
 
 describe("managed SocialKit route", () => {
+  it("returns provider data when billing fails after success", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/transcript`, async () => {
+        await pricing.cleanup();
+        return HttpResponse.json(providerResponse());
+      }),
+    );
+    const response = await accept(
+      client(pricing.resolution)(socialContract).request({
+        headers: authenticate(actor),
+        body: DEFAULT_SOCIAL_REQUEST,
+      }),
+      [200],
+    );
+    expect(response.body.creditsCharged).toBeNull();
+    expect(response.body.result).toStrictEqual({ value: "provider result" });
+  });
+
   it("rejects agent tokens without social:read capability", async () => {
     const actor = createBddApi(context).user();
     if (!actor.orgId) {

@@ -28,7 +28,7 @@ import {
 } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 import { normalizeSocialKitError } from "./socialkit-error";
@@ -179,7 +179,7 @@ interface CompleteSocialKitArgs {
   readonly accessKey: string;
   readonly request: SocialKitRequest;
   readonly tool: ManagedSocialKitTool;
-  readonly recordUsage: (quantity: number) => Promise<number>;
+  readonly recordUsage: (quantity: number) => Promise<number | null>;
 }
 
 type SocialKitCommandResponse =
@@ -906,7 +906,7 @@ export const socialKitRequest$ = command(
         tool,
         recordUsage: (quantity) => {
           return set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,

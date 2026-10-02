@@ -1,6 +1,5 @@
 import { computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
   modelProviderAccounts,
@@ -8,98 +7,41 @@ import {
 } from "@okouai/db/schema/model-provider-account";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { db$ } from "../external/db";
-import { createModelCatalog, type ModelCatalog } from "./model-catalog.service";
-import {
-  orgPlanCapabilitiesFromRow,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { createModelCatalog } from "./model-catalog.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { orgModelPolicyFactsFromSnapshot } from "./model-policy.service";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 
-/** Request-scoped captured facts; matching prefetch is authoritative, including nulls. */
-export interface PrefetchedModelBootstrap {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly org: Promise<OrgModelBootstrap>;
-  readonly member: Promise<MemberModelBootstrap>;
-}
 export type OrgModelBootstrap = Awaited<
-  ReturnType<ReturnType<typeof createOrgModelBootstrap>["read"]>
+  ReturnType<ReturnType<typeof createModelFacts>["read"]>
 >;
 export type MemberModelBootstrap = Awaited<
   ReturnType<ReturnType<typeof createMemberModelBootstrap>["read"]>
 >;
 
-export function createOrgModelBootstrap(
+export interface RunOrgMetadata {
+  readonly credits: number;
+  readonly modelMode: string;
+  readonly defaultAgentId: string | null;
+}
+
+export function createModelFacts(
   orgId: string,
-  supplied: {
-    readonly capabilities?: OrgPlanCapabilities | null;
-    readonly catalog?: ModelCatalog;
-  } = {},
+  capabilities: OrgPlanCapabilities | null,
+  org: RunOrgMetadata | null,
 ) {
   const catalog$ = createModelCatalog();
-  const capabilities$ = computed(async (get) => {
-    const database = get(db$);
-    const [row] = await database
-      .select({
-        planKey: orgPlanEntitlements.planKey,
-        status: orgPlanEntitlements.status,
-        baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-        canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
-        canBuyCredits: orgPlanEntitlements.canBuyCredits,
-        showUsagePack: orgPlanEntitlements.showUsagePack,
-        autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-        supportByok: orgPlanEntitlements.supportByok,
-        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-        videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
-        workflowWebhookAutomationAllowed:
-          orgPlanEntitlements.workflowWebhookTriggerAllowed,
-        audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
-        audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
-        audioDailyDurationSeconds:
-          orgPlanEntitlements.audioDailyDurationSeconds,
-      })
-      .from(orgPlanEntitlements)
-      .where(eq(orgPlanEntitlements.orgId, orgId))
-      .limit(1);
-    if (row) {
-      return orgPlanCapabilitiesFromRow(row, orgId);
-    }
-    const [org] = await database
-      .select({ id: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    if (org) {
-      throw new Error(`Missing org plan entitlement for ${orgId}`);
-    }
-    return null;
-  });
   return computed(async (get) => {
-    const database = get(db$);
-    const [orgRows, capabilities, catalog, policies] = await Promise.all([
-      database
-        .select({
-          credits: orgMetadata.credits,
-          modelMode: orgMetadata.modelMode,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .limit(1),
-      supplied.capabilities === undefined
-        ? get(capabilities$)
-        : supplied.capabilities,
-      supplied.catalog ?? get(catalog$),
-      database
+    const [catalog, policies] = await Promise.all([
+      get(catalog$),
+      get(db$)
         .select()
         .from(orgModelPolicies)
         .where(eq(orgModelPolicies.orgId, orgId)),
     ]);
     return {
       orgId,
-      org: orgRows[0] ?? null,
+      org,
       capabilities,
       catalog,
       policies,
@@ -112,11 +54,9 @@ export function createOrgModelBootstrap(
     };
   });
 }
-
 export function createMemberModelBootstrap(orgId: string, userId: string) {
   return computed(async (get) => {
-    const database = get(db$);
-    const rows = await database
+    const rows = await get(db$)
       .select({
         account: modelProviderAccounts,
         configuredModel: modelProviders.selectedModel,

@@ -22,8 +22,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
-import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
-import type { PrefetchedModelBootstrap } from "./model-bootstrap.service";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
   chatInputEnqueueCommits$,
   type ChatInputEnqueueCommit,
@@ -196,8 +195,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
-      readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
-      readonly prefetchedModels?: PrefetchedModelBootstrap;
+      readonly context?: AgentRunContextSignals;
     },
     signal: AbortSignal,
   ) => {

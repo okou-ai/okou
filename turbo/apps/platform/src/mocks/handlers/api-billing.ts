@@ -85,8 +85,10 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
 
 function defaultBillingStatus(): BillingStatusResponse {
   return {
-    tier: "limited-free-1",
-    ...billingPlanCapabilities("limited-free-1"),
+    // Generic page tests retain unrestricted Built-in access on a current paid
+    // plan; Limited Free scenarios install their restricted capabilities.
+    tier: "pro",
+    ...billingPlanCapabilities("pro"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,
@@ -102,7 +104,7 @@ function defaultBillingStatus(): BillingStatusResponse {
     },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 2,
+    concurrencyLimit: 3,
     concurrencySubscriptions: [],
   };
 }

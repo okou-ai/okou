@@ -148,7 +148,7 @@ type SocialStatus = "complete" | "partial" | "error";
 interface SocialBilling {
   readonly category: string;
   readonly quantity: number;
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
 }
 
 interface SocialWarning {
@@ -224,7 +224,7 @@ interface CollectionProgress {
   readonly itemsReturned: number;
   readonly itemsObserved: number;
   readonly billingQuantity: number;
-  readonly creditsCharged: number;
+  readonly creditsCharged: number | null;
 }
 
 class SocialCollectionError extends Error {
@@ -668,7 +668,7 @@ function progress(
   itemsReturned: number,
   itemsObserved: number,
   billingQuantity: number,
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): CollectionProgress {
   return {
     pages,
@@ -771,7 +771,7 @@ interface CollectionAccumulator {
   pages: number;
   itemsObserved: number;
   billingQuantity: number;
-  creditsCharged: number;
+  creditsCharged: number | null;
   reportedTotal?: number;
   nextInput?: SocialCollectionNextInput;
   bufferedItems?: unknown[];
@@ -826,7 +826,10 @@ function appendCollectionPage(
   accumulator.pages += 1;
   accumulator.itemsObserved += metadata.itemsReturned;
   accumulator.billingQuantity += response.billingQuantity;
-  accumulator.creditsCharged += response.creditsCharged;
+  accumulator.creditsCharged =
+    accumulator.creditsCharged === null || response.creditsCharged === null
+      ? null
+      : accumulator.creditsCharged + response.creditsCharged;
   accumulator.reportedTotal =
     metadata.reportedTotal ?? accumulator.reportedTotal;
   return { context: page.context, returnedItems };
@@ -1082,7 +1085,9 @@ async function finishCollectionOutput(
     previous.itemsReturned + accumulator.itemsReturned,
     previous.itemsObserved + accumulator.itemsObserved,
     previous.billingQuantity + accumulator.billingQuantity,
-    previous.creditsCharged + accumulator.creditsCharged,
+    previous.creditsCharged === null || accumulator.creditsCharged === null
+      ? null
+      : previous.creditsCharged + accumulator.creditsCharged,
   );
   const saved: SavedCollection = {
     ...checkpoint.saved,

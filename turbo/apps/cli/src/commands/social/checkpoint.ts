@@ -80,7 +80,7 @@ const progressSchema = z.strictObject({
   itemsReturned: count,
   itemsObserved: count,
   billingQuantity: count,
-  creditsCharged: count,
+  creditsCharged: count.nullable(),
 });
 const checkpointSchema = z.strictObject({
   createdAt: count,

@@ -21,7 +21,7 @@ import {
 } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -85,7 +85,7 @@ interface AuthedWebSearchArgs {
 interface CompleteWebSearchArgs {
   readonly apiKey: string;
   readonly request: WebSearchRequest;
-  readonly recordUsage: () => Promise<number>;
+  readonly recordUsage: () => Promise<number | null>;
 }
 
 type WebSearchCommandResponse =
@@ -359,7 +359,7 @@ function isWebSearchErrorResponse(
 function successBody(
   request: WebSearchRequest,
   results: readonly WebSearchResult[],
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): WebSearchResponse {
   return {
     query: request.query,
@@ -447,7 +447,7 @@ export const webSearch$ = command(
         recordUsage: () => {
           // Provider work has completed, so client disconnect must not skip billing.
           return set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: {
                 orgId: args.auth.orgId,
