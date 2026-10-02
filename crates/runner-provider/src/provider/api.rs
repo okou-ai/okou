@@ -987,7 +987,7 @@ impl JobProvider for ApiProvider {
             }
         };
 
-        const MAX_ATTEMPTS: usize = 4;
+        const MAX_ATTEMPTS: usize = 3;
         const RETRY_DELAY: Duration = Duration::from_secs(2);
 
         for attempt in 1..=MAX_ATTEMPTS {
@@ -6655,7 +6655,7 @@ mod tests {
         let event = captured_event(&events, "failed to report completion");
         assert_eq!(event.level, Level::ERROR);
         assert_eq!(event_field(event, "attempt"), "1");
-        assert_eq!(event_field(event, "max_attempts"), "4");
+        assert_eq!(event_field(event, "max_attempts"), "3");
         assert_eq!(event_field(event, "will_retry"), "false");
         assert_eq!(event_field(event, "status"), "400");
         assert_eq!(event_field(event, "failure_kind"), "http_status");
@@ -6670,7 +6670,7 @@ mod tests {
             StatusCode::TOO_MANY_REQUESTS,
             StatusCode::INTERNAL_SERVER_ERROR,
         ] {
-            for success_attempt in 2..=4 {
+            for success_attempt in 2..=3 {
                 let mut statuses = vec![status.as_u16(); success_attempt - 1];
                 statuses.push(200);
                 let mut server = complete_sequence_server(statuses).await;
@@ -6713,7 +6713,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn api_provider_complete_retries_transport_failure() {
         for reset_connection in [false, true] {
-            let mut actions: Vec<_> = (0..3)
+            let mut actions: Vec<_> = (0..2)
                 .map(|_| {
                     if reset_connection {
                         RawHttpAction::ResetConnection
@@ -6740,11 +6740,11 @@ mod tests {
                     .await;
             });
 
-            for attempt in 1..=4 {
+            for attempt in 1..=3 {
                 let request = server.next_request("completion transport request").await;
                 assert_complete_authorization(&request, "sandbox-token");
                 assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
-                if attempt < 4 {
+                if attempt < 3 {
                     tokio::task::yield_now().await;
                     assert!(
                         server.try_next_request().is_err(),
@@ -6762,7 +6762,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
         for repeated_timeout in [false, true] {
-            let attempt_count = if repeated_timeout { 4 } else { 2 };
+            let attempt_count = if repeated_timeout { 3 } else { 2 };
             let mut releases = Vec::new();
             let mut actions = Vec::new();
             for attempt in 1..=attempt_count {
@@ -6840,7 +6840,7 @@ mod tests {
             let retry_event = captured_event(&events, "completion report failed, retrying");
             assert_eq!(retry_event.level, Level::INFO);
             assert_eq!(event_field(retry_event, "attempt"), "1");
-            assert_eq!(event_field(retry_event, "max_attempts"), "4");
+            assert_eq!(event_field(retry_event, "max_attempts"), "3");
             assert_eq!(event_field(retry_event, "will_retry"), "true");
             assert_eq!(event_field(retry_event, "failure_kind"), "timeout");
             let terminal_events: Vec<_> = events
@@ -6852,7 +6852,7 @@ mod tests {
                 let final_event =
                     captured_event(&events, "failed to report completion after retry");
                 assert_eq!(final_event.level, Level::ERROR);
-                assert_eq!(event_field(final_event, "attempt"), "4");
+                assert_eq!(event_field(final_event, "attempt"), "3");
                 assert_eq!(event_field(final_event, "will_retry"), "false");
                 assert_eq!(event_field(final_event, "failure_kind"), "timeout");
             } else {
@@ -6888,8 +6888,8 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn api_provider_complete_stops_after_four_transient_failures() {
-        let mut server = complete_sequence_server(vec![500; 4]).await;
+    async fn api_provider_complete_stops_after_three_transient_failures() {
+        let mut server = complete_sequence_server(vec![500; 3]).await;
         let run_id = RunId::from(uuid::Uuid::nil());
         let request = CompleteRequest {
             exit_code: 1,
@@ -6913,14 +6913,14 @@ mod tests {
             .with_subscriber(subscriber);
         tokio::pin!(completion);
 
-        for attempt in 1..=4 {
+        for attempt in 1..=3 {
             let request = tokio::select! {
                 () = &mut completion => panic!("completion returned before attempt {attempt}"),
                 request = server.next_request("failed completion request") => request,
             };
             assert_complete_authorization(&request, "sandbox-token");
             assert_eq!(request.split_once("\r\n\r\n").unwrap().1, expected_body);
-            if attempt == 4 {
+            if attempt == 3 {
                 completion.as_mut().await;
                 break;
             }
@@ -6958,20 +6958,20 @@ mod tests {
                 .iter()
                 .filter(|event| event.fields.get("run_id") == Some(&run_id))
                 .count(),
-            4,
-            "four failed requests should produce four provider events: {events:#?}"
+            3,
+            "three failed requests should produce three provider events: {events:#?}"
         );
         let retry_event = captured_event(&events, "completion report failed, retrying");
         assert_eq!(retry_event.level, Level::WARN);
         assert_eq!(event_field(retry_event, "attempt"), "1");
-        assert_eq!(event_field(retry_event, "max_attempts"), "4");
+        assert_eq!(event_field(retry_event, "max_attempts"), "3");
         assert_eq!(event_field(retry_event, "will_retry"), "true");
         assert_eq!(event_field(retry_event, "status"), "500");
         assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
 
         let final_event = captured_event(&events, "failed to report completion after retry");
         assert_eq!(final_event.level, Level::ERROR);
-        assert_eq!(event_field(final_event, "attempt"), "4");
+        assert_eq!(event_field(final_event, "attempt"), "3");
         assert_eq!(event_field(final_event, "will_retry"), "false");
         assert_eq!(event_field(final_event, "status"), "500");
         assert_eq!(event_field(final_event, "failure_kind"), "http_status");
